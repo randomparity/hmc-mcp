@@ -49,7 +49,7 @@ def test_migrate_abort_recover_restart_jobs():
 
 @pytest.mark.asyncio
 async def test_lpar_migrate(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/Migrate"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -61,7 +61,7 @@ async def test_lpar_migrate(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_lpar_migrate_validate(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateValidate"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -71,7 +71,7 @@ async def test_lpar_migrate_validate(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_lpar_migrate_abort(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateAbort"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -81,7 +81,7 @@ async def test_lpar_migrate_abort(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_lpar_migrate_recover(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/MigrateRecover"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -91,7 +91,7 @@ async def test_lpar_migrate_recover(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_lpar_remote_restart(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/RemoteRestart"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:

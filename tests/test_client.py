@@ -146,7 +146,7 @@ async def test_find_partition_by_name(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -456,7 +456,7 @@ async def test_list_clusters(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_logical_unit(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/Cluster/cluster-uuid/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -468,7 +468,7 @@ async def test_create_logical_unit(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_logical_unit(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/Cluster/cluster-uuid/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:

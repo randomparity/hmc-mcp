@@ -43,7 +43,11 @@ class HMCError(Exception):
             detail = f"{message} (HTTP {status_code})"
         if body:
             # HMC error bodies are XML; pull out the message if possible.
-            msg = find_text(body, "Message", "msg", "error") or body[:500]
+            # Fall back to raw body text if it is not valid XML.
+            try:
+                msg = find_text(body, "Message", "msg", "error") or body[:500]
+            except Exception:
+                msg = body[:500]
             detail = f"{detail}: {msg}"
         super().__init__(detail)
 
@@ -845,13 +849,26 @@ class HMCClient:
     # ------------------------------------------------------------------ #
 
     async def submit_job(self, job_path: str, job_request_xml: str) -> dict[str, Any] | None:
-        """POST a JobRequest to /rest/api/uom/.../do/{Operation} and return the job.
+        """PUT a JobRequest to /rest/api/uom/.../do/{Operation} and return the job.
 
         `job_path` is the full do-path, e.g.
         /rest/api/uom/LogicalPartition/{uuid}/do/PowerOn
+
+        The HMC requires PUT (not POST) for do/ job operations, web+xml media
+        types, and atom+xml Accept — as confirmed by the ansible-power-hmc
+        reference implementation.
         """
-        xml = await self._post(job_path, job_request_xml, resource_type="JobRequest")
-        entries = parse_feed(xml)
+        resp = await self._http.put(
+            job_path,
+            content=job_request_xml,
+            headers={
+                "Content-Type": f"{MEDIA_WEB}; type=JobRequest",
+                "Accept": "application/atom+xml",
+            },
+        )
+        if resp.status_code not in (200, 201, 202):
+            raise HMCError(f"PUT {job_path} failed", resp.status_code, resp.text)
+        entries = parse_feed(resp.text) if resp.text else []
         return entries[0] if entries else None
 
     async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
