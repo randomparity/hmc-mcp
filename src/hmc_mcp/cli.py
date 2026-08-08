@@ -392,10 +392,7 @@ def lpars_show(
         async with _client() as hmc:
             if _is_uuid(name_or_uuid):
                 return await hmc.get_logical_partition(name_or_uuid)
-            found = await hmc.find_partition_by_name(name_or_uuid)
-            if found is None:
-                return await hmc.get_logical_partition(name_or_uuid)
-            return found
+            return await hmc.find_partition_by_name(name_or_uuid)
 
     lpar = _run(_go)
 
