@@ -52,10 +52,11 @@ from .jobs import (
 )
 from .ssh import (
     HMCCLIError,
-    _parse_lshwres_output,
     list_fc_ports,
     list_io_slots,
+    list_memory_pools,
     list_sea_adapters,
+    list_vnics,
     remove_memory_pool,
     run_hmc_command,
 )
@@ -2627,9 +2628,7 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
-        output = await run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}")
-        return _parse_lshwres_output(output)
+        return await list_memory_pools(HMCConfig(), system_name)
 
     return _run(_go())
 
@@ -2690,15 +2689,7 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
-        cmd = (
-            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"
-            f" --filter lpar_names={shlex.quote(lpar_name)}"
-        )
-        raw = await run_hmc_command(config, cmd)
-        if not raw.strip():
-            return []
-        return _parse_lshwres_output(raw)
+        return await list_vnics(HMCConfig(), system_name, lpar_name)
 
     return _run(_go())
 

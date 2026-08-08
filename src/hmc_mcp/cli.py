@@ -24,9 +24,10 @@ from .common import client_from_env
 from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import (
-    _parse_lshwres_output,
     list_fc_ports,
+    list_memory_pools,
     list_sea_adapters,
+    list_vnics,
     remove_memory_pool,
     run_hmc_command,
 )
@@ -1595,13 +1596,7 @@ def network_list_vnics(
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
     config = _ssh_config()
-    raw = _run(lambda: run_hmc_command(
-    config,
-    f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system)} "
-    f"--filter lpar_names={shlex.quote(lpar)}",
-    ))
-
-    vnics = _parse_lshwres_output(raw) if raw.strip() else []
+    vnics = _run(lambda: list_vnics(config, system, lpar))
     _output(vnics, as_json, None, "No vNICs found")
 
 
@@ -1869,9 +1864,7 @@ def memory_pools_list(
 ) -> None:
     """List shared memory pools on a managed system (HMC CLI via SSH)."""
     config = _ssh_config()
-    output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}"))
-
-    pools = _parse_lshwres_output(output)
+    pools = _run(lambda: list_memory_pools(config, system_name))
     if as_json:
         _print_json(pools)
         return

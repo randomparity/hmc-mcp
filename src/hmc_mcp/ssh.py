@@ -194,6 +194,44 @@ async def list_sea_adapters(
     return result
 
 
+async def list_vnics(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> list[dict[str, Any]]:
+    """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via SSH.
+
+    Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
+    --filter lpar_names=<lpar_name>`` and returns one dict per vNIC parsed
+    from the key=value rows, with fields such as ``vnic_id``, ``capacity``,
+    ``vswitch_name``, ``port_vlan_id``, and ``backing_devices``.
+    """
+    cmd = (
+        f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"
+        f" --filter lpar_names={shlex.quote(lpar_name)}"
+    )
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return []
+    return _parse_lshwres_output(raw)
+
+
+async def list_memory_pools(
+    config: HMCConfig,
+    system_name: str,
+) -> list[dict[str, Any]]:
+    """List shared memory pools on *system_name* via SSH.
+
+    Runs ``lshwres -r mempool -m <system_name>`` and returns one dict per
+    pool parsed from the key=value rows, with fields such as ``pool_name``,
+    ``size``, ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
+    """
+    output = await run_hmc_command(
+        config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
+    )
+    return _parse_lshwres_output(output)
+
+
 async def remove_memory_pool(
     config: HMCConfig,
     system_name: str,
@@ -215,10 +253,7 @@ async def remove_memory_pool(
         HMCCLIError: If *pool_name* still has LPARs assigned to it.
     """
     # Safety check: list pools and look for LPAR assignments.
-    list_output = await run_hmc_command(
-        config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
-    )
-    pools = _parse_lshwres_output(list_output)
+    pools = await list_memory_pools(config, system_name)
 
     for pool in pools:
         if pool.get("pool_name") == pool_name:
