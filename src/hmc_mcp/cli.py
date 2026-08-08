@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 import typer
@@ -165,14 +166,50 @@ def serve(
     http: bool = typer.Option(False, "--http", help="Serve over streamable HTTP instead of stdio"),
     host: str = typer.Option("127.0.0.1", "--host", help="HTTP listen host (with --http)"),
     port: int = typer.Option(8000, "--port", help="HTTP listen port (with --http)"),
+    allow_remote: bool = typer.Option(
+        False,
+        "--allow-remote",
+        help="Bind beyond loopback (with --http). UNSAFE: the HTTP server has no "
+        "authentication; you must gate it with an authenticated reverse proxy.",
+    ),
 ) -> None:
-    """Run the MCP server (stdio by default — what agents expect)."""
+    """Run the MCP server (stdio by default — what agents expect).
+
+    The HTTP transport is UNAUTHENTICATED and exposes the full tool surface,
+    including arbitrary HMC CLI execution (``hmc_run_command``) and user
+    administration. Bind only to loopback (the default). To reach the server
+    beyond localhost you must pass ``--allow-remote`` AND put an authenticated
+    reverse proxy (MCP gateway or HTTPS proxy with bearer-token auth) in front.
+    """
     from . import server
 
     if http:
+        if not _is_loopback(host) and not allow_remote:
+            raise typer.BadParameter(
+                f"--host {host!r} binds beyond loopback, but the streamable HTTP "
+                "server has no authentication and exposes the full tool surface "
+                "(incl. arbitrary HMC CLI exec and user admin). Refusing to start. "
+                "If you understand the risk, re-run with --allow-remote and put an "
+                "authenticated reverse proxy in front."
+            )
         server.main_http(host=host, port=port)
     else:
         server.main_stdio()
+
+
+def _is_loopback(host: str) -> bool:
+    """True if host resolves to a loopback address (127.0.0.0/8 or ::1)."""
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    return any(
+        addr[0] in (socket.AF_INET, socket.AF_INET6)
+        and (addr[4][0].startswith("127.") or addr[4][0] == "::1")
+        for addr in infos
+    )
 
 
 # ---------------------------------------------------------------------- #

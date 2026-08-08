@@ -4,6 +4,14 @@ Run:
     hmc-mcp serve            # stdio transport (default, for agents)
     hmc-mcp serve --http     # streamable HTTP on 127.0.0.1:8000
 
+The HTTP transport is UNAUTHENTICATED: it exposes the full tool surface —
+including arbitrary HMC CLI execution (``hmc_run_command``) and user
+administration — to anyone who can reach the port. Bind only to loopback
+(the default). ``hmc-mcp serve --http`` refuses to bind beyond loopback
+unless ``--allow-remote`` is passed; even then, gate the endpoint with an
+authenticated reverse proxy (MCP gateway or HTTPS proxy with bearer-token
+auth). Never expose it directly on a network.
+
 Authentication:
     REST tools authenticate via HMC_USER/HMC_PASSWORD (see
     ``client_from_env``). SSH-passthrough tools (those that run HMC CLI

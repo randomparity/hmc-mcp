@@ -75,6 +75,14 @@ hmc-mcp serve            # stdio — what MCP clients/agents expect
 hmc-mcp serve --http --host 127.0.0.1 --port 8000
 ```
 
+> **Security:** the streamable-HTTP transport is **unauthenticated**. It
+> exposes the full tool surface — including arbitrary HMC CLI execution
+> (`hmc_run_command`) and user administration — to anyone who can reach the
+> port. Keep the default loopback bind. `serve --http` refuses a
+> non-loopback `--host` unless `--allow-remote` is passed; if you need remote
+> access, put an authenticated reverse proxy (MCP gateway or HTTPS proxy with
+> bearer-token auth) in front and never expose the port directly.
+
 Exposed tools:
 
 **Read-only / inventory**
