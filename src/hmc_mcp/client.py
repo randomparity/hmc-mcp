@@ -699,6 +699,61 @@ class HMCClient:
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork/{network_uuid}"
         )
 
+    # ------------------------------------------------------------------ #
+    # Template Library (/rest/api/templates/, templates+xml media type)
+    # ------------------------------------------------------------------ #
+
+    TEMPLATES_MEDIA = "application/vnd.ibm.powervm.templates+xml"
+
+    async def _templates_get(self, path: str) -> str:
+        resp = await self._http.get(
+            path, headers={"Accept": f"{self.TEMPLATES_MEDIA}; type=PartitionTemplate"}
+        )
+        if resp.status_code == 204:
+            return ""
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        return resp.text
+
+    async def list_partition_templates(self) -> list[dict[str, Any]]:
+        """List all partition templates in the template library."""
+        xml = await self._templates_get("/rest/api/templates/PartitionTemplate")
+        return parse_feed(xml) if xml else []
+
+    async def get_partition_template(self, template_uuid: str) -> dict[str, Any] | None:
+        """Get one partition template by UUID."""
+        xml = await self._templates_get(f"/rest/api/templates/PartitionTemplate/{template_uuid}")
+        if not xml:
+            return None
+        entries = parse_feed(xml)
+        return entries[0] if entries else None
+
+    async def deploy_partition_template(
+        self, draft_template_uuid: str, target_system_uuid: str
+    ) -> dict[str, Any] | None:
+        """Deploy a partition from a *draft* template onto a managed system.
+
+        draft_template_uuid is the transformed/replica template UUID (produced
+        by capture/transform); target_system_uuid is the managed system to
+        create the partition on. Submits the Deploy job and returns the Job.
+        """
+        from .jobs import partition_template_deploy_job
+
+        memento = self._session_token or ""
+        xml = partition_template_deploy_job(target_system_uuid, draft_template_uuid, memento)
+        resp = await self._http.post(
+            f"/rest/api/templates/PartitionTemplate/{draft_template_uuid}/do/deploy",
+            content=xml,
+            headers={
+                "Content-Type": f"{MEDIA_UOM}; type=JobRequest",
+                "Accept": MEDIA_UOM,
+            },
+        )
+        if resp.status_code not in (200, 201, 202):
+            raise HMCError("PartitionTemplate deploy failed", resp.status_code, resp.text)
+        entries = parse_feed(resp.text) if resp.text else []
+        return entries[0] if entries else None
+
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"

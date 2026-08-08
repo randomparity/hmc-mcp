@@ -37,6 +37,7 @@ storage_app = typer.Typer(help="VIOS storage: volume groups, virtual disks, mapp
 cluster_app = typer.Typer(help="Clusters / Shared Storage Pools (logical units).", no_args_is_help=True)
 metrics_app = typer.Typer(help="PCM performance/capacity metrics.", no_args_is_help=True)
 network_app = typer.Typer(help="Virtual networks / switches / bridges.", no_args_is_help=True)
+templates_app = typer.Typer(help="Template library (partition templates).", no_args_is_help=True)
 vios_app = typer.Typer(help="Virtual I/O Servers.", no_args_is_help=True)
 console_app = typer.Typer(help="The HMC itself.", no_args_is_help=True)
 jobs_app = typer.Typer(help="HMC jobs.", no_args_is_help=True)
@@ -49,6 +50,7 @@ app.add_typer(storage_app, name="storage")
 app.add_typer(cluster_app, name="cluster")
 app.add_typer(metrics_app, name="metrics")
 app.add_typer(network_app, name="network")
+app.add_typer(templates_app, name="templates")
 app.add_typer(vios_app, name="vios")
 app.add_typer(console_app, name="console")
 app.add_typer(jobs_app, name="jobs")
@@ -1306,6 +1308,80 @@ def network_list_bridges(
         _fail(exc)
         return
     _output(bridges, as_json, None, "No network bridges found")
+
+
+# ---------------------------------------------------------------------- #
+# templates
+# ---------------------------------------------------------------------- #
+
+
+@templates_app.command("list")
+def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
+    """List partition templates in the template library."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_partition_templates()
+
+    try:
+        templates = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    table = None
+    if not as_json:
+        table = Table(title="Partition Templates")
+        for col in ("Name", "UUID"):
+            table.add_column(col)
+        for t in templates:
+            table.add_row(_g(t, "templateName", "TemplateName"), t.get("UUID") or "-")
+    _output(templates, as_json, table, "No partition templates found")
+
+
+@templates_app.command("show")
+def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> None:
+    """Show one partition template."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.get_partition_template(uuid)
+
+    try:
+        t = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    if t is None:
+        err_console.print(f"[yellow]Template {uuid} not found[/yellow]")
+        raise typer.Exit(code=1)
+    _print_json(t)
+
+
+@templates_app.command("deploy")
+def templates_deploy(
+    draft_uuid: str = typer.Argument(..., help="Draft (transformed) template UUID"),
+    system: str = typer.Option(..., "--system", help="Target managed system UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Deploy a partition from a draft template (submits a job)."""
+    if not yes and not typer.confirm(f"Deploy draft template {draft_uuid} to system {system}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.deploy_partition_template(draft_uuid, system)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted deploy job for template {draft_uuid}[/green]")
+    _print_json(job)
 
 
 # ---------------------------------------------------------------------- #

@@ -172,3 +172,28 @@ def remote_restart_lpar_job(target_system: str) -> str:
     return build_job_request(
         "RemoteRestart", "LogicalPartition", _lpm_params(target_system, {})
     )
+
+
+# ---------------------------------------------------------------------- #
+# Template Library
+# ---------------------------------------------------------------------- #
+
+
+def partition_template_deploy_job(
+    target_system_uuid: str, draft_template_uuid: str, memento: str
+) -> str:
+    """PartitionTemplate Deploy job.
+
+    target_system_uuid is the managed system to create the partition on;
+    draft_template_uuid is the *draft* (transformed) template UUID; memento is
+    the X-API session ID of the logged-in user.
+    """
+    return build_job_request(
+        "Deploy",
+        "PartitionTemplate",
+        {
+            "TargetUuid": target_system_uuid,
+            "TemplateUuid": draft_template_uuid,
+            "K_X_API_SESSION_MEMENTO": memento,
+        },
+    )
