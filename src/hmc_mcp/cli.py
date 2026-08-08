@@ -1576,6 +1576,40 @@ def network_list_sea_adapters(
     _output(adapters, as_json, None, "No SEA adapters found")
 
 
+@network_app.command("set-sriov-mode")
+def network_set_sriov_mode(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    adapter_id: str = typer.Argument(..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"),
+    mode: str = typer.Argument(..., help="'sriov' or 'dedicated'"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
+    if mode not in {"sriov", "dedicated"}:
+        err_console.print(f"[red]Invalid mode {mode!r}. Must be 'sriov' or 'dedicated'.[/red]")
+        raise typer.Exit(code=2)
+    if not yes and not typer.confirm(
+        f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
+    ):
+        raise typer.Abort()
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
+            f' -a "sriov_adapter_mode={mode}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
+    if result.strip():
+        console.print(result.strip())
+
+
 # ---------------------------------------------------------------------- #
 # templates
 # ---------------------------------------------------------------------- #
@@ -1801,3 +1835,80 @@ def raw_post(
         console.print(_run(_go()))
     except Exception as exc:
         _fail(exc)
+
+
+# ---------------------------------------------------------------------- #
+# memory-pools (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+memory_pools_app = typer.Typer(help="Shared memory pools.", no_args_is_help=True)
+app.add_typer(memory_pools_app, name="memory-pools")
+
+
+@memory_pools_app.command("list")
+def memory_pools_list(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List shared memory pools on a managed system (HMC CLI via SSH)."""
+    from .ssh import _parse_lshwres_output
+
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        output = asyncio.run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    pools = _parse_lshwres_output(output)
+    if as_json:
+        _print_json(pools)
+        return
+
+    if not pools:
+        err_console.print("[yellow]No memory pools found[/yellow]")
+        return
+
+    table = Table(title=f"Memory Pools — {system_name}")
+    for key in pools[0].keys():
+        table.add_column(key)
+    for pool in pools:
+        table.add_row(*pool.values())
+    console.print(table)
+
+
+@memory_pools_app.command("remove")
+def memory_pools_remove(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    pool_name: str = typer.Argument(..., help="Memory pool name"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Remove a shared memory pool (HMC CLI via SSH).
+
+    Performs an LPAR-assignment safety check before issuing the remove
+    command.  If LPARs are still assigned to the pool the command is
+    blocked and the LPAR names are reported.
+    """
+    if not yes and not typer.confirm(
+        f"Remove memory pool '{pool_name}' on system '{system_name}'?"
+    ):
+        raise typer.Abort()
+
+    from .server import hmc_remove_memory_pool
+
+    try:
+        result = hmc_remove_memory_pool(system_name, pool_name)
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    if result.startswith("ERROR:"):
+        err_console.print(f"[red]{result}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]")
+    if result.strip():
+        console.print(result.strip())
