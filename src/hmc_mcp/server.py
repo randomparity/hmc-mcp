@@ -2056,6 +2056,42 @@ def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str)
     return _run(run_hmc_command(config, cmd))
 
 
+@mcp.tool
+def hmc_get_lpar_msp(lpar_name: str, system_name: str) -> bool:
+    """Get the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F msp`` on the HMC via SSH and returns ``True`` if the flag is ``1``,
+    ``False`` if ``0``.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp"
+    raw = _run(run_hmc_command(config, cmd))
+    return raw.strip() == "1"
+
+
+@mcp.tool
+def hmc_set_lpar_msp(lpar_name: str, system_name: str, enabled: bool) -> str:
+    """Set the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
+
+    Runs ``chsyscfg -r lpar -m <system_name>
+    -i "name=<lpar_name>,msp=<0|1>"`` on the HMC via SSH.
+
+    WARNING: This modifies the LPAR configuration on the HMC. Confirm
+    lpar_name and system_name before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    value = "1" if enabled else "0"
+    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"'
+    return _run(run_hmc_command(config, cmd))
+
+
 # ---------------------------------------------------------------------- #
 # Physical I/O slot listing (SSH CLI path)
 # ---------------------------------------------------------------------- #
