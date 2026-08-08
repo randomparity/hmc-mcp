@@ -19,6 +19,7 @@ from .jobs import (
     firmware_update_job,
     hmc_update_job,
     hmc_upgrade_job,
+    install_lpar_job,
     power_off_lpar_job,
     power_on_lpar_job,
     vios_install_job,
@@ -606,6 +607,38 @@ def hmc_install_vios(
             job_xml = vios_install_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
             return await hmc.submit_job(
                 f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
+                job_xml,
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_install_lpar_os(
+    lpar_uuid: str,
+    nim_ip: str,
+    nim_gateway: str,
+    nim_subnetmask: str,
+    lpar_ip: str,
+    vlan_id: str = "0",
+    timeout: int = 60,
+) -> dict[str, Any] | None:
+    """Submit a NIM-based LPAR OS installation job.
+
+    lpar_uuid is the UUID of an existing (powered-off) LPAR. The LPAR will
+    PXE-boot from the NIM server at nim_ip to install its OS.
+    nim_gateway and nim_subnetmask define the network for the NIM install
+    boot; lpar_ip is the IP address the LPAR uses during the NIM install;
+    vlan_id is the VLAN tag for the install network (use "0" for untagged).
+    timeout is the job timeout in minutes (default 60). Returns the submitted
+    job — poll hmc_get_job for status.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
+            return await hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
                 job_xml,
             )
 

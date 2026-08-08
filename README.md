@@ -101,6 +101,7 @@ Exposed tools:
 | `hmc_delete_lpar`     | Destroy an LPAR (must be powered off; irreversible) |
 | `hmc_power_on_lpar`   | Submit PowerOn job |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
+| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`) — job |
 
 **Virtual adapters (network / storage)**
 

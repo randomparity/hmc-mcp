@@ -312,3 +312,37 @@ def vios_install_job(
             "timeout": str(timeout),
         },
     )
+
+
+# ---------------------------------------------------------------------- #
+# LPAR install (NIM-based)
+# ---------------------------------------------------------------------- #
+
+
+def install_lpar_job(
+    nim_ip: str,
+    nim_gateway: str,
+    nim_subnetmask: str,
+    lpar_ip: str,
+    vlan_id: str,
+    timeout: int = 60,
+) -> str:
+    """InstallLPAR job: NIM-based LPAR OS installation.
+
+    nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
+    the network for the LPAR during install; lpar_ip is the IP the LPAR uses
+    during the NIM install; vlan_id is the VLAN tag for the install network
+    (pass "0" for untagged); timeout is the job timeout in minutes.
+    """
+    return build_job_request(
+        "InstallLPAR",
+        "LogicalPartition",
+        {
+            "nim_IP": nim_ip,
+            "nim_gateway": nim_gateway,
+            "nim_subnetmask": nim_subnetmask,
+            "lpar_IP": lpar_ip,
+            "vlanid": vlan_id,
+            "timeout": str(timeout),
+        },
+    )
