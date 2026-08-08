@@ -10,6 +10,12 @@ Authentication:
     commands via ``run_hmc_command``) use the same env-var configuration as
     ``hmc_run_command``: set HMC_SSH_KEY_FILE for key-based auth, otherwise
     HMC_PASSWORD is used.
+
+Addressing:
+    All tools address managed systems and logical partitions by UUID
+    (``system_uuid`` / ``lpar_uuid``). SSH-passthrough tools resolve a UUID
+    to its CLI name with a REST lookup (via ``client_from_env``) before
+    running the HMC command.
 """
 
 from __future__ import annotations
@@ -59,6 +65,33 @@ mcp = FastMCP(
 def _run(coro):
     """Run an async client call from a sync tool function."""
     return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------- #
+# UUID -> CLI-name resolution (REST lookup for SSH passthrough tools)
+# ---------------------------------------------------------------------- #
+
+
+async def _system_name(hmc, system_uuid: str) -> str:
+    """Resolve a managed-system UUID to its CLI SystemName via REST."""
+    entry = await hmc.get_managed_system(system_uuid)
+    if not entry or "SystemName" not in entry.get("Resource", {}):
+        raise ValueError(
+            f"Could not resolve system UUID {system_uuid!r} to a system name. "
+            "Use hmc_list_systems to find the system_uuid."
+        )
+    return entry["Resource"]["SystemName"]
+
+
+async def _lpar_name(hmc, lpar_uuid: str) -> str:
+    """Resolve an LPAR UUID to its CLI PartitionName via REST."""
+    entry = await hmc.get_logical_partition(lpar_uuid)
+    if not entry or "PartitionName" not in entry.get("Resource", {}):
+        raise ValueError(
+            f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
+            "Use hmc_list_lpars to find the lpar_uuid."
+        )
+    return entry["Resource"]["PartitionName"]
 
 
 # ---------------------------------------------------------------------- #
@@ -1003,62 +1036,79 @@ def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool
-def hmc_list_fc_ports(system_name: str, lpar_name: str | None = None) -> list[dict]:
+def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
     """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
     on the HMC via SSH and returns parsed dicts with fields including
     lpar_name, slot_num, wwpns, and remote_lpar_id.
 
-    Pass lpar_name to restrict results to a single partition.
-    Use hmc_list_managed_systems to find system_name.
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs. Pass lpar_uuid to restrict results to a single
+    partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
+    to find lpar_uuid.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     import csv
     import io
 
-    cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system_name}"
-    if lpar_name:
-        cmd += f" --filter lpar_names={lpar_name}"
-    config = HMCConfig()
-    raw = _run(run_hmc_command(config, cmd))
-    if not raw.strip():
-        return []
-    reader = csv.DictReader(io.StringIO(raw.strip()))
-    return [dict(row) for row in reader]
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
+        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system_name}"
+        if lpar_name:
+            cmd += f" --filter lpar_names={lpar_name}"
+        config = HMCConfig()
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        reader = csv.DictReader(io.StringIO(raw.strip()))
+        return [dict(row) for row in reader]
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_list_sea_adapters(system_name: str, lpar_name: str | None = None) -> list[dict]:
+def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
     -F lpar_name,port_vlan_id,vswitch,state,trunk_priority`` on the HMC via
     SSH and returns parsed dicts with those five fields.
 
-    Pass lpar_name to restrict results to a single partition.
-    Use hmc_list_managed_systems to find system_name.
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs. Pass lpar_uuid to restrict results to a single
+    partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
+    to find lpar_uuid.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
-    cmd = (
-        f"lshwres -r virtualio --rsubtype eth --level lpar -m {system_name}"
-        f" -F {fields}"
-    )
-    if lpar_name:
-        cmd += f" --filter lpar_names={lpar_name}"
-    config = HMCConfig()
-    raw = _run(run_hmc_command(config, cmd))
-    if not raw.strip():
-        return []
-    keys = fields.split(",")
-    result = []
-    for line in raw.strip().splitlines():
-        values = line.split(",", len(keys) - 1)
-        result.append(dict(zip(keys, values)))
-    return result
+
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
+        cmd = (
+            f"lshwres -r virtualio --rsubtype eth --level lpar -m {system_name}"
+            f" -F {fields}"
+        )
+        if lpar_name:
+            cmd += f" --filter lpar_names={lpar_name}"
+        config = HMCConfig()
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        keys = fields.split(",")
+        result = []
+        for line in raw.strip().splitlines():
+            values = line.split(",", len(keys) - 1)
+            result.append(dict(zip(keys, values)))
+        return result
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -1922,17 +1972,20 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
 
 
 @mcp.tool
-def hmc_backup_lpar_profiles(system_name: str, file_path: str) -> str:
+def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
     """Backup all LPAR profiles on a Power system via the HMC CLI.
 
     Runs ``bkprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
     and returns the raw command output.
 
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
     **IMPORTANT:** file_path is on the HMC filesystem, not the local machine.
     The backup file will be created at that path on the HMC host.
 
     Args:
-        system_name: The name of the managed system (Power server).
+        system_uuid: The UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file will be saved.
 
     Returns:
@@ -1940,26 +1993,34 @@ def hmc_backup_lpar_profiles(system_name: str, file_path: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"bkprofdata -m {system_name} -f {file_path}"
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        cmd = f"bkprofdata -m {system_name} -f {file_path}"
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_restore_lpar_profiles(system_name: str, file_path: str) -> str:
+def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
     Runs ``rstprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
     and returns the raw command output.
 
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
     **IMPORTANT:** file_path is on the HMC filesystem, not the local machine.
     The backup file must already exist at that path on the HMC host.
 
     WARNING: Restoring overwrites the current LPAR profile configuration.
-    Confirm the system_name and file_path before calling.
+    Confirm the system_uuid and file_path before calling.
 
     Args:
-        system_name: The name of the managed system (Power server).
+        system_uuid: The UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file is located.
 
     Returns:
@@ -1967,13 +2028,18 @@ def hmc_restore_lpar_profiles(system_name: str, file_path: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"rstprofdata -m {system_name} -f {file_path}"
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        cmd = f"rstprofdata -m {system_name} -f {file_path}"
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_sync_lpar_profile(lpar_name: str, system_name: str) -> str:
+def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
     """Sync an LPAR's running configuration back to its current profile.
 
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=1"``
@@ -1982,23 +2048,32 @@ def hmc_sync_lpar_profile(lpar_name: str, system_name: str) -> str:
     This operation saves the LPAR's current running configuration to its
     current named profile, overwriting the previous profile definition.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     Args:
-        lpar_name: The name of the logical partition to sync.
-        system_name: The name of the managed system (Power server).
+        system_uuid: The UUID of the managed system (Power server).
+        lpar_uuid: The UUID of the logical partition to sync.
 
     Returns:
         The raw HMC CLI output.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},sync_curr_profile=1"'
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},sync_curr_profile=1"'
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 @mcp.tool
 def hmc_assign_profile_io_slot(
-    system_name: str, lpar_name: str, profile_name: str, drc_index: str
+    system_uuid: str, lpar_uuid: str, profile_name: str, drc_index: str
 ) -> str:
     """Add a physical I/O slot DRC index to an LPAR's profile.
 
@@ -2008,9 +2083,12 @@ def hmc_assign_profile_io_slot(
     This operation appends the specified physical I/O slot to the profile's
     I/O slot list. Use --force to override any conflicts.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     Args:
-        system_name: The name of the managed system (Power server).
-        lpar_name: The name of the logical partition to assign the slot to.
+        system_uuid: The UUID of the managed system (Power server).
+        lpar_uuid: The UUID of the logical partition to assign the slot to.
         profile_name: The name of the profile to modify.
         drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
 
@@ -2019,9 +2097,15 @@ def hmc_assign_profile_io_slot(
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f'chsyscfg -r prof -m {system_name} -i "name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}" --force'
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f'chsyscfg -r prof -m {system_name} -i "name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}" --force'
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 # ---------------------------------------------------------------------- #
 # LPAR description (SSH CLI path — no REST equivalent)
@@ -2029,7 +2113,7 @@ def hmc_assign_profile_io_slot(
 
 
 @mcp.tool
-def hmc_get_lpar_description(lpar_name: str, system_name: str) -> str:
+def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
     """Get the description field of an LPAR via the HMC CLI.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
@@ -2039,15 +2123,24 @@ def hmc_get_lpar_description(lpar_name: str, system_name: str) -> str:
     This field is not available via the HMC REST API; it is the same
     description visible in the HMC GUI Partitions tab.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description"
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description"
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str) -> str:
+def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str) -> str:
     """Set the description field of an LPAR via the HMC CLI.
 
     Runs ``chsyscfg -r lpar -m <system_name>
@@ -2057,48 +2150,75 @@ def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str)
     in the HMC GUI Partitions tab and is useful for recording partition
     ownership, purpose, or current task.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name and system_name before calling.
+    lpar_uuid and system_uuid before calling.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_get_lpar_msp(lpar_name: str, system_name: str) -> bool:
+def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
     """Get the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
     -F msp`` on the HMC via SSH and returns ``True`` if the flag is ``1``,
     ``False`` if ``0``.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp"
-    raw = _run(run_hmc_command(config, cmd))
-    return raw.strip() == "1"
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp"
+        raw = await run_hmc_command(config, cmd)
+        return raw.strip() == "1"
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_set_lpar_msp(lpar_name: str, system_name: str, enabled: bool) -> str:
+def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
     """Set the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
 
     Runs ``chsyscfg -r lpar -m <system_name>
     -i "name=<lpar_name>,msp=<0|1>"`` on the HMC via SSH.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name and system_name before calling.
+    lpar_uuid and system_uuid before calling.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    value = "1" if enabled else "0"
-    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"'
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        value = "1" if enabled else "0"
+        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"'
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -2110,7 +2230,7 @@ _VALID_SRIOV_MODES = {"sriov", "dedicated"}
 
 @mcp.tool
 def hmc_set_sriov_adapter_mode(
-    system_name: str,
+    system_uuid: str,
     adapter_id: str,
     mode: str,
 ) -> str:
@@ -2120,6 +2240,9 @@ def hmc_set_sriov_adapter_mode(
     -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
     command output.
 
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
     ``adapter_id`` is the physical adapter identifier as reported by
     ``hmc_list_io_slots``.
 
@@ -2128,7 +2251,7 @@ def hmc_set_sriov_adapter_mode(
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_name and adapter_id before calling.
+    functions on that adapter. Confirm system_uuid and adapter_id before calling.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
@@ -2137,12 +2260,18 @@ def hmc_set_sriov_adapter_mode(
             f"Invalid mode {mode!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
         )
-    config = HMCConfig()
-    cmd = (
-        f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
-        f' -a "sriov_adapter_mode={mode}"'
-    )
-    return _run(run_hmc_command(config, cmd))
+
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        cmd = (
+            f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
+            f' -a "sriov_adapter_mode={mode}"'
+        )
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -2151,59 +2280,85 @@ def hmc_set_sriov_adapter_mode(
 
 
 @mcp.tool
-def hmc_get_proc_compat_modes(system_name: str) -> list[str]:
+def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     """Get processor compatibility modes supported by a managed system.
 
     Runs ``lssyscfg -r sys -m <system_name> -F lpar_proc_compat_modes``
     on the HMC via SSH and returns a list of supported mode strings.
 
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes"
-    raw = _run(run_hmc_command(config, cmd))
-    if not raw.strip():
-        return []
-    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        cmd = f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes"
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_get_lpar_proc_compat(lpar_name: str, system_name: str) -> dict[str, str]:
+def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]:
     """Get the current and pending processor compatibility modes for an LPAR.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
     -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` on the HMC via SSH.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     Returns a dict with keys "pend" and "curr".
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
-    raw = _run(run_hmc_command(config, cmd))
-    if not raw.strip():
-        return {"pend": "", "curr": ""}
-    parts = raw.strip().split(",")
-    pend = parts[0].strip() if len(parts) > 0 else ""
-    curr = parts[1].strip() if len(parts) > 1 else ""
-    return {"pend": pend, "curr": curr}
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return {"pend": "", "curr": ""}
+        parts = raw.strip().split(",")
+        pend = parts[0].strip() if len(parts) > 0 else ""
+        curr = parts[1].strip() if len(parts) > 1 else ""
+        return {"pend": pend, "curr": curr}
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_set_lpar_proc_compat(lpar_name: str, system_name: str, mode: str) -> str:
+def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str:
     """Set the processor compatibility mode of an LPAR.
 
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"``
     on the HMC via SSH.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name, system_name, and mode before calling.
+    lpar_uuid, system_uuid, and mode before calling.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"'
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"'
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -2213,7 +2368,7 @@ def hmc_set_lpar_proc_compat(lpar_name: str, system_name: str, mode: str) -> str
 
 @mcp.tool
 def hmc_list_io_slots(
-    system_name: str,
+    system_uuid: str,
     adapter_type: str = "all",
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on a managed system via the HMC CLI.
@@ -2222,6 +2377,9 @@ def hmc_list_io_slots(
     SSH and returns one dict per slot.  Each dict includes fields such as
     ``drc_name``, ``pci_class``, ``feature_codes``, and ``lpar_name``
     (empty string when the slot is unassigned).
+
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
 
     adapter_type filters by PCI class:
       - ``"all"``   — return every slot (default)
@@ -2232,8 +2390,13 @@ def hmc_list_io_slots(
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    return _run(list_io_slots(config, system_name, adapter_type))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        return await list_io_slots(config, system_name, adapter_type)
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -2242,24 +2405,32 @@ def hmc_list_io_slots(
 
 
 @mcp.tool
-def hmc_list_memory_pools(system_name: str) -> list[dict[str, Any]]:
+def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     """List shared memory pools on a managed system via the HMC CLI.
 
     Runs ``lshwres -r mempool -m <system_name>`` on the HMC via SSH and
     returns one dict per pool with fields such as ``pool_name``, ``size``,
     ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
 
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     from .ssh import _parse_lshwres_output
 
-    config = HMCConfig()
-    output = _run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
-    return _parse_lshwres_output(output)
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
+        output = await run_hmc_command(config, f"lshwres -r mempool -m {system_name}")
+        return _parse_lshwres_output(output)
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
+def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     """Remove a shared memory pool from a managed system via the HMC CLI.
 
     Before issuing the remove command, fetches the current pool list and
@@ -2270,7 +2441,10 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
     Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
     the HMC via SSH when no LPARs are assigned.
 
-    WARNING: This permanently removes the pool — confirm system_name and
+    The system UUID is resolved to its CLI name via REST before the command
+    runs.
+
+    WARNING: This permanently removes the pool — confirm system_uuid and
     pool_name before calling. Returns the HMC CLI output (immediate delete —
     no job to poll).
 
@@ -2278,27 +2452,37 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
     """
     from .ssh import _parse_lshwres_output
 
-    config = HMCConfig()
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+        config = HMCConfig()
 
-    # Safety check: list pools and look for LPAR assignments.
-    list_output = _run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
-    pools = _parse_lshwres_output(list_output)
+        # Safety check: list pools and look for LPAR assignments.
+        list_output = await run_hmc_command(
+            config, f"lshwres -r mempool -m {system_name}"
+        )
+        pools = _parse_lshwres_output(list_output)
 
-    for pool in pools:
-        if pool.get("pool_name") == pool_name:
-            # curr_lpar_names may be a comma-separated string or empty.
-            assigned = pool.get("curr_lpar_names", "").strip()
-            if assigned:
-                lpar_list = [lp.strip() for lp in assigned.split(",") if lp.strip()]
-                return (
-                    f"ERROR: Cannot remove memory pool '{pool_name}' on '{system_name}' — "
-                    f"the following LPARs are still assigned to it: {', '.join(lpar_list)}. "
-                    "Reassign or remove them from the pool before retrying."
-                )
-            break
+        for pool in pools:
+            if pool.get("pool_name") == pool_name:
+                # curr_lpar_names may be a comma-separated string or empty.
+                assigned = pool.get("curr_lpar_names", "").strip()
+                if assigned:
+                    lpar_list = [
+                        lp.strip() for lp in assigned.split(",") if lp.strip()
+                    ]
+                    return (
+                        f"ERROR: Cannot remove memory pool '{pool_name}' on "
+                        f"'{system_name}' — the following LPARs are still "
+                        f"assigned to it: {', '.join(lpar_list)}. Reassign or "
+                        "remove them from the pool before retrying."
+                    )
+                break
 
-    cmd = f"chhwres -r mempool -m {system_name} -o r -a {pool_name}"
-    return _run(run_hmc_command(config, cmd))
+        cmd = f"chhwres -r mempool -m {system_name} -o r -a {pool_name}"
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #
@@ -2307,7 +2491,7 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
 
 
 @mcp.tool
-def hmc_list_vnics(system_name: str, lpar_name: str) -> list[dict[str, Any]]:
+def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
@@ -2315,27 +2499,35 @@ def hmc_list_vnics(system_name: str, lpar_name: str) -> list[dict[str, Any]]:
     per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
     ``port_vlan_id``, and ``backing_devices``.
 
-    Use ``hmc_list_managed_systems`` to find system_name.
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs. Use ``hmc_list_systems`` to find system_uuid and
+    ``hmc_list_lpars`` to find lpar_uuid.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     from .ssh import _parse_lshwres_output
 
-    config = HMCConfig()
-    cmd = (
-        f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system_name}"
-        f" --filter lpar_names={lpar_name}"
-    )
-    raw = _run(run_hmc_command(config, cmd))
-    if not raw.strip():
-        return []
-    return _parse_lshwres_output(raw)
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = (
+            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system_name}"
+            f" --filter lpar_names={lpar_name}"
+        )
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        return _parse_lshwres_output(raw)
+
+    return _run(_go())
 
 
 @mcp.tool
 def hmc_add_vnic(
-    system_name: str,
-    lpar_name: str,
+    system_uuid: str,
+    lpar_uuid: str,
     capacity: int,
     vswitch_name: str,
     port_vlan_id: int,
@@ -2345,6 +2537,9 @@ def hmc_add_vnic(
 
     Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
     --filter lpar_names=<lpar_name> -a "<attrs>"`` on the HMC via SSH.
+
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
 
     **V1 scope boundary:** Only the following parameters are supported in
     this version: ``capacity``, ``vswitch_name``, ``port_vlan_id``, and
@@ -2358,7 +2553,7 @@ def hmc_add_vnic(
     underlying SR-IOV adapter is not in SR-IOV mode.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name, lpar_name, and vswitch_name before calling.  The
+    system_uuid, lpar_uuid, and vswitch_name before calling.  The
     underlying physical adapter must be in SR-IOV mode (see
     ``hmc_set_sriov_adapter_mode``).
 
@@ -2370,43 +2565,58 @@ def hmc_add_vnic(
     if backing_devices is not None:
         attrs += f",backing_devices={backing_devices}"
 
-    config = HMCConfig()
-    cmd = (
-        f'chhwres -r virtualio --rsubtype vnic -o a -m {system_name}'
-        f' --filter lpar_names={lpar_name}'
-        f' -a "{attrs}"'
-    )
-    try:
-        return _run(run_hmc_command(config, cmd))
-    except asyncssh.ProcessError as exc:
-        stderr = (exc.stderr or "").strip()
-        return (
-            f"ERROR: Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
-            f"Ensure the underlying SR-IOV adapter is in sriov mode "
-            f"(see hmc_set_sriov_adapter_mode). HMC error: {stderr}"
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = (
+            f'chhwres -r virtualio --rsubtype vnic -o a -m {system_name}'
+            f' --filter lpar_names={lpar_name}'
+            f' -a "{attrs}"'
         )
+        try:
+            return await run_hmc_command(config, cmd)
+        except asyncssh.ProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            return (
+                f"ERROR: Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
+                f"Ensure the underlying SR-IOV adapter is in sriov mode "
+                f"(see hmc_set_sriov_adapter_mode). HMC error: {stderr}"
+            )
+
+    return _run(_go())
 
 
 @mcp.tool
-def hmc_remove_vnic(system_name: str, lpar_name: str, vnic_id: str) -> str:
+def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
     Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
     --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` on the HMC
     via SSH.
 
+    The system and partition UUIDs are resolved to their CLI names via REST
+    before the command runs.
+
     ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name, lpar_name, and vnic_id before calling. Returns the HMC CLI
+    system_uuid, lpar_uuid, and vnic_id before calling. Returns the HMC CLI
     output (immediate delete — no job to poll).
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    cmd = (
-        f'chhwres -r virtualio --rsubtype vnic -o r -m {system_name}'
-        f' --filter lpar_names={lpar_name}'
-        f' -a "vnic_id={vnic_id}"'
-    )
-    return _run(run_hmc_command(config, cmd))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid)
+            lpar_name = await _lpar_name(hmc, lpar_uuid)
+        config = HMCConfig()
+        cmd = (
+            f'chhwres -r virtualio --rsubtype vnic -o r -m {system_name}'
+            f' --filter lpar_names={lpar_name}'
+            f' -a "vnic_id={vnic_id}"'
+        )
+        return await run_hmc_command(config, cmd)
+
+    return _run(_go())

@@ -27,6 +27,58 @@ JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+# Single-resource uom entries used by SSH tools to resolve a system / LPAR
+# UUID to its CLI name via REST. Both accept {uuid} and {name} placeholders.
+SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:{uuid}</id>
+  <title>ManagedSystem:{name}</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <SystemName>{name}</SystemName>
+    </ManagedSystem>
+  </content>
+</entry>
+"""
+
+LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:{uuid}</id>
+  <title>LogicalPartition:{name}</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <PartitionName>{name}</PartitionName>
+    </LogicalPartition>
+  </content>
+</entry>
+"""
+
+
+def mock_uuid_resolution(
+    router,
+    system_uuid: str,
+    system_name: str,
+    lpar_uuid: str | None = None,
+    lpar_name: str | None = None,
+):
+    """Register respx routes resolving system/lpar UUIDs to their CLI names.
+
+    SSH-passthrough tools look up a UUID via REST before running the HMC
+    command, so tests must mock the ``get_managed_system`` /
+    ``get_logical_partition`` GETs in addition to ``asyncssh.connect``.
+    """
+    router.get(f"/rest/api/uom/ManagedSystem/{system_uuid}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=system_uuid, name=system_name)
+        )
+    )
+    if lpar_uuid is not None:
+        router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(
+            return_value=httpx.Response(
+                200, text=LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
+            )
+        )
+
 
 def make_config(**kw) -> HMCConfig:
     return HMCConfig(

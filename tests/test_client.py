@@ -299,7 +299,6 @@ async def test_add_vfc_adapter(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_adapters(mock_hmc):
-    feed = LPAR_FEED.replace("LogicalPartition", "ClientNetworkAdapter")
     mock_hmc.get(
         "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(200, text=ADAPTER_ENTRY))

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import hmc_backup_vios, hmc_list_vios_backups, hmc_restore_vios
 
 VIOS_UUID = "vios-uuid-abc123"

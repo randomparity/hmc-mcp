@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from hmc_mcp.server import hmc_list_fc_ports, hmc_list_sea_adapters
 
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "system-uuid-0001"
 SYSTEM_NAME = "Server-9009-42A-SN12345"
+LPAR_UUID = "lpar-uuid-0001"
 LPAR_NAME = "my-lpar"
 
 FC_CSV_OUTPUT = (
@@ -44,13 +47,14 @@ def _hmc_env(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_list_fc_ports_returns_list(monkeypatch):
+def test_list_fc_ports_returns_list(monkeypatch, mock_hmc):
     """hmc_list_fc_ports returns a list of dicts parsed from lshwres CSV output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_fc_ports(SYSTEM_NAME)
+        result = hmc_list_fc_ports(SYSTEM_UUID)
 
     assert isinstance(result, list)
     assert len(result) == 2
@@ -58,40 +62,43 @@ def test_list_fc_ports_returns_list(monkeypatch):
     assert result[0]["wwpns"] == "C050760E2B4C0001"
 
 
-def test_list_fc_ports_filter_by_lpar(monkeypatch):
-    """hmc_list_fc_ports appends --filter lpar_names= when lpar_name is given."""
+def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
+    """hmc_list_fc_ports appends --filter lpar_names= when lpar_uuid is given."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(
         "lpar_name,slot_num,wwpns,remote_lpar_id,remote_slot_num\n"
         "my-lpar,2,C050760E2B4C0001,0,0\n"
     )
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_fc_ports(SYSTEM_NAME, lpar_name=LPAR_NAME)
+        result = hmc_list_fc_ports(SYSTEM_UUID, lpar_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert f"--filter lpar_names={LPAR_NAME}" in called_cmd
     assert len(result) == 1
 
 
-def test_list_fc_ports_empty_output(monkeypatch):
+def test_list_fc_ports_empty_output(monkeypatch, mock_hmc):
     """hmc_list_fc_ports returns [] when the HMC returns no output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_fc_ports(SYSTEM_NAME)
+        result = hmc_list_fc_ports(SYSTEM_UUID)
 
     assert result == []
 
 
-def test_list_fc_ports_correct_command(monkeypatch):
+def test_list_fc_ports_correct_command(monkeypatch, mock_hmc):
     """hmc_list_fc_ports issues the right lshwres subcommand."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(FC_CSV_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_list_fc_ports(SYSTEM_NAME)
+        hmc_list_fc_ports(SYSTEM_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "lshwres" in called_cmd
@@ -104,13 +111,14 @@ def test_list_fc_ports_correct_command(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_list_sea_adapters_returns_list(monkeypatch):
+def test_list_sea_adapters_returns_list(monkeypatch, mock_hmc):
     """hmc_list_sea_adapters returns a list of dicts with the five SEA fields."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(SEA_LINE_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_sea_adapters(SYSTEM_NAME)
+        result = hmc_list_sea_adapters(SYSTEM_UUID)
 
     assert isinstance(result, list)
     assert len(result) == 2
@@ -121,37 +129,40 @@ def test_list_sea_adapters_returns_list(monkeypatch):
     assert result[0]["trunk_priority"] == "1"
 
 
-def test_list_sea_adapters_filter_by_lpar(monkeypatch):
-    """hmc_list_sea_adapters appends --filter lpar_names= when lpar_name is given."""
+def test_list_sea_adapters_filter_by_lpar(monkeypatch, mock_hmc):
+    """hmc_list_sea_adapters appends --filter lpar_names= when lpar_uuid is given."""
     _hmc_env(monkeypatch)
-    conn_mock = _make_ssh_mock(f"my-lpar,1000,ETHERNET0,Open,1\n")
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock("my-lpar,1000,ETHERNET0,Open,1\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_sea_adapters(SYSTEM_NAME, lpar_name=LPAR_NAME)
+        result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert f"--filter lpar_names={LPAR_NAME}" in called_cmd
     assert len(result) == 1
 
 
-def test_list_sea_adapters_empty_output(monkeypatch):
+def test_list_sea_adapters_empty_output(monkeypatch, mock_hmc):
     """hmc_list_sea_adapters returns [] when the HMC returns no output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_sea_adapters(SYSTEM_NAME)
+        result = hmc_list_sea_adapters(SYSTEM_UUID)
 
     assert result == []
 
 
-def test_list_sea_adapters_correct_command(monkeypatch):
+def test_list_sea_adapters_correct_command(monkeypatch, mock_hmc):
     """hmc_list_sea_adapters issues the right lshwres subcommand with -F fields."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(SEA_LINE_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_list_sea_adapters(SYSTEM_NAME)
+        hmc_list_sea_adapters(SYSTEM_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "lshwres" in called_cmd

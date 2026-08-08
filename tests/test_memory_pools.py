@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from hmc_mcp.server import hmc_list_memory_pools, hmc_remove_memory_pool
+
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_NAME = "Server-9009-41A-SN12345"
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -43,40 +47,43 @@ _POOL_OUTPUT_SINGLE_EMPTY = (
 # ---------------------------------------------------------------------- #
 
 
-def test_list_memory_pools_runs_correct_command(monkeypatch):
+def test_list_memory_pools_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_list_memory_pools issues lshwres -r mempool -m <system_name>."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(_POOL_OUTPUT_WITH_LPARS)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_memory_pools("Server-9009-41A-SN12345")
+        result = hmc_list_memory_pools(SYSTEM_UUID)
 
     conn_mock.run.assert_called_once_with(
-        "lshwres -r mempool -m Server-9009-41A-SN12345", check=True
+        f"lshwres -r mempool -m {SYSTEM_NAME}", check=True
     )
     assert isinstance(result, list)
     assert len(result) >= 1
 
 
-def test_list_memory_pools_returns_parsed_dicts(monkeypatch):
+def test_list_memory_pools_returns_parsed_dicts(monkeypatch, mock_hmc):
     """hmc_list_memory_pools parses key=value rows into list of dicts."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("pool_name=Pool1,size=8192,curr_lpar_names=\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_memory_pools("Server-9009-41A-SN12345")
+        result = hmc_list_memory_pools(SYSTEM_UUID)
 
     assert result[0]["pool_name"] == "Pool1"
     assert result[0]["size"] == "8192"
 
 
-def test_list_memory_pools_empty_output(monkeypatch):
+def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
     """hmc_list_memory_pools returns an empty list when there are no pools."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_memory_pools("Server-9009-41A-SN12345")
+        result = hmc_list_memory_pools(SYSTEM_UUID)
 
     assert result == []
 
@@ -86,9 +93,10 @@ def test_list_memory_pools_empty_output(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch):
+def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     """hmc_remove_memory_pool returns an error and does NOT remove when LPARs are assigned."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     # lshwres output: SharedMemPool1 has curr_lpar_names=lpar1,lpar2
     pool_list_output = (
@@ -103,7 +111,7 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch):
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_memory_pool("Server-9009-41A-SN12345", "SharedMemPool1")
+        result = hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
     # Only the safety-check lshwres should have been called -- no chhwres.
     assert conn_mock.run.call_count == 1
@@ -117,9 +125,10 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch):
     assert "lpar2" in result
 
 
-def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch):
+def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch, mock_hmc):
     """hmc_remove_memory_pool issues chhwres when no LPARs are assigned."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     list_result = MagicMock()
     list_result.stdout = _POOL_OUTPUT_SINGLE_EMPTY
@@ -132,7 +141,7 @@ def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch):
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_memory_pool("Server-9009-41A-SN12345", "SharedMemPool1")
+        result = hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
     assert conn_mock.run.call_count == 2
     remove_cmd = conn_mock.run.call_args_list[1][0][0]
@@ -143,9 +152,10 @@ def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch):
     assert "Operation successful" in result
 
 
-def test_remove_memory_pool_unknown_pool_proceeds(monkeypatch):
+def test_remove_memory_pool_unknown_pool_proceeds(monkeypatch, mock_hmc):
     """hmc_remove_memory_pool proceeds if pool is not in list (let HMC error)."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     list_result = MagicMock()
     list_result.stdout = _POOL_OUTPUT_SINGLE_EMPTY
@@ -158,6 +168,6 @@ def test_remove_memory_pool_unknown_pool_proceeds(monkeypatch):
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_memory_pool("Server-9009-41A-SN12345", "MissingPool")
+        hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
 
     assert "chhwres" in conn_mock.run.call_args_list[1][0][0]

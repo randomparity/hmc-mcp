@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from hmc_mcp.server import hmc_add_vnic, hmc_list_vnics, hmc_remove_vnic
 
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "system-uuid-0001"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
+LPAR_UUID = "lpar-uuid-0001"
 LPAR_NAME = "my-lpar"
 
 # Sample lshwres -r virtualio --rsubtype vnic output (key=value CSV-like format)
@@ -44,13 +47,14 @@ def _hmc_env(monkeypatch) -> None:
 # ---------------------------------------------------------------------- #
 
 
-def test_list_vnics_correct_command(monkeypatch):
+def test_list_vnics_correct_command(monkeypatch, mock_hmc):
     """hmc_list_vnics issues the right lshwres subcommand."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(_VNIC_LIST_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_list_vnics(SYSTEM_NAME, LPAR_NAME)
+        hmc_list_vnics(SYSTEM_UUID, LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "lshwres" in called_cmd
@@ -60,13 +64,14 @@ def test_list_vnics_correct_command(monkeypatch):
     assert f"--filter lpar_names={LPAR_NAME}" in called_cmd
 
 
-def test_list_vnics_returns_list_of_dicts(monkeypatch):
+def test_list_vnics_returns_list_of_dicts(monkeypatch, mock_hmc):
     """hmc_list_vnics returns a list of dicts parsed from lshwres output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock(_VNIC_LIST_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_vnics(SYSTEM_NAME, LPAR_NAME)
+        result = hmc_list_vnics(SYSTEM_UUID, LPAR_UUID)
 
     assert isinstance(result, list)
     assert len(result) == 2
@@ -75,13 +80,14 @@ def test_list_vnics_returns_list_of_dicts(monkeypatch):
     assert result[1]["vnic_id"] == "2"
 
 
-def test_list_vnics_empty_output(monkeypatch):
+def test_list_vnics_empty_output(monkeypatch, mock_hmc):
     """hmc_list_vnics returns [] when the HMC returns no output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_vnics(SYSTEM_NAME, LPAR_NAME)
+        result = hmc_list_vnics(SYSTEM_UUID, LPAR_UUID)
 
     assert result == []
 
@@ -91,15 +97,16 @@ def test_list_vnics_empty_output(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_add_vnic_correct_command_minimal(monkeypatch):
+def test_add_vnic_correct_command_minimal(monkeypatch, mock_hmc):
     """hmc_add_vnic issues the right chhwres command with minimal params."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("Command completed successfully.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_add_vnic(
-            system_name=SYSTEM_NAME,
-            lpar_name=LPAR_NAME,
+            system_uuid=SYSTEM_UUID,
+            lpar_uuid=LPAR_UUID,
             capacity=2,
             vswitch_name="ETHERNET0",
             port_vlan_id=100,
@@ -117,16 +124,17 @@ def test_add_vnic_correct_command_minimal(monkeypatch):
     assert "completed successfully" in result
 
 
-def test_add_vnic_with_backing_devices(monkeypatch):
+def test_add_vnic_with_backing_devices(monkeypatch, mock_hmc):
     """hmc_add_vnic includes backing_devices in the attribute string when provided."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("Command completed successfully.\n")
     backing = "U78DA.001.XYZ-P1-C4-T1"
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_add_vnic(
-            system_name=SYSTEM_NAME,
-            lpar_name=LPAR_NAME,
+            system_uuid=SYSTEM_UUID,
+            lpar_uuid=LPAR_UUID,
             capacity=5,
             vswitch_name="ETHERNET0",
             port_vlan_id=200,
@@ -137,15 +145,16 @@ def test_add_vnic_with_backing_devices(monkeypatch):
     assert f"backing_devices={backing}" in called_cmd
 
 
-def test_add_vnic_without_backing_devices_excludes_it(monkeypatch):
+def test_add_vnic_without_backing_devices_excludes_it(monkeypatch, mock_hmc):
     """hmc_add_vnic omits backing_devices from the attribute string when None."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("Command completed successfully.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_add_vnic(
-            system_name=SYSTEM_NAME,
-            lpar_name=LPAR_NAME,
+            system_uuid=SYSTEM_UUID,
+            lpar_uuid=LPAR_UUID,
             capacity=2,
             vswitch_name="ETHERNET0",
             port_vlan_id=100,
@@ -155,9 +164,10 @@ def test_add_vnic_without_backing_devices_excludes_it(monkeypatch):
     assert "backing_devices" not in called_cmd
 
 
-def test_add_vnic_sriov_mode_error_path(monkeypatch):
+def test_add_vnic_sriov_mode_error_path(monkeypatch, mock_hmc):
     """hmc_add_vnic returns a structured error when the adapter is not in sriov mode."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
 
     import asyncssh
 
@@ -178,8 +188,8 @@ def test_add_vnic_sriov_mode_error_path(monkeypatch):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_add_vnic(
-            system_name=SYSTEM_NAME,
-            lpar_name=LPAR_NAME,
+            system_uuid=SYSTEM_UUID,
+            lpar_uuid=LPAR_UUID,
             capacity=2,
             vswitch_name="ETHERNET0",
             port_vlan_id=100,
@@ -194,13 +204,14 @@ def test_add_vnic_sriov_mode_error_path(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_remove_vnic_correct_command(monkeypatch):
+def test_remove_vnic_correct_command(monkeypatch, mock_hmc):
     """hmc_remove_vnic issues the right chhwres -o r command."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("Command completed successfully.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_vnic(SYSTEM_NAME, LPAR_NAME, "1")
+        result = hmc_remove_vnic(SYSTEM_UUID, LPAR_UUID, "1")
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "chhwres" in called_cmd
@@ -212,12 +223,13 @@ def test_remove_vnic_correct_command(monkeypatch):
     assert "completed successfully" in result
 
 
-def test_remove_vnic_returns_output(monkeypatch):
+def test_remove_vnic_returns_output(monkeypatch, mock_hmc):
     """hmc_remove_vnic returns the raw command output."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_vnic(SYSTEM_NAME, LPAR_NAME, "2")
+        result = hmc_remove_vnic(SYSTEM_UUID, LPAR_UUID, "2")
 
     assert result == ""

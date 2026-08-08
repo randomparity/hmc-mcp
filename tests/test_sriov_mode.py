@@ -8,6 +8,9 @@ import pytest
 
 from hmc_mcp.server import hmc_set_sriov_adapter_mode
 
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "system-uuid-0001"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
 ADAPTER_ID = "U78DA.001.XYZ1234-P1-C2"
 
@@ -36,13 +39,14 @@ def _hmc_env(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_sriov_mode_sriov(monkeypatch):
+def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
     """hmc_set_sriov_adapter_mode issues chhwres with mode=sriov."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("Command completed successfully.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_sriov_adapter_mode(SYSTEM_NAME, ADAPTER_ID, "sriov")
+        result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
     expected_cmd = (
         f'chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}'
@@ -57,13 +61,14 @@ def test_set_sriov_mode_sriov(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_sriov_mode_dedicated(monkeypatch):
+def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
     """hmc_set_sriov_adapter_mode issues chhwres with mode=dedicated."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_sriov_adapter_mode(SYSTEM_NAME, ADAPTER_ID, "dedicated")
+        result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 
     expected_cmd = (
         f'chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}'
@@ -82,4 +87,4 @@ def test_set_sriov_mode_invalid_raises(monkeypatch):
     """hmc_set_sriov_adapter_mode raises ValueError for unknown mode without SSH."""
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="Invalid mode"):
-        hmc_set_sriov_adapter_mode(SYSTEM_NAME, ADAPTER_ID, "bogus")
+        hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "bogus")

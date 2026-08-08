@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from hmc_mcp.server import hmc_get_lpar_description, hmc_set_lpar_description
 
-LPAR_NAME = "test-lpar-01"
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "system-uuid-0001"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
+LPAR_UUID = "lpar-uuid-0001"
+LPAR_NAME = "test-lpar-01"
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -36,13 +39,14 @@ def _hmc_env(monkeypatch) -> None:
 # ---------------------------------------------------------------------- #
 
 
-def test_get_lpar_description_runs_correct_command(monkeypatch):
+def test_get_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_get_lpar_description issues lssyscfg with the correct arguments."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("production database server\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_get_lpar_description(LPAR_NAME, SYSTEM_NAME)
+        result = hmc_get_lpar_description(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
         f"lssyscfg -r lpar -m {SYSTEM_NAME} "
@@ -52,24 +56,28 @@ def test_get_lpar_description_runs_correct_command(monkeypatch):
     assert result == "production database server\n"
 
 
-def test_get_lpar_description_returns_empty_when_none_set(monkeypatch):
+def test_get_lpar_description_returns_empty_when_none_set(monkeypatch, mock_hmc):
     """hmc_get_lpar_description returns empty string when no description is set."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_get_lpar_description(LPAR_NAME, SYSTEM_NAME)
+        result = hmc_get_lpar_description(SYSTEM_UUID, LPAR_UUID)
 
     assert result == "\n"
 
 
-def test_get_lpar_description_passes_system_and_lpar(monkeypatch):
-    """hmc_get_lpar_description embeds both system_name and lpar_name in the command."""
+def test_get_lpar_description_resolves_uuids_to_names(monkeypatch, mock_hmc):
+    """hmc_get_lpar_description embeds the resolved system/lpar names in the command."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(
+        mock_hmc, "sys-uuid-x", "my-system", "lpar-uuid-y", "my-lpar"
+    )
     conn_mock = _make_ssh_mock("owner: ops-team\n")
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock) as mock_connect:
-        hmc_get_lpar_description("my-lpar", "my-system")
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        hmc_get_lpar_description("sys-uuid-x", "lpar-uuid-y")
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "-m my-system" in called_cmd
@@ -81,13 +89,16 @@ def test_get_lpar_description_passes_system_and_lpar(monkeypatch):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_lpar_description_runs_correct_command(monkeypatch):
+def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_set_lpar_description issues chsyscfg with the correct arguments."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_lpar_description(LPAR_NAME, SYSTEM_NAME, "new description")
+        result = hmc_set_lpar_description(
+            SYSTEM_UUID, LPAR_UUID, "new description"
+        )
 
     expected_cmd = (
         f'chsyscfg -r lpar -m {SYSTEM_NAME} '
@@ -97,25 +108,31 @@ def test_set_lpar_description_runs_correct_command(monkeypatch):
     assert result == ""
 
 
-def test_set_lpar_description_returns_cli_output(monkeypatch):
+def test_set_lpar_description_returns_cli_output(monkeypatch, mock_hmc):
     """hmc_set_lpar_description returns the raw SSH stdout verbatim."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     RAW_OUTPUT = "0 objects successfully changed.\n"
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_lpar_description(LPAR_NAME, SYSTEM_NAME, "some desc")
+        result = hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, "some desc")
 
     assert result == RAW_OUTPUT
 
 
-def test_set_lpar_description_embeds_description(monkeypatch):
+def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
     """hmc_set_lpar_description includes the description value in the -i argument."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(
+        mock_hmc, "sys-uuid-x", "mysystem", "lpar-uuid-y", "mylpar"
+    )
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_set_lpar_description("mylpar", "mysystem", "owner=alice env=prod")
+        hmc_set_lpar_description(
+            "sys-uuid-x", "lpar-uuid-y", "owner=alice env=prod"
+        )
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "chsyscfg" in called_cmd
