@@ -674,3 +674,60 @@ def build_hmc_user_document(
 {body}
 </HmcUser>
 """
+
+
+# ====================================================================== #
+# HMC Password Policy management (/rest/api/web/HmcPasswordPolicy)
+#
+# Create: POST /rest/api/web/HmcPasswordPolicy
+# Modify: POST /rest/api/web/HmcPasswordPolicy/{name}
+# ====================================================================== #
+
+
+def build_password_policy_document(
+    policy_name: str | None = None,
+    pwage: int | None = None,
+    min_length: int | None = None,
+    min_digits: int | None = None,
+    min_uppercase: int | None = None,
+    min_lowercase: int | None = None,
+    min_special: int | None = None,
+    hist_size: int | None = None,
+    warn_pwage: int | None = None,
+    min_pwage: int | None = None,
+) -> str:
+    """Build an HmcPasswordPolicy XML document for create (POST) or modify (POST).
+
+    For create, policy_name is required.  For modify, pass only the fields
+    to change.  pwage is the maximum password age in days (0 = never expires).
+    warn_pwage is the number of days before expiry to warn the user.
+    min_pwage is the minimum number of days before a password may be changed.
+    hist_size is the number of previous passwords that cannot be reused.
+    """
+    parts = ["  <Metadata><Atom/></Metadata>"]
+    if policy_name is not None:
+        parts.append(f'  <PolicyName kb="CUR" kxe="false">{policy_name}</PolicyName>')
+    if pwage is not None:
+        parts.append(f'  <MaxPasswordAge kb="CUR" kxe="false">{pwage}</MaxPasswordAge>')
+    if min_length is not None:
+        parts.append(f'  <MinPasswordLength kb="CUR" kxe="false">{min_length}</MinPasswordLength>')
+    if min_digits is not None:
+        parts.append(f'  <MinNumericChars kb="CUR" kxe="false">{min_digits}</MinNumericChars>')
+    if min_uppercase is not None:
+        parts.append(f'  <MinUpperCaseChars kb="CUR" kxe="false">{min_uppercase}</MinUpperCaseChars>')
+    if min_lowercase is not None:
+        parts.append(f'  <MinLowerCaseChars kb="CUR" kxe="false">{min_lowercase}</MinLowerCaseChars>')
+    if min_special is not None:
+        parts.append(f'  <MinSpecialChars kb="CUR" kxe="false">{min_special}</MinSpecialChars>')
+    if hist_size is not None:
+        parts.append(f'  <PasswordHistorySize kb="CUR" kxe="false">{hist_size}</PasswordHistorySize>')
+    if warn_pwage is not None:
+        parts.append(f'  <PasswordExpirationWarning kb="CUR" kxe="false">{warn_pwage}</PasswordExpirationWarning>')
+    if min_pwage is not None:
+        parts.append(f'  <MinPasswordAge kb="CUR" kxe="false">{min_pwage}</MinPasswordAge>')
+    body = "\n".join(parts)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<HmcPasswordPolicy xmlns="{WEB_NS}" schemaVersion="V1_0">
+{body}
+</HmcPasswordPolicy>
+"""
