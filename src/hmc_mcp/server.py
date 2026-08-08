@@ -15,11 +15,26 @@ from fastmcp import FastMCP
 from .client import HMCClient
 from .common import client_from_env
 from .config import HMCConfig
-from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
+from .jobs import (
+    firmware_update_job,
+    hmc_update_job,
+    hmc_upgrade_job,
+    power_off_lpar_job,
+    power_on_lpar_job,
+    vios_install_job,
+    vios_update_job,
+    vios_upgrade_job,
+)
 from .ssh import run_hmc_command
-from .templates import PARTITION_TYPES, build_dlpar_mem_document, build_dlpar_proc_document, build_hmc_user_document, build_lpar_document, build_vios_document
-from .jobs import power_off_lpar_job, power_on_lpar_job
-from .templates import PARTITION_TYPES, build_lpar_document, build_managed_system_document
+from .templates import (
+    PARTITION_TYPES,
+    build_dlpar_mem_document,
+    build_dlpar_proc_document,
+    build_hmc_user_document,
+    build_lpar_document,
+    build_managed_system_document,
+    build_vios_document,
+)
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -1365,5 +1380,126 @@ def hmc_delete_user(name: str) -> str:
         async with client_from_env() as hmc:
             await hmc.delete_hmc_user(name)
             return f"Deleted HMC user {name}"
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# Update / Upgrade (HMC, VIOS, firmware)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_update_hmc(system_uuid: str, repository: dict) -> dict[str, Any] | None:
+    """Submit an HMC software update job (install PTFs).
+
+    repository is a dict describing the software source, e.g.:
+        {"type": "nfs", "host": "repo.example.com", "path": "/images/hmc"}
+        {"type": "sftp", "host": "repo.example.com", "path": "/hmc", "user": "admin", "sftp_pw": "..."}
+        {"type": "disk"}  # use files already on the HMC disk
+
+    Submits an Update job to ManagementConsole; poll hmc_get_job for status.
+    system_uuid is the ManagementConsole UUID (from hmc_console_info).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.submit_job(
+                f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Update",
+                hmc_update_job(repository),
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_upgrade_hmc(system_uuid: str, repository: dict) -> dict[str, Any] | None:
+    """Submit an HMC software upgrade job (full version upgrade).
+
+    repository describes the upgrade image source (same format as
+    hmc_update_hmc). Submits an Upgrade job to ManagementConsole; poll
+    hmc_get_job for status. system_uuid is the ManagementConsole UUID.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.submit_job(
+                f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Upgrade",
+                hmc_upgrade_job(repository),
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_list_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
+    """List available PTFs (fixes) for the HMC software.
+
+    Issues a GET to the ManagementConsole resource with the SoftwareUpdate
+    group, which returns available PTF information. system_uuid is the
+    ManagementConsole UUID (from hmc_console_info). Does not submit a job.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.get_uom("ManagementConsole", system_uuid, group="SoftwareUpdate")
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_update_vios(vios_uuid: str, repository: dict) -> dict[str, Any] | None:
+    """Submit a VIOS software update job.
+
+    repository describes the update image source (same format as
+    hmc_update_hmc). Submits an Update job to VirtualIOServer; poll
+    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.submit_job(
+                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Update",
+                vios_update_job(repository),
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_upgrade_vios(vios_uuid: str, repository: dict) -> dict[str, Any] | None:
+    """Submit a VIOS software upgrade job.
+
+    repository describes the upgrade image source (same format as
+    hmc_update_hmc). Submits an Upgrade job to VirtualIOServer; poll
+    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.submit_job(
+                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Upgrade",
+                vios_upgrade_job(repository),
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_update_firmware(system_uuid: str, repository: dict) -> dict[str, Any] | None:
+    """Submit a managed system firmware update job.
+
+    repository describes the firmware image source (same format as
+    hmc_update_hmc). Submits an UpdateFirmware job to ManagedSystem; poll
+    hmc_get_job for status. system_uuid is the managed system UUID
+    (from hmc_list_systems).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.submit_job(
+                f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
+                firmware_update_job(repository),
+            )
 
     return _run(_go())

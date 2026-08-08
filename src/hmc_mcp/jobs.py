@@ -217,6 +217,70 @@ def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
 
 
 # ---------------------------------------------------------------------- #
+# Update / Upgrade (HMC, VIOS, firmware)
+# ---------------------------------------------------------------------- #
+
+
+def _repository_params(repository: dict) -> dict[str, str]:
+    """Convert a repository dict to JobParameter key/value pairs.
+
+    Recognised keys (all optional):
+        type        – repository type: nfs | sftp | disk | ibmfixcentral
+        host        – NFS/SFTP server hostname or IP
+        path        – NFS export path or SFTP remote path
+        user        – SFTP username
+        sftp_pw     – SFTP login credential
+        mount_loc   – local mount point for NFS
+        insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
+        ibm_id      – IBM FixCentral account ID
+        ibm_token   – IBM FixCentral account token
+    The raw dict values are passed through; callers may include any
+    parameter the HMC operation accepts.
+    """
+    return {str(k): str(v) for k, v in repository.items() if v is not None}
+
+
+def hmc_update_job(repository: dict) -> str:
+    """Build a JobRequest XML for an HMC software update (Install PTFs).
+
+    target: ManagementConsole/{uuid}/do/Update
+    """
+    return build_job_request("Update", "ManagementConsole", _repository_params(repository))
+
+
+def hmc_upgrade_job(repository: dict) -> str:
+    """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
+
+    target: ManagementConsole/{uuid}/do/Upgrade
+    """
+    return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
+
+
+def vios_update_job(repository: dict) -> str:
+    """Build a JobRequest XML for a VIOS update.
+
+    target: VirtualIOServer/{uuid}/do/Update
+    """
+    return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
+
+
+def vios_upgrade_job(repository: dict) -> str:
+    """Build a JobRequest XML for a VIOS upgrade.
+
+    target: VirtualIOServer/{uuid}/do/Upgrade
+    """
+    return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
+
+
+def firmware_update_job(repository: dict) -> str:
+    """Build a JobRequest XML for a managed system firmware update.
+
+    target: ManagedSystem/{uuid}/do/UpdateFirmware
+    """
+    return build_job_request("UpdateFirmware", "ManagedSystem", _repository_params(repository))
+
+
+# ---------------------------------------------------------------------- #
 # VIOS install (NIM-based)
 # ---------------------------------------------------------------------- #
 
