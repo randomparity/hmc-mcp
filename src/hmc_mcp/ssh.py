@@ -6,6 +6,8 @@ HMC CLI reference:
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncssh
 
 from .config import HMCConfig
@@ -43,3 +45,75 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     async with asyncssh.connect(**connect_kwargs) as conn:
         result = await conn.run(cmd, check=True)
         return result.stdout
+
+
+def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:
+    """Parse ``lshwres`` key=value output into a list of dicts.
+
+    Each non-empty line is expected to be a comma-separated sequence of
+    ``key=value`` pairs (the default ``lshwres`` output format).  Values that
+    are absent (empty string) are included as empty strings so callers can
+    distinguish missing from absent fields.
+    """
+    results = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        row: dict[str, Any] = {}
+        for pair in line.split(","):
+            if "=" in pair:
+                key, _, value = pair.partition("=")
+                row[key.strip()] = value.strip()
+            else:
+                # bare token with no '=' — store as-is under its own name
+                row[pair.strip()] = ""
+        if row:
+            results.append(row)
+    return results
+
+
+# PCI class codes used by lshwres -r io --rsubtype slot.
+_IO_SLOT_PCI_CLASS = {
+    "eth": "0200",
+    "sas": "0104",
+    "san": "0C04",
+    "nvme": "0108",
+}
+
+
+async def list_io_slots(
+    config: HMCConfig,
+    system_name: str,
+    adapter_type: str = "all",
+) -> list[dict[str, Any]]:
+    """List physical I/O slots on *system_name* via SSH.
+
+    Runs ``lshwres -r io --rsubtype slot -m <system_name>`` and optionally
+    filters by PCI class using ``grep pci_class=<code>``.
+
+    adapter_type may be one of:
+      - ``"all"``   — return every slot (default, no filter)
+      - ``"eth"``   — Ethernet adapters (PCI class 0200)
+      - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
+      - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
+      - ``"nvme"``  — NVMe adapters (PCI class 0108)
+
+    Returns a list of dicts parsed from the key=value HMC output rows, with
+    fields such as ``drc_name``, ``pci_class``, ``feature_codes``, and
+    ``lpar_name`` (empty string when the slot is unassigned).
+
+    Raises:
+        ValueError: If *adapter_type* is not one of the recognised values.
+    """
+    if adapter_type != "all" and adapter_type not in _IO_SLOT_PCI_CLASS:
+        valid = ", ".join(["all"] + sorted(_IO_SLOT_PCI_CLASS))
+        raise ValueError(
+            f"Invalid adapter_type {adapter_type!r}. Must be one of: {valid}"
+        )
+    cmd = f"lshwres -r io --rsubtype slot -m {system_name}"
+    if adapter_type != "all":
+        pci_class = _IO_SLOT_PCI_CLASS[adapter_type]
+        cmd += f" | grep pci_class={pci_class}"
+    output = await run_hmc_command(config, cmd)
+    return _parse_lshwres_output(output)

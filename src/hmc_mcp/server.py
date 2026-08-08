@@ -26,7 +26,7 @@ from .jobs import (
     vios_update_job,
     vios_upgrade_job,
 )
-from .ssh import run_hmc_command
+from .ssh import list_io_slots, run_hmc_command
 from .templates import (
     PARTITION_TYPES,
     build_dlpar_mem_document,
@@ -2054,3 +2054,34 @@ def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str)
     config = HMCConfig()
     cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
     return _run(run_hmc_command(config, cmd))
+
+
+# ---------------------------------------------------------------------- #
+# Physical I/O slot listing (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_io_slots(
+    system_name: str,
+    adapter_type: str = "all",
+) -> list[dict[str, Any]]:
+    """List physical I/O slots on a managed system via the HMC CLI.
+
+    Runs ``lshwres -r io --rsubtype slot -m <system_name>`` on the HMC via
+    SSH and returns one dict per slot.  Each dict includes fields such as
+    ``drc_name``, ``pci_class``, ``feature_codes``, and ``lpar_name``
+    (empty string when the slot is unassigned).
+
+    adapter_type filters by PCI class:
+      - ``"all"``   — return every slot (default)
+      - ``"eth"``   — Ethernet adapters (PCI class 0200)
+      - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
+      - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
+      - ``"nvme"``  — NVMe adapters (PCI class 0108)
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    return _run(list_io_slots(config, system_name, adapter_type))
