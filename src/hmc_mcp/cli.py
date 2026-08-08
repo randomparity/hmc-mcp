@@ -36,6 +36,7 @@ adapters_app = typer.Typer(help="Virtual adapters (network/storage) on LPARs.", 
 storage_app = typer.Typer(help="VIOS storage: volume groups, virtual disks, mappings.", no_args_is_help=True)
 cluster_app = typer.Typer(help="Clusters / Shared Storage Pools (logical units).", no_args_is_help=True)
 metrics_app = typer.Typer(help="PCM performance/capacity metrics.", no_args_is_help=True)
+network_app = typer.Typer(help="Virtual networks / switches / bridges.", no_args_is_help=True)
 vios_app = typer.Typer(help="Virtual I/O Servers.", no_args_is_help=True)
 console_app = typer.Typer(help="The HMC itself.", no_args_is_help=True)
 jobs_app = typer.Typer(help="HMC jobs.", no_args_is_help=True)
@@ -47,6 +48,7 @@ app.add_typer(adapters_app, name="adapters")
 app.add_typer(storage_app, name="storage")
 app.add_typer(cluster_app, name="cluster")
 app.add_typer(metrics_app, name="metrics")
+app.add_typer(network_app, name="network")
 app.add_typer(vios_app, name="vios")
 app.add_typer(console_app, name="console")
 app.add_typer(jobs_app, name="jobs")
@@ -1160,6 +1162,150 @@ def metrics_show(
         _fail(exc)
         return
     _print_json(result)
+
+
+# ---------------------------------------------------------------------- #
+# network (virtual switches / networks / bridges)
+# ---------------------------------------------------------------------- #
+
+
+@network_app.command("list-switches")
+def network_list_switches(
+    system: str = typer.Argument(..., help="Managed system UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List VirtualSwitches on a managed system."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_virtual_switches(system)
+
+    try:
+        switches = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    table = None
+    if not as_json:
+        table = Table(title=f"Virtual Switches on {system}")
+        for col in ("Name", "SwitchID", "Mode", "UUID"):
+            table.add_column(col)
+        for s in switches:
+            table.add_row(
+                _g(s, "SwitchName"),
+                _g(s, "SwitchID"),
+                _g(s, "SwitchMode"),
+                s.get("UUID") or "-",
+            )
+    _output(switches, as_json, table, "No virtual switches found")
+
+
+@network_app.command("list-networks")
+def network_list_networks(
+    system: str = typer.Argument(..., help="Managed system UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List Virtual Networks (VLANs) on a managed system."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_virtual_networks(system)
+
+    try:
+        nets = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    table = None
+    if not as_json:
+        table = Table(title=f"Virtual Networks on {system}")
+        for col in ("Name", "VLAN", "VswitchID", "Tagged", "UUID"):
+            table.add_column(col)
+        for n in nets:
+            table.add_row(
+                _g(n, "NetworkName"),
+                _g(n, "NetworkVLANID"),
+                _g(n, "VswitchID"),
+                _g(n, "TaggedNetwork"),
+                n.get("UUID") or "-",
+            )
+    _output(nets, as_json, table, "No virtual networks found")
+
+
+@network_app.command("create")
+def network_create(
+    system: str = typer.Argument(..., help="Managed system UUID"),
+    name: str = typer.Option(..., "--name", "-n", help="Network name"),
+    vlan: int = typer.Option(..., "--vlan", help="VLAN ID"),
+    vswitch: int = typer.Option(..., "--vswitch", help="Backing VirtualSwitch SwitchID"),
+    tagged: bool = typer.Option(False, "--tagged", help="Tagged (bridged) network"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Create a Virtual Network (VLAN) on a managed system."""
+    if not yes and not typer.confirm(f"Create network '{name}' (VLAN {vlan}, vswitch {vswitch}) on {system}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.create_virtual_network(system, name, vlan, vswitch, tagged=tagged)
+
+    try:
+        net = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Created virtual network '{name}'[/green]")
+    _print_json(net)
+
+
+@network_app.command("delete")
+def network_delete(
+    system: str = typer.Argument(..., help="Managed system UUID"),
+    uuid: str = typer.Option(..., "--uuid", help="Virtual Network UUID to delete"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a Virtual Network from a managed system."""
+    if not yes and not typer.confirm(f"Delete virtual network {uuid} from {system}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            await hmc.delete_virtual_network(system, uuid)
+            return uuid
+
+    try:
+        deleted = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Deleted virtual network {deleted}[/green]")
+
+
+@network_app.command("list-bridges")
+def network_list_bridges(
+    system: str = typer.Argument(..., help="Managed system UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_network_bridges(system)
+
+    try:
+        bridges = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    _output(bridges, as_json, None, "No network bridges found")
 
 
 # ---------------------------------------------------------------------- #

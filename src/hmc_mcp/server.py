@@ -606,6 +606,86 @@ def hmc_remote_restart_lpar(lpar_uuid: str, target_system: str) -> dict[str, Any
 
 
 # ---------------------------------------------------------------------- #
+# Virtual Network management
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_virtual_switches(system_uuid: str) -> list[dict[str, Any]]:
+    """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
+
+    The SwitchID is what hmc_create_virtual_network and hmc_add_network_adapter
+    reference.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_virtual_switches(system_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_list_virtual_networks(system_uuid: str) -> list[dict[str, Any]]:
+    """List Virtual Networks (VLANs) on a managed system."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_virtual_networks(system_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_create_virtual_network(
+    system_uuid: str,
+    name: str,
+    vlan_id: int,
+    vswitch_id: int,
+    tagged: bool = False,
+) -> dict[str, Any] | None:
+    """Create a Virtual Network (VLAN) on a managed system.
+
+    vswitch_id is the numeric SwitchID of the backing VirtualSwitch (see
+    hmc_list_virtual_switches). tagged sets whether bridged traffic keeps the
+    VLAN tag.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_virtual_network(system_uuid, name, vlan_id, vswitch_id, tagged=tagged)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
+    """Delete a Virtual Network from a managed system.
+
+    Note: a network referenced by a NetworkBridge, or equal to a trunk
+    adapter's PVID, cannot be deleted until the bridge is removed.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            await hmc.delete_virtual_network(system_uuid, network_uuid)
+            return f"Deleted VirtualNetwork {network_uuid} from {system_uuid}"
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
+    """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_network_bridges(system_uuid)
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
 # Cluster / Shared Storage Pool (SSP)
 # ---------------------------------------------------------------------- #
 

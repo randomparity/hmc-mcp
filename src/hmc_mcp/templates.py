@@ -347,3 +347,43 @@ def build_vscsi_mapping_document(
   </VirtualSCSIMappings>
 </VirtualIOServer>
 """
+
+
+# ====================================================================== #
+# Virtual Network (child of ManagedSystem)
+#
+# Create: PUT /rest/api/uom/ManagedSystem/{sys}/VirtualNetwork
+# Fields: NetworkName, NetworkVLANID, VswitchID, TaggedNetwork, and an
+# AssociatedSwitch Atom link to the backing VirtualSwitch.
+# ====================================================================== #
+
+
+def build_virtual_network_document(
+    name: str,
+    vlan_id: int,
+    vswitch_id: int,
+    switch_link: str | None = None,
+    tagged: bool = False,
+) -> str:
+    """Document to create a Virtual Network (VLAN) on a managed system.
+
+    switch_link is the Atom href of the backing VirtualSwitch
+    (.../ManagedSystem/{sys}/VirtualSwitch/{uuid}); when given it is emitted as
+    the AssociatedSwitch link. tagged controls TaggedNetwork.
+    """
+    assoc = ""
+    if switch_link:
+        assoc = (
+            f'  <AssociatedSwitch xmlns="{ATOM_NS}" rel="related" '
+            f'href="{switch_link}"/>\n'
+        )
+    tagged_str = "true" if tagged else "false"
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_8_0">
+  <Metadata><Atom/></Metadata>
+{assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
+  <NetworkVLANID kb="CUD" kxe="false">{vlan_id}</NetworkVLANID>
+  <VswitchID kb="CUD" kxe="false">{vswitch_id}</VswitchID>
+  <TaggedNetwork kb="CUD" kxe="false">{tagged_str}</TaggedNetwork>
+</VirtualNetwork>
+"""

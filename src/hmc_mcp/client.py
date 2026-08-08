@@ -639,6 +639,66 @@ class HMCClient:
 
         return await self._lpar_job(lpar_uuid, "RemoteRestart", remote_restart_lpar_job(target_system))
 
+    # ------------------------------------------------------------------ #
+    # Virtual Network management (children of ManagedSystem)
+    # ------------------------------------------------------------------ #
+
+    async def list_virtual_switches(self, system_uuid: str) -> list[dict[str, Any]]:
+        """List VirtualSwitches on a managed system (names, IDs, mode)."""
+        xml = await self._get(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualSwitch", "VirtualSwitch"
+        )
+        return parse_feed(xml) if xml else []
+
+    async def list_virtual_networks(self, system_uuid: str) -> list[dict[str, Any]]:
+        """List Virtual Networks (VLANs) on a managed system."""
+        xml = await self._get(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork", "VirtualNetwork"
+        )
+        return parse_feed(xml) if xml else []
+
+    async def list_network_bridges(self, system_uuid: str) -> list[dict[str, Any]]:
+        """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
+        xml = await self._get(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/NetworkBridge", "NetworkBridge"
+        )
+        return parse_feed(xml) if xml else []
+
+    async def create_virtual_network(
+        self,
+        system_uuid: str,
+        name: str,
+        vlan_id: int,
+        vswitch_id: int,
+        switch_uuid: str | None = None,
+        tagged: bool = False,
+    ) -> dict[str, Any] | None:
+        """Create a Virtual Network (VLAN) on a managed system.
+
+        vswitch_id is the numeric SwitchID (from list_virtual_switches);
+        switch_uuid optionally provides the AssociatedSwitch link.
+        """
+        from .templates import build_virtual_network_document
+
+        switch_link = None
+        if switch_uuid:
+            switch_link = (
+                f"{self.config.base_url}/rest/api/uom/ManagedSystem/"
+                f"{system_uuid}/VirtualSwitch/{switch_uuid}"
+            )
+        xml = build_virtual_network_document(name, vlan_id, vswitch_id, switch_link, tagged)
+        resp = await self._put(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork", xml, resource_type="VirtualNetwork"
+        )
+        entries = parse_feed(resp) if resp else []
+        return entries[0] if entries else None
+
+    async def delete_virtual_network(self, system_uuid: str, network_uuid: str) -> None:
+        """Delete a Virtual Network from a managed system."""
+        await self._delete(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork/{network_uuid}"
+        )
+
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
