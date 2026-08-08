@@ -6,6 +6,8 @@ import respx
 
 from hmc_mcp.client import HMCClient
 
+from conftest import make_config
+
 BASE = "https://hmc.test:12443"
 
 LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -48,11 +50,6 @@ VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="
   </content>
 </entry>
 """.format(base=BASE)
-
-
-def make_config():
-    from hmc_mcp.config import HMCConfig
-    return HMCConfig(host="hmc.test", user="hscroot", password="abc123", verify_ssl=False)
 
 
 @pytest.fixture

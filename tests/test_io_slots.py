@@ -6,12 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh import list_io_slots
 
-
-def make_config(**kw) -> HMCConfig:
-    return HMCConfig(host="hmc.test", user="hscroot", password="abc123", **kw)
+from conftest import make_config
 
 
 IO_SLOT_OUTPUT = (

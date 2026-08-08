@@ -9,9 +9,7 @@ import pytest
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.ssh import run_hmc_command
 
-
-def make_config(**kw) -> HMCConfig:
-    return HMCConfig(host="hmc.test", user="hscroot", password="abc123", **kw)
+from conftest import make_config
 
 
 # ---------------------------------------------------------------------------

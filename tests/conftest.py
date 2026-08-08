@@ -81,9 +81,15 @@ def mock_uuid_resolution(
 
 
 def make_config(**kw) -> HMCConfig:
-    return HMCConfig(
-        host="hmc.test", user="hscroot", password="abc123", verify_ssl=False, **kw
-    )
+    """Build a test HMCConfig; any field may be overridden via **kw."""
+    defaults = {
+        "host": "hmc.test",
+        "user": "hscroot",
+        "password": "abc123",
+        "verify_ssl": False,
+    }
+    defaults.update(kw)
+    return HMCConfig(**defaults)
 
 
 @pytest.fixture

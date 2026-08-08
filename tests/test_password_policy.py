@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.config import HMCConfig as _HMCConfig
 from hmc_mcp.server import (
     hmc_create_password_policy,
     hmc_delete_password_policy,
@@ -13,9 +12,7 @@ from hmc_mcp.server import (
 )
 from hmc_mcp.templates import build_password_policy_document
 
-
-def make_config(**kw) -> _HMCConfig:
-    return _HMCConfig(host="hmc.test", user="hscroot", password="abc123", verify_ssl=False, **kw)
+from conftest import make_config
 
 
 BASE = "https://hmc.test:12443"

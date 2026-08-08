@@ -7,8 +7,9 @@ import pytest
 import respx
 
 from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.config import HMCConfig
 from hmc_mcp.jobs import build_job_request
+
+from conftest import make_config
 
 BASE = "https://hmc.test:12443"
 
@@ -62,11 +63,6 @@ JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """
 
 
-def make_config(**kw) -> HMCConfig:
-    return HMCConfig(
-        host="hmc.test", user="hscroot", password="abc123", verify_ssl=False, **kw
-    )
-
 
 @pytest.fixture
 def mock_hmc():
@@ -86,18 +82,12 @@ async def test_logon_logoff(mock_hmc):
     assert not hmc.is_logged_on
 
 
-def _config(verify_ssl: bool) -> HMCConfig:
-    """HMCConfig with explicit verification setting (make_config hard-codes False)."""
-    return HMCConfig(
-        host="hmc.test", user="hscroot", password="abc123", verify_ssl=verify_ssl
-    )
-
 
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
     with pytest.warns(UserWarning, match="certificate verification is disabled"):
-        async with HMCClient(_config(verify_ssl=False)):
+        async with HMCClient(make_config(verify_ssl=False)):
             pass
 
 
@@ -106,7 +96,7 @@ async def test_logon_silent_when_verify_ssl_enabled(mock_hmc):
     """Logon with verify_ssl=True emits no verification warning."""
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        async with HMCClient(_config(verify_ssl=True)):
+        async with HMCClient(make_config(verify_ssl=True)):
             pass
     assert not [w for w in caught if "verification" in str(w.message)]
 
@@ -196,7 +186,7 @@ async def test_job_request_xml():
 
 @pytest.mark.asyncio
 async def test_missing_credentials():
-    config = HMCConfig(host="", user="", password="")
+    config = make_config(host="", user="", password="")
     with pytest.raises(ValueError, match="Missing HMC configuration"):
         HMCClient(config)
 
