@@ -26,6 +26,7 @@ class HMCConfig(BaseSettings):
     port: int = Field(default=12443, description="HMC REST API port")
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
+    ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
     audit_memento: str = Field(
