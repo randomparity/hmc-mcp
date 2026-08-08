@@ -43,11 +43,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """.format(base=BASE)
 
-QUICK_STATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-  <PartitionState>running</PartitionState>
-</LogicalPartition>
-"""
+QUICK_STATE = "running"
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
@@ -146,7 +142,7 @@ async def test_find_partition_by_name(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -456,7 +452,7 @@ async def test_list_clusters(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_create_logical_unit(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/Cluster/cluster-uuid/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:
@@ -468,7 +464,7 @@ async def test_create_logical_unit(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_logical_unit(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/uom/Cluster/cluster-uuid/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:

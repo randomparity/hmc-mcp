@@ -43,7 +43,11 @@ class HMCError(Exception):
             detail = f"{message} (HTTP {status_code})"
         if body:
             # HMC error bodies are XML; pull out the message if possible.
-            msg = find_text(body, "Message", "msg", "error") or body[:500]
+            # Fall back to raw body text if it is not valid XML.
+            try:
+                msg = find_text(body, "Message", "msg", "error") or body[:500]
+            except Exception:
+                msg = body[:500]
             detail = f"{detail}: {msg}"
         super().__init__(detail)
 
@@ -208,15 +212,18 @@ class HMCClient:
         return entries[0] if entries else None
 
     async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> Any:
-        """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState."""
-        xml = await self._get(f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}", resource_type)
-        # The response is a tiny XML doc whose root text (or first element) is
-        # the value.
-        value = find_text(xml, property_name)
-        if value is None:
-            # Fall back to the whole body text.
-            return xml.strip() or None
-        return value
+        """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
+
+        quick/ endpoints return a plain-text value and require Accept: */* —
+        a typed uom+xml Accept header causes HTTP 406.
+        """
+        path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
+        resp = await self._http.get(path, headers={"Accept": "*/*"})
+        if resp.status_code == 204:
+            return None
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        return resp.text.strip() or None
 
     async def search_uom(self, resource_type: str, property_name: str, property_value: str) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
@@ -740,19 +747,11 @@ class HMCClient:
         from .jobs import partition_template_deploy_job
 
         memento = self._session_token or ""
-        xml = partition_template_deploy_job(target_system_uuid, draft_template_uuid, memento)
-        resp = await self._http.post(
+        xml = partition_template_deploy_job(target_system_uuid, memento)
+        return await self.submit_job(
             f"/rest/api/templates/PartitionTemplate/{draft_template_uuid}/do/deploy",
-            content=xml,
-            headers={
-                "Content-Type": f"{MEDIA_UOM}; type=JobRequest",
-                "Accept": MEDIA_UOM,
-            },
+            xml,
         )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError("PartitionTemplate deploy failed", resp.status_code, resp.text)
-        entries = parse_feed(resp.text) if resp.text else []
-        return entries[0] if entries else None
 
     # ------------------------------------------------------------------ #
     # Managed-system / VIOS power jobs
@@ -845,13 +844,26 @@ class HMCClient:
     # ------------------------------------------------------------------ #
 
     async def submit_job(self, job_path: str, job_request_xml: str) -> dict[str, Any] | None:
-        """POST a JobRequest to /rest/api/uom/.../do/{Operation} and return the job.
+        """PUT a JobRequest to /rest/api/uom/.../do/{Operation} and return the job.
 
         `job_path` is the full do-path, e.g.
         /rest/api/uom/LogicalPartition/{uuid}/do/PowerOn
+
+        The HMC requires PUT (not POST) for do/ job operations, web+xml media
+        types, and atom+xml Accept — as confirmed by the ansible-power-hmc
+        reference implementation.
         """
-        xml = await self._post(job_path, job_request_xml, resource_type="JobRequest")
-        entries = parse_feed(xml)
+        resp = await self._http.put(
+            job_path,
+            content=job_request_xml,
+            headers={
+                "Content-Type": f"{MEDIA_WEB}; type=JobRequest",
+                "Accept": "application/atom+xml",
+            },
+        )
+        if resp.status_code not in (200, 201, 202):
+            raise HMCError(f"PUT {job_path} failed", resp.status_code, resp.text)
+        entries = parse_feed(resp.text) if resp.text else []
         return entries[0] if entries else None
 
     async def get_job(self, job_uuid: str) -> dict[str, Any] | None:

@@ -28,7 +28,7 @@ def test_vios_power_jobs():
 
 @pytest.mark.asyncio
 async def test_power_on_system(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/ManagedSystem/sys-uuid/do/PowerOn").mock(
+    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -39,7 +39,7 @@ async def test_power_on_system(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_power_off_system(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/ManagedSystem/sys-uuid/do/PowerOff").mock(
+    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/do/PowerOff").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -50,7 +50,7 @@ async def test_power_off_system(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_power_on_vios(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/vios-uuid/do/PowerOn").mock(
+    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/vios-uuid/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -60,7 +60,7 @@ async def test_power_on_vios(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_power_off_vios(mock_hmc):
-    route = mock_hmc.post("/rest/api/uom/VirtualIOServer/vios-uuid/do/PowerOff").mock(
+    route = mock_hmc.put("/rest/api/uom/VirtualIOServer/vios-uuid/do/PowerOff").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:

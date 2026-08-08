@@ -36,10 +36,10 @@ TEMPLATE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_deploy_job():
-    xml = partition_template_deploy_job("sys-uuid", "draft-uuid", "memento-1")
+    xml = partition_template_deploy_job("sys-uuid", "memento-1")
     assert "Deploy" in xml
     assert "TargetUuid" in xml and "sys-uuid" in xml
-    assert "TemplateUuid" in xml and "draft-uuid" in xml
+    assert "TemplateUuid" not in xml  # draft UUID is in the URL, not a parameter
     assert "K_X_API_SESSION_MEMENTO" in xml and "memento-1" in xml
 
 
@@ -67,7 +67,7 @@ async def test_get_partition_template(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_deploy_partition_template(mock_hmc):
-    route = mock_hmc.post(
+    route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     async with HMCClient(make_config()) as hmc:

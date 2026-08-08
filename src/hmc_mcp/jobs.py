@@ -1,13 +1,13 @@
 """XML templates for HMC job requests (do/* operations).
 
-Jobs are submitted with Content-Type: application/vnd.ibm.powervm.uom+xml;
-type=JobRequest and run asynchronously; poll /rest/api/uom/Job/{uuid} for
-status.
+Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
+type=JobRequest via PUT and run asynchronously; poll /rest/api/uom/Job/{uuid}
+for status.
 """
 
 from __future__ import annotations
 
-UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -18,8 +18,9 @@ _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Metadata>
       <Atom/>
     </Metadata>
-    <OperationName kb="CUR" kxe="false">{operation}</OperationName>
-    <GroupName kb="CUR" kxe="false">{group}</GroupName>
+    <OperationName kb="ROR" kxe="false">{operation}</OperationName>
+    <GroupName kb="ROR" kxe="false">{group}</GroupName>
+    <ProgressType kb="ROR" kxe="false">DISCRETE</ProgressType>
   </RequestedOperation>
   <JobParameters kb="CUR" kxe="false" schemaVersion="V1_0">
     <Metadata>
@@ -30,11 +31,11 @@ _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </JobRequest>
 """
 
-_PARAM_TEMPLATE = """    <JobParameter kb="CUR" kxe="false" schemaVersion="V1_0">
+_PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
       <Metadata>
         <Atom/>
       </Metadata>
-      <ParameterName kb="CUR" kxe="false">{name}</ParameterName>
+      <ParameterName kb="ROR" kxe="false">{name}</ParameterName>
       <ParameterValue kb="CUR" kxe="false">{value}</ParameterValue>
     </JobParameter>"""
 
@@ -52,19 +53,24 @@ def build_job_request(
             for name, value in parameters.items()
         )
     return _JOB_TEMPLATE.format(
-        ns=UOM_NS, operation=operation, group=group, parameters=params_xml
+        ns=WEB_NS, operation=operation, group=group, parameters=params_xml
     )
 
 
 def power_on_lpar_job() -> str:
-    return build_job_request("PowerOn", "LogicalPartition")
+    return build_job_request("PowerOn", "LogicalPartition", {
+        "force": "false",
+        "novsi": "true",
+        "bootmode": "norm",
+    })
 
 
 def power_off_lpar_job(immediate: bool = False) -> str:
-    params = {}
-    if immediate:
-        params["immediate"] = "true"
-    return build_job_request("PowerOff", "LogicalPartition", params or None)
+    return build_job_request("PowerOff", "LogicalPartition", {
+        "immediate": "true" if immediate else "false",
+        "restart": "false",
+        "operation": "shutdown",
+    })
 
 
 def power_on_system_job() -> str:
@@ -193,21 +199,18 @@ def remote_restart_lpar_job(target_system: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def partition_template_deploy_job(
-    target_system_uuid: str, draft_template_uuid: str, memento: str
-) -> str:
+def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
     """PartitionTemplate Deploy job.
 
     target_system_uuid is the managed system to create the partition on;
-    draft_template_uuid is the *draft* (transformed) template UUID; memento is
-    the X-API session ID of the logged-in user.
+    memento is the X-API session ID of the logged-in user.
+    The draft template UUID is encoded in the URL, not as a parameter.
     """
     return build_job_request(
         "Deploy",
         "PartitionTemplate",
         {
-            "TargetUuid": target_system_uuid,
-            "TemplateUuid": draft_template_uuid,
             "K_X_API_SESSION_MEMENTO": memento,
+            "TargetUuid": target_system_uuid,
         },
     )
