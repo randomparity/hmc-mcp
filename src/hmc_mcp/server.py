@@ -17,7 +17,7 @@ from .common import client_from_env
 from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
 from .ssh import run_hmc_command
-from .templates import PARTITION_TYPES, build_hmc_user_document, build_lpar_document, build_vios_document
+from .templates import PARTITION_TYPES, build_dlpar_mem_document, build_dlpar_proc_document, build_hmc_user_document, build_lpar_document, build_vios_document
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -334,6 +334,74 @@ def hmc_modify_lpar(
         desired_vcpus=desired_vcpus,
         max_vcpus=max_vcpus,
         uncapped=uncapped,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_dlpar_proc(
+    lpar_uuid: str,
+    desired_procs: float | None = None,
+    min_procs: float | None = None,
+    max_procs: float | None = None,
+    desired_vcpus: int | None = None,
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+    dedicated: bool = False,
+    uncapped: bool = True,
+) -> dict[str, Any] | None:
+    """DLPAR processor hot-plug: change CPU resources on a running LPAR.
+
+    Posts a minimal PartitionProcessorConfiguration document to the HMC.
+    Only the fields you pass are changed. For shared partitions, procs are
+    processing units (may be fractional, e.g. 0.5); vcpus are virtual
+    processor counts (ints). Set dedicated=True for whole-CPU assignment.
+
+    If the LPAR does not have an active RMC connection, the change is
+    profile-only and takes effect on next activation (no reboot is triggered).
+    """
+    xml = build_dlpar_proc_document(
+        desired_procs=desired_procs,
+        min_procs=min_procs,
+        max_procs=max_procs,
+        desired_vcpus=desired_vcpus,
+        min_vcpus=min_vcpus,
+        max_vcpus=max_vcpus,
+        dedicated=dedicated,
+        uncapped=uncapped,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_dlpar_mem(
+    lpar_uuid: str,
+    desired_mem: int | None = None,
+    min_mem: int | None = None,
+    max_mem: int | None = None,
+) -> dict[str, Any] | None:
+    """DLPAR memory hot-plug: change memory resources on a running LPAR.
+
+    Posts a minimal PartitionMemoryConfiguration document to the HMC.
+    Memory values are in MiB. Only the fields you pass are changed.
+
+    If the LPAR does not have an active RMC connection, the change is
+    profile-only and takes effect on next activation (no reboot is triggered).
+    """
+    xml = build_dlpar_mem_document(
+        desired_mem=desired_mem,
+        min_mem=min_mem,
+        max_mem=max_mem,
     )
 
     async def _go():

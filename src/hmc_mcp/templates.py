@@ -202,6 +202,64 @@ def build_vios_document(
     )
 
 
+def build_dlpar_proc_document(
+    desired_procs: float | None = None,
+    min_procs: float | None = None,
+    max_procs: float | None = None,
+    desired_vcpus: int | None = None,
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+    dedicated: bool = False,
+    uncapped: bool = True,
+) -> str:
+    """Minimal LogicalPartition document containing only PartitionProcessorConfiguration.
+
+    Used for DLPAR processor hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
+    On a running partition this applies immediately if RMC is active; otherwise the
+    change is profile-only and takes effect on next activation.
+
+    For shared partitions, procs are processing units (may be fractional, e.g. 0.5);
+    vcpus are the virtual processor counts (ints).
+    Set dedicated=True to assign whole CPUs; dedicated=False (default) for shared.
+    """
+    proc = _processor_config(
+        dedicated, min_procs, desired_procs, max_procs,
+        min_vcpus, desired_vcpus, max_vcpus, None, uncapped,
+    )
+    body = "  <Metadata><Atom/></Metadata>"
+    if proc:
+        body = body + "\n" + proc
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+{body}
+</LogicalPartition>
+"""
+
+
+def build_dlpar_mem_document(
+    desired_mem: int | None = None,
+    min_mem: int | None = None,
+    max_mem: int | None = None,
+) -> str:
+    """Minimal LogicalPartition document containing only PartitionMemoryConfiguration.
+
+    Used for DLPAR memory hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
+    On a running partition this applies immediately if RMC is active; otherwise the
+    change is profile-only and takes effect on next activation.
+
+    Memory values are in MiB.
+    """
+    mem = _memory_config(min_mem, desired_mem, max_mem)
+    body = "  <Metadata><Atom/></Metadata>"
+    if mem:
+        body = body + "\n" + mem
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+{body}
+</LogicalPartition>
+"""
+
+
 # ====================================================================== #
 # Virtual adapters (children of LogicalPartition)
 #
