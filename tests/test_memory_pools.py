@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 from hmc_mcp.server import hmc_list_memory_pools, hmc_remove_memory_pool
+from hmc_mcp.ssh import HMCCLIError
 
 from conftest import mock_uuid_resolution
 
@@ -94,7 +96,7 @@ def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
 
 
 def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool returns an error and does NOT remove when LPARs are assigned."""
+    """hmc_remove_memory_pool raises HMCCLIError and does NOT remove when LPARs are assigned."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
@@ -111,7 +113,8 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
+        with pytest.raises(HMCCLIError) as exc_info:
+            hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
 
     # Only the safety-check lshwres should have been called -- no chhwres.
     assert conn_mock.run.call_count == 1
@@ -119,10 +122,9 @@ def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
     assert "lshwres" in called_cmd
     assert "chhwres" not in called_cmd
 
-    # Result must be a structured error naming the blocking LPARs.
-    assert result.startswith("ERROR:")
-    assert "lpar1" in result
-    assert "lpar2" in result
+    # Exception must be a structured error naming the blocking LPARs.
+    assert "lpar1" in str(exc_info.value)
+    assert "lpar2" in str(exc_info.value)
 
 
 def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch, mock_hmc):

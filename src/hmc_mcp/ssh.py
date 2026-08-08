@@ -13,6 +13,10 @@ import asyncssh
 from .config import HMCConfig
 
 
+class HMCCLIError(Exception):
+    """An HMC CLI operation failed or was refused before the command ran."""
+
+
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute an HMC CLI command over SSH and return its stdout + stderr.
 

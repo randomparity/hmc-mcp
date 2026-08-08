@@ -38,7 +38,7 @@ from .jobs import (
     vios_update_job,
     vios_upgrade_job,
 )
-from .ssh import list_io_slots, run_hmc_command
+from .ssh import HMCCLIError, list_io_slots, run_hmc_command
 from .templates import (
     build_dlpar_mem_document,
     build_dlpar_proc_document,
@@ -2435,8 +2435,8 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
 
     Before issuing the remove command, fetches the current pool list and
     checks whether any LPARs are still assigned to *pool_name*.  If any are
-    found the command is **not** executed and a structured error message
-    naming the blocking LPARs is returned instead.
+    found the command is **not** executed and an ``HMCCLIError`` naming the
+    blocking LPARs is raised instead.
 
     Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
     the HMC via SSH when no LPARs are assigned.
@@ -2449,6 +2449,9 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     no job to poll).
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
+
+    Raises:
+        HMCCLIError: If *pool_name* still has LPARs assigned to it.
     """
     from .ssh import _parse_lshwres_output
 
@@ -2471,8 +2474,8 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
                     lpar_list = [
                         lp.strip() for lp in assigned.split(",") if lp.strip()
                     ]
-                    return (
-                        f"ERROR: Cannot remove memory pool '{pool_name}' on "
+                    raise HMCCLIError(
+                        f"Cannot remove memory pool '{pool_name}' on "
                         f"'{system_name}' — the following LPARs are still "
                         f"assigned to it: {', '.join(lpar_list)}. Reassign or "
                         "remove them from the pool before retrying."
@@ -2548,9 +2551,7 @@ def hmc_add_vnic(
     physical port IDs, capacity weights) is a follow-up and explicitly out
     of scope for v1.
 
-    Returns the raw HMC command output on success, or a structured error
-    message (starting with ``"ERROR:"``) when the command fails because the
-    underlying SR-IOV adapter is not in SR-IOV mode.
+    Returns the raw HMC command output on success.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     system_uuid, lpar_uuid, and vswitch_name before calling.  The
@@ -2558,6 +2559,10 @@ def hmc_add_vnic(
     ``hmc_set_sriov_adapter_mode``).
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
+
+    Raises:
+        HMCCLIError: If the HMC command fails, e.g. because the underlying
+            SR-IOV adapter is not in SR-IOV mode.
     """
     import asyncssh
 
@@ -2579,11 +2584,11 @@ def hmc_add_vnic(
             return await run_hmc_command(config, cmd)
         except asyncssh.ProcessError as exc:
             stderr = (exc.stderr or "").strip()
-            return (
-                f"ERROR: Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
+            raise HMCCLIError(
+                f"Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
                 f"Ensure the underlying SR-IOV adapter is in sriov mode "
                 f"(see hmc_set_sriov_adapter_mode). HMC error: {stderr}"
-            )
+            ) from exc
 
     return _run(_go())
 

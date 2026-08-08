@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 from hmc_mcp.server import hmc_add_vnic, hmc_list_vnics, hmc_remove_vnic
+from hmc_mcp.ssh import HMCCLIError
 
 from conftest import mock_uuid_resolution
 
@@ -165,7 +167,7 @@ def test_add_vnic_without_backing_devices_excludes_it(monkeypatch, mock_hmc):
 
 
 def test_add_vnic_sriov_mode_error_path(monkeypatch, mock_hmc):
-    """hmc_add_vnic returns a structured error when the adapter is not in sriov mode."""
+    """hmc_add_vnic raises HMCCLIError when the adapter is not in sriov mode."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
 
@@ -187,16 +189,17 @@ def test_add_vnic_sriov_mode_error_path(monkeypatch, mock_hmc):
     )
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_add_vnic(
-            system_uuid=SYSTEM_UUID,
-            lpar_uuid=LPAR_UUID,
-            capacity=2,
-            vswitch_name="ETHERNET0",
-            port_vlan_id=100,
-        )
+        with pytest.raises(HMCCLIError) as exc_info:
+            hmc_add_vnic(
+                system_uuid=SYSTEM_UUID,
+                lpar_uuid=LPAR_UUID,
+                capacity=2,
+                vswitch_name="ETHERNET0",
+                port_vlan_id=100,
+            )
 
-    assert "ERROR" in result
-    assert "sriov" in result.lower() or "SR-IOV" in result or "not in" in result.lower()
+    msg = str(exc_info.value)
+    assert "SR-IOV" in msg or "sriov" in msg.lower() or "not in" in msg.lower()
 
 
 # ---------------------------------------------------------------------- #
