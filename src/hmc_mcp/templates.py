@@ -1,4 +1,4 @@
-"""XML builders for LogicalPartition create/modify documents.
+"""XML builders for LogicalPartition and ManagedSystem create/modify documents.
 
 The HMC creates an LPAR from a PUT of a LogicalPartition document to
 /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition, and modifies one with a
@@ -7,6 +7,8 @@ POST of a (partial) document to /rest/api/uom/LogicalPartition/{uuid}.
 VIOS partitions use the same endpoint; partition_type="Virtual IO Server"
 distinguishes them. build_vios_document is a thin wrapper that fixes that
 type and exposes only the parameters relevant to VIOS provisioning.
+A managed system is modified with a POST of a (partial) ManagedSystem document
+to /rest/api/uom/ManagedSystem/{uuid}.
 
 Only the fields we set are included; the HMC fills in everything else with
 defaults (profiles, virtual adapters, boot mode, etc.).
@@ -257,6 +259,62 @@ def build_dlpar_mem_document(
 <LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
 {body}
 </LogicalPartition>
+def build_managed_system_document(
+    new_name: str | None = None,
+    power_off_policy: str | None = None,
+    power_on_lpar_start_policy: str | None = None,
+    pend_mem_region_size: int | None = None,
+    requested_num_sys_huge_pages: int | None = None,
+    mem_mirroring_mode: str | None = None,
+) -> str:
+    """Build a ManagedSystem document for POST (modify).
+
+    All parameters are optional; omitted (None) fields are not included.
+    The HMC merges the supplied fields with the existing system configuration.
+
+    new_name: rename the managed system.
+    power_off_policy: system power-off policy (e.g. 'autooff').
+    power_on_lpar_start_policy: LPAR auto-start policy on system power-on.
+    pend_mem_region_size: pending memory region size (MiB).
+    requested_num_sys_huge_pages: number of huge memory pages to allocate.
+    mem_mirroring_mode: memory mirroring mode (e.g. 'none', 'sys_firmware_only').
+    """
+    body_parts = ["  <Metadata><Atom/></Metadata>"]
+
+    mem_fields = [mem_mirroring_mode, pend_mem_region_size, requested_num_sys_huge_pages]
+    if any(v is not None for v in mem_fields):
+        mem_parts = ["  <SystemMemoryConfiguration kb=\"CUD\" kxe=\"false\">",
+                     "    <Metadata><Atom/></Metadata>"]
+        if mem_mirroring_mode is not None:
+            mem_parts.append(
+                f'    <MemoryMirroringMode kb="CUD" kxe="false">{mem_mirroring_mode}</MemoryMirroringMode>'
+            )
+        if pend_mem_region_size is not None:
+            mem_parts.append(
+                f'    <PendingMemoryRegionSize kb="CUD" kxe="false">{pend_mem_region_size}</PendingMemoryRegionSize>'
+            )
+        if requested_num_sys_huge_pages is not None:
+            mem_parts.append(
+                f'    <RequestedHugeSystemMemoryPages kb="CUD" kxe="false">'
+                f"{requested_num_sys_huge_pages}</RequestedHugeSystemMemoryPages>"
+            )
+        mem_parts.append("  </SystemMemoryConfiguration>")
+        body_parts.append("\n".join(mem_parts))
+
+    if new_name is not None:
+        body_parts.append(f'  <SystemName kb="CUD" kxe="false">{new_name}</SystemName>')
+    if power_off_policy is not None:
+        body_parts.append(f'  <PowerOffPolicy kb="CUD" kxe="false">{power_off_policy}</PowerOffPolicy>')
+    if power_on_lpar_start_policy is not None:
+        body_parts.append(
+            f'  <PowerOnLparStartPolicy kb="CUD" kxe="false">{power_on_lpar_start_policy}</PowerOnLparStartPolicy>'
+        )
+
+    body = "\n".join(body_parts)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ManagedSystem xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+{body}
+</ManagedSystem>
 """
 
 

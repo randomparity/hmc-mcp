@@ -18,6 +18,8 @@ from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
 from .ssh import run_hmc_command
 from .templates import PARTITION_TYPES, build_dlpar_mem_document, build_dlpar_proc_document, build_hmc_user_document, build_lpar_document, build_vios_document
+from .jobs import power_off_lpar_job, power_on_lpar_job
+from .templates import PARTITION_TYPES, build_lpar_document, build_managed_system_document
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -374,6 +376,34 @@ def hmc_dlpar_proc(
         max_vcpus=max_vcpus,
         dedicated=dedicated,
         uncapped=uncapped,
+def hmc_modify_system(
+    system_uuid: str,
+    new_name: str | None = None,
+    power_off_policy: str | None = None,
+    power_on_lpar_start_policy: str | None = None,
+    pend_mem_region_size: int | None = None,
+    requested_num_sys_huge_pages: int | None = None,
+    mem_mirroring_mode: str | None = None,
+) -> dict[str, Any] | None:
+    """Modify a managed system's configuration.
+
+    Only the fields you pass are changed; omitted fields are left as-is.
+
+    system_uuid: UUID of the managed system (from hmc_list_systems).
+    new_name: rename the managed system.
+    power_off_policy: system power-off policy (e.g. 'autooff').
+    power_on_lpar_start_policy: LPAR auto-start policy on system power-on.
+    pend_mem_region_size: pending memory region size (MiB).
+    requested_num_sys_huge_pages: number of huge memory pages to allocate.
+    mem_mirroring_mode: memory mirroring mode (e.g. 'none', 'sys_firmware_only').
+    """
+    xml = build_managed_system_document(
+        new_name=new_name,
+        power_off_policy=power_off_policy,
+        power_on_lpar_start_policy=power_on_lpar_start_policy,
+        pend_mem_region_size=pend_mem_region_size,
+        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+        mem_mirroring_mode=mem_mirroring_mode,
     )
 
     async def _go():
@@ -407,6 +437,7 @@ def hmc_dlpar_mem(
     async def _go():
         async with client_from_env() as hmc:
             return await hmc.modify_logical_partition(lpar_uuid, xml)
+            return await hmc.modify_managed_system(system_uuid, xml)
 
     return _run(_go())
 
