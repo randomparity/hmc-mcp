@@ -1,6 +1,8 @@
 """Tests for Cluster/SSP job builders, PCM helpers, and metrics tools."""
 
 import httpx
+import pytest
+from defusedxml import ElementTree as ET
 
 from hmc_mcp.jobs import create_logical_unit_job, delete_logical_unit_job
 from hmc_mcp.pcm import (
@@ -88,6 +90,12 @@ def test_pcm_preferences_parse():
     assert prefs["EnergyMonitoringCapable"] is True
 
 
+def test_pcm_preferences_parse_malformed_raises():
+    """Malformed XML propagates ParseError instead of silently returning {}."""
+    with pytest.raises(ET.ParseError):
+        pcm_preferences_to_dict("<ManagementConsolePcmPreference><unclosed>")
+
+
 def test_metric_links():
     feed = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -107,6 +115,12 @@ def test_metric_links():
     assert len(links) == 2
     assert links[0]["link"].endswith("_1.json")
     assert links[1]["updated"] == "2026-08-07T12:00:30Z"
+
+
+def test_metric_links_malformed_raises():
+    """Malformed XML propagates ParseError instead of silently returning []."""
+    with pytest.raises(ET.ParseError):
+        metric_links("<feed><entry><unclosed>")
 
 
 # ---------------------------------------------------------------------- #

@@ -53,11 +53,14 @@ def build_pcm_preferences_document(**flags: bool) -> str:
 
 
 def pcm_preferences_to_dict(xml: str) -> dict[str, Any]:
-    """Parse a PCM preferences GET response into {field: bool/str}."""
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return {}
+    """Parse a PCM preferences GET response into {field: bool/str}.
+
+    Raises:
+        ET.ParseError: If *xml* is malformed — callers must not mistake a
+            parse failure for "no preferences" (an empty dict is returned
+            only for well-formed XML without recognized preference fields).
+    """
+    root = ET.fromstring(xml)
     out: dict[str, Any] = {}
     for el in root.iter():
         tag = el.tag.rsplit("}", 1)[-1]
@@ -71,12 +74,15 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
     """Extract metric JSON links from a PCM Atom feed.
 
     Returns a list of {link, updated, title} — 'link' is the absolute or
-    relative URL to the JSON metrics document.
+    relative URL to the JSON metrics document. An empty list means a
+    well-formed feed with no entries (e.g. no metrics in the requested
+    range), never a parse failure.
+
+    Raises:
+        ET.ParseError: If *feed_xml* is malformed — propagated so callers
+            surface the failure instead of mistaking it for "no metrics".
     """
-    try:
-        root = ET.fromstring(feed_xml)
-    except ET.ParseError:
-        return []
+    root = ET.fromstring(feed_xml)
     links = []
     for entry in root.iter(f"{ATOM}entry"):
         link = entry.find(f"{ATOM}link")
