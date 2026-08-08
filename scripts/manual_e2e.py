@@ -1,6 +1,9 @@
 """Manual harness: run the real CLI against a mocked HMC over HTTP."""
 
+import os
+import subprocess  # nosec B404 — harness runs only hardcoded commands
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 LOGON = b"""<?xml version="1.0"?>
@@ -93,12 +96,14 @@ if __name__ == "__main__":
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
 
-    import subprocess, os
-    env = dict(os.environ, HMC_HOST="127.0.0.1", HMC_USER="hscroot", HMC_PASSWORD="abc123")
+    env = dict(os.environ, HMC_HOST="127.0.0.1", HMC_USER="hscroot",
+               HMC_PASSWORD="abc123")  # nosec B106 — fake credential for the mock HMC
+    repo_root = Path(__file__).resolve().parent.parent
     for cmd in (["uv", "run", "hmc-mcp", "systems", "list"],
                 ["uv", "run", "hmc-mcp", "lpars", "list"]):
         print(f"$ {' '.join(cmd)}")
-        out = subprocess.run(cmd, env=env, capture_output=True, text=True, cwd="/home/hermes/src/hmc-mcp")
+        # cmd is a hardcoded literal list, never user input
+        out = subprocess.run(cmd, env=env, capture_output=True, text=True, cwd=repo_root)  # nosec B603
         print(out.stdout)
         if out.returncode != 0:
             print("STDERR:", out.stderr[-2000:])
