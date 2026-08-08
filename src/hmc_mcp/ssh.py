@@ -22,7 +22,8 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
 
     Authentication:
     - If ``config.ssh_key_file`` is set, key-based auth is attempted using
-      that private-key file (passphrase-protected keys are not supported).
+      that private-key file (passphrase-protected keys are not supported); the
+      password is not required in this mode.
     - Otherwise password auth is used via ``config.password``.
 
     Args:
@@ -33,8 +34,13 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         The combined stdout of the command.
 
     Raises:
+        ValueError: If required connection settings (host/user, and password
+            when no SSH key is configured) are missing — the same actionable
+            message the REST client uses.
         asyncssh.Error: On SSH connection or command execution failure.
     """
+    config.validate_credentials(require_password=not config.ssh_key_file)
+
     connect_kwargs: dict = {
         "host": config.host,
         "username": config.user,
