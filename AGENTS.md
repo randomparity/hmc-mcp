@@ -1,0 +1,77 @@
+# AGENTS.md
+
+## Non-interactive shell discipline
+
+All shell commands must be non-interactive. A command that opens an editor, a
+pager, or a prompt will stall the agent with no recovery path.
+
+**git**
+
+- Always set `GIT_EDITOR=true` when a git command may open an editor:
+  ```sh
+  GIT_EDITOR=true git rebase --continue
+  GIT_EDITOR=true git commit --amend
+  GIT_EDITOR=true git merge --continue
+  ```
+- Prefer `--no-edit` on `commit --amend` and `merge` when the message is unchanged.
+- Never run `git rebase --continue` without `GIT_EDITOR=true` — the continue
+  step opens the editor to confirm the commit message even when there are no
+  remaining conflicts.
+- Suppress the pager: `git --no-pager <subcommand>` or set `GIT_PAGER=cat`.
+
+**Other common interactive traps**
+
+| Command | Safe form |
+|---------|-----------|
+| `git log` | `git --no-pager log --oneline` |
+| `git diff` | `git --no-pager diff` |
+| `gh pr create` | always supply `--title` and `--body` (or `--body-file`) |
+| `gh issue create` | always supply `--title` and `--body` |
+| `uv add` / `pip install` | non-interactive by default; fine as-is |
+
+## Merge-conflict resolution
+
+**Resolve conflicts with precise, targeted edits — not regex over the whole file.**
+
+A regex that matches `<<<<<<< HEAD … >>>>>>> sha (message)` across the entire
+file is brittle: it fails silently when the conflict block spans a Python
+f-string boundary (the closing `"""` is inside the conflict region and gets
+consumed), leaving a syntax error that only surfaces at import time.
+
+Preferred approach:
+
+1. After a failed rebase, read the exact conflict block with `grep -n` and
+   `read_file` (specifying the conflict line range).
+2. Write a targeted Python script that replaces the exact literal string
+   (conflict markers included) with the resolved text — or use `apply_diff` /
+   `search_and_replace` with the conflict markers escaped.
+3. Verify syntax before staging: `uv run python -c "import hmc_mcp.server"`
+   (or the relevant module) must succeed **before** `git add`.
+
+Never call `git add <file>` and `git rebase --continue` in the same step unless
+you have already confirmed the file is syntax-clean.
+
+## Worktree venv hygiene
+
+After any commit lands on `main` that changes installed package code, worktrees
+created before that commit have a stale `.venv`. Run `uv sync` inside the
+worktree before running tests or the smoke script.
+
+**Symptom:** `SyntaxError` at a `.venv/lib/…/site-packages/` path while the
+source file is clean. The fix is always `uv sync`, not editing source.
+
+## Guardrail commands
+
+Before pushing any branch, run the full suite inside that branch's worktree:
+
+```sh
+just verify   # uv run pytest -q + scripts/smoke_mcp.py + all CLI groups
+```
+
+`scripts/smoke_mcp.py` imports `hmc_mcp.server` directly and surfaces
+import-time syntax errors that pytest collection may swallow. Run it explicitly
+if pytest collection fails before any tests execute:
+
+```sh
+uv run python scripts/smoke_mcp.py
+```
