@@ -259,6 +259,9 @@ def build_dlpar_mem_document(
 <LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
 {body}
 </LogicalPartition>
+"""
+
+
 def build_managed_system_document(
     new_name: str | None = None,
     power_off_policy: str | None = None,

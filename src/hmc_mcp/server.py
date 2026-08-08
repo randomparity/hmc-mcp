@@ -376,6 +376,16 @@ def hmc_dlpar_proc(
         max_vcpus=max_vcpus,
         dedicated=dedicated,
         uncapped=uncapped,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
 def hmc_modify_system(
     system_uuid: str,
     new_name: str | None = None,
@@ -408,7 +418,7 @@ def hmc_modify_system(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
+            return await hmc.modify_managed_system(system_uuid, xml)
 
     return _run(_go())
 
