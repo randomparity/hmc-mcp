@@ -1,0 +1,52 @@
+"""Configuration for hmc-mcp.
+
+Settings are resolved in priority order:
+  1. CLI options / explicit constructor args
+  2. Environment variables (HMC_*)
+  3. .env file in the current directory (auto-loaded)
+"""
+
+from __future__ import annotations
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class HMCConfig(BaseSettings):
+    """Connection settings for an IBM HMC."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="HMC_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    host: str = Field(default="", description="HMC hostname or IP address")
+    port: int = Field(default=12443, description="HMC REST API port")
+    user: str = Field(default="", description="HMC user name")
+    password: str = Field(default="", description="HMC password")
+    verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
+    timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
+    audit_memento: str = Field(
+        default="hmc-mcp",
+        description="Value sent in the X-Audit-Memento header (shows up in HMC audit logs)",
+    )
+
+    @property
+    def base_url(self) -> str:
+        host = self.host.removeprefix("https://").removeprefix("http://").rstrip("/")
+        return f"https://{host}:{self.port}"
+
+    def validate_credentials(self) -> None:
+        missing = []
+        if not self.host:
+            missing.append("host (HMC_HOST / --host)")
+        if not self.user:
+            missing.append("user (HMC_USER / --user)")
+        if not self.password:
+            missing.append("password (HMC_PASSWORD / --password)")
+        if missing:
+            raise ValueError(
+                "Missing HMC configuration: " + ", ".join(missing)
+            )
