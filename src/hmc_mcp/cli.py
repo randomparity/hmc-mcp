@@ -1764,8 +1764,7 @@ def network_list_vnics(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
-    from hmc_mcp.config import HMCConfig
-    from hmc_mcp.ssh import _parse_lshwres_output, run_hmc_command
+    from .ssh import _parse_lshwres_output
 
     config = HMCConfig()
     try:
@@ -1796,9 +1795,6 @@ def network_add_vnic(
         f"Add vNIC (capacity={capacity}, vswitch={vswitch}, vlan={vlan}) to '{lpar}' on '{system}'?"
     ):
         raise typer.Abort()
-
-    from hmc_mcp.config import HMCConfig
-    from hmc_mcp.ssh import run_hmc_command
 
     attrs = f"capacity={capacity},vswitch_name={vswitch},port_vlan_id={vlan}"
     if backing_devices:
@@ -1832,9 +1828,6 @@ def network_remove_vnic(
         f"Remove vNIC {vnic_id} from '{lpar}' on '{system}'?"
     ):
         raise typer.Abort()
-
-    from hmc_mcp.config import HMCConfig
-    from hmc_mcp.ssh import run_hmc_command
 
     config = HMCConfig()
     try:
