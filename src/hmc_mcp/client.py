@@ -45,9 +45,7 @@ from .templates import (
     build_vscsi_adapter_document,
     build_vscsi_mapping_document,
 )
-from .xmlutil import find_text, parse_feed
-
-WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+from .xmlutil import WEB_NS, find_text, parse_feed
 
 LOGON_REQUEST_TEMPLATE = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <LogonRequest xmlns="{WEB_NS}" schemaVersion="V1_0">

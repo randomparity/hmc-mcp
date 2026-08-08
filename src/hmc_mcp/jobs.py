@@ -7,7 +7,7 @@ for status.
 
 from __future__ import annotations
 
-WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+from .xmlutil import WEB_NS
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">

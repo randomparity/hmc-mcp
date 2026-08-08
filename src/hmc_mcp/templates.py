@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .xmlutil import ATOM_NS
+from .xmlutil import ATOM_NS, WEB_NS
 
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
@@ -667,8 +667,6 @@ def build_media_repository_delete_document() -> str:
 # Modify: POST /rest/api/web/HmcUser/{name}
 # Fields documented in ansible-power-hmc plugins/modules/hmc_user.py
 # ====================================================================== #
-
-WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
 
 
 def build_hmc_user_document(

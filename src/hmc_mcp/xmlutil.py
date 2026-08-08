@@ -30,6 +30,9 @@ from defusedxml import ElementTree as DET
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
 
+# web/mc namespace: Logon, HmcUser, HmcPasswordPolicy, HmcLdapServer docs.
+WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+
 # HMC bookkeeping attributes carried on nearly every uom element; they are
 # noise for consumers, so we drop them during flattening.
 _IGNORED_ATTRS = {"kb", "kxe", "kbo", "kb-cur", "schemaVersion", "lsb"}
