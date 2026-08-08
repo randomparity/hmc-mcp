@@ -4,6 +4,10 @@ The HMC creates an LPAR from a PUT of a LogicalPartition document to
 /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition, and modifies one with a
 POST of a (partial) document to /rest/api/uom/LogicalPartition/{uuid}.
 
+VIOS partitions use the same endpoint; partition_type="Virtual IO Server"
+distinguishes them. build_vios_document is a thin wrapper that fixes that
+type and exposes only the parameters relevant to VIOS provisioning.
+
 Only the fields we set are included; the HMC fills in everything else with
 defaults (profiles, virtual adapters, boot mode, etc.).
 """
@@ -160,6 +164,42 @@ def build_lpar_document(
 {body}
 </LogicalPartition>
 """
+
+
+def build_vios_document(
+    name: str,
+    min_memory: int = 512,
+    desired_memory: int = 4096,
+    max_memory: int = 8192,
+    desired_vcpus: int = 2,
+    min_vcpus: int = 1,
+    max_vcpus: int = 4,
+    desired_procs: float = 0.5,
+    min_procs: float = 0.1,
+    max_procs: float = 1.0,
+) -> str:
+    """Build a LogicalPartition document for creating a Virtual IO Server.
+
+    Wraps build_lpar_document with partition_type='Virtual IO Server' and
+    shared-processor defaults appropriate for VIOS provisioning. All resource
+    values are optional; the HMC supplies defaults for anything not set.
+    Memory values are in MiB; procs are processing units (fractional ok).
+    """
+    return build_lpar_document(
+        name=name,
+        partition_type="Virtual IO Server",
+        min_memory=min_memory,
+        desired_memory=desired_memory,
+        max_memory=max_memory,
+        dedicated=False,
+        min_procs=min_procs,
+        desired_procs=desired_procs,
+        max_procs=max_procs,
+        min_vcpus=min_vcpus,
+        desired_vcpus=desired_vcpus,
+        max_vcpus=max_vcpus,
+        uncapped=True,
+    )
 
 
 # ====================================================================== #
