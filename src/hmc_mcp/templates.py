@@ -128,12 +128,19 @@ def build_lpar_document(
     max_vcpus: int | None = None,
     sharing_mode: str | None = None,
     uncapped: bool = False,
+    os_type: str | None = None,
+    keylock: str | None = None,
+    max_virtual_slots: int | None = None,
 ) -> str:
     """Build a LogicalPartition document for PUT (create) or POST (modify).
 
     Memory values are in MiB. For a create, `name` is required; the rest are
     optional (the HMC supplies defaults). For a modify, supply only the fields
     to change (pass name=None to omit it).
+
+    os_type: target OS type — ``aix``, ``linux``, or ``ibmi``.
+    keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
+    max_virtual_slots: maximum number of virtual I/O slots.
     """
     if partition_type not in PARTITION_TYPES:
         raise ValueError(
@@ -148,8 +155,21 @@ def build_lpar_document(
     if mem:
         body_parts.append(mem)
 
+    if keylock is not None:
+        body_parts.append(f'  <KeylockPosition kb="CUD" kxe="false">{keylock}</KeylockPosition>')
+
+    if max_virtual_slots is not None:
+        body_parts.append(
+            f'  <MaximumVirtualIoSlots kb="CUD" kxe="false">{max_virtual_slots}</MaximumVirtualIoSlots>'
+        )
+
     if name is not None:
         body_parts.append(f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>')
+
+    if os_type is not None:
+        body_parts.append(
+            f'  <OperatingSystemType kb="CUD" kxe="false">{os_type}</OperatingSystemType>'
+        )
 
     proc = _processor_config(
         dedicated, min_procs, desired_procs, max_procs,

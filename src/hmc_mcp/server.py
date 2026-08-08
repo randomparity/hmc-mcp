@@ -259,6 +259,9 @@ def hmc_create_lpar(
     desired_vcpus: int | None = 1,
     max_vcpus: int | None = 2,
     uncapped: bool = True,
+    os_type: str | None = None,
+    keylock: str | None = None,
+    max_virtual_slots: int | None = None,
 ) -> dict[str, Any] | None:
     """Create a new LPAR on a managed system.
 
@@ -274,6 +277,9 @@ def hmc_create_lpar(
     confirm name/system_uuid before calling.
 
     partition_type must be one of: 'AIX/Linux', 'OS400', 'Virtual IO Server'.
+    os_type: target OS — ``aix``, ``linux``, or ``ibmi``.
+    keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
+    max_virtual_slots: maximum number of virtual I/O slots.
     """
     xml = build_lpar_document(
         name=name,
@@ -290,6 +296,9 @@ def hmc_create_lpar(
         desired_vcpus=desired_vcpus,
         max_vcpus=max_vcpus,
         uncapped=uncapped,
+        os_type=os_type,
+        keylock=keylock,
+        max_virtual_slots=max_virtual_slots,
     )
 
     async def _go():
