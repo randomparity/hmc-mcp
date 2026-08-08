@@ -1447,6 +1447,76 @@ def network_list_bridges(
     _output(bridges, as_json, None, "No network bridges found")
 
 
+@network_app.command("list-fc-ports")
+def network_list_fc_ports(
+    system: str = typer.Argument(..., help="Managed system name"),
+    lpar_name: Optional[str] = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
+
+    async def _go():
+        from hmc_mcp.config import HMCConfig
+        from hmc_mcp.ssh import run_hmc_command
+        import csv
+        import io
+
+        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system}"
+        if lpar_name:
+            cmd += f" --filter lpar_names={lpar_name}"
+        config = HMCConfig()
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        reader = csv.DictReader(io.StringIO(raw.strip()))
+        return [dict(row) for row in reader]
+
+    try:
+        ports = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    _output(ports, as_json, None, "No FC ports found")
+
+
+@network_app.command("list-sea-adapters")
+def network_list_sea_adapters(
+    system: str = typer.Argument(..., help="Managed system name"),
+    lpar_name: Optional[str] = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
+
+    async def _go():
+        from hmc_mcp.config import HMCConfig
+        from hmc_mcp.ssh import run_hmc_command
+
+        fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
+        cmd = (
+            f"lshwres -r virtualio --rsubtype eth --level lpar -m {system}"
+            f" -F {fields}"
+        )
+        if lpar_name:
+            cmd += f" --filter lpar_names={lpar_name}"
+        config = HMCConfig()
+        raw = await run_hmc_command(config, cmd)
+        if not raw.strip():
+            return []
+        keys = fields.split(",")
+        result = []
+        for line in raw.strip().splitlines():
+            values = line.split(",", len(keys) - 1)
+            result.append(dict(zip(keys, values)))
+        return result
+
+    try:
+        adapters = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    _output(adapters, as_json, None, "No SEA adapters found")
+
+
 # ---------------------------------------------------------------------- #
 # templates
 # ---------------------------------------------------------------------- #
