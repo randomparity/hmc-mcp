@@ -11,3 +11,10 @@ wheels/
 
 # Local HMC credentials
 .env
+
+# desloppify local state
+.desloppify/
+scorecard.png
+
+# local Claude Code settings
+.claude/settings.local.json
