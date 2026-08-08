@@ -509,7 +509,8 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
     The partition must be powered off first (use hmc_power_off_lpar and
     confirm with hmc_lpar_state). This permanently removes the partition and
     its profiles from the HMC — it is irreversible. Confirm the UUID with
-    hmc_find_lpar before calling.
+    hmc_find_lpar before calling. Returns a confirmation string (immediate
+    delete — no job to poll).
     """
 
     async def _go():
@@ -574,7 +575,8 @@ def hmc_delete_vios(vios_uuid: str) -> str:
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
     with hmc_lpar_state). This permanently removes the VIOS and its profiles
     from the HMC — it is irreversible. Confirm the UUID with hmc_list_vios
-    before calling.
+    before calling. Returns a confirmation string (immediate delete — no job
+    to poll).
     """
 
     async def _go():
@@ -748,7 +750,8 @@ def hmc_delete_adapter(lpar_uuid: str, adapter_type: str, adapter_uuid: str) -> 
     adapter_type is one of: ClientNetworkAdapter, VirtualSCSIClientAdapter,
     VirtualFibreChannelClientAdapter, VirtualNICDedicated. Get adapter UUIDs
     from hmc_list_adapters. Removing an adapter detaches that storage/network
-    from the partition.
+    from the partition. Returns a confirmation string (immediate delete — no
+    job to poll).
     """
 
     async def _go():
@@ -976,7 +979,8 @@ def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
     """Delete a Virtual Network from a managed system.
 
     Note: a network referenced by a NetworkBridge, or equal to a trunk
-    adapter's PVID, cannot be deleted until the bridge is removed.
+    adapter's PVID, cannot be deleted until the bridge is removed. Returns a
+    confirmation string (immediate delete — no job to poll).
     """
 
     async def _go():
@@ -1191,12 +1195,17 @@ def hmc_create_optical_media(
 
 
 @mcp.tool
-def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
-    """Delete the Virtual Media Repository from a Volume Group."""
+def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> str:
+    """Delete the Virtual Media Repository from a Volume Group.
+
+    This is an immediate (synchronous) delete — it returns a confirmation
+    string once the HMC has applied the change; there is no job to poll.
+    """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.delete_media_repository(vios_uuid, vg_uuid)
+            await hmc.delete_media_repository(vios_uuid, vg_uuid)
+            return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
     return _run(_go())
 
@@ -1268,7 +1277,11 @@ def hmc_create_logical_unit(
 
 @mcp.tool
 def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
-    """Delete a Logical Unit from a Cluster/SSP by its UDID (a job)."""
+    """Delete a Logical Unit from a Cluster/SSP by its UDID.
+
+    Submits a DeleteLogicalUnit job and returns it — poll hmc_get_job for
+    status (an asynchronous delete, unlike the immediate delete tools).
+    """
 
     async def _go():
         async with client_from_env() as hmc:
@@ -1499,7 +1512,8 @@ def hmc_delete_user(name: str) -> str:
     """Delete an HMC user account by username.
 
     This permanently removes the account — it is irreversible. Confirm
-    the username with hmc_get_user before calling.
+    the username with hmc_get_user before calling. Returns a confirmation
+    string (immediate delete — no job to poll).
     """
 
     async def _go():
@@ -1618,7 +1632,8 @@ def hmc_delete_password_policy(policy_name: str) -> str:
     """Delete an HMC password policy by name.
 
     This permanently removes the policy — it is irreversible.  Confirm
-    the policy_name with hmc_list_password_policies before calling.
+    the policy_name with hmc_list_password_policies before calling. Returns
+    a confirmation string (immediate delete — no job to poll).
     """
 
     async def _go():
@@ -1707,6 +1722,7 @@ def hmc_remove_ldap_config(resource: str) -> str:
 
     Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
     Use hmc_list_ldap_config to inspect the current state before calling.
+    Returns the HMC response string (immediate delete — no job to poll).
     """
 
     async def _go():
@@ -2255,7 +2271,8 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
     the HMC via SSH when no LPARs are assigned.
 
     WARNING: This permanently removes the pool — confirm system_name and
-    pool_name before calling.
+    pool_name before calling. Returns the HMC CLI output (immediate delete —
+    no job to poll).
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
@@ -2381,7 +2398,8 @@ def hmc_remove_vnic(system_name: str, lpar_name: str, vnic_id: str) -> str:
     ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name, lpar_name, and vnic_id before calling.
+    system_name, lpar_name, and vnic_id before calling. Returns the HMC CLI
+    output (immediate delete — no job to poll).
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
