@@ -2093,6 +2093,51 @@ def hmc_set_lpar_msp(lpar_name: str, system_name: str, enabled: bool) -> str:
 
 
 # ---------------------------------------------------------------------- #
+# SR-IOV adapter mode (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+_VALID_SRIOV_MODES = {"sriov", "dedicated"}
+
+
+@mcp.tool
+def hmc_set_sriov_adapter_mode(
+    system_name: str,
+    adapter_id: str,
+    mode: str,
+) -> str:
+    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
+
+    Runs ``chhwres -r sriov -m <system_name> -o s --id <adapter_id>
+    -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
+    command output.
+
+    ``adapter_id`` is the physical adapter identifier as reported by
+    ``hmc_list_io_slots``.
+
+    ``mode`` must be one of:
+      - ``"sriov"``      — enable SR-IOV mode (shared virtual functions)
+      - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
+
+    WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
+    functions on that adapter. Confirm system_name and adapter_id before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    if mode not in _VALID_SRIOV_MODES:
+        raise ValueError(
+            f"Invalid mode {mode!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
+        )
+    config = HMCConfig()
+    cmd = (
+        f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
+        f' -a "sriov_adapter_mode={mode}"'
+    )
+    return _run(run_hmc_command(config, cmd))
+
+
+# ---------------------------------------------------------------------- #
 # Physical I/O slot listing (SSH CLI path)
 # ---------------------------------------------------------------------- #
 
@@ -2121,3 +2166,69 @@ def hmc_list_io_slots(
     """
     config = HMCConfig()
     return _run(list_io_slots(config, system_name, adapter_type))
+
+
+# ---------------------------------------------------------------------- #
+# Shared memory pool management (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_memory_pools(system_name: str) -> list[dict[str, Any]]:
+    """List shared memory pools on a managed system via the HMC CLI.
+
+    Runs ``lshwres -r mempool -m <system_name>`` on the HMC via SSH and
+    returns one dict per pool with fields such as ``pool_name``, ``size``,
+    ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    from .ssh import _parse_lshwres_output
+
+    config = HMCConfig()
+    output = _run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
+    return _parse_lshwres_output(output)
+
+
+@mcp.tool
+def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
+    """Remove a shared memory pool from a managed system via the HMC CLI.
+
+    Before issuing the remove command, fetches the current pool list and
+    checks whether any LPARs are still assigned to *pool_name*.  If any are
+    found the command is **not** executed and a structured error message
+    naming the blocking LPARs is returned instead.
+
+    Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
+    the HMC via SSH when no LPARs are assigned.
+
+    WARNING: This permanently removes the pool — confirm system_name and
+    pool_name before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    from .ssh import _parse_lshwres_output
+
+    config = HMCConfig()
+
+    # Safety check: list pools and look for LPAR assignments.
+    list_output = _run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
+    pools = _parse_lshwres_output(list_output)
+
+    for pool in pools:
+        if pool.get("pool_name") == pool_name:
+            # curr_lpar_names may be a comma-separated string or empty.
+            assigned = pool.get("curr_lpar_names", "").strip()
+            if assigned:
+                lpar_list = [lp.strip() for lp in assigned.split(",") if lp.strip()]
+                return (
+                    f"ERROR: Cannot remove memory pool '{pool_name}' on '{system_name}' — "
+                    f"the following LPARs are still assigned to it: {', '.join(lpar_list)}. "
+                    "Reassign or remove them from the pool before retrying."
+                )
+            break
+
+    cmd = f"chhwres -r mempool -m {system_name} -o r -a {pool_name}"
+    return _run(run_hmc_command(config, cmd))
