@@ -31,6 +31,7 @@ from .templates import (
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_hmc_user_document,
+    build_ldap_config_document,
     build_lpar_document,
     build_managed_system_document,
     build_password_policy_document,
@@ -1528,6 +1529,93 @@ def hmc_delete_password_policy(policy_name: str) -> str:
         async with client_from_env() as hmc:
             await hmc.delete_password_policy(policy_name)
             return f"Deleted HMC password policy {policy_name}"
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# HMC LDAP server configuration
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_ldap_config() -> str:
+    """Get the current HMC LDAP server configuration.
+
+    Returns the raw XML response from /rest/api/web/HmcLdapServer describing
+    the configured LDAP server URL, base DN, bind DN, search filter, and
+    HMC group mappings.  Returns an empty string if no LDAP is configured.
+    Equivalent to Ansible ``hmc_user`` state=ldap_facts.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_ldap_config()
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_configure_ldap(
+    server_url: str,
+    base_dn: str | None = None,
+    bind_dn: str | None = None,
+    bind_pw: str | None = None,
+    search_filter: str | None = None,
+    hmc_groups: str | None = None,
+    group_member_attributes: str | None = None,
+) -> str:
+    """Configure the HMC LDAP server integration.
+
+    server_url is the LDAP or LDAPS URL (e.g. 'ldap://ldap.example.com' or
+    'ldaps://ldap.example.com:636'). Only the fields you supply are changed.
+
+    base_dn: LDAP search base (e.g. 'dc=example,dc=com').
+    bind_dn: DN of the account used to bind for searches.
+    bind_pw: password for the bind account.
+    search_filter: LDAP search filter (e.g. '(objectClass=person)').
+    hmc_groups: comma-separated LDAP groups mapped to HMC access.
+    group_member_attributes: LDAP attribute used for group membership.
+
+    Equivalent to Ansible ``hmc_user`` action=configure_ldap.
+    """
+    xml = build_ldap_config_document(
+        server_url=server_url,
+        base_dn=base_dn,
+        bind_dn=bind_dn,
+        bind_pw=bind_pw,
+        search_filter=search_filter,
+        hmc_groups=hmc_groups,
+        group_member_attributes=group_member_attributes,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.configure_ldap(xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_remove_ldap_config(resource: str) -> str:
+    """Remove a component of the HMC LDAP server configuration.
+
+    resource selects what to remove.  Valid values:
+      'backup'                  — remove the backup LDAP server
+      'ldap'                    — remove the entire LDAP configuration
+      'binddn'                  — remove the bind DN
+      'bindpw'                  — remove the bind password
+      'searchfilter'            — remove the custom search filter
+      'hmcgroups'               — remove HMC group mappings
+      'groupmemberattributes'   — remove group-member attribute settings
+
+    Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
+    Use hmc_list_ldap_config to inspect the current state before calling.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.remove_ldap_config(resource)
 
     return _run(_go())
 

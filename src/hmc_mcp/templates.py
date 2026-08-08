@@ -731,3 +731,53 @@ def build_password_policy_document(
 {body}
 </HmcPasswordPolicy>
 """
+
+
+# ====================================================================== #
+# HMC LDAP server configuration (/rest/api/web/HmcLdapServer)
+#
+# List:      GET  /rest/api/web/HmcLdapServer
+# Configure: POST /rest/api/web/HmcLdapServer
+# Remove:    POST /rest/api/web/HmcLdapServer?Remove={resource}
+# ====================================================================== #
+
+
+def build_ldap_config_document(
+    server_url: str | None = None,
+    base_dn: str | None = None,
+    bind_dn: str | None = None,
+    bind_pw: str | None = None,
+    search_filter: str | None = None,
+    hmc_groups: str | None = None,
+    group_member_attributes: str | None = None,
+) -> str:
+    """Build an HmcLdapServer XML document for configure (POST).
+
+    server_url is the LDAP/LDAPS URL (e.g. 'ldap://ldap.example.com').
+    base_dn is the LDAP search base (e.g. 'dc=example,dc=com').
+    bind_dn and bind_pw are the bind credentials for authenticated searches.
+    search_filter is the LDAP search filter (e.g. '(objectClass=person)').
+    hmc_groups is a comma-separated list of LDAP groups mapped to HMC access.
+    group_member_attributes is the LDAP attribute used for group membership.
+    """
+    parts = ["  <Metadata><Atom/></Metadata>"]
+    if server_url is not None:
+        parts.append(f'  <LdapServerUrl kb="CUR" kxe="false">{server_url}</LdapServerUrl>')
+    if base_dn is not None:
+        parts.append(f'  <BaseDN kb="CUR" kxe="false">{base_dn}</BaseDN>')
+    if bind_dn is not None:
+        parts.append(f'  <BindDN kb="CUR" kxe="false">{bind_dn}</BindDN>')
+    if bind_pw is not None:
+        parts.append(f'  <BindPw kb="CUR" kxe="false">{bind_pw}</BindPw>')
+    if search_filter is not None:
+        parts.append(f'  <SearchFilter kb="CUR" kxe="false">{search_filter}</SearchFilter>')
+    if hmc_groups is not None:
+        parts.append(f'  <HmcGroups kb="CUR" kxe="false">{hmc_groups}</HmcGroups>')
+    if group_member_attributes is not None:
+        parts.append(f'  <GroupMemberAttributes kb="CUR" kxe="false">{group_member_attributes}</GroupMemberAttributes>')
+    body = "\n".join(parts)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<HmcLdapServer xmlns="{WEB_NS}" schemaVersion="V1_0">
+{body}
+</HmcLdapServer>
+"""
