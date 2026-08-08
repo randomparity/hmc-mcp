@@ -14,7 +14,9 @@ from fastmcp import FastMCP
 
 from .client import HMCClient
 from .common import client_from_env
+from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
+from .ssh import run_hmc_command
 from .templates import PARTITION_TYPES, build_hmc_user_document, build_lpar_document, build_vios_document
 
 mcp = FastMCP(
@@ -32,6 +34,29 @@ mcp = FastMCP(
 def _run(coro):
     """Run an async client call from a sync tool function."""
     return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------- #
+# HMC CLI passthrough (SSH)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_run_command(cmd: str) -> str:
+    """Execute an arbitrary HMC CLI command over SSH and return its output.
+
+    WARNING: This tool executes arbitrary commands on the HMC with the
+    credentials configured in HMC_USER / HMC_PASSWORD (or HMC_SSH_KEY_FILE).
+    It is an operator escape-hatch equivalent to Ansible ``hmc_command``.
+    Use only for HMC CLI operations that have no dedicated MCP tool.
+
+    Authentication follows the same env-var configuration as all other tools:
+    set HMC_SSH_KEY_FILE to use key-based auth, otherwise password auth is used.
+
+    Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
+    """
+    config = HMCConfig()
+    return _run(run_hmc_command(config, cmd))
 
 
 # ---------------------------------------------------------------------- #

@@ -5,6 +5,7 @@ description = "MCP server and CLI for the IBM HMC (Hardware Management Console) 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "asyncssh>=2.18.0",
     "defusedxml>=0.7.1",
     "fastmcp>=3.4.6",
     "httpx>=0.28.1",
