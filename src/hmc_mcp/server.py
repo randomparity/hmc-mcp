@@ -2009,3 +2009,48 @@ def hmc_assign_profile_io_slot(
     config = HMCConfig()
     cmd = f'chsyscfg -r prof -m {system_name} -i "name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}" --force'
     return _run(run_hmc_command(config, cmd))
+
+# ---------------------------------------------------------------------- #
+# LPAR description (SSH CLI path — no REST equivalent)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_get_lpar_description(lpar_name: str, system_name: str) -> str:
+    """Get the description field of an LPAR via the HMC CLI.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F description`` on the HMC via SSH and returns the raw output (the
+    description string, or an empty line if none is set).
+
+    This field is not available via the HMC REST API; it is the same
+    description visible in the HMC GUI Partitions tab.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description"
+    return _run(run_hmc_command(config, cmd))
+
+
+@mcp.tool
+def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str) -> str:
+    """Set the description field of an LPAR via the HMC CLI.
+
+    Runs ``chsyscfg -r lpar -m <system_name>
+    -i "name=<lpar_name>,description=<description>"`` on the HMC via SSH.
+
+    This field is not settable via the HMC REST API. The description appears
+    in the HMC GUI Partitions tab and is useful for recording partition
+    ownership, purpose, or current task.
+
+    WARNING: This modifies the LPAR configuration on the HMC. Confirm
+    lpar_name and system_name before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
+    return _run(run_hmc_command(config, cmd))
