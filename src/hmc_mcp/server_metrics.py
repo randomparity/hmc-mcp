@@ -11,6 +11,7 @@ from ._app import (
     mcp,
 )
 
+from .client import HMCError
 from .common import client_from_env
 
 
@@ -180,8 +181,15 @@ def _metrics_fetch(
             links = await fn(category, uuid, start_ts, end_ts, no_of_samples)
             if not links:
                 return {}
-            # Fetch the most recent metrics document.
-            return await hmc.fetch_json(links[-1]["link"])
+            # Fetch the most recent metrics document. A 404 means the document
+            # has aged out of PCM retention; surface that as no-data, matching
+            # the tool contract (``{}`` when no metrics are available).
+            try:
+                return await hmc.fetch_json(links[-1]["link"])
+            except HMCError as exc:
+                if exc.status_code == 404:
+                    return {}
+                raise
 
     return _run(_go())
 

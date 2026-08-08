@@ -559,3 +559,15 @@ async def test_fetch_json(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         data = await hmc.fetch_json("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json")
     assert data["systemUtil"]["utilization"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_fetch_json_404_raises(mock_hmc):
+    """fetch_json raises HMCError on 404 like every other client method."""
+    mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(
+        return_value=httpx.Response(404, text="<error>expired</error>")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.fetch_json("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json")
+    assert exc_info.value.status_code == 404

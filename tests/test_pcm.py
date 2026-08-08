@@ -171,6 +171,21 @@ def test_get_processed_metrics_empty_feed(monkeypatch, mock_hmc):
     assert result == {}
 
 
+def test_get_processed_metrics_expired_doc(monkeypatch, mock_hmc):
+    """A 404 on the metrics document (aged out of retention) surfaces as {}."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(404, text="<error>expired</error>"))
+
+    result = hmc_get_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert result == {}
+
+
 def test_get_aggregated_metric_links(monkeypatch, mock_hmc):
     """hmc_get_aggregated_metric_links uses the AggregatedMetrics endpoint."""
     _hmc_env(monkeypatch)

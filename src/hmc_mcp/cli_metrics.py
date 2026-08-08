@@ -7,6 +7,7 @@ from typing import Optional
 
 import typer
 
+from .client import HMCError
 from .cli_app import (
     _client,
     _print_json,
@@ -85,7 +86,14 @@ def metrics_show(
             links = await fn(category, uuid, start, end, samples)
             if not fetch or not links:
                 return links
-            return await hmc.fetch_json(links[-1]["link"])
+            # A 404 means the newest document aged out of PCM retention;
+            # report that as no data rather than an error.
+            try:
+                return await hmc.fetch_json(links[-1]["link"])
+            except HMCError as exc:
+                if exc.status_code == 404:
+                    return {}
+                raise
 
     result = _run(_go)
 

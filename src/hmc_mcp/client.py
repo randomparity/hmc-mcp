@@ -745,12 +745,16 @@ class HMCClient:
         return await self.get_metrics_feed(path)
 
     async def fetch_json(self, link: str) -> Any:
-        """Fetch a PCM metrics JSON document from an Atom link href."""
+        """Fetch a PCM metrics JSON document from an Atom link href.
+
+        Raises HMCError for any non-200 response, including 404. A 404 means
+        the metrics document has aged out of PCM retention (processed metrics
+        keep ~2h, aggregated longer); callers that treat expiry as 'no data'
+        catch HMCError and translate it (see hmc_get_processed_metrics).
+        """
         url = link if link.startswith("http") else f"{self.config.base_url}{link}"
         resp = await self._http.get(url, headers={"Accept": "application/json"})
-        if resp.status_code == 404:
-            return None
-        if resp.status_code >= 400:
+        if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
         return resp.json()
 
