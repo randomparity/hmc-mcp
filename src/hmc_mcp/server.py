@@ -49,7 +49,13 @@ from .jobs import (
     vios_update_job,
     vios_upgrade_job,
 )
-from .ssh import HMCCLIError, list_io_slots, run_hmc_command
+from .ssh import (
+    HMCCLIError,
+    list_fc_ports,
+    list_io_slots,
+    list_sea_adapters,
+    run_hmc_command,
+)
 from .templates import (
     LparResources,
     build_dlpar_mem_document,
@@ -1178,22 +1184,11 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    import csv
-    import io
-
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system_name)}"
-        if lpar_name:
-            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = HMCConfig()
-        raw = await run_hmc_command(config, cmd)
-        if not raw.strip():
-            return []
-        reader = csv.DictReader(io.StringIO(raw.strip()))
-        return [dict(row) for row in reader]
+        return await list_fc_ports(HMCConfig(), system_name, lpar_name)
 
     return _run(_go())
 
@@ -1213,28 +1208,11 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
-
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        cmd = (
-            f"lshwres -r virtualio --rsubtype eth --level lpar -m {shlex.quote(system_name)}"
-            f" -F {fields}"
-        )
-        if lpar_name:
-            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = HMCConfig()
-        raw = await run_hmc_command(config, cmd)
-        if not raw.strip():
-            return []
-        keys = fields.split(",")
-        result = []
-        for line in raw.strip().splitlines():
-            values = line.split(",", len(keys) - 1)
-            result.append(dict(zip(keys, values)))
-        return result
+        return await list_sea_adapters(HMCConfig(), system_name, lpar_name)
 
     return _run(_go())
 

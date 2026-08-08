@@ -1530,19 +1530,9 @@ def network_list_fc_ports(
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
     async def _go():
-        from hmc_mcp.ssh import run_hmc_command
-        import csv
-        import io
+        from hmc_mcp.ssh import list_fc_ports
 
-        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system)}"
-        if lpar_name:
-            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = _ssh_config()
-        raw = await run_hmc_command(config, cmd)
-        if not raw.strip():
-            return []
-        reader = csv.DictReader(io.StringIO(raw.strip()))
-        return [dict(row) for row in reader]
+        return await list_fc_ports(_ssh_config(), system, lpar_name)
 
     ports = _run(_go)
 
@@ -1558,25 +1548,9 @@ def network_list_sea_adapters(
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
     async def _go():
-        from hmc_mcp.ssh import run_hmc_command
+        from hmc_mcp.ssh import list_sea_adapters
 
-        fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
-        cmd = (
-            f"lshwres -r virtualio --rsubtype eth --level lpar -m {shlex.quote(system)}"
-            f" -F {fields}"
-        )
-        if lpar_name:
-            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = _ssh_config()
-        raw = await run_hmc_command(config, cmd)
-        if not raw.strip():
-            return []
-        keys = fields.split(",")
-        result = []
-        for line in raw.strip().splitlines():
-            values = line.split(",", len(keys) - 1)
-            result.append(dict(zip(keys, values)))
-        return result
+        return await list_sea_adapters(_ssh_config(), system, lpar_name)
 
     adapters = _run(_go)
 

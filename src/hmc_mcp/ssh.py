@@ -6,6 +6,8 @@ HMC CLI reference:
 
 from __future__ import annotations
 
+import csv
+import io
 import shlex
 from typing import Any
 
@@ -139,3 +141,54 @@ async def list_io_slots(
         cmd += f" | grep pci_class={shlex.quote(pci_class)}"
     output = await run_hmc_command(config, cmd)
     return _parse_lshwres_output(output)
+
+
+async def list_fc_ports(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str | None = None,
+) -> list[dict[str, str]]:
+    """List Virtual Fibre Channel (NPIV) adapters via SSH.
+
+    Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
+    and parses the CSV output rows (lpar_name, slot_num, wwpns, ...).  Pass
+    *lpar_name* to restrict results to a single partition.
+    """
+    cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system_name)}"
+    if lpar_name:
+        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return []
+    reader = csv.DictReader(io.StringIO(raw.strip()))
+    return [dict(row) for row in reader]
+
+
+async def list_sea_adapters(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str | None = None,
+) -> list[dict[str, str]]:
+    """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via SSH.
+
+    Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
+    -F lpar_name,port_vlan_id,vswitch,state,trunk_priority`` and returns one
+    dict with those five fields per port.  Pass *lpar_name* to restrict
+    results to a single partition.
+    """
+    fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
+    cmd = (
+        f"lshwres -r virtualio --rsubtype eth --level lpar -m {shlex.quote(system_name)}"
+        f" -F {fields}"
+    )
+    if lpar_name:
+        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return []
+    keys = fields.split(",")
+    result = []
+    for line in raw.strip().splitlines():
+        values = line.split(",", len(keys) - 1)
+        result.append(dict(zip(keys, values)))
+    return result
