@@ -33,6 +33,7 @@ from .templates import (
     build_hmc_user_document,
     build_lpar_document,
     build_managed_system_document,
+    build_password_policy_document,
     build_vios_document,
 )
 
@@ -1408,6 +1409,125 @@ def hmc_delete_user(name: str) -> str:
         async with client_from_env() as hmc:
             await hmc.delete_hmc_user(name)
             return f"Deleted HMC user {name}"
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# HMC password policy management
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_password_policies(policy_type: str = "policies") -> str:
+    """List HMC password policies.
+
+    policy_type selects what to return: 'policies' (default) returns the list
+    of defined password policies, 'status' returns activation status.
+    Returns the raw XML response from /rest/api/web/HmcPasswordPolicy.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_password_policies(policy_type)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_create_password_policy(
+    policy_name: str,
+    pwage: int = 0,
+    min_length: int = 8,
+    min_digits: int = 0,
+    min_uppercase: int = 0,
+    min_lowercase: int = 0,
+    min_special: int = 0,
+    hist_size: int = 0,
+    warn_pwage: int = 0,
+    min_pwage: int = 0,
+) -> str:
+    """Create a new HMC password policy.
+
+    policy_name is the unique name for the policy.  pwage is the maximum
+    password age in days (0 = never expires).  min_length is the minimum
+    password length.  min_digits, min_uppercase, min_lowercase, and
+    min_special set character-class minimums.  hist_size controls how many
+    previous passwords cannot be reused.  warn_pwage is the number of days
+    before expiry to warn the user.  min_pwage is the minimum days before a
+    password may be changed.  Confirm the policy_name before calling.
+    """
+    xml = build_password_policy_document(
+        policy_name=policy_name,
+        pwage=pwage,
+        min_length=min_length,
+        min_digits=min_digits,
+        min_uppercase=min_uppercase,
+        min_lowercase=min_lowercase,
+        min_special=min_special,
+        hist_size=hist_size,
+        warn_pwage=warn_pwage,
+        min_pwage=min_pwage,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_password_policy(xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_modify_password_policy(
+    policy_name: str,
+    pwage: int | None = None,
+    min_length: int | None = None,
+    min_digits: int | None = None,
+    min_uppercase: int | None = None,
+    min_lowercase: int | None = None,
+    min_special: int | None = None,
+    hist_size: int | None = None,
+    warn_pwage: int | None = None,
+    min_pwage: int | None = None,
+) -> str:
+    """Modify an existing HMC password policy.
+
+    Only the fields you supply are changed.  Use hmc_list_password_policies
+    to confirm the current state before calling.  To activate or deactivate a
+    policy, use the HMC console — the REST API activates a policy by name via
+    the PolicyType=status query path rather than a direct field change.
+    """
+    xml = build_password_policy_document(
+        pwage=pwage,
+        min_length=min_length,
+        min_digits=min_digits,
+        min_uppercase=min_uppercase,
+        min_lowercase=min_lowercase,
+        min_special=min_special,
+        hist_size=hist_size,
+        warn_pwage=warn_pwage,
+        min_pwage=min_pwage,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.modify_password_policy(policy_name, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_password_policy(policy_name: str) -> str:
+    """Delete an HMC password policy by name.
+
+    This permanently removes the policy — it is irreversible.  Confirm
+    the policy_name with hmc_list_password_policies before calling.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            await hmc.delete_password_policy(policy_name)
+            return f"Deleted HMC password policy {policy_name}"
 
     return _run(_go())
 

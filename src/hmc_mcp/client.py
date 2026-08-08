@@ -257,6 +257,34 @@ class HMCClient:
         await self._web_delete(f"/rest/api/web/HmcUser/{name}")
 
     # ------------------------------------------------------------------ #
+    # HMC password policy management (/rest/api/web/HmcPasswordPolicy)
+    # ------------------------------------------------------------------ #
+
+    async def list_password_policies(self, policy_type: str = "policies") -> str:
+        """GET /rest/api/web/HmcPasswordPolicy, optionally filtered by PolicyType.
+
+        policy_type is one of 'policies' (default, returns policy list) or
+        'status' (returns activation status).
+        Returns raw XML; the caller decides how to present it.
+        """
+        path = "/rest/api/web/HmcPasswordPolicy"
+        if policy_type != "policies":
+            path += f"?PolicyType={policy_type}"
+        return await self._web_get(path)
+
+    async def create_password_policy(self, policy_xml: str) -> str:
+        """POST an HmcPasswordPolicy document to /rest/api/web/HmcPasswordPolicy."""
+        return await self._web_post("/rest/api/web/HmcPasswordPolicy", policy_xml)
+
+    async def modify_password_policy(self, name: str, policy_xml: str) -> str:
+        """POST a partial HmcPasswordPolicy document to /rest/api/web/HmcPasswordPolicy/{name}."""
+        return await self._web_post(f"/rest/api/web/HmcPasswordPolicy/{name}", policy_xml)
+
+    async def delete_password_policy(self, name: str) -> None:
+        """DELETE /rest/api/web/HmcPasswordPolicy/{name}."""
+        await self._web_delete(f"/rest/api/web/HmcPasswordPolicy/{name}")
+
+    # ------------------------------------------------------------------ #
     # uom resources
     # ------------------------------------------------------------------ #
 
