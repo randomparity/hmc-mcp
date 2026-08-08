@@ -212,13 +212,20 @@ class HMCClient:
         return entries[0] if entries else None
 
     async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> Any:
-        """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState."""
-        xml = await self._get(f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}", resource_type)
-        # The response is a tiny XML doc whose root text (or first element) is
-        # the value.
+        """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
+
+        quick/ endpoints return a small XML or plain-text value and require
+        Accept: */* — a typed uom+xml Accept header causes HTTP 406.
+        """
+        path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
+        resp = await self._http.get(path, headers={"Accept": "*/*"})
+        if resp.status_code == 204:
+            return None
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        xml = resp.text
         value = find_text(xml, property_name)
         if value is None:
-            # Fall back to the whole body text.
             return xml.strip() or None
         return value
 
