@@ -49,6 +49,7 @@ from .templates import (
     build_password_policy_document,
     build_vios_document,
 )
+from .xmlutil import parse_feed
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -1529,32 +1530,49 @@ def main_http(host: str = "127.0.0.1", port: int = 8000) -> None:
 # ---------------------------------------------------------------------- #
 
 
+def _parse_web_entries(xml_text: str) -> list[dict[str, Any]]:
+    """Parse a /rest/api/web XML response into uom-shaped resource dicts.
+
+    Web endpoints return an Atom feed, a bare resource element, or nothing
+    at all (HTTP 204/202 yield an empty body). An empty body parses to an
+    empty list so callers can map it to None/[] without special-casing.
+    Each returned dict matches the uom list shape: {UUID, title, link,
+    ResourceType, Resource}.
+    """
+    if not (xml_text or "").strip():
+        return []
+    return parse_feed(xml_text)
+
+
 @mcp.tool
-def hmc_list_users(user_type: str = "all") -> str:
+def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     """List HMC user accounts.
 
     user_type filters by account type: 'local' (local HMC accounts),
     'kerberos' (Kerberos/LDAP-backed accounts), or 'all' (default).
-    Returns the raw XML response from /rest/api/web/HmcUser.
+    Returns one dict per user: {UUID, title, link, ResourceType, Resource}
+    where Resource holds the flattened HmcUser fields.
     """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.list_hmc_users(user_type)
+            return _parse_web_entries(await hmc.list_hmc_users(user_type))
 
     return _run(_go())
 
 
 @mcp.tool
-def hmc_get_user(name: str) -> str:
+def hmc_get_user(name: str) -> dict[str, Any] | None:
     """Get details for one HMC user account by username.
 
-    Returns the raw XML response from /rest/api/web/HmcUser/{name}.
+    Returns a single resource dict, or None if the server returned no
+    content.
     """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.get_hmc_user(name)
+            entries = _parse_web_entries(await hmc.get_hmc_user(name))
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1566,14 +1584,15 @@ def hmc_create_user(
     password: str,
     description: str = "",
     pwage: int = 0,
-) -> str:
+) -> dict[str, Any] | None:
     """Create a new HMC local user account.
 
     name is the login username. taskrole controls what the user can do
     (e.g. 'hmcoperator', 'hmcviewer', 'hmcsuperadmin'). password is the
     initial password. description is optional. pwage is the password
     expiration in days (0 = never expires). This creates a real account —
-    confirm the taskrole before calling.
+    confirm the taskrole before calling. Returns the created user resource
+    dict.
     """
     xml = build_hmc_user_document(
         username=name,
@@ -1585,7 +1604,8 @@ def hmc_create_user(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.create_hmc_user(xml)
+            entries = _parse_web_entries(await hmc.create_hmc_user(xml))
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1597,12 +1617,13 @@ def hmc_modify_user(
     password: str | None = None,
     description: str | None = None,
     enable: bool | None = None,
-) -> str:
+) -> dict[str, Any] | None:
     """Modify an existing HMC user account.
 
     Only the fields you supply are changed. enable=True re-enables a
     disabled account; enable=False disables it. Use hmc_get_user to
-    confirm the current state before calling.
+    confirm the current state before calling. Returns the updated user
+    resource dict.
     """
     xml = build_hmc_user_document(
         taskrole=taskrole,
@@ -1613,7 +1634,8 @@ def hmc_modify_user(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.modify_hmc_user(name, xml)
+            entries = _parse_web_entries(await hmc.modify_hmc_user(name, xml))
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1641,17 +1663,17 @@ def hmc_delete_user(name: str) -> str:
 
 
 @mcp.tool
-def hmc_list_password_policies(policy_type: str = "policies") -> str:
+def hmc_list_password_policies(policy_type: str = "policies") -> list[dict[str, Any]]:
     """List HMC password policies.
 
     policy_type selects what to return: 'policies' (default) returns the list
     of defined password policies, 'status' returns activation status.
-    Returns the raw XML response from /rest/api/web/HmcPasswordPolicy.
+    Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
     """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.list_password_policies(policy_type)
+            return _parse_web_entries(await hmc.list_password_policies(policy_type))
 
     return _run(_go())
 
@@ -1668,7 +1690,7 @@ def hmc_create_password_policy(
     hist_size: int = 0,
     warn_pwage: int = 0,
     min_pwage: int = 0,
-) -> str:
+) -> dict[str, Any] | None:
     """Create a new HMC password policy.
 
     policy_name is the unique name for the policy.  pwage is the maximum
@@ -1677,7 +1699,8 @@ def hmc_create_password_policy(
     min_special set character-class minimums.  hist_size controls how many
     previous passwords cannot be reused.  warn_pwage is the number of days
     before expiry to warn the user.  min_pwage is the minimum days before a
-    password may be changed.  Confirm the policy_name before calling.
+    password may be changed.  Confirm the policy_name before calling. Returns
+    the created policy resource dict.
     """
     xml = build_password_policy_document(
         policy_name=policy_name,
@@ -1694,7 +1717,8 @@ def hmc_create_password_policy(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.create_password_policy(xml)
+            entries = _parse_web_entries(await hmc.create_password_policy(xml))
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1711,13 +1735,14 @@ def hmc_modify_password_policy(
     hist_size: int | None = None,
     warn_pwage: int | None = None,
     min_pwage: int | None = None,
-) -> str:
+) -> dict[str, Any] | None:
     """Modify an existing HMC password policy.
 
     Only the fields you supply are changed.  Use hmc_list_password_policies
     to confirm the current state before calling.  To activate or deactivate a
     policy, use the HMC console — the REST API activates a policy by name via
     the PolicyType=status query path rather than a direct field change.
+    Returns the updated policy resource dict.
     """
     xml = build_password_policy_document(
         pwage=pwage,
@@ -1733,7 +1758,10 @@ def hmc_modify_password_policy(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.modify_password_policy(policy_name, xml)
+            entries = _parse_web_entries(
+                await hmc.modify_password_policy(policy_name, xml)
+            )
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1761,18 +1789,19 @@ def hmc_delete_password_policy(policy_name: str) -> str:
 
 
 @mcp.tool
-def hmc_list_ldap_config() -> str:
+def hmc_list_ldap_config() -> dict[str, Any] | None:
     """Get the current HMC LDAP server configuration.
 
-    Returns the raw XML response from /rest/api/web/HmcLdapServer describing
-    the configured LDAP server URL, base DN, bind DN, search filter, and
-    HMC group mappings.  Returns an empty string if no LDAP is configured.
+    Returns a single resource dict describing the configured LDAP server URL,
+    base DN, bind DN, search filter, and HMC group mappings, or None if no
+    LDAP is configured.
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
     """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.list_ldap_config()
+            entries = _parse_web_entries(await hmc.list_ldap_config())
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1786,7 +1815,7 @@ def hmc_configure_ldap(
     search_filter: str | None = None,
     hmc_groups: str | None = None,
     group_member_attributes: str | None = None,
-) -> str:
+) -> dict[str, Any] | None:
     """Configure the HMC LDAP server integration.
 
     server_url is the LDAP or LDAPS URL (e.g. 'ldap://ldap.example.com' or
@@ -1800,6 +1829,7 @@ def hmc_configure_ldap(
     group_member_attributes: LDAP attribute used for group membership.
 
     Equivalent to Ansible ``hmc_user`` action=configure_ldap.
+    Returns the updated LDAP configuration resource dict.
     """
     xml = build_ldap_config_document(
         server_url=server_url,
@@ -1813,7 +1843,8 @@ def hmc_configure_ldap(
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.configure_ldap(xml)
+            entries = _parse_web_entries(await hmc.configure_ldap(xml))
+            return entries[0] if entries else None
 
     return _run(_go())
 
@@ -1833,12 +1864,13 @@ def hmc_remove_ldap_config(resource: str) -> str:
 
     Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
     Use hmc_list_ldap_config to inspect the current state before calling.
-    Returns the HMC response string (immediate delete — no job to poll).
+    Returns a confirmation string (immediate delete — no job to poll).
     """
 
     async def _go():
         async with client_from_env() as hmc:
-            return await hmc.remove_ldap_config(resource)
+            await hmc.remove_ldap_config(resource)
+            return f"Removed LDAP configuration component: {resource}"
 
     return _run(_go())
 

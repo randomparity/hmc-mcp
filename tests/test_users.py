@@ -4,8 +4,15 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.templates import build_hmc_user_document
 from hmc_mcp.config import HMCConfig as _HMCConfig
+from hmc_mcp.server import (
+    hmc_create_user,
+    hmc_delete_user,
+    hmc_get_user,
+    hmc_list_users,
+    hmc_modify_user,
+)
+from hmc_mcp.templates import build_hmc_user_document
 
 
 def make_config(**kw) -> _HMCConfig:
@@ -179,3 +186,79 @@ async def test_web_get_error_raises(mock_hmc):
         with pytest.raises(HMCError) as exc_info:
             await hmc.get_hmc_user("nobody")
     assert exc_info.value.status_code == 404
+
+
+# ------------------------------------------------------------------ #
+# Server-tool tests (parsed dict returns, not raw XML)
+# ------------------------------------------------------------------ #
+
+def _hmc_env(monkeypatch) -> None:
+    """Set env vars so HMCConfig() succeeds inside the tool."""
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def test_hmc_list_users_parses_feed(monkeypatch, mock_hmc):
+    """hmc_list_users returns parsed dicts, one per account."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(200, text=USER_FEED)
+    )
+    result = hmc_list_users()
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["Resource"]["UserID"] == "hscroot"
+    assert result[1]["Resource"]["TaskRole"] == "hmcoperator"
+
+
+def test_hmc_get_user_parses_entry(monkeypatch, mock_hmc):
+    """hmc_get_user returns a single parsed resource dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
+        return_value=httpx.Response(200, text=USER_ENTRY)
+    )
+    result = hmc_get_user("hscroot")
+    assert isinstance(result, dict)
+    assert result["ResourceType"] == "HmcUser"
+    assert result["Resource"]["UserID"] == "hscroot"
+
+
+def test_hmc_get_user_empty_body_returns_none(monkeypatch, mock_hmc):
+    """hmc_get_user returns None when the server returns no content."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcUser/nobody").mock(
+        return_value=httpx.Response(204)
+    )
+    assert hmc_get_user("nobody") is None
+
+
+def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):
+    """hmc_create_user returns the created resource dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(201, text=CREATED_USER)
+    )
+    result = hmc_create_user("newop", "hmcoperator", "P@ss1")
+    assert isinstance(result, dict)
+    assert result["Resource"]["UserID"] == "newop"
+
+
+def test_hmc_modify_user_returns_parsed_dict(monkeypatch, mock_hmc):
+    """hmc_modify_user returns the updated resource dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcUser/operator1").mock(
+        return_value=httpx.Response(200, text=USER_ENTRY)
+    )
+    result = hmc_modify_user("operator1", taskrole="hmcviewer", enable=False)
+    assert isinstance(result, dict)
+    assert result["Resource"]["TaskRole"] == "hmcsuperadmin"
+
+
+def test_hmc_delete_user_returns_confirmation(monkeypatch, mock_hmc):
+    """hmc_delete_user returns a confirmation string, not XML."""
+    _hmc_env(monkeypatch)
+    mock_hmc.delete("/rest/api/web/HmcUser/operator1").mock(
+        return_value=httpx.Response(204)
+    )
+    assert hmc_delete_user("operator1") == "Deleted HMC user operator1"

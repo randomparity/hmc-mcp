@@ -4,8 +4,13 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.templates import build_ldap_config_document
 from hmc_mcp.config import HMCConfig as _HMCConfig
+from hmc_mcp.server import (
+    hmc_configure_ldap,
+    hmc_list_ldap_config,
+    hmc_remove_ldap_config,
+)
+from hmc_mcp.templates import build_ldap_config_document
 
 
 def make_config(**kw) -> _HMCConfig:
@@ -171,3 +176,60 @@ async def test_configure_ldap_error_raises(mock_hmc):
         with pytest.raises(HMCError) as exc_info:
             await hmc.configure_ldap(ldap_xml)
     assert exc_info.value.status_code == 500
+
+
+# ------------------------------------------------------------------ #
+# Server-tool tests (parsed dict returns, not raw XML)
+# ------------------------------------------------------------------ #
+
+def _hmc_env(monkeypatch) -> None:
+    """Set env vars so HMCConfig() succeeds inside the tool."""
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def test_hmc_list_ldap_config_parses(monkeypatch, mock_hmc):
+    """hmc_list_ldap_config returns a single parsed resource dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
+        return_value=httpx.Response(200, text=LDAP_CONFIG_FEED)
+    )
+    result = hmc_list_ldap_config()
+    assert isinstance(result, dict)
+    assert result["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
+    assert result["Resource"]["BaseDN"] == "dc=example,dc=com"
+
+
+def test_hmc_list_ldap_config_empty_returns_none(monkeypatch, mock_hmc):
+    """hmc_list_ldap_config returns None when no LDAP is configured."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
+        return_value=httpx.Response(204)
+    )
+    assert hmc_list_ldap_config() is None
+
+
+def test_hmc_configure_ldap_returns_dict(monkeypatch, mock_hmc):
+    """hmc_configure_ldap returns the updated LDAP resource dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
+        return_value=httpx.Response(200, text=LDAP_CONFIG_ENTRY)
+    )
+    result = hmc_configure_ldap(
+        "ldap://ldap.example.com", base_dn="dc=example,dc=com"
+    )
+    assert isinstance(result, dict)
+    assert result["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
+
+
+def test_hmc_remove_ldap_config_returns_confirmation(monkeypatch, mock_hmc):
+    """hmc_remove_ldap_config returns a confirmation string, not XML."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
+        return_value=httpx.Response(200, text="<ok/>")
+    )
+    assert (
+        hmc_remove_ldap_config("ldap")
+        == "Removed LDAP configuration component: ldap"
+    )

@@ -4,8 +4,14 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
-from hmc_mcp.templates import build_password_policy_document
 from hmc_mcp.config import HMCConfig as _HMCConfig
+from hmc_mcp.server import (
+    hmc_create_password_policy,
+    hmc_delete_password_policy,
+    hmc_list_password_policies,
+    hmc_modify_password_policy,
+)
+from hmc_mcp.templates import build_password_policy_document
 
 
 def make_config(**kw) -> _HMCConfig:
@@ -184,3 +190,72 @@ async def test_list_password_policies_error_raises(mock_hmc):
         with pytest.raises(HMCError) as exc_info:
             await hmc.list_password_policies()
     assert exc_info.value.status_code == 403
+
+
+# ------------------------------------------------------------------ #
+# Server-tool tests (parsed dict returns, not raw XML)
+# ------------------------------------------------------------------ #
+
+def _hmc_env(monkeypatch) -> None:
+    """Set env vars so HMCConfig() succeeds inside the tool."""
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def test_hmc_list_password_policies_parses_feed(monkeypatch, mock_hmc):
+    """hmc_list_password_policies returns parsed dicts, one per policy."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
+        return_value=httpx.Response(200, text=POLICY_FEED)
+    )
+    result = hmc_list_password_policies()
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["Resource"]["PolicyName"] == "StrongPolicy"
+
+
+def test_hmc_list_password_policies_status_parses(monkeypatch, mock_hmc):
+    """hmc_list_password_policies('status') parses the status feed."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
+        return_value=httpx.Response(200, text=STATUS_FEED)
+    )
+    result = hmc_list_password_policies("status")
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"
+
+
+def test_hmc_create_password_policy_returns_dict(monkeypatch, mock_hmc):
+    """hmc_create_password_policy returns the created policy dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcPasswordPolicy").mock(
+        return_value=httpx.Response(201, text=CREATED_POLICY)
+    )
+    result = hmc_create_password_policy("StrongPolicy", pwage=90, min_length=12)
+    assert isinstance(result, dict)
+    assert result["Resource"]["PolicyName"] == "StrongPolicy"
+
+
+def test_hmc_modify_password_policy_returns_dict(monkeypatch, mock_hmc):
+    """hmc_modify_password_policy returns the updated policy dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/web/HmcPasswordPolicy/StrongPolicy").mock(
+        return_value=httpx.Response(200, text=CREATED_POLICY)
+    )
+    result = hmc_modify_password_policy("StrongPolicy", pwage=180, min_length=14)
+    assert isinstance(result, dict)
+    assert result["Resource"]["MaxPasswordAge"] == "90"
+
+
+def test_hmc_delete_password_policy_returns_confirmation(monkeypatch, mock_hmc):
+    """hmc_delete_password_policy returns a confirmation string, not XML."""
+    _hmc_env(monkeypatch)
+    mock_hmc.delete("/rest/api/web/HmcPasswordPolicy/StrongPolicy").mock(
+        return_value=httpx.Response(204)
+    )
+    assert (
+        hmc_delete_password_policy("StrongPolicy")
+        == "Deleted HMC password policy StrongPolicy"
+    )
