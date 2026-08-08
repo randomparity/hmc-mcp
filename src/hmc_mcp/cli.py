@@ -1219,6 +1219,91 @@ def metrics_show(
 
 
 # ---------------------------------------------------------------------- #
+# storage: Virtual Media Repository / optical media
+# ---------------------------------------------------------------------- #
+
+
+@storage_app.command("create-media-repo")
+def storage_create_media_repo(
+    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    size_mb: int = typer.Option(..., "--size-mb", help="Repository size in MB"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Create the Virtual Media Repository (VMLibrary) on a volume group."""
+    if not yes and not typer.confirm(f"Create {size_mb} MB media repository on VG {vg} (VIOS {vios})?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.create_media_repository(vios, vg, size_mb)
+
+    try:
+        result = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Created media repository on {vg}[/green]")
+    _print_json(result)
+
+
+@storage_app.command("create-media")
+def storage_create_media(
+    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    name: str = typer.Option(..., "--name", "-n", help="Media file name (e.g. aix.iso)"),
+    size_mb: int = typer.Option(..., "--size-mb", help="Media size in MB"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Create a blank optical media (ISO container) in the media repository."""
+    if not yes and not typer.confirm(f"Create media '{name}' ({size_mb} MB) on VG {vg} (VIOS {vios})?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.create_optical_media(vios, vg, name, size_mb)
+
+    try:
+        result = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Created media '{name}' on {vg}[/green]")
+    _print_json(result)
+
+
+@storage_app.command("delete-media-repo")
+def storage_delete_media_repo(
+    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete the Virtual Media Repository from a volume group."""
+    if not yes and not typer.confirm(f"Delete media repository on VG {vg} (VIOS {vios})?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.delete_media_repository(vios, vg)
+
+    try:
+        _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Deleted media repository on {vg}[/green]")
+
+
+# ---------------------------------------------------------------------- #
 # network (virtual switches / networks / bridges)
 # ---------------------------------------------------------------------- #
 

@@ -790,6 +790,49 @@ class HMCClient:
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff", power_off_vios_job(immediate)
         )
 
+    # ------------------------------------------------------------------ #
+    # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
+    # ------------------------------------------------------------------ #
+
+    async def _post_volume_group_op(
+        self, vios_uuid: str, vg_uuid: str, xml: str
+    ) -> dict[str, Any] | None:
+        resp = await self._post(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}",
+            xml,
+            resource_type="VolumeGroup",
+        )
+        entries = parse_feed(resp) if resp else []
+        return entries[0] if entries else None
+
+    async def create_media_repository(
+        self, vios_uuid: str, vg_uuid: str, size_mb: int
+    ) -> dict[str, Any] | None:
+        """Create the Virtual Media Repository (named VMLibrary) on a Volume Group."""
+        from .templates import build_media_repository_document
+
+        return await self._post_volume_group_op(
+            vios_uuid, vg_uuid, build_media_repository_document(size_mb)
+        )
+
+    async def create_optical_media(
+        self, vios_uuid: str, vg_uuid: str, media_name: str, size_mb: int
+    ) -> dict[str, Any] | None:
+        """Create a blank VirtualOpticalMedia (ISO container) in the repository."""
+        from .templates import build_virtual_optical_media_document
+
+        return await self._post_volume_group_op(
+            vios_uuid, vg_uuid, build_virtual_optical_media_document(media_name, size_mb)
+        )
+
+    async def delete_media_repository(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
+        """Delete the Virtual Media Repository from a Volume Group."""
+        from .templates import build_media_repository_delete_document
+
+        return await self._post_volume_group_op(
+            vios_uuid, vg_uuid, build_media_repository_delete_document()
+        )
+
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"

@@ -121,6 +121,51 @@ Exposed tools:
 | `hmc_create_virtual_disk` | Carve a Virtual Disk (logical volume) out of a VG |
 | `hmc_map_storage_to_lpar` | Map a VirtualDisk/PhysicalVolume to an LPAR (vSCSI mapping) |
 
+**Virtual media (ISO library)**
+
+| Tool                          | Description |
+|-------------------------------|-------------|
+| `hmc_create_media_repository` | Create the Virtual Media Repository (VMLibrary) on a VG |
+| `hmc_create_optical_media`    | Create a blank optical media (ISO container) |
+| `hmc_delete_media_repository` | Delete the Virtual Media Repository from a VG |
+
+**Virtual networking (switches / networks / bridges)**
+
+| Tool                           | Description |
+|--------------------------------|-------------|
+| `hmc_list_virtual_switches`    | List VirtualSwitches (names, SwitchIDs, mode) |
+| `hmc_list_virtual_networks`    | List Virtual Networks (VLANs) on a system |
+| `hmc_create_virtual_network`   | Create a Virtual Network (VLAN) |
+| `hmc_delete_virtual_network`   | Delete a Virtual Network |
+| `hmc_list_network_bridges`     | List NetworkBridges (Shared Ethernet Adapters) |
+
+**Template library**
+
+| Tool                              | Description |
+|-----------------------------------|-------------|
+| `hmc_list_partition_templates`    | List partition templates |
+| `hmc_get_partition_template`      | One template by UUID |
+| `hmc_deploy_partition_template`   | Deploy a partition from a draft template — job |
+
+**Live Partition Mobility (LPM)**
+
+| Tool                            | Description |
+|---------------------------------|-------------|
+| `hmc_migrate_lpar`              | Migrate an LPAR to another system — job |
+| `hmc_migrate_validate_lpar`     | Pre-check a migration — job |
+| `hmc_migrate_abort_lpar`        | Abort an in-progress migration — job |
+| `hmc_migrate_recover_lpar`      | Recover after a failed migration — job |
+| `hmc_remote_restart_lpar`       | Remote-restart a failed LPAR — job |
+
+**System / VIOS power**
+
+| Tool                    | Description |
+|-------------------------|-------------|
+| `hmc_power_on_system`   | Power on a managed system — job |
+| `hmc_power_off_system`  | Power off a managed system — job |
+| `hmc_power_on_vios`     | Power on a VIOS — job |
+| `hmc_power_off_vios`    | Power off a VIOS — job |
+
 **Cluster / Shared Storage Pool (SSP)**
 
 | Tool                            | Description |

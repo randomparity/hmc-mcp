@@ -387,3 +387,64 @@ def build_virtual_network_document(
   <TaggedNetwork kb="CUD" kxe="false">{tagged_str}</TaggedNetwork>
 </VirtualNetwork>
 """
+
+
+# ====================================================================== #
+# Virtual Media Repository / Virtual Optical Media
+#
+# Both are operations via POST on a VolumeGroup (the repository lives on the
+# "VMLibrary" volume group of a VIOS). The repository name is always
+# "VMLibrary"; only BLANK optical media can be created via this API.
+# ====================================================================== #
+
+
+def build_media_repository_document(size_mb: int) -> str:
+    """VolumeGroup document carrying a VirtualMediaRepository (create POST).
+
+    The repository is always named VMLibrary; size_mb is RepositorySize.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualMediaRepository schemaVersion="V1_8_0">
+    <Metadata><Atom/></Metadata>
+    <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
+    <RepositorySize kb="CUD" kxe="false">{size_mb}</RepositorySize>
+  </VirtualMediaRepository>
+</VolumeGroup>
+"""
+
+
+def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
+    """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
+
+    Only blank optical media can be created via the API; media_name is the
+    file name (e.g. 'aix.iso'), size_mb is MediaSize.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualMediaRepository schemaVersion="V1_8_0">
+    <Metadata><Atom/></Metadata>
+    <VirtualOpticalMedia schemaVersion="V1_8_0">
+      <Metadata><Atom/></Metadata>
+      <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
+      <MediaSize kb="CUD" kxe="false">{size_mb}</MediaSize>
+      <MediaType kb="CUD" kxe="false">BLANK</MediaType>
+    </VirtualOpticalMedia>
+  </VirtualMediaRepository>
+</VolumeGroup>
+"""
+
+
+def build_media_repository_delete_document() -> str:
+    """VolumeGroup document marking the VirtualMediaRepository for deletion (POST)."""
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualMediaRepository schemaVersion="V1_8_0" kb="CUD">
+    <Metadata><Atom/></Metadata>
+    <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
+  </VirtualMediaRepository>
+</VolumeGroup>
+"""

@@ -780,6 +780,56 @@ def hmc_power_off_vios(vios_uuid: str, immediate: bool = False) -> dict[str, Any
 
 
 # ---------------------------------------------------------------------- #
+# Virtual Media Repository / optical media
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_create_media_repository(
+    vios_uuid: str, vg_uuid: str, size_mb: int
+) -> dict[str, Any] | None:
+    """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
+
+    The repository holds file-backed ISO images for client partitions; only one
+    can exist per VIOS. size_mb is RepositorySize.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_media_repository(vios_uuid, vg_uuid, size_mb)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_create_optical_media(
+    vios_uuid: str, vg_uuid: str, media_name: str, size_mb: int
+) -> dict[str, Any] | None:
+    """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
+
+    Only blank media can be created via the API; media_name is the file name
+    (e.g. 'aix.iso'), size_mb is MediaSize.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_optical_media(vios_uuid, vg_uuid, media_name, size_mb)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
+    """Delete the Virtual Media Repository from a Volume Group."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.delete_media_repository(vios_uuid, vg_uuid)
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
 # Cluster / Shared Storage Pool (SSP)
 # ---------------------------------------------------------------------- #
 
