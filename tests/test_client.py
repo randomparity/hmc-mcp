@@ -43,11 +43,7 @@ LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """.format(base=BASE)
 
-QUICK_STATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-  <PartitionState>running</PartitionState>
-</LogicalPartition>
-"""
+QUICK_STATE = "running"
 
 JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">

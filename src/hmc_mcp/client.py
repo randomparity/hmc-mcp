@@ -214,8 +214,8 @@ class HMCClient:
     async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> Any:
         """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
 
-        quick/ endpoints return a small XML or plain-text value and require
-        Accept: */* — a typed uom+xml Accept header causes HTTP 406.
+        quick/ endpoints return a plain-text value and require Accept: */* —
+        a typed uom+xml Accept header causes HTTP 406.
         """
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
         resp = await self._http.get(path, headers={"Accept": "*/*"})
@@ -223,11 +223,7 @@ class HMCClient:
             return None
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        xml = resp.text
-        value = find_text(xml, property_name)
-        if value is None:
-            return xml.strip() or None
-        return value
+        return resp.text.strip() or None
 
     async def search_uom(self, resource_type: str, property_name: str, property_value: str) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
