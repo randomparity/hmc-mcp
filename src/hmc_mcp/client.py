@@ -187,6 +187,76 @@ class HMCClient:
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
     # ------------------------------------------------------------------ #
+    # Web endpoint helpers (/rest/api/web/)
+    #
+    # The HMC exposes user management and other non-UOM resources under
+    # /rest/api/web/ with the MEDIA_WEB content type.  These helpers mirror
+    # _get/_post/_delete but use MEDIA_WEB for Content-Type and Accept.
+    #
+    # Auth assumption: /rest/api/web/HmcUser (and sibling web endpoints)
+    # accept the same X-API-Session token that _get/_post/_delete use.
+    # This is consistent with the HMC REST API design — the token is set
+    # on the shared httpx client during logon and applies to every request,
+    # including the /rest/api/web/Logon and /rest/api/web/Logoff calls that
+    # already use MEDIA_WEB in this file.  The ansible-power-hmc reference
+    # implementation uses the same session token for HmcUser operations.
+    # ------------------------------------------------------------------ #
+
+    async def _web_get(self, path: str) -> str:
+        resp = await self._http.get(path, headers={"Accept": MEDIA_WEB})
+        if resp.status_code == 204:
+            return ""
+        if resp.status_code != 200:
+            raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
+        return resp.text
+
+    async def _web_post(self, path: str, body: str) -> str:
+        resp = await self._http.post(
+            path,
+            content=body,
+            headers={"Content-Type": MEDIA_WEB, "Accept": MEDIA_WEB},
+        )
+        if resp.status_code not in (200, 201, 202):
+            raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
+        return resp.text
+
+    async def _web_delete(self, path: str) -> None:
+        resp = await self._http.delete(path)
+        if resp.status_code not in (200, 202, 204):
+            raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
+
+    # ------------------------------------------------------------------ #
+    # HMC user management (/rest/api/web/HmcUser)
+    # ------------------------------------------------------------------ #
+
+    async def list_hmc_users(self, user_type: str = "all") -> str:
+        """GET /rest/api/web/HmcUser, optionally filtered by UserType.
+
+        user_type is one of 'local', 'kerberos', or 'all' (default).
+        Returns raw XML; the caller decides how to present it.
+        """
+        path = "/rest/api/web/HmcUser"
+        if user_type != "all":
+            path += f"?UserType={user_type}"
+        return await self._web_get(path)
+
+    async def get_hmc_user(self, name: str) -> str:
+        """GET /rest/api/web/HmcUser/{name}."""
+        return await self._web_get(f"/rest/api/web/HmcUser/{name}")
+
+    async def create_hmc_user(self, user_xml: str) -> str:
+        """POST an HmcUser document to /rest/api/web/HmcUser."""
+        return await self._web_post("/rest/api/web/HmcUser", user_xml)
+
+    async def modify_hmc_user(self, name: str, user_xml: str) -> str:
+        """POST a partial HmcUser document to /rest/api/web/HmcUser/{name}."""
+        return await self._web_post(f"/rest/api/web/HmcUser/{name}", user_xml)
+
+    async def delete_hmc_user(self, name: str) -> None:
+        """DELETE /rest/api/web/HmcUser/{name}."""
+        await self._web_delete(f"/rest/api/web/HmcUser/{name}")
+
+    # ------------------------------------------------------------------ #
     # uom resources
     # ------------------------------------------------------------------ #
 

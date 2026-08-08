@@ -488,3 +488,50 @@ def build_media_repository_delete_document() -> str:
   </VirtualMediaRepository>
 </VolumeGroup>
 """
+
+
+# ====================================================================== #
+# HMC User management (/rest/api/web/HmcUser)
+#
+# Create: POST /rest/api/web/HmcUser
+# Modify: POST /rest/api/web/HmcUser/{name}
+# Fields documented in ansible-power-hmc plugins/modules/hmc_user.py
+# ====================================================================== #
+
+WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+
+
+def build_hmc_user_document(
+    username: str | None = None,
+    taskrole: str | None = None,
+    password: str | None = None,
+    description: str | None = None,
+    pwage: int | None = None,
+    enable: bool | None = None,
+) -> str:
+    """Build an HmcUser XML document for create (POST) or modify (POST).
+
+    For create, username is required.  For modify, pass only the fields
+    to change.  pwage is the password expiration in days (0 = never expires).
+    enable controls whether the account is enabled (True) or disabled (False).
+    """
+    parts = ["  <Metadata><Atom/></Metadata>"]
+    if username is not None:
+        parts.append(f'  <UserID kb="CUR" kxe="false">{username}</UserID>')
+    if taskrole is not None:
+        parts.append(f'  <TaskRole kb="CUR" kxe="false">{taskrole}</TaskRole>')
+    if password is not None:
+        parts.append(f'  <Password kb="CUR" kxe="false">{password}</Password>')
+    if description is not None:
+        parts.append(f'  <Description kb="CUR" kxe="false">{description}</Description>')
+    if pwage is not None:
+        parts.append(f'  <PasswordAgePolicy kb="CUR" kxe="false">{pwage}</PasswordAgePolicy>')
+    if enable is not None:
+        val = "true" if enable else "false"
+        parts.append(f'  <IsEnabled kb="CUR" kxe="false">{val}</IsEnabled>')
+    body = "\n".join(parts)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<HmcUser xmlns="{WEB_NS}" schemaVersion="V1_0">
+{body}
+</HmcUser>
+"""
