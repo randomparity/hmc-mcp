@@ -14,8 +14,8 @@ from fastmcp import FastMCP
 
 from .client import HMCClient
 from .common import client_from_env
-from .jobs import power_off_lpar_job, power_on_lpar_job
-from .templates import PARTITION_TYPES, build_lpar_document
+from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
+from .templates import PARTITION_TYPES, build_lpar_document, build_vios_document
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -332,6 +332,103 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
         async with client_from_env() as hmc:
             await hmc.delete_logical_partition(lpar_uuid)
             return f"Deleted LPAR {lpar_uuid}"
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# VIOS lifecycle (create / delete / install)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_create_vios(
+    system_uuid: str,
+    name: str,
+    min_memory: int = 512,
+    desired_memory: int = 4096,
+    max_memory: int = 8192,
+    desired_vcpus: int = 2,
+    min_vcpus: int = 1,
+    max_vcpus: int = 4,
+    desired_procs: float = 0.5,
+    min_procs: float = 0.1,
+    max_procs: float = 1.0,
+) -> dict[str, Any] | None:
+    """Create a new Virtual IO Server (VIOS) partition on a managed system.
+
+    system_uuid is the target managed system (find it with hmc_list_systems).
+    Memory values are in MiB; procs are shared processing units (fractional
+    ok). The VIOS is created powered off with default settings — install the
+    OS with hmc_install_vios before using it as a storage/network server.
+    This creates a real partition — confirm name/system_uuid before calling.
+    """
+    xml = build_vios_document(
+        name=name,
+        min_memory=min_memory,
+        desired_memory=desired_memory,
+        max_memory=max_memory,
+        desired_vcpus=desired_vcpus,
+        min_vcpus=min_vcpus,
+        max_vcpus=max_vcpus,
+        desired_procs=desired_procs,
+        min_procs=min_procs,
+        max_procs=max_procs,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_logical_partition(system_uuid, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_vios(vios_uuid: str) -> str:
+    """Delete (destroy) a VIOS partition by UUID.
+
+    The VIOS must be powered off first (use hmc_power_off_vios and confirm
+    with hmc_lpar_state). This permanently removes the VIOS and its profiles
+    from the HMC — it is irreversible. Confirm the UUID with hmc_list_vios
+    before calling.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            await hmc.delete_logical_partition(vios_uuid)
+            return f"Deleted VIOS {vios_uuid}"
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_install_vios(
+    vios_uuid: str,
+    nim_ip: str,
+    nim_gateway: str,
+    nim_subnetmask: str,
+    vios_ip: str,
+    vlan_id: str = "0",
+    timeout: int = 60,
+) -> dict[str, Any] | None:
+    """Submit a NIM-based VIOS installation job.
+
+    vios_uuid is the UUID of an existing (powered-off) VIOS partition. The
+    VIOS will PXE-boot from the NIM server at nim_ip to install its OS.
+    nim_gateway and nim_subnetmask define the network for the NIM install
+    boot; vios_ip is the IP address the VIOS uses during the NIM install;
+    vlan_id is the VLAN tag for the install network (use "0" for untagged).
+    timeout is the job timeout in minutes (default 60). Returns the submitted
+    job — poll hmc_get_job for status.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            job_xml = vios_install_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
+            return await hmc.submit_job(
+                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
+                job_xml,
+            )
 
     return _run(_go())
 
