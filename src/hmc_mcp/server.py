@@ -15,7 +15,7 @@ from fastmcp import FastMCP
 from .client import HMCClient
 from .common import client_from_env
 from .jobs import power_off_lpar_job, power_on_lpar_job, vios_install_job
-from .templates import PARTITION_TYPES, build_lpar_document, build_vios_document
+from .templates import PARTITION_TYPES, build_hmc_user_document, build_lpar_document, build_vios_document
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -1123,3 +1123,113 @@ def main_stdio() -> None:
 
 def main_http(host: str = "127.0.0.1", port: int = 8000) -> None:
     mcp.run(transport="streamable-http", host=host, port=port)
+
+
+# ---------------------------------------------------------------------- #
+# HMC user management
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_users(user_type: str = "all") -> str:
+    """List HMC user accounts.
+
+    user_type filters by account type: 'local' (local HMC accounts),
+    'kerberos' (Kerberos/LDAP-backed accounts), or 'all' (default).
+    Returns the raw XML response from /rest/api/web/HmcUser.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_hmc_users(user_type)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_get_user(name: str) -> str:
+    """Get details for one HMC user account by username.
+
+    Returns the raw XML response from /rest/api/web/HmcUser/{name}.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.get_hmc_user(name)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_create_user(
+    name: str,
+    taskrole: str,
+    password: str,
+    description: str = "",
+    pwage: int = 0,
+) -> str:
+    """Create a new HMC local user account.
+
+    name is the login username. taskrole controls what the user can do
+    (e.g. 'hmcoperator', 'hmcviewer', 'hmcsuperadmin'). password is the
+    initial password. description is optional. pwage is the password
+    expiration in days (0 = never expires). This creates a real account —
+    confirm the taskrole before calling.
+    """
+    xml = build_hmc_user_document(
+        username=name,
+        taskrole=taskrole,
+        password=password,
+        description=description or None,
+        pwage=pwage,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_hmc_user(xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_modify_user(
+    name: str,
+    taskrole: str | None = None,
+    password: str | None = None,
+    description: str | None = None,
+    enable: bool | None = None,
+) -> str:
+    """Modify an existing HMC user account.
+
+    Only the fields you supply are changed. enable=True re-enables a
+    disabled account; enable=False disables it. Use hmc_get_user to
+    confirm the current state before calling.
+    """
+    xml = build_hmc_user_document(
+        taskrole=taskrole,
+        password=password,
+        description=description,
+        enable=enable,
+    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.modify_hmc_user(name, xml)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_user(name: str) -> str:
+    """Delete an HMC user account by username.
+
+    This permanently removes the account — it is irreversible. Confirm
+    the username with hmc_get_user before calling.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            await hmc.delete_hmc_user(name)
+            return f"Deleted HMC user {name}"
+
+    return _run(_go())
