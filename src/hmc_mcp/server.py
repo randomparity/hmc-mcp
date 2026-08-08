@@ -32,6 +32,7 @@ import asyncio
 import shlex
 from typing import Any
 
+import asyncssh
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -51,6 +52,7 @@ from .jobs import (
 )
 from .ssh import (
     HMCCLIError,
+    _parse_lshwres_output,
     list_fc_ports,
     list_io_slots,
     list_sea_adapters,
@@ -2622,8 +2624,6 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    from .ssh import _parse_lshwres_output
-
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
@@ -2686,8 +2686,6 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    from .ssh import _parse_lshwres_output
-
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
@@ -2742,8 +2740,6 @@ def hmc_add_vnic(
         HMCCLIError: If the HMC command fails, e.g. because the underlying
             SR-IOV adapter is not in SR-IOV mode.
     """
-    import asyncssh
-
     attrs = f"capacity={capacity},vswitch_name={vswitch_name},port_vlan_id={port_vlan_id}"
     if backing_devices is not None:
         attrs += f",backing_devices={backing_devices}"

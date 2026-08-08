@@ -23,7 +23,13 @@ from rich.table import Table
 from .common import client_from_env
 from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import run_hmc_command
+from .ssh import (
+    _parse_lshwres_output,
+    list_fc_ports,
+    list_sea_adapters,
+    remove_memory_pool,
+    run_hmc_command,
+)
 from .templates import LparResources, PARTITION_TYPES, build_lpar_document
 
 app = typer.Typer(
@@ -1530,8 +1536,6 @@ def network_list_fc_ports(
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
     async def _go():
-        from hmc_mcp.ssh import list_fc_ports
-
         return await list_fc_ports(_ssh_config(), system, lpar_name)
 
     ports = _run(_go)
@@ -1548,8 +1552,6 @@ def network_list_sea_adapters(
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
     async def _go():
-        from hmc_mcp.ssh import list_sea_adapters
-
         return await list_sea_adapters(_ssh_config(), system, lpar_name)
 
     adapters = _run(_go)
@@ -1592,8 +1594,6 @@ def network_list_vnics(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
-    from .ssh import _parse_lshwres_output
-
     config = _ssh_config()
     raw = _run(lambda: run_hmc_command(
     config,
@@ -1868,8 +1868,6 @@ def memory_pools_list(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List shared memory pools on a managed system (HMC CLI via SSH)."""
-    from .ssh import _parse_lshwres_output
-
     config = _ssh_config()
     output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}"))
 
@@ -1906,8 +1904,6 @@ def memory_pools_remove(
         f"Remove memory pool '{pool_name}' on system '{system_name}'?"
     ):
         raise typer.Abort()
-
-    from .ssh import remove_memory_pool
 
     config = _ssh_config()
     result = _run(lambda: remove_memory_pool(config, system_name, pool_name))
