@@ -19,7 +19,11 @@ class HMCCLIError(Exception):
 
 
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
-    """Execute an HMC CLI command over SSH and return its stdout + stderr.
+    """Execute an HMC CLI command over SSH and return its stdout.
+
+    Command stderr is not returned: on a non-zero exit, ``check=True`` raises
+    ``asyncssh.ProcessError`` and the command's stderr is available as
+    ``exc.stderr``.
 
     Authentication:
     - If ``config.ssh_key_file`` is set, key-based auth is attempted using
@@ -38,7 +42,9 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         ValueError: If required connection settings (host/user, and password
             when no SSH key is configured) are missing — the same actionable
             message the REST client uses.
-        asyncssh.Error: On SSH connection or command execution failure.
+        asyncssh.ProcessError: On non-zero command exit (``check=True``);
+            ``exc.stderr`` carries the command's stderr.
+        asyncssh.Error: On SSH connection or authentication failure.
     """
     config.validate_credentials(require_password=not config.ssh_key_file)
 
