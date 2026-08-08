@@ -1400,21 +1400,58 @@ def hmc_set_pcm_preferences(
 
 
 @mcp.tool
+def hmc_get_processed_metric_links(
+    category: str,
+    uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+) -> list[dict[str, str]]:
+    """List available processed PCM metrics JSON documents.
+
+    Processed metrics have 30s granularity and ~2h retention. Timestamps are
+    ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the
+    Atom feed links to the metric JSON documents. Pass one link's ``link``
+    value to hmc_fetch_json, or call hmc_get_processed_metrics to download
+    the most recent document directly.
+    """
+    return _metrics_links(category, uuid, "processed", start_ts, end_ts, no_of_samples)
+
+
+@mcp.tool
 def hmc_get_processed_metrics(
     category: str,
     uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    fetch: bool = False,
-) -> Any:
-    """Get processed PCM metrics (30s granularity, ~2h retention).
+) -> dict[str, Any]:
+    """Download the most recent processed PCM metrics JSON document.
 
-    Timestamps are ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
-    By default returns the list of JSON links; set fetch=True to also download
-    and return the metric JSON of the most recent link.
+    Same time-range arguments as hmc_get_processed_metric_links. Returns the
+    parsed JSON of the newest document, or ``{}`` when no metrics are
+    available in the requested range.
     """
-    return _metrics_tool(category, uuid, "processed", start_ts, end_ts, no_of_samples, fetch)
+    return _metrics_fetch(category, uuid, "processed", start_ts, end_ts, no_of_samples)
+
+
+@mcp.tool
+def hmc_get_aggregated_metric_links(
+    category: str,
+    uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+) -> list[dict[str, str]]:
+    """List available aggregated PCM metrics JSON documents.
+
+    Aggregated metrics are the long-term rollup used for trend analysis.
+    Timestamps are ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+    Returns the Atom feed links to the metric JSON documents. Pass one link's
+    ``link`` value to hmc_fetch_json, or call hmc_get_aggregated_metrics to
+    download the most recent document directly.
+    """
+    return _metrics_links(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
 @mcp.tool
@@ -1424,31 +1461,55 @@ def hmc_get_aggregated_metrics(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    fetch: bool = False,
-) -> Any:
-    """Get aggregated PCM metrics (long-term rollup for trend analysis).
+) -> dict[str, Any]:
+    """Download the most recent aggregated PCM metrics JSON document.
 
-    Same arguments as hmc_get_processed_metrics. Requires aggregation to be
-    enabled in PCM preferences.
+    Same time-range arguments as hmc_get_aggregated_metric_links. Requires
+    aggregation to be enabled in PCM preferences. Returns the parsed JSON of
+    the newest document, or ``{}`` when no metrics are available in the
+    requested range.
     """
-    return _metrics_tool(category, uuid, "aggregated", start_ts, end_ts, no_of_samples, fetch)
+    return _metrics_fetch(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
-def _metrics_tool(
+def _metrics_links(
     category: str,
     uuid: str,
     kind: str,
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
-    fetch: bool,
-) -> Any:
+) -> list[dict[str, str]]:
     async def _go():
         async with client_from_env() as hmc:
-            fn = hmc.get_processed_metrics if kind == "processed" else hmc.get_aggregated_metrics
+            fn = (
+                hmc.get_processed_metrics
+                if kind == "processed"
+                else hmc.get_aggregated_metrics
+            )
+            return await fn(category, uuid, start_ts, end_ts, no_of_samples)
+
+    return _run(_go())
+
+
+def _metrics_fetch(
+    category: str,
+    uuid: str,
+    kind: str,
+    start_ts: str,
+    end_ts: str | None,
+    no_of_samples: int | None,
+) -> dict[str, Any]:
+    async def _go():
+        async with client_from_env() as hmc:
+            fn = (
+                hmc.get_processed_metrics
+                if kind == "processed"
+                else hmc.get_aggregated_metrics
+            )
             links = await fn(category, uuid, start_ts, end_ts, no_of_samples)
-            if not fetch or not links:
-                return links
+            if not links:
+                return {}
             # Fetch the most recent metrics document.
             return await hmc.fetch_json(links[-1]["link"])
 

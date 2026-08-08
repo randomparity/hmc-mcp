@@ -183,15 +183,18 @@ Exposed tools:
 |-----------------------------|-------------|
 | `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
 | `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
-| `hmc_get_processed_metrics` | Processed metrics (30s, ~2h retention) |
-| `hmc_get_aggregated_metrics`| Aggregated long-term metrics (trend rollup) |
+| `hmc_get_processed_metric_links` | List processed metrics links (30s, ~2h retention) |
+| `hmc_get_processed_metrics`     | Download most recent processed metrics doc |
+| `hmc_get_aggregated_metric_links`| List aggregated metrics links (trend rollup) |
+| `hmc_get_aggregated_metrics`    | Download most recent aggregated metrics doc |
 
-> **PCM notes**: metrics are returned as *JSON*, reached via an Atom feed of
-> links. The tools return the list of links by default; pass `fetch=True`
-> (MCP) or `--fetch` (CLI) to also download the most recent metrics document.
-> Long-term monitoring + aggregation must be enabled via
-> `hmc_set_pcm_preferences` before processed/aggregated metrics accumulate.
-> Categories include `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
+> **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
+> links. The `_links` tools return the list of links; the fetch tools
+> download the most recent document (or `{}` when none are in range). The CLI
+> `metrics show` accepts `--fetch` to do both in one step. Long-term
+> monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
+> before processed/aggregated metrics accumulate. Categories include
+> `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
 > `VirtualIOServer`, `SharedStoragePool`, `Cluster`.
 
 ### End-to-end: give an LPAR a bootable disk

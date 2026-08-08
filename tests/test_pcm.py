@@ -1,4 +1,6 @@
-"""Tests for Cluster/SSP job builders and PCM helpers."""
+"""Tests for Cluster/SSP job builders, PCM helpers, and metrics tools."""
+
+import httpx
 
 from hmc_mcp.jobs import create_logical_unit_job, delete_logical_unit_job
 from hmc_mcp.pcm import (
@@ -6,6 +8,41 @@ from hmc_mcp.pcm import (
     metric_links,
     pcm_preferences_to_dict,
 )
+from hmc_mcp.server import (
+    hmc_get_aggregated_metric_links,
+    hmc_get_aggregated_metrics,
+    hmc_get_processed_metric_links,
+    hmc_get_processed_metrics,
+)
+
+PCM_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>ManagedSystem ProcessedMetrics</title>
+    <updated>2026-08-07T12:00:30Z</updated>
+    <link rel="SELF" href="/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json" type="application/json"/>
+  </entry>
+</feed>
+"""
+
+EMPTY_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+</feed>
+"""
+
+METRICS_JSON = {"systemUtil": {"utilization": 0.5}, "sampleTime": "2026-08-07T12:00:30Z"}
+
+
+def _hmc_env(monkeypatch):
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def _route_metrics_feed(router, category, uuid, kind, text=PCM_FEED):
+    router.get(f"/rest/api/pcm/{category}/{uuid}/{kind}").mock(
+        return_value=httpx.Response(200, text=text)
+    )
 
 
 def test_create_logical_unit_job():
@@ -70,3 +107,79 @@ def test_metric_links():
     assert len(links) == 2
     assert links[0]["link"].endswith("_1.json")
     assert links[1]["updated"] == "2026-08-07T12:00:30Z"
+
+
+# ---------------------------------------------------------------------- #
+# Metrics MCP tools (split link-list vs fetch)
+# ---------------------------------------------------------------------- #
+
+
+def test_get_processed_metric_links(monkeypatch, mock_hmc):
+    """hmc_get_processed_metric_links returns the parsed link list."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
+
+    result = hmc_get_processed_metric_links(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", no_of_samples=5
+    )
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0]["link"].endswith("_2.json")
+
+
+def test_get_processed_metrics_fetches_latest(monkeypatch, mock_hmc):
+    """hmc_get_processed_metrics downloads the most recent metrics JSON."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
+
+    result = hmc_get_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert result == METRICS_JSON
+
+
+def test_get_processed_metrics_empty_feed(monkeypatch, mock_hmc):
+    """hmc_get_processed_metrics returns {} when no metrics are in range."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(
+        mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics", text=EMPTY_FEED
+    )
+
+    result = hmc_get_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert result == {}
+
+
+def test_get_aggregated_metric_links(monkeypatch, mock_hmc):
+    """hmc_get_aggregated_metric_links uses the AggregatedMetrics endpoint."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
+
+    result = hmc_get_aggregated_metric_links(
+        "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert len(result) == 1
+    assert result[0]["link"].endswith("_2.json")
+
+
+def test_get_aggregated_metrics_fetches_latest(monkeypatch, mock_hmc):
+    """hmc_get_aggregated_metrics downloads the most recent aggregated JSON."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
+
+    result = hmc_get_aggregated_metrics(
+        "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert result == METRICS_JSON
