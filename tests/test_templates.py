@@ -67,3 +67,50 @@ def test_modify_document_omits_name_when_none():
     xml = build_lpar_document(name=None, desired_memory=2048)
     assert "PartitionName" not in xml
     assert "2048" in xml
+
+
+def test_os_type_emitted():
+    xml = build_lpar_document(name="mypart", os_type="aix")
+    assert "<OperatingSystemType" in xml
+    assert "aix" in xml
+
+
+def test_keylock_emitted():
+    xml = build_lpar_document(name="mypart", keylock="normal")
+    assert "<KeylockPosition" in xml
+    assert "normal" in xml
+
+
+def test_max_virtual_slots_emitted():
+    xml = build_lpar_document(name="mypart", max_virtual_slots=64)
+    assert "<MaximumVirtualIoSlots" in xml
+    assert "64" in xml
+
+
+def test_all_three_new_fields_together():
+    xml = build_lpar_document(
+        name="mypart",
+        os_type="linux",
+        keylock="manual",
+        max_virtual_slots=32,
+    )
+    assert "<OperatingSystemType" in xml and "linux" in xml
+    assert "<KeylockPosition" in xml and "manual" in xml
+    assert "<MaximumVirtualIoSlots" in xml and "32" in xml
+
+
+def test_new_fields_default_to_none_backward_compat():
+    xml = build_lpar_document(name="mypart")
+    assert "OperatingSystemType" not in xml
+    assert "KeylockPosition" not in xml
+    assert "MaximumVirtualIoSlots" not in xml
+
+
+def test_ibmi_os_type():
+    xml = build_lpar_document(name="ibmi-part", os_type="ibmi")
+    assert "<OperatingSystemType" in xml and "ibmi" in xml
+
+
+def test_auto_keylock():
+    xml = build_lpar_document(name="mypart", keylock="auto")
+    assert "<KeylockPosition" in xml and "auto" in xml
