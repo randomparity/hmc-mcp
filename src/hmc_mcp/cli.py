@@ -780,6 +780,60 @@ def lpars_set_description(
         console.print(result.strip())
 
 
+@lpars_app.command("get-msp")
+def lpars_get_msp(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+) -> None:
+    """Get the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp",
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    enabled = result.strip() == "1"
+    console.print("enabled" if enabled else "disabled")
+
+
+@lpars_app.command("set-msp")
+def lpars_set_msp(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    enabled: bool = typer.Argument(..., help="True to enable MSP, False to disable"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Set the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
+    if not yes and not typer.confirm(
+        f"Set MSP={'1' if enabled else '0'} on '{lpar_name}' (system {system_name})?"
+    ):
+        raise typer.Abort()
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    value = "1" if enabled else "0"
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
+    if result.strip():
+        console.print(result.strip())
+
+
 # ---------------------------------------------------------------------- #
 # adapters
 # ---------------------------------------------------------------------- #
