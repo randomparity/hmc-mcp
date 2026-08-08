@@ -994,6 +994,67 @@ def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
     return _run(_go())
 
 
+@mcp.tool
+def hmc_list_fc_ports(system_name: str, lpar_name: str | None = None) -> list[dict]:
+    """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
+
+    Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
+    on the HMC via SSH and returns parsed dicts with fields including
+    lpar_name, slot_num, wwpns, and remote_lpar_id.
+
+    Pass lpar_name to restrict results to a single partition.
+    Use hmc_list_managed_systems to find system_name.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    import csv
+    import io
+
+    cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system_name}"
+    if lpar_name:
+        cmd += f" --filter lpar_names={lpar_name}"
+    config = HMCConfig()
+    raw = _run(run_hmc_command(config, cmd))
+    if not raw.strip():
+        return []
+    reader = csv.DictReader(io.StringIO(raw.strip()))
+    return [dict(row) for row in reader]
+
+
+@mcp.tool
+def hmc_list_sea_adapters(system_name: str, lpar_name: str | None = None) -> list[dict]:
+    """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
+
+    Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
+    -F lpar_name,port_vlan_id,vswitch,state,trunk_priority`` on the HMC via
+    SSH and returns parsed dicts with those five fields.
+
+    Pass lpar_name to restrict results to a single partition.
+    Use hmc_list_managed_systems to find system_name.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
+    cmd = (
+        f"lshwres -r virtualio --rsubtype eth --level lpar -m {system_name}"
+        f" -F {fields}"
+    )
+    if lpar_name:
+        cmd += f" --filter lpar_names={lpar_name}"
+    config = HMCConfig()
+    raw = _run(run_hmc_command(config, cmd))
+    if not raw.strip():
+        return []
+    keys = fields.split(",")
+    result = []
+    for line in raw.strip().splitlines():
+        values = line.split(",", len(keys) - 1)
+        result.append(dict(zip(keys, values)))
+    return result
+
+
 # ---------------------------------------------------------------------- #
 # Template Library
 # ---------------------------------------------------------------------- #
