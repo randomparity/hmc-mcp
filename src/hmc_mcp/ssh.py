@@ -61,12 +61,17 @@ def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:
         if not line:
             continue
         row: dict[str, Any] = {}
+        last_key: str | None = None
         for pair in line.split(","):
             if "=" in pair:
                 key, _, value = pair.partition("=")
-                row[key.strip()] = value.strip()
+                last_key = key.strip()
+                row[last_key] = value.strip()
+            elif last_key is not None:
+                # bare token — comma is part of the previous value (e.g. LPAR name lists)
+                row[last_key] = row[last_key] + "," + pair.strip()
             else:
-                # bare token with no '=' — store as-is under its own name
+                # bare token with no prior key — store as-is
                 row[pair.strip()] = ""
         if row:
             results.append(row)

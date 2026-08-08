@@ -2232,3 +2232,7 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
 
     cmd = f"chhwres -r mempool -m {system_name} -o r -a {pool_name}"
     return _run(run_hmc_command(config, cmd))
+
+
+# ---------------------------------------------------------------------- #
+# Shared memory pool management (SSH CLI path)
