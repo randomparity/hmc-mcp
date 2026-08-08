@@ -96,8 +96,6 @@ class HMCClient:
         config.validate_credentials()
         self.config = config
         self._session_token: str | None = None
-        if not config.verify_ssl:
-            warnings.filterwarnings("ignore", message="Unverified HTTPS request")
         self._http = httpx.AsyncClient(
             base_url=config.base_url,
             verify=config.verify_ssl,
@@ -128,7 +126,20 @@ class HMCClient:
         return self._session_token is not None
 
     async def logon(self) -> str:
-        """Authenticate and store the X-API-Session token."""
+        """Authenticate and store the X-API-Session token.
+
+        Emits a one-time warning when TLS certificate verification is disabled
+        so the MITM exposure of the credentials in flight is never silent.
+        """
+        if not self.config.verify_ssl:
+            warnings.warn(
+                "TLS certificate verification is disabled (verify_ssl=False). "
+                "HMC credentials travel over an unverified TLS connection and "
+                "can be intercepted by a man-in-the-middle. Install the HMC's "
+                "CA locally and set HMC_VERIFY_SSL=true (or --verify-ssl) to "
+                "enable verification.",
+                stacklevel=2,
+            )
         body = LOGON_REQUEST_TEMPLATE.format(
             user=self.config.user, password=self.config.password
         )

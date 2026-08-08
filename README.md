@@ -35,7 +35,11 @@ cp .env.example .env   # then edit
 | Password          | `HMC_PASSWORD`  | `--password, -p`  | —         |
 | Verify TLS        | `HMC_VERIFY_SSL`| `--verify-ssl`    | `false`   |
 
-HMCs ship self-signed certificates, so TLS verification is off by default.
+HMCs ship self-signed certificates, so TLS verification is off by default and
+`hmc-mcp` warns on every logon while it stays off. To verify the HMC
+certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
+(`--verify-ssl`) — otherwise the HMC credentials are at risk of
+man-in-the-middle interception.
 
 ## CLI usage
 
