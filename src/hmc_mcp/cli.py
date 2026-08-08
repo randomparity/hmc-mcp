@@ -357,6 +357,112 @@ def lpars_power_off(
     _power_lpar(name_or_uuid, on=False, immediate=immediate, yes=yes)
 
 
+# ---------------------------------------------------------------------- #
+# lpars: Live Partition Mobility
+# ---------------------------------------------------------------------- #
+
+
+def _lpm_run(name_or_uuid: str, fn, action: str, target: Optional[str], yes: bool) -> None:
+    """Shared resolve -> confirm -> run helper for LPM operations."""
+
+    async def _go():
+        async with _client() as hmc:
+            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            if uuid is None:
+                return None, None
+            if not yes:
+                dest = f" to '{target}'" if target else ""
+                if not typer.confirm(f"Really {action} partition '{name_or_uuid}' ({uuid}){dest}?"):
+                    raise typer.Abort()
+            return uuid, await fn(hmc, uuid)
+
+    try:
+        uuid, job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    if uuid is None:
+        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Submitted {action} for {uuid}[/green]")
+    _print_json(job)
+
+
+@lpars_app.command("migrate")
+def lpars_migrate(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Target profile name"),
+    wait_time: Optional[int] = typer.Option(None, "--wait-time", help="Override operation wait time"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Live-migrate (LPM) an LPAR to another managed system."""
+
+    async def _fn(hmc, uuid):
+        return await hmc.lpar_migrate(uuid, target, profile, wait_time=wait_time)
+
+    _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
+
+
+@lpars_app.command("migrate-validate")
+def lpars_migrate_validate(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Target profile name"),
+    wait_time: Optional[int] = typer.Option(None, "--wait-time"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Validate whether an LPM migration would succeed."""
+
+    async def _fn(hmc, uuid):
+        return await hmc.lpar_migrate_validate(uuid, target, profile, wait_time=wait_time)
+
+    _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
+
+
+@lpars_app.command("migrate-abort")
+def lpars_migrate_abort(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Abort an in-progress LPM migration."""
+
+    async def _fn(hmc, uuid):
+        return await hmc.lpar_migrate_abort(uuid)
+
+    _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
+
+
+@lpars_app.command("migrate-recover")
+def lpars_migrate_recover(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Recover an LPAR after a failed LPM migration."""
+
+    async def _fn(hmc, uuid):
+        return await hmc.lpar_migrate_recover(uuid)
+
+    _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
+
+
+@lpars_app.command("remote-restart")
+def lpars_remote_restart(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Remote-restart a failed LPAR on another managed system."""
+
+    async def _fn(hmc, uuid):
+        return await hmc.lpar_remote_restart(uuid, target)
+
+    _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
+
+
 def _is_uuid(value: str) -> bool:
     return "-" in value and len(value) == 36
 

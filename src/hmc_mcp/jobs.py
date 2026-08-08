@@ -104,3 +104,71 @@ def delete_logical_unit_job(lu_udid: str) -> str:
     return build_job_request(
         "DeleteLogicalUnit", "Cluster", {"LogicalUnitUDID": lu_udid}
     )
+
+
+# ---------------------------------------------------------------------- #
+# Live Partition Mobility (LPM)
+# ---------------------------------------------------------------------- #
+
+
+def _lpm_params(target_system: str, extra: dict[str, str]) -> dict[str, str]:
+    params = {"TargetManagedSystemName": target_system}
+    params.update(extra)
+    return params
+
+
+def migrate_lpar_job(
+    target_system: str,
+    target_profile_name: str | None = None,
+    destination_lpar_id: str | None = None,
+    shared_proc_pool_id: str | None = None,
+    wait_time: int | None = None,
+) -> str:
+    """Migrate job: move an LPAR to another managed system."""
+    extra: dict[str, str] = {}
+    if target_profile_name:
+        extra["TargetProfileName"] = target_profile_name
+    if destination_lpar_id:
+        extra["DestinationLparID"] = destination_lpar_id
+    if shared_proc_pool_id:
+        extra["SharedProcPoolID"] = shared_proc_pool_id
+    if wait_time is not None:
+        extra["WaitTime"] = str(wait_time)
+    return build_job_request("Migrate", "LogicalPartition", _lpm_params(target_system, extra))
+
+
+def migrate_validate_lpar_job(
+    target_system: str,
+    target_profile_name: str | None = None,
+    destination_lpar_id: str | None = None,
+    shared_proc_pool_id: str | None = None,
+    wait_time: int | None = None,
+) -> str:
+    """MigrateValidate job: check whether a migration would succeed."""
+    extra: dict[str, str] = {}
+    if target_profile_name:
+        extra["TargetProfileName"] = target_profile_name
+    if destination_lpar_id:
+        extra["DestinationLparID"] = destination_lpar_id
+    if shared_proc_pool_id:
+        extra["SharedProcPoolID"] = shared_proc_pool_id
+    if wait_time is not None:
+        extra["WaitTime"] = str(wait_time)
+    return build_job_request("MigrateValidate", "LogicalPartition", _lpm_params(target_system, extra))
+
+
+def migrate_abort_lpar_job() -> str:
+    """MigrateAbort job: cancel an in-progress migration."""
+    return build_job_request("MigrateAbort", "LogicalPartition")
+
+
+def migrate_recover_lpar_job() -> str:
+    """MigrateRecover job: recover an LPAR after a failed migration."""
+    return build_job_request("MigrateRecover", "LogicalPartition")
+
+
+def remote_restart_lpar_job(target_system: str) -> str:
+    """RemoteRestart job: restart a failed LPAR on another managed system."""
+    return build_job_request(
+        "RemoteRestart", "LogicalPartition", _lpm_params(target_system, {})
+    )
