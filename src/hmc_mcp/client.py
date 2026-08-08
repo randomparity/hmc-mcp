@@ -9,10 +9,42 @@ from __future__ import annotations
 
 import warnings
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 from .config import HMCConfig
+from .jobs import (
+    create_logical_unit_job,
+    delete_logical_unit_job,
+    migrate_abort_lpar_job,
+    migrate_lpar_job,
+    migrate_recover_lpar_job,
+    migrate_validate_lpar_job,
+    partition_template_deploy_job,
+    power_off_system_job,
+    power_off_vios_job,
+    power_on_system_job,
+    power_on_vios_job,
+    remote_restart_lpar_job,
+)
+from .pcm import (
+    build_pcm_preferences_document,
+    metric_links,
+    pcm_preferences_to_dict,
+)
+from .templates import (
+    build_client_network_adapter_document,
+    build_media_repository_delete_document,
+    build_media_repository_document,
+    build_vfc_adapter_document,
+    build_virtual_disk_document,
+    build_virtual_network_document,
+    build_virtual_optical_media_document,
+    build_volume_group_document,
+    build_vscsi_adapter_document,
+    build_vscsi_mapping_document,
+)
 from .xmlutil import find_text, parse_feed
 
 WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
@@ -467,7 +499,6 @@ class HMCClient:
         self, lpar_uuid: str, vios_partition_id: int, vios_slot: int, slot_number: int | None = None
     ) -> dict[str, Any] | None:
         """Add a Virtual SCSI client adapter, paired to a VIOS server adapter."""
-        from .templates import build_vscsi_adapter_document
 
         xml = build_vscsi_adapter_document(vios_partition_id, vios_slot, slot_number)
         return await self.create_child("LogicalPartition", lpar_uuid, "VirtualSCSIClientAdapter", xml)
@@ -476,7 +507,6 @@ class HMCClient:
         self, lpar_uuid: str, vios_partition_id: int, vios_slot: int, slot_number: int | None = None
     ) -> dict[str, Any] | None:
         """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
-        from .templates import build_vfc_adapter_document
 
         xml = build_vfc_adapter_document(vios_partition_id, vios_slot, slot_number)
         return await self.create_child("LogicalPartition", lpar_uuid, "VirtualFibreChannelClientAdapter", xml)
@@ -491,7 +521,6 @@ class HMCClient:
         mac_address: str | None = None,
     ) -> dict[str, Any] | None:
         """Add a Virtual Ethernet client network adapter to an LPAR."""
-        from .templates import build_client_network_adapter_document
 
         xml = build_client_network_adapter_document(
             port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
@@ -533,7 +562,6 @@ class HMCClient:
         self, vios_uuid: str, name: str, physical_volumes: list[str]
     ) -> dict[str, Any] | None:
         """Create a Volume Group on a VIOS from physical volumes (e.g. ['hdisk10'])."""
-        from .templates import build_volume_group_document
 
         xml = build_volume_group_document(name, physical_volumes)
         resp = await self._put(
@@ -546,7 +574,6 @@ class HMCClient:
         self, vios_uuid: str, vg_uuid: str, disk_name: str, capacity_mb: int
     ) -> dict[str, Any] | None:
         """Create a Virtual Disk (logical volume) in a Volume Group."""
-        from .templates import build_virtual_disk_document
 
         xml = build_virtual_disk_document(disk_name, capacity_mb)
         resp = await self._post(
@@ -570,7 +597,6 @@ class HMCClient:
         logical volume created with create_virtual_disk). storage_name is the
         device or disk name. lpar_uuid is the client partition to attach to.
         """
-        from .templates import build_vscsi_mapping_document
 
         lpar_link = await self.get_lpar_link(lpar_uuid)
         xml = build_vscsi_mapping_document(
@@ -612,7 +638,6 @@ class HMCClient:
         Returns the Job resource (poll get_job for status; the job result
         contains the new LU's UDID in LUCreated).
         """
-        from .jobs import create_logical_unit_job
 
         job_xml = create_logical_unit_job(
             lu_name, lu_size_gb, lu_type, device_type, cloned_from
@@ -623,7 +648,6 @@ class HMCClient:
 
     async def delete_logical_unit(self, cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
         """Submit a DeleteLogicalUnit job against a Cluster/SSP."""
-        from .jobs import delete_logical_unit_job
 
         job_xml = delete_logical_unit_job(lu_udid)
         return await self.submit_job(
@@ -636,7 +660,6 @@ class HMCClient:
 
     async def get_pcm_preferences(self, category: str, uuid: str) -> dict[str, Any]:
         """Get PCM preferences for a resource (e.g. ManagedSystem)."""
-        from .pcm import pcm_preferences_to_dict
 
         xml = await self._get(f"/rest/api/pcm/{category}/{uuid}/preferences")
         return pcm_preferences_to_dict(xml) if xml else {}
@@ -646,7 +669,6 @@ class HMCClient:
 
         Only the flags you pass are changed; the HMC merges the rest.
         """
-        from .pcm import build_pcm_preferences_document
 
         xml = build_pcm_preferences_document(**flags)
         await self._post_pcm(f"/rest/api/pcm/{category}/{uuid}/preferences", xml)
@@ -661,7 +683,6 @@ class HMCClient:
 
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]:
         """GET a PCM metrics Atom feed and return its JSON links."""
-        from .pcm import metric_links
 
         xml = await self._get(path)
         return metric_links(xml) if xml else []
@@ -705,7 +726,6 @@ class HMCClient:
         end_ts: str | None,
         no_of_samples: int | None,
     ) -> list[dict[str, str]]:
-        from urllib.parse import urlencode
 
         query: dict[str, str] = {"StartTS": start_ts}
         if end_ts:
@@ -744,7 +764,6 @@ class HMCClient:
         wait_time: int | None = None,
     ) -> dict[str, Any] | None:
         """Migrate (LPM) an LPAR to another managed system."""
-        from .jobs import migrate_lpar_job
 
         xml = migrate_lpar_job(
             target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
@@ -761,7 +780,6 @@ class HMCClient:
         wait_time: int | None = None,
     ) -> dict[str, Any] | None:
         """Validate whether an LPM migration would succeed."""
-        from .jobs import migrate_validate_lpar_job
 
         xml = migrate_validate_lpar_job(
             target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
@@ -770,19 +788,16 @@ class HMCClient:
 
     async def lpar_migrate_abort(self, lpar_uuid: str) -> dict[str, Any] | None:
         """Abort an in-progress LPM migration."""
-        from .jobs import migrate_abort_lpar_job
 
         return await self._lpar_job(lpar_uuid, "MigrateAbort", migrate_abort_lpar_job())
 
     async def lpar_migrate_recover(self, lpar_uuid: str) -> dict[str, Any] | None:
         """Recover an LPAR after a failed LPM migration."""
-        from .jobs import migrate_recover_lpar_job
 
         return await self._lpar_job(lpar_uuid, "MigrateRecover", migrate_recover_lpar_job())
 
     async def lpar_remote_restart(self, lpar_uuid: str, target_system: str) -> dict[str, Any] | None:
         """Remote-restart a failed LPAR on another managed system."""
-        from .jobs import remote_restart_lpar_job
 
         return await self._lpar_job(lpar_uuid, "RemoteRestart", remote_restart_lpar_job(target_system))
 
@@ -825,7 +840,6 @@ class HMCClient:
         vswitch_id is the numeric SwitchID (from list_virtual_switches);
         switch_uuid optionally provides the AssociatedSwitch link.
         """
-        from .templates import build_virtual_network_document
 
         switch_link = None
         if switch_uuid:
@@ -884,7 +898,6 @@ class HMCClient:
         by capture/transform); target_system_uuid is the managed system to
         create the partition on. Submits the Deploy job and returns the Job.
         """
-        from .jobs import partition_template_deploy_job
 
         memento = self._session_token or ""
         xml = partition_template_deploy_job(target_system_uuid, memento)
@@ -899,7 +912,6 @@ class HMCClient:
 
     async def power_on_system(self, system_uuid: str) -> dict[str, Any] | None:
         """Power on a managed system (PowerOn job)."""
-        from .jobs import power_on_system_job
 
         return await self.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOn", power_on_system_job()
@@ -907,7 +919,6 @@ class HMCClient:
 
     async def power_off_system(self, system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
         """Power off a managed system (PowerOff job; immediate skips graceful shutdown)."""
-        from .jobs import power_off_system_job
 
         return await self.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff", power_off_system_job(immediate)
@@ -915,7 +926,6 @@ class HMCClient:
 
     async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""
-        from .jobs import power_on_vios_job
 
         return await self.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOn", power_on_vios_job()
@@ -923,7 +933,6 @@ class HMCClient:
 
     async def power_off_vios(self, vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
         """Power off a VIOS (PowerOff job; immediate skips graceful shutdown)."""
-        from .jobs import power_off_vios_job
 
         return await self.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff", power_off_vios_job(immediate)
@@ -948,7 +957,6 @@ class HMCClient:
         self, vios_uuid: str, vg_uuid: str, size_mb: int
     ) -> dict[str, Any] | None:
         """Create the Virtual Media Repository (named VMLibrary) on a Volume Group."""
-        from .templates import build_media_repository_document
 
         return await self._post_volume_group_op(
             vios_uuid, vg_uuid, build_media_repository_document(size_mb)
@@ -958,7 +966,6 @@ class HMCClient:
         self, vios_uuid: str, vg_uuid: str, media_name: str, size_mb: int
     ) -> dict[str, Any] | None:
         """Create a blank VirtualOpticalMedia (ISO container) in the repository."""
-        from .templates import build_virtual_optical_media_document
 
         return await self._post_volume_group_op(
             vios_uuid, vg_uuid, build_virtual_optical_media_document(media_name, size_mb)
@@ -966,7 +973,6 @@ class HMCClient:
 
     async def delete_media_repository(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
         """Delete the Virtual Media Repository from a Volume Group."""
-        from .templates import build_media_repository_delete_document
 
         return await self._post_volume_group_op(
             vios_uuid, vg_uuid, build_media_repository_delete_document()
