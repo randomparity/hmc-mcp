@@ -32,7 +32,9 @@ import asyncio
 from typing import Any
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
+from .client import HMCError
 from .common import client_from_env
 from .config import HMCConfig
 from .jobs import (
@@ -70,6 +72,81 @@ mcp = FastMCP(
         "entries as JSON."
     ),
 )
+
+# Tool capability annotations. MCP clients and gateways use these to separate
+# read-only, state-changing, and destructive tools (e.g. to auto-approve the
+# first, warn before the last). Tools are tagged inline on their @mcp.tool
+# decorator with _READ_ONLY or _DESTRUCTIVE; everything else is state-changing
+# and intentionally untagged. tests/test_capabilities.py asserts the live tool
+# registry matches the documented READ_ONLY_TOOLS / DESTRUCTIVE_TOOLS sets, so
+# a new tool must be placed in exactly one category there and tagged here.
+_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+_DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
+
+READ_ONLY_TOOLS = frozenset({
+    "hmc_console_info",
+    "hmc_list_systems",
+    "hmc_get_system",
+    "hmc_list_lpars",
+    "hmc_get_lpar",
+    "hmc_find_lpar",
+    "hmc_lpar_state",
+    "hmc_list_vios",
+    "hmc_vios_mappings",
+    "hmc_list_resources",
+    "hmc_get_job",
+    "hmc_list_adapters",
+    "hmc_list_volume_groups",
+    "hmc_list_virtual_switches",
+    "hmc_list_virtual_networks",
+    "hmc_list_network_bridges",
+    "hmc_list_fc_ports",
+    "hmc_list_sea_adapters",
+    "hmc_list_partition_templates",
+    "hmc_get_partition_template",
+    "hmc_list_clusters",
+    "hmc_list_shared_storage_pools",
+    "hmc_get_shared_storage_pool",
+    "hmc_get_pcm_preferences",
+    "hmc_get_processed_metric_links",
+    "hmc_get_processed_metrics",
+    "hmc_get_aggregated_metric_links",
+    "hmc_get_aggregated_metrics",
+    "hmc_list_users",
+    "hmc_get_user",
+    "hmc_list_password_policies",
+    "hmc_list_ldap_config",
+    "hmc_list_available_hmc_ptfs",
+    "hmc_list_vios_backups",
+    "hmc_get_lpar_description",
+    "hmc_get_lpar_msp",
+    "hmc_get_proc_compat_modes",
+    "hmc_get_lpar_proc_compat",
+    "hmc_list_io_slots",
+    "hmc_list_memory_pools",
+    "hmc_list_vnics",
+})
+
+DESTRUCTIVE_TOOLS = frozenset({
+    "hmc_power_off_lpar",
+    "hmc_delete_lpar",
+    "hmc_delete_vios",
+    "hmc_delete_adapter",
+    "hmc_delete_virtual_network",
+    "hmc_delete_media_repository",
+    "hmc_delete_logical_unit",
+    "hmc_delete_user",
+    "hmc_delete_password_policy",
+    "hmc_remove_ldap_config",
+    "hmc_remove_memory_pool",
+    "hmc_remove_vnic",
+    "hmc_power_off_system",
+    "hmc_power_off_vios",
+    "hmc_migrate_abort_lpar",
+    "hmc_remote_restart_lpar",
+    "hmc_restore_vios",
+    "hmc_restore_lpar_profiles",
+})
 
 
 def _run(coro):
@@ -132,7 +209,7 @@ def hmc_run_command(cmd: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_console_info() -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
@@ -146,7 +223,7 @@ def hmc_console_info() -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_systems() -> list[dict[str, Any]]:
     """List all managed systems (Power servers) known to the HMC.
 
@@ -161,7 +238,7 @@ def hmc_list_systems() -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_system(system_uuid: str) -> dict[str, Any] | None:
     """Get full details for one managed system by UUID."""
 
@@ -172,7 +249,7 @@ def hmc_get_system(system_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_lpars(system_uuid: str | None = None) -> list[dict[str, Any]]:
     """List logical partitions (LPARs).
 
@@ -187,7 +264,7 @@ def hmc_list_lpars(system_uuid: str | None = None) -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     """Get full details for one logical partition by UUID."""
 
@@ -198,7 +275,7 @@ def hmc_get_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_find_lpar(name: str) -> dict[str, Any] | None:
     """Find a logical partition by its partition name (exact match)."""
 
@@ -209,7 +286,7 @@ def hmc_find_lpar(name: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_lpar_state(lpar_uuid: str) -> Any:
     """Get just the current state of an LPAR (running, not activated, ...).
 
@@ -223,7 +300,7 @@ def hmc_lpar_state(lpar_uuid: str) -> Any:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_vios(system_uuid: str | None = None) -> list[dict[str, Any]]:
     """List Virtual I/O Servers, optionally restricted to one managed system."""
 
@@ -234,7 +311,7 @@ def hmc_list_vios(system_uuid: str | None = None) -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_vios_mappings(vios_uuid: str) -> dict[str, Any] | None:
     """Return VIOS device mapping facts (vSCSI, NPIV, virtual optical).
 
@@ -253,7 +330,7 @@ def hmc_vios_mappings(vios_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
     """List any uom resource type exposed by the HMC.
 
@@ -293,7 +370,7 @@ def hmc_power_on_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
@@ -311,7 +388,7 @@ def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
     """Get the status/result of an HMC job by UUID."""
 
@@ -553,19 +630,35 @@ def hmc_dlpar_mem(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_lpar(lpar_uuid: str) -> str:
     """Delete (destroy) an LPAR by UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
-    confirm with hmc_lpar_state). This permanently removes the partition and
-    its profiles from the HMC — it is irreversible. Confirm the UUID with
-    hmc_find_lpar before calling. Returns a confirmation string (immediate
-    delete — no job to poll).
+    confirm with hmc_lpar_state). This tool refuses to delete a partition
+    whose current state is anything other than 'not activated', matching the
+    precondition check pattern used by hmc_remove_memory_pool. This
+    permanently removes the partition and its profiles from the HMC — it is
+    irreversible. Confirm the UUID with hmc_find_lpar before calling. Returns
+    a confirmation string (immediate delete — no job to poll).
+
+    Raises:
+        HMCError: If the partition state is not 'not activated' (HTTP 409).
     """
 
     async def _go():
         async with client_from_env() as hmc:
+            state = await hmc.get_quick_property(
+                "LogicalPartition", lpar_uuid, "PartitionState"
+            )
+            if state != "not activated":
+                raise HMCError(
+                    f"Cannot delete LPAR {lpar_uuid} — current state is "
+                    f"{state!r}; it must be 'not activated' to delete. Power it "
+                    "off (hmc_power_off_lpar) and confirm with hmc_lpar_state "
+                    "before retrying.",
+                    status_code=409,
+                )
             await hmc.delete_logical_partition(lpar_uuid)
             return f"Deleted LPAR {lpar_uuid}"
 
@@ -619,19 +712,35 @@ def hmc_create_vios(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_vios(vios_uuid: str) -> str:
     """Delete (destroy) a VIOS partition by UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
-    with hmc_lpar_state). This permanently removes the VIOS and its profiles
-    from the HMC — it is irreversible. Confirm the UUID with hmc_list_vios
-    before calling. Returns a confirmation string (immediate delete — no job
-    to poll).
+    with hmc_lpar_state). This tool refuses to delete a VIOS whose current
+    state is anything other than 'not activated', matching the precondition
+    check pattern used by hmc_remove_memory_pool. This permanently removes
+    the VIOS and its profiles from the HMC — it is irreversible. Confirm the
+    UUID with hmc_list_vios before calling. Returns a confirmation string
+    (immediate delete — no job to poll).
+
+    Raises:
+        HMCError: If the VIOS state is not 'not activated' (HTTP 409).
     """
 
     async def _go():
         async with client_from_env() as hmc:
+            state = await hmc.get_quick_property(
+                "LogicalPartition", vios_uuid, "PartitionState"
+            )
+            if state != "not activated":
+                raise HMCError(
+                    f"Cannot delete VIOS {vios_uuid} — current state is "
+                    f"{state!r}; it must be 'not activated' to delete. Power it "
+                    "off (hmc_power_off_vios) and confirm with hmc_lpar_state "
+                    "before retrying.",
+                    status_code=409,
+                )
             await hmc.delete_logical_partition(vios_uuid)
             return f"Deleted VIOS {vios_uuid}"
 
@@ -707,7 +816,7 @@ def hmc_install_lpar_os(
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_adapters(lpar_uuid: str, adapter_type: str = "ClientNetworkAdapter") -> list[dict[str, Any]]:
     """List an LPAR's virtual adapters of a given type.
 
@@ -794,7 +903,7 @@ def hmc_add_vfc_adapter(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_adapter(lpar_uuid: str, adapter_type: str, adapter_uuid: str) -> str:
     """Remove a virtual adapter from an LPAR by its UUID.
 
@@ -818,7 +927,7 @@ def hmc_delete_adapter(lpar_uuid: str, adapter_type: str, adapter_uuid: str) -> 
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_volume_groups(vios_uuid: str) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
@@ -939,7 +1048,7 @@ def hmc_migrate_validate_lpar(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_migrate_abort_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     """Abort an in-progress LPM migration of an LPAR."""
 
@@ -961,7 +1070,7 @@ def hmc_migrate_recover_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remote_restart_lpar(lpar_uuid: str, target_system: str) -> dict[str, Any] | None:
     """Remote-restart a failed LPAR on another managed system."""
 
@@ -977,7 +1086,7 @@ def hmc_remote_restart_lpar(lpar_uuid: str, target_system: str) -> dict[str, Any
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_virtual_switches(system_uuid: str) -> list[dict[str, Any]]:
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
@@ -992,7 +1101,7 @@ def hmc_list_virtual_switches(system_uuid: str) -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_virtual_networks(system_uuid: str) -> list[dict[str, Any]]:
     """List Virtual Networks (VLANs) on a managed system."""
 
@@ -1025,7 +1134,7 @@ def hmc_create_virtual_network(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
     """Delete a Virtual Network from a managed system.
 
@@ -1042,7 +1151,7 @@ def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
 
@@ -1053,7 +1162,7 @@ def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
     """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
 
@@ -1088,7 +1197,7 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
 
@@ -1134,7 +1243,7 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_partition_templates() -> list[dict[str, Any]]:
     """List all partition templates in the HMC template library."""
 
@@ -1145,7 +1254,7 @@ def hmc_list_partition_templates() -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_partition_template(template_uuid: str) -> dict[str, Any] | None:
     """Get one partition template by UUID (full config the template captures)."""
 
@@ -1190,7 +1299,7 @@ def hmc_power_on_system(system_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_system(system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
     """Power off a managed system (PowerOff job). immediate skips graceful shutdown."""
 
@@ -1212,7 +1321,7 @@ def hmc_power_on_vios(vios_uuid: str) -> dict[str, Any] | None:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_vios(vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
     """Power off a VIOS (PowerOff job). immediate skips graceful shutdown."""
 
@@ -1262,7 +1371,7 @@ def hmc_create_optical_media(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
@@ -1283,7 +1392,7 @@ def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_clusters() -> list[dict[str, Any]]:
     """List Clusters (sets of VIOS nodes sharing a storage pool)."""
 
@@ -1294,7 +1403,7 @@ def hmc_list_clusters() -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
     """List Shared Storage Pools (capacity, free space, logical units)."""
 
@@ -1305,7 +1414,7 @@ def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_shared_storage_pool(ssp_uuid: str) -> dict[str, Any] | None:
     """Get one Shared Storage Pool by UUID (physical volumes, logical units)."""
 
@@ -1343,7 +1452,7 @@ def hmc_create_logical_unit(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
     """Delete a Logical Unit from a Cluster/SSP by its UDID.
 
@@ -1363,7 +1472,7 @@ def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] |
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_pcm_preferences(category: str, uuid: str) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
@@ -1417,7 +1526,7 @@ def hmc_set_pcm_preferences(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_processed_metric_links(
     category: str,
     uuid: str,
@@ -1436,7 +1545,7 @@ def hmc_get_processed_metric_links(
     return _metrics_links(category, uuid, "processed", start_ts, end_ts, no_of_samples)
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_processed_metrics(
     category: str,
     uuid: str,
@@ -1453,7 +1562,7 @@ def hmc_get_processed_metrics(
     return _metrics_fetch(category, uuid, "processed", start_ts, end_ts, no_of_samples)
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_aggregated_metric_links(
     category: str,
     uuid: str,
@@ -1472,7 +1581,7 @@ def hmc_get_aggregated_metric_links(
     return _metrics_links(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_aggregated_metrics(
     category: str,
     uuid: str,
@@ -1561,7 +1670,7 @@ def _parse_web_entries(xml_text: str) -> list[dict[str, Any]]:
     return parse_feed(xml_text)
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     """List HMC user accounts.
 
@@ -1578,7 +1687,7 @@ def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_user(name: str) -> dict[str, Any] | None:
     """Get details for one HMC user account by username.
 
@@ -1657,7 +1766,7 @@ def hmc_modify_user(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_user(name: str) -> str:
     """Delete an HMC user account by username.
 
@@ -1679,7 +1788,7 @@ def hmc_delete_user(name: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(policy_type: str = "policies") -> list[dict[str, Any]]:
     """List HMC password policies.
 
@@ -1783,7 +1892,7 @@ def hmc_modify_password_policy(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_delete_password_policy(policy_name: str) -> str:
     """Delete an HMC password policy by name.
 
@@ -1805,7 +1914,7 @@ def hmc_delete_password_policy(policy_name: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_ldap_config() -> dict[str, Any] | None:
     """Get the current HMC LDAP server configuration.
 
@@ -1866,7 +1975,7 @@ def hmc_configure_ldap(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remove_ldap_config(resource: str) -> str:
     """Remove a component of the HMC LDAP server configuration.
 
@@ -1939,7 +2048,7 @@ def hmc_upgrade_hmc(system_uuid: str, repository: dict) -> dict[str, Any] | None
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
     """List available PTFs (fixes) for the HMC software.
 
@@ -2020,7 +2129,7 @@ def hmc_update_firmware(system_uuid: str, repository: dict) -> dict[str, Any] | 
 _VALID_BACKUP_TYPES = {"vios", "viosioconfig", "ssp"}
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_vios_backups(vios_uuid: str) -> str:
     """List existing VIOS backups for a given VIOS UUID.
 
@@ -2058,7 +2167,7 @@ def hmc_backup_vios(vios_uuid: str, backup_type: str = "vios") -> str:
     return _run(run_hmc_command(config, cmd))
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
     """Restore a VIOS from a named backup via the HMC CLI.
 
@@ -2113,7 +2222,7 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
@@ -2222,7 +2331,7 @@ def hmc_assign_profile_io_slot(
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
     """Get the description field of an LPAR via the HMC CLI.
 
@@ -2279,7 +2388,7 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
     """Get the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
 
@@ -2389,7 +2498,7 @@ def hmc_set_sriov_adapter_mode(
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     """Get processor compatibility modes supported by a managed system.
 
@@ -2414,7 +2523,7 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]:
     """Get the current and pending processor compatibility modes for an LPAR.
 
@@ -2476,7 +2585,7 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_io_slots(
     system_uuid: str,
     adapter_type: str = "all",
@@ -2514,7 +2623,7 @@ def hmc_list_io_slots(
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     """List shared memory pools on a managed system via the HMC CLI.
 
@@ -2539,7 +2648,7 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     """Remove a shared memory pool from a managed system via the HMC CLI.
 
@@ -2603,7 +2712,7 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
@@ -2703,7 +2812,7 @@ def hmc_add_vnic(
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
