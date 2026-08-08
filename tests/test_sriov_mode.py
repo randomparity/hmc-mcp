@@ -49,8 +49,8 @@ def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
     expected_cmd = (
-        f'chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}'
-        f' -a "sriov_adapter_mode=sriov"'
+        f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
+        f" -a sriov_adapter_mode=sriov"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert "completed successfully" in result
@@ -71,8 +71,8 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 
     expected_cmd = (
-        f'chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}'
-        f' -a "sriov_adapter_mode=dedicated"'
+        f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
+        f" -a sriov_adapter_mode=dedicated"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert result == ""

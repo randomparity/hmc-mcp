@@ -101,8 +101,8 @@ def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
         )
 
     expected_cmd = (
-        f'chsyscfg -r lpar -m {SYSTEM_NAME} '
-        f'-i "name={LPAR_NAME},description=new description"'
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
+        f"-i 'name={LPAR_NAME},description=new description'"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert result == ""

@@ -118,8 +118,8 @@ def test_set_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_set_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID, "POWER9")
 
     expected_cmd = (
-        f'chsyscfg -r lpar -m {SYSTEM_NAME} '
-        f'-i "name={LPAR_NAME},lpar_proc_compat_mode=POWER9"'
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
+        f"-i name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert result == ""

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import socket
 from typing import Any, Awaitable, Callable, NoReturn, Optional
 
@@ -747,7 +748,8 @@ def lpars_get_description(
     )
     result = _run(lambda: run_hmc_command(
     config,
-    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description",
+    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+    f"--filter lpar_names={shlex.quote(lpar_name)} -F description",
     ))
 
     console.print(result.strip() or "(no description set)")
@@ -770,9 +772,10 @@ def lpars_set_description(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
+    payload = f"name={lpar_name},description={description}"
     result = _run(lambda: run_hmc_command(
     config,
-    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"',
+    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
     ))
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
@@ -793,7 +796,8 @@ def lpars_get_msp(
     )
     result = _run(lambda: run_hmc_command(
     config,
-    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp",
+    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+    f"--filter lpar_names={shlex.quote(lpar_name)} -F msp",
     ))
 
     enabled = result.strip() == "1"
@@ -818,9 +822,10 @@ def lpars_set_msp(
         password=GLOBALS.password or "",
     )
     value = "1" if enabled else "0"
+    payload = f"name={lpar_name},msp={value}"
     result = _run(lambda: run_hmc_command(
     config,
-    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"',
+    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
     ))
 
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
@@ -845,7 +850,7 @@ def lpars_get_proc_compat_modes(
     )
     result = _run(lambda: run_hmc_command(
     config,
-    f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes",
+    f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes",
     ))
 
     console.print(result.strip() or "(no modes returned)")
@@ -865,7 +870,8 @@ def lpars_get_proc_compat(
     )
     result = _run(lambda: run_hmc_command(
     config,
-    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F "
+    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+    f"--filter lpar_names={shlex.quote(lpar_name)} -F "
     f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
     ))
 
@@ -902,9 +908,10 @@ def lpars_set_proc_compat(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
+    payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
     result = _run(lambda: run_hmc_command(
     config,
-    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"',
+    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
     ))
 
     console.print(f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]")
@@ -1543,9 +1550,9 @@ def network_list_fc_ports(
         import csv
         import io
 
-        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system}"
+        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system)}"
         if lpar_name:
-            cmd += f" --filter lpar_names={lpar_name}"
+            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
         config = HMCConfig()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
@@ -1572,11 +1579,11 @@ def network_list_sea_adapters(
 
         fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
         cmd = (
-            f"lshwres -r virtualio --rsubtype eth --level lpar -m {system}"
+            f"lshwres -r virtualio --rsubtype eth --level lpar -m {shlex.quote(system)}"
             f" -F {fields}"
         )
         if lpar_name:
-            cmd += f" --filter lpar_names={lpar_name}"
+            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
         config = HMCConfig()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
@@ -1613,10 +1620,11 @@ def network_set_sriov_mode(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
+    payload = f"sriov_adapter_mode={mode}"
     result = _run(lambda: run_hmc_command(
     config,
-    f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
-    f' -a "sriov_adapter_mode={mode}"',
+    f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)} "
+    f"-a {shlex.quote(payload)}",
     ))
 
     console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
@@ -1636,8 +1644,8 @@ def network_list_vnics(
     config = HMCConfig()
     raw = _run(lambda: run_hmc_command(
     config,
-    f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system}"
-    f" --filter lpar_names={lpar}",
+    f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system)} "
+    f"--filter lpar_names={shlex.quote(lpar)}",
     ))
 
     vnics = _parse_lshwres_output(raw) if raw.strip() else []
@@ -1667,9 +1675,9 @@ def network_add_vnic(
     config = HMCConfig()
     result = _run(lambda: run_hmc_command(
     config,
-    f'chhwres -r virtualio --rsubtype vnic -o a -m {system}'
-    f' --filter lpar_names={lpar}'
-    f' -a "{attrs}"',
+    f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system)} "
+    f"--filter lpar_names={shlex.quote(lpar)} "
+    f"-a {shlex.quote(attrs)}",
     ))
 
     console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
@@ -1691,11 +1699,12 @@ def network_remove_vnic(
         raise typer.Abort()
 
     config = HMCConfig()
+    payload = f"vnic_id={vnic_id}"
     result = _run(lambda: run_hmc_command(
     config,
-    f'chhwres -r virtualio --rsubtype vnic -o r -m {system}'
-    f' --filter lpar_names={lpar}'
-    f' -a "vnic_id={vnic_id}"',
+    f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system)} "
+    f"--filter lpar_names={shlex.quote(lpar)} "
+    f"-a {shlex.quote(payload)}",
     ))
 
     console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
@@ -1913,7 +1922,7 @@ def memory_pools_list(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
+    output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}"))
 
     pools = _parse_lshwres_output(output)
     if as_json:

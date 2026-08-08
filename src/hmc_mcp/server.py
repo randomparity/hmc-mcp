@@ -29,6 +29,7 @@ Addressing:
 from __future__ import annotations
 
 import asyncio
+import shlex
 from typing import Any
 
 from fastmcp import FastMCP
@@ -1184,9 +1185,9 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {system_name}"
+        cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system_name)}"
         if lpar_name:
-            cmd += f" --filter lpar_names={lpar_name}"
+            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
         config = HMCConfig()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
@@ -1219,11 +1220,11 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
         cmd = (
-            f"lshwres -r virtualio --rsubtype eth --level lpar -m {system_name}"
+            f"lshwres -r virtualio --rsubtype eth --level lpar -m {shlex.quote(system_name)}"
             f" -F {fields}"
         )
         if lpar_name:
-            cmd += f" --filter lpar_names={lpar_name}"
+            cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
         config = HMCConfig()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
@@ -2139,7 +2140,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> str:
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
-    return _run(run_hmc_command(config, f"lsviosbackup -id {vios_uuid}"))
+    return _run(run_hmc_command(config, f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
 
 
 @mcp.tool
@@ -2163,7 +2164,7 @@ def hmc_backup_vios(vios_uuid: str, backup_type: str = "vios") -> str:
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
     config = HMCConfig()
-    cmd = f"chviosbackup -id {vios_uuid} -operation backup -type {backup_type}"
+    cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation backup -type {shlex.quote(backup_type)}"
     return _run(run_hmc_command(config, cmd))
 
 
@@ -2181,7 +2182,7 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
     Returns the raw HMC CLI output.
     """
     config = HMCConfig()
-    cmd = f"chviosbackup -id {vios_uuid} -operation restore -file {backup_name}"
+    cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
     return _run(run_hmc_command(config, cmd))
 
 
@@ -2216,7 +2217,7 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
         config = HMCConfig()
-        cmd = f"bkprofdata -m {system_name} -f {file_path}"
+        cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2251,7 +2252,7 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
         config = HMCConfig()
-        cmd = f"rstprofdata -m {system_name} -f {file_path}"
+        cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2284,7 +2285,8 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},sync_curr_profile=1"'
+        payload = f"name={lpar_name},sync_curr_profile=1"
+        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2321,7 +2323,8 @@ def hmc_assign_profile_io_slot(
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f'chsyscfg -r prof -m {system_name} -i "name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}" --force'
+        payload = f"name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}"
+        cmd = f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(payload)} --force"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2352,7 +2355,7 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description"
+        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F description"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2382,7 +2385,8 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
+        payload = f"name={lpar_name},description={description}"
+        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2406,7 +2410,7 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp"
+        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F msp"
         raw = await run_hmc_command(config, cmd)
         return raw.strip() == "1"
 
@@ -2434,7 +2438,8 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
         value = "1" if enabled else "0"
-        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"'
+        payload = f"name={lpar_name},msp={value}"
+        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2484,9 +2489,10 @@ def hmc_set_sriov_adapter_mode(
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
         config = HMCConfig()
+        payload = f"sriov_adapter_mode={mode}"
         cmd = (
-            f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
-            f' -a "sriov_adapter_mode={mode}"'
+            f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)}"
+            f" -a {shlex.quote(payload)}"
         )
         return await run_hmc_command(config, cmd)
 
@@ -2514,7 +2520,7 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
         config = HMCConfig()
-        cmd = f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes"
+        cmd = f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
             return []
@@ -2542,7 +2548,7 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
             return {"pend": "", "curr": ""}
@@ -2574,7 +2580,8 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
-        cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"'
+        payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
+        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2642,7 +2649,7 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
         config = HMCConfig()
-        output = await run_hmc_command(config, f"lshwres -r mempool -m {system_name}")
+        output = await run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}")
         return _parse_lshwres_output(output)
 
     return _run(_go())
@@ -2681,7 +2688,7 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
 
         # Safety check: list pools and look for LPAR assignments.
         list_output = await run_hmc_command(
-            config, f"lshwres -r mempool -m {system_name}"
+            config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
         )
         pools = _parse_lshwres_output(list_output)
 
@@ -2701,7 +2708,7 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
                     )
                 break
 
-        cmd = f"chhwres -r mempool -m {system_name} -o r -a {pool_name}"
+        cmd = f"chhwres -r mempool -m {shlex.quote(system_name)} -o r -a {shlex.quote(pool_name)}"
         return await run_hmc_command(config, cmd)
 
     return _run(_go())
@@ -2735,8 +2742,8 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
         cmd = (
-            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system_name}"
-            f" --filter lpar_names={lpar_name}"
+            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"
+            f" --filter lpar_names={shlex.quote(lpar_name)}"
         )
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
@@ -2795,9 +2802,9 @@ def hmc_add_vnic(
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
         cmd = (
-            f'chhwres -r virtualio --rsubtype vnic -o a -m {system_name}'
-            f' --filter lpar_names={lpar_name}'
-            f' -a "{attrs}"'
+            f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
+            f" --filter lpar_names={shlex.quote(lpar_name)}"
+            f" -a {shlex.quote(attrs)}"
         )
         try:
             return await run_hmc_command(config, cmd)
@@ -2836,10 +2843,11 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
         config = HMCConfig()
+        payload = f"vnic_id={vnic_id}"
         cmd = (
-            f'chhwres -r virtualio --rsubtype vnic -o r -m {system_name}'
-            f' --filter lpar_names={lpar_name}'
-            f' -a "vnic_id={vnic_id}"'
+            f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
+            f" --filter lpar_names={shlex.quote(lpar_name)}"
+            f" -a {shlex.quote(payload)}"
         )
         return await run_hmc_command(config, cmd)
 

@@ -6,6 +6,7 @@ HMC CLI reference:
 
 from __future__ import annotations
 
+import shlex
 from typing import Any
 
 import asyncssh
@@ -126,9 +127,9 @@ async def list_io_slots(
         raise ValueError(
             f"Invalid adapter_type {adapter_type!r}. Must be one of: {valid}"
         )
-    cmd = f"lshwres -r io --rsubtype slot -m {system_name}"
+    cmd = f"lshwres -r io --rsubtype slot -m {shlex.quote(system_name)}"
     if adapter_type != "all":
         pci_class = _IO_SLOT_PCI_CLASS[adapter_type]
-        cmd += f" | grep pci_class={pci_class}"
+        cmd += f" | grep pci_class={shlex.quote(pci_class)}"
     output = await run_hmc_command(config, cmd)
     return _parse_lshwres_output(output)

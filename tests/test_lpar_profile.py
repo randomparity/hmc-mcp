@@ -123,7 +123,7 @@ def test_sync_lpar_profile_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_sync_lpar_profile(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
-        f'chsyscfg -r lpar -m {SYSTEM_NAME} -i "name={LPAR_NAME},sync_curr_profile=1"'
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},sync_curr_profile=1"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert "successfully" in result
@@ -160,7 +160,8 @@ def test_assign_profile_io_slot_runs_correct_command(monkeypatch, mock_hmc):
         )
 
     expected_cmd = (
-        f'chsyscfg -r prof -m {SYSTEM_NAME} -i "name={PROFILE_NAME},io_slots+={DRC_INDEX}//0,lpar_name={LPAR_NAME}" --force'
+        f"chsyscfg -r prof -m {SYSTEM_NAME} "
+        f"-i name={PROFILE_NAME},io_slots+={DRC_INDEX}//0,lpar_name={LPAR_NAME} --force"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert "successfully" in result

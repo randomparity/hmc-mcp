@@ -95,8 +95,8 @@ def test_set_lpar_msp_enabled_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
 
     expected_cmd = (
-        f'chsyscfg -r lpar -m {SYSTEM_NAME} '
-        f'-i "name={LPAR_NAME},msp=1"'
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
+        f"-i name={LPAR_NAME},msp=1"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert result == ""
@@ -112,8 +112,8 @@ def test_set_lpar_msp_disabled_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, False)
 
     expected_cmd = (
-        f'chsyscfg -r lpar -m {SYSTEM_NAME} '
-        f'-i "name={LPAR_NAME},msp=0"'
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
+        f"-i name={LPAR_NAME},msp=0"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True)
     assert result == ""
