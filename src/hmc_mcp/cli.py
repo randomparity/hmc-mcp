@@ -1944,9 +1944,6 @@ def memory_pools_remove(
         _fail(exc)
         return
 
-    if result.startswith("ERROR:"):
-        err_console.print(f"[red]{result}[/red]")
-        raise typer.Exit(code=1)
     console.print(f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]")
     if result.strip():
         console.print(result.strip())
