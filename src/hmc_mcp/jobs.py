@@ -1,8 +1,8 @@
 """XML templates for HMC job requests (do/* operations).
 
-Jobs are submitted with Content-Type: application/vnd.ibm.powervm.uom+xml;
-type=JobRequest and run asynchronously; poll /rest/api/uom/Job/{uuid} for
-status.
+Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
+type=JobRequest via PUT and run asynchronously; poll /rest/api/uom/Job/{uuid}
+for status.
 """
 
 from __future__ import annotations
@@ -58,7 +58,11 @@ def build_job_request(
 
 
 def power_on_lpar_job() -> str:
-    return build_job_request("PowerOn", "LogicalPartition")
+    return build_job_request("PowerOn", "LogicalPartition", {
+        "force": "false",
+        "novsi": "true",
+        "bootmode": "norm",
+    })
 
 
 def power_off_lpar_job(immediate: bool = False) -> str:
@@ -195,21 +199,18 @@ def remote_restart_lpar_job(target_system: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def partition_template_deploy_job(
-    target_system_uuid: str, draft_template_uuid: str, memento: str
-) -> str:
+def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
     """PartitionTemplate Deploy job.
 
     target_system_uuid is the managed system to create the partition on;
-    draft_template_uuid is the *draft* (transformed) template UUID; memento is
-    the X-API session ID of the logged-in user.
+    memento is the X-API session ID of the logged-in user.
+    The draft template UUID is encoded in the URL, not as a parameter.
     """
     return build_job_request(
         "Deploy",
         "PartitionTemplate",
         {
-            "TargetUuid": target_system_uuid,
-            "TemplateUuid": draft_template_uuid,
             "K_X_API_SESSION_MEMENTO": memento,
+            "TargetUuid": target_system_uuid,
         },
     )

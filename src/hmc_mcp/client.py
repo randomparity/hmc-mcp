@@ -744,19 +744,11 @@ class HMCClient:
         from .jobs import partition_template_deploy_job
 
         memento = self._session_token or ""
-        xml = partition_template_deploy_job(target_system_uuid, draft_template_uuid, memento)
-        resp = await self._http.post(
+        xml = partition_template_deploy_job(target_system_uuid, memento)
+        return await self.submit_job(
             f"/rest/api/templates/PartitionTemplate/{draft_template_uuid}/do/deploy",
-            content=xml,
-            headers={
-                "Content-Type": f"{MEDIA_UOM}; type=JobRequest",
-                "Accept": MEDIA_UOM,
-            },
+            xml,
         )
-        if resp.status_code not in (200, 201, 202):
-            raise HMCError("PartitionTemplate deploy failed", resp.status_code, resp.text)
-        entries = parse_feed(resp.text) if resp.text else []
-        return entries[0] if entries else None
 
     # ------------------------------------------------------------------ #
     # Managed-system / VIOS power jobs
