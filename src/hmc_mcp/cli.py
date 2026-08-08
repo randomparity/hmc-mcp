@@ -1907,13 +1907,10 @@ def memory_pools_remove(
     ):
         raise typer.Abort()
 
-    from .server import hmc_remove_memory_pool
+    from .ssh import remove_memory_pool
 
-    try:
-        result = hmc_remove_memory_pool(system_name, pool_name)
-    except Exception as exc:
-        _fail(exc)
-        return
+    config = _ssh_config()
+    result = _run(lambda: remove_memory_pool(config, system_name, pool_name))
 
     console.print(f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]")
     if result.strip():

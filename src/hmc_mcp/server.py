@@ -54,6 +54,7 @@ from .ssh import (
     list_fc_ports,
     list_io_slots,
     list_sea_adapters,
+    remove_memory_pool,
     run_hmc_command,
 )
 from .templates import (
@@ -2657,37 +2658,10 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     Raises:
         HMCCLIError: If *pool_name* still has LPARs assigned to it.
     """
-    from .ssh import _parse_lshwres_output
-
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
-
-        # Safety check: list pools and look for LPAR assignments.
-        list_output = await run_hmc_command(
-            config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
-        )
-        pools = _parse_lshwres_output(list_output)
-
-        for pool in pools:
-            if pool.get("pool_name") == pool_name:
-                # curr_lpar_names may be a comma-separated string or empty.
-                assigned = pool.get("curr_lpar_names", "").strip()
-                if assigned:
-                    lpar_list = [
-                        lp.strip() for lp in assigned.split(",") if lp.strip()
-                    ]
-                    raise HMCCLIError(
-                        f"Cannot remove memory pool '{pool_name}' on "
-                        f"'{system_name}' — the following LPARs are still "
-                        f"assigned to it: {', '.join(lpar_list)}. Reassign or "
-                        "remove them from the pool before retrying."
-                    )
-                break
-
-        cmd = f"chhwres -r mempool -m {shlex.quote(system_name)} -o r -a {shlex.quote(pool_name)}"
-        return await run_hmc_command(config, cmd)
+        return await remove_memory_pool(HMCConfig(), system_name, pool_name)
 
     return _run(_go())
 

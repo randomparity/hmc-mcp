@@ -192,3 +192,47 @@ async def list_sea_adapters(
         values = line.split(",", len(keys) - 1)
         result.append(dict(zip(keys, values)))
     return result
+
+
+async def remove_memory_pool(
+    config: HMCConfig,
+    system_name: str,
+    pool_name: str,
+) -> str:
+    """Remove a shared memory pool from *system_name* via SSH.
+
+    Before issuing the remove command, fetches the current pool list and
+    checks whether any LPARs are still assigned to *pool_name*.  If any are
+    found the command is **not** executed and an ``HMCCLIError`` naming the
+    blocking LPARs is raised instead.
+
+    Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
+    the HMC via SSH when no LPARs are assigned.
+
+    Returns the HMC CLI output (immediate delete — no job to poll).
+
+    Raises:
+        HMCCLIError: If *pool_name* still has LPARs assigned to it.
+    """
+    # Safety check: list pools and look for LPAR assignments.
+    list_output = await run_hmc_command(
+        config, f"lshwres -r mempool -m {shlex.quote(system_name)}"
+    )
+    pools = _parse_lshwres_output(list_output)
+
+    for pool in pools:
+        if pool.get("pool_name") == pool_name:
+            # curr_lpar_names may be a comma-separated string or empty.
+            assigned = pool.get("curr_lpar_names", "").strip()
+            if assigned:
+                lpar_list = [lp.strip() for lp in assigned.split(",") if lp.strip()]
+                raise HMCCLIError(
+                    f"Cannot remove memory pool '{pool_name}' on "
+                    f"'{system_name}' — the following LPARs are still "
+                    f"assigned to it: {', '.join(lpar_list)}. Reassign or "
+                    "remove them from the pool before retrying."
+                )
+            break
+
+    cmd = f"chhwres -r mempool -m {shlex.quote(system_name)} -o r -a {shlex.quote(pool_name)}"
+    return await run_hmc_command(config, cmd)
