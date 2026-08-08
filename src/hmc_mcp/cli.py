@@ -250,6 +250,58 @@ def systems_show(uuid: str = typer.Argument(..., help="Managed system UUID"),
     _print_json(system)
 
 
+@systems_app.command("power-on")
+def systems_power_on(
+    uuid: str = typer.Argument(..., help="Managed system UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Power on a managed system (submits a PowerOn job)."""
+    if not yes and not typer.confirm(f"Really PowerOn system {uuid}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.power_on_system(uuid)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
+    _print_json(job)
+
+
+@systems_app.command("power-off")
+def systems_power_off(
+    uuid: str = typer.Argument(..., help="Managed system UUID"),
+    immediate: bool = typer.Option(False, "--immediate"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Power off a managed system (submits a PowerOff job)."""
+    op = "Immediate PowerOff" if immediate else "PowerOff"
+    if not yes and not typer.confirm(f"Really {op} system {uuid}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.power_off_system(uuid, immediate=immediate)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted {op} for {uuid}[/green]")
+    _print_json(job)
+
+
 # ---------------------------------------------------------------------- #
 # lpars
 # ---------------------------------------------------------------------- #
@@ -1419,6 +1471,58 @@ def vios_list(
                 _g(v, "IOSLevel", "VIOSVersion", default="-"),
             )
     _output(vios, as_json, table, "No VIOS found")
+
+
+@vios_app.command("power-on")
+def vios_power_on(
+    uuid: str = typer.Argument(..., help="VIOS UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Power on a VIOS (submits a PowerOn job)."""
+    if not yes and not typer.confirm(f"Really PowerOn VIOS {uuid}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.power_on_vios(uuid)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
+    _print_json(job)
+
+
+@vios_app.command("power-off")
+def vios_power_off(
+    uuid: str = typer.Argument(..., help="VIOS UUID"),
+    immediate: bool = typer.Option(False, "--immediate"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Power off a VIOS (submits a PowerOff job)."""
+    op = "Immediate PowerOff" if immediate else "PowerOff"
+    if not yes and not typer.confirm(f"Really {op} VIOS {uuid}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.power_off_vios(uuid, immediate=immediate)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted {op} for {uuid}[/green]")
+    _print_json(job)
 
 
 # ---------------------------------------------------------------------- #

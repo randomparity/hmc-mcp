@@ -731,6 +731,55 @@ def hmc_deploy_partition_template(
 
 
 # ---------------------------------------------------------------------- #
+# Managed-system / VIOS power
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_power_on_system(system_uuid: str) -> dict[str, Any] | None:
+    """Power on a managed system (PowerOn job). Poll hmc_get_job for status."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.power_on_system(system_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_power_off_system(system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+    """Power off a managed system (PowerOff job). immediate skips graceful shutdown."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.power_off_system(system_uuid, immediate)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_power_on_vios(vios_uuid: str) -> dict[str, Any] | None:
+    """Power on a VIOS (PowerOn job). Poll hmc_get_job for status."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.power_on_vios(vios_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_power_off_vios(vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+    """Power off a VIOS (PowerOff job). immediate skips graceful shutdown."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.power_off_vios(vios_uuid, immediate)
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
 # Cluster / Shared Storage Pool (SSP)
 # ---------------------------------------------------------------------- #
 

@@ -71,8 +71,22 @@ def power_on_system_job() -> str:
     return build_job_request("PowerOn", "ManagedSystem")
 
 
-def power_off_system_job() -> str:
-    return build_job_request("PowerOff", "ManagedSystem")
+def power_off_system_job(immediate: bool = False) -> str:
+    params = {}
+    if immediate:
+        params["immediate"] = "true"
+    return build_job_request("PowerOff", "ManagedSystem", params or None)
+
+
+def power_on_vios_job() -> str:
+    return build_job_request("PowerOn", "VirtualIOServer")
+
+
+def power_off_vios_job(immediate: bool = False) -> str:
+    params = {}
+    if immediate:
+        params["immediate"] = "true"
+    return build_job_request("PowerOff", "VirtualIOServer", params or None)
 
 
 def create_logical_unit_job(

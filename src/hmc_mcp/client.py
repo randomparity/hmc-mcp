@@ -754,6 +754,42 @@ class HMCClient:
         entries = parse_feed(resp.text) if resp.text else []
         return entries[0] if entries else None
 
+    # ------------------------------------------------------------------ #
+    # Managed-system / VIOS power jobs
+    # ------------------------------------------------------------------ #
+
+    async def power_on_system(self, system_uuid: str) -> dict[str, Any] | None:
+        """Power on a managed system (PowerOn job)."""
+        from .jobs import power_on_system_job
+
+        return await self.submit_job(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOn", power_on_system_job()
+        )
+
+    async def power_off_system(self, system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+        """Power off a managed system (PowerOff job; immediate skips graceful shutdown)."""
+        from .jobs import power_off_system_job
+
+        return await self.submit_job(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff", power_off_system_job(immediate)
+        )
+
+    async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
+        """Power on a VIOS (PowerOn job)."""
+        from .jobs import power_on_vios_job
+
+        return await self.submit_job(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOn", power_on_vios_job()
+        )
+
+    async def power_off_vios(self, vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+        """Power off a VIOS (PowerOff job; immediate skips graceful shutdown)."""
+        from .jobs import power_off_vios_job
+
+        return await self.submit_job(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff", power_off_vios_job(immediate)
+        )
+
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
