@@ -19,8 +19,10 @@ from typing import Any
 
 from defusedxml import ElementTree as ET
 
+from .xmlutil import ATOM_NS
+
 PCM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/"
-ATOM = "{http://www.w3.org/2005/Atom}"
+ATOM = f"{{{ATOM_NS}}}"  # braced tag prefix: {http://www.w3.org/2005/Atom}
 
 PREFERENCE_FIELDS = (
     "LongTermMonitorEnabled",
