@@ -364,6 +364,23 @@ class HMCClient:
         entries = parse_feed(xml) if xml else []
         return entries[0] if entries else None
 
+    async def modify_managed_system(
+        self, system_uuid: str, system_xml: str
+    ) -> dict[str, Any] | None:
+        """Modify a managed system's properties (POST a partial ManagedSystem doc).
+
+        Supported fields include system name, power-off policy, LPAR start
+        policy, pending memory region size, huge pages, and mirroring mode.
+        See templates.build_managed_system_document for the document builder.
+        """
+        xml = await self._post(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}",
+            system_xml,
+            resource_type="ManagedSystem",
+        )
+        entries = parse_feed(xml) if xml else []
+        return entries[0] if entries else None
+
     async def delete_logical_partition(self, lpar_uuid: str) -> None:
         """Delete an LPAR. It must be powered off first."""
         await self._delete(f"/rest/api/uom/LogicalPartition/{lpar_uuid}")
