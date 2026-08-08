@@ -2138,6 +2138,70 @@ def hmc_set_sriov_adapter_mode(
 
 
 # ---------------------------------------------------------------------- #
+# LPAR processor compatibility modes (SSH CLI path — no REST equivalent)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_get_proc_compat_modes(system_name: str) -> list[str]:
+    """Get processor compatibility modes supported by a managed system.
+
+    Runs ``lssyscfg -r sys -m <system_name> -F lpar_proc_compat_modes``
+    on the HMC via SSH and returns a list of supported mode strings.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes"
+    raw = _run(run_hmc_command(config, cmd))
+    if not raw.strip():
+        return []
+    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
+
+
+@mcp.tool
+def hmc_get_lpar_proc_compat(lpar_name: str, system_name: str) -> dict[str, str]:
+    """Get the current and pending processor compatibility modes for an LPAR.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` on the HMC via SSH.
+
+    Returns a dict with keys "pend" and "curr".
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+    raw = _run(run_hmc_command(config, cmd))
+    if not raw.strip():
+        return {"pend": "", "curr": ""}
+    parts = raw.strip().split(",")
+    pend = parts[0].strip() if len(parts) > 0 else ""
+    curr = parts[1].strip() if len(parts) > 1 else ""
+    return {"pend": pend, "curr": curr}
+
+
+@mcp.tool
+def hmc_set_lpar_proc_compat(lpar_name: str, system_name: str, mode: str) -> str:
+    """Set the processor compatibility mode of an LPAR.
+
+    Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"``
+    on the HMC via SSH.
+
+    WARNING: This modifies the LPAR configuration on the HMC. Confirm
+    lpar_name, system_name, and mode before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"'
+    return _run(run_hmc_command(config, cmd))
+
+
+# ---------------------------------------------------------------------- #
 # Physical I/O slot listing (SSH CLI path)
 # ---------------------------------------------------------------------- #
 

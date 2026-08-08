@@ -835,6 +835,99 @@ def lpars_set_msp(
 
 
 # ---------------------------------------------------------------------- #
+# lpars: processor compatibility mode (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+
+@lpars_app.command("get-proc-compat-modes")
+def lpars_get_proc_compat_modes(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+) -> None:
+    """Get processor compatibility modes supported by a managed system (HMC CLI via SSH)."""
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes",
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(result.strip() or "(no modes returned)")
+
+
+@lpars_app.command("get-proc-compat")
+def lpars_get_proc_compat(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F "
+            f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    raw = result.strip()
+    parts = raw.split(",") if raw else []
+    pend = parts[0].strip() if len(parts) > 0 else ""
+    curr = parts[1].strip() if len(parts) > 1 else ""
+
+    if as_json:
+        _print_json({"pend": pend, "curr": curr})
+    else:
+        table = Table(title=f"Processor Compatibility Mode: {lpar_name}")
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_row("Pending Mode", pend or "-")
+        table.add_row("Current Mode", curr or "-")
+        console.print(table)
+
+
+@lpars_app.command("set-proc-compat")
+def lpars_set_proc_compat(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    mode: str = typer.Argument(..., help="Processor compatibility mode to set"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Set the processor compatibility mode of an LPAR (HMC CLI via SSH)."""
+    if not yes and not typer.confirm(
+        f"Set processor compatibility mode to '{mode}' on LPAR '{lpar_name}' (system {system_name})?"
+    ):
+        raise typer.Abort()
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]")
+    if result.strip():
+        console.print(result.strip())
+
+
+# ---------------------------------------------------------------------- #
 # adapters
 # ---------------------------------------------------------------------- #
 
