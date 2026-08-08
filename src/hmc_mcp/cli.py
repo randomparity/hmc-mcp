@@ -19,7 +19,9 @@ from rich.console import Console
 from rich.table import Table
 
 from .common import client_from_env
+from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
+from .ssh import run_hmc_command
 from .templates import PARTITION_TYPES, build_lpar_document
 
 app = typer.Typer(
@@ -719,6 +721,63 @@ def lpars_delete(
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
+
+
+# ---------------------------------------------------------------------- #
+# lpars: description (SSH CLI path — no REST equivalent)
+# ---------------------------------------------------------------------- #
+
+
+@lpars_app.command("get-description")
+def lpars_get_description(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+) -> None:
+    """Get the description field of an LPAR (HMC CLI via SSH)."""
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description",
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(result.strip() or "(no description set)")
+
+
+@lpars_app.command("set-description")
+def lpars_set_description(
+    lpar_name: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    description: str = typer.Argument(..., help="New description text"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Set the description field of an LPAR (HMC CLI via SSH)."""
+    if not yes and not typer.confirm(
+        f"Set description on '{lpar_name}' (system {system_name})?"
+    ):
+        raise typer.Abort()
+    config = HMCConfig(
+        host=GLOBALS.host or "",
+        user=GLOBALS.user or "",
+        password=GLOBALS.password or "",
+    )
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Description updated for '{lpar_name}'[/green]")
+    if result.strip():
+        console.print(result.strip())
 
 
 # ---------------------------------------------------------------------- #
