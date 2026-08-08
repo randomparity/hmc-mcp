@@ -1531,3 +1531,67 @@ def hmc_update_firmware(system_uuid: str, repository: dict) -> dict[str, Any] | 
             )
 
     return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# VIOS backup / restore
+# ---------------------------------------------------------------------- #
+
+_VALID_BACKUP_TYPES = {"vios", "viosioconfig", "ssp"}
+
+
+@mcp.tool
+def hmc_list_vios_backups(vios_uuid: str) -> str:
+    """List existing VIOS backups for a given VIOS UUID.
+
+    Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and returns
+    the raw command output. Find vios_uuid with hmc_list_vios.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    return _run(run_hmc_command(config, f"lsviosbackup -id {vios_uuid}"))
+
+
+@mcp.tool
+def hmc_backup_vios(vios_uuid: str, backup_type: str = "vios") -> str:
+    """Create a VIOS backup via the HMC CLI.
+
+    Runs ``chviosbackup -id <vios_uuid> -operation backup -type <backup_type>``
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios).
+
+    backup_type must be one of:
+      - ``vios``       — full VIOS configuration backup (default)
+      - ``viosioconfig`` — I/O configuration backup
+      - ``ssp``        — Shared Storage Pool (cluster) backup
+
+    Returns the raw HMC CLI output. Poll hmc_list_vios_backups to confirm
+    the backup was created.
+    """
+    if backup_type not in _VALID_BACKUP_TYPES:
+        raise ValueError(
+            f"Invalid backup_type {backup_type!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
+        )
+    config = HMCConfig()
+    cmd = f"chviosbackup -id {vios_uuid} -operation backup -type {backup_type}"
+    return _run(run_hmc_command(config, cmd))
+
+
+@mcp.tool
+def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
+    """Restore a VIOS from a named backup via the HMC CLI.
+
+    Runs ``chviosbackup -id <vios_uuid> -operation restore -file <backup_name>``
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios);
+    backup_name is the backup file name as listed by hmc_list_vios_backups.
+
+    WARNING: Restoring overwrites the current VIOS configuration. Confirm
+    the vios_uuid and backup_name before calling.
+
+    Returns the raw HMC CLI output.
+    """
+    config = HMCConfig()
+    cmd = f"chviosbackup -id {vios_uuid} -operation restore -file {backup_name}"
+    return _run(run_hmc_command(config, cmd))
