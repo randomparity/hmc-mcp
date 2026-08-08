@@ -493,7 +493,6 @@ def hmc_dlpar_mem(
     async def _go():
         async with client_from_env() as hmc:
             return await hmc.modify_logical_partition(lpar_uuid, xml)
-            return await hmc.modify_managed_system(system_uuid, xml)
 
     return _run(_go())
 
@@ -2409,7 +2408,3 @@ def hmc_remove_vnic(system_name: str, lpar_name: str, vnic_id: str) -> str:
         f' -a "vnic_id={vnic_id}"'
     )
     return _run(run_hmc_command(config, cmd))
-
-
-# ---------------------------------------------------------------------- #
-# Shared memory pool management (SSH CLI path)
