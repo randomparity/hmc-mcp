@@ -169,6 +169,25 @@ def hmc_list_vios(system_uuid: str | None = None) -> list[dict[str, Any]]:
 
 
 @mcp.tool
+def hmc_vios_mappings(vios_uuid: str) -> dict[str, Any] | None:
+    """Return VIOS device mapping facts (vSCSI, NPIV, virtual optical).
+
+    Fetches the ViosStorageDetail group for the given VIOS UUID and returns
+    the parsed entry, which contains VirtualSCSIMappings (physical volumes and
+    virtual disks served to LPARs) and VirtualFibreChannelMappings (NPIV port
+    mappings). Equivalent to Ansible ``vios_mapping_facts``.
+
+    Find VIOS UUIDs with hmc_list_vios.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.get_vios_storage_detail(vios_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
 def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
     """List any uom resource type exposed by the HMC.
 

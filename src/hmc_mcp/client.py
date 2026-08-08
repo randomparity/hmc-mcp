@@ -926,6 +926,22 @@ class HMCClient:
             return parse_feed(xml) if xml else []
         return await self.list_uom("VirtualIOServer")
 
+    async def get_vios_storage_detail(self, vios_uuid: str) -> dict[str, Any] | None:
+        """GET VirtualIOServer storage-detail group (device mappings).
+
+        Fetches /rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail
+        and returns the parsed entry, which includes VirtualSCSIMappings and
+        VirtualFibreChannelMappings populated with physical/virtual device info.
+        """
+        xml = await self._get(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail",
+            "VirtualIOServer",
+        )
+        if not xml:
+            return None
+        entries = parse_feed(xml)
+        return entries[0] if entries else None
+
     # ------------------------------------------------------------------ #
     # Jobs (long-running operations)
     # ------------------------------------------------------------------ #
