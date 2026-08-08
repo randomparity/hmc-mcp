@@ -205,11 +205,17 @@ async def test_create_logical_partition(mock_hmc):
     route = mock_hmc.put(
         "/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR))
-    from hmc_mcp.templates import build_lpar_document
+    from hmc_mcp.templates import LparResources, build_lpar_document
 
     xml = build_lpar_document(
-        name="newlpar", min_memory=256, desired_memory=4096, max_memory=8192,
-        desired_vcpus=1, max_vcpus=2,
+        name="newlpar",
+        resources=LparResources(
+            min_memory=256,
+            desired_memory=4096,
+            max_memory=8192,
+            desired_vcpus=1,
+            max_vcpus=2,
+        ),
     )
     async with HMCClient(make_config()) as hmc:
         created = await hmc.create_logical_partition("sys-uuid", xml)
@@ -225,9 +231,9 @@ async def test_modify_logical_partition(mock_hmc):
     route = mock_hmc.post("/rest/api/uom/LogicalPartition/lpar-uuid").mock(
         return_value=httpx.Response(200, text=CREATED_LPAR)
     )
-    from hmc_mcp.templates import build_lpar_document
+    from hmc_mcp.templates import LparResources, build_lpar_document
 
-    xml = build_lpar_document(name=None, desired_memory=2048)
+    xml = build_lpar_document(name=None, resources=LparResources(desired_memory=2048))
     async with HMCClient(make_config()) as hmc:
         updated = await hmc.modify_logical_partition("lpar-uuid", xml)
     assert route.called

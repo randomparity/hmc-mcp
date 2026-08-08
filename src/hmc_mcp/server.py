@@ -40,6 +40,7 @@ from .jobs import (
 )
 from .ssh import HMCCLIError, list_io_slots, run_hmc_command
 from .templates import (
+    LparResources,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_hmc_user_document,
@@ -361,17 +362,19 @@ def hmc_create_lpar(
         name=name,
         partition_type=partition_type,
         partition_id=partition_id,
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        dedicated=dedicated,
-        min_procs=min_procs,
-        desired_procs=desired_procs,
-        max_procs=max_procs,
-        min_vcpus=min_vcpus,
-        desired_vcpus=desired_vcpus,
-        max_vcpus=max_vcpus,
-        uncapped=uncapped,
+        resources=LparResources(
+            min_memory=min_memory,
+            desired_memory=desired_memory,
+            max_memory=max_memory,
+            dedicated=dedicated,
+            min_procs=min_procs,
+            desired_procs=desired_procs,
+            max_procs=max_procs,
+            min_vcpus=min_vcpus,
+            desired_vcpus=desired_vcpus,
+            max_vcpus=max_vcpus,
+            uncapped=uncapped,
+        ),
         os_type=os_type,
         keylock=keylock,
         max_virtual_slots=max_virtual_slots,
@@ -410,17 +413,19 @@ def hmc_modify_lpar(
     """
     xml = build_lpar_document(
         name=name,
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        dedicated=dedicated,
-        min_procs=min_procs,
-        desired_procs=desired_procs,
-        max_procs=max_procs,
-        min_vcpus=min_vcpus,
-        desired_vcpus=desired_vcpus,
-        max_vcpus=max_vcpus,
-        uncapped=uncapped,
+        resources=LparResources(
+            min_memory=min_memory,
+            desired_memory=desired_memory,
+            max_memory=max_memory,
+            dedicated=dedicated,
+            min_procs=min_procs,
+            desired_procs=desired_procs,
+            max_procs=max_procs,
+            min_vcpus=min_vcpus,
+            desired_vcpus=desired_vcpus,
+            max_vcpus=max_vcpus,
+            uncapped=uncapped,
+        ),
     )
 
     async def _go():
@@ -453,14 +458,16 @@ def hmc_dlpar_proc(
     profile-only and takes effect on next activation (no reboot is triggered).
     """
     xml = build_dlpar_proc_document(
-        desired_procs=desired_procs,
-        min_procs=min_procs,
-        max_procs=max_procs,
-        desired_vcpus=desired_vcpus,
-        min_vcpus=min_vcpus,
-        max_vcpus=max_vcpus,
-        dedicated=dedicated,
-        uncapped=uncapped,
+        LparResources(
+            desired_procs=desired_procs,
+            min_procs=min_procs,
+            max_procs=max_procs,
+            desired_vcpus=desired_vcpus,
+            min_vcpus=min_vcpus,
+            max_vcpus=max_vcpus,
+            dedicated=dedicated,
+            uncapped=uncapped,
+        )
     )
 
     async def _go():
@@ -511,9 +518,9 @@ def hmc_modify_system(
 @mcp.tool
 def hmc_dlpar_mem(
     lpar_uuid: str,
-    desired_mem: int | None = None,
-    min_mem: int | None = None,
-    max_mem: int | None = None,
+    desired_memory: int | None = None,
+    min_memory: int | None = None,
+    max_memory: int | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
@@ -524,9 +531,11 @@ def hmc_dlpar_mem(
     profile-only and takes effect on next activation (no reboot is triggered).
     """
     xml = build_dlpar_mem_document(
-        desired_mem=desired_mem,
-        min_mem=min_mem,
-        max_mem=max_mem,
+        LparResources(
+            desired_memory=desired_memory,
+            min_memory=min_memory,
+            max_memory=max_memory,
+        )
     )
 
     async def _go():

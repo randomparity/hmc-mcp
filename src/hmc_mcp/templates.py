@@ -16,12 +16,42 @@ defaults (profiles, virtual adapters, boot mode, etc.).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .xmlutil import ATOM_NS
 
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
 # Valid partition environments.
 PARTITION_TYPES = ("AIX/Linux", "OS400", "Virtual IO Server")
+
+
+@dataclass(frozen=True)
+class LparResources:
+    """Memory / processor resource fields shared by LPAR create, modify, DLPAR.
+
+    This is the single source of truth for the resource vocabulary used by the
+    LPAR document builders (``build_lpar_document``, ``build_dlpar_*``) and the
+    MCP/CLI tool parameters that feed them. Memory values are in MiB. For
+    shared partitions (``dedicated=False``) ``procs`` are processing units
+    (may be fractional, e.g. 0.5) and ``vcpus`` are virtual processor counts;
+    with ``dedicated=True`` the ``procs`` are whole CPU counts. A ``None``
+    field means "not specified": the HMC supplies a default on create and
+    leaves the value unchanged on modify / DLPAR.
+    """
+
+    min_memory: int | None = None
+    desired_memory: int | None = None
+    max_memory: int | None = None
+    dedicated: bool = False
+    min_procs: float | None = None
+    desired_procs: float | None = None
+    max_procs: float | None = None
+    min_vcpus: int | None = None
+    desired_vcpus: int | None = None
+    max_vcpus: int | None = None
+    sharing_mode: str | None = None
+    uncapped: bool = True
 
 
 def _memory_config(
@@ -116,27 +146,17 @@ def build_lpar_document(
     name: str | None,
     partition_type: str = "AIX/Linux",
     partition_id: int | None = None,
-    min_memory: int | None = None,
-    desired_memory: int | None = None,
-    max_memory: int | None = None,
-    dedicated: bool = False,
-    min_procs: float | None = None,
-    desired_procs: float | None = None,
-    max_procs: float | None = None,
-    min_vcpus: int | None = None,
-    desired_vcpus: int | None = None,
-    max_vcpus: int | None = None,
-    sharing_mode: str | None = None,
-    uncapped: bool = False,
+    resources: LparResources | None = None,
     os_type: str | None = None,
     keylock: str | None = None,
     max_virtual_slots: int | None = None,
 ) -> str:
     """Build a LogicalPartition document for PUT (create) or POST (modify).
 
-    Memory values are in MiB. For a create, `name` is required; the rest are
-    optional (the HMC supplies defaults). For a modify, supply only the fields
-    to change (pass name=None to omit it).
+    For a create, `name` is required; the rest are optional (the HMC supplies
+    defaults). For a modify, supply only the fields to change (pass name=None
+    to omit it). `resources` carries the memory/processor fields; None means
+    no resource block is emitted.
 
     os_type: target OS type — ``aix``, ``linux``, or ``ibmi``.
     keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
@@ -147,11 +167,15 @@ def build_lpar_document(
             f"partition_type must be one of {PARTITION_TYPES}, got {partition_type!r}"
         )
 
+    resources = resources or LparResources()
+
     body_parts = ["  <Metadata><Atom/></Metadata>"]
     if partition_id is not None:
         body_parts.append(f'  <PartitionID kb="COD" kxe="false">{partition_id}</PartitionID>')
 
-    mem = _memory_config(min_memory, desired_memory, max_memory)
+    mem = _memory_config(
+        resources.min_memory, resources.desired_memory, resources.max_memory
+    )
     if mem:
         body_parts.append(mem)
 
@@ -172,8 +196,15 @@ def build_lpar_document(
         )
 
     proc = _processor_config(
-        dedicated, min_procs, desired_procs, max_procs,
-        min_vcpus, desired_vcpus, max_vcpus, sharing_mode, uncapped,
+        resources.dedicated,
+        resources.min_procs,
+        resources.desired_procs,
+        resources.max_procs,
+        resources.min_vcpus,
+        resources.desired_vcpus,
+        resources.max_vcpus,
+        resources.sharing_mode,
+        resources.uncapped,
     )
     if proc:
         body_parts.append(proc)
@@ -210,30 +241,22 @@ def build_vios_document(
     return build_lpar_document(
         name=name,
         partition_type="Virtual IO Server",
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        dedicated=False,
-        min_procs=min_procs,
-        desired_procs=desired_procs,
-        max_procs=max_procs,
-        min_vcpus=min_vcpus,
-        desired_vcpus=desired_vcpus,
-        max_vcpus=max_vcpus,
-        uncapped=True,
+        resources=LparResources(
+            min_memory=min_memory,
+            desired_memory=desired_memory,
+            max_memory=max_memory,
+            min_procs=min_procs,
+            desired_procs=desired_procs,
+            max_procs=max_procs,
+            min_vcpus=min_vcpus,
+            desired_vcpus=desired_vcpus,
+            max_vcpus=max_vcpus,
+            uncapped=True,
+        ),
     )
 
 
-def build_dlpar_proc_document(
-    desired_procs: float | None = None,
-    min_procs: float | None = None,
-    max_procs: float | None = None,
-    desired_vcpus: int | None = None,
-    min_vcpus: int | None = None,
-    max_vcpus: int | None = None,
-    dedicated: bool = False,
-    uncapped: bool = True,
-) -> str:
+def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionProcessorConfiguration.
 
     Used for DLPAR processor hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
@@ -244,9 +267,17 @@ def build_dlpar_proc_document(
     vcpus are the virtual processor counts (ints).
     Set dedicated=True to assign whole CPUs; dedicated=False (default) for shared.
     """
+    resources = resources or LparResources()
     proc = _processor_config(
-        dedicated, min_procs, desired_procs, max_procs,
-        min_vcpus, desired_vcpus, max_vcpus, None, uncapped,
+        resources.dedicated,
+        resources.min_procs,
+        resources.desired_procs,
+        resources.max_procs,
+        resources.min_vcpus,
+        resources.desired_vcpus,
+        resources.max_vcpus,
+        resources.sharing_mode,
+        resources.uncapped,
     )
     body = "  <Metadata><Atom/></Metadata>"
     if proc:
@@ -258,20 +289,20 @@ def build_dlpar_proc_document(
 """
 
 
-def build_dlpar_mem_document(
-    desired_mem: int | None = None,
-    min_mem: int | None = None,
-    max_mem: int | None = None,
-) -> str:
+def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionMemoryConfiguration.
 
     Used for DLPAR memory hot-plug: POST to /rest/api/uom/LogicalPartition/{uuid}.
     On a running partition this applies immediately if RMC is active; otherwise the
     change is profile-only and takes effect on next activation.
 
-    Memory values are in MiB.
+    Memory values are in MiB. Only the min/desired/max memory fields of
+    `resources` are emitted; processor fields are ignored.
     """
-    mem = _memory_config(min_mem, desired_mem, max_mem)
+    resources = resources or LparResources()
+    mem = _memory_config(
+        resources.min_memory, resources.desired_memory, resources.max_memory
+    )
     body = "  <Metadata><Atom/></Metadata>"
     if mem:
         body = body + "\n" + mem

@@ -6,7 +6,11 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.templates import build_dlpar_mem_document, build_dlpar_proc_document
+from hmc_mcp.templates import (
+    LparResources,
+    build_dlpar_mem_document,
+    build_dlpar_proc_document,
+)
 
 LPAR_UUID = "aaaa0000-0000-0000-0000-000000000001"
 
@@ -30,7 +34,9 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_dlpar_proc_shared_desired():
-    xml = build_dlpar_proc_document(desired_procs=0.5, desired_vcpus=1)
+    xml = build_dlpar_proc_document(
+        LparResources(desired_procs=0.5, desired_vcpus=1)
+    )
     assert "<LogicalPartition" in xml
     assert "PartitionProcessorConfiguration" in xml
     assert "SharedProcessorConfiguration" in xml
@@ -42,7 +48,9 @@ def test_dlpar_proc_shared_desired():
 
 
 def test_dlpar_proc_dedicated():
-    xml = build_dlpar_proc_document(desired_procs=2, min_procs=1, max_procs=4, dedicated=True)
+    xml = build_dlpar_proc_document(
+        LparResources(desired_procs=2, min_procs=1, max_procs=4, dedicated=True)
+    )
     assert "DedicatedProcessorConfiguration" in xml
     assert "<DesiredProcessors" in xml and ">2<" in xml
     assert "<MinimumProcessors" in xml and ">1<" in xml
@@ -63,7 +71,9 @@ def test_dlpar_proc_no_args_emits_metadata():
 
 
 def test_dlpar_mem_desired():
-    xml = build_dlpar_mem_document(desired_mem=2048, min_mem=512, max_mem=4096)
+    xml = build_dlpar_mem_document(
+        LparResources(desired_memory=2048, min_memory=512, max_memory=4096)
+    )
     assert "<LogicalPartition" in xml
     assert "PartitionMemoryConfiguration" in xml
     assert "<DesiredMemory" in xml and ">2048<" in xml
@@ -93,7 +103,9 @@ async def test_dlpar_proc_posts_correct_xml(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
     ).mock(return_value=httpx.Response(200, text=LPAR_ENTRY))
 
-    xml = build_dlpar_proc_document(desired_procs=1.0, desired_vcpus=2)
+    xml = build_dlpar_proc_document(
+        LparResources(desired_procs=1.0, desired_vcpus=2)
+    )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.modify_logical_partition(LPAR_UUID, xml)
 
@@ -112,7 +124,9 @@ async def test_dlpar_mem_posts_correct_xml(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
     ).mock(return_value=httpx.Response(200, text=LPAR_ENTRY))
 
-    xml = build_dlpar_mem_document(desired_mem=4096, min_mem=1024, max_mem=8192)
+    xml = build_dlpar_mem_document(
+        LparResources(desired_memory=4096, min_memory=1024, max_memory=8192)
+    )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.modify_logical_partition(LPAR_UUID, xml)
 
@@ -132,7 +146,9 @@ async def test_dlpar_proc_dedicated_posts_correct_xml(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
     ).mock(return_value=httpx.Response(200, text=LPAR_ENTRY))
 
-    xml = build_dlpar_proc_document(desired_procs=2, dedicated=True)
+    xml = build_dlpar_proc_document(
+        LparResources(desired_procs=2, dedicated=True)
+    )
     async with HMCClient(make_config()) as hmc:
         await hmc.modify_logical_partition(LPAR_UUID, xml)
 

@@ -22,7 +22,7 @@ from .common import client_from_env
 from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import run_hmc_command
-from .templates import PARTITION_TYPES, build_lpar_document
+from .templates import LparResources, PARTITION_TYPES, build_lpar_document
 
 app = typer.Typer(
     name="hmc-mcp",
@@ -567,12 +567,22 @@ def lpars_create(
             abort=True,
         )
     xml = build_lpar_document(
-        name=name, partition_type=partition_type, partition_id=partition_id,
-        min_memory=min_memory, desired_memory=memory, max_memory=max_memory,
-        dedicated=dedicated,
-        min_procs=min_procs, desired_procs=procs, max_procs=max_procs,
-        min_vcpus=min_vcpus, desired_vcpus=vcpus, max_vcpus=max_vcpus,
-        uncapped=not capped,
+        name=name,
+        partition_type=partition_type,
+        partition_id=partition_id,
+        resources=LparResources(
+            min_memory=min_memory,
+            desired_memory=memory,
+            max_memory=max_memory,
+            dedicated=dedicated,
+            min_procs=min_procs,
+            desired_procs=procs,
+            max_procs=max_procs,
+            min_vcpus=min_vcpus,
+            desired_vcpus=vcpus,
+            max_vcpus=max_vcpus,
+            uncapped=not capped,
+        ),
     )
 
     async def _go():
@@ -626,11 +636,19 @@ def lpars_modify(
                     raise typer.Abort()
             xml = build_lpar_document(
                 name=new_name,
-                min_memory=min_memory, desired_memory=memory, max_memory=max_memory,
-                dedicated=dedicated,
-                min_procs=min_procs, desired_procs=procs, max_procs=max_procs,
-                min_vcpus=min_vcpus, desired_vcpus=vcpus, max_vcpus=max_vcpus,
-                uncapped=not capped,
+                resources=LparResources(
+                    min_memory=min_memory,
+                    desired_memory=memory,
+                    max_memory=max_memory,
+                    dedicated=dedicated,
+                    min_procs=min_procs,
+                    desired_procs=procs,
+                    max_procs=max_procs,
+                    min_vcpus=min_vcpus,
+                    desired_vcpus=vcpus,
+                    max_vcpus=max_vcpus,
+                    uncapped=not capped,
+                ),
             )
             return uuid, await hmc.modify_logical_partition(uuid, xml)
 

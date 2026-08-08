@@ -2,7 +2,7 @@
 
 import pytest
 
-from hmc_mcp.templates import PARTITION_TYPES, build_lpar_document
+from hmc_mcp.templates import LparResources, PARTITION_TYPES, build_lpar_document
 
 
 def test_minimal_create_document():
@@ -16,7 +16,10 @@ def test_minimal_create_document():
 
 def test_memory_config():
     xml = build_lpar_document(
-        name="m", min_memory=256, desired_memory=512, max_memory=1024
+        name="m",
+        resources=LparResources(
+            min_memory=256, desired_memory=512, max_memory=1024
+        ),
     )
     assert "<DesiredMemory" in xml and "512" in xml
     assert "<MaximumMemory" in xml and "1024" in xml
@@ -26,9 +29,13 @@ def test_memory_config():
 def test_shared_processor_config():
     xml = build_lpar_document(
         name="s",
-        desired_procs=0.5, max_procs=2.0,
-        desired_vcpus=1, max_vcpus=2,
-        uncapped=True,
+        resources=LparResources(
+            desired_procs=0.5,
+            max_procs=2.0,
+            desired_vcpus=1,
+            max_vcpus=2,
+            uncapped=True,
+        ),
     )
     assert "<HasDedicatedProcessors" in xml and "false" in xml
     assert "SharedProcessorConfiguration" in xml
@@ -39,7 +46,10 @@ def test_shared_processor_config():
 
 def test_dedicated_processor_config():
     xml = build_lpar_document(
-        name="d", dedicated=True, min_procs=2, desired_procs=2, max_procs=4
+        name="d",
+        resources=LparResources(
+            dedicated=True, min_procs=2, desired_procs=2, max_procs=4
+        ),
     )
     assert "DedicatedProcessorConfiguration" in xml
     assert "<DesiredProcessors" in xml and "2" in xml
@@ -64,7 +74,9 @@ def test_all_partition_types_accepted():
 
 
 def test_modify_document_omits_name_when_none():
-    xml = build_lpar_document(name=None, desired_memory=2048)
+    xml = build_lpar_document(
+        name=None, resources=LparResources(desired_memory=2048)
+    )
     assert "PartitionName" not in xml
     assert "2048" in xml
 
