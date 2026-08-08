@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 import typer
 from rich.console import Console
@@ -100,8 +100,18 @@ def _client():
     )
 
 
-def _run(coro):
-    return asyncio.run(coro)
+def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
+    """Run a coroutine-returning closure, routing failures to the CLI error path.
+
+    typer.Abort propagates so typer renders its own "Aborted." message;
+    any other exception is reported via _fail and exits with code 1.
+    """
+    try:
+        return asyncio.run(fn())
+    except typer.Abort:
+        raise
+    except Exception as exc:
+        _fail(exc)
 
 
 def _print_json(data: Any) -> None:
@@ -140,7 +150,7 @@ def _output(entries: Any, as_json: bool, table: Table | None = None, empty_msg: 
         _print_json(entries)
 
 
-def _fail(exc: Exception) -> None:
+def _fail(exc: Exception) -> NoReturn:
     err_console.print(f"[red]Error:[/red] {exc}")
     raise typer.Exit(code=1)
 
@@ -178,11 +188,7 @@ def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
         async with _client() as hmc:
             return await hmc.get_console_info()
 
-    try:
-        info = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    info = _run(_go)
 
     if info is None:
         err_console.print("[yellow]No ManagementConsole data returned[/yellow]")
@@ -210,11 +216,7 @@ def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
         async with _client() as hmc:
             return await hmc.list_managed_systems()
 
-    try:
-        systems = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    systems = _run(_go)
 
     table = None
     if not as_json:
@@ -241,11 +243,8 @@ def systems_show(uuid: str = typer.Argument(..., help="Managed system UUID"),
         async with _client() as hmc:
             return await hmc.get_managed_system(uuid)
 
-    try:
-        system = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    system = _run(_go)
+
     if system is None:
         err_console.print(f"[yellow]System {uuid} not found[/yellow]")
         raise typer.Exit(code=1)
@@ -265,14 +264,8 @@ def systems_power_on(
         async with _client() as hmc:
             return await hmc.power_on_system(uuid)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
 
@@ -292,14 +285,8 @@ def systems_power_off(
         async with _client() as hmc:
             return await hmc.power_off_system(uuid, immediate=immediate)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)
 
@@ -320,26 +307,22 @@ def lpars_list(
         async with _client() as hmc:
             return await hmc.list_logical_partitions(system)
 
-    try:
-        lpars = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    lpars = _run(_go)
 
     table = None
     if not as_json:
         table = Table(title="Logical Partitions")
         for col in ("Name", "ID", "UUID", "State", "Type", "OS", "RMC"):
             table.add_column(col)
-        for l in lpars:
+        for lpar in lpars:
             table.add_row(
-                _g(l, "PartitionName"),
-                _g(l, "PartitionID"),
-                l.get("UUID") or "-",
-                _g(l, "PartitionState"),
-                _g(l, "PartitionType"),
-                _g(l, "OperatingSystemVersion", default="-"),
-                _g(l, "ResourceMonitoringControlState", "RMCState"),
+                _g(lpar, "PartitionName"),
+                _g(lpar, "PartitionID"),
+                lpar.get("UUID") or "-",
+                _g(lpar, "PartitionState"),
+                _g(lpar, "PartitionType"),
+                _g(lpar, "OperatingSystemVersion", default="-"),
+                _g(lpar, "ResourceMonitoringControlState", "RMCState"),
             )
     _output(lpars, as_json, table, "No logical partitions found")
 
@@ -360,11 +343,8 @@ def lpars_show(
                 return await hmc.get_logical_partition(name_or_uuid)
             return found
 
-    try:
-        lpar = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    lpar = _run(_go)
+
     if lpar is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -385,11 +365,8 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
                 uuid = str(found.get("UUID") or "")
             return await hmc.get_quick_property("LogicalPartition", uuid, "PartitionState")
 
-    try:
-        state = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    state = _run(_go)
+
     if state is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -434,14 +411,8 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: Optional[str], yes: boo
                     raise typer.Abort()
             return uuid, await fn(hmc, uuid)
 
-    try:
-        uuid, job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid, job = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -552,13 +523,8 @@ def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool 
                 )
             return uuid, job
 
-    try:
-        uuid, job = _run(_go())
-    except typer.Abort:
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid, job = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -613,11 +579,8 @@ def lpars_create(
         async with _client() as hmc:
             return await hmc.create_logical_partition(system, xml)
 
-    try:
-        created = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    created = _run(_go)
+
     console.print(f"[green]Created LPAR '{name}'[/green]")
     _print_json(created)
 
@@ -671,14 +634,8 @@ def lpars_modify(
             )
             return uuid, await hmc.modify_logical_partition(uuid, xml)
 
-    try:
-        uuid, updated = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid, updated = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -709,14 +666,8 @@ def lpars_delete(
             await hmc.delete_logical_partition(uuid)
             return uuid
 
-    try:
-        uuid = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -739,14 +690,11 @@ def lpars_get_description(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description",
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description",
+    ))
+
     console.print(result.strip() or "(no description set)")
 
 
@@ -767,14 +715,11 @@ def lpars_set_description(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"',
+    ))
+
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -791,14 +736,11 @@ def lpars_get_msp(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp",
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp",
+    ))
+
     enabled = result.strip() == "1"
     console.print("enabled" if enabled else "disabled")
 
@@ -821,14 +763,11 @@ def lpars_set_msp(
         password=GLOBALS.password or "",
     )
     value = "1" if enabled else "0"
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},msp={value}"',
+    ))
+
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -849,14 +788,11 @@ def lpars_get_proc_compat_modes(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes",
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes",
+    ))
+
     console.print(result.strip() or "(no modes returned)")
 
 
@@ -872,15 +808,12 @@ def lpars_get_proc_compat(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F "
-            f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F "
+    f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
+    ))
+
     raw = result.strip()
     parts = raw.split(",") if raw else []
     pend = parts[0].strip() if len(parts) > 0 else ""
@@ -914,14 +847,11 @@ def lpars_set_proc_compat(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"',
+    ))
+
     console.print(f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -949,11 +879,8 @@ def adapters_list(
                 return None, None
             return uuid, await hmc.list_child("LogicalPartition", uuid, adapter_type)
 
-    try:
-        uuid, adapters = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid, adapters = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -1047,14 +974,8 @@ def adapters_delete(
             await hmc.delete_child("LogicalPartition", uuid, adapter_type, adapter_uuid)
             return uuid
 
-    try:
-        uuid = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid = _run(_go)
+
     if uuid is None:
         err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -1069,14 +990,7 @@ async def _resolve_uuid(hmc, name_or_uuid: str) -> str | None:
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
-    try:
-        uuid, result = _run(go_coro())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    uuid, result = _run(go_coro)
     if uuid is None:
         err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -1100,11 +1014,7 @@ def storage_list_vgs(
         async with _client() as hmc:
             return await hmc.list_volume_groups(vios)
 
-    try:
-        vgs = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    vgs = _run(_go)
 
     table = None
     if not as_json:
@@ -1112,7 +1022,6 @@ def storage_list_vgs(
         for col in ("Name", "UUID", "Free (MiB)", "Capacity (MiB)"):
             table.add_column(col)
         for v in vgs:
-            res = _resource(v)
             table.add_row(
                 _g(v, "GroupName"),
                 v.get("UUID") or "-",
@@ -1141,14 +1050,8 @@ def storage_create_vg(
         async with _client() as hmc:
             return await hmc.create_volume_group(vios, name, pv_list)
 
-    try:
-        vg = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    vg = _run(_go)
+
     console.print(f"[green]Created Volume Group '{name}'[/green]")
     _print_json(vg)
 
@@ -1169,14 +1072,8 @@ def storage_create_disk(
         async with _client() as hmc:
             return await hmc.create_virtual_disk(vios, vg, name, size)
 
-    try:
-        disk = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    disk = _run(_go)
+
     console.print(f"[green]Created virtual disk '{name}' ({size} MiB)[/green]")
     _print_json(disk)
 
@@ -1203,14 +1100,8 @@ def storage_map(
                 raise typer.Abort()
             return lpar_uuid, await hmc.map_storage_to_lpar(vios, kind, disk, lpar_uuid, target)
 
-    try:
-        lpar_uuid, result = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    lpar_uuid, result = _run(_go)
+
     if lpar_uuid is None:
         err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
         raise typer.Exit(code=1)
@@ -1233,11 +1124,7 @@ def cluster_list(
         async with _client() as hmc:
             return await hmc.list_clusters()
 
-    try:
-        clusters = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    clusters = _run(_go)
 
     table = None
     if not as_json:
@@ -1259,11 +1146,7 @@ def cluster_list_ssps(
         async with _client() as hmc:
             return await hmc.list_shared_storage_pools()
 
-    try:
-        ssps = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    ssps = _run(_go)
 
     table = None
     if not as_json:
@@ -1298,14 +1181,8 @@ def cluster_create_lu(
         async with _client() as hmc:
             return await hmc.create_logical_unit(cluster, name, size, lu_type, device_type, cloned_from)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted CreateLogicalUnit job for '{name}'[/green]")
     _print_json(job)
 
@@ -1324,14 +1201,8 @@ def cluster_delete_lu(
         async with _client() as hmc:
             return await hmc.delete_logical_unit(cluster, udid)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
     _print_json(job)
 
@@ -1352,11 +1223,8 @@ def metrics_prefs(
         async with _client() as hmc:
             return await hmc.get_pcm_preferences(category, uuid)
 
-    try:
-        prefs = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    prefs = _run(_go)
+
     _print_json(prefs)
 
 
@@ -1388,11 +1256,8 @@ def metrics_set_prefs(
             await hmc.set_pcm_preferences(category, uuid, **flags)
             return f"Updated {category} {uuid}: {flags}"
 
-    try:
-        msg = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    msg = _run(_go)
+
     console.print(f"[green]{msg}[/green]")
 
 
@@ -1416,11 +1281,8 @@ def metrics_show(
                 return links
             return await hmc.fetch_json(links[-1]["link"])
 
-    try:
-        result = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(_go)
+
     _print_json(result)
 
 
@@ -1444,14 +1306,8 @@ def storage_create_media_repo(
         async with _client() as hmc:
             return await hmc.create_media_repository(vios, vg, size_mb)
 
-    try:
-        result = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(_go)
+
     console.print(f"[green]Created media repository on {vg}[/green]")
     _print_json(result)
 
@@ -1472,14 +1328,8 @@ def storage_create_media(
         async with _client() as hmc:
             return await hmc.create_optical_media(vios, vg, name, size_mb)
 
-    try:
-        result = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(_go)
+
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
     _print_json(result)
 
@@ -1498,14 +1348,8 @@ def storage_delete_media_repo(
         async with _client() as hmc:
             return await hmc.delete_media_repository(vios, vg)
 
-    try:
-        _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    _run(_go)
+
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 
 
@@ -1525,11 +1369,7 @@ def network_list_switches(
         async with _client() as hmc:
             return await hmc.list_virtual_switches(system)
 
-    try:
-        switches = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    switches = _run(_go)
 
     table = None
     if not as_json:
@@ -1557,11 +1397,7 @@ def network_list_networks(
         async with _client() as hmc:
             return await hmc.list_virtual_networks(system)
 
-    try:
-        nets = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    nets = _run(_go)
 
     table = None
     if not as_json:
@@ -1596,14 +1432,8 @@ def network_create(
         async with _client() as hmc:
             return await hmc.create_virtual_network(system, name, vlan, vswitch, tagged=tagged)
 
-    try:
-        net = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    net = _run(_go)
+
     console.print(f"[green]Created virtual network '{name}'[/green]")
     _print_json(net)
 
@@ -1623,14 +1453,8 @@ def network_delete(
             await hmc.delete_virtual_network(system, uuid)
             return uuid
 
-    try:
-        deleted = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    deleted = _run(_go)
+
     console.print(f"[green]Deleted virtual network {deleted}[/green]")
 
 
@@ -1645,11 +1469,8 @@ def network_list_bridges(
         async with _client() as hmc:
             return await hmc.list_network_bridges(system)
 
-    try:
-        bridges = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    bridges = _run(_go)
+
     _output(bridges, as_json, None, "No network bridges found")
 
 
@@ -1677,11 +1498,8 @@ def network_list_fc_ports(
         reader = csv.DictReader(io.StringIO(raw.strip()))
         return [dict(row) for row in reader]
 
-    try:
-        ports = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    ports = _run(_go)
+
     _output(ports, as_json, None, "No FC ports found")
 
 
@@ -1715,11 +1533,8 @@ def network_list_sea_adapters(
             result.append(dict(zip(keys, values)))
         return result
 
-    try:
-        adapters = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    adapters = _run(_go)
+
     _output(adapters, as_json, None, "No SEA adapters found")
 
 
@@ -1743,15 +1558,12 @@ def network_set_sriov_mode(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
-            f' -a "sriov_adapter_mode={mode}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chhwres -r sriov -m {system_name} -o s --id {adapter_id}'
+    f' -a "sriov_adapter_mode={mode}"',
+    ))
+
     console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -1767,15 +1579,12 @@ def network_list_vnics(
     from .ssh import _parse_lshwres_output
 
     config = HMCConfig()
-    try:
-        raw = asyncio.run(run_hmc_command(
-            config,
-            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system}"
-            f" --filter lpar_names={lpar}",
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    raw = _run(lambda: run_hmc_command(
+    config,
+    f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system}"
+    f" --filter lpar_names={lpar}",
+    ))
+
     vnics = _parse_lshwres_output(raw) if raw.strip() else []
     _output(vnics, as_json, None, "No vNICs found")
 
@@ -1801,16 +1610,13 @@ def network_add_vnic(
         attrs += f",backing_devices={backing_devices}"
 
     config = HMCConfig()
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chhwres -r virtualio --rsubtype vnic -o a -m {system}'
-            f' --filter lpar_names={lpar}'
-            f' -a "{attrs}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chhwres -r virtualio --rsubtype vnic -o a -m {system}'
+    f' --filter lpar_names={lpar}'
+    f' -a "{attrs}"',
+    ))
+
     console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -1830,16 +1636,13 @@ def network_remove_vnic(
         raise typer.Abort()
 
     config = HMCConfig()
-    try:
-        result = asyncio.run(run_hmc_command(
-            config,
-            f'chhwres -r virtualio --rsubtype vnic -o r -m {system}'
-            f' --filter lpar_names={lpar}'
-            f' -a "vnic_id={vnic_id}"',
-        ))
-    except Exception as exc:
-        _fail(exc)
-        return
+    result = _run(lambda: run_hmc_command(
+    config,
+    f'chhwres -r virtualio --rsubtype vnic -o r -m {system}'
+    f' --filter lpar_names={lpar}'
+    f' -a "vnic_id={vnic_id}"',
+    ))
+
     console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
     if result.strip():
         console.print(result.strip())
@@ -1858,11 +1661,7 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
         async with _client() as hmc:
             return await hmc.list_partition_templates()
 
-    try:
-        templates = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    templates = _run(_go)
 
     table = None
     if not as_json:
@@ -1882,11 +1681,8 @@ def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> Non
         async with _client() as hmc:
             return await hmc.get_partition_template(uuid)
 
-    try:
-        t = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    t = _run(_go)
+
     if t is None:
         err_console.print(f"[yellow]Template {uuid} not found[/yellow]")
         raise typer.Exit(code=1)
@@ -1907,14 +1703,8 @@ def templates_deploy(
         async with _client() as hmc:
             return await hmc.deploy_partition_template(draft_uuid, system)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted deploy job for template {draft_uuid}[/green]")
     _print_json(job)
 
@@ -1934,11 +1724,7 @@ def vios_list(
         async with _client() as hmc:
             return await hmc.list_vios(system)
 
-    try:
-        vios = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    vios = _run(_go)
 
     table = None
     if not as_json:
@@ -1969,14 +1755,8 @@ def vios_power_on(
         async with _client() as hmc:
             return await hmc.power_on_vios(uuid)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
 
@@ -1996,14 +1776,8 @@ def vios_power_off(
         async with _client() as hmc:
             return await hmc.power_off_vios(uuid, immediate=immediate)
 
-    try:
-        job = _run(_go())
-    except typer.Abort:
-        err_console.print("Aborted.")
-        raise
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)
 
@@ -2021,11 +1795,8 @@ def jobs_show(uuid: str = typer.Argument(..., help="Job UUID")) -> None:
         async with _client() as hmc:
             return await hmc.get_job(uuid)
 
-    try:
-        job = _run(_go())
-    except Exception as exc:
-        _fail(exc)
-        return
+    job = _run(_go)
+
     if job is None:
         err_console.print(f"[yellow]Job {uuid} not found[/yellow]")
         raise typer.Exit(code=1)
@@ -2045,10 +1816,7 @@ def raw_get(path: str = typer.Argument(..., help="Path under the HMC, e.g. /rest
         async with _client() as hmc:
             return await hmc.raw_get(path)
 
-    try:
-        console.print(_run(_go()))
-    except Exception as exc:
-        _fail(exc)
+    console.print(_run(_go))
 
 
 @raw_app.command("post")
@@ -2066,10 +1834,7 @@ def raw_post(
         async with _client() as hmc:
             return await hmc.raw_post(path, body, content_type=content_type)
 
-    try:
-        console.print(_run(_go()))
-    except Exception as exc:
-        _fail(exc)
+    console.print(_run(_go))
 
 
 # ---------------------------------------------------------------------- #
@@ -2093,11 +1858,7 @@ def memory_pools_list(
         user=GLOBALS.user or "",
         password=GLOBALS.password or "",
     )
-    try:
-        output = asyncio.run(run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
-    except Exception as exc:
-        _fail(exc)
-        return
+    output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {system_name}"))
 
     pools = _parse_lshwres_output(output)
     if as_json:
