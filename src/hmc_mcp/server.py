@@ -3,6 +3,13 @@
 Run:
     hmc-mcp serve            # stdio transport (default, for agents)
     hmc-mcp serve --http     # streamable HTTP on 127.0.0.1:8000
+
+Authentication:
+    REST tools authenticate via HMC_USER/HMC_PASSWORD (see
+    ``client_from_env``). SSH-passthrough tools (those that run HMC CLI
+    commands via ``run_hmc_command``) use the same env-var configuration as
+    ``hmc_run_command``: set HMC_SSH_KEY_FILE for key-based auth, otherwise
+    HMC_PASSWORD is used.
 """
 
 from __future__ import annotations
@@ -12,7 +19,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from .client import HMCClient
 from .common import client_from_env
 from .config import HMCConfig
 from .jobs import (
@@ -28,7 +34,6 @@ from .jobs import (
 )
 from .ssh import list_io_slots, run_hmc_command
 from .templates import (
-    PARTITION_TYPES,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_hmc_user_document,
@@ -1004,8 +1009,7 @@ def hmc_list_fc_ports(system_name: str, lpar_name: str | None = None) -> list[di
     Pass lpar_name to restrict results to a single partition.
     Use hmc_list_managed_systems to find system_name.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     import csv
     import io
@@ -1032,8 +1036,7 @@ def hmc_list_sea_adapters(system_name: str, lpar_name: str | None = None) -> lis
     Pass lpar_name to restrict results to a single partition.
     Use hmc_list_managed_systems to find system_name.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
     cmd = (
@@ -1848,8 +1851,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> str:
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and returns
     the raw command output. Find vios_uuid with hmc_list_vios.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     return _run(run_hmc_command(config, f"lsviosbackup -id {vios_uuid}"))
@@ -1920,8 +1922,7 @@ def hmc_backup_lpar_profiles(system_name: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"bkprofdata -m {system_name} -f {file_path}"
@@ -1948,8 +1949,7 @@ def hmc_restore_lpar_profiles(system_name: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"rstprofdata -m {system_name} -f {file_path}"
@@ -1973,8 +1973,7 @@ def hmc_sync_lpar_profile(lpar_name: str, system_name: str) -> str:
     Returns:
         The raw HMC CLI output.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},sync_curr_profile=1"'
@@ -2002,8 +2001,7 @@ def hmc_assign_profile_io_slot(
     Returns:
         The raw HMC CLI output.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f'chsyscfg -r prof -m {system_name} -i "name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}" --force'
@@ -2025,8 +2023,7 @@ def hmc_get_lpar_description(lpar_name: str, system_name: str) -> str:
     This field is not available via the HMC REST API; it is the same
     description visible in the HMC GUI Partitions tab.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F description"
@@ -2047,8 +2044,7 @@ def hmc_set_lpar_description(lpar_name: str, system_name: str, description: str)
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name and system_name before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},description={description}"'
@@ -2063,8 +2059,7 @@ def hmc_get_lpar_msp(lpar_name: str, system_name: str) -> bool:
     -F msp`` on the HMC via SSH and returns ``True`` if the flag is ``1``,
     ``False`` if ``0``.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F msp"
@@ -2082,8 +2077,7 @@ def hmc_set_lpar_msp(lpar_name: str, system_name: str, enabled: bool) -> str:
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name and system_name before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     value = "1" if enabled else "0"
@@ -2120,8 +2114,7 @@ def hmc_set_sriov_adapter_mode(
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
     functions on that adapter. Confirm system_name and adapter_id before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     if mode not in _VALID_SRIOV_MODES:
         raise ValueError(
@@ -2148,8 +2141,7 @@ def hmc_get_proc_compat_modes(system_name: str) -> list[str]:
     Runs ``lssyscfg -r sys -m <system_name> -F lpar_proc_compat_modes``
     on the HMC via SSH and returns a list of supported mode strings.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"lssyscfg -r sys -m {system_name} -F lpar_proc_compat_modes"
@@ -2168,8 +2160,7 @@ def hmc_get_lpar_proc_compat(lpar_name: str, system_name: str) -> dict[str, str]
 
     Returns a dict with keys "pend" and "curr".
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f"lssyscfg -r lpar -m {system_name} --filter lpar_names={lpar_name} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
@@ -2192,8 +2183,7 @@ def hmc_set_lpar_proc_compat(lpar_name: str, system_name: str, mode: str) -> str
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name, system_name, and mode before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = f'chsyscfg -r lpar -m {system_name} -i "name={lpar_name},lpar_proc_compat_mode={mode}"'
@@ -2224,8 +2214,7 @@ def hmc_list_io_slots(
       - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
       - ``"nvme"``  — NVMe adapters (PCI class 0108)
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     return _run(list_io_slots(config, system_name, adapter_type))
@@ -2244,8 +2233,7 @@ def hmc_list_memory_pools(system_name: str) -> list[dict[str, Any]]:
     returns one dict per pool with fields such as ``pool_name``, ``size``,
     ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     from .ssh import _parse_lshwres_output
 
@@ -2269,8 +2257,7 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
     WARNING: This permanently removes the pool — confirm system_name and
     pool_name before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     from .ssh import _parse_lshwres_output
 
@@ -2313,8 +2300,7 @@ def hmc_list_vnics(system_name: str, lpar_name: str) -> list[dict[str, Any]]:
 
     Use ``hmc_list_managed_systems`` to find system_name.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     from .ssh import _parse_lshwres_output
 
@@ -2359,8 +2345,7 @@ def hmc_add_vnic(
     underlying physical adapter must be in SR-IOV mode (see
     ``hmc_set_sriov_adapter_mode``).
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     import asyncssh
 
@@ -2398,8 +2383,7 @@ def hmc_remove_vnic(system_name: str, lpar_name: str, vnic_id: str) -> str:
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     system_name, lpar_name, and vnic_id before calling.
 
-    Authentication uses the same env-var configuration as hmc_run_command:
-    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
     config = HMCConfig()
     cmd = (
