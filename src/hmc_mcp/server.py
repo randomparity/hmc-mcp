@@ -2299,4 +2299,117 @@ def hmc_remove_memory_pool(system_name: str, pool_name: str) -> str:
 
 
 # ---------------------------------------------------------------------- #
+# vNIC management (SSH CLI path)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_vnics(system_name: str, lpar_name: str) -> list[dict[str, Any]]:
+    """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
+
+    Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
+    --filter lpar_names=<lpar_name>`` on the HMC via SSH and returns one dict
+    per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
+    ``port_vlan_id``, and ``backing_devices``.
+
+    Use ``hmc_list_managed_systems`` to find system_name.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    from .ssh import _parse_lshwres_output
+
+    config = HMCConfig()
+    cmd = (
+        f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system_name}"
+        f" --filter lpar_names={lpar_name}"
+    )
+    raw = _run(run_hmc_command(config, cmd))
+    if not raw.strip():
+        return []
+    return _parse_lshwres_output(raw)
+
+
+@mcp.tool
+def hmc_add_vnic(
+    system_name: str,
+    lpar_name: str,
+    capacity: int,
+    vswitch_name: str,
+    port_vlan_id: int,
+    backing_devices: str | None = None,
+) -> str:
+    """Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI.
+
+    Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
+    --filter lpar_names=<lpar_name> -a "<attrs>"`` on the HMC via SSH.
+
+    **V1 scope boundary:** Only the following parameters are supported in
+    this version: ``capacity``, ``vswitch_name``, ``port_vlan_id``, and
+    ``backing_devices`` (optional, opaque string passed verbatim).  Complex
+    backing-device topology (multi-adapter failover, per-device SR-IOV
+    physical port IDs, capacity weights) is a follow-up and explicitly out
+    of scope for v1.
+
+    Returns the raw HMC command output on success, or a structured error
+    message (starting with ``"ERROR:"``) when the command fails because the
+    underlying SR-IOV adapter is not in SR-IOV mode.
+
+    WARNING: This modifies the LPAR configuration on the HMC. Confirm
+    system_name, lpar_name, and vswitch_name before calling.  The
+    underlying physical adapter must be in SR-IOV mode (see
+    ``hmc_set_sriov_adapter_mode``).
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    import asyncssh
+
+    attrs = f"capacity={capacity},vswitch_name={vswitch_name},port_vlan_id={port_vlan_id}"
+    if backing_devices is not None:
+        attrs += f",backing_devices={backing_devices}"
+
+    config = HMCConfig()
+    cmd = (
+        f'chhwres -r virtualio --rsubtype vnic -o a -m {system_name}'
+        f' --filter lpar_names={lpar_name}'
+        f' -a "{attrs}"'
+    )
+    try:
+        return _run(run_hmc_command(config, cmd))
+    except asyncssh.ProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        return (
+            f"ERROR: Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
+            f"Ensure the underlying SR-IOV adapter is in sriov mode "
+            f"(see hmc_set_sriov_adapter_mode). HMC error: {stderr}"
+        )
+
+
+@mcp.tool
+def hmc_remove_vnic(system_name: str, lpar_name: str, vnic_id: str) -> str:
+    """Remove a vNIC from an LPAR via the HMC CLI.
+
+    Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
+    --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` on the HMC
+    via SSH.
+
+    ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
+
+    WARNING: This modifies the LPAR configuration on the HMC. Confirm
+    system_name, lpar_name, and vnic_id before calling.
+
+    Authentication uses the same env-var configuration as hmc_run_command:
+    HMC_SSH_KEY_FILE for key-based auth, otherwise HMC_PASSWORD.
+    """
+    config = HMCConfig()
+    cmd = (
+        f'chhwres -r virtualio --rsubtype vnic -o r -m {system_name}'
+        f' --filter lpar_names={lpar_name}'
+        f' -a "vnic_id={vnic_id}"'
+    )
+    return _run(run_hmc_command(config, cmd))
+
+
+# ---------------------------------------------------------------------- #
 # Shared memory pool management (SSH CLI path)

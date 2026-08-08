@@ -1757,6 +1757,94 @@ def network_set_sriov_mode(
         console.print(result.strip())
 
 
+@network_app.command("list-vnics")
+def network_list_vnics(
+    system: str = typer.Argument(..., help="Managed system name"),
+    lpar: str = typer.Argument(..., help="LPAR name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
+    from .ssh import _parse_lshwres_output
+
+    config = HMCConfig()
+    try:
+        raw = asyncio.run(run_hmc_command(
+            config,
+            f"lshwres -r virtualio --rsubtype vnic --level lpar -m {system}"
+            f" --filter lpar_names={lpar}",
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    vnics = _parse_lshwres_output(raw) if raw.strip() else []
+    _output(vnics, as_json, None, "No vNICs found")
+
+
+@network_app.command("add-vnic")
+def network_add_vnic(
+    system: str = typer.Argument(..., help="Managed system name"),
+    lpar: str = typer.Argument(..., help="LPAR name"),
+    capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
+    vswitch: str = typer.Option(..., "--vswitch", help="Virtual switch name"),
+    vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
+    backing_devices: Optional[str] = typer.Option(None, "--backing-devices", help="Backing devices (opaque string, v1 only)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
+    if not yes and not typer.confirm(
+        f"Add vNIC (capacity={capacity}, vswitch={vswitch}, vlan={vlan}) to '{lpar}' on '{system}'?"
+    ):
+        raise typer.Abort()
+
+    attrs = f"capacity={capacity},vswitch_name={vswitch},port_vlan_id={vlan}"
+    if backing_devices:
+        attrs += f",backing_devices={backing_devices}"
+
+    config = HMCConfig()
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chhwres -r virtualio --rsubtype vnic -o a -m {system}'
+            f' --filter lpar_names={lpar}'
+            f' -a "{attrs}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
+    if result.strip():
+        console.print(result.strip())
+
+
+@network_app.command("remove-vnic")
+def network_remove_vnic(
+    system: str = typer.Argument(..., help="Managed system name"),
+    lpar: str = typer.Argument(..., help="LPAR name"),
+    vnic_id: str = typer.Argument(..., help="vNIC ID (from list-vnics)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
+    if not yes and not typer.confirm(
+        f"Remove vNIC {vnic_id} from '{lpar}' on '{system}'?"
+    ):
+        raise typer.Abort()
+
+    config = HMCConfig()
+    try:
+        result = asyncio.run(run_hmc_command(
+            config,
+            f'chhwres -r virtualio --rsubtype vnic -o r -m {system}'
+            f' --filter lpar_names={lpar}'
+            f' -a "vnic_id={vnic_id}"',
+        ))
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
+    if result.strip():
+        console.print(result.strip())
+
+
 # ---------------------------------------------------------------------- #
 # templates
 # ---------------------------------------------------------------------- #
