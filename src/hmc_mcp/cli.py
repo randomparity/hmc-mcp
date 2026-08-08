@@ -102,6 +102,22 @@ def _client():
     )
 
 
+def _ssh_config() -> HMCConfig:
+    """Build the SSH HMCConfig, honoring the global CLI options.
+
+    None overrides are dropped so env vars / .env fill the rest — the same
+    contract as ``client_from_env`` (explicit init args would otherwise
+    shadow the environment).
+    """
+    overrides = {
+        "host": GLOBALS.host,
+        "user": GLOBALS.user,
+        "password": GLOBALS.password,
+        "verify_ssl": GLOBALS.verify_ssl,
+    }
+    return HMCConfig(**{k: v for k, v in overrides.items() if v is not None})
+
+
 def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
     """Run a coroutine-returning closure, routing failures to the CLI error path.
 
@@ -741,11 +757,7 @@ def lpars_get_description(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the description field of an LPAR (HMC CLI via SSH)."""
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     result = _run(lambda: run_hmc_command(
     config,
     f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -767,11 +779,7 @@ def lpars_set_description(
         f"Set description on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     payload = f"name={lpar_name},description={description}"
     result = _run(lambda: run_hmc_command(
     config,
@@ -789,11 +797,7 @@ def lpars_get_msp(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     result = _run(lambda: run_hmc_command(
     config,
     f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -816,11 +820,7 @@ def lpars_set_msp(
         f"Set MSP={'1' if enabled else '0'} on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     value = "1" if enabled else "0"
     payload = f"name={lpar_name},msp={value}"
     result = _run(lambda: run_hmc_command(
@@ -843,11 +843,7 @@ def lpars_get_proc_compat_modes(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get processor compatibility modes supported by a managed system (HMC CLI via SSH)."""
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     result = _run(lambda: run_hmc_command(
     config,
     f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes",
@@ -863,11 +859,7 @@ def lpars_get_proc_compat(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     result = _run(lambda: run_hmc_command(
     config,
     f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -903,11 +895,7 @@ def lpars_set_proc_compat(
         f"Set processor compatibility mode to '{mode}' on LPAR '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
     result = _run(lambda: run_hmc_command(
     config,
@@ -1545,7 +1533,6 @@ def network_list_fc_ports(
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
     async def _go():
-        from hmc_mcp.config import HMCConfig
         from hmc_mcp.ssh import run_hmc_command
         import csv
         import io
@@ -1553,7 +1540,7 @@ def network_list_fc_ports(
         cmd = f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system)}"
         if lpar_name:
             cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = HMCConfig()
+        config = _ssh_config()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
             return []
@@ -1574,7 +1561,6 @@ def network_list_sea_adapters(
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
     async def _go():
-        from hmc_mcp.config import HMCConfig
         from hmc_mcp.ssh import run_hmc_command
 
         fields = "lpar_name,port_vlan_id,vswitch,state,trunk_priority"
@@ -1584,7 +1570,7 @@ def network_list_sea_adapters(
         )
         if lpar_name:
             cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
-        config = HMCConfig()
+        config = _ssh_config()
         raw = await run_hmc_command(config, cmd)
         if not raw.strip():
             return []
@@ -1615,11 +1601,7 @@ def network_set_sriov_mode(
         f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
     ):
         raise typer.Abort()
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     payload = f"sriov_adapter_mode={mode}"
     result = _run(lambda: run_hmc_command(
     config,
@@ -1641,7 +1623,7 @@ def network_list_vnics(
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
     from .ssh import _parse_lshwres_output
 
-    config = HMCConfig()
+    config = _ssh_config()
     raw = _run(lambda: run_hmc_command(
     config,
     f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system)} "
@@ -1672,7 +1654,7 @@ def network_add_vnic(
     if backing_devices:
         attrs += f",backing_devices={backing_devices}"
 
-    config = HMCConfig()
+    config = _ssh_config()
     result = _run(lambda: run_hmc_command(
     config,
     f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system)} "
@@ -1698,7 +1680,7 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    config = HMCConfig()
+    config = _ssh_config()
     payload = f"vnic_id={vnic_id}"
     result = _run(lambda: run_hmc_command(
     config,
@@ -1917,11 +1899,7 @@ def memory_pools_list(
     """List shared memory pools on a managed system (HMC CLI via SSH)."""
     from .ssh import _parse_lshwres_output
 
-    config = HMCConfig(
-        host=GLOBALS.host or "",
-        user=GLOBALS.user or "",
-        password=GLOBALS.password or "",
-    )
+    config = _ssh_config()
     output = _run(lambda: run_hmc_command(config, f"lshwres -r mempool -m {shlex.quote(system_name)}"))
 
     pools = _parse_lshwres_output(output)

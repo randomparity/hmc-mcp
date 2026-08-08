@@ -1,0 +1,52 @@
+"""Tests for CLI helpers — ``_ssh_config`` honours global options.
+
+SSH-backed CLI commands build their ``HMCConfig`` through ``_ssh_config`` so
+the global ``--host/--user/--password/--verify-ssl`` flags are honoured even
+when the command itself defines no HMC options.  Explicit ``None`` overrides
+must be dropped so env vars / ``.env`` still fill the remaining fields (an
+explicit init arg would otherwise shadow the environment).
+"""
+
+from __future__ import annotations
+
+from hmc_mcp import cli
+
+
+def test_ssh_config_uses_global_overrides(monkeypatch):
+    """Set global flags are passed through to the SSH HMCConfig."""
+    monkeypatch.setattr(cli.GLOBALS, "host", "flag-host")
+    monkeypatch.setattr(cli.GLOBALS, "user", "flag-user")
+    monkeypatch.setattr(cli.GLOBALS, "password", "flag-pass")
+    monkeypatch.setattr(cli.GLOBALS, "verify_ssl", True)
+
+    cfg = cli._ssh_config()
+
+    assert cfg.host == "flag-host"
+    assert cfg.user == "flag-user"
+    assert cfg.password == "flag-pass"
+    assert cfg.verify_ssl is True
+
+
+def test_ssh_config_keeps_false_verify_ssl(monkeypatch):
+    """An explicit ``--no-verify-ssl`` (False) is kept, not dropped as None."""
+    monkeypatch.setattr(cli.GLOBALS, "verify_ssl", False)
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+
+    cfg = cli._ssh_config()
+
+    assert cfg.verify_ssl is False
+
+
+def test_ssh_config_falls_back_to_env(monkeypatch):
+    """None globals fall back to the HMC_* environment variables."""
+    monkeypatch.setenv("HMC_HOST", "env-host")
+    monkeypatch.setenv("HMC_USER", "env-user")
+    monkeypatch.setenv("HMC_PASSWORD", "env-pass")
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+
+    cfg = cli._ssh_config()
+
+    assert cfg.host == "env-host"
+    assert cfg.user == "env-user"
+    assert cfg.password == "env-pass"
+    assert cfg.verify_ssl is True
