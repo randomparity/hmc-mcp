@@ -148,11 +148,6 @@ def parse_feed(xml_text: str) -> list[dict[str, Any]]:
     return entries
 
 
-def parse_response(xml_text: str) -> list[dict[str, Any]]:
-    """Alias for parse_feed for readability at call sites."""
-    return parse_feed(xml_text)
-
-
 def find_text(xml_text: str, *names: str) -> str | None:
     """Return the text of the first element whose local name is in `names`."""
     root = DET.fromstring(xml_text.encode("utf-8"))
