@@ -257,6 +257,31 @@ class HMCClient:
         await self._web_delete(f"/rest/api/web/HmcUser/{name}")
 
     # ------------------------------------------------------------------ #
+    # HMC LDAP server configuration (/rest/api/web/HmcLdapServer)
+    # ------------------------------------------------------------------ #
+
+    async def list_ldap_config(self) -> str:
+        """GET /rest/api/web/HmcLdapServer.
+
+        Returns raw XML; the caller decides how to present it.
+        """
+        return await self._web_get("/rest/api/web/HmcLdapServer")
+
+    async def configure_ldap(self, ldap_xml: str) -> str:
+        """POST an HmcLdapServer document to /rest/api/web/HmcLdapServer."""
+        return await self._web_post("/rest/api/web/HmcLdapServer", ldap_xml)
+
+    async def remove_ldap_config(self, resource: str) -> str:
+        """POST to /rest/api/web/HmcLdapServer?Remove={resource}.
+
+        resource is one of: 'backup', 'ldap', 'binddn', 'bindpw',
+        'searchfilter', 'hmcgroups', 'groupmemberattributes'.
+        """
+        return await self._web_post(
+            f"/rest/api/web/HmcLdapServer?Remove={resource}", ""
+        )
+
+    # ------------------------------------------------------------------ #
     # HMC password policy management (/rest/api/web/HmcPasswordPolicy)
     # ------------------------------------------------------------------ #
 
