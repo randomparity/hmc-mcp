@@ -121,6 +121,33 @@ Exposed tools:
 | `hmc_create_virtual_disk` | Carve a Virtual Disk (logical volume) out of a VG |
 | `hmc_map_storage_to_lpar` | Map a VirtualDisk/PhysicalVolume to an LPAR (vSCSI mapping) |
 
+**Cluster / Shared Storage Pool (SSP)**
+
+| Tool                            | Description |
+|---------------------------------|-------------|
+| `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
+| `hmc_list_shared_storage_pools` | List SSPs (capacity, free space, logical units) |
+| `hmc_get_shared_storage_pool`   | One SSP by UUID (PVs, logical units) |
+| `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
+| `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
+
+**Performance & Capacity Monitoring (PCM)**
+
+| Tool                        | Description |
+|-----------------------------|-------------|
+| `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
+| `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
+| `hmc_get_processed_metrics` | Processed metrics (30s, ~2h retention) |
+| `hmc_get_aggregated_metrics`| Aggregated long-term metrics (trend rollup) |
+
+> **PCM notes**: metrics are returned as *JSON*, reached via an Atom feed of
+> links. The tools return the list of links by default; pass `fetch=True`
+> (MCP) or `--fetch` (CLI) to also download the most recent metrics document.
+> Long-term monitoring + aggregation must be enabled via
+> `hmc_set_pcm_preferences` before processed/aggregated metrics accumulate.
+> Categories include `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
+> `VirtualIOServer`, `SharedStoragePool`, `Cluster`.
+
 ### End-to-end: give an LPAR a bootable disk
 
 ```bash
@@ -144,14 +171,13 @@ hmc-mcp lpars power-on web01
 
 > **Note on the storage model**: an LPAR's vSCSI/vFC *adapter* (added with
 > `adapters add-vscsi` / `add-vfc`) is just plumbing — it pairs the partition
-> with a VIOS server slot. The actual *disk* lives on the VIOS: carve it out
-> of a Volume Group (`storage create-disk`) or use a whole physical volume,
-> then connect it to the partition with a mapping (`storage map`). The tools
-> above cover the VIOS **Volume Group / Virtual Disk** model; the newer
-> **Cluster / Shared Storage Pool** model (Logical Units via `CreateLogicalUnit_Cluster`
-> jobs) is not yet wrapped but is reachable via `raw post`. Once a disk is
-> mapped, partitioning it into filesystems is the guest OS's job (NIM,
-> cloud-init, `mkfs`), not the HMC's.
+> with a VIOS server slot. The actual *disk* lives on the VIOS or in a Shared
+> Storage Pool: carve it out of a Volume Group (`storage create-disk`) or a
+> Cluster/SSP (`cluster create-lu`), then connect it with a mapping
+> (`storage map`). Both the VIOS **Volume Group / Virtual Disk** model and the
+> **Cluster / SSP Logical Unit** model are wrapped. Once a disk is mapped,
+> partitioning it into filesystems is the guest OS's job (NIM, cloud-init,
+> `mkfs`), not the HMC's.
 
 ### Use with Hermes Agent
 

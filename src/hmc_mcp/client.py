@@ -435,6 +435,149 @@ class HMCClient:
         entries = parse_feed(resp) if resp else []
         return entries[0] if entries else None
 
+    # ------------------------------------------------------------------ #
+    # Cluster / Shared Storage Pool (SSP)
+    # ------------------------------------------------------------------ #
+
+    async def list_clusters(self) -> list[dict[str, Any]]:
+        return await self.list_uom("Cluster")
+
+    async def get_cluster(self, cluster_uuid: str) -> dict[str, Any] | None:
+        return await self.get_uom("Cluster", cluster_uuid)
+
+    async def list_shared_storage_pools(self) -> list[dict[str, Any]]:
+        return await self.list_uom("SharedStoragePool")
+
+    async def get_shared_storage_pool(self, ssp_uuid: str) -> dict[str, Any] | None:
+        return await self.get_uom("SharedStoragePool", ssp_uuid)
+
+    async def create_logical_unit(
+        self,
+        cluster_uuid: str,
+        lu_name: str,
+        lu_size_gb: int,
+        lu_type: str = "THIN",
+        device_type: str = "VirtualIO_Disk",
+        cloned_from: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Submit a CreateLogicalUnit job against a Cluster/SSP.
+
+        Returns the Job resource (poll get_job for status; the job result
+        contains the new LU's UDID in LUCreated).
+        """
+        from .jobs import create_logical_unit_job
+
+        job_xml = create_logical_unit_job(
+            lu_name, lu_size_gb, lu_type, device_type, cloned_from
+        )
+        return await self.submit_job(
+            f"/rest/api/uom/Cluster/{cluster_uuid}/do/CreateLogicalUnit", job_xml
+        )
+
+    async def delete_logical_unit(self, cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
+        """Submit a DeleteLogicalUnit job against a Cluster/SSP."""
+        from .jobs import delete_logical_unit_job
+
+        job_xml = delete_logical_unit_job(lu_udid)
+        return await self.submit_job(
+            f"/rest/api/uom/Cluster/{cluster_uuid}/do/DeleteLogicalUnit", job_xml
+        )
+
+    # ------------------------------------------------------------------ #
+    # Performance and Capacity Monitoring (PCM)
+    # ------------------------------------------------------------------ #
+
+    async def get_pcm_preferences(self, category: str, uuid: str) -> dict[str, Any]:
+        """Get PCM preferences for a resource (e.g. ManagedSystem)."""
+        from .pcm import pcm_preferences_to_dict
+
+        xml = await self._get(f"/rest/api/pcm/{category}/{uuid}/preferences")
+        return pcm_preferences_to_dict(xml) if xml else {}
+
+    async def set_pcm_preferences(self, category: str, uuid: str, **flags: bool) -> None:
+        """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
+
+        Only the flags you pass are changed; the HMC merges the rest.
+        """
+        from .pcm import build_pcm_preferences_document
+
+        xml = build_pcm_preferences_document(**flags)
+        await self._post_pcm(f"/rest/api/pcm/{category}/{uuid}/preferences", xml)
+
+    async def _post_pcm(self, path: str, body: str) -> str:
+        resp = await self._http.post(
+            path, content=body, headers={"Content-Type": "application/xml"}
+        )
+        if resp.status_code not in (200, 201, 202, 204):
+            raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
+        return resp.text
+
+    async def get_metrics_feed(self, path: str) -> list[dict[str, str]]:
+        """GET a PCM metrics Atom feed and return its JSON links."""
+        from .pcm import metric_links
+
+        xml = await self._get(path)
+        return metric_links(xml) if xml else []
+
+    async def get_processed_metrics(
+        self,
+        category: str,
+        uuid: str,
+        start_ts: str,
+        end_ts: str | None = None,
+        no_of_samples: int | None = None,
+    ) -> list[dict[str, str]]:
+        """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
+        return await self._metrics_links(category, uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
+
+    async def get_aggregated_metrics(
+        self,
+        category: str,
+        uuid: str,
+        start_ts: str,
+        end_ts: str | None = None,
+        no_of_samples: int | None = None,
+    ) -> list[dict[str, str]]:
+        """Links to AggregatedMetrics JSON (long-term rollup)."""
+        return await self._metrics_links(category, uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
+
+    async def get_ltm_metrics(
+        self, category: str, uuid: str, start_ts: str, end_ts: str | None = None
+    ) -> list[dict[str, str]]:
+        """Links to raw Long Term Monitor metrics JSON."""
+        return await self._metrics_links(
+            category, uuid, "RawMetrics/LongTermMonitor", start_ts, end_ts, None
+        )
+
+    async def _metrics_links(
+        self,
+        category: str,
+        uuid: str,
+        kind: str,
+        start_ts: str,
+        end_ts: str | None,
+        no_of_samples: int | None,
+    ) -> list[dict[str, str]]:
+        from urllib.parse import urlencode
+
+        query: dict[str, str] = {"StartTS": start_ts}
+        if end_ts:
+            query["EndTS"] = end_ts
+        if no_of_samples:
+            query["NoOfSamples"] = str(no_of_samples)
+        path = f"/rest/api/pcm/{category}/{uuid}/{kind}?{urlencode(query)}"
+        return await self.get_metrics_feed(path)
+
+    async def fetch_json(self, link: str) -> Any:
+        """Fetch a PCM metrics JSON document from an Atom link href."""
+        url = link if link.startswith("http") else f"{self.config.base_url}{link}"
+        resp = await self._http.get(url, headers={"Accept": "application/json"})
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
+        return resp.json()
+
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"

@@ -34,6 +34,8 @@ systems_app = typer.Typer(help="Managed systems (Power servers).", no_args_is_he
 lpars_app = typer.Typer(help="Logical partitions (LPARs).", no_args_is_help=True)
 adapters_app = typer.Typer(help="Virtual adapters (network/storage) on LPARs.", no_args_is_help=True)
 storage_app = typer.Typer(help="VIOS storage: volume groups, virtual disks, mappings.", no_args_is_help=True)
+cluster_app = typer.Typer(help="Clusters / Shared Storage Pools (logical units).", no_args_is_help=True)
+metrics_app = typer.Typer(help="PCM performance/capacity metrics.", no_args_is_help=True)
 vios_app = typer.Typer(help="Virtual I/O Servers.", no_args_is_help=True)
 console_app = typer.Typer(help="The HMC itself.", no_args_is_help=True)
 jobs_app = typer.Typer(help="HMC jobs.", no_args_is_help=True)
@@ -43,6 +45,8 @@ app.add_typer(systems_app, name="systems")
 app.add_typer(lpars_app, name="lpars")
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(storage_app, name="storage")
+app.add_typer(cluster_app, name="cluster")
+app.add_typer(metrics_app, name="metrics")
 app.add_typer(vios_app, name="vios")
 app.add_typer(console_app, name="console")
 app.add_typer(jobs_app, name="jobs")
@@ -843,6 +847,212 @@ def storage_map(
         err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
         raise typer.Exit(code=1)
     console.print(f"[green]Mapped '{disk}'[/green] to {lpar_uuid}")
+    _print_json(result)
+
+
+# ---------------------------------------------------------------------- #
+# cluster / SSP
+# ---------------------------------------------------------------------- #
+
+
+@cluster_app.command("list")
+def cluster_list(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List Clusters (VIOS node sets sharing a storage pool)."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_clusters()
+
+    try:
+        clusters = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    table = None
+    if not as_json:
+        table = Table(title="Clusters")
+        for col in ("Name", "UUID"):
+            table.add_column(col)
+        for c in clusters:
+            table.add_row(_g(c, "ClusterName"), c.get("UUID") or "-")
+    _output(clusters, as_json, table, "No clusters found")
+
+
+@cluster_app.command("list-ssps")
+def cluster_list_ssps(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List Shared Storage Pools (capacity, free space, logical units)."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.list_shared_storage_pools()
+
+    try:
+        ssps = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+
+    table = None
+    if not as_json:
+        table = Table(title="Shared Storage Pools")
+        for col in ("Name", "UUID", "Capacity (GB)", "Free (GB)"):
+            table.add_column(col)
+        for s in ssps:
+            table.add_row(
+                _g(s, "StoragePoolName"),
+                s.get("UUID") or "-",
+                _g(s, "Capacity"),
+                _g(s, "FreeSpace"),
+            )
+    _output(ssps, as_json, table, "No shared storage pools found")
+
+
+@cluster_app.command("create-lu")
+def cluster_create_lu(
+    cluster: str = typer.Argument(..., help="Cluster UUID"),
+    name: str = typer.Option(..., "--name", "-n", help="Logical unit name"),
+    size: int = typer.Option(..., "--size", help="Size in GB"),
+    lu_type: str = typer.Option("THIN", "--type", help="THIN or THICK"),
+    device_type: str = typer.Option("VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"),
+    cloned_from: Optional[str] = typer.Option(None, "--cloned-from", help="Source LU UDID to clone"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Create a Logical Unit in a Cluster/SSP (submits a job)."""
+    if not yes and not typer.confirm(f"Create {size} GB {lu_type} LU '{name}' in cluster {cluster}?"):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.create_logical_unit(cluster, name, size, lu_type, device_type, cloned_from)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted CreateLogicalUnit job for '{name}'[/green]")
+    _print_json(job)
+
+
+@cluster_app.command("delete-lu")
+def cluster_delete_lu(
+    cluster: str = typer.Argument(..., help="Cluster UUID"),
+    udid: str = typer.Option(..., "--udid", help="Logical unit UDID to delete"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a Logical Unit from a Cluster/SSP (submits a job)."""
+    if not yes and not typer.confirm(f"Delete LU {udid} from cluster {cluster}? This is irreversible."):
+        raise typer.Abort()
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.delete_logical_unit(cluster, udid)
+
+    try:
+        job = _run(_go())
+    except typer.Abort:
+        err_console.print("Aborted.")
+        raise
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
+    _print_json(job)
+
+
+# ---------------------------------------------------------------------- #
+# metrics (PCM)
+# ---------------------------------------------------------------------- #
+
+
+@metrics_app.command("prefs")
+def metrics_prefs(
+    category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
+    uuid: str = typer.Argument(..., help="Resource UUID"),
+) -> None:
+    """Show PCM monitoring preferences for a resource."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.get_pcm_preferences(category, uuid)
+
+    try:
+        prefs = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    _print_json(prefs)
+
+
+@metrics_app.command("set-prefs")
+def metrics_set_prefs(
+    category: str = typer.Argument(..., help="e.g. ManagedSystem"),
+    uuid: str = typer.Argument(..., help="Resource UUID"),
+    ltm: Optional[bool] = typer.Option(None, "--ltm/--no-ltm", help="Long-term monitoring"),
+    aggregation: Optional[bool] = typer.Option(None, "--aggregation/--no-aggregation"),
+    stm: Optional[bool] = typer.Option(None, "--stm/--no-stm", help="Short-term monitoring"),
+    energy: Optional[bool] = typer.Option(None, "--energy/--no-energy", help="Energy monitoring"),
+) -> None:
+    """Enable/disable PCM data collection for a resource."""
+    flags: dict[str, bool] = {}
+    if ltm is not None:
+        flags["LongTermMonitorEnabled"] = ltm
+    if aggregation is not None:
+        flags["AggregationEnabled"] = aggregation
+    if stm is not None:
+        flags["ShortTermMonitorEnabled"] = stm
+    if energy is not None:
+        flags["EnergyMonitorEnabled"] = energy
+    if not flags:
+        err_console.print("[yellow]No flags supplied; nothing to change.[/yellow]")
+        raise typer.Exit(code=2)
+
+    async def _go():
+        async with _client() as hmc:
+            await hmc.set_pcm_preferences(category, uuid, **flags)
+            return f"Updated {category} {uuid}: {flags}"
+
+    try:
+        msg = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]{msg}[/green]")
+
+
+@metrics_app.command("show")
+def metrics_show(
+    category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
+    uuid: str = typer.Argument(..., help="Resource UUID"),
+    start: str = typer.Option(..., "--start", help="Start TS yyyy-MM-ddTHH:mm:ssZ"),
+    end: Optional[str] = typer.Option(None, "--end", help="End TS (optional)"),
+    samples: Optional[int] = typer.Option(None, "--samples", help="Number of samples"),
+    aggregated: bool = typer.Option(False, "--aggregated", help="Use aggregated (long-term) metrics"),
+    fetch: bool = typer.Option(False, "--fetch", help="Also download the latest JSON doc"),
+) -> None:
+    """Get PCM metrics (processed by default; --aggregated for rollups)."""
+
+    async def _go():
+        async with _client() as hmc:
+            fn = hmc.get_aggregated_metrics if aggregated else hmc.get_processed_metrics
+            links = await fn(category, uuid, start, end, samples)
+            if not fetch or not links:
+                return links
+            return await hmc.fetch_json(links[-1]["link"])
+
+    try:
+        result = _run(_go())
+    except Exception as exc:
+        _fail(exc)
+        return
     _print_json(result)
 
 

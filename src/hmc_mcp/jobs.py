@@ -73,3 +73,34 @@ def power_on_system_job() -> str:
 
 def power_off_system_job() -> str:
     return build_job_request("PowerOff", "ManagedSystem")
+
+
+def create_logical_unit_job(
+    lu_name: str,
+    lu_size_gb: int,
+    lu_type: str = "THIN",
+    device_type: str = "VirtualIO_Disk",
+    cloned_from: str | None = None,
+) -> str:
+    """CreateLogicalUnit job against a Cluster/SSP.
+
+    lu_type is THICK or THIN; device_type is VirtualIO_Disk or VirtualIO_Image.
+    cloned_from is the UDID of an LU to clone from (optional).
+    """
+    params: dict[str, str] = {
+        "TierUDID": "",
+        "LUName": lu_name,
+        "LUSize": str(lu_size_gb),
+        "LUType": lu_type,
+        "DeviceType": device_type,
+    }
+    if cloned_from:
+        params["ClonedFrom"] = cloned_from
+    return build_job_request("CreateLogicalUnit", "Cluster", params)
+
+
+def delete_logical_unit_job(lu_udid: str) -> str:
+    """DeleteLogicalUnit job against a Cluster/SSP (by LU UDID)."""
+    return build_job_request(
+        "DeleteLogicalUnit", "Cluster", {"LogicalUnitUDID": lu_udid}
+    )

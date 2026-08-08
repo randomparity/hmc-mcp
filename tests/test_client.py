@@ -413,3 +413,131 @@ async def test_map_storage_to_lpar(mock_hmc):
     assert "VirtualSCSIMapping" in body
     assert "lv_boot" in body
     assert "LogicalPartition/lpar-uuid" in body
+
+
+JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-1</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>12345</JobID>
+      <Status>RUNNING</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+CLUSTER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:cluster-uuid-1</id>
+    <title>Cluster:cluster1</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <Cluster xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <ClusterName>cluster1</ClusterName>
+      </Cluster>
+    </content>
+  </entry>
+</feed>
+"""
+
+
+@pytest.mark.asyncio
+async def test_list_clusters(mock_hmc):
+    mock_hmc.get("/rest/api/uom/Cluster").mock(
+        return_value=httpx.Response(200, text=CLUSTER_FEED)
+    )
+    async with HMCClient(make_config()) as hmc:
+        clusters = await hmc.list_clusters()
+    assert len(clusters) == 1
+    assert clusters[0]["Resource"]["ClusterName"] == "cluster1"
+
+
+@pytest.mark.asyncio
+async def test_create_logical_unit(mock_hmc):
+    route = mock_hmc.post(
+        "/rest/api/uom/Cluster/cluster-uuid/do/CreateLogicalUnit"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    async with HMCClient(make_config()) as hmc:
+        job = await hmc.create_logical_unit("cluster-uuid", "newLU", 18)
+    body = route.calls.last.request.content.decode()
+    assert "CreateLogicalUnit" in body and "newLU" in body and ">18<" in body
+    assert job is not None and job["Resource"]["JobID"] == "12345"
+
+
+@pytest.mark.asyncio
+async def test_delete_logical_unit(mock_hmc):
+    route = mock_hmc.post(
+        "/rest/api/uom/Cluster/cluster-uuid/do/DeleteLogicalUnit"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_logical_unit("cluster-uuid", "udid-9")
+    body = route.calls.last.request.content.decode()
+    assert "DeleteLogicalUnit" in body and "udid-9" in body
+
+
+PCM_PREFS_XML = """<?xml version="1.0"?>
+<ManagementConsolePcmPreference xmlns="http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/">
+  <LongTermMonitorEnabled>true</LongTermMonitorEnabled>
+  <AggregationEnabled>false</AggregationEnabled>
+</ManagementConsolePcmPreference>
+"""
+
+PCM_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>ManagedSystem ProcessedMetrics</title>
+    <updated>2026-08-07T12:00:30Z</updated>
+    <link rel="SELF" href="/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json" type="application/json"/>
+  </entry>
+</feed>
+"""
+
+
+@pytest.mark.asyncio
+async def test_get_pcm_preferences(mock_hmc):
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=httpx.Response(200, text=PCM_PREFS_XML)
+    )
+    async with HMCClient(make_config()) as hmc:
+        prefs = await hmc.get_pcm_preferences("ManagedSystem", "sys-uuid")
+    assert prefs["LongTermMonitorEnabled"] is True
+    assert prefs["AggregationEnabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_set_pcm_preferences(mock_hmc):
+    route = mock_hmc.post("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=httpx.Response(200, text=PCM_PREFS_XML)
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc.set_pcm_preferences("ManagedSystem", "sys-uuid", LongTermMonitorEnabled=True)
+    body = route.calls.last.request.content.decode()
+    assert "LongTermMonitorEnabled" in body and ">true<" in body
+
+
+@pytest.mark.asyncio
+async def test_get_processed_metrics_links(mock_hmc):
+    route = mock_hmc.get(
+        "/rest/api/pcm/ManagedSystem/sys-uuid/ProcessedMetrics"
+    ).mock(return_value=httpx.Response(200, text=PCM_FEED))
+    async with HMCClient(make_config()) as hmc:
+        links = await hmc.get_processed_metrics(
+            "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", no_of_samples=5
+        )
+    assert len(links) == 1
+    assert links[0]["link"].endswith("_2.json")
+    # StartTS/NoOfSamples were sent as query params on the metrics GET.
+    req = route.calls.last.request
+    assert "StartTS=" in str(req.url) and "NoOfSamples=5" in str(req.url)
+
+
+@pytest.mark.asyncio
+async def test_fetch_json(mock_hmc):
+    mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(
+        return_value=httpx.Response(200, json={"systemUtil": {"utilization": 0.5}})
+    )
+    async with HMCClient(make_config()) as hmc:
+        data = await hmc.fetch_json("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json")
+    assert data["systemUtil"]["utilization"] == 0.5

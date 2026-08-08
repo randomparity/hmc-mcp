@@ -530,6 +530,197 @@ def hmc_map_storage_to_lpar(
     return _run(_go())
 
 
+# ---------------------------------------------------------------------- #
+# Cluster / Shared Storage Pool (SSP)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_list_clusters() -> list[dict[str, Any]]:
+    """List Clusters (sets of VIOS nodes sharing a storage pool)."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_clusters()
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
+    """List Shared Storage Pools (capacity, free space, logical units)."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.list_shared_storage_pools()
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_get_shared_storage_pool(ssp_uuid: str) -> dict[str, Any] | None:
+    """Get one Shared Storage Pool by UUID (physical volumes, logical units)."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.get_shared_storage_pool(ssp_uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_create_logical_unit(
+    cluster_uuid: str,
+    lu_name: str,
+    lu_size_gb: int,
+    lu_type: str = "THIN",
+    device_type: str = "VirtualIO_Disk",
+    cloned_from: str | None = None,
+) -> dict[str, Any] | None:
+    """Create a Logical Unit (file-backed disk) in a Cluster/SSP.
+
+    Submits a CreateLogicalUnit job and returns it — poll hmc_get_job for
+    status; the result holds the new LU's UDID in LUCreated. lu_type is THIN
+    or THICK; device_type is VirtualIO_Disk or VirtualIO_Image. cloned_from is
+    an optional source LU UDID to clone. Find cluster_uuid with
+    hmc_list_clusters.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.create_logical_unit(
+                cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
+            )
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
+    """Delete a Logical Unit from a Cluster/SSP by its UDID (a job)."""
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.delete_logical_unit(cluster_uuid, lu_udid)
+
+    return _run(_go())
+
+
+# ---------------------------------------------------------------------- #
+# Performance and Capacity Monitoring (PCM)
+# ---------------------------------------------------------------------- #
+
+
+@mcp.tool
+def hmc_get_pcm_preferences(category: str, uuid: str) -> dict[str, Any]:
+    """Get PCM monitoring preferences for a resource.
+
+    category is e.g. 'ManagedSystem' or 'LogicalPartition'. Returns flags like
+    LongTermMonitorEnabled, AggregationEnabled, ShortTermMonitorEnabled,
+    ComputeLTMEnabled, EnergyMonitorEnabled.
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            return await hmc.get_pcm_preferences(category, uuid)
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_set_pcm_preferences(
+    category: str,
+    uuid: str,
+    long_term_monitor: bool | None = None,
+    aggregation: bool | None = None,
+    short_term_monitor: bool | None = None,
+    compute_ltm: bool | None = None,
+    energy_monitor: bool | None = None,
+) -> str:
+    """Enable/disable PCM data collection for a resource.
+
+    Only the flags you set are changed. Turning on aggregation implicitly
+    enables long-term monitoring on the HMC. Long-term + aggregation are
+    required before processed/aggregated metrics become available.
+    """
+    flags: dict[str, bool] = {}
+    if long_term_monitor is not None:
+        flags["LongTermMonitorEnabled"] = long_term_monitor
+    if aggregation is not None:
+        flags["AggregationEnabled"] = aggregation
+    if short_term_monitor is not None:
+        flags["ShortTermMonitorEnabled"] = short_term_monitor
+    if compute_ltm is not None:
+        flags["ComputeLTMEnabled"] = compute_ltm
+    if energy_monitor is not None:
+        flags["EnergyMonitorEnabled"] = energy_monitor
+    if not flags:
+        return "No preference flags supplied; nothing to change."
+
+    async def _go():
+        async with client_from_env() as hmc:
+            await hmc.set_pcm_preferences(category, uuid, **flags)
+            return f"Updated PCM preferences on {category} {uuid}: {flags}"
+
+    return _run(_go())
+
+
+@mcp.tool
+def hmc_get_processed_metrics(
+    category: str,
+    uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+    fetch: bool = False,
+) -> Any:
+    """Get processed PCM metrics (30s granularity, ~2h retention).
+
+    Timestamps are ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+    By default returns the list of JSON links; set fetch=True to also download
+    and return the metric JSON of the most recent link.
+    """
+    return _metrics_tool(category, uuid, "processed", start_ts, end_ts, no_of_samples, fetch)
+
+
+@mcp.tool
+def hmc_get_aggregated_metrics(
+    category: str,
+    uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+    fetch: bool = False,
+) -> Any:
+    """Get aggregated PCM metrics (long-term rollup for trend analysis).
+
+    Same arguments as hmc_get_processed_metrics. Requires aggregation to be
+    enabled in PCM preferences.
+    """
+    return _metrics_tool(category, uuid, "aggregated", start_ts, end_ts, no_of_samples, fetch)
+
+
+def _metrics_tool(
+    category: str,
+    uuid: str,
+    kind: str,
+    start_ts: str,
+    end_ts: str | None,
+    no_of_samples: int | None,
+    fetch: bool,
+) -> Any:
+    async def _go():
+        async with client_from_env() as hmc:
+            fn = hmc.get_processed_metrics if kind == "processed" else hmc.get_aggregated_metrics
+            links = await fn(category, uuid, start_ts, end_ts, no_of_samples)
+            if not fetch or not links:
+                return links
+            # Fetch the most recent metrics document.
+            return await hmc.fetch_json(links[-1]["link"])
+
+    return _run(_go())
+
+
 def main_stdio() -> None:
     mcp.run()
 
