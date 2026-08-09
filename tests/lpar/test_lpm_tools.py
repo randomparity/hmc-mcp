@@ -1,0 +1,96 @@
+"""Tool-layer tests for the Live Partition Mobility MCP tools.
+
+The job XML builders and client methods are covered in test_lpm.py; these
+tests call the actual ``@mcp.tool`` functions in ``server_lpm`` against the
+respx ``mock_hmc`` router so the argument->URL and argument->XML mapping in
+the tool bodies is exercised — the layer the client tests skip.
+"""
+
+import httpx
+import pytest
+
+from hmc_mcp.client import HMCError
+from hmc_mcp.server import (
+    hmc_migrate_abort_lpar,
+    hmc_migrate_lpar,
+    hmc_migrate_recover_lpar,
+    hmc_migrate_validate_lpar,
+    hmc_remote_restart_lpar,
+)
+
+from conftest import JOB_ENTRY
+
+LPAR_UUID = "lpar-uuid-0001"
+
+
+def _hmc_env(monkeypatch) -> None:
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+def _job_route(router, operation: str):
+    return router.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/{operation}"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+
+def test_migrate_lpar_submits_job(monkeypatch, mock_hmc):
+    """hmc_migrate_lpar PUTs a Migrate job with the target system."""
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "Migrate")
+    result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", target_profile_name="prof1", wait_time=60)
+    body = route.calls.last.request.content.decode()
+    assert "Migrate</OperationName>" in body
+    assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
+    assert "TargetProfileName" in body and "prof1" in body
+    assert "WaitTime" in body and "60" in body
+    assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_migrate_validate_lpar_submits_job(monkeypatch, mock_hmc):
+    """hmc_migrate_validate_lpar PUTs a MigrateValidate job."""
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "MigrateValidate")
+    hmc_migrate_validate_lpar(LPAR_UUID, "vrml12-fsp")
+    body = route.calls.last.request.content.decode()
+    assert "MigrateValidate</OperationName>" in body
+    assert "vrml12-fsp" in body
+
+
+def test_migrate_abort_lpar_submits_job(monkeypatch, mock_hmc):
+    """hmc_migrate_abort_lpar PUTs a MigrateAbort job."""
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "MigrateAbort")
+    hmc_migrate_abort_lpar(LPAR_UUID)
+    assert "MigrateAbort</OperationName>" in route.calls.last.request.content.decode()
+
+
+def test_migrate_recover_lpar_submits_job(monkeypatch, mock_hmc):
+    """hmc_migrate_recover_lpar PUTs a MigrateRecover job."""
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "MigrateRecover")
+    hmc_migrate_recover_lpar(LPAR_UUID)
+    assert "MigrateRecover</OperationName>" in route.calls.last.request.content.decode()
+
+
+def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
+    """hmc_remote_restart_lpar PUTs a RemoteRestart job with the target."""
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "RemoteRestart")
+    hmc_remote_restart_lpar(LPAR_UUID, "vrml12-fsp")
+    body = route.calls.last.request.content.decode()
+    assert "RemoteRestart</OperationName>" in body
+    assert "vrml12-fsp" in body
+
+
+def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
+    """A non-2xx job submission surfaces as HMCError naming the failing PUT."""
+    _hmc_env(monkeypatch)
+    mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate"
+    ).mock(return_value=httpx.Response(500, text="<error>boom</error>"))
+    with pytest.raises(HMCError) as exc_info:
+        hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp")
+    assert exc_info.value.status_code == 500
+    assert "do/Migrate" in str(exc_info.value)

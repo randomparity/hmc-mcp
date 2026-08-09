@@ -13,6 +13,7 @@ from hmc_mcp.pcm import (
 from hmc_mcp.server import (
     hmc_get_aggregated_metric_links,
     hmc_get_aggregated_metrics,
+    hmc_get_pcm_preferences,
     hmc_get_processed_metric_links,
     hmc_get_processed_metrics,
     hmc_set_pcm_preferences,
@@ -220,6 +221,19 @@ def test_get_aggregated_metrics_fetches_latest(monkeypatch, mock_hmc):
     )
 
     assert result == METRICS_JSON
+
+
+def test_get_pcm_preferences(monkeypatch, mock_hmc):
+    """hmc_get_pcm_preferences returns the parsed preferences dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=httpx.Response(200, text=PCM_PREFS_XML)
+    )
+
+    result = hmc_get_pcm_preferences("ManagedSystem", "sys-uuid")
+
+    assert result["LongTermMonitorEnabled"] is True
+    assert result["AggregationEnabled"] is False
 
 
 def test_set_pcm_preferences_returns_updated(monkeypatch, mock_hmc):
