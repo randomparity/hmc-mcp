@@ -19,7 +19,7 @@ TY_INCLUDE = [
     "src/hmc_mcp/documents.py",
     "src/hmc_mcp/errors.py",
 ]
-BASELINED_FIXTURES = {
+BASELINED_FINDINGS = {
     "justfile": 1,
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
@@ -80,12 +80,12 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     assert "entry: uv run" not in config
 
 
-def test_secret_baseline_is_an_exact_reviewed_fixture_allowlist() -> None:
+def test_secret_baseline_is_an_exact_reviewed_allowlist() -> None:
     with (ROOT / ".secrets.baseline").open("rb") as file:
         baseline = json.load(file)
 
     results = baseline["results"]
-    assert {path: len(findings) for path, findings in results.items()} == BASELINED_FIXTURES
+    assert {path: len(findings) for path, findings in results.items()} == BASELINED_FINDINGS
     excluded_paths = baseline.get("exclude", {})
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
