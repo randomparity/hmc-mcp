@@ -18,6 +18,16 @@ pager, or a prompt will stall the agent with no recovery path.
   step opens the editor to confirm the commit message even when there are no
   remaining conflicts.
 - Suppress the pager: `git --no-pager <subcommand>` or set `GIT_PAGER=cat`.
+- **Never squash-merge** (`gh pr merge --squash` / `git merge --squash`) unless
+  the PR is documentation-only. Squash merges collapse commit history and break
+  `git bisect`. Use `--merge` (merge commit) for all code, test, config, and
+  script changes.
+  - **Documentation-only** means every file changed in the PR matches one of:
+    `*.md`, `docs/**`, `*.txt`. If any changed file falls outside those patterns
+    the PR is not documentation-only and must be merged with `--merge`.
+  - To check before merging:
+    `gh pr diff <PR> --name-only | grep -Ev '\.(md|txt)$|^docs/'`
+    An empty result confirms documentation-only; any output means use `--merge`.
 
 **Other common interactive traps**
 
