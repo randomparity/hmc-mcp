@@ -23,9 +23,9 @@
    configuration. Confirm `git status --short --untracked-files=all` shows only the policy
    test and design-plan state expected at this phase.
 
-## Task 2: Pin direct dependencies and generate the lock
+## Task 2: Pin direct dependencies and regenerate the lock
 
-**Files:** modify `pyproject.toml`; create `uv.lock`.
+**Files:** modify `pyproject.toml` and `uv.lock`.
 
 1. Replace each runtime, development, and build requirement's range with an exact `==` pin
    at its currently declared release. Do not add, remove, substitute, or opportunistically
