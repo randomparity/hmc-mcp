@@ -151,7 +151,9 @@ def test_remove_memory_pool_quotes_hostile_pool_name(monkeypatch, mock_hmc):
     """hmc_remove_memory_pool quotes a hostile pool_name in the chhwres command."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn = _make_ssh_mock("")  # empty pool list → safety check passes
+    # Pool list contains the hostile name (unassigned) so the safety check
+    # finds it and proceeds to the remove command.
+    conn = _make_ssh_mock("pool_name=x; id,size=4096,curr_lpar_names=\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
         hmc_remove_memory_pool(SYSTEM_UUID, HOSTILE)

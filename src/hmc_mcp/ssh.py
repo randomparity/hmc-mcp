@@ -260,23 +260,27 @@ async def remove_memory_pool(
     """Remove a shared memory pool from *system_name* via SSH.
 
     Before issuing the remove command, fetches the current pool list and
-    checks whether any LPARs are still assigned to *pool_name*.  If any are
-    found the command is **not** executed and an ``HMCCLIError`` naming the
-    blocking LPARs is raised instead.
+    checks that *pool_name* exists and that no LPARs are still assigned to
+    it.  If a pool with that name is missing, or any LPARs are still
+    assigned, the command is **not** executed and an ``HMCCLIError``
+    describing the problem is raised instead.
 
     Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
-    the HMC via SSH when no LPARs are assigned.
+    the HMC via SSH when the pool exists and no LPARs are assigned.
 
     Returns the HMC CLI output (immediate delete — no job to poll).
 
     Raises:
-        HMCCLIError: If *pool_name* still has LPARs assigned to it.
+        HMCCLIError: If *pool_name* has LPARs still assigned to it, or if
+            no pool with that name exists on *system_name*.
     """
     # Safety check: list pools and look for LPAR assignments.
     pools = await list_memory_pools(config, system_name)
 
+    found = False
     for pool in pools:
         if pool.get("pool_name") == pool_name:
+            found = True
             # curr_lpar_names may be a comma-separated string or empty.
             assigned = pool.get("curr_lpar_names", "").strip()
             if assigned:
@@ -288,6 +292,12 @@ async def remove_memory_pool(
                     "remove them from the pool before retrying."
                 )
             break
+    if not found:
+        raise HMCCLIError(
+            f"Cannot remove memory pool '{pool_name}' on '{system_name}' — "
+            f"no pool with that name exists in the current pool list. "
+            f"Use hmc_list_memory_pools to see the available pools."
+        )
 
     cmd = f"chhwres -r mempool -m {shlex.quote(system_name)} -o r -a {shlex.quote(pool_name)}"
     return await run_hmc_command(config, cmd)

@@ -154,22 +154,29 @@ def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch, mock_hmc):
     assert "Operation successful" in result
 
 
-def test_remove_memory_pool_unknown_pool_proceeds(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool proceeds if pool is not in list (let HMC error)."""
+def test_remove_memory_pool_unknown_pool_raises(monkeypatch, mock_hmc):
+    """hmc_remove_memory_pool raises HMCCLIError and does NOT remove when pool is not in the list."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
     list_result = MagicMock()
     list_result.stdout = _POOL_OUTPUT_SINGLE_EMPTY
-    remove_result = MagicMock()
-    remove_result.stdout = "Operation successful.\n"
 
     conn_mock = AsyncMock()
-    conn_mock.run = AsyncMock(side_effect=[list_result, remove_result])
+    conn_mock.run = AsyncMock(return_value=list_result)
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
+        with pytest.raises(HMCCLIError) as exc_info:
+            hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
 
-    assert "chhwres" in conn_mock.run.call_args_list[1][0][0]
+    # Only the safety-check lshwres should have been called -- no chhwres.
+    assert conn_mock.run.call_count == 1
+    called_cmd = conn_mock.run.call_args[0][0]
+    assert "lshwres" in called_cmd
+    assert "chhwres" not in called_cmd
+
+    # Exception names the missing pool.
+    assert "no pool with that name exists" in str(exc_info.value)
+    assert "MissingPool" in str(exc_info.value)

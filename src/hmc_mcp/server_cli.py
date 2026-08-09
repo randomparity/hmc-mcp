@@ -225,12 +225,13 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     """Remove a shared memory pool from a managed system via the HMC CLI.
 
     Before issuing the remove command, fetches the current pool list and
-    checks whether any LPARs are still assigned to *pool_name*.  If any are
-    found the command is **not** executed and an ``HMCCLIError`` naming the
-    blocking LPARs is raised instead.
+    checks that *pool_name* exists and that no LPARs are still assigned to
+    it.  If a pool with that name is missing, or any LPARs are still
+    assigned, the command is **not** executed and an ``HMCCLIError``
+    describing the problem is raised instead.
 
     Runs ``chhwres -r mempool -m <system_name> -o r -a <pool_name>`` on
-    the HMC via SSH when no LPARs are assigned.
+    the HMC via SSH when the pool exists and no LPARs are assigned.
 
     The system UUID is resolved to its CLI name via REST before the command
     runs.
@@ -240,7 +241,8 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     no job to poll).
 
     Raises:
-        HMCCLIError: If *pool_name* still has LPARs assigned to it.
+        HMCCLIError: If *pool_name* has LPARs still assigned to it, or if
+            no pool with that name exists on the managed system.
     """
     return _ssh_with_client(
         lambda config, system_name, _: remove_memory_pool(config, system_name, pool_name),
