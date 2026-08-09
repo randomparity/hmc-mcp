@@ -23,11 +23,7 @@ class StorageMixin:
     # ------------------------------------------------------------------ #
     # Virtual storage (children of VirtualIOServer)
     # ------------------------------------------------------------------ #
-    async def get_vios_link(self, vios_uuid: str) -> str:
-        """Atom SELF href for a VIOS (used when building mappings)."""
-        return f"{self.config.base_url}/rest/api/uom/VirtualIOServer/{vios_uuid}"
-
-    async def get_lpar_link(self, lpar_uuid: str) -> str:
+    def get_lpar_link(self, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
         return f"{self.config.base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
 
@@ -79,7 +75,7 @@ class StorageMixin:
         device or disk name. lpar_uuid is the client partition to attach to.
         """
 
-        lpar_link = await self.get_lpar_link(lpar_uuid)
+        lpar_link = self.get_lpar_link(lpar_uuid)
         xml = build_vscsi_mapping_document(
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
