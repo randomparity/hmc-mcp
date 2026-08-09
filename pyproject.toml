@@ -5,31 +5,31 @@ description = "MCP server and CLI for the IBM HMC (Hardware Management Console) 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "asyncssh>=2.18.0",
-    "defusedxml>=0.7.1",
-    "fastmcp>=3.4.6",
-    "httpx>=0.28.1",
-    "mcp>=1.29.0",
-    "pydantic>=2.13.4",
-    "pydantic-settings>=2.15.0",
-    "rich>=15.0.0",
-    "typer>=0.27.1",
+    "asyncssh==2.24.0",
+    "defusedxml==0.7.1",
+    "fastmcp==3.4.6",
+    "httpx==0.28.1",
+    "mcp==1.29.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "rich==15.0.0",
+    "typer==0.27.1",
 ]
 
 [project.scripts]
 hmc-mcp = "hmc_mcp:main"
 
 [build-system]
-requires = ["uv_build>=0.11.29,<0.12.0"]
+requires = ["uv_build==0.12.3"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "cryptography>=50.0.0",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
-    "pytest-cov>=7.1.0",
-    "respx>=0.23.1",
+    "cryptography==50.0.0",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "respx==0.23.1",
 ]
 
 [tool.pytest.ini_options]
