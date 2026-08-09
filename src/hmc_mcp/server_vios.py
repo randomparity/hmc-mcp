@@ -39,7 +39,7 @@ def hmc_create_vios(
 ) -> dict[str, Any] | None:
     """Create a new Virtual IO Server (VIOS) partition on a managed system.
 
-    system_uuid is the target managed system (find it with hmc_list_systems).
+    system_uuid is the target managed system (find it with hmc_systems).
     Memory values are in MiB; procs are shared processing units (fractional
     ok). The VIOS is created powered off with default settings — install the
     OS with hmc_install_vios before using it as a storage/network server.
@@ -66,7 +66,7 @@ def hmc_delete_vios(vios_uuid: str) -> str:
     """Delete (destroy) a VIOS partition by UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
-    with hmc_lpar_state). This tool refuses to delete a VIOS whose current
+    with hmc_lpars). This tool refuses to delete a VIOS whose current
     state is anything other than 'not activated', matching the precondition
     check pattern used by hmc_remove_memory_pool. This permanently removes
     the VIOS and its profiles from the HMC — it is irreversible. Confirm the
@@ -86,7 +86,7 @@ def hmc_delete_vios(vios_uuid: str) -> str:
                 raise HMCError(
                     f"Cannot delete VIOS {vios_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
-                    "off (hmc_power_off_vios) and confirm with hmc_lpar_state "
+                    "off (hmc_power_off_vios) and confirm with hmc_lpars "
                     "before retrying.",
                     status_code=409,
                 )

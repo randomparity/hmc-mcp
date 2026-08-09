@@ -24,12 +24,11 @@ from hmc_mcp.server import (
     hmc_delete_adapter,
     hmc_delete_logical_unit,
     hmc_delete_media_repository,
-    hmc_get_shared_storage_pool,
     hmc_list_adapters,
     hmc_list_clusters,
-    hmc_list_shared_storage_pools,
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
+    hmc_shared_storage_pools,
 )
 
 from conftest import JOB_ENTRY
@@ -302,22 +301,22 @@ def test_list_clusters(monkeypatch, mock_hmc):
 
 
 def test_list_shared_storage_pools(monkeypatch, mock_hmc):
-    """hmc_list_shared_storage_pools GETs the SharedStoragePool collection."""
+    """hmc_shared_storage_pools with no args GETs the SharedStoragePool collection."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/SharedStoragePool").mock(
         return_value=httpx.Response(200, text=_feed(SSP_UUID, "SharedStoragePool"))
     )
-    result = hmc_list_shared_storage_pools()
+    result = hmc_shared_storage_pools()
     assert result[0]["UUID"] == SSP_UUID
 
 
 def test_get_shared_storage_pool(monkeypatch, mock_hmc):
-    """hmc_get_shared_storage_pool GETs one SSP by UUID."""
+    """hmc_shared_storage_pools with ssp_uuid GETs one SSP by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/SharedStoragePool/{SSP_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(SSP_UUID, "SharedStoragePool"))
     )
-    result = hmc_get_shared_storage_pool(SSP_UUID)
+    result = hmc_shared_storage_pools(SSP_UUID)
     assert result["UUID"] == SSP_UUID
 
 

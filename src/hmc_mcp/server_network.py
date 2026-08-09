@@ -96,8 +96,8 @@ def hmc_list_fc_ports(system_name_or_uuid: str, lpar_name_or_uuid: str | None = 
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
-    Either a CLI name or UUID works; use hmc_list_systems to find a system
-    UUID and hmc_list_lpars to find an LPAR UUID.    """
+    Either a CLI name or UUID works; use hmc_systems to find a system
+    UUID and hmc_lpars to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_fc_ports(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,
@@ -117,8 +117,8 @@ def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | Non
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
-    Either a CLI name or UUID works; use hmc_list_systems to find a system
-    UUID and hmc_list_lpars to find an LPAR UUID.    """
+    Either a CLI name or UUID works; use hmc_systems to find a system
+    UUID and hmc_lpars to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_sea_adapters(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,
@@ -174,8 +174,8 @@ def hmc_list_vnics(system_name_or_uuid: str, lpar_name_or_uuid: str) -> list[dic
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
-    runs. Use ``hmc_list_systems`` to find a system UUID and
-    ``hmc_list_lpars`` to find an LPAR UUID.    """
+    runs. Use ``hmc_systems`` to find a system UUID and
+    ``hmc_lpars`` to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_vnics(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,

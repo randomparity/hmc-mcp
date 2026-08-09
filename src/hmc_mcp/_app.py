@@ -48,15 +48,9 @@ _DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
 
 READ_ONLY_TOOLS = frozenset({
     "hmc_console_info",
-    "hmc_list_systems",
-    "hmc_get_system",
-    "hmc_find_system",
-    "hmc_list_lpars",
-    "hmc_get_lpar",
-    "hmc_find_lpar",
-    "hmc_lpar_state",
-    "hmc_list_vios",
-    "hmc_vios_mappings",
+    "hmc_systems",
+    "hmc_lpars",
+    "hmc_vios",
     "hmc_list_resources",
     "hmc_get_job",
     "hmc_wait_for_job",
@@ -70,18 +64,15 @@ READ_ONLY_TOOLS = frozenset({
     "hmc_list_network_bridges",
     "hmc_list_fc_ports",
     "hmc_list_sea_adapters",
-    "hmc_list_partition_templates",
-    "hmc_get_partition_template",
+    "hmc_partition_templates",
     "hmc_list_clusters",
-    "hmc_list_shared_storage_pools",
-    "hmc_get_shared_storage_pool",
+    "hmc_shared_storage_pools",
     "hmc_get_pcm_preferences",
     "hmc_get_processed_metric_links",
     "hmc_get_processed_metrics",
     "hmc_get_aggregated_metric_links",
     "hmc_get_aggregated_metrics",
-    "hmc_list_users",
-    "hmc_get_user",
+    "hmc_users",
     "hmc_list_password_policies",
     "hmc_get_ldap_config",
     "hmc_get_available_hmc_ptfs",
@@ -143,7 +134,7 @@ async def _system_name_from_rest(hmc, system_uuid: str) -> str:
     if not entry or "SystemName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve system UUID {system_uuid!r} to a system name. "
-            "Use hmc_list_systems to find the system_uuid."
+            "Use hmc_systems to find the system_uuid."
         )
     return entry["Resource"]["SystemName"]
 
@@ -154,7 +145,7 @@ async def _lpar_name_from_rest(hmc, lpar_uuid: str) -> str:
     if not entry or "PartitionName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
-            "Use hmc_list_lpars to find the lpar_uuid."
+            "Use hmc_lpars to find the lpar_uuid."
         )
     return entry["Resource"]["PartitionName"]
 

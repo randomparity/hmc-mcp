@@ -7,9 +7,8 @@ from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.server import (
     hmc_create_user,
     hmc_delete_user,
-    hmc_get_user,
-    hmc_list_users,
     hmc_modify_user,
+    hmc_users,
 )
 from hmc_mcp.documents import build_hmc_user_document
 
@@ -204,12 +203,12 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_hmc_list_users_parses_feed(monkeypatch, mock_hmc):
-    """hmc_list_users returns parsed dicts, one per account."""
+    """hmc_users with no name returns parsed dicts, one per account."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser").mock(
         return_value=httpx.Response(200, text=USER_FEED)
     )
-    result = hmc_list_users()
+    result = hmc_users()
     assert isinstance(result, list)
     assert len(result) == 2
     assert result[0]["Resource"]["UserID"] == "hscroot"
@@ -217,24 +216,24 @@ def test_hmc_list_users_parses_feed(monkeypatch, mock_hmc):
 
 
 def test_hmc_get_user_parses_entry(monkeypatch, mock_hmc):
-    """hmc_get_user returns a single parsed resource dict."""
+    """hmc_users(name=...) returns a single parsed resource dict."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
         return_value=httpx.Response(200, text=USER_ENTRY)
     )
-    result = hmc_get_user("hscroot")
+    result = hmc_users(name="hscroot")
     assert isinstance(result, dict)
     assert result["ResourceType"] == "HmcUser"
     assert result["Resource"]["UserID"] == "hscroot"
 
 
 def test_hmc_get_user_empty_body_returns_none(monkeypatch, mock_hmc):
-    """hmc_get_user returns None when the server returns no content."""
+    """hmc_users(name=...) returns None when the server returns no content."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser/nobody").mock(
         return_value=httpx.Response(204)
     )
-    assert hmc_get_user("nobody") is None
+    assert hmc_users(name="nobody") is None
 
 
 def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):

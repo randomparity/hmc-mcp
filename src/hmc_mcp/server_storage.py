@@ -231,17 +231,19 @@ def hmc_list_clusters() -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
-    """List Shared Storage Pools (capacity, free space, logical units)."""
+def hmc_shared_storage_pools(
+    ssp_uuid: str | None = None,
+) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """List Shared Storage Pools or get one by UUID.
 
+    - No arguments: list all Shared Storage Pools (capacity, free space,
+      logical units).
+    - *ssp_uuid*: return full details for one SSP (physical volumes, logical
+      units).
+    """
+    if ssp_uuid is not None:
+        return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid))
     return with_client(lambda hmc: hmc.list_shared_storage_pools())
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_shared_storage_pool(ssp_uuid: str) -> dict[str, Any] | None:
-    """Get one Shared Storage Pool by UUID (physical volumes, logical units)."""
-
-    return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid))
 
 
 @mcp.tool

@@ -57,91 +57,75 @@ def hmc_console_info() -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_systems() -> list[dict[str, Any]]:
-    """List all managed systems (Power servers) known to the HMC.
+def hmc_systems(
+    system_uuid: str | None = None,
+    name: str | None = None,
+) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """List or look up managed systems (Power servers).
 
-    Returns one entry per system with UUID, SystemName, State, MTMS
-    (machine type/model/serial), IPAddress, etc.
+    - No arguments: list all managed systems known to the HMC.
+    - *system_uuid*: return full details for one system by UUID.
+    - *name*: find a system by its SystemName (exact match), return the first
+      match or None.
+
+    Returns one entry per system when listing, or a single dict when a
+    *system_uuid* or *name* is supplied.  Each entry contains UUID,
+    SystemName, State, MTMS (machine type/model/serial), IPAddress, etc.
     """
-
+    if system_uuid is not None:
+        return with_client(lambda hmc: hmc.get_managed_system(system_uuid))
+    if name is not None:
+        return with_client(lambda hmc: hmc.find_system_by_name(name))
     return with_client(lambda hmc: hmc.list_managed_systems())
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_system(system_uuid: str) -> dict[str, Any] | None:
-    """Get full details for one managed system by UUID."""
+def hmc_lpars(
+    system_uuid: str | None = None,
+    lpar_uuid: str | None = None,
+    name: str | None = None,
+    state_only: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any] | str | None:
+    """List or look up logical partitions (LPARs).
 
-    return with_client(lambda hmc: hmc.get_managed_system(system_uuid))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_find_system(name: str) -> dict[str, Any] | None:
-    """Find a managed system by its SystemName (exact match).
-
-    Returns the first managed system whose SystemName equals *name*, or None
-    if no system with that name is found.
+    - No arguments: list every LPAR known to the HMC.
+    - *system_uuid* only: list LPARs on that managed system.
+    - *lpar_uuid*: return full details for one LPAR by UUID.
+    - *name*: find an LPAR by its PartitionName (exact match), return the
+      first match or None.
+    - *state_only=True* (requires *lpar_uuid*): return just the current
+      PartitionState string using the cheap quick-property endpoint.
     """
-
-    return with_client(lambda hmc: hmc.find_system_by_name(name))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_list_lpars(system_uuid: str | None = None) -> list[dict[str, Any]]:
-    """List logical partitions (LPARs).
-
-    If system_uuid is omitted, lists every LPAR known to the HMC; otherwise
-    only the LPARs of that managed system.
-    """
-
+    if state_only:
+        if lpar_uuid is None:
+            raise ValueError("lpar_uuid is required when state_only=True")
+        return with_client(
+            lambda hmc: hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
+        )
+    if lpar_uuid is not None:
+        return with_client(lambda hmc: hmc.get_logical_partition(lpar_uuid))
+    if name is not None:
+        return with_client(lambda hmc: hmc.find_partition_by_name(name))
     return with_client(lambda hmc: hmc.list_logical_partitions(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_lpar(lpar_uuid: str) -> dict[str, Any] | None:
-    """Get full details for one logical partition by UUID."""
+def hmc_vios(
+    system_uuid: str | None = None,
+    vios_uuid: str | None = None,
+) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """List Virtual I/O Servers or return storage mapping facts for one VIOS.
 
-    return with_client(lambda hmc: hmc.get_logical_partition(lpar_uuid))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_find_lpar(name: str) -> dict[str, Any] | None:
-    """Find a logical partition by its partition name (exact match)."""
-
-    return with_client(lambda hmc: hmc.find_partition_by_name(name))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_lpar_state(lpar_uuid: str) -> str | None:
-    """Get just the current state of an LPAR (running, not activated, ...).
-
-    Uses the cheap quick-property endpoint instead of a full fetch.
+    - No arguments: list all VIOSes known to the HMC.
+    - *system_uuid* only: list VIOSes on that managed system.
+    - *vios_uuid*: return VIOS device mapping facts (ViosStorageDetail group),
+      which contains VirtualSCSIMappings (physical volumes and virtual disks
+      served to LPARs) and VirtualFibreChannelMappings (NPIV port mappings).
+      Equivalent to Ansible ``vios_mapping_facts``.
     """
-
-    return with_client(
-        lambda hmc: hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
-    )
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_list_vios(system_uuid: str | None = None) -> list[dict[str, Any]]:
-    """List Virtual I/O Servers, optionally restricted to one managed system."""
-
+    if vios_uuid is not None:
+        return with_client(lambda hmc: hmc.get_vios_storage_detail(vios_uuid))
     return with_client(lambda hmc: hmc.list_vios(system_uuid))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_vios_mappings(vios_uuid: str) -> dict[str, Any] | None:
-    """Return VIOS device mapping facts (vSCSI, NPIV, virtual optical).
-
-    Fetches the ViosStorageDetail group for the given VIOS UUID and returns
-    the parsed entry, which contains VirtualSCSIMappings (physical volumes and
-    virtual disks served to LPARs) and VirtualFibreChannelMappings (NPIV port
-    mappings). Equivalent to Ansible ``vios_mapping_facts``.
-
-    Find VIOS UUIDs with hmc_list_vios.
-    """
-
-    return with_client(lambda hmc: hmc.get_vios_storage_detail(vios_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)

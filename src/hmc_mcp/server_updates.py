@@ -115,7 +115,7 @@ def hmc_update_firmware(system_uuid: str, repository: RepositorySource) -> dict[
     repository describes the firmware image source (same format as
     hmc_update_hmc). Submits an UpdateFirmware job to ManagedSystem; poll
     hmc_get_job for status. system_uuid is the managed system UUID
-    (from hmc_list_systems).
+    (from hmc_systems).
     """
 
     return with_client(

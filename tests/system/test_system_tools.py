@@ -13,14 +13,10 @@ import pytest
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_console_info,
-    hmc_get_lpar,
-    hmc_get_system,
-    hmc_lpar_state,
-    hmc_list_lpars,
     hmc_list_resources,
-    hmc_list_systems,
-    hmc_list_vios,
-    hmc_vios_mappings,
+    hmc_lpars,
+    hmc_systems,
+    hmc_vios,
 )
 
 SYSTEM_UUID = "sys-uuid-0001"
@@ -76,34 +72,34 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
 
 
 def test_list_systems(monkeypatch, mock_hmc):
-    """hmc_list_systems GETs the ManagedSystem collection."""
+    """hmc_systems with no args GETs the ManagedSystem collection."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
         return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01"))
     )
-    result = hmc_list_systems()
+    result = hmc_systems()
     assert result[0]["UUID"] == SYSTEM_UUID
     assert result[0]["Resource"]["SystemName"] == "s824-01"
 
 
 def test_get_system(monkeypatch, mock_hmc):
-    """hmc_get_system GETs one managed system by UUID."""
+    """hmc_systems with system_uuid GETs one managed system by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", State="operating"))
     )
-    result = hmc_get_system(SYSTEM_UUID)
+    result = hmc_systems(system_uuid=SYSTEM_UUID)
     assert result["Resource"]["State"] == "operating"
 
 
 def test_get_system_error_propagates(monkeypatch, mock_hmc):
-    """A 404 on hmc_get_system surfaces as HMCError with the status code."""
+    """A 404 on hmc_systems(system_uuid=...) surfaces as HMCError."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_get_system(SYSTEM_UUID)
+        hmc_systems(system_uuid=SYSTEM_UUID)
     assert exc_info.value.status_code == 404
 
 
@@ -113,42 +109,42 @@ def test_get_system_error_propagates(monkeypatch, mock_hmc):
 
 
 def test_list_lpars_all(monkeypatch, mock_hmc):
-    """hmc_list_lpars with no system_uuid GETs the global LogicalPartition feed."""
+    """hmc_lpars with no args GETs the global LogicalPartition feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
     )
-    result = hmc_list_lpars()
+    result = hmc_lpars()
     assert result[0]["Resource"]["PartitionName"] == "aix1"
 
 
 def test_list_lpars_scoped(monkeypatch, mock_hmc):
-    """hmc_list_lpars with system_uuid GETs the system-scoped child feed."""
+    """hmc_lpars with system_uuid GETs the system-scoped child feed."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
     )
-    hmc_list_lpars(SYSTEM_UUID)
+    hmc_lpars(system_uuid=SYSTEM_UUID)
     assert route.called
 
 
 def test_get_lpar(monkeypatch, mock_hmc):
-    """hmc_get_lpar GETs one LPAR by UUID."""
+    """hmc_lpars with lpar_uuid GETs one LPAR by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running"))
     )
-    result = hmc_get_lpar(LPAR_UUID)
+    result = hmc_lpars(lpar_uuid=LPAR_UUID)
     assert result["Resource"]["PartitionState"] == "running"
 
 
 def test_lpar_state_uses_quick_property(monkeypatch, mock_hmc):
-    """hmc_lpar_state GETs the cheap quick/PartitionState endpoint."""
+    """hmc_lpars with state_only=True GETs the cheap quick/PartitionState endpoint."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(return_value=httpx.Response(200, text="running"))
-    result = hmc_lpar_state(LPAR_UUID)
+    result = hmc_lpars(lpar_uuid=LPAR_UUID, state_only=True)
     assert route.called
     assert result == "running"
 
@@ -159,22 +155,22 @@ def test_lpar_state_uses_quick_property(monkeypatch, mock_hmc):
 
 
 def test_list_vios_all(monkeypatch, mock_hmc):
-    """hmc_list_vios with no system_uuid GETs the VirtualIOServer feed."""
+    """hmc_vios with no args GETs the VirtualIOServer feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1"))
     )
-    result = hmc_list_vios()
+    result = hmc_vios()
     assert result[0]["Resource"]["PartitionName"] == "vios1"
 
 
 def test_vios_mappings(monkeypatch, mock_hmc):
-    """hmc_vios_mappings GETs the ViosStorageDetail group."""
+    """hmc_vios with vios_uuid GETs the ViosStorageDetail group."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
     ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")))
-    result = hmc_vios_mappings(VIOS_UUID)
+    result = hmc_vios(vios_uuid=VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
 
@@ -308,28 +304,26 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
 
 
 # ---------------------------------------------------------------------- #
-# hmc_find_system (name-based lookup)
+# hmc_systems name-based lookup
 # ---------------------------------------------------------------------- #
-
-from hmc_mcp.server import hmc_find_system  # noqa: E402
 
 
 def test_find_system_by_name_found(monkeypatch, mock_hmc):
-    """hmc_find_system searches by SystemName and returns the entry."""
+    """hmc_systems(name=...) searches by SystemName and returns the entry."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==s824-01)").mock(
         return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01"))
     )
-    result = hmc_find_system("s824-01")
+    result = hmc_systems(name="s824-01")
     assert result is not None
     assert result["UUID"] == SYSTEM_UUID
     assert result["Resource"]["SystemName"] == "s824-01"
 
 
 def test_find_system_by_name_not_found(monkeypatch, mock_hmc):
-    """hmc_find_system returns None when the search matches nothing."""
+    """hmc_systems(name=...) returns None when the search matches nothing."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==nobody)").mock(
         return_value=httpx.Response(200, text='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>')
     )
-    assert hmc_find_system("nobody") is None
+    assert hmc_systems(name="nobody") is None

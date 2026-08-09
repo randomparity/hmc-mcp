@@ -13,17 +13,18 @@ from ._app import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_partition_templates() -> list[dict[str, Any]]:
-    """List all partition templates in the HMC template library."""
+def hmc_partition_templates(
+    template_uuid: str | None = None,
+) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """List partition templates or get one by UUID.
 
+    - No arguments: list all partition templates in the HMC template library.
+    - *template_uuid*: return full details for one template (the full config
+      the template captures).
+    """
+    if template_uuid is not None:
+        return with_client(lambda hmc: hmc.get_partition_template(template_uuid))
     return with_client(lambda hmc: hmc.list_partition_templates())
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_partition_template(template_uuid: str) -> dict[str, Any] | None:
-    """Get one partition template by UUID (full config the template captures)."""
-
-    return with_client(lambda hmc: hmc.get_partition_template(template_uuid))
 
 
 @mcp.tool
