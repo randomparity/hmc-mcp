@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -159,7 +159,7 @@ def hmc_map_storage_to_lpar(
     vios_uuid: str,
     storage_name: str,
     lpar_uuid: str,
-    storage_kind: str = "VirtualDisk",
+    storage_kind: Literal["VirtualDisk", "PhysicalVolume"] = "VirtualDisk",
     target_device: str | None = None,
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.

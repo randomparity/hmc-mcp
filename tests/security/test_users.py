@@ -123,6 +123,14 @@ async def test_list_hmc_users_local_filter(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_list_hmc_users_invalid_type_raises(mock_hmc):
+    """list_hmc_users rejects an unknown user_type before any HTTP call."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="Invalid user_type"):
+            await hmc.list_hmc_users("bogus")
+
+
+@pytest.mark.asyncio
 async def test_get_hmc_user(mock_hmc):
     mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
         return_value=httpx.Response(200, text=USER_ENTRY)

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -172,7 +172,9 @@ def hmc_list_vios_backups(vios_uuid: str) -> str:
 
 
 @mcp.tool
-def hmc_backup_vios(vios_uuid: str, backup_type: str = "vios") -> str:
+def hmc_backup_vios(
+    vios_uuid: str, backup_type: Literal["vios", "viosioconfig", "ssp"] = "vios"
+) -> str:
     """Create a VIOS backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation backup -type <backup_type>``

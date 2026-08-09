@@ -10,6 +10,9 @@ from typing import Any
 
 from .client_parse import _parse_feed
 
+_VALID_USER_TYPES = {"local", "kerberos", "all"}
+_VALID_POLICY_TYPES = {"policies", "status"}
+
 
 class UsersMixin:
     # ------------------------------------------------------------------ #
@@ -34,7 +37,15 @@ class UsersMixin:
 
         user_type is one of 'local', 'kerberos', or 'all' (default).
         Returns one parsed entry dict per account.
+
+        Raises:
+            ValueError: If *user_type* is not one of the recognised values.
         """
+        if user_type not in _VALID_USER_TYPES:
+            raise ValueError(
+                f"Invalid user_type {user_type!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_USER_TYPES))}"
+            )
         path = "/rest/api/web/HmcUser"
         if user_type != "all":
             path += f"?UserType={user_type}"
@@ -110,7 +121,15 @@ class UsersMixin:
         policy_type is one of 'policies' (default, returns policy list) or
         'status' (returns activation status).
         Returns one parsed entry dict per policy (or per status entry).
+
+        Raises:
+            ValueError: If *policy_type* is not one of the recognised values.
         """
+        if policy_type not in _VALID_POLICY_TYPES:
+            raise ValueError(
+                f"Invalid policy_type {policy_type!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_POLICY_TYPES))}"
+            )
         path = "/rest/api/web/HmcPasswordPolicy"
         if policy_type != "policies":
             path += f"?PolicyType={policy_type}"

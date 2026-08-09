@@ -141,6 +141,14 @@ async def test_list_password_policies_status_filter(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_list_password_policies_invalid_type_raises(mock_hmc):
+    """list_password_policies rejects an unknown policy_type."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="Invalid policy_type"):
+            await hmc.list_password_policies("bogus")
+
+
+@pytest.mark.asyncio
 async def test_create_password_policy(mock_hmc):
     route = mock_hmc.post("/rest/api/web/HmcPasswordPolicy").mock(
         return_value=httpx.Response(201, text=CREATED_POLICY)

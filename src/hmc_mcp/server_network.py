@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -144,7 +144,7 @@ _VALID_SRIOV_MODES = {"sriov", "dedicated"}
 def hmc_set_sriov_adapter_mode(
     system_uuid: str,
     adapter_id: str,
-    mode: str,
+    mode: Literal["sriov", "dedicated"],
 ) -> str:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
 

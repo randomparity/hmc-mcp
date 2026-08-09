@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -28,7 +28,7 @@ from .documents import (
 def hmc_create_lpar(
     system_uuid: str,
     name: str,
-    partition_type: str = "AIX/Linux",
+    partition_type: Literal["AIX/Linux", "OS400", "Virtual IO Server"] = "AIX/Linux",
     partition_id: int | None = None,
     min_memory: int = 256,
     desired_memory: int = 4096,

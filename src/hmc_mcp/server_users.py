@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -20,7 +20,9 @@ from .documents import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
+def hmc_list_users(
+    user_type: Literal["local", "kerberos", "all"] = "all",
+) -> list[dict[str, Any]]:
     """List HMC user accounts.
 
     user_type filters by account type: 'local' (local HMC accounts),
@@ -112,7 +114,9 @@ def hmc_delete_user(name: str) -> str:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_password_policies(policy_type: str = "policies") -> list[dict[str, Any]]:
+def hmc_list_password_policies(
+    policy_type: Literal["policies", "status"] = "policies",
+) -> list[dict[str, Any]]:
     """List HMC password policies.
 
     policy_type selects what to return: 'policies' (default) returns the list
