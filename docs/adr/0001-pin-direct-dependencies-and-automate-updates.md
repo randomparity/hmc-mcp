@@ -57,5 +57,6 @@ requests.
 - **Reference Git tags or commit SHAs.** The dependencies are registry packages, not
   repository-source dependencies. Converting them to Git sources would bypass normal wheel
   distribution and index metadata without improving the committed uv resolution.
-- **Do nothing.** This preserves the current non-reproducible resolution and leaves updates
-  dependent on manual discovery.
+- **Do nothing.** This preserves the existing committed resolution for repository installs
+  but leaves metadata-only installs open to different direct releases and leaves manifest
+  and lock updates dependent on manual discovery.
