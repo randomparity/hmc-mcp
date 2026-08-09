@@ -158,6 +158,15 @@ Exposed tools:
 | `hmc_delete_virtual_network`   | Delete a Virtual Network |
 | `hmc_list_network_bridges`     | List NetworkBridges (Shared Ethernet Adapters) |
 
+> **SSH/CLI tools** — the `(SSH/CLI)` tools run HMC CLI commands over SSH.
+> Their system/LPAR arguments (`system_name_or_uuid` / `lpar_name_or_uuid`)
+> accept either a CLI name or a UUID. Names are used as-is; UUIDs are resolved
+> to their CLI names via the REST API first, falling back to an `lssyscfg` name
+> lookup over SSH when the REST API is unreachable. Resolution happens before
+> the command runs, so a UUID that cannot be resolved surfaces as an error
+> rather than being passed through to the CLI. `hmc_run_command` is the
+> exception — it runs whatever command you give it verbatim.
+
 **VIOS administration**
 
 | Tool                  | Description |
