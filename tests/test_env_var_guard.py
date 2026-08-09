@@ -36,10 +36,22 @@ def test_env_var_doc_exists() -> None:
 
 
 def test_env_var_doc_lists_all_expected_vars() -> None:
-    """Every HMC_* var in EXPECTED_ENV_VARS must appear in the doc."""
+    """Every HMC_* var must appear in a table row inside the ## Reference section.
+
+    Uses the same lookup semantics as the production guard so this test and the
+    guard stay logically consistent: a var in prose does not satisfy either.
+    """
+    import re as _re
+
     doc_text = DOC.read_text()
-    missing = [var for var in EXPECTED_ENV_VARS if var not in doc_text]
-    assert not missing, f"Doc is missing env vars: {missing}"
+    ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
+    assert ref_match, "docs/environment-variables.md must have a ## Reference section"
+    next_section = _re.search(r"^## ", doc_text[ref_match.end():], _re.MULTILINE)
+    section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
+    ref_section = doc_text[ref_match.start():section_end]
+    table_text = "\n".join(ln for ln in ref_section.splitlines() if ln.strip().startswith("|"))
+    missing = [var for var in EXPECTED_ENV_VARS if not _re.search(rf"\b{_re.escape(var)}\b", table_text)]
+    assert not missing, f"Doc Reference table is missing env vars: {missing}"
 
 
 def _make_doc(vars_to_include: set[str]) -> str:

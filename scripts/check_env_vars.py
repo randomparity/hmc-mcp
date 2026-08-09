@@ -41,9 +41,16 @@ def _env_var_names() -> list[str]:
     prefix = HMCConfig.model_config.get("env_prefix") or ""
     names: list[str] = []
     for field_name, field_info in HMCConfig.model_fields.items():
-        if getattr(field_info, "alias", None) or getattr(field_info, "validation_alias", None):
+        # pydantic-settings honours alias, validation_alias, and the env kwarg
+        # as alternative env var name sources.  Detect any of them so the guard
+        # fails loudly rather than silently checking the wrong derived name.
+        if (
+            getattr(field_info, "alias", None)
+            or getattr(field_info, "validation_alias", None)
+            or getattr(field_info, "env", None)
+        ):
             raise RuntimeError(
-                f"HMCConfig.{field_name} has an alias override; "
+                f"HMCConfig.{field_name} has an alias/env override; "
                 "update _env_var_names() to resolve the actual env var name."
             )
         names.append(prefix + field_name.upper())
