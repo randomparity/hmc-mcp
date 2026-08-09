@@ -389,8 +389,12 @@ src/hmc_mcp/
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
-  server.py      # FastMCP server + tool definitions (server_*.py per domain)
-  cli.py         # Typer CLI (cli_*.py per domain)
+  _app.py        # shared FastMCP instance, READ_ONLY/DESTRUCTIVE_TOOLS sets, entry points
+  server.py      # thin aggregator importing every server_*.py tool module
+  server_*.py    # per-domain @mcp.tool definitions (power, storage, network, ...)
+  cli.py         # thin aggregator importing every cli_*.py command module
+  cli_app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
+  cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)
 tests/           # pytest + respx, no real HMC needed
 scripts/         # smoke/manual harnesses
 ```
