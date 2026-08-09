@@ -72,79 +72,54 @@ def hmc_set_pcm_preferences(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_processed_metric_links(
+def hmc_processed_metrics(
     category: str,
     resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-) -> list[dict[str, str]]:
-    """List available processed PCM metrics JSON documents.
+    mode: Literal["links", "fetch"] = "fetch",
+) -> list[dict[str, str]] | dict[str, Any]:
+    """List or download processed PCM metrics JSON documents.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_uuid is the UUID of that resource. Processed metrics have 30s
     granularity and ~2h retention. Timestamps are ISO-8601 UTC
-    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the Atom feed links
-    to the metric JSON documents; call hmc_get_processed_metrics to download
-    the most recent document directly.
+    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+
+    mode='links' returns the Atom feed link list (list of dicts with 'link',
+    'updated', 'title' keys). mode='fetch' (default) downloads and returns the
+    parsed JSON of the most recent document, or ``{}`` when no metrics are
+    available in the requested range.
     """
-    return _metrics_links(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_processed_metrics(
-    category: str,
-    resource_uuid: str,
-    start_ts: str,
-    end_ts: str | None = None,
-    no_of_samples: int | None = None,
-) -> dict[str, Any]:
-    """Download the most recent processed PCM metrics JSON document.
-
-    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource. Same time-range arguments as
-    hmc_get_processed_metric_links. Returns the parsed JSON of the newest
-    document, or ``{}`` when no metrics are available in the requested range.
-    """
+    if mode == "links":
+        return _metrics_links(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
     return _metrics_fetch(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_aggregated_metric_links(
+def hmc_aggregated_metrics(
     category: str,
     resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-) -> list[dict[str, str]]:
-    """List available aggregated PCM metrics JSON documents.
+    mode: Literal["links", "fetch"] = "fetch",
+) -> list[dict[str, str]] | dict[str, Any]:
+    """List or download aggregated PCM metrics JSON documents.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_uuid is the UUID of that resource. Aggregated metrics are the
     long-term rollup used for trend analysis. Timestamps are ISO-8601 UTC
-    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the Atom feed links
-    to the metric JSON documents; call hmc_get_aggregated_metrics to download
-    the most recent document directly.
+    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+
+    mode='links' returns the Atom feed link list. mode='fetch' (default)
+    downloads and returns the parsed JSON of the most recent document, or
+    ``{}`` when no metrics are available in the requested range. Requires
+    aggregation to be enabled in PCM preferences.
     """
-    return _metrics_links(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_aggregated_metrics(
-    category: str,
-    resource_uuid: str,
-    start_ts: str,
-    end_ts: str | None = None,
-    no_of_samples: int | None = None,
-) -> dict[str, Any]:
-    """Download the most recent aggregated PCM metrics JSON document.
-
-    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource. Same time-range arguments as
-    hmc_get_aggregated_metric_links. Requires aggregation to be enabled in PCM
-    preferences. Returns the parsed JSON of the newest document, or ``{}``
-    when no metrics are available in the requested range.
-    """
+    if mode == "links":
+        return _metrics_links(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
     return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 

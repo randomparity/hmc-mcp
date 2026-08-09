@@ -226,14 +226,12 @@ Exposed tools:
 |-----------------------------|-------------|
 | `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
 | `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
-| `hmc_get_processed_metric_links` | List processed metrics links (30s, ~2h retention) |
-| `hmc_get_processed_metrics`     | Download most recent processed metrics doc |
-| `hmc_get_aggregated_metric_links`| List aggregated metrics links (trend rollup) |
-| `hmc_get_aggregated_metrics`    | Download most recent aggregated metrics doc |
+| `hmc_processed_metrics`         | List (mode=links) or download (mode=fetch, default) processed metrics (30s, ~2h retention) |
+| `hmc_aggregated_metrics`        | List (mode=links) or download (mode=fetch, default) aggregated metrics (trend rollup) |
 
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
-> links. The `_links` tools return the list of links; the fetch tools
-> download the most recent document (or `{}` when none are in range). The CLI
+> links. Pass `mode="links"` to get the link list; `mode="fetch"` (default)
+> downloads the most recent document (or `{}` when none are in range). The CLI
 > `metrics show` accepts `--fetch` to do both in one step. Long-term
 > monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
 > before processed/aggregated metrics accumulate. Categories include
@@ -260,11 +258,9 @@ Exposed tools:
 
 | Tool                         | Description |
 |------------------------------|-------------|
-| `hmc_update_hmc`             | Submit an HMC software update (PTF install) job |
-| `hmc_upgrade_hmc`            | Submit an HMC software upgrade (full version) job |
+| `hmc_hmc_update`             | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
-| `hmc_update_vios`            | Submit a VIOS software update job |
-| `hmc_upgrade_vios`           | Submit a VIOS software upgrade job |
+| `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |
 
 **LPAR profiles (backup / restore)**

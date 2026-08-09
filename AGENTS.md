@@ -70,6 +70,25 @@ worktree before running tests or the smoke script.
 **Symptom:** `SyntaxError` at a `.venv/lib/…/site-packages/` path while the
 source file is clean. The fix is always `uv sync`, not editing source.
 
+## Pre-existing test failures
+
+When running the guardrail suite and discovering a failing test that predates the
+current branch, **fix it in the same PR**. Do not leave it failing and do not
+defer it to a follow-up. A failing test is either wrong (the test must be
+corrected to match the current contract) or right (a latent bug that must be
+fixed). Determine which, apply the minimum targeted fix, and include it in the
+commit history for this branch. Documenting a known-broken test as "pre-existing"
+and shipping over it is not acceptable.
+
+Common causes worth checking first:
+
+- **Local `.env` file supplying credentials** — `pydantic_settings` reads
+  `env_file=".env"` at construction time, independent of `os.environ` patches.
+  Tests that need an empty `HMCConfig` must pass `_env_file=None` to suppress
+  `.env` loading; `monkeypatch.delenv` alone does not prevent `.env` reads.
+- **Import name drift** — a tool or function renamed in source but still
+  referenced by the old name in a test or fixture.
+
 ## Guardrail commands
 
 Before pushing any branch, run the full suite inside that branch's worktree:

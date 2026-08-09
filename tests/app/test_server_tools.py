@@ -18,16 +18,14 @@ from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
+    hmc_hmc_update,
     hmc_lpars,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
     hmc_run_command,
     hmc_update_firmware,
-    hmc_update_hmc,
-    hmc_update_vios,
-    hmc_upgrade_hmc,
-    hmc_upgrade_vios,
+    hmc_vios_update,
 )
 
 from conftest import JOB_ENTRY
@@ -243,53 +241,73 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_update_hmc_submits_job(monkeypatch, mock_hmc):
-    """hmc_update_hmc PUTs an Update job with the repository parameters."""
+def test_hmc_update_kind_update(monkeypatch, mock_hmc):
+    """hmc_hmc_update with kind='update' PUTs an Update job to ManagementConsole."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_update_hmc(MC_UUID, REPO)
+    hmc_hmc_update(MC_UUID, REPO, kind="update")
     body = route.calls.last.request.content.decode()
     assert "Update</OperationName>" in body
     assert "repo.example.com" in body
     assert "/images/hmc" in body
 
 
-def test_upgrade_hmc_submits_job(monkeypatch, mock_hmc):
-    """hmc_upgrade_hmc PUTs an Upgrade job to the ManagementConsole."""
+def test_hmc_update_kind_upgrade(monkeypatch, mock_hmc):
+    """hmc_hmc_update with kind='upgrade' PUTs an Upgrade job to ManagementConsole."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_upgrade_hmc(MC_UUID, REPO)
+    hmc_hmc_update(MC_UUID, REPO, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "Upgrade</OperationName>" in body
     assert "repo.example.com" in body
 
 
-def test_update_vios_submits_job(monkeypatch, mock_hmc):
-    """hmc_update_vios PUTs an Update job to the VirtualIOServer."""
+def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
+    """hmc_hmc_update defaults to kind='update' when kind is omitted."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+    hmc_hmc_update(MC_UUID, REPO)
+    assert route.calls.last.request.url.path.endswith("/do/Update")
+
+
+def test_vios_update_kind_update(monkeypatch, mock_hmc):
+    """hmc_vios_update with kind='update' PUTs an Update job to VirtualIOServer."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_update_vios(VIOS_UUID, REPO)
+    hmc_vios_update(VIOS_UUID, REPO, kind="update")
     body = route.calls.last.request.content.decode()
     assert "Update</OperationName>" in body
     assert "repo.example.com" in body
 
 
-def test_upgrade_vios_submits_job(monkeypatch, mock_hmc):
-    """hmc_upgrade_vios PUTs an Upgrade job to the VirtualIOServer."""
+def test_vios_update_kind_upgrade(monkeypatch, mock_hmc):
+    """hmc_vios_update with kind='upgrade' PUTs an Upgrade job to VirtualIOServer."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_upgrade_vios(VIOS_UUID, REPO)
+    hmc_vios_update(VIOS_UUID, REPO, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "Upgrade</OperationName>" in body
     assert "repo.example.com" in body
+
+
+def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
+    """hmc_vios_update defaults to kind='update' when kind is omitted."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+    hmc_vios_update(VIOS_UUID, REPO)
+    assert route.calls.last.request.url.path.endswith("/do/Update")
 
 
 def test_update_firmware_submits_job(monkeypatch, mock_hmc):

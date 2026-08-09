@@ -110,7 +110,7 @@ def test_repository_type_enum_matches_runtime_constant():
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_update_hmc"].parameters["properties"]["repository"][
+    repo_type = by_name["hmc_hmc_update"].parameters["properties"]["repository"][
         "properties"
     ]["type"]
     assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
