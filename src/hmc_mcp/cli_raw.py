@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 
 import typer
 
@@ -35,7 +36,7 @@ def raw_post(
     """Raw POST against the HMC. Use @file.xml to read the body from a file."""
 
     if body.startswith("@"):
-        body = open(body[1:], encoding="utf-8").read()
+        body = Path(body[1:]).read_text(encoding="utf-8")
 
     async def _go():
         async with _client() as hmc:
