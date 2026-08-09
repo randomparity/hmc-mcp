@@ -55,7 +55,7 @@ def hmc_create_lpar(
 ) -> dict[str, Any] | None:
     """Create a new LPAR on a managed system.
 
-    system_uuid is the target managed system (find it with hmc_list_systems).
+    system_uuid is the target managed system (find it with hmc_systems).
     Memory values are in MiB. By default a shared-processor partition is
     created; set dedicated=True for dedicated CPUs (then procs are whole CPU
     counts). For shared partitions, procs are processing units (may be
@@ -193,7 +193,7 @@ def hmc_modify_system(
 
     Only the fields you pass are changed; omitted fields are left as-is.
 
-    system_uuid: UUID of the managed system (from hmc_list_systems).
+    system_uuid: UUID of the managed system (from hmc_systems).
     new_name: rename the managed system.
     power_off_policy: power-off policy — 1 powers the system off after all
         partitions shut down, 0 leaves it powered on.
@@ -246,11 +246,11 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
     """Delete (destroy) an LPAR by UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
-    confirm with hmc_lpar_state). This tool refuses to delete a partition
+    confirm with hmc_lpars). This tool refuses to delete a partition
     whose current state is anything other than 'not activated', matching the
     precondition check pattern used by hmc_remove_memory_pool. This
     permanently removes the partition and its profiles from the HMC — it is
-    irreversible. Confirm the UUID with hmc_find_lpar before calling. Returns
+    irreversible. Confirm the UUID with hmc_lpars before calling. Returns
     a confirmation string (immediate delete — no job to poll).
 
     Raises:
@@ -266,7 +266,7 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
                 raise HMCError(
                     f"Cannot delete LPAR {lpar_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
-                    "off (hmc_power_off_lpar) and confirm with hmc_lpar_state "
+                    "off (hmc_power_off_lpar) and confirm with hmc_lpars "
                     "before retrying.",
                     status_code=409,
                 )
@@ -304,7 +304,7 @@ def hmc_power_on_lpar(
     """Submit a PowerOn job for a logical partition.
 
     Returns the submitted job (check hmc_get_job for status). This changes
-    the state of a real partition — confirm the UUID with hmc_find_lpar
+    the state of a real partition — confirm the UUID with hmc_lpars
     before calling.
 
     Set wait=True to block until the job completes (or timeout_seconds expire).
