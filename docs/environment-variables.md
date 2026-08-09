@@ -1,0 +1,44 @@
+# Environment Variables
+
+`hmc-mcp` reads configuration from a `.env` file, environment variables, or
+CLI flags (priority: CLI flags > environment variables > `.env` file).
+
+Copy `.env.example` to `.env` and fill in at minimum `HMC_HOST`, `HMC_USER`,
+and `HMC_PASSWORD`.
+
+## Reference
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `HMC_HOST` | string | _(required)_ | HMC hostname or IP address |
+| `HMC_PORT` | integer | `12443` | HMC REST API port |
+| `HMC_USER` | string | _(required)_ | HMC user name |
+| `HMC_PASSWORD` | string | _(required)_ | HMC password |
+| `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
+| `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
+| `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
+| `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
+| `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs |
+| `HMC_SCHEMA_VERSION` | string | _(empty)_ | Pins the `X-HMC-Schema-Version` request header (e.g. `V1_0`). Leave unset to let the HMC negotiate via the document's `schemaVersion` attribute |
+
+## Notes
+
+- **TLS verification** (`HMC_VERIFY_SSL`): HMCs ship self-signed certificates,
+  so TLS verification is off by default. To verify the HMC certificate, install
+  its CA locally and set `HMC_VERIFY_SSL=true` — otherwise credentials are at
+  risk of man-in-the-middle interception.
+
+- **SSH key file** (`HMC_SSH_KEY_FILE`): only used by SSH-passthrough commands
+  (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
+  use `HMC_PASSWORD`.
+
+- **Schema version** (`HMC_SCHEMA_VERSION`): HMC V8/V9 targets do not need this
+  set; uom documents already declare `schemaVersion=V1_0`. Set it only to pin
+  negotiation explicitly or to test against a specific schema revision.
+
+## Adding a New Variable
+
+Every new `HMC_*` env var added to
+[`src/hmc_mcp/config.py`](../src/hmc_mcp/config.py) must be added to this
+document before merging. The `just env-vars` guard (`scripts/check_env_vars.py`)
+enforces this in pre-commit hooks and CI.

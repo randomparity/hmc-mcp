@@ -61,10 +61,11 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "typecheck",
         "secrets",
         "workflow-security",
+        "env-vars",
         "static",
     ):
         assert f"\n{recipe}:" in justfile
-    assert "\nstatic: lint typecheck secrets workflow-security\n" in justfile
+    assert "\nstatic: lint typecheck secrets workflow-security env-vars\n" in justfile
     assert "\nverify: static test smoke\n" in justfile
     assert "--baseline .secrets.baseline --no-verify --" in justfile
     assert "uv run hmc-mcp metrics --help" in justfile
@@ -74,9 +75,9 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
     assert config.count("repo: local") == 1
-    for recipe in ("lint", "typecheck", "secrets", "workflow-security"):
+    for recipe in ("lint", "typecheck", "secrets", "workflow-security", "env-vars"):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 4
+    assert config.count("pass_filenames: false") == 5
     assert "entry: uv run" not in config
 
 

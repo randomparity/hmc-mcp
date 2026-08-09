@@ -27,8 +27,12 @@ secrets:
 workflow-security:
     uv run zizmor -qq --no-online-audits .github/workflows/
 
+# verify every HMC_* env var in HMCConfig is documented
+env-vars:
+    uv run python scripts/check_env_vars.py
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security
+static: lint typecheck secrets workflow-security env-vars
 
 # run the full pytest suite
 test:

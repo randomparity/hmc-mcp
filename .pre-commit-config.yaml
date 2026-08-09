@@ -21,3 +21,8 @@ repos:
         entry: just workflow-security
         language: system
         pass_filenames: false
+      - id: env-vars
+        name: Env-var documentation guard
+        entry: just env-vars
+        language: system
+        pass_filenames: false
