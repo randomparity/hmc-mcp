@@ -26,8 +26,12 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "respx>=0.23.1",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
+# Coverage gate: the CLI command tests keep the package at ~77%; the floor
+# makes any regression visible. Run a subset with `--no-cov` to skip the gate.
+addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=75"
