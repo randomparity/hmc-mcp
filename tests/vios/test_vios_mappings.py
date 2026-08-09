@@ -2,19 +2,12 @@
 
 import httpx
 import pytest
-import respx
 
 from hmc_mcp.client import HMCClient
 
 from conftest import make_config
 
 BASE = "https://hmc.test:12443"
-
-LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogonResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-  <X-API-Session>test-session-token-123</X-API-Session>
-</LogonResponse>
-"""
 
 # Minimal ViosStorageDetail entry with a vSCSI server mapping and an NPIV port mapping.
 VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -51,15 +44,6 @@ VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="
 </entry>
 """.format(base=BASE)
 
-
-@pytest.fixture
-def mock_hmc():
-    with respx.mock(base_url=BASE, assert_all_called=False) as router:
-        router.put("/rest/api/web/Logon").mock(
-            return_value=httpx.Response(200, text=LOGON_RESPONSE)
-        )
-        router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
-        yield router
 
 
 @pytest.mark.asyncio

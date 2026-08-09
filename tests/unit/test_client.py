@@ -4,7 +4,6 @@ import warnings
 
 import httpx
 import pytest
-import respx
 
 from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.jobs import build_job_request
@@ -12,12 +11,6 @@ from hmc_mcp.jobs import build_job_request
 from conftest import make_config
 
 BASE = "https://hmc.test:12443"
-
-LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogonResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
-  <X-API-Session>test-session-token-123</X-API-Session>
-</LogonResponse>
-"""
 
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -62,16 +55,6 @@ JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
-
-
-@pytest.fixture
-def mock_hmc():
-    with respx.mock(base_url=BASE, assert_all_called=False) as router:
-        router.put("/rest/api/web/Logon").mock(
-            return_value=httpx.Response(200, text=LOGON_RESPONSE)
-        )
-        router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
-        yield router
 
 
 @pytest.mark.asyncio
