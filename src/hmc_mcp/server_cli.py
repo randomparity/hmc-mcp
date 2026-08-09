@@ -9,13 +9,10 @@ from typing import Any
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _lpar_name,
-    _run,
-    _system_name,
+    _ssh_with_client,
     mcp,
 )
 
-from .common import client_from_env
 from .config import HMCConfig
 from .ssh import (
     list_io_slots,
@@ -42,14 +39,14 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F description"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+            f"--filter lpar_names={shlex.quote(lpar_name)} -F description"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool
@@ -71,15 +68,14 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        payload = f"name={lpar_name},description={description}"
-        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+            f"{shlex.quote(f'name={lpar_name},description={description}')}"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -95,15 +91,15 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F msp"
-        raw = await run_hmc_cli(cmd)
-        return raw.strip() == "1"
-
-    return _run(_go())
+    raw = _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+            f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
+    return raw.strip() == "1"
 
 
 @mcp.tool
@@ -121,16 +117,15 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        value = "1" if enabled else "0"
-        payload = f"name={lpar_name},msp={value}"
-        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    value = "1" if enabled else "0"
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+            f"{shlex.quote(f'name={lpar_name},msp={value}')}"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 
@@ -147,16 +142,15 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        cmd = f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
-        raw = await run_hmc_cli(cmd)
-        if not raw.strip():
-            return []
-        return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
-
-    return _run(_go())
+    raw = _ssh_with_client(
+        lambda system_name, _: run_hmc_cli(
+            f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
+        ),
+        system_uuid=system_uuid,
+    )
+    if not raw.strip():
+        return []
+    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -173,20 +167,21 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
-        raw = await run_hmc_cli(cmd)
-        if not raw.strip():
-            return {"pend": "", "curr": ""}
-        parts = raw.strip().split(",")
-        pend = parts[0].strip() if len(parts) > 0 else ""
-        curr = parts[1].strip() if len(parts) > 1 else ""
-        return {"pend": pend, "curr": curr}
-
-    return _run(_go())
+    raw = _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+            f"--filter lpar_names={shlex.quote(lpar_name)} "
+            "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
+    if not raw.strip():
+        return {"pend": "", "curr": ""}
+    parts = raw.strip().split(",")
+    pend = parts[0].strip() if len(parts) > 0 else ""
+    curr = parts[1].strip() if len(parts) > 1 else ""
+    return {"pend": pend, "curr": curr}
 
 
 @mcp.tool
@@ -204,15 +199,14 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
-        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+            f"{shlex.quote(f'name={lpar_name},lpar_proc_compat_mode={mode}')}"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 
@@ -241,13 +235,10 @@ def hmc_list_io_slots(
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
-        return await list_io_slots(config, system_name, adapter_type)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, _: list_io_slots(HMCConfig(), system_name, adapter_type),
+        system_uuid=system_uuid,
+    )
 
 
 
@@ -265,12 +256,10 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        return await list_memory_pools(HMCConfig(), system_name)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, _: list_memory_pools(HMCConfig(), system_name),
+        system_uuid=system_uuid,
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -297,11 +286,9 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     Raises:
         HMCCLIError: If *pool_name* still has LPARs assigned to it.
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        return await remove_memory_pool(HMCConfig(), system_name, pool_name)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, _: remove_memory_pool(HMCConfig(), system_name, pool_name),
+        system_uuid=system_uuid,
+    )
 
 

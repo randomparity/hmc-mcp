@@ -9,14 +9,11 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _lpar_name,
-    _run,
-    _system_name,
+    _ssh_with_client,
     mcp,
     with_client,
 )
 
-from .common import client_from_env
 from .config import HMCConfig
 from .ssh import (
     HMCCLIError,
@@ -103,13 +100,11 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        return await list_fc_ports(HMCConfig(), system_name, lpar_name)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: list_fc_ports(HMCConfig(), system_name, lpar_name),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -127,13 +122,11 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        return await list_sea_adapters(HMCConfig(), system_name, lpar_name)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: list_sea_adapters(HMCConfig(), system_name, lpar_name),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 
@@ -173,17 +166,13 @@ def hmc_set_sriov_adapter_mode(
             f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
         )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        payload = f"sriov_adapter_mode={mode}"
-        cmd = (
+    return _ssh_with_client(
+        lambda system_name, _: run_hmc_cli(
             f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)}"
-            f" -a {shlex.quote(payload)}"
-        )
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+            f" -a {shlex.quote(f'sriov_adapter_mode={mode}')}"
+        ),
+        system_uuid=system_uuid,
+    )
 
 
 
@@ -203,13 +192,11 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        return await list_vnics(HMCConfig(), system_name, lpar_name)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: list_vnics(HMCConfig(), system_name, lpar_name),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool
@@ -253,10 +240,7 @@ def hmc_add_vnic(
     if backing_devices is not None:
         attrs += f",backing_devices={backing_devices}"
 
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
+    async def _add_vnic(system_name, lpar_name):
         cmd = (
             f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
             f" --filter lpar_names={shlex.quote(lpar_name)}"
@@ -271,7 +255,11 @@ def hmc_add_vnic(
                 f"(see hmc_set_sriov_adapter_mode)."
             ) from exc
 
-    return _run(_go())
+    return _ssh_with_client(
+        _add_vnic,
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -293,16 +281,12 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        payload = f"vnic_id={vnic_id}"
-        cmd = (
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
             f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
             f" --filter lpar_names={shlex.quote(lpar_name)}"
-            f" -a {shlex.quote(payload)}"
-        )
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+            f" -a {shlex.quote(f'vnic_id={vnic_id}')}"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )

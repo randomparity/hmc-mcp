@@ -3,7 +3,8 @@
 Holds the single :class:`FastMCP` instance (``mcp``) that every domain
 tool module registers itself on via ``@mcp.tool``, the read-only /
 destructive capability annotations and the frozensets that document them,
-and the small sync-run / UUID-resolution helpers used by the tool bodies.
+and the small sync-run / UUID-resolution / SSH-passthrough helpers used by
+the tool bodies.
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
@@ -149,6 +150,26 @@ async def _lpar_name(hmc, lpar_uuid: str) -> str:
             "Use hmc_list_lpars to find the lpar_uuid."
         )
     return entry["Resource"]["PartitionName"]
+
+
+def _ssh_with_client(fn, *, system_uuid=None, lpar_uuid=None):
+    """Resolve UUIDs to CLI names via REST, then run an SSH tool body.
+
+    Collapses the pervasive ``async def _go`` + ``client_from_env`` +
+    ``_system_name``/``_lpar_name`` + ``_run`` scaffold in the SSH-passthrough
+    tools, mirroring :func:`with_client` for the REST seam. *fn* is called with
+    the resolved system and LPAR CLI names (``None`` when the matching UUID was
+    not supplied) and returns an awaitable for the tool result — a
+    ``run_hmc_cli(...)`` command, or a call into an :mod:`ssh` helper that runs
+    the command itself. The REST session is closed before the SSH command runs.
+    """
+    async def _go():
+        async with client_from_env() as hmc:
+            system_name = await _system_name(hmc, system_uuid) if system_uuid else None
+            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
+        return await fn(system_name, lpar_name)
+
+    return _run(_go())
 
 
 

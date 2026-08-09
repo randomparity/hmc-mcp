@@ -7,13 +7,10 @@ import shlex
 
 from ._app import (
     _DESTRUCTIVE,
-    _lpar_name,
-    _run,
-    _system_name,
+    _ssh_with_client,
     mcp,
 )
 
-from .common import client_from_env
 from .ssh import run_hmc_cli
 
 
@@ -40,13 +37,12 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, _: run_hmc_cli(
+            f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        ),
+        system_uuid=system_uuid,
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -74,13 +70,12 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-        cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, _: run_hmc_cli(
+            f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        ),
+        system_uuid=system_uuid,
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -108,15 +103,14 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        payload = f"name={lpar_name},sync_curr_profile=1"
-        cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+            f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
 
 @mcp.tool
@@ -145,13 +139,12 @@ def hmc_assign_profile_io_slot(
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid)
-            lpar_name = await _lpar_name(hmc, lpar_uuid)
-        payload = f"name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}"
-        cmd = f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(payload)} --force"
-        return await run_hmc_cli(cmd)
-
-    return _run(_go())
+    return _ssh_with_client(
+        lambda system_name, lpar_name: run_hmc_cli(
+            f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
+            f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force"
+        ),
+        system_uuid=system_uuid,
+        lpar_uuid=lpar_uuid,
+    )
 
