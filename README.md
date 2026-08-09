@@ -69,6 +69,9 @@ attribute).
 hmc-mcp console info                 # connectivity check / HMC version
 hmc-mcp systems list                 # table of managed systems
 hmc-mcp systems show <uuid>
+hmc-mcp systems capacity             # per-system memory/CPU capacity report
+hmc-mcp systems find-placement 4096  # systems with >= 4 GiB free
+hmc-mcp systems find-placement 8192 --procs 2.0
 hmc-mcp lpars list                   # all LPARs
 hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)

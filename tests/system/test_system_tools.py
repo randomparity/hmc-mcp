@@ -187,3 +187,121 @@ def test_list_resources(monkeypatch, mock_hmc):
     )
     result = hmc_list_resources("Cluster")
     assert result[0]["UUID"] == "cluster-uuid-1"
+
+
+# ---------------------------------------------------------------------- #
+# hmc_capacity_report / hmc_find_placement
+# ---------------------------------------------------------------------- #
+
+from hmc_mcp.server import hmc_capacity_report, hmc_find_placement  # noqa: E402
+
+
+def _system_feed_with_mem(uuid: str, name: str, mem_mb: int, proc_units_x100: int) -> str:
+    """A ManagedSystem feed entry with capacity fields."""
+    body = (
+        f'        <SystemName xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{name}</SystemName>\n'
+        f'        <State xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">operating</State>\n'
+        f'        <InstalledSystemMemory xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{mem_mb}</InstalledSystemMemory>\n'
+        f'        <InstalledSystemProcessorUnits xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{proc_units_x100}</InstalledSystemProcessorUnits>\n'
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>ManagedSystem:{name}</title>
+    <link rel="SELF" href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{uuid}"/>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+{body}
+      </ManagedSystem>
+    </content>
+  </entry>
+</feed>
+"""
+
+
+def _lpar_feed_with_resources(uuid: str, name: str, mem_mb: int, procs: float, state: str = "running") -> str:
+    """An LPAR feed entry with DesiredMemory and DesiredProcessingUnits."""
+    body = (
+        f'        <PartitionName xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{name}</PartitionName>\n'
+        f'        <PartitionState xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{state}</PartitionState>\n'
+        f'        <DesiredMemory xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{mem_mb}</DesiredMemory>\n'
+        f'        <DesiredProcessingUnits xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{procs}</DesiredProcessingUnits>\n'
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>LogicalPartition:{name}</title>
+    <link rel="SELF" href="https://hmc.test:12443/rest/api/uom/LogicalPartition/{uuid}"/>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+{body}
+      </LogicalPartition>
+    </content>
+  </entry>
+</feed>
+"""
+
+
+def test_capacity_report_single_system(monkeypatch, mock_hmc):
+    """hmc_capacity_report aggregates system and LPAR data correctly."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_system_feed_with_mem(SYSTEM_UUID, "s824-01", 131072, 800))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text=_lpar_feed_with_resources(LPAR_UUID, "web01", 8192, 0.5, "running")
+        )
+    )
+    result = hmc_capacity_report()
+    assert len(result) == 1
+    row = result[0]
+    assert row["system_name"] == "s824-01"
+    assert row["total_memory_mb"] == 131072
+    assert row["assigned_memory_mb"] == 8192
+    assert row["free_memory_mb"] == 131072 - 8192
+    assert row["running_lpars"] == 1
+    assert row["total_lpars"] == 1
+
+
+def test_capacity_report_empty(monkeypatch, mock_hmc):
+    """hmc_capacity_report returns an empty list when no systems exist."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>')
+    )
+    result = hmc_capacity_report()
+    assert result == []
+
+
+def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
+    """hmc_find_placement returns systems meeting the memory+proc threshold."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_system_feed_with_mem(SYSTEM_UUID, "s824-01", 131072, 800))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text=_lpar_feed_with_resources(LPAR_UUID, "web01", 8192, 0.5, "running")
+        )
+    )
+    candidates = hmc_find_placement(desired_memory_mb=4096, desired_proc_units=0.5)
+    assert len(candidates) == 1
+    assert candidates[0]["system_name"] == "s824-01"
+
+
+def test_find_placement_no_candidates(monkeypatch, mock_hmc):
+    """hmc_find_placement returns empty list when no system fits."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_system_feed_with_mem(SYSTEM_UUID, "tiny-sys", 4096, 100))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
+        )
+    )
+    candidates = hmc_find_placement(desired_memory_mb=8192, desired_proc_units=0.5)
+    assert candidates == []
