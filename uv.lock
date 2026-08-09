@@ -573,24 +573,24 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncssh", specifier = ">=2.18.0" },
-    { name = "defusedxml", specifier = ">=0.7.1" },
-    { name = "fastmcp", specifier = ">=3.4.6" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", specifier = ">=1.29.0" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "rich", specifier = ">=15.0.0" },
-    { name = "typer", specifier = ">=0.27.1" },
+    { name = "asyncssh", specifier = "==2.24.0" },
+    { name = "defusedxml", specifier = "==0.7.1" },
+    { name = "fastmcp", specifier = "==3.4.6" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "mcp", specifier = "==1.29.0" },
+    { name = "pydantic", specifier = "==2.13.4" },
+    { name = "pydantic-settings", specifier = "==2.15.0" },
+    { name = "rich", specifier = "==15.0.0" },
+    { name = "typer", specifier = "==0.27.1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cryptography", specifier = ">=50.0.0" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "respx", specifier = ">=0.23.1" },
+    { name = "cryptography", specifier = "==50.0.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+    { name = "respx", specifier = "==0.23.1" },
 ]
 
 [[package]]
