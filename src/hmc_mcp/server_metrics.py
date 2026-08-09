@@ -147,9 +147,9 @@ def _metrics_links(
     async def _go():
         async with client_from_env() as hmc:
             fn = (
-                hmc.get_processed_metrics
+                hmc.get_processed_metric_links
                 if kind == "processed"
-                else hmc.get_aggregated_metrics
+                else hmc.get_aggregated_metric_links
             )
             return await fn(category, uuid, start_ts, end_ts, no_of_samples)
 
@@ -167,9 +167,9 @@ def _metrics_fetch(
     async def _go():
         async with client_from_env() as hmc:
             fn = (
-                hmc.get_processed_metrics
+                hmc.get_processed_metric_links
                 if kind == "processed"
-                else hmc.get_aggregated_metrics
+                else hmc.get_aggregated_metric_links
             )
             links = await fn(category, uuid, start_ts, end_ts, no_of_samples)
             if not links:

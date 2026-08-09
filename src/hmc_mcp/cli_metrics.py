@@ -78,7 +78,7 @@ def metrics_show(
 
     async def _go():
         async with _client() as hmc:
-            fn = hmc.get_aggregated_metrics if aggregated else hmc.get_processed_metrics
+            fn = hmc.get_aggregated_metric_links if aggregated else hmc.get_processed_metric_links
             links = await fn(category, uuid, start, end, samples)
             if not fetch or not links:
                 return links

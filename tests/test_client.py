@@ -541,7 +541,7 @@ async def test_get_processed_metrics_links(mock_hmc):
         "/rest/api/pcm/ManagedSystem/sys-uuid/ProcessedMetrics"
     ).mock(return_value=httpx.Response(200, text=PCM_FEED))
     async with HMCClient(make_config()) as hmc:
-        links = await hmc.get_processed_metrics(
+        links = await hmc.get_processed_metric_links(
             "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", no_of_samples=5
         )
     assert len(links) == 1

@@ -48,7 +48,7 @@ class PcmMixin:
         xml = await self._get(path)
         return _metric_links(xml, path) if xml else []
 
-    async def get_processed_metrics(
+    async def get_processed_metric_links(
         self,
         category: str,
         uuid: str,
@@ -59,7 +59,7 @@ class PcmMixin:
         """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
         return await self._metrics_links(category, uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
 
-    async def get_aggregated_metrics(
+    async def get_aggregated_metric_links(
         self,
         category: str,
         uuid: str,
@@ -70,7 +70,7 @@ class PcmMixin:
         """Links to AggregatedMetrics JSON (long-term rollup)."""
         return await self._metrics_links(category, uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
 
-    async def get_ltm_metrics(
+    async def get_ltm_metric_links(
         self, category: str, uuid: str, start_ts: str, end_ts: str | None = None
     ) -> list[dict[str, str]]:
         """Links to raw Long Term Monitor metrics JSON."""
