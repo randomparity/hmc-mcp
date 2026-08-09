@@ -9,7 +9,10 @@ Power systems, inspect LPARs/VIOS, and submit jobs such as power on/off.
 - **Python ≥3.12**, managed with [uv](https://docs.astral.sh/uv/)
 - **MCP server**: [FastMCP](https://gofastmcp.com/) (stdio or streamable HTTP)
 - **CLI**: [Typer](https://typer.tiangolo.com/) + Rich tables
-- **Transport**: httpx (async), XML parsed with defusedxml
+- **REST transport**: httpx (async), XML parsed with defusedxml
+- **CLI passthrough**: [asyncssh](https://asyncssh.readthedocs.io) — tools that
+  shell out to HMC CLI commands (`lssyscfg`, `lshwres`, `chsyscfg`, ...) over
+  SSH
 
 ## Install
 
@@ -101,6 +104,7 @@ Exposed tools:
 | `hmc_find_lpar`       | Find an LPAR by exact name |
 | `hmc_lpar_state`      | Quick PartitionState property |
 | `hmc_list_vios`       | Virtual I/O Servers |
+| `hmc_vios_mappings`   | VIOS device mapping facts (vSCSI, NPIV, virtual optical) |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
 
@@ -110,6 +114,8 @@ Exposed tools:
 |-----------------------|-------------|
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type) |
 | `hmc_modify_lpar`     | Change an LPAR's name / memory / CPU (DLPAR when running) |
+| `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
+| `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
 | `hmc_delete_lpar`     | Destroy an LPAR (must be powered off; irreversible) |
 | `hmc_power_on_lpar`   | Submit PowerOn job |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
@@ -152,6 +158,28 @@ Exposed tools:
 | `hmc_delete_virtual_network`   | Delete a Virtual Network |
 | `hmc_list_network_bridges`     | List NetworkBridges (Shared Ethernet Adapters) |
 
+**VIOS administration**
+
+| Tool                  | Description |
+|-----------------------|-------------|
+| `hmc_create_vios`     | Create a VIOS partition on a managed system |
+| `hmc_delete_vios`     | Delete (destroy) a VIOS partition (must be powered off) |
+| `hmc_install_vios`    | Submit a NIM-based VIOS installation job — job |
+| `hmc_list_vios_backups` | List existing VIOS backups (SSH/CLI) |
+| `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
+| `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
+
+**SR-IOV / vNIC & physical I/O (SSH/CLI)**
+
+| Tool                       | Description |
+|----------------------------|-------------|
+| `hmc_list_vnics`           | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR |
+| `hmc_add_vnic`             | Add a vNIC to an LPAR |
+| `hmc_remove_vnic`          | Remove a vNIC from an LPAR |
+| `hmc_list_fc_ports`        | List Virtual Fibre Channel (NPIV) adapters for a system |
+| `hmc_list_sea_adapters`    | List Shared Ethernet Adapters for a system |
+| `hmc_set_sriov_adapter_mode` | Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode |
+
 **Template library**
 
 | Tool                              | Description |
@@ -174,6 +202,7 @@ Exposed tools:
 
 | Tool                    | Description |
 |-------------------------|-------------|
+| `hmc_modify_system`     | Change a managed system's configuration (only passed fields) |
 | `hmc_power_on_system`   | Power on a managed system — job |
 | `hmc_power_off_system`  | Power off a managed system — job |
 | `hmc_power_on_vios`     | Power on a VIOS — job |
@@ -208,6 +237,64 @@ Exposed tools:
 > before processed/aggregated metrics accumulate. Categories include
 > `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
 > `VirtualIOServer`, `SharedStoragePool`, `Cluster`.
+
+**Users & access (HMC user administration)**
+
+| Tool                          | Description |
+|-------------------------------|-------------|
+| `hmc_list_users`              | List HMC user accounts |
+| `hmc_get_user`                | One HMC user account by username |
+| `hmc_create_user`             | Create a new HMC local user account |
+| `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
+| `hmc_delete_user`             | Delete an HMC user account (irreversible) |
+| `hmc_list_password_policies`  | List HMC password policies |
+| `hmc_create_password_policy`  | Create a password policy (max age, rules) |
+| `hmc_modify_password_policy`  | Modify a password policy (only supplied fields) |
+| `hmc_delete_password_policy`  | Delete a password policy (irreversible) |
+| `hmc_list_ldap_config`        | Get the current HMC LDAP server configuration |
+| `hmc_configure_ldap`          | Configure the HMC LDAP server integration |
+| `hmc_remove_ldap_config`      | Remove a component of the LDAP configuration |
+
+**Software updates (HMC / VIOS / firmware)**
+
+| Tool                         | Description |
+|------------------------------|-------------|
+| `hmc_update_hmc`             | Submit an HMC software update (PTF install) job |
+| `hmc_upgrade_hmc`            | Submit an HMC software upgrade (full version) job |
+| `hmc_list_available_hmc_ptfs`| List available PTFs for the HMC software |
+| `hmc_update_vios`            | Submit a VIOS software update job |
+| `hmc_upgrade_vios`           | Submit a VIOS software upgrade job |
+| `hmc_update_firmware`        | Submit a managed-system firmware update job |
+
+**LPAR profiles (backup / restore)**
+
+| Tool                         | Description |
+|------------------------------|-------------|
+| `hmc_backup_lpar_profiles`   | Backup all LPAR profiles on a system (`bkprofdata`) |
+| `hmc_restore_lpar_profiles`  | Restore LPAR profiles from a backup file (`rstprofdata`) |
+| `hmc_sync_lpar_profile`      | Sync an LPAR's running config back to its current profile |
+| `hmc_assign_profile_io_slot` | Add a physical I/O slot DRC index to an LPAR's profile |
+
+**LPAR / system properties (SSH/CLI)**
+
+| Tool                        | Description |
+|-----------------------------|-------------|
+| `hmc_get_lpar_description`  | Get an LPAR's description field |
+| `hmc_set_lpar_description`  | Set an LPAR's description field |
+| `hmc_get_lpar_msp`          | Get the Migratable Service Partition flag |
+| `hmc_set_lpar_msp`          | Set the MSP flag |
+| `hmc_get_proc_compat_modes` | List processor compatibility modes a system supports |
+| `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
+| `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |
+| `hmc_list_io_slots`         | List physical I/O slots on a system |
+| `hmc_list_memory_pools`     | List shared memory pools on a system |
+| `hmc_remove_memory_pool`    | Remove a shared memory pool from a system |
+
+**Escape hatch**
+
+| Tool                | Description |
+|---------------------|-------------|
+| `hmc_run_command`   | Run an arbitrary HMC CLI command (documented escape hatch) |
 
 ### End-to-end: give an LPAR a bootable disk
 
@@ -291,15 +378,21 @@ lifecycle all work; everything else uses the same path.
 
 ```
 src/hmc_mcp/
-  config.py    # pydantic-settings config (env/.env/flags)
-  xmlutil.py   # defusedxml Atom-feed -> dict parsing
-  client.py    # async HMCClient: logon/logoff, uom resources, jobs
-  templates.py # LogicalPartition create/modify XML documents
-  jobs.py      # JobRequest XML templates (PowerOn/PowerOff/...)
-  server.py    # FastMCP server + tool definitions
-  cli.py       # Typer CLI
-tests/         # pytest + respx, no real HMC needed
-scripts/       # smoke/manual harnesses
+  config.py      # pydantic-settings config (env/.env/flags)
+  xmlutil.py     # defusedxml Atom-feed -> dict parsing
+  errors.py      # HMCError (shared by client and its mixins)
+  client.py      # async HMCClient: session, transport, uom helpers, jobs
+  client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
+  client_parse.py# defusedxml wrappers tagging failures with the HMC call
+  common.py      # shared HMCClient/config helpers for tool definitions
+  ssh.py         # asyncssh helpers running HMC CLI commands over SSH
+  templates.py   # LogicalPartition create/modify XML documents
+  jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
+  pcm.py         # PCM metrics/preferences parsing + XML documents
+  server.py      # FastMCP server + tool definitions (server_*.py per domain)
+  cli.py         # Typer CLI (cli_*.py per domain)
+tests/           # pytest + respx, no real HMC needed
+scripts/         # smoke/manual harnesses
 ```
 
 ## Notes on the HMC API
