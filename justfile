@@ -5,6 +5,27 @@
 #   just test     # pytest only
 #   just smoke    # MCP handshake / tool count
 
+# synchronize locked dependencies and install repository hooks
+setup:
+    uv sync --locked
+    uv run prek install
+
+# Python lint
+lint:
+    uv run ruff check .
+
+# type-check the explicit clean production-module boundary
+typecheck:
+    uv run ty check
+
+# scan every tracked file against the reviewed fixture baseline
+secrets:
+    git ls-files -z | xargs -0 uv run detect-secrets-hook \
+        --baseline .secrets.baseline --no-verify
+
+# local and hosted static-analysis gate
+static: lint typecheck secrets
+
 # run the full pytest suite
 test:
     uv run pytest -q
@@ -14,7 +35,7 @@ smoke:
     uv run python scripts/smoke_mcp.py
 
 # full verification: tests + handshake + CLI groups load
-verify: test smoke
+verify: static test smoke
     uv run hmc-mcp --help >/dev/null
     uv run hmc-mcp lpars --help >/dev/null
     uv run hmc-mcp storage --help >/dev/null

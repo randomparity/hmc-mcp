@@ -98,7 +98,8 @@ ty-clean joins before merge. Reviewers own this manual ratchet because the
 existing excluded modules prevent an automatic whole-tree rule.
 
 The detect-secrets baseline is generated from the current tracked tree and
-reviewed to ensure its entries correspond only to intentional test fixtures.
+reviewed to ensure its entries correspond only to intentional test fixtures or
+the justfile's scanner self-reference.
 The scan never excludes `tests/`. Both the hook and `just secrets` use the same
 baseline and disable network verification for deterministic/offline runs. A
 baseline diff is a security-sensitive bypass: each added or changed entry must

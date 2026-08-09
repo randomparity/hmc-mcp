@@ -31,7 +31,8 @@ contract modules (`config.py`, `documents.py`, and `errors.py`) through an
 explicit include list, retaining ty's normal strict diagnostics for those
 files. The boundary is visible configuration, not blanket rule suppression.
 Secret detection scans tracked content against a committed baseline that
-records existing intentional fixtures; tests remain in the scan.
+records existing intentional fixtures and the scanner command's self-reference;
+tests and the justfile remain in the scan.
 
 GitHub Actions uses read-only repository permissions, immutable action SHAs,
 locked dependency synchronization, and the same `just verify` entry point.
@@ -47,8 +48,8 @@ not yet a gate. Expanding either boundary requires making the added files clean;
 it must not be done by globally disabling diagnostics. The secret baseline must
 be reviewed when intentional fixture values change. Every new or changed
 baseline entry is a security-sensitive bypass and must be matched to its
-intentional fixture during review; a baseline update is not evidence that a
-finding is safe.
+intentional fixture or scanner self-reference during review; a baseline update
+is not evidence that a finding is safe.
 
 Partial type coverage is an accepted residual of this change, not a claim that
 the repository is globally type-clean. Maintainers should add a production
