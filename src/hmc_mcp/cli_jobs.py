@@ -40,3 +40,19 @@ def jobs_list(
     _print_json(jobs)
 
 
+@jobs_app.command("wait")
+def jobs_wait(
+    uuid: str = typer.Argument(..., help="Job UUID"),
+    timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
+    interval: int = typer.Option(5, "--interval", "-i", help="Seconds between polls"),
+) -> None:
+    """Poll a job until it reaches a terminal status (COMPLETED/FAILED/EXCEPTION)."""
+
+    job = _with_client(lambda hmc: hmc.wait_for_job(uuid, timeout, interval))
+
+    if job is None:
+        err_console.print(f"[yellow]Job {uuid} not found[/yellow]")
+        raise typer.Exit(code=1)
+    _print_json(job)
+
+

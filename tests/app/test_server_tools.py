@@ -377,3 +377,47 @@ def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
     result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+# ---------------------------------------------------------------------- #
+# hmc_wait_for_job
+# ---------------------------------------------------------------------- #
+
+from hmc_mcp.server import hmc_wait_for_job  # noqa: E402
+
+
+COMPLETED_JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_wait_for_job_completes_immediately(monkeypatch, mock_hmc):
+    """hmc_wait_for_job returns once the job reaches COMPLETED."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=COMPLETED_JOB_ENTRY)
+    )
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=30, poll_interval=1)
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_wait_for_job_timeout_returns_last_seen(monkeypatch, mock_hmc):
+    """hmc_wait_for_job returns the last-seen entry after timeout."""
+    _hmc_env(monkeypatch)
+    # Always return RUNNING — never reaches terminal status
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    )
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=1, poll_interval=0)
+    assert result is not None
+    assert result["Resource"]["Status"] == "RUNNING"

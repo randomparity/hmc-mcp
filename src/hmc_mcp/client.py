@@ -352,6 +352,33 @@ class HMCClient(
     async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("Job", job_uuid)
 
+    async def wait_for_job(
+        self,
+        job_uuid: str,
+        timeout_seconds: float = 300,
+        poll_interval: float = 5,
+    ) -> dict[str, Any] | None:
+        """Poll a job until it reaches a terminal status or the timeout expires.
+
+        Terminal statuses: ``COMPLETED``, ``FAILED``, ``EXCEPTION``.
+        Returns the final job entry (same shape as ``get_job``). If the timeout
+        fires before a terminal status is reached, returns the last-seen job
+        entry — callers should check the ``Status`` field.
+        """
+        import asyncio as _asyncio
+        _TERMINAL = frozenset({"COMPLETED", "FAILED", "EXCEPTION"})
+        deadline = _asyncio.get_event_loop().time() + timeout_seconds
+        job = None
+        while True:
+            job = await self.get_job(job_uuid)
+            status = (job or {}).get("Resource", {}).get("Status", "")
+            if status in _TERMINAL:
+                return job
+            remaining = deadline - _asyncio.get_event_loop().time()
+            if remaining <= 0:
+                return job
+            await _asyncio.sleep(min(poll_interval, remaining))
+
     async def delete_job(self, job_uuid: str) -> None:
         await self._delete(f"/rest/api/uom/Job/{job_uuid}")
 

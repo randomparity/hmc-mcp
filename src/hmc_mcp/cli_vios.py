@@ -45,13 +45,22 @@ def vios_list(
 @vios_app.command("power-on")
 def vios_power_on(
     uuid: str = typer.Argument(..., help="VIOS UUID"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power on a VIOS (submits a PowerOn job)."""
     if not yes and not typer.confirm(f"Really PowerOn VIOS {uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(lambda hmc: hmc.power_on_vios(uuid))
+    async def _go(hmc):
+        job = await hmc.power_on_vios(uuid)
+        if wait and job is not None:
+            job_uuid = job.get("UUID")
+            if job_uuid:
+                job = await hmc.wait_for_job(job_uuid)
+        return job
+
+    job = _with_client(_go)
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
@@ -61,6 +70,7 @@ def vios_power_on(
 def vios_power_off(
     uuid: str = typer.Argument(..., help="VIOS UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power off a VIOS (submits a PowerOff job)."""
@@ -68,7 +78,15 @@ def vios_power_off(
     if not yes and not typer.confirm(f"Really {op} VIOS {uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(lambda hmc: hmc.power_off_vios(uuid, immediate=immediate))
+    async def _go(hmc):
+        job = await hmc.power_off_vios(uuid, immediate=immediate)
+        if wait and job is not None:
+            job_uuid = job.get("UUID")
+            if job_uuid:
+                job = await hmc.wait_for_job(job_uuid)
+        return job
+
+    job = _with_client(_go)
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)

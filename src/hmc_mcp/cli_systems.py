@@ -66,13 +66,22 @@ def systems_show(
 @systems_app.command("power-on")
 def systems_power_on(
     uuid: str = typer.Argument(..., help="Managed system UUID"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power on a managed system (submits a PowerOn job)."""
     if not yes and not typer.confirm(f"Really PowerOn system {uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(lambda hmc: hmc.power_on_system(uuid))
+    async def _go(hmc):
+        job = await hmc.power_on_system(uuid)
+        if wait and job is not None:
+            job_uuid = job.get("UUID")
+            if job_uuid:
+                job = await hmc.wait_for_job(job_uuid)
+        return job
+
+    job = _with_client(_go)
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
@@ -82,6 +91,7 @@ def systems_power_on(
 def systems_power_off(
     uuid: str = typer.Argument(..., help="Managed system UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power off a managed system (submits a PowerOff job)."""
@@ -89,7 +99,15 @@ def systems_power_off(
     if not yes and not typer.confirm(f"Really {op} system {uuid}?"):
         raise typer.Abort()
 
-    job = _with_client(lambda hmc: hmc.power_off_system(uuid, immediate=immediate))
+    async def _go(hmc):
+        job = await hmc.power_off_system(uuid, immediate=immediate)
+        if wait and job is not None:
+            job_uuid = job.get("UUID")
+            if job_uuid:
+                job = await hmc.wait_for_job(job_uuid)
+        return job
+
+    job = _with_client(_go)
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)
