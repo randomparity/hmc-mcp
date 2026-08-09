@@ -263,7 +263,7 @@ class HMCClient(
         entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
-    async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> Any:
+    async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> str | None:
         """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
 
         quick/ endpoints return a plain-text value and require Accept: */* —

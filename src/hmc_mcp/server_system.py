@@ -91,7 +91,7 @@ def hmc_find_lpar(name: str) -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_lpar_state(lpar_uuid: str) -> Any:
+def hmc_lpar_state(lpar_uuid: str) -> str | None:
     """Get just the current state of an LPAR (running, not activated, ...).
 
     Uses the cheap quick-property endpoint instead of a full fetch.
