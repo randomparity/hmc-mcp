@@ -133,6 +133,8 @@ Exposed tools:
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
 | `hmc_recent_jobs`     | Recent HMC jobs list (limit=20) |
+| `hmc_capacity_report` | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
+| `hmc_find_placement`  | Systems with enough free memory + CPU to host a new LPAR |
 
 **Mutating / lifecycle**
 

@@ -41,7 +41,9 @@ from ._app import (
 )
 
 from .server_system import (
+    hmc_capacity_report as hmc_capacity_report,
     hmc_console_info as hmc_console_info,
+    hmc_find_placement as hmc_find_placement,
     hmc_get_job as hmc_get_job,
     hmc_list_resources as hmc_list_resources,
     hmc_lpars as hmc_lpars,

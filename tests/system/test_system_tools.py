@@ -12,7 +12,9 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
+    hmc_capacity_report,
     hmc_console_info,
+    hmc_find_placement,
     hmc_lpars,
     hmc_list_resources,
     hmc_systems,
@@ -259,3 +261,158 @@ def test_list_resources(monkeypatch, mock_hmc):
     )
     result = hmc_list_resources("Cluster")
     assert result[0]["UUID"] == "cluster-uuid-1"
+
+
+# ---------------------------------------------------------------------- #
+# hmc_capacity_report + hmc_find_placement
+# ---------------------------------------------------------------------- #
+
+SYS_UUID_A = "sys-cap-0001"
+SYS_UUID_B = "sys-cap-0002"
+
+
+def _sys_feed(*entries: str) -> str:
+    """Wrap one or more entry XML strings in an Atom feed."""
+    joined = "\n".join(entries)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+{joined}
+</feed>
+"""
+
+
+def _sys_entry(uuid: str, name: str, total_mem: int, total_procs: float) -> str:
+    return f"""  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <SystemName>{name}</SystemName>
+        <AssignableSystemMemory>{total_mem}</AssignableSystemMemory>
+        <ConfigurableSystemProcessorUnits>{total_procs}</ConfigurableSystemProcessorUnits>
+      </ManagedSystem>
+    </content>
+  </entry>"""
+
+
+def _lpar_entry(uuid: str, name: str, mem: int, procs: float, state: str = "running") -> str:
+    return f"""  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <PartitionName>{name}</PartitionName>
+        <PartitionState>{state}</PartitionState>
+        <DesiredMemory>{mem}</DesiredMemory>
+        <DesiredProcessingUnits>{procs}</DesiredProcessingUnits>
+      </LogicalPartition>
+    </content>
+  </entry>"""
+
+
+def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
+    """hmc_capacity_report returns total/assigned/free resources per system."""
+    _hmc_env(monkeypatch)
+    # Two managed systems
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _sys_entry(SYS_UUID_A, "p9-01", total_mem=131072, total_procs=16.0),
+            _sys_entry(SYS_UUID_B, "p9-02", total_mem=65536, total_procs=8.0),
+        ))
+    )
+    # LPARs for system A: 2 LPARs using 16384 MiB + 2.0 procs total
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
+            _lpar_entry("lp-a2", "aix2", mem=8192, procs=1.0, state="not activated"),
+        ))
+    )
+    # LPARs for system B: 1 LPAR using 4096 MiB + 0.5 procs
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _lpar_entry("lp-b1", "linux1", mem=4096, procs=0.5),
+        ))
+    )
+
+    result = hmc_capacity_report()
+
+    assert len(result) == 2
+    by_name = {r["system_name"]: r for r in result}
+
+    a = by_name["p9-01"]
+    assert a["total_memory_mb"] == 131072
+    assert a["assigned_memory_mb"] == 16384
+    assert a["free_memory_mb"] == 131072 - 16384
+    assert a["total_proc_units"] == 16.0
+    assert a["assigned_proc_units"] == 2.0
+    assert a["free_proc_units"] == pytest.approx(14.0)
+    assert a["total_lpars"] == 2
+    assert a["running_lpars"] == 1  # only "running" counts
+
+    b = by_name["p9-02"]
+    assert b["assigned_memory_mb"] == 4096
+    assert b["free_memory_mb"] == 65536 - 4096
+
+
+def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
+    """hmc_capacity_report handles a system with no LPARs (free == total)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _sys_entry(SYS_UUID_A, "empty-sys", total_mem=65536, total_procs=8.0),
+        ))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
+
+    result = hmc_capacity_report()
+    assert result[0]["assigned_memory_mb"] == 0
+    assert result[0]["free_memory_mb"] == 65536
+    assert result[0]["running_lpars"] == 0
+    assert result[0]["total_lpars"] == 0
+
+
+def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
+    """hmc_find_placement returns systems that can host the requested LPAR."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _sys_entry(SYS_UUID_A, "big-sys", total_mem=131072, total_procs=16.0),
+            _sys_entry(SYS_UUID_B, "small-sys", total_mem=8192, total_procs=2.0),
+        ))
+    )
+    # big-sys: 1 LPAR using 8192 MiB / 1.0 proc → free = 122880 MiB / 15.0 procs
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
+        ))
+    )
+    # small-sys: 1 LPAR using 6144 MiB / 1.5 procs → free = 2048 MiB / 0.5 procs
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _lpar_entry("lp-b1", "linux1", mem=6144, procs=1.5),
+        ))
+    )
+
+    # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
+    result = hmc_find_placement(desired_memory_mb=4096, desired_proc_units=0.5)
+    assert len(result) == 1
+    assert result[0]["system_name"] == "big-sys"
+    assert result[0]["free_memory_mb"] == 131072 - 8192
+
+
+def test_find_placement_no_candidates(monkeypatch, mock_hmc):
+    """hmc_find_placement returns empty list when no system has enough free resources."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _sys_entry(SYS_UUID_A, "full-sys", total_mem=8192, total_procs=2.0),
+        ))
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=_sys_feed(
+            _lpar_entry("lp-a1", "aix1", mem=8192, procs=2.0),
+        ))
+    )
+
+    result = hmc_find_placement(desired_memory_mb=512)
+    assert result == []
