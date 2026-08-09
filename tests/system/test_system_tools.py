@@ -22,9 +22,9 @@ from hmc_mcp.server import (
     hmc_vios,
 )
 
-SYSTEM_UUID = "sys-uuid-0001"
-LPAR_UUID = "lpar-uuid-0001"
-VIOS_UUID = "vios-uuid-0001"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -152,7 +152,7 @@ def test_lpars_system_uuid_scopes(monkeypatch, mock_hmc):
     route = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
     )
-    hmc_lpars(system_uuid=SYSTEM_UUID)
+    hmc_lpars(system_name_or_uuid=SYSTEM_UUID)
     assert route.called
 
 
@@ -162,7 +162,7 @@ def test_lpars_lpar_uuid_gets_one(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running"))
     )
-    result = hmc_lpars(lpar_uuid=LPAR_UUID)
+    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID)
     assert result["Resource"]["PartitionState"] == "running"
 
 
@@ -192,7 +192,7 @@ def test_lpars_state_only_returns_string(monkeypatch, mock_hmc):
     route = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(return_value=httpx.Response(200, text="running"))
-    result = hmc_lpars(lpar_uuid=LPAR_UUID, state_only=True)
+    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state_only=True)
     assert route.called
     assert result == "running"
 
@@ -209,7 +209,7 @@ def test_lpars_lpar_uuid_takes_priority_over_name(monkeypatch, mock_hmc):
     route = mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
     )
-    hmc_lpars(lpar_uuid=LPAR_UUID, name="should-be-ignored")
+    hmc_lpars(lpar_name_or_uuid=LPAR_UUID, name="should-be-ignored")
     assert route.called
 
 
@@ -234,7 +234,7 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
     ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")))
-    result = hmc_vios(vios_uuid=VIOS_UUID)
+    result = hmc_vios(vios_name_or_uuid=VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
 
@@ -245,7 +245,7 @@ def test_vios_uuid_takes_priority_over_system_uuid(monkeypatch, mock_hmc):
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
     ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer")))
-    hmc_vios(vios_uuid=VIOS_UUID, system_uuid=SYSTEM_UUID)
+    hmc_vios(vios_name_or_uuid=VIOS_UUID, system_name_or_uuid=SYSTEM_UUID)
     assert route.called
 
 

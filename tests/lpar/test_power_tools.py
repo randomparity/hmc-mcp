@@ -25,9 +25,9 @@ from hmc_mcp.server import (
 
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
-SYSTEM_UUID = "sys-uuid-0001"
-VIOS_UUID = "vios-uuid-0001"
-LPAR_UUID = "lpar-uuid-0001"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
 LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">

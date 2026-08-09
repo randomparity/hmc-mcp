@@ -20,7 +20,7 @@ from hmc_mcp.server import (
 
 from conftest import JOB_ENTRY
 
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 
 
 def _hmc_env(monkeypatch) -> None:

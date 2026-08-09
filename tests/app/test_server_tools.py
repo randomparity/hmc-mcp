@@ -33,16 +33,16 @@ from hmc_mcp.server import (
 
 from conftest import JOB_ENTRY
 
-SYSTEM_UUID = "sys-uuid-0001"
-LPAR_UUID = "lpar-uuid-0001"
-VIOS_UUID = "vios-uuid-0001"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 MC_UUID = "mc-uuid-0001"
 
 # A single-LPAR Atom feed; {name} is the partition name.
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <id>urn:uuid:lpar-uuid-0001</id>
+    <id>urn:uuid:00000000-0000-0000-0000-000000000002</id>
     <title>LogicalPartition:{name}</title>
     <content type="application/vnd.ibm.powervm.uom+xml">
       <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
@@ -186,7 +186,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar"))
     )
     result = hmc_create_lpar(
-        system_uuid=SYSTEM_UUID,
+        system_name_or_uuid=SYSTEM_UUID,
         name="newlpar",
         min_memory=512,
         desired_memory=2048,
@@ -211,7 +211,7 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded"))
     )
     hmc_create_lpar(
-        system_uuid=SYSTEM_UUID,
+        system_name_or_uuid=SYSTEM_UUID,
         name="ded",
         dedicated=True,
         desired_procs=2.0,

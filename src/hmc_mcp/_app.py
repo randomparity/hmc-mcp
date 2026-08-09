@@ -188,6 +188,65 @@ async def _resolve_lpar_name(
         return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
 
 
+# ---------------------------------------------------------------------- #
+# UUID resolvers for REST tools
+# ---------------------------------------------------------------------- #
+
+
+async def _resolve_system_uuid(hmc, system_name_or_uuid: str) -> str:
+    """Resolve a system name-or-UUID to a UUID for REST calls.
+
+    If the value is already a UUID it is returned as-is. Otherwise it is
+    treated as a SystemName; :meth:`find_system_by_name` is called and its
+    UUID is returned. Raises ``ValueError`` when the name cannot be found.
+    """
+    if is_uuid(system_name_or_uuid):
+        return system_name_or_uuid
+    entry = await hmc.find_system_by_name(system_name_or_uuid)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No managed system named {system_name_or_uuid!r} found. "
+            "Use hmc_systems to list available systems."
+        )
+    return str(entry["UUID"])
+
+
+async def _resolve_lpar_uuid(hmc, lpar_name_or_uuid: str) -> str:
+    """Resolve an LPAR name-or-UUID to a UUID for REST calls.
+
+    If the value is already a UUID it is returned as-is. Otherwise it is
+    treated as a PartitionName; :meth:`find_partition_by_name` is called and
+    its UUID is returned. Raises ``ValueError`` when the name cannot be found.
+    """
+    if is_uuid(lpar_name_or_uuid):
+        return lpar_name_or_uuid
+    entry = await hmc.find_partition_by_name(lpar_name_or_uuid)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No LPAR named {lpar_name_or_uuid!r} found. "
+            "Use hmc_lpars to list available partitions."
+        )
+    return str(entry["UUID"])
+
+
+async def _resolve_vios_uuid(hmc, vios_name_or_uuid: str) -> str:
+    """Resolve a VIOS name-or-UUID to a UUID for REST calls.
+
+    If the value is already a UUID it is returned as-is. Otherwise it is
+    treated as a PartitionName; :meth:`find_vios_by_name` is called and its
+    UUID is returned. Raises ``ValueError`` when the name cannot be found.
+    """
+    if is_uuid(vios_name_or_uuid):
+        return vios_name_or_uuid
+    entry = await hmc.find_vios_by_name(vios_name_or_uuid)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No VIOS named {vios_name_or_uuid!r} found. "
+            "Use hmc_vios to list available Virtual I/O Servers."
+        )
+    return str(entry["UUID"])
+
+
 def _ssh_with_client(fn, *, system_name_or_uuid=None, lpar_name_or_uuid=None):
     """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
 
