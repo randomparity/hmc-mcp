@@ -20,29 +20,24 @@ from .documents import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_users(
+def hmc_users(
+    name: str | None = None,
     user_type: Literal["local", "kerberos", "all"] = "all",
-) -> list[dict[str, Any]]:
-    """List HMC user accounts.
+) -> Any:
+    """List HMC user accounts or get one by username.
 
-    user_type filters by account type: 'local' (local HMC accounts),
-    'kerberos' (Kerberos/LDAP-backed accounts), or 'all' (default).
+    When name is provided, returns a single resource dict for that user,
+    or None if not found. user_type is ignored when name is supplied.
+
+    When name is omitted, returns a list of all user accounts filtered by
+    user_type: 'local' (local HMC accounts), 'kerberos'
+    (Kerberos/LDAP-backed accounts), or 'all' (default).
     Returns one dict per user: {UUID, title, link, ResourceType, Resource}
     where Resource holds the flattened HmcUser fields.
     """
-
+    if name is not None:
+        return with_client(lambda hmc: hmc.get_hmc_user(name))
     return with_client(lambda hmc: hmc.list_hmc_users(user_type))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_user(name: str) -> dict[str, Any] | None:
-    """Get details for one HMC user account by username.
-
-    Returns a single resource dict, or None if the server returned no
-    content.
-    """
-
-    return with_client(lambda hmc: hmc.get_hmc_user(name))
 
 
 @mcp.tool
