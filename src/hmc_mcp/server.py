@@ -162,3 +162,6 @@ from .server_cli import (
     hmc_set_lpar_msp as hmc_set_lpar_msp,
     hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
 )
+from .server_composite import (
+    hmc_lpar_summary as hmc_lpar_summary,
+)
