@@ -50,7 +50,10 @@ def hmc_console_info() -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_systems(system_name_or_uuid: str | None = None) -> Any:
+def hmc_systems(
+    system_name_or_uuid: str | None = None,
+    state: str | None = None,
+) -> Any:
     """List all managed systems or get one by name or UUID.
 
     When system_name_or_uuid is omitted, returns a list of all managed systems
@@ -59,8 +62,14 @@ def hmc_systems(system_name_or_uuid: str | None = None) -> Any:
 
     When system_name_or_uuid is provided, accepts either a SystemName or a UUID
     and returns the full details dict for that one system, or None if not found.
+
+    When state is provided and system_name_or_uuid is omitted, returns only
+    systems whose State property matches the given value, using the HMC
+    server-side search endpoint.
     """
     if system_name_or_uuid is None:
+        if state is not None:
+            return with_client(lambda hmc: hmc.search_uom("ManagedSystem", "State", state))
         return with_client(lambda hmc: hmc.list_managed_systems())
 
     async def _go():
@@ -77,6 +86,7 @@ def hmc_lpars(
     lpar_name_or_uuid: str | None = None,
     name: str | None = None,
     state_only: bool = False,
+    state: str | None = None,
 ) -> Any:
     """List logical partitions (LPARs) or get/find one.
 
@@ -92,10 +102,14 @@ def hmc_lpars(
        PartitionName (exact match).
     4. system_name_or_uuid                  →  list[dict]   — all LPARs on that
        system. Accepts either a SystemName or a UUID.
-    5. (no arguments)                       →  list[dict]   — all LPARs known
+    5. state                                →  list[dict]   — all LPARs whose
+       PartitionState matches the given value (server-side /search/ endpoint).
+    6. (no arguments)                       →  list[dict]   — all LPARs known
        to the HMC.
 
     Raises ValueError if state_only=True is supplied without lpar_name_or_uuid.
+    The state filter is ignored when lpar_name_or_uuid or system_name_or_uuid
+    is supplied.
     """
     if lpar_name_or_uuid is not None and state_only:
         async def _go_state():
@@ -119,6 +133,8 @@ def hmc_lpars(
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
         return _run(_go_sys)
+    if state is not None:
+        return with_client(lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state))
     return with_client(lambda hmc: hmc.list_logical_partitions(None))
 
 
@@ -126,6 +142,7 @@ def hmc_lpars(
 def hmc_vios(
     system_name_or_uuid: str | None = None,
     vios_name_or_uuid: str | None = None,
+    state: str | None = None,
 ) -> Any:
     """List Virtual I/O Servers or get storage-detail mappings for one.
 
@@ -136,6 +153,11 @@ def hmc_vios(
     When vios_name_or_uuid is omitted, returns a list of all VIOS entries,
     optionally restricted to one managed system via system_name_or_uuid
     (accepts either a SystemName or a UUID).
+
+    When state is provided and vios_name_or_uuid is omitted, returns only
+    VIOS entries whose PartitionState matches the given value, using the HMC
+    server-side search endpoint. The state filter is ignored when
+    vios_name_or_uuid or system_name_or_uuid is supplied.
     """
     if vios_name_or_uuid is not None:
         async def _go_vios():
@@ -149,6 +171,8 @@ def hmc_vios(
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_vios(system_uuid)
         return _run(_go_sys)
+    if state is not None:
+        return with_client(lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state))
     return with_client(lambda hmc: hmc.list_vios(None))
 
 

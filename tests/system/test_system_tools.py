@@ -444,3 +444,112 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
 
     result = hmc_find_placement(desired_memory_mb=512)
     assert result == []
+
+
+# ---------------------------------------------------------------------- #
+# State filter tests — hmc_systems, hmc_lpars, hmc_vios
+# ---------------------------------------------------------------------- #
+
+
+def test_systems_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
+    """hmc_systems(state='operating') GETs the search endpoint, not the collection."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
+        return_value=httpx.Response(
+            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01", State="operating")
+        )
+    )
+    result = hmc_systems(state="operating")
+    assert route.called
+    assert len(result) == 1
+    assert result[0]["Resource"]["State"] == "operating"
+
+
+def test_systems_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
+    """hmc_systems(state='no-match') returns [] when the search finds nothing."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==no-match)").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
+    result = hmc_systems(state="no-match")
+    assert result == []
+
+
+def test_lpars_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
+    """hmc_lpars(state='running') GETs the PartitionState search endpoint."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionState==running)"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1", PartitionState="running")
+        )
+    )
+    result = hmc_lpars(state="running")
+    assert route.called
+    assert len(result) == 1
+    assert result[0]["Resource"]["PartitionState"] == "running"
+
+
+def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
+    """hmc_lpars(state='not activated') returns [] when the search matches nothing."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionState==not activated)"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    result = hmc_lpars(state="not activated")
+    assert result == []
+
+
+def test_lpars_state_filter_ignored_when_lpar_name_or_uuid_given(monkeypatch, mock_hmc):
+    """hmc_lpars(lpar_name_or_uuid=..., state=...) resolves the UUID, ignores state."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running")
+        )
+    )
+    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state="running")
+    assert route.called
+    assert result["UUID"] == LPAR_UUID
+
+
+def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
+    """hmc_vios(state='running') GETs the VirtualIOServer PartitionState search endpoint."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/search/(PartitionState==running)"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1", PartitionState="running")
+        )
+    )
+    result = hmc_vios(state="running")
+    assert route.called
+    assert len(result) == 1
+    assert result[0]["Resource"]["PartitionState"] == "running"
+
+
+def test_vios_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
+    """hmc_vios(state='no-match') returns [] when the search matches nothing."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        "/rest/api/uom/VirtualIOServer/search/(PartitionState==no-match)"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    result = hmc_vios(state="no-match")
+    assert result == []
+
+
+def test_vios_state_filter_ignored_when_vios_name_or_uuid_given(monkeypatch, mock_hmc):
+    """hmc_vios(vios_name_or_uuid=..., state=...) returns storage detail, ignores state."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
+        )
+    )
+    hmc_vios(vios_name_or_uuid=VIOS_UUID, state="running")
+    assert route.called
+

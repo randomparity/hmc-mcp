@@ -22,10 +22,16 @@ from .cli_app import (
 
 
 @systems_app.command("list")
-def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
+def systems_list(
+    state: str | None = typer.Option(None, "--state", help="Filter by State (server-side search)"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
     """List managed systems."""
 
-    systems = _with_client(lambda hmc: hmc.list_managed_systems())
+    if state is not None:
+        systems = _with_client(lambda hmc: hmc.search_uom("ManagedSystem", "State", state))
+    else:
+        systems = _with_client(lambda hmc: hmc.list_managed_systems())
 
     table = None
     if not as_json:
