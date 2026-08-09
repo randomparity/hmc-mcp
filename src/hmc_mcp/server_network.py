@@ -8,11 +8,13 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
+    _resolve_system_uuid,
+    _run,
     _ssh_with_client,
     mcp,
-    with_client,
 )
 
+from .common import client_from_env
 from .ssh import (
     add_vnic,
     list_fc_ports,
@@ -25,26 +27,42 @@ from .ssh import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_virtual_switches(system_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_virtual_switches(system_name_or_uuid: str) -> list[dict[str, Any]]:
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
     The SwitchID is what hmc_create_virtual_network and hmc_add_network_adapter
     reference.
     """
 
-    return with_client(lambda hmc: hmc.list_virtual_switches(system_uuid))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.list_virtual_switches(system_uuid)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_virtual_networks(system_uuid: str) -> list[dict[str, Any]]:
-    """List Virtual Networks (VLANs) on a managed system."""
+def hmc_list_virtual_networks(system_name_or_uuid: str) -> list[dict[str, Any]]:
+    """List Virtual Networks (VLANs) on a managed system.
 
-    return with_client(lambda hmc: hmc.list_virtual_networks(system_uuid))
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.list_virtual_networks(system_uuid)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_create_virtual_network(
-    system_uuid: str,
+    system_name_or_uuid: str,
     name: str,
     vlan_id: int,
     vswitch_id: int,
@@ -52,36 +70,57 @@ def hmc_create_virtual_network(
 ) -> dict[str, Any] | None:
     """Create a Virtual Network (VLAN) on a managed system.
 
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
     vswitch_id is the numeric SwitchID of the backing VirtualSwitch (see
     hmc_list_virtual_switches). tagged sets whether bridged traffic keeps the
     VLAN tag.
     """
 
-    return with_client(
-        lambda hmc: hmc.create_virtual_network(
-            system_uuid, name, vlan_id, vswitch_id, tagged=tagged
-        )
-    )
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.create_virtual_network(
+                system_uuid, name, vlan_id, vswitch_id, tagged=tagged
+            )
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
+def hmc_delete_virtual_network(system_name_or_uuid: str, network_uuid: str) -> str:
     """Delete a Virtual Network from a managed system.
 
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
     Note: a network referenced by a NetworkBridge, or equal to a trunk
     adapter's PVID, cannot be deleted until the bridge is removed. Returns a
     confirmation string (immediate delete — no job to poll).
     """
 
-    with_client(lambda hmc: hmc.delete_virtual_network(system_uuid, network_uuid))
-    return f"Deleted VirtualNetwork {network_uuid} from {system_uuid}"
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            await hmc.delete_virtual_network(system_uuid, network_uuid)
+        return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
-    """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
+def hmc_list_network_bridges(system_name_or_uuid: str) -> list[dict[str, Any]]:
+    """List NetworkBridges (Shared Ethernet Adapters) on a managed system.
 
-    return with_client(lambda hmc: hmc.list_network_bridges(system_uuid))
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
+    """
+
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.list_network_bridges(system_uuid)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)

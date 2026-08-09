@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
+    _resolve_system_uuid,
+    _resolve_vios_uuid,
     _run,
     mcp,
     with_client,
@@ -37,7 +39,7 @@ async def _update_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval:
 
 @mcp.tool
 def hmc_hmc_update(
-    system_uuid: str,
+    console_uuid: str,
     repository: RepositorySource,
     kind: Literal["update", "upgrade"] = "update",
     wait: bool = False,
@@ -53,7 +55,8 @@ def hmc_hmc_update(
         {"type": "disk"}  # use files already on the HMC disk
 
     Submits an Update or Upgrade job to ManagementConsole; poll hmc_get_job
-    for status. system_uuid is the ManagementConsole UUID (from hmc_console_info).
+    for status. console_uuid is the ManagementConsole UUID (from
+    hmc_console_info).
 
     Set wait=True to block until the job reaches a terminal state.
     """
@@ -68,7 +71,7 @@ def hmc_hmc_update(
 
     return _run(lambda: _update_op(
         lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/ManagementConsole/{system_uuid}/do/{operation}",
+            f"/rest/api/uom/ManagementConsole/{console_uuid}/do/{operation}",
             job_xml,
         ),
         wait, timeout_seconds, poll_interval,
@@ -76,22 +79,22 @@ def hmc_hmc_update(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
+def hmc_get_available_hmc_ptfs(console_uuid: str) -> dict[str, Any] | None:
     """Get available PTFs (fixes) for the HMC software.
 
     Issues a GET to the ManagementConsole resource with the SoftwareUpdate
-    group, which returns available PTF information. system_uuid is the
+    group, which returns available PTF information. console_uuid is the
     ManagementConsole UUID (from hmc_console_info). Does not submit a job.
     """
 
     return with_client(
-        lambda hmc: hmc.get_uom("ManagementConsole", system_uuid, group="SoftwareUpdate")
+        lambda hmc: hmc.get_uom("ManagementConsole", console_uuid, group="SoftwareUpdate")
     )
 
 
 @mcp.tool
 def hmc_vios_update(
-    vios_uuid: str,
+    vios_name_or_uuid: str,
     repository: RepositorySource,
     kind: Literal["update", "upgrade"] = "update",
     wait: bool = False,
@@ -100,10 +103,12 @@ def hmc_vios_update(
 ) -> dict[str, Any] | None:
     """Submit a VIOS software update or upgrade job.
 
+    vios_name_or_uuid: accepts either a PartitionName or a UUID
+    (find it with hmc_vios).
     kind='update' installs fixes (PTF level); kind='upgrade' performs a full
     VIOS version upgrade. repository describes the image source (same format as
     hmc_hmc_update). Submits an Update or Upgrade job to VirtualIOServer; poll
-    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_vios).
+    hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
     """
@@ -116,18 +121,23 @@ def hmc_vios_update(
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
 
-    return _run(lambda: _update_op(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/{operation}",
-            job_xml,
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            return await _update_op(
+                lambda hmc2: hmc2.submit_job(
+                    f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/{operation}",
+                    job_xml,
+                ),
+                wait, timeout_seconds, poll_interval,
+            )
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_update_firmware(
-    system_uuid: str,
+    system_name_or_uuid: str,
     repository: RepositorySource,
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -135,19 +145,23 @@ def hmc_update_firmware(
 ) -> dict[str, Any] | None:
     """Submit a managed system firmware update job.
 
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
     repository describes the firmware image source (same format as
     hmc_hmc_update). Submits an UpdateFirmware job to ManagedSystem; poll
-    hmc_get_job for status. system_uuid is the managed system UUID
-    (from hmc_systems).
+    hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _update_op(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
-            update_firmware_job(repository),
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await _update_op(
+                lambda hmc2: hmc2.submit_job(
+                    f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
+                    update_firmware_job(repository),
+                ),
+                wait, timeout_seconds, poll_interval,
+            )
 
-
+    return _run(_go)
