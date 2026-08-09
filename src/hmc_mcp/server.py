@@ -47,6 +47,7 @@ from .server_system import (
     hmc_find_placement as hmc_find_placement,
     hmc_find_system as hmc_find_system,
     hmc_get_job as hmc_get_job,
+    hmc_wait_for_job as hmc_wait_for_job,
     hmc_get_lpar as hmc_get_lpar,
     hmc_get_system as hmc_get_system,
     hmc_list_lpars as hmc_list_lpars,

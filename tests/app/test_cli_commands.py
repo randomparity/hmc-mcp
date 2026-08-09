@@ -158,6 +158,10 @@ class FakeHMC:
         self._record("find_system_by_name", name)
         return self.system if name == self.system["Resource"]["SystemName"] else None
 
+    async def wait_for_job(self, job_uuid, timeout_seconds=300, poll_interval=5):
+        self._record("wait_for_job", job_uuid)
+        return self.job
+
     async def get_managed_system(self, uuid):
         self._record("get_managed_system", uuid)
         return self.system if uuid == SYSTEM_UUID else None

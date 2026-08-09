@@ -164,6 +164,32 @@ def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
+def hmc_wait_for_job(
+    job_uuid: str,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Poll an HMC job until it reaches a terminal status or the timeout expires.
+
+    Terminal statuses: ``COMPLETED``, ``FAILED``, ``EXCEPTION``.
+    Returns the final job entry. If the timeout fires before a terminal status
+    is reached, returns the last-seen entry (check the ``Status`` field).
+
+    Use after submitting a job with a power/install/update tool when you want
+    to block until the operation completes rather than polling manually.
+
+    Args:
+        job_uuid: UUID of the job returned by the submitting tool.
+        timeout_seconds: Maximum seconds to wait (default 300).
+        poll_interval: Seconds between polls (default 5).
+    """
+
+    return with_client(
+        lambda hmc: hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+    )
+
+
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
     """List recent HMC jobs (audit view of recent activity).
 

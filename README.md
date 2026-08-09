@@ -124,6 +124,7 @@ Exposed tools:
 | `hmc_console_info`    | HMC version/network info; cheap connectivity check |
 | `hmc_list_systems`    | All managed systems |
 | `hmc_get_system`      | One managed system by UUID |
+| `hmc_find_system`     | Find a managed system by SystemName (exact match) |
 | `hmc_list_lpars`      | All LPARs, or those of one system |
 | `hmc_get_lpar`        | One LPAR by UUID |
 | `hmc_find_lpar`       | Find an LPAR by exact name |
@@ -132,6 +133,7 @@ Exposed tools:
 | `hmc_vios_mappings`   | VIOS device mapping facts (vSCSI, NPIV, virtual optical) |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
+| `hmc_wait_for_job`    | Poll a job until it reaches COMPLETED/FAILED/EXCEPTION or times out |
 | `hmc_recent_jobs`     | Recent HMC jobs (audit view, most-recent first) |
 
 **Mutating / lifecycle**
@@ -443,6 +445,10 @@ scripts/         # smoke/manual harnesses
   `application/vnd.ibm.powervm.uom+xml; type=<ResourceType>`.
 - `.../quick/<Property>` returns a single property cheaply;
   `.../search/(<Property>==<Value>)` filters server-side.
+- State changes are asynchronous **jobs**: POST a JobRequest to
+  `/rest/api/uom/<Type>/<uuid>/do/<Operation>`, then poll
+  `/rest/api/uom/Job/<job-uuid>`.
+`.
 - State changes are asynchronous **jobs**: POST a JobRequest to
   `/rest/api/uom/<Type>/<uuid>/do/<Operation>`, then poll
   `/rest/api/uom/Job/<job-uuid>`.

@@ -104,20 +104,22 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
 @lpars_app.command("power-on")
 def lpars_power_on(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
-    _power_lpar(name_or_uuid, on=True, yes=yes)
+    _power_lpar(name_or_uuid, on=True, yes=yes, wait=wait)
 
 
 @lpars_app.command("power-off")
 def lpars_power_off(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     immediate: bool = typer.Option(False, "--immediate", help="Immediate power off (no graceful shutdown)"),
+    wait: bool = typer.Option(False, "--wait", help="Block until the job completes"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Power off an LPAR (submits a PowerOff job)."""
-    _power_lpar(name_or_uuid, on=False, immediate=immediate, yes=yes)
+    _power_lpar(name_or_uuid, on=False, immediate=immediate, yes=yes, wait=wait)
 
 
 
@@ -218,7 +220,15 @@ def lpars_remote_restart(
 
 
 
-def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool = False) -> None:
+def _power_lpar(
+    name_or_uuid: str,
+    on: bool,
+    immediate: bool = False,
+    yes: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> None:
     async def _go():
         async with _client() as hmc:
             uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
@@ -243,6 +253,10 @@ def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool 
                     f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOff",
                     power_off_lpar_job(immediate=immediate),
                 )
+            if wait and job is not None:
+                job_uuid = job.get("UUID")
+                if job_uuid:
+                    job = await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
             return uuid, job
 
     uuid, job = _run(_go)

@@ -59,6 +59,7 @@ READ_ONLY_TOOLS = frozenset({
     "hmc_vios_mappings",
     "hmc_list_resources",
     "hmc_get_job",
+    "hmc_wait_for_job",
     "hmc_recent_jobs",
     "hmc_capacity_report",
     "hmc_find_placement",
