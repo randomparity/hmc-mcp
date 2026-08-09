@@ -21,6 +21,7 @@ from .documents import (
     build_lpar_document,
     build_managed_system_document,
 )
+from .jobs import power_off_lpar_job, power_on_lpar_job
 
 
 
@@ -266,6 +267,39 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
     return _run(_go)
 
 
+
+
+@mcp.tool
+def hmc_power_on_lpar(lpar_uuid: str) -> dict[str, Any] | None:
+    """Submit a PowerOn job for a logical partition.
+
+    Returns the submitted job (check hmc_get_job for status). This changes
+    the state of a real partition — confirm the UUID with hmc_find_lpar
+    before calling.
+    """
+
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+            power_on_lpar_job(),
+        )
+    )
+
+
+@mcp.tool(annotations=_DESTRUCTIVE)
+def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+    """Submit a PowerOff job for a logical partition.
+
+    immediate=True forces an immediate power off (no graceful OS shutdown).
+    Returns the submitted job. This changes the state of a real partition.
+    """
+
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
+            power_off_lpar_job(immediate=immediate),
+        )
+    )
 
 
 @mcp.tool

@@ -1,4 +1,4 @@
-"""MCP tools for read-only inventory, HMC CLI passthrough, and job submission.
+"""MCP tools for read-only inventory and job status, plus the HMC CLI escape hatch.
 """
 
 from __future__ import annotations
@@ -6,14 +6,12 @@ from __future__ import annotations
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
     _READ_ONLY,
     _run,
     mcp,
     with_client,
 )
 
-from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import run_hmc_cli
 
 
@@ -136,39 +134,6 @@ def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
     return with_client(lambda hmc: hmc.list_uom(resource_type))
 
 
-
-
-@mcp.tool
-def hmc_power_on_lpar(lpar_uuid: str) -> dict[str, Any] | None:
-    """Submit a PowerOn job for a logical partition.
-
-    Returns the submitted job (check hmc_get_job for status). This changes
-    the state of a real partition — confirm the UUID with hmc_find_lpar
-    before calling.
-    """
-
-    return with_client(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-            power_on_lpar_job(),
-        )
-    )
-
-
-@mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
-    """Submit a PowerOff job for a logical partition.
-
-    immediate=True forces an immediate power off (no graceful OS shutdown).
-    Returns the submitted job. This changes the state of a real partition.
-    """
-
-    return with_client(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
-            power_off_lpar_job(immediate=immediate),
-        )
-    )
 
 
 @mcp.tool(annotations=_READ_ONLY)

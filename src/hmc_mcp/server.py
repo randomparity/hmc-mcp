@@ -51,8 +51,6 @@ from .server_system import (
     hmc_list_systems as hmc_list_systems,
     hmc_list_vios as hmc_list_vios,
     hmc_lpar_state as hmc_lpar_state,
-    hmc_power_off_lpar as hmc_power_off_lpar,
-    hmc_power_on_lpar as hmc_power_on_lpar,
     hmc_run_command as hmc_run_command,
     hmc_vios_mappings as hmc_vios_mappings,
 )
@@ -63,8 +61,10 @@ from .server_power import (
     hmc_dlpar_proc as hmc_dlpar_proc,
     hmc_modify_lpar as hmc_modify_lpar,
     hmc_modify_system as hmc_modify_system,
+    hmc_power_off_lpar as hmc_power_off_lpar,
     hmc_power_off_system as hmc_power_off_system,
     hmc_power_off_vios as hmc_power_off_vios,
+    hmc_power_on_lpar as hmc_power_on_lpar,
     hmc_power_on_system as hmc_power_on_system,
     hmc_power_on_vios as hmc_power_on_vios,
 )
