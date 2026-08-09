@@ -25,7 +25,8 @@ element names.
 from __future__ import annotations
 
 from typing import Any
-from xml.etree.ElementTree import Element
+# Element is used only as a type annotation; all XML parsing uses defusedxml.
+from xml.etree.ElementTree import Element  # nosec B405
 
 from defusedxml import ElementTree as DET
 
