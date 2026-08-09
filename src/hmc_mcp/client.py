@@ -28,13 +28,13 @@ from .client_systems import SystemsMixin
 from .client_templates import TemplatesMixin
 from .client_users import UsersMixin
 
-LOGON_REQUEST_TEMPLATE = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogonRequest xmlns="{WEB_NS}" schemaVersion="V1_0">
+LOGON_REQUEST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LogonRequest xmlns="{web_ns}" schemaVersion="V1_0">
   <Metadata>
     <Atom/>
   </Metadata>
-  <UserID kb="CUR" kxe="false">{{user}}</UserID>
-  <Password kb="CUR" kxe="false">{{password}}</Password>
+  <UserID kb="CUR" kxe="false">{user}</UserID>
+  <Password kb="CUR" kxe="false">{password}</Password>
 </LogonRequest>
 """
 
@@ -111,7 +111,7 @@ class HMCClient(
                 stacklevel=2,
             )
         body = LOGON_REQUEST_TEMPLATE.format(
-            user=self.config.user, password=self.config.password
+            web_ns=WEB_NS, user=self.config.user, password=self.config.password
         )
         resp = await self._http.put(
             "/rest/api/web/Logon",
