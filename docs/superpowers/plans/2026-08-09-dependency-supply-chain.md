@@ -12,14 +12,16 @@
 
 1. Parse `pyproject.toml` and assert every runtime, development, and build requirement has
    exactly one `==` specifier with no direct URL or additional range operator.
-2. Assert `uv.lock` exists, parse it, and check that every direct pinned name/version is in
-   the resolved package set.
+2. Parse the existing `uv.lock` and check that every direct pinned name/version is in the
+   resolved package set.
 3. Read `.github/dependabot.yml` and assert the one intended updater is the root `uv`
    ecosystem with a weekly schedule, seven-day default cooldown, and an all-dependencies
    version-update group.
-4. Run `uv run pytest tests/test_supply_chain.py --no-cov -q` and confirm it fails against
-   the current lower-bound declarations and missing artifacts. Do not weaken assertions to
-   make the initial repository pass.
+4. Run `uv lock --check`, then `uv sync --locked` to provision `.venv` without refreshing
+   the lock. Run `.venv/bin/python -m pytest tests/test_supply_chain.py --no-cov -q` and
+   confirm it fails against the current lower-bound declarations and missing Dependabot
+   configuration. Confirm `git status --short --untracked-files=all` shows only the policy
+   test and design-plan state expected at this phase.
 
 ## Task 2: Pin direct dependencies and generate the lock
 
@@ -28,7 +30,7 @@
 1. Replace each runtime, development, and build requirement's range with an exact `==` pin
    at its currently declared release. Do not add, remove, substitute, or opportunistically
    upgrade dependencies.
-2. Run `uv lock` to generate the universal lockfile; never hand-edit it.
+2. Run `uv lock` to regenerate the universal lockfile; never hand-edit it.
 3. Run `uv lock --check` from the clean pre-test state before any `uv run`, then run the
    focused policy test. Confirm the test still fails only because Dependabot configuration
    is not present.
