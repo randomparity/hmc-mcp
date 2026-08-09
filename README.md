@@ -30,13 +30,21 @@ Credentials come from a `.env` file, environment variables, or CLI flags
 cp .env.example .env   # then edit
 ```
 
-| Setting           | Env var         | CLI flag          | Default   |
-|-------------------|-----------------|-------------------|-----------|
-| HMC host / IP     | `HMC_HOST`      | `--host`          | —         |
-| REST port         | `HMC_PORT`      | —                 | `12443`   |
-| User              | `HMC_USER`      | `--user, -u`      | —         |
-| Password          | `HMC_PASSWORD`  | `--password, -p`  | —         |
-| Verify TLS        | `HMC_VERIFY_SSL`| `--verify-ssl`    | `false`   |
+| Setting           | Env var              | CLI flag          | Default   |
+|-------------------|----------------------|-------------------|-----------|
+| HMC host / IP     | `HMC_HOST`           | `--host`          | —         |
+| REST port         | `HMC_PORT`           | —                 | `12443`   |
+| User              | `HMC_USER`           | `--user, -u`      | —         |
+| Password          | `HMC_PASSWORD`       | `--password, -p`  | —         |
+| Verify TLS        | `HMC_VERIFY_SSL`     | `--verify-ssl`    | `false`   |
+| HTTP timeout (s)  | `HMC_TIMEOUT`        | —                 | `60.0`    |
+| SSH timeout (s)   | `HMC_SSH_TIMEOUT`    | —                 | `300.0`   |
+| SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
+| Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmc-mcp` |
+| Schema version    | `HMC_SCHEMA_VERSION` | —                 | —         |
+
+See [`docs/environment-variables.md`](docs/environment-variables.md) for the
+full reference, including descriptions and usage notes.
 
 HMCs ship self-signed certificates, so TLS verification is off by default and
 `hmc-mcp` warns on every logon while it stays off. To verify the HMC
@@ -61,7 +69,8 @@ regardless of firmware age.
 The `HMC_SCHEMA_VERSION` environment variable (or `schema_version` in `.env`)
 optionally pins the `X-HMC-Schema-Version` request header. Leave it unset for
 the default behaviour (let the HMC negotiate via the document's `schemaVersion`
-attribute).
+attribute). See [`docs/environment-variables.md`](docs/environment-variables.md)
+for all supported variables.
 
 ## CLI usage
 
