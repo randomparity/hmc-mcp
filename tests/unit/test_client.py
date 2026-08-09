@@ -587,3 +587,61 @@ async def test_pcm_parse_failure_names_failing_call(mock_hmc):
         "Failed to parse /rest/api/pcm/ManagedSystem/sys-uuid/preferences response"
         in str(exc_info.value)
     )
+
+
+@pytest.mark.asyncio
+async def test_raw_get_returns_body_and_headers(mock_hmc):
+    """raw_get() returns a (body, headers) tuple so callers can inspect response headers."""
+    mock_hmc.get("/rest/api/uom/VirtualSwitch").mock(
+        return_value=httpx.Response(
+            200,
+            text="<feed/>",
+            headers={"X-HMC-Schema-Version": "V1_0"},
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        body, headers = await hmc.raw_get("/rest/api/uom/VirtualSwitch")
+    assert body == "<feed/>"
+    assert headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_raw_get_204_returns_empty_body_and_headers(mock_hmc):
+    """raw_get() handles 204 No Content correctly."""
+    mock_hmc.get("/rest/api/uom/empty").mock(
+        return_value=httpx.Response(204, headers={"X-HMC-Schema-Version": "V1_0"})
+    )
+    async with HMCClient(make_config()) as hmc:
+        body, headers = await hmc.raw_get("/rest/api/uom/empty")
+    assert body == ""
+    assert "x-hmc-schema-version" in headers
+
+
+@pytest.mark.asyncio
+async def test_uom_headers_sends_schema_version_when_configured(mock_hmc):
+    """_uom_headers() includes X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200,
+            text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>",
+        )
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc.list_logical_partitions()
+    sent_headers = route.calls.last.request.headers
+    assert sent_headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_uom_headers_omits_schema_version_when_not_configured(mock_hmc):
+    """_uom_headers() does not include X-HMC-Schema-Version when schema_version is empty (default)."""
+    route = mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200,
+            text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>",
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc.list_logical_partitions()
+    sent_headers = route.calls.last.request.headers
+    assert "x-hmc-schema-version" not in sent_headers
