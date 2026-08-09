@@ -143,3 +143,19 @@ def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
     return with_client(lambda hmc: hmc.get_job(job_uuid))
 
 
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    """List recent HMC jobs (audit view of recent activity).
+
+    Returns up to *limit* jobs from the HMC's job log, most-recent first.
+    Each entry includes the job UUID, operation type, state, status, and
+    timestamps so you can review what actions were submitted recently.
+
+    Useful for auditing or for recovering a job UUID when the original
+    request response was lost.
+    """
+
+    jobs = with_client(lambda hmc: hmc.list_uom("Job"))
+    return jobs[:limit] if limit > 0 else jobs
+
+

@@ -51,6 +51,7 @@ from .server_system import (
     hmc_list_systems as hmc_list_systems,
     hmc_list_vios as hmc_list_vios,
     hmc_lpar_state as hmc_lpar_state,
+    hmc_recent_jobs as hmc_recent_jobs,
     hmc_run_command as hmc_run_command,
     hmc_vios_mappings as hmc_vios_mappings,
 )
