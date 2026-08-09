@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import shlex
 from typing import Any, Literal
 
 from ._app import (
@@ -16,11 +15,12 @@ from ._app import (
 
 from .config import HMCConfig
 from .ssh import (
-    HMCCLIError,
+    add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
-    run_hmc_cli,
+    remove_vnic,
+    set_sriov_adapter_mode,
 )
 
 
@@ -124,9 +124,6 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
 
 
 
-_VALID_SRIOV_MODES = {"sriov", "dedicated"}
-
-
 @mcp.tool
 def hmc_set_sriov_adapter_mode(
     system_uuid: str,
@@ -151,16 +148,9 @@ def hmc_set_sriov_adapter_mode(
 
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
     functions on that adapter. Confirm system_uuid and adapter_id before calling.    """
-    if mode not in _VALID_SRIOV_MODES:
-        raise ValueError(
-            f"Invalid mode {mode!r}. "
-            f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
-        )
-
     return _ssh_with_client(
-        lambda system_name, _: run_hmc_cli(
-            f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)}"
-            f" -a {shlex.quote(f'sriov_adapter_mode={mode}')}"
+        lambda system_name, _: set_sriov_adapter_mode(
+            HMCConfig(), system_name, adapter_id, mode
         ),
         system_uuid=system_uuid,
     )
@@ -222,27 +212,16 @@ def hmc_add_vnic(
         HMCCLIError: If the HMC command fails, e.g. because the underlying
             SR-IOV adapter is not in SR-IOV mode.
     """
-    attrs = f"capacity={capacity},vswitch_name={vswitch_name},port_vlan_id={port_vlan_id}"
-    if backing_devices is not None:
-        attrs += f",backing_devices={backing_devices}"
-
-    async def _add_vnic(system_name, lpar_name):
-        cmd = (
-            f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
-            f" --filter lpar_names={shlex.quote(lpar_name)}"
-            f" -a {shlex.quote(attrs)}"
-        )
-        try:
-            return await run_hmc_cli(cmd)
-        except HMCCLIError as exc:
-            raise HMCCLIError(
-                f"Failed to add vNIC to '{lpar_name}' on '{system_name}': {exc}. "
-                f"Ensure the underlying SR-IOV adapter is in sriov mode "
-                f"(see hmc_set_sriov_adapter_mode)."
-            ) from exc
-
     return _ssh_with_client(
-        _add_vnic,
+        lambda system_name, lpar_name: add_vnic(
+            HMCConfig(),
+            system_name,
+            lpar_name,
+            capacity,
+            vswitch_name,
+            port_vlan_id,
+            backing_devices,
+        ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
@@ -265,10 +244,8 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
     system_uuid, lpar_uuid, and vnic_id before calling. Returns the HMC CLI
     output (immediate delete — no job to poll).    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
-            f" --filter lpar_names={shlex.quote(lpar_name)}"
-            f" -a {shlex.quote(f'vnic_id={vnic_id}')}"
+        lambda system_name, lpar_name: remove_vnic(
+            HMCConfig(), system_name, lpar_name, vnic_id
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,

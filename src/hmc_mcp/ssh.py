@@ -291,3 +291,264 @@ async def remove_memory_pool(
 
     cmd = f"chhwres -r mempool -m {shlex.quote(system_name)} -o r -a {shlex.quote(pool_name)}"
     return await run_hmc_command(config, cmd)
+
+
+# ---------------------------------------------------------------------- #
+# LPAR description and MSP (lssyscfg / chsyscfg — no REST equivalent)
+# ---------------------------------------------------------------------- #
+
+
+async def get_lpar_description(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> str:
+    """Get the description field of *lpar_name* on *system_name* via SSH.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F description`` and returns the raw output (the description string, or an
+    empty line if none is set). The description is not exposed via the HMC REST
+    API; it is the same text shown in the HMC GUI Partitions tab.
+    """
+    cmd = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F description"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+async def set_lpar_description(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    description: str,
+) -> str:
+    """Set the description field of *lpar_name* via SSH.
+
+    Runs ``chsyscfg -r lpar -m <system_name>
+    -i "name=<lpar_name>,description=<description>"`` and returns the raw
+    command output.
+    """
+    cmd = (
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+        f"{shlex.quote(f'name={lpar_name},description={description}')}"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+async def get_lpar_msp(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> bool:
+    """Get the MSP (Migratable Service Partition) flag of *lpar_name* via SSH.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F msp`` and returns ``True`` when the flag is ``1``, ``False`` when ``0``.
+    """
+    cmd = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
+    )
+    raw = await run_hmc_command(config, cmd)
+    return raw.strip() == "1"
+
+
+async def set_lpar_msp(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    enabled: bool,
+) -> str:
+    """Set the MSP (Migratable Service Partition) flag of *lpar_name* via SSH.
+
+    Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,msp=<0|1>"``
+    and returns the raw command output.
+    """
+    value = "1" if enabled else "0"
+    cmd = (
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+        f"{shlex.quote(f'name={lpar_name},msp={value}')}"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+# ---------------------------------------------------------------------- #
+# Processor compatibility (lssyscfg / chsyscfg)
+# ---------------------------------------------------------------------- #
+
+
+async def get_proc_compat_modes(
+    config: HMCConfig,
+    system_name: str,
+) -> list[str]:
+    """List processor compatibility modes supported by *system_name* via SSH.
+
+    Runs ``lssyscfg -r sys -m <system_name> -F lpar_proc_compat_modes`` and
+    returns the comma-separated modes as a list of stripped strings.
+    """
+    cmd = f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return []
+    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
+
+
+async def get_lpar_proc_compat(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> dict[str, str]:
+    """Get the current and pending processor compatibility modes of an LPAR.
+
+    Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
+    -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` and returns a
+    dict with keys ``"pend"`` and ``"curr"``.
+    """
+    cmd = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} "
+        "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+    )
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return {"pend": "", "curr": ""}
+    parts = raw.strip().split(",")
+    pend = parts[0].strip() if len(parts) > 0 else ""
+    curr = parts[1].strip() if len(parts) > 1 else ""
+    return {"pend": pend, "curr": curr}
+
+
+async def set_lpar_proc_compat(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    mode: str,
+) -> str:
+    """Set the processor compatibility mode of *lpar_name* via SSH.
+
+    Runs ``chsyscfg -r lpar -m <system_name>
+    -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"`` and returns the raw
+    command output.
+    """
+    cmd = (
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+        f"{shlex.quote(f'name={lpar_name},lpar_proc_compat_mode={mode}')}"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+# ---------------------------------------------------------------------- #
+# SR-IOV adapter mode and vNICs (chhwres)
+# ---------------------------------------------------------------------- #
+
+_VALID_SRIOV_MODES = frozenset({"sriov", "dedicated"})
+
+
+def validate_sriov_mode(mode: str) -> str:
+    """Return *mode* if it is a recognised SR-IOV adapter mode, else raise.
+
+    Shared by :func:`set_sriov_adapter_mode` and the CLI pre-confirmation
+    guard so the valid-mode set is defined once.
+
+    Raises:
+        ValueError: If *mode* is not one of ``"sriov"`` or ``"dedicated"``.
+    """
+    if mode not in _VALID_SRIOV_MODES:
+        raise ValueError(
+            f"Invalid mode {mode!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
+        )
+    return mode
+
+
+async def set_sriov_adapter_mode(
+    config: HMCConfig,
+    system_name: str,
+    adapter_id: str,
+    mode: str,
+) -> str:
+    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
+
+    Runs ``chhwres -r sriov -m <system_name> -o s --id <adapter_id>
+    -a "sriov_adapter_mode=<mode>"`` and returns the raw command output.
+
+    *mode* must be one of ``"sriov"`` (shared virtual functions) or
+    ``"dedicated"`` (passthrough); any other value raises :class:`ValueError`
+    before a command is issued.
+
+    Raises:
+        ValueError: If *mode* is not a recognised SR-IOV adapter mode.
+    """
+    validate_sriov_mode(mode)
+    cmd = (
+        f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)}"
+        f" -a {shlex.quote(f'sriov_adapter_mode={mode}')}"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+async def add_vnic(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    capacity: int,
+    vswitch_name: str,
+    port_vlan_id: int,
+    backing_devices: str | None = None,
+) -> str:
+    """Add a vNIC (SR-IOV-backed Virtual NIC) to *lpar_name* via SSH.
+
+    Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
+    --filter lpar_names=<lpar_name> -a "<attrs>"`` and returns the raw command
+    output.
+
+    **V1 scope boundary:** Only ``capacity``, ``vswitch_name``,
+    ``port_vlan_id``, and ``backing_devices`` (optional, opaque string passed
+    verbatim) are supported.  Complex backing-device topology (multi-adapter
+    failover, per-device SR-IOV physical port IDs, capacity weights) is a
+    follow-up.
+
+    Raises:
+        HMCCLIError: If the HMC command fails, e.g. because the underlying
+            SR-IOV adapter is not in SR-IOV mode.
+    """
+    attrs = f"capacity={capacity},vswitch_name={vswitch_name},port_vlan_id={port_vlan_id}"
+    if backing_devices is not None:
+        attrs += f",backing_devices={backing_devices}"
+
+    cmd = (
+        f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
+        f" --filter lpar_names={shlex.quote(lpar_name)}"
+        f" -a {shlex.quote(attrs)}"
+    )
+    try:
+        return await run_hmc_command(config, cmd)
+    except HMCCLIError as exc:
+        raise HMCCLIError(
+            f"Failed to add vNIC to '{lpar_name}' on '{system_name}': {exc}. "
+            f"Ensure the underlying SR-IOV adapter is in sriov mode "
+            f"(see hmc_set_sriov_adapter_mode)."
+        ) from exc
+
+
+async def remove_vnic(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    vnic_id: str,
+) -> str:
+    """Remove a vNIC from *lpar_name* via SSH.
+
+    Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
+    --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` and returns the
+    raw command output.
+
+    *vnic_id* is the numeric ID reported by :func:`list_vnics`.
+    """
+    cmd = (
+        f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
+        f" --filter lpar_names={shlex.quote(lpar_name)}"
+        f" -a {shlex.quote(f'vnic_id={vnic_id}')}"
+    )
+    return await run_hmc_command(config, cmd)

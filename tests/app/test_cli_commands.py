@@ -2,7 +2,7 @@
 
 The REST-backed commands all funnel through ``cli_app._client`` →
 ``cli_app.client_from_env`` (imported at ``cli_app.py``), and the SSH-backed
-commands through ``cli_app.run_hmc_command``.  These tests monkeypatch those
+commands through ``ssh.run_hmc_command``.  These tests monkeypatch those
 two factories so every command runs against a scripted fake — no HTTP, no SSH.
 
 This closes the CLI blind spot where only the helpers (``_ssh_config``,
@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, cli_app
+from hmc_mcp import cli, cli_app, ssh
 from hmc_mcp.errors import HMCError
 
 LPAR_NAME = "lpar1"
@@ -508,7 +508,7 @@ def test_lpars_get_description_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "my lpar description\n"
 
-    monkeypatch.setattr(cli_app, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-description", "lpar1", "sys1"])
 
     assert result.exit_code == 0
@@ -519,7 +519,7 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "1\n"
 
-    monkeypatch.setattr(cli_app, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-msp", "lpar1", "sys1"])
 
     assert result.exit_code == 0

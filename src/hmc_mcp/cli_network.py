@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import shlex
-
 import typer
 from rich.table import Table
 
@@ -18,13 +16,16 @@ from .cli_app import (
     console,
     err_console,
     network_app,
-    run_hmc,
 )
 
 from .ssh import (
+    add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
+    remove_vnic,
+    set_sriov_adapter_mode,
+    validate_sriov_mode,
 )
 
 
@@ -160,17 +161,17 @@ def network_set_sriov_mode(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
-    if mode not in {"sriov", "dedicated"}:
-        err_console.print(f"[red]Invalid mode {mode!r}. Must be 'sriov' or 'dedicated'.[/red]")
+    try:
+        validate_sriov_mode(mode)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=2)
     if not yes and not typer.confirm(
         f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
     ):
         raise typer.Abort()
-    payload = f"sriov_adapter_mode={mode}"
-    result = run_hmc(
-        f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)} "
-        f"-a {shlex.quote(payload)}",
+    result = _run(
+        lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
     )
 
     console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
@@ -206,14 +207,10 @@ def network_add_vnic(
     ):
         raise typer.Abort()
 
-    attrs = f"capacity={capacity},vswitch_name={vswitch},port_vlan_id={vlan}"
-    if backing_devices:
-        attrs += f",backing_devices={backing_devices}"
-
-    result = run_hmc(
-        f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system)} "
-        f"--filter lpar_names={shlex.quote(lpar)} "
-        f"-a {shlex.quote(attrs)}",
+    result = _run(
+        lambda: add_vnic(
+            _ssh_config(), system, lpar, capacity, vswitch, vlan, backing_devices
+        )
     )
 
     console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
@@ -234,11 +231,8 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    payload = f"vnic_id={vnic_id}"
-    result = run_hmc(
-        f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system)} "
-        f"--filter lpar_names={shlex.quote(lpar)} "
-        f"-a {shlex.quote(payload)}",
+    result = _run(
+        lambda: remove_vnic(_ssh_config(), system, lpar, vnic_id)
     )
 
     console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")

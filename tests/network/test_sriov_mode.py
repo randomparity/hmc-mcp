@@ -83,8 +83,9 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_set_sriov_mode_invalid_raises(monkeypatch):
+def test_set_sriov_mode_invalid_raises(monkeypatch, mock_hmc):
     """hmc_set_sriov_adapter_mode raises ValueError for unknown mode without SSH."""
     _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     with pytest.raises(ValueError, match="Invalid mode"):
         hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "bogus")

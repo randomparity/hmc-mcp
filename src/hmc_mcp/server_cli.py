@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import shlex
 from typing import Any
 
 from ._app import (
@@ -15,10 +14,16 @@ from ._app import (
 
 from .config import HMCConfig
 from .ssh import (
+    get_lpar_description,
+    get_lpar_msp,
+    get_lpar_proc_compat,
+    get_proc_compat_modes,
     list_io_slots,
     list_memory_pools,
     remove_memory_pool,
-    run_hmc_cli,
+    set_lpar_description,
+    set_lpar_msp,
+    set_lpar_proc_compat,
 )
 
 
@@ -37,9 +42,8 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-            f"--filter lpar_names={shlex.quote(lpar_name)} -F description"
+        lambda system_name, lpar_name: get_lpar_description(
+            HMCConfig(), system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -63,9 +67,8 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid and system_uuid before calling.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={lpar_name},description={description}')}"
+        lambda system_name, lpar_name: set_lpar_description(
+            HMCConfig(), system_name, lpar_name, description
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -82,15 +85,13 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
 
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.    """
-    raw = _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-            f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
+    return _ssh_with_client(
+        lambda system_name, lpar_name: get_lpar_msp(
+            HMCConfig(), system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
-    return raw.strip() == "1"
 
 
 @mcp.tool
@@ -105,11 +106,9 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid and system_uuid before calling.    """
-    value = "1" if enabled else "0"
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={lpar_name},msp={value}')}"
+        lambda system_name, lpar_name: set_lpar_msp(
+            HMCConfig(), system_name, lpar_name, enabled
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -127,15 +126,10 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
 
     The system UUID is resolved to its CLI name via REST before the command
     runs.    """
-    raw = _ssh_with_client(
-        lambda system_name, _: run_hmc_cli(
-            f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
-        ),
+    return _ssh_with_client(
+        lambda system_name, _: get_proc_compat_modes(HMCConfig(), system_name),
         system_uuid=system_uuid,
     )
-    if not raw.strip():
-        return []
-    return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -149,21 +143,13 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
     before the command runs.
 
     Returns a dict with keys "pend" and "curr".    """
-    raw = _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-            f"--filter lpar_names={shlex.quote(lpar_name)} "
-            "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+    return _ssh_with_client(
+        lambda system_name, lpar_name: get_lpar_proc_compat(
+            HMCConfig(), system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
-    if not raw.strip():
-        return {"pend": "", "curr": ""}
-    parts = raw.strip().split(",")
-    pend = parts[0].strip() if len(parts) > 0 else ""
-    curr = parts[1].strip() if len(parts) > 1 else ""
-    return {"pend": pend, "curr": curr}
 
 
 @mcp.tool
@@ -179,9 +165,8 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid, system_uuid, and mode before calling.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
-            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={lpar_name},lpar_proc_compat_mode={mode}')}"
+        lambda system_name, lpar_name: set_lpar_proc_compat(
+            HMCConfig(), system_name, lpar_name, mode
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,

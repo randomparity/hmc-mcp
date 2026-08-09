@@ -26,7 +26,6 @@ from rich.table import Table
 
 from .common import client_from_env
 from .config import HMCConfig
-from .ssh import run_hmc_command
 
 app = typer.Typer(
     name="hmc-mcp",
@@ -149,16 +148,6 @@ def _with_client(fn: Callable[[Any], Awaitable[Any]]) -> Any:
         async with _client() as hmc:
             return await fn(hmc)
     return _run(_go)
-
-
-def run_hmc(cmd: str) -> str:
-    """Run an HMC CLI command over SSH with the global connection options.
-
-    Collapses the pervasive ``config = _ssh_config()`` +
-    ``_run(lambda: run_hmc_command(config, cmd))`` idiom into one line,
-    mirroring ``_with_client`` for the REST seam.
-    """
-    return _run(lambda: run_hmc_command(_ssh_config(), cmd))
 
 
 def _print_json(data: Any) -> None:
