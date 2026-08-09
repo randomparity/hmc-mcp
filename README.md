@@ -135,6 +135,7 @@ Exposed tools:
 | `hmc_recent_jobs`     | Recent HMC jobs list (limit=20) |
 | `hmc_capacity_report` | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`  | Systems with enough free memory + CPU to host a new LPAR |
+| `hmc_find_system`     | Find a managed system by SystemName (exact match) |
 
 **Mutating / lifecycle**
 

@@ -15,6 +15,7 @@ from hmc_mcp.server import (
     hmc_capacity_report,
     hmc_console_info,
     hmc_find_placement,
+    hmc_find_system,
     hmc_lpars,
     hmc_list_resources,
     hmc_systems,
@@ -246,6 +247,33 @@ def test_vios_uuid_takes_priority_over_system_uuid(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer")))
     hmc_vios(vios_uuid=VIOS_UUID, system_uuid=SYSTEM_UUID)
     assert route.called
+
+
+# ---------------------------------------------------------------------- #
+# hmc_find_system
+# ---------------------------------------------------------------------- #
+
+
+def test_find_system_found(monkeypatch, mock_hmc):
+    """hmc_find_system returns the matching system entry when found."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p9-01)").mock(
+        return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="p9-01"))
+    )
+    result = hmc_find_system("p9-01")
+    assert result is not None
+    assert result["UUID"] == SYSTEM_UUID
+    assert result["Resource"]["SystemName"] == "p9-01"
+
+
+def test_find_system_not_found(monkeypatch, mock_hmc):
+    """hmc_find_system returns None when no system matches the name."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==ghost-sys)").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
+    result = hmc_find_system("ghost-sys")
+    assert result is None
 
 
 # ---------------------------------------------------------------------- #

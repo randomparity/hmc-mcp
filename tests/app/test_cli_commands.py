@@ -158,6 +158,10 @@ class FakeHMC:
         self._record("get_managed_system", uuid)
         return self.system if uuid == SYSTEM_UUID else None
 
+    async def find_system_by_name(self, name):
+        self._record("find_system_by_name", name)
+        return self.system if name == "sys1" else None
+
     async def power_on_system(self, system_uuid):
         self._record("power_on_system", system_uuid)
         return self.job
@@ -680,12 +684,20 @@ def test_systems_show(fake_hmc):
     assert fake_hmc.calls == [("get_managed_system", (SYSTEM_UUID,), {})]
 
 
+def test_systems_show_by_name(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["systems", "show", "sys1"])
+
+    assert result.exit_code == 0
+    assert "sys1" in result.stdout
+    assert fake_hmc.calls == [("find_system_by_name", ("sys1",), {})]
+
+
 def test_systems_show_not_found_exits_1(fake_hmc):
     result = RUNNER.invoke(cli.app, ["systems", "show", "ghost"])
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("get_managed_system", ("ghost",), {})]
+    assert fake_hmc.calls == [("find_system_by_name", ("ghost",), {})]
 
 
 def test_systems_power_on(fake_hmc):
