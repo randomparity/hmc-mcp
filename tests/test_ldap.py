@@ -88,24 +88,24 @@ def test_build_ldap_config_document_minimal():
 # ------------------------------------------------------------------ #
 
 @pytest.mark.asyncio
-async def test_list_ldap_config(mock_hmc):
+async def test_get_ldap_config(mock_hmc):
     mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
         return_value=httpx.Response(200, text=LDAP_CONFIG_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.list_ldap_config()
-    assert "ldap://ldap.example.com" in xml
-    assert "dc=example,dc=com" in xml
+        cfg = await hmc.get_ldap_config()
+    assert cfg["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
+    assert cfg["Resource"]["BaseDN"] == "dc=example,dc=com"
 
 
 @pytest.mark.asyncio
-async def test_list_ldap_config_empty(mock_hmc):
+async def test_get_ldap_config_empty(mock_hmc):
     mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
         return_value=httpx.Response(204)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.list_ldap_config()
-    assert xml == ""
+        cfg = await hmc.get_ldap_config()
+    assert cfg is None
 
 
 @pytest.mark.asyncio
@@ -120,12 +120,12 @@ async def test_configure_ldap(mock_hmc):
         bind_pw="secret",
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.configure_ldap(ldap_xml)
+        cfg = await hmc.configure_ldap(ldap_xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "ldap://ldap.example.com" in body
     assert "dc=example,dc=com" in body
-    assert "LdapServerUrl" in xml
+    assert cfg["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
 
 
 @pytest.mark.asyncio
@@ -153,13 +153,13 @@ async def test_remove_ldap_config_binddn(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_list_ldap_config_error_raises(mock_hmc):
+async def test_get_ldap_config_error_raises(mock_hmc):
     mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
         return_value=httpx.Response(403, text="<error>forbidden</error>")
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
-            await hmc.list_ldap_config()
+            await hmc.get_ldap_config()
     assert exc_info.value.status_code == 403
 
 

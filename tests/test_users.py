@@ -107,9 +107,8 @@ async def test_list_hmc_users_all(mock_hmc):
         return_value=httpx.Response(200, text=USER_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.list_hmc_users()
-    assert "hscroot" in xml
-    assert "operator1" in xml
+        entries = await hmc.list_hmc_users()
+    assert [e["Resource"]["UserID"] for e in entries] == ["hscroot", "operator1"]
 
 
 @pytest.mark.asyncio
@@ -129,9 +128,9 @@ async def test_get_hmc_user(mock_hmc):
         return_value=httpx.Response(200, text=USER_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.get_hmc_user("hscroot")
-    assert "hscroot" in xml
-    assert "hmcsuperadmin" in xml
+        entry = await hmc.get_hmc_user("hscroot")
+    assert entry["Resource"]["UserID"] == "hscroot"
+    assert entry["Resource"]["TaskRole"] == "hmcsuperadmin"
 
 
 @pytest.mark.asyncio
@@ -143,11 +142,11 @@ async def test_create_hmc_user(mock_hmc):
         username="newop", taskrole="hmcoperator", password="P@ss1"
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.create_hmc_user(user_xml)
+        entry = await hmc.create_hmc_user(user_xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "newop" in body and "hmcoperator" in body
-    assert "newop" in xml
+    assert entry["Resource"]["UserID"] == "newop"
 
 
 @pytest.mark.asyncio

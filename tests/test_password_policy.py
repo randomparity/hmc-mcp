@@ -122,9 +122,11 @@ async def test_list_password_policies_default(mock_hmc):
         return_value=httpx.Response(200, text=POLICY_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.list_password_policies()
-    assert "StrongPolicy" in xml
-    assert "DefaultPolicy" in xml
+        entries = await hmc.list_password_policies()
+    assert [e["Resource"]["PolicyName"] for e in entries] == [
+        "StrongPolicy",
+        "DefaultPolicy",
+    ]
 
 
 @pytest.mark.asyncio
@@ -133,9 +135,9 @@ async def test_list_password_policies_status_filter(mock_hmc):
         return_value=httpx.Response(200, text=STATUS_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.list_password_policies("status")
+        entries = await hmc.list_password_policies("status")
     assert "PolicyType=status" in str(route.calls.last.request.url)
-    assert "ActivePolicyName" in xml
+    assert entries[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"
 
 
 @pytest.mark.asyncio
@@ -147,11 +149,11 @@ async def test_create_password_policy(mock_hmc):
         policy_name="StrongPolicy", pwage=90, min_length=12
     )
     async with HMCClient(make_config()) as hmc:
-        xml = await hmc.create_password_policy(policy_xml)
+        entry = await hmc.create_password_policy(policy_xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "StrongPolicy" in body
-    assert "StrongPolicy" in xml
+    assert entry["Resource"]["PolicyName"] == "StrongPolicy"
 
 
 @pytest.mark.asyncio

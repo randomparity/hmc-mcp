@@ -17,27 +17,6 @@ from .documents import (
     build_ldap_config_document,
     build_password_policy_document,
 )
-from .xmlutil import parse_feed
-
-
-
-def _parse_web_entries(xml_text: str) -> list[dict[str, Any]]:
-    """Parse a /rest/api/web XML response into uom-shaped resource dicts.
-
-    Web endpoints return an Atom feed, a bare resource element, or nothing
-    at all (HTTP 204/202 yield an empty body). An empty body parses to an
-    empty list so callers can map it to None/[] without special-casing.
-    Each returned dict matches the uom list shape: {UUID, title, link,
-    ResourceType, Resource}.
-    """
-    if not (xml_text or "").strip():
-        return []
-    return parse_feed(xml_text)
-
-
-def _first_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """First parsed web entry, or None when the response is empty."""
-    return entries[0] if entries else None
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -50,9 +29,7 @@ def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     where Resource holds the flattened HmcUser fields.
     """
 
-    return _parse_web_entries(
-        with_client(lambda hmc: hmc.list_hmc_users(user_type))
-    )
+    return with_client(lambda hmc: hmc.list_hmc_users(user_type))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -63,9 +40,7 @@ def hmc_get_user(name: str) -> dict[str, Any] | None:
     content.
     """
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.get_hmc_user(name)))
-    )
+    return with_client(lambda hmc: hmc.get_hmc_user(name))
 
 
 @mcp.tool
@@ -93,9 +68,7 @@ def hmc_create_user(
         pwage=pwage,
     )
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.create_hmc_user(xml)))
-    )
+    return with_client(lambda hmc: hmc.create_hmc_user(xml))
 
 
 @mcp.tool
@@ -120,9 +93,7 @@ def hmc_modify_user(
         enable=enable,
     )
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.modify_hmc_user(name, xml)))
-    )
+    return with_client(lambda hmc: hmc.modify_hmc_user(name, xml))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -149,9 +120,7 @@ def hmc_list_password_policies(policy_type: str = "policies") -> list[dict[str, 
     Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
     """
 
-    return _parse_web_entries(
-        with_client(lambda hmc: hmc.list_password_policies(policy_type))
-    )
+    return with_client(lambda hmc: hmc.list_password_policies(policy_type))
 
 
 @mcp.tool
@@ -191,9 +160,7 @@ def hmc_create_password_policy(
         min_pwage=min_pwage,
     )
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.create_password_policy(xml)))
-    )
+    return with_client(lambda hmc: hmc.create_password_policy(xml))
 
 
 @mcp.tool
@@ -229,11 +196,7 @@ def hmc_modify_password_policy(
         min_pwage=min_pwage,
     )
 
-    return _first_entry(
-        _parse_web_entries(
-            with_client(lambda hmc: hmc.modify_password_policy(policy_name, xml))
-        )
-    )
+    return with_client(lambda hmc: hmc.modify_password_policy(policy_name, xml))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -261,9 +224,7 @@ def hmc_list_ldap_config() -> dict[str, Any] | None:
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
     """
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.list_ldap_config()))
-    )
+    return with_client(lambda hmc: hmc.get_ldap_config())
 
 
 @mcp.tool
@@ -301,9 +262,7 @@ def hmc_configure_ldap(
         group_member_attributes=group_member_attributes,
     )
 
-    return _first_entry(
-        _parse_web_entries(with_client(lambda hmc: hmc.configure_ldap(xml)))
-    )
+    return with_client(lambda hmc: hmc.configure_ldap(xml))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
