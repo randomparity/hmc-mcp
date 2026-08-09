@@ -85,7 +85,9 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
 
     assert "pull_request:" in workflow
     assert re.search(r"push:\n\s+branches:\s+\[main\]", workflow)
-    assert "permissions:\n  contents: read" in workflow
+    permissions = re.search(r"^permissions:\n(?P<body>(?:  .+\n)+)\n", workflow, re.MULTILINE)
+    assert permissions
+    assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
     assert "runs-on: ubuntu-24.04" in workflow
