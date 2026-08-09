@@ -49,6 +49,7 @@ _DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
 READ_ONLY_TOOLS = frozenset({
     "hmc_console_info",
     "hmc_systems",
+    "hmc_system_summary",
     "hmc_lpars",
     "hmc_lpar_summary",
     "hmc_vios",

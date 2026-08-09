@@ -78,6 +78,7 @@ for all supported variables.
 hmc-mcp console info                 # connectivity check / HMC version
 hmc-mcp systems list                 # table of managed systems
 hmc-mcp systems show <uuid>
+hmc-mcp systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
 hmc-mcp lpars list                   # all LPARs
 hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)
@@ -131,6 +132,7 @@ Exposed tools:
 | `hmc_systems`         | All managed systems, or one by UUID |
 | `hmc_lpars`           | All LPARs, one by UUID, find by name, or quick state |
 | `hmc_lpar_summary`    | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
+| `hmc_system_summary`  | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
 | `hmc_vios`            | Virtual I/O Servers, or storage-detail mappings for one |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
