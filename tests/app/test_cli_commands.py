@@ -557,6 +557,36 @@ def test_raw_post_with_yes_sends_request(fake_hmc):
     assert args[1] == "<lpar/>"
 
 
+def test_raw_post_file_missing_errors(fake_hmc, tmp_path):
+    """A @file body that cannot be read exits via the CLI Error path, no request sent."""
+    result = RUNNER.invoke(
+        cli.app,
+        ["raw", "post", "/rest/api/uom/LogicalPartition", f"@{tmp_path/'nope.xml'}", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert "Error" in result.stderr
+    assert "cannot read body file" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_raw_post_file_body_sent(fake_hmc, tmp_path):
+    """A @file body is read from disk and posted verbatim."""
+    body_file = tmp_path / "body.xml"
+    body_file.write_text("<lpar><name>x</name></lpar>", encoding="utf-8")
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["raw", "post", "/rest/api/uom/LogicalPartition", f"@{body_file}", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    name, args, _ = fake_hmc.calls[0]
+    assert name == "raw_post"
+    assert args[0] == "/rest/api/uom/LogicalPartition"
+    assert args[1] == "<lpar><name>x</name></lpar>"
+
+
 # --------------------------------------------------------------------------- #
 # systems
 # --------------------------------------------------------------------------- #

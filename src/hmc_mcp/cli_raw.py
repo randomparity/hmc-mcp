@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from .cli_app import (
+    _fail,
     _with_client,
     console,
     raw_app,
@@ -36,7 +37,11 @@ def raw_post(
     """
 
     if body.startswith("@"):
-        body = Path(body[1:]).read_text(encoding="utf-8")
+        body_path = Path(body[1:])
+        try:
+            body = body_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            _fail(OSError(f"cannot read body file {body_path}: {exc}"))
 
     if not yes and not typer.confirm(f"POST {path} to the HMC?"):
         raise typer.Abort()
