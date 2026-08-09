@@ -6,8 +6,6 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-import asyncssh
-
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
@@ -272,12 +270,11 @@ def hmc_add_vnic(
         )
         try:
             return await run_hmc_command(config, cmd)
-        except asyncssh.ProcessError as exc:
-            stderr = (exc.stderr or "").strip()
+        except HMCCLIError as exc:
             raise HMCCLIError(
-                f"Failed to add vNIC to '{lpar_name}' on '{system_name}'. "
+                f"Failed to add vNIC to '{lpar_name}' on '{system_name}': {exc}. "
                 f"Ensure the underlying SR-IOV adapter is in sriov mode "
-                f"(see hmc_set_sriov_adapter_mode). HMC error: {stderr}"
+                f"(see hmc_set_sriov_adapter_mode)."
             ) from exc
 
     return _run(_go())

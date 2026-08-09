@@ -14,18 +14,22 @@ from typing import Any
 import asyncssh
 
 from .config import HMCConfig
+from .errors import HMCError
 
 
-class HMCCLIError(Exception):
-    """An HMC CLI operation failed or was refused before the command ran."""
+class HMCCLIError(HMCError):
+    """An HMC CLI operation failed or was refused before the command ran.
+
+    Subclasses :class:`HMCError` so callers can handle REST and CLI failures
+    uniformly with a single ``except HMCError``.
+    """
 
 
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute an HMC CLI command over SSH and return its stdout.
 
-    Command stderr is not returned: on a non-zero exit, ``check=True`` raises
-    ``asyncssh.ProcessError`` and the command's stderr is available as
-    ``exc.stderr``.
+    Command stderr is not returned: on a non-zero exit the command's stderr is
+    folded into the raised :class:`HMCCLIError` message.
 
     Authentication:
     - If ``config.ssh_key_file`` is set, key-based auth is attempted using
@@ -44,9 +48,8 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         ValueError: If required connection settings (host/user, and password
             when no SSH key is configured) are missing — the same actionable
             message the REST client uses.
-        asyncssh.ProcessError: On non-zero command exit (``check=True``);
-            ``exc.stderr`` carries the command's stderr.
-        asyncssh.Error: On SSH connection or authentication failure.
+        HMCCLIError: If the SSH connection fails or the command exits
+            non-zero. The command's stderr is included when available.
     """
     config.validate_credentials(require_password=not config.ssh_key_file)
 
@@ -61,9 +64,16 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     else:
         connect_kwargs["password"] = config.password
 
-    async with asyncssh.connect(**connect_kwargs) as conn:
-        result = await conn.run(cmd, check=True)
-        return result.stdout
+    try:
+        async with asyncssh.connect(**connect_kwargs) as conn:
+            result = await conn.run(cmd, check=True)
+            return result.stdout
+    except asyncssh.Error as exc:
+        # ProcessError (non-zero exit) and connection/auth errors both derive
+        # from asyncssh.Error; surface them as HMCCLIError so no caller needs
+        # to import the SSH library just to name the exception type.
+        detail = getattr(exc, "stderr", None) or str(exc)
+        raise HMCCLIError(f"SSH command failed: {detail.strip()}") from exc
 
 
 def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:

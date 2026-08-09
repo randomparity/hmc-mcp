@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncssh
 import pytest
 
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.ssh import run_hmc_command
+from hmc_mcp.errors import HMCError
+from hmc_mcp.ssh import HMCCLIError, run_hmc_command
 
 from conftest import make_config
 
@@ -76,6 +78,47 @@ async def test_run_hmc_command_passes_cmd():
         await run_hmc_command(make_config(), "lshmc -v")
 
     conn_mock.run.assert_called_once_with("lshmc -v", check=True)
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_nonzero_exit_raises_hmcclierror():
+    """A non-zero command exit surfaces as HMCCLIError with stderr included.
+
+    run_hmc_command translates asyncssh.ProcessError so callers never need to
+    import the SSH library just to catch the exception type.
+    """
+    conn_mock = _make_ssh_mock()
+    conn_mock.run = AsyncMock(
+        side_effect=asyncssh.ProcessError(
+            env={},
+            command="lssyscfg -r sys",
+            subsystem=None,
+            exit_status=1,
+            exit_signal=None,
+            returncode=1,
+            stdout="",
+            stderr="HSCL0001 bad config",
+        )
+    )
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        with pytest.raises(HMCCLIError, match="HSCL0001 bad config") as exc_info:
+            await run_hmc_command(make_config(), "lssyscfg -r sys")
+
+    # HMCCLIError subclasses HMCError so REST and CLI failures share one type.
+    assert isinstance(exc_info.value, HMCError)
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_connect_error_raises_hmcclierror():
+    """An SSH connection/auth failure surfaces as HMCCLIError, not a raw
+    asyncssh error."""
+    with patch(
+        "hmc_mcp.ssh.asyncssh.connect",
+        side_effect=asyncssh.Error("connect", "connection refused"),
+    ):
+        with pytest.raises(HMCCLIError, match="connection refused"):
+            await run_hmc_command(make_config(), "lssyscfg -r sys")
 
 
 def test_hmc_config_ssh_key_field_default():

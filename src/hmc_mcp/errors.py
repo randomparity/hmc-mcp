@@ -6,7 +6,11 @@ from .xmlutil import find_text
 
 
 class HMCError(Exception):
-    """Error returned by the HMC REST API."""
+    """Error returned by the HMC REST API or an HMC CLI command.
+
+    ``HMCCLIError`` (SSH-transported CLI failures) subclasses this so callers
+    can handle both paths with a single ``except HMCError``.
+    """
 
     def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
         self.status_code = status_code
