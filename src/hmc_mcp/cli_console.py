@@ -8,10 +8,9 @@ import json
 import typer
 
 from .cli_app import (
-    _client,
     _print_json,
     _resource,
-    _run,
+    _with_client,
     console,
     console_app,
     err_console,
@@ -23,11 +22,7 @@ from .cli_app import (
 def console_info(as_json: bool = typer.Option(False, "--json")) -> None:
     """Show HMC version and network info (connectivity check)."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.get_console_info()
-
-    info = _run(_go)
+    info = _with_client(lambda hmc: hmc.get_console_info())
 
     if info is None:
         err_console.print("[yellow]No ManagementConsole data returned[/yellow]")

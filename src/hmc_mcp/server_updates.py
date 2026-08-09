@@ -7,11 +7,10 @@ from typing import Any
 
 from ._app import (
     _READ_ONLY,
-    _run,
     mcp,
+    with_client,
 )
 
-from .common import client_from_env
 from .jobs import (
     firmware_update_job,
     hmc_update_job,
@@ -35,14 +34,12 @@ def hmc_update_hmc(system_uuid: str, repository: dict) -> dict[str, Any] | None:
     system_uuid is the ManagementConsole UUID (from hmc_console_info).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Update",
-                hmc_update_job(repository),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Update",
+            hmc_update_job(repository),
+        )
+    )
 
 
 @mcp.tool
@@ -54,14 +51,12 @@ def hmc_upgrade_hmc(system_uuid: str, repository: dict) -> dict[str, Any] | None
     hmc_get_job for status. system_uuid is the ManagementConsole UUID.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Upgrade",
-                hmc_upgrade_job(repository),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Upgrade",
+            hmc_upgrade_job(repository),
+        )
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -73,11 +68,9 @@ def hmc_list_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
     ManagementConsole UUID (from hmc_console_info). Does not submit a job.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_uom("ManagementConsole", system_uuid, group="SoftwareUpdate")
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.get_uom("ManagementConsole", system_uuid, group="SoftwareUpdate")
+    )
 
 
 @mcp.tool
@@ -89,14 +82,12 @@ def hmc_update_vios(vios_uuid: str, repository: dict) -> dict[str, Any] | None:
     hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Update",
-                vios_update_job(repository),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Update",
+            vios_update_job(repository),
+        )
+    )
 
 
 @mcp.tool
@@ -108,14 +99,12 @@ def hmc_upgrade_vios(vios_uuid: str, repository: dict) -> dict[str, Any] | None:
     hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Upgrade",
-                vios_upgrade_job(repository),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Upgrade",
+            vios_upgrade_job(repository),
+        )
+    )
 
 
 @mcp.tool
@@ -128,13 +117,11 @@ def hmc_update_firmware(system_uuid: str, repository: dict) -> dict[str, Any] | 
     (from hmc_list_systems).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
-                firmware_update_job(repository),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
+            firmware_update_job(repository),
+        )
+    )
 
 

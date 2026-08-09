@@ -8,11 +8,10 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _client,
     _g,
     _output,
     _print_json,
-    _run,
+    _with_client,
     cluster_app,
     console,
 )
@@ -25,11 +24,7 @@ def cluster_list(
 ) -> None:
     """List Clusters (VIOS node sets sharing a storage pool)."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_clusters()
-
-    clusters = _run(_go)
+    clusters = _with_client(lambda hmc: hmc.list_clusters())
 
     table = None
     if not as_json:
@@ -47,11 +42,7 @@ def cluster_list_ssps(
 ) -> None:
     """List Shared Storage Pools (capacity, free space, logical units)."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_shared_storage_pools()
-
-    ssps = _run(_go)
+    ssps = _with_client(lambda hmc: hmc.list_shared_storage_pools())
 
     table = None
     if not as_json:
@@ -82,11 +73,9 @@ def cluster_create_lu(
     if not yes and not typer.confirm(f"Create {size} GB {lu_type} LU '{name}' in cluster {cluster}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_logical_unit(cluster, name, size, lu_type, device_type, cloned_from)
-
-    job = _run(_go)
+    job = _with_client(
+        lambda hmc: hmc.create_logical_unit(cluster, name, size, lu_type, device_type, cloned_from)
+    )
 
     console.print(f"[green]Submitted CreateLogicalUnit job for '{name}'[/green]")
     _print_json(job)
@@ -102,11 +91,7 @@ def cluster_delete_lu(
     if not yes and not typer.confirm(f"Delete LU {udid} from cluster {cluster}? This is irreversible."):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.delete_logical_unit(cluster, udid)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.delete_logical_unit(cluster, udid))
 
     console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
     _print_json(job)

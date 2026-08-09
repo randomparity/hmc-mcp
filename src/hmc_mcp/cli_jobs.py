@@ -7,9 +7,8 @@ from __future__ import annotations
 import typer
 
 from .cli_app import (
-    _client,
     _print_json,
-    _run,
+    _with_client,
     err_console,
     jobs_app,
 )
@@ -20,11 +19,7 @@ from .cli_app import (
 def jobs_show(uuid: str = typer.Argument(..., help="Job UUID")) -> None:
     """Show status/result of an HMC job."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.get_job(uuid)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.get_job(uuid))
 
     if job is None:
         err_console.print(f"[yellow]Job {uuid} not found[/yellow]")

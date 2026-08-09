@@ -11,6 +11,7 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
+    with_client,
 )
 
 from .client import HMCError
@@ -57,11 +58,7 @@ def hmc_create_vios(
         max_procs=max_procs,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_logical_partition(system_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.create_logical_partition(system_uuid, xml))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)

@@ -11,6 +11,7 @@ from .cli_app import (
     _client,
     _print_json,
     _run,
+    _with_client,
     console,
     err_console,
     metrics_app,
@@ -25,11 +26,7 @@ def metrics_prefs(
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.get_pcm_preferences(category, uuid)
-
-    prefs = _run(_go)
+    prefs = _with_client(lambda hmc: hmc.get_pcm_preferences(category, uuid))
 
     _print_json(prefs)
 

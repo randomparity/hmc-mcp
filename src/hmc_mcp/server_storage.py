@@ -10,6 +10,7 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
+    with_client,
 )
 
 from .common import client_from_env
@@ -24,11 +25,7 @@ def hmc_list_adapters(lpar_uuid: str, adapter_type: str = "ClientNetworkAdapter"
     VirtualFibreChannelClientAdapter, VirtualNICDedicated.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_child("LogicalPartition", lpar_uuid, adapter_type)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_child("LogicalPartition", lpar_uuid, adapter_type))
 
 
 @mcp.tool
@@ -50,13 +47,11 @@ def hmc_add_network_adapter(
     DLPAR operation and needs active RMC.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.add_network_adapter(
-                lpar_uuid, port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.add_network_adapter(
+            lpar_uuid, port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
+        )
+    )
 
 
 @mcp.tool
@@ -75,11 +70,9 @@ def hmc_add_vscsi_adapter(
     (disks / logical volumes) are then mapped to this adapter on the VIOS.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
+    )
 
 
 @mcp.tool
@@ -96,11 +89,9 @@ def hmc_add_vfc_adapter(
     WWPNs. Use this for SAN storage via NPIV instead of vSCSI.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -133,11 +124,7 @@ def hmc_list_volume_groups(vios_uuid: str) -> list[dict[str, Any]]:
     hmc_list_vios.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_volume_groups(vios_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_volume_groups(vios_uuid))
 
 
 @mcp.tool
@@ -151,11 +138,7 @@ def hmc_create_volume_group(
     pools the disks so virtual disks can be carved out for LPARs.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_volume_group(vios_uuid, name, physical_volumes)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.create_volume_group(vios_uuid, name, physical_volumes))
 
 
 @mcp.tool
@@ -169,11 +152,9 @@ def hmc_create_virtual_disk(
     'VirtualDisk'). Find vg_uuid with hmc_list_volume_groups.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_virtual_disk(vios_uuid, vg_uuid, disk_name, capacity_mb)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.create_virtual_disk(vios_uuid, vg_uuid, disk_name, capacity_mb)
+    )
 
 
 @mcp.tool
@@ -194,13 +175,11 @@ def hmc_map_storage_to_lpar(
     name on the VIOS.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.map_storage_to_lpar(
-                vios_uuid, storage_kind, storage_name, lpar_uuid, target_device
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.map_storage_to_lpar(
+            vios_uuid, storage_kind, storage_name, lpar_uuid, target_device
+        )
+    )
 
 
 
@@ -215,11 +194,7 @@ def hmc_create_media_repository(
     can exist per VIOS. size_mb is RepositorySize.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_media_repository(vios_uuid, vg_uuid, size_mb)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.create_media_repository(vios_uuid, vg_uuid, size_mb))
 
 
 @mcp.tool
@@ -232,11 +207,9 @@ def hmc_create_optical_media(
     (e.g. 'aix.iso'), size_mb is MediaSize.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_optical_media(vios_uuid, vg_uuid, media_name, size_mb)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.create_optical_media(vios_uuid, vg_uuid, media_name, size_mb)
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -261,33 +234,21 @@ def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> str:
 def hmc_list_clusters() -> list[dict[str, Any]]:
     """List Clusters (sets of VIOS nodes sharing a storage pool)."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_clusters()
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_clusters())
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
     """List Shared Storage Pools (capacity, free space, logical units)."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_shared_storage_pools()
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_shared_storage_pools())
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_shared_storage_pool(ssp_uuid: str) -> dict[str, Any] | None:
     """Get one Shared Storage Pool by UUID (physical volumes, logical units)."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_shared_storage_pool(ssp_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid))
 
 
 @mcp.tool
@@ -308,13 +269,11 @@ def hmc_create_logical_unit(
     hmc_list_clusters.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_logical_unit(
-                cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.create_logical_unit(
+            cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -325,10 +284,6 @@ def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] |
     status (an asynchronous delete, unlike the immediate delete tools).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.delete_logical_unit(cluster_uuid, lu_udid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.delete_logical_unit(cluster_uuid, lu_udid))
 
 

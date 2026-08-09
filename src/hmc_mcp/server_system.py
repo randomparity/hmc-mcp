@@ -10,9 +10,9 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
+    with_client,
 )
 
-from .common import client_from_env
 from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import run_hmc_command
@@ -46,11 +46,7 @@ def hmc_console_info() -> dict[str, Any] | None:
     Useful as a connectivity check — this is the cheapest HMC call.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_console_info()
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_console_info())
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -61,22 +57,14 @@ def hmc_list_systems() -> list[dict[str, Any]]:
     (machine type/model/serial), IPAddress, etc.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_managed_systems()
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_managed_systems())
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_system(system_uuid: str) -> dict[str, Any] | None:
     """Get full details for one managed system by UUID."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_managed_system(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_managed_system(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -87,33 +75,21 @@ def hmc_list_lpars(system_uuid: str | None = None) -> list[dict[str, Any]]:
     only the LPARs of that managed system.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_logical_partitions(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_logical_partitions(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     """Get full details for one logical partition by UUID."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_logical_partition(lpar_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_logical_partition(lpar_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_find_lpar(name: str) -> dict[str, Any] | None:
     """Find a logical partition by its partition name (exact match)."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.find_partition_by_name(name)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.find_partition_by_name(name))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -123,22 +99,16 @@ def hmc_lpar_state(lpar_uuid: str) -> Any:
     Uses the cheap quick-property endpoint instead of a full fetch.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_vios(system_uuid: str | None = None) -> list[dict[str, Any]]:
     """List Virtual I/O Servers, optionally restricted to one managed system."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_vios(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_vios(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -153,11 +123,7 @@ def hmc_vios_mappings(vios_uuid: str) -> dict[str, Any] | None:
     Find VIOS UUIDs with hmc_list_vios.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_vios_storage_detail(vios_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_vios_storage_detail(vios_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -169,11 +135,7 @@ def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
     SharedProcessorPool, HostEthernetAdapter, SRIOVAdapter, Cluster.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_uom(resource_type)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_uom(resource_type))
 
 
 
@@ -187,14 +149,12 @@ def hmc_power_on_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     before calling.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-                power_on_lpar_job(),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+            power_on_lpar_job(),
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -205,24 +165,18 @@ def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any
     Returns the submitted job. This changes the state of a real partition.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
-                power_off_lpar_job(immediate=immediate),
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
+            power_off_lpar_job(immediate=immediate),
+        )
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
     """Get the status/result of an HMC job by UUID."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_job(job_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_job(job_uuid))
 
 

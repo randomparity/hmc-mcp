@@ -8,11 +8,10 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _client,
     _g,
     _output,
     _print_json,
-    _run,
+    _with_client,
     console,
     err_console,
     templates_app,
@@ -24,11 +23,7 @@ from .cli_app import (
 def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
     """List partition templates in the template library."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_partition_templates()
-
-    templates = _run(_go)
+    templates = _with_client(lambda hmc: hmc.list_partition_templates())
 
     table = None
     if not as_json:
@@ -44,11 +39,7 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
 def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> None:
     """Show one partition template."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.get_partition_template(uuid)
-
-    t = _run(_go)
+    t = _with_client(lambda hmc: hmc.get_partition_template(uuid))
 
     if t is None:
         err_console.print(f"[yellow]Template {uuid} not found[/yellow]")
@@ -66,11 +57,7 @@ def templates_deploy(
     if not yes and not typer.confirm(f"Deploy draft template {draft_uuid} to system {system}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.deploy_partition_template(draft_uuid, system)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.deploy_partition_template(draft_uuid, system))
 
     console.print(f"[green]Submitted deploy job for template {draft_uuid}[/green]")
     _print_json(job)

@@ -9,6 +9,7 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
+    with_client,
 )
 
 from .client import HMCError
@@ -25,11 +26,7 @@ def hmc_get_pcm_preferences(category: str, uuid: str) -> dict[str, Any]:
     ComputeLTMEnabled, EnergyMonitorEnabled.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.get_pcm_preferences(category, uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.get_pcm_preferences(category, uuid))
 
 
 @mcp.tool

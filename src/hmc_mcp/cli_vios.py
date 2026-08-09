@@ -8,11 +8,10 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _client,
     _g,
     _output,
     _print_json,
-    _run,
+    _with_client,
     console,
     vios_app,
 )
@@ -25,11 +24,7 @@ def vios_list(
 ) -> None:
     """List Virtual I/O Servers."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_vios(system)
-
-    vios = _run(_go)
+    vios = _with_client(lambda hmc: hmc.list_vios(system))
 
     table = None
     if not as_json:
@@ -56,11 +51,7 @@ def vios_power_on(
     if not yes and not typer.confirm(f"Really PowerOn VIOS {uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.power_on_vios(uuid)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.power_on_vios(uuid))
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
@@ -77,11 +68,7 @@ def vios_power_off(
     if not yes and not typer.confirm(f"Really {op} VIOS {uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.power_off_vios(uuid, immediate=immediate)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.power_off_vios(uuid, immediate=immediate))
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)

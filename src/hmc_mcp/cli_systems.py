@@ -8,11 +8,10 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _client,
     _g,
     _output,
     _print_json,
-    _run,
+    _with_client,
     console,
     err_console,
     systems_app,
@@ -24,11 +23,7 @@ from .cli_app import (
 def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
     """List managed systems."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_managed_systems()
-
-    systems = _run(_go)
+    systems = _with_client(lambda hmc: hmc.list_managed_systems())
 
     table = None
     if not as_json:
@@ -51,11 +46,7 @@ def systems_show(uuid: str = typer.Argument(..., help="Managed system UUID"),
                  as_json: bool = typer.Option(False, "--json")) -> None:
     """Show full details of one managed system."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.get_managed_system(uuid)
-
-    system = _run(_go)
+    system = _with_client(lambda hmc: hmc.get_managed_system(uuid))
 
     if system is None:
         err_console.print(f"[yellow]System {uuid} not found[/yellow]")
@@ -72,11 +63,7 @@ def systems_power_on(
     if not yes and not typer.confirm(f"Really PowerOn system {uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.power_on_system(uuid)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.power_on_system(uuid))
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
     _print_json(job)
@@ -93,11 +80,7 @@ def systems_power_off(
     if not yes and not typer.confirm(f"Really {op} system {uuid}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.power_off_system(uuid, immediate=immediate)
-
-    job = _run(_go)
+    job = _with_client(lambda hmc: hmc.power_off_system(uuid, immediate=immediate))
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)

@@ -14,6 +14,7 @@ from .cli_app import (
     _print_json,
     _resolve_uuid,
     _run,
+    _with_client,
     console,
     err_console,
     storage_app,
@@ -28,11 +29,7 @@ def storage_list_vgs(
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_volume_groups(vios)
-
-    vgs = _run(_go)
+    vgs = _with_client(lambda hmc: hmc.list_volume_groups(vios))
 
     table = None
     if not as_json:
@@ -64,11 +61,7 @@ def storage_create_vg(
     if not yes and not typer.confirm(f"Create VG '{name}' from {pv_list} on VIOS {vios}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_volume_group(vios, name, pv_list)
-
-    vg = _run(_go)
+    vg = _with_client(lambda hmc: hmc.create_volume_group(vios, name, pv_list))
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
     _print_json(vg)
@@ -86,11 +79,7 @@ def storage_create_disk(
     if not yes and not typer.confirm(f"Create {size} MiB virtual disk '{name}' in VG {vg}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_virtual_disk(vios, vg, name, size)
-
-    disk = _run(_go)
+    disk = _with_client(lambda hmc: hmc.create_virtual_disk(vios, vg, name, size))
 
     console.print(f"[green]Created virtual disk '{name}' ({size} MiB)[/green]")
     _print_json(disk)
@@ -140,11 +129,7 @@ def storage_create_media_repo(
     if not yes and not typer.confirm(f"Create {size_mb} MB media repository on VG {vg} (VIOS {vios})?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_media_repository(vios, vg, size_mb)
-
-    result = _run(_go)
+    result = _with_client(lambda hmc: hmc.create_media_repository(vios, vg, size_mb))
 
     console.print(f"[green]Created media repository on {vg}[/green]")
     _print_json(result)
@@ -162,11 +147,7 @@ def storage_create_media(
     if not yes and not typer.confirm(f"Create media '{name}' ({size_mb} MB) on VG {vg} (VIOS {vios})?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_optical_media(vios, vg, name, size_mb)
-
-    result = _run(_go)
+    result = _with_client(lambda hmc: hmc.create_optical_media(vios, vg, name, size_mb))
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
     _print_json(result)

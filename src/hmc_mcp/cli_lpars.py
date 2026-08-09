@@ -17,6 +17,7 @@ from .cli_app import (
     _resolve_uuid,
     _run,
     _ssh_config,
+    _with_client,
     console,
     err_console,
     lpars_app,
@@ -35,11 +36,7 @@ def lpars_list(
 ) -> None:
     """List logical partitions."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_logical_partitions(system)
-
-    lpars = _run(_go)
+    lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
 
     table = None
     if not as_json:
@@ -301,11 +298,7 @@ def lpars_create(
         ),
     )
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_logical_partition(system, xml)
-
-    created = _run(_go)
+    created = _with_client(lambda hmc: hmc.create_logical_partition(system, xml))
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
     _print_json(created)

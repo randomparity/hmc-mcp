@@ -138,6 +138,18 @@ def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
         _fail(exc)
 
 
+def _with_client(fn: Callable[[Any], Awaitable[Any]]) -> Any:
+    """Run an async client call against the global connection options.
+
+    Collapses the pervasive ``async def _go`` + ``X = _run(_go)`` idiom into
+    one line for the common case where the body is a single client call.
+    """
+    async def _go():
+        async with _client() as hmc:
+            return await fn(hmc)
+    return _run(_go)
+
+
 def _print_json(data: Any) -> None:
     console.print_json(json.dumps(data, default=str))
 

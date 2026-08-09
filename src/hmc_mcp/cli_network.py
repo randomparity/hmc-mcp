@@ -15,6 +15,7 @@ from .cli_app import (
     _print_json,
     _run,
     _ssh_config,
+    _with_client,
     console,
     err_console,
     network_app,
@@ -36,11 +37,7 @@ def network_list_switches(
 ) -> None:
     """List VirtualSwitches on a managed system."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_virtual_switches(system)
-
-    switches = _run(_go)
+    switches = _with_client(lambda hmc: hmc.list_virtual_switches(system))
 
     table = None
     if not as_json:
@@ -64,11 +61,7 @@ def network_list_networks(
 ) -> None:
     """List Virtual Networks (VLANs) on a managed system."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_virtual_networks(system)
-
-    nets = _run(_go)
+    nets = _with_client(lambda hmc: hmc.list_virtual_networks(system))
 
     table = None
     if not as_json:
@@ -99,11 +92,9 @@ def network_create(
     if not yes and not typer.confirm(f"Create network '{name}' (VLAN {vlan}, vswitch {vswitch}) on {system}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.create_virtual_network(system, name, vlan, vswitch, tagged=tagged)
-
-    net = _run(_go)
+    net = _with_client(
+        lambda hmc: hmc.create_virtual_network(system, name, vlan, vswitch, tagged=tagged)
+    )
 
     console.print(f"[green]Created virtual network '{name}'[/green]")
     _print_json(net)
@@ -136,11 +127,7 @@ def network_list_bridges(
 ) -> None:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.list_network_bridges(system)
-
-    bridges = _run(_go)
+    bridges = _with_client(lambda hmc: hmc.list_network_bridges(system))
 
     _output(bridges, as_json, None, "No network bridges found")
 

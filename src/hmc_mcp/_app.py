@@ -17,6 +17,8 @@ import asyncio
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from .common import client_from_env
+
 mcp = FastMCP(
     name="hmc-mcp",
     instructions=(
@@ -107,6 +109,18 @@ DESTRUCTIVE_TOOLS = frozenset({
 def _run(coro):
     """Run an async client call from a sync tool function."""
     return asyncio.run(coro)
+
+
+def with_client(fn):
+    """Run an async client call against the env-configured HMC.
+
+    Collapses the pervasive ``async def _go`` + ``return _run(_go())`` idiom
+    into one line for the common case where the body is a single client call.
+    """
+    async def _go():
+        async with client_from_env() as hmc:
+            return await fn(hmc)
+    return _run(_go())
 
 
 # ---------------------------------------------------------------------- #

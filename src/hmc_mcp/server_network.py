@@ -15,6 +15,7 @@ from ._app import (
     _run,
     _system_name,
     mcp,
+    with_client,
 )
 
 from .common import client_from_env
@@ -37,22 +38,14 @@ def hmc_list_virtual_switches(system_uuid: str) -> list[dict[str, Any]]:
     reference.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_virtual_switches(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_virtual_switches(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_virtual_networks(system_uuid: str) -> list[dict[str, Any]]:
     """List Virtual Networks (VLANs) on a managed system."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_virtual_networks(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_virtual_networks(system_uuid))
 
 
 @mcp.tool
@@ -70,11 +63,11 @@ def hmc_create_virtual_network(
     VLAN tag.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_virtual_network(system_uuid, name, vlan_id, vswitch_id, tagged=tagged)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.create_virtual_network(
+            system_uuid, name, vlan_id, vswitch_id, tagged=tagged
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -98,11 +91,7 @@ def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
 def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.list_network_bridges(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.list_network_bridges(system_uuid))
 
 
 @mcp.tool(annotations=_READ_ONLY)

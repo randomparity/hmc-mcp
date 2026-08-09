@@ -7,12 +7,9 @@ from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
-    _run,
     mcp,
+    with_client,
 )
-
-from .common import client_from_env
-
 
 
 @mcp.tool
@@ -29,11 +26,11 @@ def hmc_migrate_lpar(
     Run hmc_migrate_validate_lpar first to pre-check.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.lpar_migrate(lpar_uuid, target_system, target_profile_name, wait_time=wait_time)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.lpar_migrate(
+            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        )
+    )
 
 
 @mcp.tool
@@ -45,43 +42,31 @@ def hmc_migrate_validate_lpar(
 ) -> dict[str, Any] | None:
     """Validate whether an LPM migration of an LPAR to target_system would succeed."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.lpar_migrate_validate(lpar_uuid, target_system, target_profile_name, wait_time=wait_time)
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: hmc.lpar_migrate_validate(
+            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_migrate_abort_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     """Abort an in-progress LPM migration of an LPAR."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.lpar_migrate_abort(lpar_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.lpar_migrate_abort(lpar_uuid))
 
 
 @mcp.tool
 def hmc_migrate_recover_lpar(lpar_uuid: str) -> dict[str, Any] | None:
     """Recover an LPAR after a failed LPM migration."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.lpar_migrate_recover(lpar_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.lpar_migrate_recover(lpar_uuid))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remote_restart_lpar(lpar_uuid: str, target_system: str) -> dict[str, Any] | None:
     """Remote-restart a failed LPAR on another managed system."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.lpar_remote_restart(lpar_uuid, target_system)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.lpar_remote_restart(lpar_uuid, target_system))
 
 

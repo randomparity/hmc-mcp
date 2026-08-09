@@ -8,8 +8,7 @@ from pathlib import Path
 import typer
 
 from .cli_app import (
-    _client,
-    _run,
+    _with_client,
     console,
     raw_app,
 )
@@ -20,11 +19,7 @@ from .cli_app import (
 def raw_get(path: str = typer.Argument(..., help="Path under the HMC, e.g. /rest/api/uom/VirtualSwitch")) -> None:
     """Raw GET against the HMC; prints the XML response body."""
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.raw_get(path)
-
-    console.print(_run(_go))
+    console.print(_with_client(lambda hmc: hmc.raw_get(path)))
 
 
 @raw_app.command("post")
@@ -38,10 +33,6 @@ def raw_post(
     if body.startswith("@"):
         body = Path(body[1:]).read_text(encoding="utf-8")
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.raw_post(path, body, content_type=content_type)
-
-    console.print(_run(_go))
+    console.print(_with_client(lambda hmc: hmc.raw_post(path, body, content_type=content_type)))
 
 

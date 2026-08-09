@@ -9,6 +9,7 @@ from ._app import (
     _DESTRUCTIVE,
     _run,
     mcp,
+    with_client,
 )
 
 from .client import HMCError
@@ -84,11 +85,7 @@ def hmc_create_lpar(
         max_virtual_slots=max_virtual_slots,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.create_logical_partition(system_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.create_logical_partition(system_uuid, xml))
 
 
 @mcp.tool
@@ -132,11 +129,7 @@ def hmc_modify_lpar(
         ),
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
 
 
 @mcp.tool
@@ -174,11 +167,7 @@ def hmc_dlpar_proc(
         )
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
 
 
 @mcp.tool
@@ -212,11 +201,7 @@ def hmc_modify_system(
         mem_mirroring_mode=mem_mirroring_mode,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.modify_managed_system(system_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.modify_managed_system(system_uuid, xml))
 
 
 @mcp.tool
@@ -242,11 +227,7 @@ def hmc_dlpar_mem(
         )
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -290,43 +271,27 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
 def hmc_power_on_system(system_uuid: str) -> dict[str, Any] | None:
     """Power on a managed system (PowerOn job). Poll hmc_get_job for status."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.power_on_system(system_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.power_on_system(system_uuid))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_system(system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
     """Power off a managed system (PowerOff job). immediate skips graceful shutdown."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.power_off_system(system_uuid, immediate)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.power_off_system(system_uuid, immediate))
 
 
 @mcp.tool
 def hmc_power_on_vios(vios_uuid: str) -> dict[str, Any] | None:
     """Power on a VIOS (PowerOn job). Poll hmc_get_job for status."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.power_on_vios(vios_uuid)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.power_on_vios(vios_uuid))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_vios(vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
     """Power off a VIOS (PowerOff job). immediate skips graceful shutdown."""
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return await hmc.power_off_vios(vios_uuid, immediate)
-
-    return _run(_go())
+    return with_client(lambda hmc: hmc.power_off_vios(vios_uuid, immediate))
 
 
