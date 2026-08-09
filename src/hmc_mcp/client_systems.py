@@ -66,6 +66,11 @@ class SystemsMixin:
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff", power_off_system_job(immediate)
         )
 
+    async def find_vios_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find a Virtual I/O Server by its PartitionName (exact match)."""
+        results = await self.search_uom("VirtualIOServer", "PartitionName", name)
+        return results[0] if results else None
+
     async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""
 

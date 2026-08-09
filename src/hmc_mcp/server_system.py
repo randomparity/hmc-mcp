@@ -7,6 +7,9 @@ from typing import Any
 
 from ._app import (
     _READ_ONLY,
+    _resolve_lpar_uuid,
+    _resolve_system_uuid,
+    _resolve_vios_uuid,
     _run,
     mcp,
     with_client,
@@ -47,25 +50,31 @@ def hmc_console_info() -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_systems(system_uuid: str | None = None) -> Any:
-    """List all managed systems or get one by UUID.
+def hmc_systems(system_name_or_uuid: str | None = None) -> Any:
+    """List all managed systems or get one by name or UUID.
 
-    When system_uuid is omitted, returns a list of all managed systems known to
-    the HMC — each entry has UUID, SystemName, State, MTMS (machine
+    When system_name_or_uuid is omitted, returns a list of all managed systems
+    known to the HMC — each entry has UUID, SystemName, State, MTMS (machine
     type/model/serial), IPAddress, etc.
 
-    When system_uuid is provided, returns the full details dict for that one
-    system (same fields), or None if not found.
+    When system_name_or_uuid is provided, accepts either a SystemName or a UUID
+    and returns the full details dict for that one system, or None if not found.
     """
-    if system_uuid is None:
+    if system_name_or_uuid is None:
         return with_client(lambda hmc: hmc.list_managed_systems())
-    return with_client(lambda hmc: hmc.get_managed_system(system_uuid))
+
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.get_managed_system(system_uuid)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_lpars(
-    system_uuid: str | None = None,
-    lpar_uuid: str | None = None,
+    system_name_or_uuid: str | None = None,
+    lpar_name_or_uuid: str | None = None,
     name: str | None = None,
     state_only: bool = False,
 ) -> Any:
@@ -73,47 +82,74 @@ def hmc_lpars(
 
     Resolution priority (first match wins):
 
-    1. lpar_uuid + state_only=True  →  str | None  — current LPAR state only
-       (uses the cheap quick-property endpoint instead of a full fetch).
-    2. lpar_uuid                    →  dict | None  — full LPAR details.
-       When both lpar_uuid and name are supplied, lpar_uuid takes priority
-       and name is ignored.
-    3. name                         →  dict | None  — find by PartitionName
-       (exact match).
-    4. system_uuid                  →  list[dict]   — all LPARs on that system.
-    5. (no arguments)               →  list[dict]   — all LPARs known to the HMC.
+    1. lpar_name_or_uuid + state_only=True  →  str | None  — current LPAR state
+       only (uses the cheap quick-property endpoint instead of a full fetch).
+    2. lpar_name_or_uuid                    →  dict | None  — full LPAR details.
+       Accepts either a PartitionName or a UUID. When both lpar_name_or_uuid
+       and name are supplied, lpar_name_or_uuid takes priority and name is
+       ignored.
+    3. name                                 →  dict | None  — find by
+       PartitionName (exact match).
+    4. system_name_or_uuid                  →  list[dict]   — all LPARs on that
+       system. Accepts either a SystemName or a UUID.
+    5. (no arguments)                       →  list[dict]   — all LPARs known
+       to the HMC.
 
-    Raises ValueError if state_only=True is supplied without lpar_uuid.
+    Raises ValueError if state_only=True is supplied without lpar_name_or_uuid.
     """
-    if lpar_uuid is not None and state_only:
-        return with_client(
-            lambda hmc: hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
-        )
-    if lpar_uuid is not None:
-        return with_client(lambda hmc: hmc.get_logical_partition(lpar_uuid))
+    if lpar_name_or_uuid is not None and state_only:
+        async def _go_state():
+            async with client_from_env() as hmc:
+                lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+                return await hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
+        return _run(_go_state)
+    if lpar_name_or_uuid is not None:
+        async def _go_lpar():
+            async with client_from_env() as hmc:
+                lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+                return await hmc.get_logical_partition(lpar_uuid)
+        return _run(_go_lpar)
     if name is not None:
         return with_client(lambda hmc: hmc.find_partition_by_name(name))
     if state_only:
-        raise ValueError("state_only=True requires lpar_uuid to be provided")
-    return with_client(lambda hmc: hmc.list_logical_partitions(system_uuid))
+        raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
+    if system_name_or_uuid is not None:
+        async def _go_sys():
+            async with client_from_env() as hmc:
+                system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+                return await hmc.list_logical_partitions(system_uuid)
+        return _run(_go_sys)
+    return with_client(lambda hmc: hmc.list_logical_partitions(None))
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_vios(
-    system_uuid: str | None = None,
-    vios_uuid: str | None = None,
+    system_name_or_uuid: str | None = None,
+    vios_name_or_uuid: str | None = None,
 ) -> Any:
     """List Virtual I/O Servers or get storage-detail mappings for one.
 
-    When vios_uuid is provided, returns the VIOS device mapping facts
-    (vSCSI, NPIV, virtual optical) for that VIOS.
+    When vios_name_or_uuid is provided, accepts either a PartitionName or a
+    UUID and returns the VIOS device mapping facts (vSCSI, NPIV, virtual
+    optical) for that VIOS.
 
-    When vios_uuid is omitted, returns a list of all VIOS entries, optionally
-    restricted to one managed system via system_uuid.
+    When vios_name_or_uuid is omitted, returns a list of all VIOS entries,
+    optionally restricted to one managed system via system_name_or_uuid
+    (accepts either a SystemName or a UUID).
     """
-    if vios_uuid is not None:
-        return with_client(lambda hmc: hmc.get_vios_storage_detail(vios_uuid))
-    return with_client(lambda hmc: hmc.list_vios(system_uuid))
+    if vios_name_or_uuid is not None:
+        async def _go_vios():
+            async with client_from_env() as hmc:
+                vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+                return await hmc.get_vios_storage_detail(vios_uuid)
+        return _run(_go_vios)
+    if system_name_or_uuid is not None:
+        async def _go_sys():
+            async with client_from_env() as hmc:
+                system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+                return await hmc.list_vios(system_uuid)
+        return _run(_go_sys)
+    return with_client(lambda hmc: hmc.list_vios(None))
 
 
 @mcp.tool(annotations=_READ_ONLY)

@@ -33,8 +33,8 @@ from hmc_mcp.server import (
 
 from conftest import JOB_ENTRY
 
-LPAR_UUID = "lpar-uuid-0001"
-VIOS_UUID = "vios-uuid-0001"
+LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-0001"
 ADAPTER_UUID = "adapter-uuid-0001"
 CLUSTER_UUID = "cluster-uuid-0001"

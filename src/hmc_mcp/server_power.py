@@ -7,9 +7,11 @@ from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
+    _resolve_lpar_uuid,
+    _resolve_system_uuid,
+    _resolve_vios_uuid,
     _run,
     mcp,
-    with_client,
 )
 
 from .client import HMCError
@@ -33,7 +35,7 @@ from .jobs import power_off_lpar_job, power_on_lpar_job
 
 @mcp.tool
 def hmc_create_lpar(
-    system_uuid: str,
+    system_name_or_uuid: str,
     name: str,
     partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
@@ -54,16 +56,18 @@ def hmc_create_lpar(
 ) -> dict[str, Any] | None:
     """Create a new LPAR on a managed system.
 
-    system_uuid is the target managed system (find it with hmc_systems).
-    Memory values are in MiB. By default a shared-processor partition is
-    created; set dedicated=True for dedicated CPUs (then procs are whole CPU
-    counts). For shared partitions, procs are processing units (may be
-    fractional, e.g. 0.5) and vcpus are virtual processor counts.
+    system_name_or_uuid: the target managed system — accepts either a
+    SystemName (e.g. ``"Server-9080-M9S-SN12345"``) or a UUID (find it
+    with hmc_systems). Memory values are in MiB. By default a
+    shared-processor partition is created; set dedicated=True for dedicated
+    CPUs (then procs are whole CPU counts). For shared partitions, procs are
+    processing units (may be fractional, e.g. 0.5) and vcpus are virtual
+    processor counts.
 
     The partition is created powered off with a default profile; storage,
     network and boot settings still need to be configured (via the HMC UI or
     profile edits) before it can boot an OS. This creates a real partition —
-    confirm name/system_uuid before calling.
+    confirm name/system_name_or_uuid before calling.
 
     partition_type must be one of: 'AIX/Linux', 'OS400', 'Virtual IO Server'.
     os_type: target OS — ``aix``, ``linux``, or ``ibmi``.
@@ -92,12 +96,17 @@ def hmc_create_lpar(
         max_virtual_slots=max_virtual_slots,
     )
 
-    return with_client(lambda hmc: hmc.create_logical_partition(system_uuid, xml))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.create_logical_partition(system_uuid, xml)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_modify_lpar(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     name: str | None = None,
     min_memory: int | None = None,
     desired_memory: int | None = None,
@@ -113,11 +122,13 @@ def hmc_modify_lpar(
 ) -> dict[str, Any] | None:
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
 
-    Only the fields you pass are changed. Memory values are in MiB. For a
-    running partition these are dynamic (DLPAR) operations and require an
-    active RMC connection; otherwise the change applies on next activation.
-    Set dedicated=True to assign whole CPUs, False for shared processing
-    units + virtual processors; omit it to leave the sharing mode unchanged.
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID
+    (find it with hmc_lpars). Only the fields you pass are changed.
+    Memory values are in MiB. For a running partition these are dynamic
+    (DLPAR) operations and require an active RMC connection; otherwise the
+    change applies on next activation. Set dedicated=True to assign whole
+    CPUs, False for shared processing units + virtual processors; omit it
+    to leave the sharing mode unchanged.
     """
     xml = build_lpar_document(
         name=name,
@@ -136,12 +147,17 @@ def hmc_modify_lpar(
         ),
     )
 
-    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
+    async def _go():
+        async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_dlpar_proc(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     desired_procs: float | None = None,
     min_procs: float | None = None,
     max_procs: float | None = None,
@@ -153,6 +169,7 @@ def hmc_dlpar_proc(
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID.
     Posts a minimal PartitionProcessorConfiguration document to the HMC.
     Only the fields you pass are changed. For shared partitions, procs are
     processing units (may be fractional, e.g. 0.5); vcpus are virtual
@@ -175,12 +192,17 @@ def hmc_dlpar_proc(
         )
     )
 
-    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
+    async def _go():
+        async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_modify_system(
-    system_uuid: str,
+    system_name_or_uuid: str,
     new_name: str | None = None,
     power_off_policy: PowerOffPolicy | None = None,
     power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
@@ -192,7 +214,8 @@ def hmc_modify_system(
 
     Only the fields you pass are changed; omitted fields are left as-is.
 
-    system_uuid: UUID of the managed system (from hmc_systems).
+    system_name_or_uuid: the managed system — accepts either a SystemName or
+        a UUID (from hmc_systems).
     new_name: rename the managed system.
     power_off_policy: power-off policy — 1 powers the system off after all
         partitions shut down, 0 leaves it powered on.
@@ -211,18 +234,24 @@ def hmc_modify_system(
         mem_mirroring_mode=mem_mirroring_mode,
     )
 
-    return with_client(lambda hmc: hmc.modify_managed_system(system_uuid, xml))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.modify_managed_system(system_uuid, xml)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_dlpar_mem(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     desired_memory: int | None = None,
     min_memory: int | None = None,
     max_memory: int | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID.
     Posts a minimal PartitionMemoryConfiguration document to the HMC.
     Memory values are in MiB. Only the fields you pass are changed.
 
@@ -237,21 +266,28 @@ def hmc_dlpar_mem(
         )
     )
 
-    return with_client(lambda hmc: hmc.modify_logical_partition(lpar_uuid, xml))
+    async def _go():
+        async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            return await hmc.modify_logical_partition(lpar_uuid, xml)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_lpar(lpar_uuid: str) -> str:
-    """Delete (destroy) an LPAR by UUID.
+def hmc_delete_lpar(lpar_name_or_uuid: str) -> str:
+    """Delete (destroy) an LPAR by name or UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
-    confirm with hmc_lpars(lpar_uuid=..., state_only=True)). This tool refuses
-    to delete a partition whose current state is anything other than 'not
-    activated', matching the precondition check pattern used by
+    confirm with hmc_lpars(lpar_name_or_uuid=..., state_only=True)). This
+    tool refuses to delete a partition whose current state is anything other
+    than 'not activated', matching the precondition check pattern used by
     hmc_remove_memory_pool. This permanently removes the partition and its
-    profiles from the HMC — it is irreversible. Confirm the UUID with
+    profiles from the HMC — it is irreversible. Confirm the target with
     hmc_lpars(name=...) before calling. Returns a confirmation string
     (immediate delete — no job to poll).
+
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID.
 
     Raises:
         HMCError: If the partition state is not 'not activated' (HTTP 409).
@@ -259,6 +295,7 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
 
     async def _go():
         async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             state = await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )
@@ -267,7 +304,7 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
                     f"Cannot delete LPAR {lpar_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
                     "off (hmc_power_off_lpar) and confirm with "
-                    "hmc_lpars(lpar_uuid=..., state_only=True) before retrying.",
+                    "hmc_lpars(lpar_name_or_uuid=..., state_only=True) before retrying.",
                     status_code=409,
                 )
             await hmc.delete_logical_partition(lpar_uuid)
@@ -298,32 +335,39 @@ async def _power_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: 
 
 @mcp.tool
 def hmc_power_on_lpar(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit a PowerOn job for a logical partition.
 
-    Returns the submitted job (check hmc_get_job for status). This changes
-    the state of a real partition — confirm the UUID with hmc_lpars(name=...)
-    before calling.
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID
+    (find it with hmc_lpars). Returns the submitted job (check hmc_get_job
+    for status). This changes the state of a real partition — confirm the
+    target with hmc_lpars(name=...) before calling.
 
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-            power_on_lpar_job(),
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            job = await hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+                power_on_lpar_job(),
+            )
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_lpar(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -331,40 +375,55 @@ def hmc_power_off_lpar(
 ) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
+    lpar_name_or_uuid: accepts either a PartitionName or a UUID.
     immediate=True forces an immediate power off (no graceful OS shutdown).
     Returns the submitted job. This changes the state of a real partition.
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
-            power_off_lpar_job(immediate=immediate),
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            job = await hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
+                power_off_lpar_job(immediate=immediate),
+            )
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_power_on_system(
-    system_uuid: str,
+    system_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Power on a managed system (PowerOn job).
 
+    system_name_or_uuid: accepts either a SystemName or a UUID
+    (find it with hmc_systems).
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.power_on_system(system_uuid),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            job = await hmc.power_on_system(system_uuid)
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_system(
-    system_uuid: str,
+    system_name_or_uuid: str,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -372,34 +431,49 @@ def hmc_power_off_system(
 ) -> dict[str, Any] | None:
     """Power off a managed system (PowerOff job). immediate skips graceful shutdown.
 
+    system_name_or_uuid: accepts either a SystemName or a UUID.
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.power_off_system(system_uuid, immediate),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            job = await hmc.power_off_system(system_uuid, immediate)
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_power_on_vios(
-    vios_uuid: str,
+    vios_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Power on a VIOS (PowerOn job).
 
+    vios_name_or_uuid: accepts either a PartitionName or a UUID
+    (find it with hmc_vios).
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.power_on_vios(vios_uuid),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            job = await hmc.power_on_vios(vios_uuid)
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_vios(
-    vios_uuid: str,
+    vios_name_or_uuid: str,
     immediate: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -407,11 +481,18 @@ def hmc_power_off_vios(
 ) -> dict[str, Any] | None:
     """Power off a VIOS (PowerOff job). immediate skips graceful shutdown.
 
+    vios_name_or_uuid: accepts either a PartitionName or a UUID.
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _power_op(
-        lambda hmc: hmc.power_off_vios(vios_uuid, immediate),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env() as hmc:
+            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            job = await hmc.power_off_vios(vios_uuid, immediate)
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+
+    return _run(_go)
 
 
