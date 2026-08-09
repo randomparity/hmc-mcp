@@ -41,14 +41,18 @@ A policy test will parse `pyproject.toml` and `uv.lock` with the standard librar
 that every direct runtime, development, and build requirement is exactly pinned, every pin
 appears at that version in the lock, and the Dependabot configuration contains the selected
 uv schedule, grouping, and cooldown. The test will first fail on the current repository.
-`uv lock --check` will prove the committed lock matches the manifest. The repository's
-`just verify` recipe remains the full functional guardrail.
+From a clean working tree, `uv lock --check` will run before any `uv run` command that could
+refresh the lock, proving the committed lock matches the manifest. The repository's
+`just verify` recipe then remains the full functional guardrail. This ordered proof is a
+maintainer and pull-request review responsibility because workflow changes are excluded and
+the repository has no checked-in CI workflow.
 
 ## Failure handling
 
 Dependency resolution failure is a hard failure: do not commit a stale or partial lockfile.
 A policy mismatch fails the test with the affected dependency or missing configuration
-field. Dependabot update PRs remain subject to normal repository CI and human review.
+field. Dependabot update PRs require the same ordered local proof and human review; this
+design does not claim an automated merge gate that the repository does not contain.
 
 ## Threat model
 
@@ -75,7 +79,7 @@ distribution services. Maintainers remain responsible for reviewing and merging 
 - A seven-day version cooldown reduces immediate exposure to newly published releases;
   security updates are not delayed by that cooldown.
 - Grouped Dependabot PRs keep the direct declarations and complete resolution together, and
-  existing CI checks the proposed graph before merge.
+  the required ordered local proof checks the proposed graph before maintainers merge it.
 - Dependabot receives no credentials, permissions expansion, or auto-merge path from the
   configuration.
 
