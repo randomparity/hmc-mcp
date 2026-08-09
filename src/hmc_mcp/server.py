@@ -164,4 +164,5 @@ from .server_cli import (
 )
 from .server_composite import (
     hmc_lpar_summary as hmc_lpar_summary,
+    hmc_system_summary as hmc_system_summary,
 )

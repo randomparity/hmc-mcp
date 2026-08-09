@@ -123,6 +123,37 @@ def systems_power_off(
     _print_json(job)
 
 
+@systems_app.command("summary")
+def systems_summary(
+    name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
+    from .server_composite import hmc_system_summary
+
+    result = hmc_system_summary(name_or_uuid)
+    if as_json:
+        _print_json(result)
+        return
+
+    table = Table(title=f"System Summary: {result.get('name') or name_or_uuid}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("UUID", result.get("uuid") or "-")
+    table.add_row("State", result.get("state") or "-")
+    table.add_row("MTMS", result.get("mtms") or "-")
+    table.add_row("Firmware", result.get("firmware_version") or "-")
+    table.add_row("Total Memory (MiB)", str(result.get("total_memory_mb", 0)))
+    table.add_row("Free Memory (MiB)", str(result.get("free_memory_mb", 0)))
+    table.add_row("Total Proc Units", str(result.get("total_proc_units", 0.0)))
+    table.add_row("Free Proc Units", str(result.get("free_proc_units", 0.0)))
+    table.add_row("Total LPARs", str(result.get("lpar_count", 0)))
+    for state, count in sorted((result.get("lpar_states") or {}).items()):
+        table.add_row(f"  LPARs ({state})", str(count))
+    table.add_row("VIOS Count", str(result.get("vios_count", 0)))
+    console.print(table)
+
+
 @systems_app.command("capacity")
 def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
