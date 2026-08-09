@@ -22,11 +22,15 @@ from .cli_app import (
 @vios_app.command("list")
 def vios_list(
     system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
+    state: str | None = typer.Option(None, "--state", help="Filter by PartitionState (server-side search)"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual I/O Servers."""
 
-    vios = _with_client(lambda hmc: hmc.list_vios(system))
+    if state is not None:
+        vios = _with_client(lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state))
+    else:
+        vios = _with_client(lambda hmc: hmc.list_vios(system))
 
     table = None
     if not as_json:

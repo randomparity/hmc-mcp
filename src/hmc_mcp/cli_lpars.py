@@ -39,11 +39,15 @@ from .ssh import (
 @lpars_app.command("list")
 def lpars_list(
     system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
+    state: str | None = typer.Option(None, "--state", help="Filter by PartitionState (server-side search)"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List logical partitions."""
 
-    lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
+    if state is not None:
+        lpars = _with_client(lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state))
+    else:
+        lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
 
     table = None
     if not as_json:
