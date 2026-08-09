@@ -8,12 +8,9 @@ from typing import Any
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _run,
     mcp,
     with_client,
 )
-
-from .common import client_from_env
 
 
 
@@ -105,12 +102,12 @@ def hmc_delete_adapter(lpar_uuid: str, adapter_type: str, adapter_uuid: str) -> 
     job to poll).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.delete_child("LogicalPartition", lpar_uuid, adapter_type, adapter_uuid)
-            return f"Deleted {adapter_type} {adapter_uuid} from {lpar_uuid}"
-
-    return _run(_go())
+    with_client(
+        lambda hmc: hmc.delete_child(
+            "LogicalPartition", lpar_uuid, adapter_type, adapter_uuid
+        )
+    )
+    return f"Deleted {adapter_type} {adapter_uuid} from {lpar_uuid}"
 
 
 
@@ -220,12 +217,8 @@ def hmc_delete_media_repository(vios_uuid: str, vg_uuid: str) -> str:
     string once the HMC has applied the change; there is no job to poll.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.delete_media_repository(vios_uuid, vg_uuid)
-            return f"Deleted media repository from VolumeGroup {vg_uuid}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.delete_media_repository(vios_uuid, vg_uuid))
+    return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
 
 

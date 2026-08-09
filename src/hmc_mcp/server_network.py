@@ -77,12 +77,8 @@ def hmc_delete_virtual_network(system_uuid: str, network_uuid: str) -> str:
     confirmation string (immediate delete — no job to poll).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.delete_virtual_network(system_uuid, network_uuid)
-            return f"Deleted VirtualNetwork {network_uuid} from {system_uuid}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.delete_virtual_network(system_uuid, network_uuid))
+    return f"Deleted VirtualNetwork {network_uuid} from {system_uuid}"
 
 
 @mcp.tool(annotations=_READ_ONLY)

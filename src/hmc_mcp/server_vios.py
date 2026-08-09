@@ -116,15 +116,13 @@ def hmc_install_vios(
     job — poll hmc_get_job for status.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            job_xml = vios_install_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
-            return await hmc.submit_job(
-                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
-                job_xml,
-            )
-
-    return _run(_go())
+    job_xml = vios_install_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
+            job_xml,
+        )
+    )
 
 
 @mcp.tool
@@ -148,15 +146,13 @@ def hmc_install_lpar_os(
     job — poll hmc_get_job for status.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
-            return await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
-                job_xml,
-            )
-
-    return _run(_go())
+    job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
+    return with_client(
+        lambda hmc: hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
+            job_xml,
+        )
+    )
 
 
 

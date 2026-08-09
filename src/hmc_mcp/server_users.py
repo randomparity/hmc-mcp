@@ -8,11 +8,10 @@ from typing import Any
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _run,
     mcp,
+    with_client,
 )
 
-from .common import client_from_env
 from .documents import (
     build_hmc_user_document,
     build_ldap_config_document,
@@ -36,6 +35,11 @@ def _parse_web_entries(xml_text: str) -> list[dict[str, Any]]:
     return parse_feed(xml_text)
 
 
+def _first_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """First parsed web entry, or None when the response is empty."""
+    return entries[0] if entries else None
+
+
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     """List HMC user accounts.
@@ -46,11 +50,9 @@ def hmc_list_users(user_type: str = "all") -> list[dict[str, Any]]:
     where Resource holds the flattened HmcUser fields.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return _parse_web_entries(await hmc.list_hmc_users(user_type))
-
-    return _run(_go())
+    return _parse_web_entries(
+        with_client(lambda hmc: hmc.list_hmc_users(user_type))
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -61,12 +63,9 @@ def hmc_get_user(name: str) -> dict[str, Any] | None:
     content.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.get_hmc_user(name))
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.get_hmc_user(name)))
+    )
 
 
 @mcp.tool
@@ -94,12 +93,9 @@ def hmc_create_user(
         pwage=pwage,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.create_hmc_user(xml))
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.create_hmc_user(xml)))
+    )
 
 
 @mcp.tool
@@ -124,12 +120,9 @@ def hmc_modify_user(
         enable=enable,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.modify_hmc_user(name, xml))
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.modify_hmc_user(name, xml)))
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -141,12 +134,8 @@ def hmc_delete_user(name: str) -> str:
     string (immediate delete — no job to poll).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.delete_hmc_user(name)
-            return f"Deleted HMC user {name}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.delete_hmc_user(name))
+    return f"Deleted HMC user {name}"
 
 
 
@@ -160,11 +149,9 @@ def hmc_list_password_policies(policy_type: str = "policies") -> list[dict[str, 
     Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            return _parse_web_entries(await hmc.list_password_policies(policy_type))
-
-    return _run(_go())
+    return _parse_web_entries(
+        with_client(lambda hmc: hmc.list_password_policies(policy_type))
+    )
 
 
 @mcp.tool
@@ -204,12 +191,9 @@ def hmc_create_password_policy(
         min_pwage=min_pwage,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.create_password_policy(xml))
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.create_password_policy(xml)))
+    )
 
 
 @mcp.tool
@@ -245,14 +229,11 @@ def hmc_modify_password_policy(
         min_pwage=min_pwage,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(
-                await hmc.modify_password_policy(policy_name, xml)
-            )
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(
+            with_client(lambda hmc: hmc.modify_password_policy(policy_name, xml))
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -264,12 +245,8 @@ def hmc_delete_password_policy(policy_name: str) -> str:
     a confirmation string (immediate delete — no job to poll).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.delete_password_policy(policy_name)
-            return f"Deleted HMC password policy {policy_name}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.delete_password_policy(policy_name))
+    return f"Deleted HMC password policy {policy_name}"
 
 
 
@@ -284,12 +261,9 @@ def hmc_list_ldap_config() -> dict[str, Any] | None:
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.list_ldap_config())
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.list_ldap_config()))
+    )
 
 
 @mcp.tool
@@ -327,12 +301,9 @@ def hmc_configure_ldap(
         group_member_attributes=group_member_attributes,
     )
 
-    async def _go():
-        async with client_from_env() as hmc:
-            entries = _parse_web_entries(await hmc.configure_ldap(xml))
-            return entries[0] if entries else None
-
-    return _run(_go())
+    return _first_entry(
+        _parse_web_entries(with_client(lambda hmc: hmc.configure_ldap(xml)))
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -353,11 +324,7 @@ def hmc_remove_ldap_config(resource: str) -> str:
     Returns a confirmation string (immediate delete — no job to poll).
     """
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.remove_ldap_config(resource)
-            return f"Removed LDAP configuration component: {resource}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.remove_ldap_config(resource))
+    return f"Removed LDAP configuration component: {resource}"
 
 

@@ -59,12 +59,8 @@ def hmc_set_pcm_preferences(
     if not flags:
         return "No preference flags supplied; nothing to change."
 
-    async def _go():
-        async with client_from_env() as hmc:
-            await hmc.set_pcm_preferences(category, uuid, **flags)
-            return f"Updated PCM preferences on {category} {uuid}: {flags}"
-
-    return _run(_go())
+    with_client(lambda hmc: hmc.set_pcm_preferences(category, uuid, **flags))
+    return f"Updated PCM preferences on {category} {uuid}: {flags}"
 
 
 @mcp.tool(annotations=_READ_ONLY)
