@@ -155,6 +155,15 @@ def _processor_config(
     return "\n".join(parts)
 
 
+def _lpar_envelope(body: str) -> str:
+    """Wrap an LPAR document body in the LogicalPartition XML envelope."""
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+{body}
+</LogicalPartition>
+"""
+
+
 def build_lpar_document(
     name: str | None,
     partition_type: str = "AIX/Linux",
@@ -225,11 +234,7 @@ def build_lpar_document(
     body_parts.append(f'  <PartitionType kb="COD" kxe="false">{partition_type}</PartitionType>')
 
     body = "\n".join(body_parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
-{body}
-</LogicalPartition>
-"""
+    return _lpar_envelope(body)
 
 
 def build_vios_document(
@@ -295,11 +300,7 @@ def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     body = "  <Metadata><Atom/></Metadata>"
     if proc:
         body = body + "\n" + proc
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
-{body}
-</LogicalPartition>
-"""
+    return _lpar_envelope(body)
 
 
 def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
@@ -319,11 +320,7 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     body = "  <Metadata><Atom/></Metadata>"
     if mem:
         body = body + "\n" + mem
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
-{body}
-</LogicalPartition>
-"""
+    return _lpar_envelope(body)
 
 
 def build_managed_system_document(
