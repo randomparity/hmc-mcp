@@ -15,7 +15,15 @@ from hmc_mcp.server import (
     hmc_get_aggregated_metrics,
     hmc_get_processed_metric_links,
     hmc_get_processed_metrics,
+    hmc_set_pcm_preferences,
 )
+
+PCM_PREFS_XML = """<?xml version="1.0"?>
+<ManagementConsolePcmPreference xmlns="http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/">
+  <LongTermMonitorEnabled>true</LongTermMonitorEnabled>
+  <AggregationEnabled>false</AggregationEnabled>
+</ManagementConsolePcmPreference>
+"""
 
 PCM_FEED = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -212,3 +220,24 @@ def test_get_aggregated_metrics_fetches_latest(monkeypatch, mock_hmc):
     )
 
     assert result == METRICS_JSON
+
+
+def test_set_pcm_preferences_returns_updated(monkeypatch, mock_hmc):
+    """hmc_set_pcm_preferences returns the updated preferences dict."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=httpx.Response(200, text=PCM_PREFS_XML)
+    )
+
+    result = hmc_set_pcm_preferences("ManagedSystem", "sys-uuid", long_term_monitor=True)
+
+    assert result["LongTermMonitorEnabled"] is True
+    assert result["AggregationEnabled"] is False
+
+
+def test_set_pcm_preferences_no_flags_raises(monkeypatch, mock_hmc):
+    """hmc_set_pcm_preferences raises ValueError when no flags are supplied."""
+    _hmc_env(monkeypatch)
+
+    with pytest.raises(ValueError, match="No preference flags"):
+        hmc_set_pcm_preferences("ManagedSystem", "sys-uuid")

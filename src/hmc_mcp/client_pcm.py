@@ -25,14 +25,18 @@ class PcmMixin:
         xml = await self._get(path)
         return _pcm_preferences(xml, path) if xml else {}
 
-    async def set_pcm_preferences(self, category: str, resource_uuid: str, **flags: bool) -> None:
+    async def set_pcm_preferences(self, category: str, resource_uuid: str, **flags: bool) -> dict[str, Any]:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
-        Only the flags you pass are changed; the HMC merges the rest.
+        Only the flags you pass are changed; the HMC merges the rest. Returns
+        the updated preferences document (``{}`` when the response body is
+        empty).
         """
 
         xml = build_pcm_preferences_document(**flags)
-        await self._post_pcm(f"/rest/api/pcm/{category}/{resource_uuid}/preferences", xml)
+        path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
+        resp_xml = await self._post_pcm(path, xml)
+        return _pcm_preferences(resp_xml, path) if resp_xml else {}
 
     async def _post_pcm(self, path: str, body: str) -> str:
         resp = await self._http.post(

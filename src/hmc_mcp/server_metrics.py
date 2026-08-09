@@ -40,14 +40,18 @@ def hmc_set_pcm_preferences(
     short_term_monitor: bool | None = None,
     compute_ltm: bool | None = None,
     energy_monitor: bool | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Enable/disable PCM data collection for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_uuid is the UUID of that resource. Only the flags you set are
     changed. Turning on aggregation implicitly enables long-term monitoring
     on the HMC. Long-term + aggregation are required before
-    processed/aggregated metrics become available.
+    processed/aggregated metrics become available. Returns the updated
+    preferences dict (``{}`` if the HMC returns no body).
+
+    Raises:
+        ValueError: if no preference flags are supplied.
     """
     flags: dict[str, bool] = {}
     if long_term_monitor is not None:
@@ -61,10 +65,9 @@ def hmc_set_pcm_preferences(
     if energy_monitor is not None:
         flags["EnergyMonitorEnabled"] = energy_monitor
     if not flags:
-        return "No preference flags supplied; nothing to change."
+        raise ValueError("No preference flags supplied; nothing to change.")
 
-    with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
-    return f"Updated PCM preferences on {category} {resource_uuid}: {flags}"
+    return with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
 
 
 @mcp.tool(annotations=_READ_ONLY)

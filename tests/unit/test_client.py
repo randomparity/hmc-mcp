@@ -530,9 +530,13 @@ async def test_set_pcm_preferences(mock_hmc):
         return_value=httpx.Response(200, text=PCM_PREFS_XML)
     )
     async with HMCClient(make_config()) as hmc:
-        await hmc.set_pcm_preferences("ManagedSystem", "sys-uuid", LongTermMonitorEnabled=True)
+        prefs = await hmc.set_pcm_preferences(
+            "ManagedSystem", "sys-uuid", LongTermMonitorEnabled=True
+        )
     body = route.calls.last.request.content.decode()
     assert "LongTermMonitorEnabled" in body and ">true<" in body
+    assert prefs["LongTermMonitorEnabled"] is True
+    assert prefs["AggregationEnabled"] is False
 
 
 @pytest.mark.asyncio
