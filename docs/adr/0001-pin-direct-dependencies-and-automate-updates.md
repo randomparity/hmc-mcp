@@ -10,7 +10,8 @@ The project declares runtime and development dependencies with open-ended lower 
 allows a range of build-backend releases, does not commit uv's resolution, and has no
 automated dependency-update configuration. A fresh install can therefore resolve a
 different transitive graph without a repository change. Issue #26 asks the repository to
-lock dependency inputs and enable Dependabot.
+lock dependency inputs and enable Dependabot. The repository's supplied GitHub Actions
+standards require Dependabot update groups and seven-day cooldowns.
 
 ## Decision
 
@@ -30,6 +31,9 @@ requests.
 - Direct and transitive upgrades become explicit diffs and run through repository CI.
 - Security updates remain eligible immediately because Dependabot cooldowns apply only to
   version updates.
+- An incompatible release can hold a grouped routine update until that release is excluded
+  or corrected; this coupling is accepted to keep the manifest and one complete resolution
+  reviewable together and to follow the repository update-group standard.
 - Direct pins require routine update PRs; a stale Dependabot queue can leave the project on
   older releases.
 - Consumers install the pinned direct versions because this repository is an application,
@@ -44,6 +48,10 @@ requests.
 - **Use compatible-release or upper-bounded ranges plus `uv.lock`.** This is friendlier for
   reusable libraries but still permits an installer that ignores `uv.lock` to select a
   different release. The project is operated as an application and CLI.
+- **Open individual updates immediately.** This minimizes coupling and delay, but creates
+  separate manifest/lockfile review streams and conflicts with the supplied repository
+  standard requiring grouped updates and seven-day cooldowns. Security updates are not
+  subject to the configured cooldown.
 - **Reference Git tags or commit SHAs.** The dependencies are registry packages, not
   repository-source dependencies. Converting them to Git sources would bypass normal wheel
   distribution and index metadata without improving the committed uv resolution.
