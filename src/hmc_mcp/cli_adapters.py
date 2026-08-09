@@ -10,7 +10,7 @@ from .cli_app import (
     _client,
     _output,
     _print_json,
-    _resolve_uuid,
+    _resolve_partition_uuid,
     _run,
     adapters_app,
     console,
@@ -31,7 +31,7 @@ def adapters_list(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, lpar)
+            uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None, None
             return uuid, await hmc.list_child("LogicalPartition", uuid, adapter_type)
@@ -58,7 +58,7 @@ def adapters_add_network(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, lpar)
+            uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None, None
             if not yes and not typer.confirm(f"Add network adapter (VLAN {vlan}) to '{lpar}' ({uuid})?"):
@@ -80,7 +80,7 @@ def adapters_add_vscsi(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, lpar)
+            uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None, None
             if not yes and not typer.confirm(f"Add vSCSI adapter to '{lpar}' ({uuid}) via VIOS {vios_id}?"):
@@ -102,7 +102,7 @@ def adapters_add_vfc(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, lpar)
+            uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None, None
             if not yes and not typer.confirm(f"Add vFC adapter to '{lpar}' ({uuid}) via VIOS {vios_id}?"):
@@ -123,7 +123,7 @@ def adapters_delete(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, lpar)
+            uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None
             if not yes and not typer.confirm(f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"):

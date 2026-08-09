@@ -4,7 +4,7 @@ Holds the root :class:`typer.Typer` (``app``), every sub-command group
 (``systems_app``, ``lpars_app``, ...), the global option state
 (``GlobalOpts`` / ``GLOBALS``), the shared output / run helpers used by the
 command bodies, the ``serve`` command, and the cross-domain UUID helpers
-(``_is_uuid`` / ``_resolve_uuid``).
+(``_is_uuid`` / ``_resolve_partition_uuid``).
 
 The per-domain command modules (``cli_systems``, ``cli_lpars``, ...) import
 the group and helpers they need from here and register their commands via
@@ -267,7 +267,13 @@ def _is_uuid(value: str) -> bool:
 
 
 
-async def _resolve_uuid(hmc, name_or_uuid: str) -> str | None:
+async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
+    """Resolve an LPAR name or UUID to its UUID.
+
+    Partition-scoped: names are looked up via ``find_partition_by_name`` only.
+    Returns None when *name_or_uuid* is neither a UUID nor a known partition
+    name — callers decide how to report the miss.
+    """
     if _is_uuid(name_or_uuid):
         return name_or_uuid
     found = await hmc.find_partition_by_name(name_or_uuid)

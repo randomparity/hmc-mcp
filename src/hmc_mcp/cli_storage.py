@@ -12,7 +12,7 @@ from .cli_app import (
     _first_field,
     _output,
     _print_json,
-    _resolve_uuid,
+    _resolve_partition_uuid,
     _run,
     _with_client,
     console,
@@ -98,7 +98,7 @@ def storage_map(
 
     async def _go():
         async with _client() as hmc:
-            lpar_uuid = await _resolve_uuid(hmc, lpar)
+            lpar_uuid = await _resolve_partition_uuid(hmc, lpar)
             if lpar_uuid is None:
                 return None, None
             if not yes and not typer.confirm(

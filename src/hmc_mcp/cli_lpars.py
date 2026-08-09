@@ -12,7 +12,7 @@ from .cli_app import (
     _is_uuid,
     _output,
     _print_json,
-    _resolve_uuid,
+    _resolve_partition_uuid,
     _run,
     _ssh_config,
     _with_client,
@@ -87,7 +87,7 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None
             return await hmc.get_quick_property("LogicalPartition", uuid, "PartitionState")
@@ -126,7 +126,7 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None, None
             if not yes:
@@ -220,7 +220,7 @@ def lpars_remote_restart(
 def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool = False) -> None:
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None, None
             if not yes:
@@ -343,7 +343,7 @@ def lpars_modify(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None, None
             if not yes:
@@ -385,7 +385,7 @@ def lpars_delete(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None
             if not yes:
