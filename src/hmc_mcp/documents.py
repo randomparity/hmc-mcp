@@ -45,13 +45,15 @@ class LparResources:
     (may be fractional, e.g. 0.5) and ``vcpus`` are virtual processor counts;
     with ``dedicated=True`` the ``procs`` are whole CPU counts. A ``None``
     field means "not specified": the HMC supplies a default on create and
-    leaves the value unchanged on modify / DLPAR.
+    leaves the value unchanged on modify / DLPAR. ``dedicated`` and ``uncapped``
+    are also ``None``-able so a modify can change processor counts without
+    silently flipping the sharing mode.
     """
 
     min_memory: int | None = None
     desired_memory: int | None = None
     max_memory: int | None = None
-    dedicated: bool = False
+    dedicated: bool | None = None
     min_procs: float | None = None
     desired_procs: float | None = None
     max_procs: float | None = None
@@ -59,7 +61,7 @@ class LparResources:
     desired_vcpus: int | None = None
     max_vcpus: int | None = None
     sharing_mode: str | None = None
-    uncapped: bool = True
+    uncapped: bool | None = None
 
 
 def _memory_config(
@@ -79,7 +81,7 @@ def _memory_config(
 
 
 def _processor_config(
-    dedicated: bool,
+    dedicated: bool | None,
     min_procs: float | None,
     desired_procs: float | None,
     max_procs: float | None,
@@ -87,26 +89,28 @@ def _processor_config(
     desired_vcpus: int | None,
     max_vcpus: int | None,
     sharing_mode: str | None,
-    uncapped: bool,
+    uncapped: bool | None,
 ) -> str:
     """Build PartitionProcessorConfiguration.
 
     dedicated=True  -> DedicatedProcessorConfiguration (whole CPUs).
     dedicated=False -> SharedProcessorConfiguration (processing units) plus
                        virtual processor min/desired/max.
+    dedicated=None  -> the sharing mode is left unchanged: the processor
+                       values are still emitted but HasDedicatedProcessors is
+                       omitted so the HMC applies them to the current mode.
     For shared partitions, procs are processing units (may be fractional,
-    e.g. 0.5); vcpus are the virtual processor counts (ints).
+    e.g. 0.5); vcpus are the virtual processor counts (ints). uncapped=None
+    likewise leaves SharingMode / UncappedWeight unchanged.
     """
-    have_dedicated = dedicated and any(v is not None for v in (min_procs, desired_procs, max_procs))
-    have_shared = (not dedicated) and any(
-        v is not None for v in (min_procs, desired_procs, max_procs, min_vcpus, desired_vcpus, max_vcpus)
-    )
-    if not (have_dedicated or have_shared):
+    have_procs = any(v is not None for v in (min_procs, desired_procs, max_procs))
+    have_vcpus = any(v is not None for v in (min_vcpus, desired_vcpus, max_vcpus))
+    if not (have_procs or have_vcpus):
         return ""
 
     parts = ['  <PartitionProcessorConfiguration kb="CUD" kxe="false">', "    <Metadata><Atom/></Metadata>"]
 
-    if dedicated:
+    if dedicated is True:
         parts.append('    <DedicatedProcessorConfiguration kb="CUD" kxe="false">')
         parts.append("      <Metadata><Atom/></Metadata>")
         if desired_procs is not None:
@@ -120,7 +124,8 @@ def _processor_config(
         if sharing_mode:
             parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
     else:
-        parts.append('    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>')
+        if dedicated is False:
+            parts.append('    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>')
         parts.append('    <SharedProcessorConfiguration kb="CUD" kxe="false">')
         parts.append("      <Metadata><Atom/></Metadata>")
 
@@ -136,14 +141,14 @@ def _processor_config(
         _sp("DesiredVirtualProcessors", desired_vcpus)
         _sp("MaximumVirtualProcessors", max_vcpus)
         _sp("MinimumVirtualProcessors", min_vcpus)
-        if not uncapped:
+        if uncapped is False:
             parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
         parts.append("    </SharedProcessorConfiguration>")
-        if uncapped:
+        if uncapped is True:
             parts.append('    <SharingMode kb="CUD" kxe="false">uncapped</SharingMode>')
         elif sharing_mode:
             parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
-        else:
+        elif uncapped is False:
             parts.append('    <SharingMode kb="CUD" kxe="false">capped</SharingMode>')
 
     parts.append("  </PartitionProcessorConfiguration>")

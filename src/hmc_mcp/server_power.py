@@ -95,22 +95,22 @@ def hmc_modify_lpar(
     min_memory: int | None = None,
     desired_memory: int | None = None,
     max_memory: int | None = None,
-    dedicated: bool = False,
+    dedicated: bool | None = None,
     min_procs: float | None = None,
     desired_procs: float | None = None,
     max_procs: float | None = None,
     min_vcpus: int | None = None,
     desired_vcpus: int | None = None,
     max_vcpus: int | None = None,
-    uncapped: bool = True,
+    uncapped: bool | None = None,
 ) -> dict[str, Any] | None:
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
 
     Only the fields you pass are changed. Memory values are in MiB. For a
     running partition these are dynamic (DLPAR) operations and require an
     active RMC connection; otherwise the change applies on next activation.
-    Set dedicated=True to assign whole CPUs, False (default) for shared
-    processing units + virtual processors.
+    Set dedicated=True to assign whole CPUs, False for shared processing
+    units + virtual processors; omit it to leave the sharing mode unchanged.
     """
     xml = build_lpar_document(
         name=name,
@@ -141,15 +141,16 @@ def hmc_dlpar_proc(
     desired_vcpus: int | None = None,
     min_vcpus: int | None = None,
     max_vcpus: int | None = None,
-    dedicated: bool = False,
-    uncapped: bool = True,
+    dedicated: bool | None = None,
+    uncapped: bool | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
     Posts a minimal PartitionProcessorConfiguration document to the HMC.
     Only the fields you pass are changed. For shared partitions, procs are
     processing units (may be fractional, e.g. 0.5); vcpus are virtual
-    processor counts (ints). Set dedicated=True for whole-CPU assignment.
+    processor counts (ints). Set dedicated=True for whole-CPU assignment,
+    False for shared; omit it to leave the sharing mode unchanged.
 
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).

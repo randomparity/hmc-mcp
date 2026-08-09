@@ -310,14 +310,18 @@ def lpars_modify(
     min_memory: int | None = typer.Option(None, "--min-mem", help="Minimum memory (MiB)"),
     memory: int | None = typer.Option(None, "--mem", help="Desired memory (MiB)"),
     max_memory: int | None = typer.Option(None, "--max-mem", help="Maximum memory (MiB)"),
-    dedicated: bool = typer.Option(False, "--dedicated", help="Assign dedicated CPUs"),
+    dedicated: bool | None = typer.Option(
+        None, "--dedicated/--no-dedicated", help="Assign dedicated CPUs (default: leave unchanged)"
+    ),
     min_procs: float | None = typer.Option(None, "--min-procs"),
     procs: float | None = typer.Option(None, "--procs"),
     max_procs: float | None = typer.Option(None, "--max-procs"),
     min_vcpus: int | None = typer.Option(None, "--min-vcpus"),
     vcpus: int | None = typer.Option(None, "--vcpus"),
     max_vcpus: int | None = typer.Option(None, "--max-vcpus"),
-    capped: bool = typer.Option(False, "--capped", help="Cap shared CPU"),
+    capped: bool | None = typer.Option(
+        None, "--capped/--uncapped", help="Cap shared CPU (default: leave unchanged)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Change an LPAR's name and/or resource assignment (memory / CPU).
@@ -327,7 +331,8 @@ def lpars_modify(
     activation.
     """
     if all(v is None for v in (new_name, min_memory, memory, max_memory,
-                               min_procs, procs, max_procs, min_vcpus, vcpus, max_vcpus)):
+                               min_procs, procs, max_procs, min_vcpus, vcpus, max_vcpus,
+                               dedicated, capped)):
         err_console.print("[yellow]Nothing to change — pass at least one option[/yellow]")
         raise typer.Exit(code=2)
 
@@ -352,7 +357,7 @@ def lpars_modify(
                     min_vcpus=min_vcpus,
                     desired_vcpus=vcpus,
                     max_vcpus=max_vcpus,
-                    uncapped=not capped,
+                    uncapped=None if capped is None else not capped,
                 ),
             )
             return uuid, await hmc.modify_logical_partition(uuid, xml)

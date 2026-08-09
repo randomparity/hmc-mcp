@@ -34,6 +34,7 @@ def test_shared_processor_config():
             max_procs=2.0,
             desired_vcpus=1,
             max_vcpus=2,
+            dedicated=False,
             uncapped=True,
         ),
     )
@@ -42,6 +43,20 @@ def test_shared_processor_config():
     assert "DesiredProcessingUnits" in xml and "0.5" in xml
     assert "DesiredVirtualProcessors" in xml
     assert "uncapped" in xml
+
+
+def test_processor_config_mode_unchanged_when_unspecified():
+    """A proc modify without dedicated/uncapped must not flip the sharing mode."""
+    xml = build_lpar_document(
+        name="m",
+        resources=LparResources(desired_procs=0.5, desired_vcpus=1),
+    )
+    assert "SharedProcessorConfiguration" in xml
+    assert "DesiredProcessingUnits" in xml and "0.5" in xml
+    # Mode fields are omitted so the HMC keeps the current mode.
+    assert "HasDedicatedProcessors" not in xml
+    assert "SharingMode" not in xml
+    assert "UncappedWeight" not in xml
 
 
 def test_dedicated_processor_config():

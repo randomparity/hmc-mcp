@@ -268,6 +268,32 @@ def test_lpars_modify_with_no_options_exits_2(fake_hmc):
     assert fake_hmc.calls == []
 
 
+def test_lpars_modify_procs_only_keeps_sharing_mode(fake_hmc):
+    """A proc-only modify without --dedicated/--capped must not flip the mode."""
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--procs", "0.5", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    body = fake_hmc.calls[0][1][1]
+    assert "DesiredProcessingUnits" in body and ">0.5<" in body
+    assert "HasDedicatedProcessors" not in body
+    assert "SharingMode" not in body
+
+
+def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--procs", "2", "--dedicated", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    body = fake_hmc.calls[0][1][1]
+    assert "DedicatedProcessorConfiguration" in body
+    assert "HasDedicatedProcessors" in body and ">true<" in body
+
+
 def test_lpars_delete(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "delete", LPAR_UUID, "--yes"])
 
