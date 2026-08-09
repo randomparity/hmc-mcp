@@ -89,7 +89,7 @@ def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
+def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[dict[str, str]]:
     """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
@@ -113,7 +113,7 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> list[dict]:
+def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> list[dict[str, str]]:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
