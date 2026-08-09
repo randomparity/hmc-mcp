@@ -13,13 +13,13 @@ from .cli_app import (
     _ssh_config,
     console,
     err_console,
+    memory_pools_app,
 )
 
 from .ssh import list_memory_pools, remove_memory_pool
 
 
-
-
+@memory_pools_app.command("list")
 def memory_pools_list(
     system_name: str = typer.Argument(..., help="Managed system name"),
     as_json: bool = typer.Option(False, "--json"),
@@ -43,6 +43,7 @@ def memory_pools_list(
     console.print(table)
 
 
+@memory_pools_app.command("remove")
 def memory_pools_remove(
     system_name: str = typer.Argument(..., help="Managed system name"),
     pool_name: str = typer.Argument(..., help="Memory pool name"),
