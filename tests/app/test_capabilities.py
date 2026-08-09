@@ -97,6 +97,25 @@ def test_closed_vocab_enum_matches_runtime_constant():
     assert backup_type["default"] in _VALID_BACKUP_TYPES
 
 
+def test_repository_type_enum_matches_runtime_constant():
+    """The MCP enum for RepositorySource.type must not drift from the Literal.
+
+    The repository TypedDict's ``type`` field is annotated with the
+    RepositoryType Literal, which renders as an enum in the tool schema; the
+    jobs layer validates against _REQUIRED_KEYS keyed by that same set. This
+    pins the rendered schema to the runtime set so either side changing alone
+    is caught.
+    """
+    from hmc_mcp.jobs import _REPOSITORY_TYPES
+
+    by_name = _tools_by_name()
+
+    repo_type = by_name["hmc_update_hmc"].parameters["properties"]["repository"][
+        "properties"
+    ]["type"]
+    assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
+
+
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #

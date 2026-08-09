@@ -8,7 +8,7 @@ for status.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Required, TypedDict
+from typing import Literal, Required, TypedDict, get_args
 
 from .xmlutil import WEB_NS
 
@@ -231,6 +231,9 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
+RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
+
+
 class RepositorySource(TypedDict, total=False):
     """Software source for an update/upgrade job.
 
@@ -246,7 +249,7 @@ class RepositorySource(TypedDict, total=False):
         ibm_token   – IBM FixCentral account token
     """
 
-    type: Required[str]
+    type: Required[RepositoryType]
     host: str
     path: str
     user: str
@@ -259,9 +262,13 @@ class RepositorySource(TypedDict, total=False):
 
 _REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
 
+# The accepted repository types, derived from the RepositoryType Literal so the
+# annotation and the runtime enforcement cannot drift.
+_REPOSITORY_TYPES = frozenset(get_args(RepositoryType))
+
 # Required keys per repository type; a missing one fails fast with a clear
 # message instead of producing a job the HMC rejects at runtime.
-_REQUIRED_KEYS: dict[str, frozenset[str]] = {
+_REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
     "nfs": frozenset({"host", "path"}),
     "sftp": frozenset({"host", "path"}),
     "disk": frozenset(),
@@ -284,16 +291,17 @@ def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
             f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
         )
     repo_type = repository.get("type")
+    expected = ", ".join(sorted(_REPOSITORY_TYPES))
     if repo_type is None:
         raise ValueError(
-            "Repository dict is missing 'type'. "
-            "Expected one of: nfs, sftp, disk, ibmfixcentral."
+            "Repository dict is missing 'type'. Expected one of: "
+            f"{expected}."
         )
     required = _REQUIRED_KEYS.get(repo_type)
     if required is None:
         raise ValueError(
-            f"Unknown repository type {repo_type!r}. "
-            "Expected one of: nfs, sftp, disk, ibmfixcentral."
+            f"Unknown repository type {repo_type!r}. Expected one of: "
+            f"{expected}."
         )
     missing = required - set(repository)
     if missing:

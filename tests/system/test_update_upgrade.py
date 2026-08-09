@@ -7,6 +7,8 @@ from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import (
+    _REPOSITORY_TYPES,
+    _REQUIRED_KEYS,
     update_firmware_job,
     update_hmc_job,
     upgrade_hmc_job,
@@ -86,6 +88,15 @@ def test_repository_params_missing_required_key_rejected():
 def test_repository_params_disk_requires_nothing():
     xml = update_hmc_job({"type": "disk"})
     assert "Update" in xml
+
+
+def test_repository_types_cover_required_key_sets():
+    """Every RepositoryType must have a required-key set, and vice versa.
+
+    Pins the annotation (RepositoryType Literal) to the enforcement map
+    (_REQUIRED_KEYS) so adding a repository type is a single edit.
+    """
+    assert set(_REQUIRED_KEYS) == _REPOSITORY_TYPES
 
 
 # ---------------------------------------------------------------------- #
