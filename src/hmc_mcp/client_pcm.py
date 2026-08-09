@@ -106,7 +106,7 @@ class PcmMixin:
         Raises HMCError for any non-200 response, including 404. A 404 means
         the metrics document has aged out of PCM retention (processed metrics
         keep ~2h, aggregated longer); callers that treat expiry as 'no data'
-        catch HMCError and translate it (see hmc_get_processed_metrics).
+        catch HMCError and translate it (see hmc_processed_metrics).
         """
         url = link if link.startswith("http") else f"{self.config.base_url}{link}"
         resp = await self._http.get(url, headers={"Accept": "application/json"})

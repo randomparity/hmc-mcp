@@ -179,14 +179,16 @@ def test_hmc_config_ssh_timeout_default():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_run_hmc_command_missing_config_fails_actionably(monkeypatch):
+async def test_run_hmc_command_missing_config_fails_actionably():
     """Password auth without host/user raises the shared actionable error
-    instead of an obscure asyncssh error."""
-    for var in ("HMC_HOST", "HMC_USER", "HMC_PASSWORD"):
-        monkeypatch.delenv(var, raising=False)
+    instead of an obscure asyncssh error.
+
+    Uses _env_file=None so the local .env file (if present) does not supply
+    credentials and mask the missing-config condition under test.
+    """
     with patch("hmc_mcp.ssh.asyncssh.connect") as mock_connect:
         with pytest.raises(ValueError, match="Missing HMC configuration"):
-            await run_hmc_command(HMCConfig(), "lssyscfg -r sys")
+            await run_hmc_command(HMCConfig(_env_file=None), "lssyscfg -r sys")
     mock_connect.assert_not_called()
 
 
@@ -214,5 +216,10 @@ def test_validate_credentials_key_auth_skips_password():
 
 
 def test_validate_credentials_password_still_required_by_default():
+    """validate_credentials() raises when password is absent.
+
+    Uses _env_file=None so the local .env file (if present) does not supply
+    a password and mask the missing-password condition under test.
+    """
     with pytest.raises(ValueError, match="password"):
-        HMCConfig(host="h", user="u").validate_credentials()
+        HMCConfig(host="h", user="u", _env_file=None).validate_credentials()

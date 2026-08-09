@@ -121,7 +121,8 @@ CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 @pytest.mark.asyncio
-async def test_hmc_update_hmc(mock_hmc):
+async def test_hmc_hmc_update_update(mock_hmc):
+    """Client layer: Update job reaches ManagementConsole/do/Update."""
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
@@ -137,7 +138,8 @@ async def test_hmc_update_hmc(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_upgrade_hmc(mock_hmc):
+async def test_hmc_hmc_update_upgrade(mock_hmc):
+    """Client layer: Upgrade job reaches ManagementConsole/do/Upgrade."""
     route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
@@ -166,7 +168,8 @@ async def test_hmc_get_available_hmc_ptfs(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_update_vios(mock_hmc):
+async def test_hmc_vios_update_update(mock_hmc):
+    """Client layer: Update job reaches VirtualIOServer/do/Update."""
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
@@ -185,7 +188,8 @@ async def test_hmc_update_vios(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_upgrade_vios(mock_hmc):
+async def test_hmc_vios_update_upgrade(mock_hmc):
+    """Client layer: Upgrade job reaches VirtualIOServer/do/Upgrade."""
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
