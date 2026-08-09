@@ -7,6 +7,8 @@ for status.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from .xmlutil import WEB_NS
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -221,7 +223,7 @@ def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def _repository_params(repository: dict) -> dict[str, str]:
+def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
     """Convert a repository dict to JobParameter key/value pairs.
 
     Recognised keys (all optional):
@@ -240,7 +242,7 @@ def _repository_params(repository: dict) -> dict[str, str]:
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
-def hmc_update_job(repository: dict) -> str:
+def hmc_update_job(repository: Mapping[str, str | None]) -> str:
     """Build a JobRequest XML for an HMC software update (Install PTFs).
 
     target: ManagementConsole/{uuid}/do/Update
@@ -248,7 +250,7 @@ def hmc_update_job(repository: dict) -> str:
     return build_job_request("Update", "ManagementConsole", _repository_params(repository))
 
 
-def hmc_upgrade_job(repository: dict) -> str:
+def hmc_upgrade_job(repository: Mapping[str, str | None]) -> str:
     """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
 
     target: ManagementConsole/{uuid}/do/Upgrade
@@ -256,7 +258,7 @@ def hmc_upgrade_job(repository: dict) -> str:
     return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
 
 
-def vios_update_job(repository: dict) -> str:
+def vios_update_job(repository: Mapping[str, str | None]) -> str:
     """Build a JobRequest XML for a VIOS update.
 
     target: VirtualIOServer/{uuid}/do/Update
@@ -264,7 +266,7 @@ def vios_update_job(repository: dict) -> str:
     return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
 
 
-def vios_upgrade_job(repository: dict) -> str:
+def vios_upgrade_job(repository: Mapping[str, str | None]) -> str:
     """Build a JobRequest XML for a VIOS upgrade.
 
     target: VirtualIOServer/{uuid}/do/Upgrade
@@ -272,7 +274,7 @@ def vios_upgrade_job(repository: dict) -> str:
     return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
 
 
-def firmware_update_job(repository: dict) -> str:
+def firmware_update_job(repository: Mapping[str, str | None]) -> str:
     """Build a JobRequest XML for a managed system firmware update.
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware
