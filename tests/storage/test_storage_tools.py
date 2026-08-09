@@ -367,3 +367,55 @@ def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
     assert "<ParameterName kb=\"ROR\" kxe=\"false\">LogicalUnitUDID</ParameterName>" in body
     assert "<ParameterValue kb=\"CUR\" kxe=\"false\">udid-1234</ParameterValue>" in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+# ---------------------------------------------------------------------- #
+# wait=True path: create/delete LU blocks until job reaches terminal state
+# ---------------------------------------------------------------------- #
+
+JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    """hmc_create_logical_unit(wait=True) submits then polls until COMPLETED."""
+    _hmc_env(monkeypatch)
+    submit_route = mock_hmc.put(
+        f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_create_logical_unit(
+        CLUSTER_UUID, "lu_data", 100, wait=True, timeout_seconds=60, poll_interval=0
+    )
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    """hmc_delete_logical_unit(wait=True) submits then polls until COMPLETED."""
+    _hmc_env(monkeypatch)
+    submit_route = mock_hmc.put(
+        f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_delete_logical_unit(
+        CLUSTER_UUID, "udid-1234", wait=True, timeout_seconds=60, poll_interval=0
+    )
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"

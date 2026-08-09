@@ -343,6 +343,21 @@ def test_update_firmware_submits_job(monkeypatch, mock_hmc):
     assert "repo.example.com" in body
 
 
+def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    """hmc_hmc_update(wait=True) submits the job then polls until COMPLETED."""
+    _hmc_env(monkeypatch)
+    submit_route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_hmc_update(MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=0)
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
 def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
     """hmc_get_available_hmc_ptfs GETs the SoftwareUpdate group."""
     _hmc_env(monkeypatch)

@@ -8,10 +8,12 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
+    _run,
     mcp,
     with_client,
 )
 
+from .common import client_from_env
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -245,6 +247,18 @@ def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
     return with_client(lambda hmc: hmc.list_shared_storage_pools())
 
 
+async def _lu_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a logical-unit job; optionally wait for terminal state."""
+    async with client_from_env() as hmc:
+        job = await submit_fn(hmc)
+        if not wait or job is None:
+            return job
+        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+        if not job_uuid:
+            return job
+        return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+
+
 @mcp.tool
 def hmc_create_logical_unit(
     cluster_uuid: str,
@@ -253,6 +267,9 @@ def hmc_create_logical_unit(
     lu_type: str = "THIN",
     device_type: str = "VirtualIO_Disk",
     cloned_from: str | None = None,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Create a Logical Unit (file-backed disk) in a Cluster/SSP.
 
@@ -261,23 +278,35 @@ def hmc_create_logical_unit(
     or THICK; device_type is VirtualIO_Disk or VirtualIO_Image. cloned_from is
     an optional source LU UDID to clone. Find cluster_uuid with
     hmc_list_clusters.
-    """
 
-    return with_client(
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _lu_op(
         lambda hmc: hmc.create_logical_unit(
             cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_logical_unit(cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
+def hmc_delete_logical_unit(
+    cluster_uuid: str,
+    lu_udid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
     """Delete a Logical Unit from a Cluster/SSP by its UDID.
 
     Submits a DeleteLogicalUnit job and returns it — poll hmc_get_job for
     status (an asynchronous delete, unlike the immediate delete tools).
-    """
 
-    return with_client(lambda hmc: hmc.delete_logical_unit(cluster_uuid, lu_udid))
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _lu_op(
+        lambda hmc: hmc.delete_logical_unit(cluster_uuid, lu_udid),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 

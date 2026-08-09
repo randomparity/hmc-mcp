@@ -83,3 +83,38 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert "TargetUuid" in body and "sys-uuid" in body
     assert "K_X_API_SESSION_MEMENTO" in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+# ---------------------------------------------------------------------- #
+# wait=True path: deploy blocks until job reaches terminal state
+# ---------------------------------------------------------------------- #
+
+JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    """hmc_deploy_partition_template(wait=True) submits then polls until COMPLETED."""
+    _hmc_env(monkeypatch)
+    submit_route = mock_hmc.put(
+        "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_deploy_partition_template(
+        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
+    )
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
