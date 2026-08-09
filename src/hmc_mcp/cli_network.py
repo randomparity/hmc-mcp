@@ -9,7 +9,6 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _client,
     _first_field,
     _output,
     _print_json,
@@ -110,14 +109,9 @@ def network_delete(
     if not yes and not typer.confirm(f"Delete virtual network {uuid} from {system}?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            await hmc.delete_virtual_network(system, uuid)
-            return uuid
+    _with_client(lambda hmc: hmc.delete_virtual_network(system, uuid))
 
-    deleted = _run(_go)
-
-    console.print(f"[green]Deleted virtual network {deleted}[/green]")
+    console.print(f"[green]Deleted virtual network {uuid}[/green]")
 
 
 @network_app.command("list-bridges")
@@ -140,10 +134,7 @@ def network_list_fc_ports(
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
-    async def _go():
-        return await list_fc_ports(_ssh_config(), system, lpar_name)
-
-    ports = _run(_go)
+    ports = _run(lambda: list_fc_ports(_ssh_config(), system, lpar_name))
 
     _output(ports, as_json, None, "No FC ports found")
 
@@ -156,10 +147,7 @@ def network_list_sea_adapters(
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
-    async def _go():
-        return await list_sea_adapters(_ssh_config(), system, lpar_name)
-
-    adapters = _run(_go)
+    adapters = _run(lambda: list_sea_adapters(_ssh_config(), system, lpar_name))
 
     _output(adapters, as_json, None, "No SEA adapters found")
 

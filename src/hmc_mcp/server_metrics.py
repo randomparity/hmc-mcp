@@ -153,13 +153,11 @@ def _metrics_links(
     end_ts: str | None,
     no_of_samples: int | None,
 ) -> list[dict[str, str]]:
-    async def _go():
-        async with client_from_env() as hmc:
-            return await _metric_links_method(hmc, kind)(
-                category, uuid, start_ts, end_ts, no_of_samples
-            )
-
-    return _run(_go())
+    return with_client(
+        lambda hmc: _metric_links_method(hmc, kind)(
+            category, uuid, start_ts, end_ts, no_of_samples
+        )
+    )
 
 
 def _metrics_fetch(

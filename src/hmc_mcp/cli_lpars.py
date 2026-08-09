@@ -62,13 +62,11 @@ def lpars_show(
 ) -> None:
     """Show one LPAR, looked up by name (exact) or by UUID."""
 
-    async def _go():
-        async with _client() as hmc:
-            if _is_uuid(name_or_uuid):
-                return await hmc.get_logical_partition(name_or_uuid)
-            return await hmc.find_partition_by_name(name_or_uuid)
-
-    lpar = _run(_go)
+    lpar = _with_client(
+        lambda hmc: hmc.get_logical_partition(name_or_uuid)
+        if _is_uuid(name_or_uuid)
+        else hmc.find_partition_by_name(name_or_uuid)
+    )
 
     if lpar is None:
         err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")

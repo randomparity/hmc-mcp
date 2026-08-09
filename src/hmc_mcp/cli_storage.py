@@ -163,11 +163,7 @@ def storage_delete_media_repo(
     if not yes and not typer.confirm(f"Delete media repository on VG {vg} (VIOS {vios})?"):
         raise typer.Abort()
 
-    async def _go():
-        async with _client() as hmc:
-            return await hmc.delete_media_repository(vios, vg)
-
-    _run(_go)
+    _with_client(lambda hmc: hmc.delete_media_repository(vios, vg))
 
     console.print(f"[green]Deleted media repository on {vg}[/green]")
 

@@ -54,14 +54,9 @@ def metrics_set_prefs(
         err_console.print("[yellow]No flags supplied; nothing to change.[/yellow]")
         raise typer.Exit(code=2)
 
-    async def _go():
-        async with _client() as hmc:
-            await hmc.set_pcm_preferences(category, uuid, **flags)
-            return f"Updated {category} {uuid}: {flags}"
+    _with_client(lambda hmc: hmc.set_pcm_preferences(category, uuid, **flags))
 
-    msg = _run(_go)
-
-    console.print(f"[green]{msg}[/green]")
+    console.print(f"[green]Updated {category} {uuid}: {flags}[/green]")
 
 
 @metrics_app.command("show")
