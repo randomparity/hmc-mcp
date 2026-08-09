@@ -134,3 +134,15 @@ def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
     """Get the status/result of an HMC job by UUID."""
 
     return with_client(lambda hmc: hmc.get_job(job_uuid))
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    """List recent HMC jobs (most recent first, up to *limit* entries).
+
+    Returns a list of parsed job dicts with at minimum JobID and Status.
+    Useful for auditing recent HMC activity — power operations, firmware
+    updates, migrations, etc.
+    """
+    jobs = with_client(lambda hmc: hmc.list_uom("Job"))
+    return jobs[:limit]

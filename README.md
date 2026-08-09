@@ -94,6 +94,8 @@ hmc-mcp adapters add-vscsi mylpar --vios-id 1 --vios-slot 5
 hmc-mcp adapters add-vfc mylpar --vios-id 1 --vios-slot 6
 hmc-mcp adapters delete mylpar --type ClientNetworkAdapter --uuid <adapter-uuid>
 hmc-mcp vios list
+hmc-mcp jobs list                    # recent jobs (default 20)
+hmc-mcp jobs list -n 5               # last 5 jobs
 hmc-mcp jobs show <job-uuid>
 hmc-mcp raw get /rest/api/uom/VirtualSwitch   # escape hatch, prints XML
 ```
@@ -130,6 +132,7 @@ Exposed tools:
 | `hmc_vios`            | Virtual I/O Servers, or storage-detail mappings for one |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
+| `hmc_recent_jobs`     | Recent HMC jobs list (limit=20) |
 
 **Mutating / lifecycle**
 

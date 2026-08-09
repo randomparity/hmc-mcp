@@ -24,6 +24,7 @@ from hmc_mcp.server import (
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
+    hmc_recent_jobs,
     hmc_run_command,
     hmc_update_firmware,
     hmc_vios_update,
@@ -350,3 +351,67 @@ def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
     result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+# ---------------------------------------------------------------------- #
+# hmc_recent_jobs (job list)
+# ---------------------------------------------------------------------- #
+
+JOB_FEED_2 = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:job-uuid-001</id>
+    <title>Job</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <JobID>job-uuid-001</JobID>
+        <Status>COMPLETED</Status>
+      </Job>
+    </content>
+  </entry>
+  <entry>
+    <id>urn:uuid:job-uuid-002</id>
+    <title>Job</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <JobID>job-uuid-002</JobID>
+        <Status>RUNNING</Status>
+      </Job>
+    </content>
+  </entry>
+</feed>
+"""
+
+
+def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
+    """hmc_recent_jobs returns a list of parsed job dicts from the feed."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(200, text=JOB_FEED_2)
+    )
+    result = hmc_recent_jobs()
+    assert isinstance(result, list)
+    assert len(result) == 2
+    job_ids = {j["Resource"]["JobID"] for j in result}
+    assert job_ids == {"job-uuid-001", "job-uuid-002"}
+
+
+def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
+    """hmc_recent_jobs(limit=1) returns only the first 1 entry."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(200, text=JOB_FEED_2)
+    )
+    result = hmc_recent_jobs(limit=1)
+    assert len(result) == 1
+    assert result[0]["Resource"]["JobID"] == "job-uuid-001"
+
+
+def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
+    """hmc_recent_jobs returns an empty list when the HMC has no jobs."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
+    result = hmc_recent_jobs()
+    assert result == []

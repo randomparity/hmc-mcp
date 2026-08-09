@@ -45,6 +45,7 @@ from .server_system import (
     hmc_get_job as hmc_get_job,
     hmc_list_resources as hmc_list_resources,
     hmc_lpars as hmc_lpars,
+    hmc_recent_jobs as hmc_recent_jobs,
     hmc_run_command as hmc_run_command,
     hmc_systems as hmc_systems,
     hmc_vios as hmc_vios,
