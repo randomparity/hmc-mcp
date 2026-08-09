@@ -136,6 +136,7 @@ Exposed tools:
 | `hmc_capacity_report` | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`  | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_find_system`     | Find a managed system by SystemName (exact match) |
+| `hmc_wait_for_job`    | Poll a job until COMPLETED / FAILED / EXCEPTION (or timeout) |
 
 **Mutating / lifecycle**
 

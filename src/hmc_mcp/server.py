@@ -52,6 +52,7 @@ from .server_system import (
     hmc_run_command as hmc_run_command,
     hmc_systems as hmc_systems,
     hmc_vios as hmc_vios,
+    hmc_wait_for_job as hmc_wait_for_job,
 )
 from .server_power import (
     hmc_create_lpar as hmc_create_lpar,

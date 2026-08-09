@@ -239,3 +239,20 @@ def hmc_find_system(name: str) -> dict[str, Any] | None:
     name is known to the HMC.
     """
     return with_client(lambda hmc: hmc.find_system_by_name(name))
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_wait_for_job(
+    job_uuid: str,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Poll an HMC job until it reaches a terminal state (COMPLETED / FAILED / EXCEPTION).
+
+    Returns the final job entry. If *timeout_seconds* elapses before a
+    terminal state is reached, returns the last-seen entry regardless of
+    status — check the Status field to distinguish timeout from completion.
+    """
+    return with_client(
+        lambda hmc: hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+    )
