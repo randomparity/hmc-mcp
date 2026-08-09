@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
@@ -139,7 +139,7 @@ def hmc_get_aggregated_metrics(
 def _metrics_links(
     category: str,
     uuid: str,
-    kind: str,
+    kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
@@ -159,7 +159,7 @@ def _metrics_links(
 def _metrics_fetch(
     category: str,
     uuid: str,
-    kind: str,
+    kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
