@@ -21,10 +21,14 @@ typecheck:
 # scan every tracked file against the reviewed fixture baseline
 secrets:
     git ls-files -z | xargs -0 uv run detect-secrets-hook \
-        --baseline .secrets.baseline --no-verify
+        --baseline .secrets.baseline --no-verify --
+
+# audit GitHub Actions without depending on mutable remote state
+workflow-security:
+    uv run zizmor -qq --no-online-audits .github/workflows/
 
 # local and hosted static-analysis gate
-static: lint typecheck secrets
+static: lint typecheck secrets workflow-security
 
 # run the full pytest suite
 test:
