@@ -17,18 +17,24 @@ GitHub Actions standards require Dependabot update groups and seven-day cooldown
 ## Decision
 
 Pin every direct runtime, development, and build dependency to one registry release with
-`==`. Regenerate and continue committing the uv-managed universal `uv.lock` from those
-declarations. Configure Dependabot's `uv` ecosystem at the repository root to check weekly,
-group all version updates, and wait seven days after release before proposing them.
+`==`. Runtime and development pins use their existing locked releases; the build backend,
+which is outside uv's project lock, uses current stable uv-build 0.12.3 to match the current
+uv tool. Regenerate and continue committing the uv-managed universal `uv.lock` from the
+project and development declarations. Configure Dependabot's `uv` ecosystem at the
+repository root to check weekly, group all version updates, and wait seven days after
+release before proposing them.
 
 The manifest remains the reviewable declaration of direct dependencies; `uv.lock` records
-the exact transitive resolution. Dependabot changes both together in reviewable pull
-requests.
+the exact project and development resolution. Dependabot updates those declarations with
+the lock in reviewable pull requests. A build-backend-only update is manifest-only because
+uv excludes the backend from the project lock.
 
 ## Consequences
 
 - A checkout resolves the same dependency graph until a reviewed repository change updates
   it.
+- `uv lock --check` does not validate the build backend; its exact manifest pin and the
+  functional build/verification path cover that separate boundary.
 - Direct and transitive upgrades become explicit diffs that require the ordered local
   `uv lock --check` and `just verify` proof plus human review before merge.
 - Security updates remain eligible immediately because Dependabot cooldowns apply only to
