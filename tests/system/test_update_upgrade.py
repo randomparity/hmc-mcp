@@ -66,6 +66,12 @@ def test_repository_params_unknown_key_rejected():
         hmc_update_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
 
 
+def test_repository_params_missing_type_rejected():
+    """A repository dict without 'type' must fail fast, not build a job."""
+    with pytest.raises(ValueError, match="missing 'type'"):
+        hmc_update_job({"host": "repo.example.com", "path": "/images"})
+
+
 def test_repository_params_unknown_type_rejected():
     with pytest.raises(ValueError, match="Unknown repository type"):
         hmc_update_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})

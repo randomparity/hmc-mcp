@@ -8,7 +8,7 @@ for status.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import Required, TypedDict
 
 from .xmlutil import WEB_NS
 
@@ -239,7 +239,7 @@ class RepositorySource(TypedDict, total=False):
         ibm_token   – IBM FixCentral account token
     """
 
-    type: str
+    type: Required[str]
     host: str
     path: str
     user: str
@@ -265,9 +265,10 @@ _REQUIRED_KEYS: dict[str, frozenset[str]] = {
 def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
     """Convert a repository dict to JobParameter key/value pairs.
 
-    Unknown keys are rejected and required keys are checked per repository
-    type, so a typo like ``{'type': 'nfs', 'hst': '...'}`` fails here with an
-    actionable message instead of producing a job the HMC rejects at runtime.
+    Unknown keys are rejected, the repository type must be present, and
+    required keys are checked per repository type, so a typo like
+    ``{'type': 'nfs', 'hst': '...'}`` fails here with an actionable message
+    instead of producing a job the HMC rejects at runtime.
     """
     unknown = set(repository) - _REPOSITORY_KEYS
     if unknown:
@@ -276,19 +277,23 @@ def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
             f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
         )
     repo_type = repository.get("type")
-    if repo_type is not None:
-        required = _REQUIRED_KEYS.get(repo_type)
-        if required is None:
-            raise ValueError(
-                f"Unknown repository type {repo_type!r}. "
-                "Expected one of: nfs, sftp, disk, ibmfixcentral."
-            )
-        missing = required - set(repository)
-        if missing:
-            raise ValueError(
-                f"Repository type {repo_type!r} requires key(s): "
-                f"{', '.join(sorted(missing))}."
-            )
+    if repo_type is None:
+        raise ValueError(
+            "Repository dict is missing 'type'. "
+            "Expected one of: nfs, sftp, disk, ibmfixcentral."
+        )
+    required = _REQUIRED_KEYS.get(repo_type)
+    if required is None:
+        raise ValueError(
+            f"Unknown repository type {repo_type!r}. "
+            "Expected one of: nfs, sftp, disk, ibmfixcentral."
+        )
+    missing = required - set(repository)
+    if missing:
+        raise ValueError(
+            f"Repository type {repo_type!r} requires key(s): "
+            f"{', '.join(sorted(missing))}."
+        )
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
