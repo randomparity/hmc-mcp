@@ -146,6 +146,7 @@ Exposed tools:
 
 | Tool                  | Description |
 |-----------------------|-------------|
+| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
 | `hmc_modify_lpar`     | Change an LPAR's name / memory / CPU (DLPAR when running) |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |

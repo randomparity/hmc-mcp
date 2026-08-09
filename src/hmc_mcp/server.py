@@ -166,3 +166,6 @@ from .server_composite import (
     hmc_lpar_summary as hmc_lpar_summary,
     hmc_system_summary as hmc_system_summary,
 )
+from .server_provision import (
+    hmc_provision_lpar as hmc_provision_lpar,
+)
