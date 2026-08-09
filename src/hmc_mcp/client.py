@@ -79,8 +79,21 @@ def _find_text(xml_text: str, context: str, *names: str) -> str | None:
     except DET.ParseError as exc:
         raise HMCError(f"Failed to parse {context} response") from exc
 
-MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
-MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+
+def _metric_links(xml_text: str, context: str) -> list[dict[str, str]]:
+    """metric_links that tags XML failures with the HMC call that returned it."""
+    try:
+        return metric_links(xml_text)
+    except DET.ParseError as exc:
+        raise HMCError(f"Failed to parse {context} response") from exc
+
+
+def _pcm_preferences(xml_text: str, context: str) -> dict[str, Any]:
+    """pcm_preferences_to_dict that tags XML failures with the HMC call that returned it."""
+    try:
+        return pcm_preferences_to_dict(xml_text)
+    except DET.ParseError as exc:
+        raise HMCError(f"Failed to parse {context} response") from exc
 
 
 class HMCError(Exception):
@@ -677,8 +690,9 @@ class HMCClient:
     async def get_pcm_preferences(self, category: str, uuid: str) -> dict[str, Any]:
         """Get PCM preferences for a resource (e.g. ManagedSystem)."""
 
-        xml = await self._get(f"/rest/api/pcm/{category}/{uuid}/preferences")
-        return pcm_preferences_to_dict(xml) if xml else {}
+        path = f"/rest/api/pcm/{category}/{uuid}/preferences"
+        xml = await self._get(path)
+        return _pcm_preferences(xml, path) if xml else {}
 
     async def set_pcm_preferences(self, category: str, uuid: str, **flags: bool) -> None:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
@@ -701,7 +715,7 @@ class HMCClient:
         """GET a PCM metrics Atom feed and return its JSON links."""
 
         xml = await self._get(path)
-        return metric_links(xml) if xml else []
+        return _metric_links(xml, path) if xml else []
 
     async def get_processed_metrics(
         self,

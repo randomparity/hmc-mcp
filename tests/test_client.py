@@ -583,3 +583,20 @@ async def test_parse_failure_names_failing_call(mock_hmc):
         with pytest.raises(HMCError) as exc_info:
             await hmc.list_managed_systems()
     assert "Failed to parse /rest/api/uom/ManagedSystem response" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_pcm_parse_failure_names_failing_call(mock_hmc):
+    """A 200 with malformed PCM preferences XML surfaces as HMCError."""
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/sys-uuid/preferences").mock(
+        return_value=httpx.Response(
+            200, text="<ManagementConsolePcmPreference><unclosed>"
+        )
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.get_pcm_preferences("ManagedSystem", "sys-uuid")
+    assert (
+        "Failed to parse /rest/api/pcm/ManagedSystem/sys-uuid/preferences response"
+        in str(exc_info.value)
+    )
