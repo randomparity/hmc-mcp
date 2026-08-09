@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import functools
+from typing import Any, Callable, TypeVar
 
 from defusedxml import ElementTree as DET
 
@@ -10,34 +11,29 @@ from .errors import HMCError
 from .pcm import metric_links, pcm_preferences_to_dict
 from .xmlutil import find_text, parse_feed
 
-
-def _parse_feed(xml_text: str, context: str) -> list[dict[str, Any]]:
-    """parse_feed that tags XML failures with the HMC call that returned it."""
-    try:
-        return parse_feed(xml_text)
-    except DET.ParseError as exc:
-        raise HMCError(f"Failed to parse {context} response") from exc
+_T = TypeVar("_T")
 
 
-def _find_text(xml_text: str, context: str, *names: str) -> str | None:
-    """find_text that tags XML failures with the HMC call that returned it."""
-    try:
-        return find_text(xml_text, *names)
-    except DET.ParseError as exc:
-        raise HMCError(f"Failed to parse {context} response") from exc
+def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
+    """Wrap an XML parse callable so a ParseError becomes an HMCError.
+
+    The wrapper takes the same arguments as *fn* with a *context* string
+    inserted second; on a parse failure it raises ``HMCError(f"Failed to
+    parse {context} response")`` so the error names the HMC call that
+    returned the malformed XML.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(xml_text: str, context: str, *args: Any) -> _T:
+        try:
+            return fn(xml_text, *args)
+        except DET.ParseError as exc:
+            raise HMCError(f"Failed to parse {context} response") from exc
+
+    return wrapper
 
 
-def _metric_links(xml_text: str, context: str) -> list[dict[str, str]]:
-    """metric_links that tags XML failures with the HMC call that returned it."""
-    try:
-        return metric_links(xml_text)
-    except DET.ParseError as exc:
-        raise HMCError(f"Failed to parse {context} response") from exc
-
-
-def _pcm_preferences(xml_text: str, context: str) -> dict[str, Any]:
-    """pcm_preferences_to_dict that tags XML failures with the HMC call that returned it."""
-    try:
-        return pcm_preferences_to_dict(xml_text)
-    except DET.ParseError as exc:
-        raise HMCError(f"Failed to parse {context} response") from exc
+_parse_feed = _tag_parse_errors(parse_feed)
+_find_text = _tag_parse_errors(find_text)
+_metric_links = _tag_parse_errors(metric_links)
+_pcm_preferences = _tag_parse_errors(pcm_preferences_to_dict)
