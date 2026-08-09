@@ -73,7 +73,8 @@ The `justfile` will expose:
   `pyproject.toml`.
 - `secrets`: run detect-secrets across every tracked file using the committed
   baseline and offline verification behavior.
-- `static`: compose lint, type checking, and secret scanning.
+- `workflow-security`: run pinned zizmor without mutable online audit inputs.
+- `static`: compose lint, type checking, secret scanning, and workflow audit.
 - `verify`: compose static checks, the existing tests and smoke check, and the
   existing CLI-loading assertions.
 
@@ -83,10 +84,11 @@ dev dependency group, so local and hosted runs resolve the same versions.
 
 ## Tool configuration
 
-The dev group pins Ruff 0.15.22, ty 0.0.62, prek 0.4.10, and detect-secrets
-1.5.0, the current stable releases verified from their official PyPI project
-pages on 2026-08-09. Ruff lint uses its default rule set because the tree is
-already clean. Ruff formatting is not enabled by this issue.
+The dev group pins Ruff 0.15.22, ty 0.0.62, prek 0.4.10, detect-secrets 1.5.0,
+and zizmor 1.29.0, the current stable releases verified from their official
+PyPI or GitHub release pages on 2026-08-09. Ruff lint uses its default rule set
+because the tree is already clean. Ruff formatting is not enabled by this
+issue.
 
 ty's source include list names `src/hmc_mcp/config.py`,
 `src/hmc_mcp/documents.py`, and `src/hmc_mcp/errors.py`. No diagnostic category
@@ -104,7 +106,9 @@ The scan never excludes `tests/`. Both the hook and `just secrets` use the same
 baseline and disable network verification for deterministic/offline runs. A
 baseline diff is a security-sensitive bypass: each added or changed entry must
 be matched to the corresponding intentional fixture during review, and merely
-regenerating the baseline never establishes that a finding is safe.
+regenerating the baseline never establishes that a finding is safe. The scanner
+places `--` before tracked filenames so option-shaped paths remain inputs rather
+than changing detector configuration.
 
 ## Hook behavior
 
@@ -114,7 +118,8 @@ download a second tool copy. Every hook sets `pass_filenames: false`: Ruff runs
 over the repository, ty runs over its reviewed include boundary, and secret
 detection scans every tracked file against the shared baseline. The broader
 hook boundary is intentional because these tools are fast and it makes hook,
-manual, and hosted results identical.
+manual, and hosted results identical. A fourth hook runs the pinned offline
+workflow-security audit.
 
 `just setup` installs the pre-commit hook type. `prek run --all-files` is an
 additional verification arm to prove the committed hook configuration works;
@@ -127,7 +132,8 @@ the canonical `just verify` recipes remain the hosted gate.
 same ref, checks out without persisted credentials, installs uv and just with
 immutable action SHAs and version comments, and pins just 1.58.0. The action
 versions are current releases verified from their official GitHub repositories
-on 2026-08-09.
+on 2026-08-09. setup-uv installs the exact uv 0.12.3 runtime, and the job has a
+20-minute timeout.
 
 The job runs `just setup`, `just verify`, and `uv run prek run --all-files`.
 The last arm catches a malformed or drifting hook configuration even if the

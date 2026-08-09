@@ -21,10 +21,10 @@ secret scanning needs a reviewed baseline rather than a test exclusion.
 ## Decision
 
 The `justfile` is the single command graph. It exposes focused lint,
-type-check, secret-scan, test, and smoke recipes; `verify` composes all of
-them. The `setup` recipe performs a locked `uv sync` and installs hooks with
-the project-pinned `prek` executable. Local hooks and GitHub Actions invoke
-these recipes instead of copying their commands.
+type-check, secret-scan, workflow-security, test, and smoke recipes; `verify`
+composes all of them. The `setup` recipe performs a locked `uv sync` and
+installs hooks with the project-pinned `prek` executable. Local hooks and
+GitHub Actions invoke these recipes instead of copying their commands.
 
 Ruff initially gates lint only. ty initially gates the already-clean typed
 contract modules (`config.py`, `documents.py`, and `errors.py`) through an
@@ -32,10 +32,13 @@ explicit include list, retaining ty's normal strict diagnostics for those
 files. The boundary is visible configuration, not blanket rule suppression.
 Secret detection scans tracked content against a committed baseline that
 records existing intentional fixtures and the scanner command's self-reference;
-tests and the justfile remain in the scan.
+tests and the justfile remain in the scan. An option terminator keeps tracked
+filenames from changing scanner configuration. The workflow-security recipe
+runs project-pinned zizmor without mutable online audit inputs.
 
 GitHub Actions uses read-only repository permissions, immutable action SHAs,
-locked dependency synchronization, and the same `just verify` entry point.
+exact uv and just runtime versions, a bounded job, locked dependency
+synchronization, and the same `just verify` entry point.
 
 ## Consequences
 
@@ -59,8 +62,9 @@ This is a manual ratchet: CI cannot prove coverage growth while existing modules
 remain outside the boundary, so reviewers still own that check.
 
 The CI workflow depends on pinned checkout, uv, and just-setup actions plus
-locked Python development dependencies. Dependabot's existing uv configuration
-maintains the Python pins; action SHA updates remain ordinary reviewed changes.
+locked Python development dependencies, including the workflow auditor.
+Dependabot's existing uv configuration maintains the Python pins; action SHA
+updates remain ordinary reviewed changes.
 
 ## Considered & rejected
 
