@@ -11,6 +11,7 @@ from ._app import (
     mcp,
     with_client,
 )
+from .common import client_from_env
 
 from .ssh import run_hmc_cli
 
@@ -146,3 +147,87 @@ def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
     """
     jobs = with_client(lambda hmc: hmc.list_uom("Job"))
     return jobs[:limit]
+
+
+def _system_capacity(system: dict[str, Any], lpars: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute capacity stats for one managed system from its entry + LPAR list."""
+    res = system.get("Resource") or {}
+    total_mem = int(res.get("AssignableSystemMemory") or 0)
+    total_procs = float(res.get("ConfigurableSystemProcessorUnits") or 0.0)
+
+    assigned_mem = 0
+    assigned_procs = 0.0
+    running = 0
+    for lpar in lpars:
+        lr = lpar.get("Resource") or {}
+        assigned_mem += int(lr.get("DesiredMemory") or 0)
+        try:
+            assigned_procs += float(lr.get("DesiredProcessingUnits") or 0.0)
+        except (TypeError, ValueError):
+            pass
+        if lr.get("PartitionState") == "running":
+            running += 1
+
+    return {
+        "system_uuid": system.get("UUID"),
+        "system_name": res.get("SystemName", ""),
+        "total_memory_mb": total_mem,
+        "assigned_memory_mb": assigned_mem,
+        "free_memory_mb": total_mem - assigned_mem,
+        "total_proc_units": total_procs,
+        "assigned_proc_units": round(assigned_procs, 4),
+        "free_proc_units": round(total_procs - assigned_procs, 4),
+        "total_lpars": len(lpars),
+        "running_lpars": running,
+    }
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_capacity_report() -> list[dict[str, Any]]:
+    """Capacity report: for each managed system, total/assigned/free memory (MiB)
+    and processor units, plus running and total LPAR counts.
+
+    Derived by listing all managed systems then fetching the LPAR list for each
+    system to compute assigned resources. Free = total − assigned.
+    """
+    async def _go() -> list[dict[str, Any]]:
+        async with client_from_env() as hmc:
+            systems = await hmc.list_managed_systems()
+            result = []
+            for system in systems:
+                uuid = system.get("UUID")
+                lpars = await hmc.list_logical_partitions(uuid) if uuid else []
+                result.append(_system_capacity(system, lpars))
+            return result
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_find_placement(
+    desired_memory_mb: int,
+    desired_proc_units: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Find managed systems that can host a new LPAR of the given size.
+
+    Returns systems with at least *desired_memory_mb* MiB free and at least
+    *desired_proc_units* free processor units, sorted by free memory descending.
+    Each result has the same fields as :func:`hmc_capacity_report`.
+    """
+    async def _go() -> list[dict[str, Any]]:
+        async with client_from_env() as hmc:
+            systems = await hmc.list_managed_systems()
+            candidates = []
+            for system in systems:
+                uuid = system.get("UUID")
+                lpars = await hmc.list_logical_partitions(uuid) if uuid else []
+                cap = _system_capacity(system, lpars)
+                if (
+                    cap["free_memory_mb"] >= desired_memory_mb
+                    and cap["free_proc_units"] >= desired_proc_units
+                ):
+                    candidates.append(cap)
+            candidates.sort(key=lambda c: c["free_memory_mb"], reverse=True)
+            return candidates
+
+    return _run(_go)

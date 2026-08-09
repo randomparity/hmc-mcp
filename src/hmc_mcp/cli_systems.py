@@ -86,3 +86,67 @@ def systems_power_off(
     _print_json(job)
 
 
+@systems_app.command("capacity")
+def systems_capacity(
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Capacity report: memory/CPU totals and free resources per managed system."""
+    from .server_system import hmc_capacity_report
+
+    report = hmc_capacity_report()
+    if as_json:
+        _print_json(report)
+        return
+    if not report:
+        err_console.print("[yellow]No managed systems found[/yellow]")
+        return
+    table = Table(title="System Capacity")
+    for col in (
+        "System", "UUID", "Total Mem (MiB)", "Assigned Mem (MiB)", "Free Mem (MiB)",
+        "Total Procs", "Assigned Procs", "Free Procs", "Running LPARs", "Total LPARs",
+    ):
+        table.add_column(col)
+    for r in report:
+        table.add_row(
+            r.get("system_name") or "-",
+            r.get("system_uuid") or "-",
+            str(r.get("total_memory_mb", 0)),
+            str(r.get("assigned_memory_mb", 0)),
+            str(r.get("free_memory_mb", 0)),
+            str(r.get("total_proc_units", 0.0)),
+            str(r.get("assigned_proc_units", 0.0)),
+            str(r.get("free_proc_units", 0.0)),
+            str(r.get("running_lpars", 0)),
+            str(r.get("total_lpars", 0)),
+        )
+    _output(report, as_json=False, table=table, empty_msg="No managed systems found")
+
+
+@systems_app.command("find-placement")
+def systems_find_placement(
+    memory: int = typer.Argument(..., help="Desired memory in MiB"),
+    procs: float = typer.Option(0.5, "--procs", help="Desired processor units"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Find managed systems with enough free resources for a new LPAR."""
+    from .server_system import hmc_find_placement
+
+    candidates = hmc_find_placement(desired_memory_mb=memory, desired_proc_units=procs)
+    if as_json:
+        _print_json(candidates)
+        return
+    if not candidates:
+        err_console.print("[yellow]No systems with sufficient free capacity[/yellow]")
+        return
+    table = Table(title="Placement Candidates (sorted by free memory)")
+    for col in ("System", "UUID", "Free Mem (MiB)", "Free Procs", "Running LPARs"):
+        table.add_column(col)
+    for r in candidates:
+        table.add_row(
+            r.get("system_name") or "-",
+            r.get("system_uuid") or "-",
+            str(r.get("free_memory_mb", 0)),
+            str(r.get("free_proc_units", 0.0)),
+            str(r.get("running_lpars", 0)),
+        )
+    _output(candidates, as_json=False, table=table, empty_msg="No placement candidates")
