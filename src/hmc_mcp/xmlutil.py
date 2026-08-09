@@ -25,6 +25,7 @@ element names.
 from __future__ import annotations
 
 from typing import Any
+from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree as DET
 
@@ -45,7 +46,7 @@ def localname(tag: str) -> str:
     return tag
 
 
-def element_to_dict(el) -> Any:
+def element_to_dict(el: Element) -> dict[str, Any] | str:
     """Recursively convert an ElementTree element to plain Python data.
 
     - Leaf elements become their text (or their attribute dict if they only
@@ -53,6 +54,9 @@ def element_to_dict(el) -> Any:
     - Repeated child element names are collected into a list.
     - Attributes are preserved under an "@attrs" key when an element also has
       children or meaningful text.
+
+    Returns a dict for elements with children or attributes, otherwise the
+    element's text as a string.
     """
     children = list(el)
     attrs = {
