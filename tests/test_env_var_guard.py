@@ -78,10 +78,10 @@ def test_guard_fails_on_incomplete_doc(tmp_path: Path) -> None:
 
 
 def test_guard_ignores_vars_only_in_prose(tmp_path: Path) -> None:
-    """Guard fails if a var appears only in prose, not the Reference table."""
+    """Guard fails if a var appears only in prose outside the Reference table."""
     doc = tmp_path / "environment-variables.md"
     # All vars in the Reference table except HMC_TIMEOUT, which appears only
-    # in the Notes prose section.
+    # in the Notes prose section (outside ## Reference).
     vars_minus_timeout = EXPECTED_ENV_VARS - {"HMC_TIMEOUT"}
     body = _make_doc(vars_minus_timeout)
     body += "\nSee also HMC_TIMEOUT for more details.\n"  # prose mention only
@@ -94,6 +94,47 @@ def test_guard_ignores_vars_only_in_prose(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "HMC_TIMEOUT" in result.stdout + result.stderr
+
+
+def test_guard_ignores_vars_in_prose_inside_reference_section(tmp_path: Path) -> None:
+    """Guard fails if a var appears only in a prose line inside ## Reference."""
+    doc = tmp_path / "environment-variables.md"
+    # All vars in the Reference table except HMC_TIMEOUT, which appears as a
+    # prose comment line (not a | row) inside the ## Reference section.
+    vars_minus_timeout = EXPECTED_ENV_VARS - {"HMC_TIMEOUT"}
+    rows = "\n".join(f"| `{v}` | string | - | desc |" for v in vars_minus_timeout)
+    body = (
+        "# Environment Variables\n\n"
+        "## Reference\n\n"
+        "Note: HMC_TIMEOUT was added in v0.2.\n\n"  # prose line inside the section
+        f"{rows}\n\n"
+        "## Notes\n\nsome prose\n"
+    )
+    doc.write_text(body)
+
+    result = subprocess.run(
+        [sys.executable, str(GUARD), "--doc", str(doc)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "HMC_TIMEOUT" in result.stdout + result.stderr
+
+
+def test_guard_fails_when_reference_section_missing(tmp_path: Path) -> None:
+    """Guard exits 1 when the doc has no ## Reference section."""
+    doc = tmp_path / "environment-variables.md"
+    # Write a doc with all vars but no ## Reference heading.
+    rows = "\n".join(f"| `{v}` | string | - | desc |" for v in EXPECTED_ENV_VARS)
+    doc.write_text(f"# Environment Variables\n\n{rows}\n")
+
+    result = subprocess.run(
+        [sys.executable, str(GUARD), "--doc", str(doc)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "Reference" in result.stdout + result.stderr
 
 
 def test_guard_uses_default_doc_path_when_no_arg(monkeypatch: pytest.MonkeyPatch) -> None:

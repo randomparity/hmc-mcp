@@ -38,7 +38,7 @@ def _env_var_names() -> list[str]:
     Raises ``RuntimeError`` if any field carries an alias override so the
     guard fails loudly rather than checking the wrong name.
     """
-    prefix = HMCConfig.model_config.get("env_prefix", "")
+    prefix = HMCConfig.model_config.get("env_prefix") or ""
     names: list[str] = []
     for field_name, field_info in HMCConfig.model_fields.items():
         if getattr(field_info, "alias", None) or getattr(field_info, "validation_alias", None):
@@ -68,22 +68,27 @@ def main(argv: list[str] | None = None) -> int:
 
     doc_text = doc_path.read_text()
     env_vars = _env_var_names()
-    # Restrict the search to the ## Reference table section so that a var
-    # mentioned only in prose (e.g. in Notes or a historical comment) does
-    # not satisfy the check — only a documented table entry counts.
-    # Fall back to the full doc if the section marker is absent.
+    # Restrict the search to table rows inside the ## Reference section so
+    # that a var mentioned only in prose (including prose inside the section)
+    # does not satisfy the check — only a documented table row counts.
     ref_match = re.search(r"^## Reference\b", doc_text, re.MULTILINE)
-    if ref_match:
-        # Slice from ## Reference to the next ## heading (or end of file).
-        section_start = ref_match.start()
-        next_section = re.search(r"^## ", doc_text[ref_match.end():], re.MULTILINE)
-        section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
-        search_text = doc_text[section_start:section_end]
-    else:
-        search_text = doc_text
+    if not ref_match:
+        print(
+            'ERROR: doc has no "## Reference" section; cannot verify documentation coverage.',
+            file=sys.stderr,
+        )
+        return 1
+    # Slice from ## Reference to the next ## heading (or end of file).
+    section_start = ref_match.start()
+    next_section = re.search(r"^## ", doc_text[ref_match.end():], re.MULTILINE)
+    section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
+    ref_section = doc_text[section_start:section_end]
+    # Filter to Markdown table rows (lines starting with |) to exclude
+    # prose, comments, or example blocks within the section.
+    table_text = "\n".join(ln for ln in ref_section.splitlines() if ln.strip().startswith("|"))
     # Use word-boundary regex matching so that "HMC_SSH_TIME" is not falsely
     # satisfied by the presence of "HMC_SSH_TIMEOUT".
-    missing = [v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", search_text)]
+    missing = [v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", table_text)]
 
     if missing:
         print(
