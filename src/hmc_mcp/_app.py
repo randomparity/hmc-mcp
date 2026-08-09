@@ -103,6 +103,7 @@ DESTRUCTIVE_TOOLS = frozenset({
     "hmc_remote_restart_lpar",
     "hmc_restore_vios",
     "hmc_restore_lpar_profiles",
+    "hmc_sync_lpar_profile",
 })
 
 

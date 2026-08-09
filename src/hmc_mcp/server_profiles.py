@@ -83,7 +83,7 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     return _run(_go())
 
 
-@mcp.tool
+@mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
     """Sync an LPAR's running configuration back to its current profile.
 
@@ -92,6 +92,9 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
 
     This operation saves the LPAR's current running configuration to its
     current named profile, overwriting the previous profile definition.
+
+    WARNING: Overwrites the current profile definition. Confirm the
+    system_uuid and lpar_uuid before calling.
 
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.

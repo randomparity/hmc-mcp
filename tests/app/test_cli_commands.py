@@ -108,6 +108,10 @@ class FakeHMC:
         self._record("create_virtual_disk", vios_uuid, vg_uuid, disk_name, capacity_mb)
         return self.disk
 
+    async def raw_post(self, path, body, content_type="application/xml"):
+        self._record("raw_post", path, body, content_type)
+        return "<ok/>"
+
 
 @pytest.fixture
 def fake_hmc(monkeypatch):
@@ -362,3 +366,34 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "enabled"
+
+
+# --------------------------------------------------------------------------- #
+# raw REST escape hatch
+# --------------------------------------------------------------------------- #
+
+
+def test_raw_post_requires_confirmation(fake_hmc):
+    """raw post is gated by the same --yes/confirm convention as other mutating commands."""
+    result = RUNNER.invoke(
+        cli.app,
+        ["raw", "post", "/rest/api/uom/LogicalPartition", "<lpar/>"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_raw_post_with_yes_sends_request(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["raw", "post", "/rest/api/uom/LogicalPartition", "<lpar/>", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    name, args, _ = fake_hmc.calls[0]
+    assert name == "raw_post"
+    assert args[0] == "/rest/api/uom/LogicalPartition"
+    assert args[1] == "<lpar/>"
