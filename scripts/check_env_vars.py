@@ -14,6 +14,7 @@ names when any are absent.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -30,9 +31,23 @@ from hmc_mcp.config import HMCConfig  # noqa: E402  (after sys.path tweak)
 
 
 def _env_var_names() -> list[str]:
-    """Return every HMC_* env var name declared in HMCConfig."""
+    """Return every HMC_* env var name declared in HMCConfig.
+
+    Assumes no field uses ``alias``, ``validation_alias``, or ``env`` kwargs
+    to override the default ``<prefix><FIELD_NAME>`` env var derivation.
+    Raises ``RuntimeError`` if any field carries an alias override so the
+    guard fails loudly rather than checking the wrong name.
+    """
     prefix = HMCConfig.model_config.get("env_prefix", "")
-    return [prefix + field_name.upper() for field_name in HMCConfig.model_fields]
+    names: list[str] = []
+    for field_name, field_info in HMCConfig.model_fields.items():
+        if getattr(field_info, "alias", None) or getattr(field_info, "validation_alias", None):
+            raise RuntimeError(
+                f"HMCConfig.{field_name} has an alias override; "
+                "update _env_var_names() to resolve the actual env var name."
+            )
+        names.append(prefix + field_name.upper())
+    return names
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,7 +68,22 @@ def main(argv: list[str] | None = None) -> int:
 
     doc_text = doc_path.read_text()
     env_vars = _env_var_names()
-    missing = [v for v in env_vars if v not in doc_text]
+    # Restrict the search to the ## Reference table section so that a var
+    # mentioned only in prose (e.g. in Notes or a historical comment) does
+    # not satisfy the check — only a documented table entry counts.
+    # Fall back to the full doc if the section marker is absent.
+    ref_match = re.search(r"^## Reference\b", doc_text, re.MULTILINE)
+    if ref_match:
+        # Slice from ## Reference to the next ## heading (or end of file).
+        section_start = ref_match.start()
+        next_section = re.search(r"^## ", doc_text[ref_match.end():], re.MULTILINE)
+        section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
+        search_text = doc_text[section_start:section_end]
+    else:
+        search_text = doc_text
+    # Use word-boundary regex matching so that "HMC_SSH_TIME" is not falsely
+    # satisfied by the presence of "HMC_SSH_TIMEOUT".
+    missing = [v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", search_text)]
 
     if missing:
         print(

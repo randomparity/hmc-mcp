@@ -14,25 +14,17 @@ from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
+from hmc_mcp.config import HMCConfig  # noqa: E402
+
 
 ROOT = Path(__file__).parents[1]
 GUARD = ROOT / "scripts" / "check_env_vars.py"
 DOC = ROOT / "docs" / "environment-variables.md"
 
-# The complete authoritative set of HMC_* env vars in HMCConfig.
-# This list must stay in sync with src/hmc_mcp/config.py.
-EXPECTED_ENV_VARS = {
-    "HMC_HOST",
-    "HMC_PORT",
-    "HMC_USER",
-    "HMC_PASSWORD",
-    "HMC_SSH_KEY_FILE",
-    "HMC_VERIFY_SSL",
-    "HMC_TIMEOUT",
-    "HMC_SSH_TIMEOUT",
-    "HMC_AUDIT_MEMENTO",
-    "HMC_SCHEMA_VERSION",
-}
+# Derived from the live HMCConfig — stays in sync automatically.
+_PREFIX = HMCConfig.model_config.get("env_prefix", "")
+EXPECTED_ENV_VARS = {_PREFIX + f.upper() for f in HMCConfig.model_fields}
 
 
 def test_guard_script_exists() -> None:
@@ -50,11 +42,16 @@ def test_env_var_doc_lists_all_expected_vars() -> None:
     assert not missing, f"Doc is missing env vars: {missing}"
 
 
+def _make_doc(vars_to_include: set[str]) -> str:
+    """Build a minimal env-var doc with a ## Reference section."""
+    rows = "\n".join(f"| `{v}` | string | - | desc |" for v in vars_to_include)
+    return f"# Environment Variables\n\n## Reference\n\n{rows}\n\n## Notes\n\nsome prose\n"
+
+
 def test_guard_passes_on_complete_doc(tmp_path: Path) -> None:
-    """Guard exits 0 when the doc contains all env var names."""
+    """Guard exits 0 when the Reference table contains all env var names."""
     doc = tmp_path / "environment-variables.md"
-    # Write a doc that mentions every expected var.
-    doc.write_text("\n".join(f"| `{v}` | x |" for v in EXPECTED_ENV_VARS))
+    doc.write_text(_make_doc(EXPECTED_ENV_VARS))
 
     result = subprocess.run(
         [sys.executable, str(GUARD), "--doc", str(doc)],
@@ -67,9 +64,28 @@ def test_guard_passes_on_complete_doc(tmp_path: Path) -> None:
 def test_guard_fails_on_incomplete_doc(tmp_path: Path) -> None:
     """Guard exits 1 and names the missing var when any var is absent."""
     doc = tmp_path / "environment-variables.md"
-    # Write a doc that mentions every var *except* HMC_TIMEOUT.
+    # Write a doc that includes every var *except* HMC_TIMEOUT.
     vars_minus_timeout = EXPECTED_ENV_VARS - {"HMC_TIMEOUT"}
-    doc.write_text("\n".join(f"| `{v}` | x |" for v in vars_minus_timeout))
+    doc.write_text(_make_doc(vars_minus_timeout))
+
+    result = subprocess.run(
+        [sys.executable, str(GUARD), "--doc", str(doc)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "HMC_TIMEOUT" in result.stdout + result.stderr
+
+
+def test_guard_ignores_vars_only_in_prose(tmp_path: Path) -> None:
+    """Guard fails if a var appears only in prose, not the Reference table."""
+    doc = tmp_path / "environment-variables.md"
+    # All vars in the Reference table except HMC_TIMEOUT, which appears only
+    # in the Notes prose section.
+    vars_minus_timeout = EXPECTED_ENV_VARS - {"HMC_TIMEOUT"}
+    body = _make_doc(vars_minus_timeout)
+    body += "\nSee also HMC_TIMEOUT for more details.\n"  # prose mention only
+    doc.write_text(body)
 
     result = subprocess.run(
         [sys.executable, str(GUARD), "--doc", str(doc)],
