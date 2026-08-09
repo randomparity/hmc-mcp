@@ -58,8 +58,9 @@ artifacts. Assert exact dev pins for Ruff, ty, prek, and detect-secrets; assert
 the exact ty include set and absence of `[tool.ty.rules]`; assert the six just
 recipe headers and that `verify` depends on `static test smoke`; assert all
 three local hooks call `just <focused-recipe>` with `pass_filenames: false`;
-and assert the baseline includes result entries for the seven known fixture
-paths without excluding `tests/`.
+and assert the baseline's complete result set contains exactly seven findings
+whose paths equal the reviewed fixture-path set, with no other result or
+excluded `tests/` path.
 
 - [ ] **Step 2: Run the focused tests and confirm the expected red state**
 
@@ -127,9 +128,11 @@ Run, bare and independently:
 ```bash
 uv run pytest -q tests/test_ci_pipeline.py --no-cov
 uv lock --check
+just setup
 just lint
 just typecheck
 just secrets
+just verify
 uv run prek run --all-files
 ```
 
@@ -217,36 +220,36 @@ Stage the workflow and updated test and commit:
 git commit -m "ci: run local quality gates on GitHub"
 ```
 
-### Task 3: Final local proof
+### Task 3: Remove the transient plan and run final local proof
 
 **Files:**
 
-- Modify only plan checkboxes in this file while executing; plans remain
-  transient and must not be included in the shipped PR diff.
+- Delete: `docs/superpowers/plans/2026-08-09-local-github-ci.md`
 
 **Interfaces:**
 
 - Consumes: all Task 1 and Task 2 gates.
 - Produces: a branch ready for adversarial review and shipping.
 
-- [ ] **Step 1: Inspect the complete branch diff**
+- [ ] **Step 1: Remove the tracked transient plan**
 
-Run `git diff --stat main...HEAD`, `git diff --check main...HEAD`, and read the
-full diff for scope, naming, action pins, baseline entries, and accidental
-credential disclosure.
-
-- [ ] **Step 2: Run the full guardrail set afresh**
-
-Run `uv lock --check`, `actionlint`, `zizmor .github/workflows/`,
-`just verify`, and `uv run prek run --all-files` as bare commands. Record exact
-pass/fail results for the review summary.
-
-- [ ] **Step 3: Remove the transient plan from the branch**
-
-Delete this plan with the platform trash command and commit its removal as:
+Move this tracked plan to trash, stage its deletion, and commit:
 
 ```bash
 git commit -m "docs: remove transient implementation plan"
 ```
 
-The spec and ADR remain as durable design artifacts.
+The spec and ADR remain as durable design artifacts. If the plan is unexpectedly
+untracked on resume, trash it without creating an empty commit.
+
+- [ ] **Step 2: Inspect the final branch diff**
+
+Run `git diff --stat main...HEAD`, `git diff --check main...HEAD`, and read the
+full diff for scope, naming, action pins, baseline entries, and accidental
+credential disclosure.
+
+- [ ] **Step 3: Run the full guardrail set against final HEAD**
+
+Run `uv lock --check`, `actionlint`, `zizmor .github/workflows/`,
+`just verify`, and `uv run prek run --all-files` as bare commands. Record exact
+pass/fail results for the review summary.
