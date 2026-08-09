@@ -18,7 +18,7 @@ from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_find_lpar,
     hmc_get_job,
-    hmc_list_available_hmc_ptfs,
+    hmc_get_available_hmc_ptfs,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
@@ -305,11 +305,11 @@ def test_update_firmware_submits_job(monkeypatch, mock_hmc):
 
 
 def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
-    """hmc_list_available_hmc_ptfs GETs the SoftwareUpdate group."""
+    """hmc_get_available_hmc_ptfs GETs the SoftwareUpdate group."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    result = hmc_list_available_hmc_ptfs(MC_UUID)
+    result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"

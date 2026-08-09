@@ -61,8 +61,8 @@ def hmc_upgrade_hmc(system_uuid: str, repository: RepositorySource) -> dict[str,
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
-    """List available PTFs (fixes) for the HMC software.
+def hmc_get_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
+    """Get available PTFs (fixes) for the HMC software.
 
     Issues a GET to the ManagementConsole resource with the SoftwareUpdate
     group, which returns available PTF information. system_uuid is the

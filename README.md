@@ -251,7 +251,7 @@ Exposed tools:
 | `hmc_create_password_policy`  | Create a password policy (max age, rules) |
 | `hmc_modify_password_policy`  | Modify a password policy (only supplied fields) |
 | `hmc_delete_password_policy`  | Delete a password policy (irreversible) |
-| `hmc_list_ldap_config`        | Get the current HMC LDAP server configuration |
+| `hmc_get_ldap_config`          | Get the current HMC LDAP server configuration |
 | `hmc_configure_ldap`          | Configure the HMC LDAP server integration |
 | `hmc_remove_ldap_config`      | Remove a component of the LDAP configuration |
 
@@ -261,7 +261,7 @@ Exposed tools:
 |------------------------------|-------------|
 | `hmc_update_hmc`             | Submit an HMC software update (PTF install) job |
 | `hmc_upgrade_hmc`            | Submit an HMC software upgrade (full version) job |
-| `hmc_list_available_hmc_ptfs`| List available PTFs for the HMC software |
+| `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_update_vios`            | Submit a VIOS software update job |
 | `hmc_upgrade_vios`           | Submit a VIOS software upgrade job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |

@@ -136,7 +136,7 @@ async def test_hmc_upgrade_hmc(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_list_available_hmc_ptfs(mock_hmc):
+async def test_hmc_get_available_hmc_ptfs(mock_hmc):
     mock_hmc.get(
         f"/rest/api/uom/ManagementConsole/{HMC_UUID}",
         params={"group": "SoftwareUpdate"},

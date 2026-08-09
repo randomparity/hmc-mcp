@@ -136,7 +136,7 @@ from .server_users import (
     hmc_delete_password_policy as hmc_delete_password_policy,
     hmc_delete_user as hmc_delete_user,
     hmc_get_user as hmc_get_user,
-    hmc_list_ldap_config as hmc_list_ldap_config,
+    hmc_get_ldap_config as hmc_get_ldap_config,
     hmc_list_password_policies as hmc_list_password_policies,
     hmc_list_users as hmc_list_users,
     hmc_modify_password_policy as hmc_modify_password_policy,
@@ -144,7 +144,7 @@ from .server_users import (
     hmc_remove_ldap_config as hmc_remove_ldap_config,
 )
 from .server_updates import (
-    hmc_list_available_hmc_ptfs as hmc_list_available_hmc_ptfs,
+    hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
     hmc_update_firmware as hmc_update_firmware,
     hmc_update_hmc as hmc_update_hmc,
     hmc_update_vios as hmc_update_vios,

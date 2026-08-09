@@ -219,7 +219,7 @@ def hmc_delete_password_policy(policy_name: str) -> str:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_ldap_config() -> dict[str, Any] | None:
+def hmc_get_ldap_config() -> dict[str, Any] | None:
     """Get the current HMC LDAP server configuration.
 
     Returns a single resource dict describing the configured LDAP server URL,
@@ -283,7 +283,7 @@ def hmc_remove_ldap_config(resource: str) -> str:
       'groupmemberattributes'   — remove group-member attribute settings
 
     Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
-    Use hmc_list_ldap_config to inspect the current state before calling.
+    Use hmc_get_ldap_config to inspect the current state before calling.
     Returns a confirmation string (immediate delete — no job to poll).
     """
 

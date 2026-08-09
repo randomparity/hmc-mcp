@@ -6,7 +6,7 @@ import pytest
 from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.server import (
     hmc_configure_ldap,
-    hmc_list_ldap_config,
+    hmc_get_ldap_config,
     hmc_remove_ldap_config,
 )
 from hmc_mcp.documents import build_ldap_config_document
@@ -186,25 +186,25 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
-def test_hmc_list_ldap_config_parses(monkeypatch, mock_hmc):
-    """hmc_list_ldap_config returns a single parsed resource dict."""
+def test_hmc_get_ldap_config_parses(monkeypatch, mock_hmc):
+    """hmc_get_ldap_config returns a single parsed resource dict."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
         return_value=httpx.Response(200, text=LDAP_CONFIG_FEED)
     )
-    result = hmc_list_ldap_config()
+    result = hmc_get_ldap_config()
     assert isinstance(result, dict)
     assert result["Resource"]["LdapServerUrl"] == "ldap://ldap.example.com"
     assert result["Resource"]["BaseDN"] == "dc=example,dc=com"
 
 
-def test_hmc_list_ldap_config_empty_returns_none(monkeypatch, mock_hmc):
-    """hmc_list_ldap_config returns None when no LDAP is configured."""
+def test_hmc_get_ldap_config_empty_returns_none(monkeypatch, mock_hmc):
+    """hmc_get_ldap_config returns None when no LDAP is configured."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcLdapServer").mock(
         return_value=httpx.Response(204)
     )
-    assert hmc_list_ldap_config() is None
+    assert hmc_get_ldap_config() is None
 
 
 def test_hmc_configure_ldap_returns_dict(monkeypatch, mock_hmc):
