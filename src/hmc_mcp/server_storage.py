@@ -61,7 +61,7 @@ def hmc_add_vscsi_adapter(
     """Add a Virtual SCSI client adapter to an LPAR, paired to a VIOS.
 
     vios_partition_id is the integer PartitionID of the serving VIOS (find it
-    with hmc_list_vios), and vios_slot is that VIOS's server-side virtual
+    with hmc_vios), and vios_slot is that VIOS's server-side virtual
     SCSI slot number that owns the backing storage. slot_number is the client
     adapter's virtual slot (auto-assigned if omitted). Storage backing devices
     (disks / logical volumes) are then mapped to this adapter on the VIOS.
@@ -118,7 +118,7 @@ def hmc_list_volume_groups(vios_uuid: str) -> list[dict[str, Any]]:
 
     Each Volume Group shows free space (MiB), the physical volumes backing it
     and the virtual disks already carved out. Find the VIOS UUID with
-    hmc_list_vios.
+    hmc_vios.
     """
 
     return with_client(lambda hmc: hmc.list_volume_groups(vios_uuid))

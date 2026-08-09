@@ -80,7 +80,7 @@ def hmc_update_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, A
 
     repository describes the update image source (same format as
     hmc_update_hmc). Submits an Update job to VirtualIOServer; poll
-    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_vios).
     """
 
     return with_client(
@@ -97,7 +97,7 @@ def hmc_upgrade_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, 
 
     repository describes the upgrade image source (same format as
     hmc_update_hmc). Submits an Upgrade job to VirtualIOServer; poll
-    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_vios).
     """
 
     return with_client(
@@ -115,7 +115,7 @@ def hmc_update_firmware(system_uuid: str, repository: RepositorySource) -> dict[
     repository describes the firmware image source (same format as
     hmc_update_hmc). Submits an UpdateFirmware job to ManagedSystem; poll
     hmc_get_job for status. system_uuid is the managed system UUID
-    (from hmc_list_systems).
+    (from hmc_systems).
     """
 
     return with_client(

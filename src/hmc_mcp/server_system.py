@@ -76,6 +76,8 @@ def hmc_lpars(
        (uses the cheap quick-property endpoint; equivalent to the former
        hmc_lpar_state tool).
     2. lpar_uuid                    →  dict | None  — full LPAR details.
+       When both lpar_uuid and name are supplied, lpar_uuid takes priority
+       and name is ignored.
     3. name                         →  dict | None  — find by PartitionName
        (exact match).
     4. system_uuid                  →  list[dict]   — all LPARs on that system.

@@ -236,6 +236,17 @@ def test_hmc_users_with_name_empty_returns_none(monkeypatch, mock_hmc):
     assert hmc_users(name="nobody") is None
 
 
+def test_hmc_users_name_ignores_user_type(monkeypatch, mock_hmc):
+    """hmc_users(name=..., user_type=...) uses the by-name path; user_type is silently ignored."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
+        return_value=httpx.Response(200, text=USER_ENTRY)
+    )
+    result = hmc_users(name="hscroot", user_type="local")
+    assert route.called
+    assert result["Resource"]["UserID"] == "hscroot"
+
+
 def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):
     """hmc_create_user returns the created resource dict."""
     _hmc_env(monkeypatch)

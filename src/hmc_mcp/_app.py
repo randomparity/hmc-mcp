@@ -130,7 +130,7 @@ async def _system_name_from_rest(hmc, system_uuid: str) -> str:
     if not entry or "SystemName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve system UUID {system_uuid!r} to a system name. "
-            "Use hmc_list_systems to find the system_uuid."
+            "Use hmc_systems to find the system_uuid."
         )
     return entry["Resource"]["SystemName"]
 
@@ -141,7 +141,7 @@ async def _lpar_name_from_rest(hmc, lpar_uuid: str) -> str:
     if not entry or "PartitionName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
-            "Use hmc_list_lpars to find the lpar_uuid."
+            "Use hmc_lpars to find the lpar_uuid."
         )
     return entry["Resource"]["PartitionName"]
 

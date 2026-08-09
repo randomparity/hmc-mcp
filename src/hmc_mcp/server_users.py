@@ -79,7 +79,7 @@ def hmc_modify_user(
     """Modify an existing HMC user account.
 
     Only the fields you supply are changed. enable=True re-enables a
-    disabled account; enable=False disables it. Use hmc_get_user to
+    disabled account; enable=False disables it. Use hmc_users(name=...) to
     confirm the current state before calling. Returns the updated user
     resource dict.
     """
@@ -98,7 +98,7 @@ def hmc_delete_user(name: str) -> str:
     """Delete an HMC user account by username.
 
     This permanently removes the account — it is irreversible. Confirm
-    the username with hmc_get_user before calling. Returns a confirmation
+    the username with hmc_users(name=...) before calling. Returns a confirmation
     string (immediate delete — no job to poll).
     """
 
