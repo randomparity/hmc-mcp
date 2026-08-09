@@ -29,7 +29,8 @@ requests.
 
 - A checkout resolves the same dependency graph until a reviewed repository change updates
   it.
-- Direct and transitive upgrades become explicit diffs and run through repository CI.
+- Direct and transitive upgrades become explicit diffs that require the ordered local
+  `uv lock --check` and `just verify` proof plus human review before merge.
 - Security updates remain eligible immediately because Dependabot cooldowns apply only to
   version updates.
 - An incompatible release can hold a grouped routine update until that release is excluded
