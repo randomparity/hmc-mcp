@@ -355,7 +355,7 @@ connects with a real FastMCP client and prints the tools:
 
 ```bash
 uv run python scripts/smoke_mcp.py
-# Connected. 12 tools exposed:
+# Connected. <N> tools exposed:
 #   - hmc_console_info
 #   - hmc_list_systems
 #   ...
