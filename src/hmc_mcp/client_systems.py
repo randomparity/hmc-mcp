@@ -30,6 +30,11 @@ class SystemsMixin:
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)
 
+    async def find_system_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find a managed system by its SystemName (exact match)."""
+        results = await self.search_uom("ManagedSystem", "SystemName", name)
+        return results[0] if results else None
+
     async def modify_managed_system(
         self, system_uuid: str, system_xml: str
     ) -> dict[str, Any] | None:

@@ -42,14 +42,21 @@ def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
 
 
 @systems_app.command("show")
-def systems_show(uuid: str = typer.Argument(..., help="Managed system UUID"),
-                 as_json: bool = typer.Option(False, "--json")) -> None:
-    """Show full details of one managed system."""
+def systems_show(
+    name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show full details of one managed system (accepts name or UUID)."""
+    from .common import is_uuid
 
-    system = _with_client(lambda hmc: hmc.get_managed_system(uuid))
+    system = _with_client(
+        lambda hmc: hmc.get_managed_system(name_or_uuid)
+        if is_uuid(name_or_uuid)
+        else hmc.find_system_by_name(name_or_uuid)
+    )
 
     if system is None:
-        err_console.print(f"[yellow]System {uuid} not found[/yellow]")
+        err_console.print(f"[yellow]System '{name_or_uuid}' not found[/yellow]")
         raise typer.Exit(code=1)
     _print_json(system)
 

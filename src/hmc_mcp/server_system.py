@@ -231,3 +231,11 @@ def hmc_find_placement(
             return candidates
 
     return _run(_go)
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_find_system(name: str) -> dict[str, Any] | None:
+    """Find a managed system by its SystemName (exact match).
+
+    Returns the full system dict if found, or None if no system with that
+    name is known to the HMC.
+    """
+    return with_client(lambda hmc: hmc.find_system_by_name(name))
