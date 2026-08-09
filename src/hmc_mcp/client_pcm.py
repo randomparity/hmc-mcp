@@ -18,21 +18,21 @@ class PcmMixin:
     # ------------------------------------------------------------------ #
     # Performance and Capacity Monitoring (PCM)
     # ------------------------------------------------------------------ #
-    async def get_pcm_preferences(self, category: str, uuid: str) -> dict[str, Any]:
+    async def get_pcm_preferences(self, category: str, resource_uuid: str) -> dict[str, Any]:
         """Get PCM preferences for a resource (e.g. ManagedSystem)."""
 
-        path = f"/rest/api/pcm/{category}/{uuid}/preferences"
+        path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
         xml = await self._get(path)
         return _pcm_preferences(xml, path) if xml else {}
 
-    async def set_pcm_preferences(self, category: str, uuid: str, **flags: bool) -> None:
+    async def set_pcm_preferences(self, category: str, resource_uuid: str, **flags: bool) -> None:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
         Only the flags you pass are changed; the HMC merges the rest.
         """
 
         xml = build_pcm_preferences_document(**flags)
-        await self._post_pcm(f"/rest/api/pcm/{category}/{uuid}/preferences", xml)
+        await self._post_pcm(f"/rest/api/pcm/{category}/{resource_uuid}/preferences", xml)
 
     async def _post_pcm(self, path: str, body: str) -> str:
         resp = await self._http.post(
@@ -51,37 +51,37 @@ class PcmMixin:
     async def get_processed_metric_links(
         self,
         category: str,
-        uuid: str,
+        resource_uuid: str,
         start_ts: str,
         end_ts: str | None = None,
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
-        return await self._metrics_links(category, uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
 
     async def get_aggregated_metric_links(
         self,
         category: str,
-        uuid: str,
+        resource_uuid: str,
         start_ts: str,
         end_ts: str | None = None,
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to AggregatedMetrics JSON (long-term rollup)."""
-        return await self._metrics_links(category, uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(category, resource_uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
 
     async def get_ltm_metric_links(
-        self, category: str, uuid: str, start_ts: str, end_ts: str | None = None
+        self, category: str, resource_uuid: str, start_ts: str, end_ts: str | None = None
     ) -> list[dict[str, str]]:
         """Links to raw Long Term Monitor metrics JSON."""
         return await self._metrics_links(
-            category, uuid, "RawMetrics/LongTermMonitor", start_ts, end_ts, None
+            category, resource_uuid, "RawMetrics/LongTermMonitor", start_ts, end_ts, None
         )
 
     async def _metrics_links(
         self,
         category: str,
-        uuid: str,
+        resource_uuid: str,
         kind: str,
         start_ts: str,
         end_ts: str | None,
@@ -93,7 +93,7 @@ class PcmMixin:
             query["EndTS"] = end_ts
         if no_of_samples:
             query["NoOfSamples"] = str(no_of_samples)
-        path = f"/rest/api/pcm/{category}/{uuid}/{kind}?{urlencode(query)}"
+        path = f"/rest/api/pcm/{category}/{resource_uuid}/{kind}?{urlencode(query)}"
         return await self.get_metrics_feed(path)
 
     async def fetch_json(self, link: str) -> Any:

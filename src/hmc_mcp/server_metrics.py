@@ -18,21 +18,23 @@ from .common import client_from_env
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_pcm_preferences(category: str, uuid: str) -> dict[str, Any]:
+def hmc_get_pcm_preferences(category: str, resource_uuid: str) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
-    category is e.g. 'ManagedSystem' or 'LogicalPartition'. Returns flags like
-    LongTermMonitorEnabled, AggregationEnabled, ShortTermMonitorEnabled,
-    ComputeLTMEnabled, EnergyMonitorEnabled.
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource (from hmc_list_systems or
+    hmc_list_lpars). Returns flags like LongTermMonitorEnabled,
+    AggregationEnabled, ShortTermMonitorEnabled, ComputeLTMEnabled,
+    EnergyMonitorEnabled.
     """
 
-    return with_client(lambda hmc: hmc.get_pcm_preferences(category, uuid))
+    return with_client(lambda hmc: hmc.get_pcm_preferences(category, resource_uuid))
 
 
 @mcp.tool
 def hmc_set_pcm_preferences(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     long_term_monitor: bool | None = None,
     aggregation: bool | None = None,
     short_term_monitor: bool | None = None,
@@ -41,9 +43,11 @@ def hmc_set_pcm_preferences(
 ) -> str:
     """Enable/disable PCM data collection for a resource.
 
-    Only the flags you set are changed. Turning on aggregation implicitly
-    enables long-term monitoring on the HMC. Long-term + aggregation are
-    required before processed/aggregated metrics become available.
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource. Only the flags you set are
+    changed. Turning on aggregation implicitly enables long-term monitoring
+    on the HMC. Long-term + aggregation are required before
+    processed/aggregated metrics become available.
     """
     flags: dict[str, bool] = {}
     if long_term_monitor is not None:
@@ -59,81 +63,85 @@ def hmc_set_pcm_preferences(
     if not flags:
         return "No preference flags supplied; nothing to change."
 
-    with_client(lambda hmc: hmc.set_pcm_preferences(category, uuid, **flags))
-    return f"Updated PCM preferences on {category} {uuid}: {flags}"
+    with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
+    return f"Updated PCM preferences on {category} {resource_uuid}: {flags}"
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_processed_metric_links(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
 ) -> list[dict[str, str]]:
     """List available processed PCM metrics JSON documents.
 
-    Processed metrics have 30s granularity and ~2h retention. Timestamps are
-    ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the
-    Atom feed links to the metric JSON documents. Pass one link's ``link``
-    value to hmc_fetch_json, or call hmc_get_processed_metrics to download
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource. Processed metrics have 30s
+    granularity and ~2h retention. Timestamps are ISO-8601 UTC
+    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the Atom feed links
+    to the metric JSON documents; call hmc_get_processed_metrics to download
     the most recent document directly.
     """
-    return _metrics_links(category, uuid, "processed", start_ts, end_ts, no_of_samples)
+    return _metrics_links(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_processed_metrics(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
 ) -> dict[str, Any]:
     """Download the most recent processed PCM metrics JSON document.
 
-    Same time-range arguments as hmc_get_processed_metric_links. Returns the
-    parsed JSON of the newest document, or ``{}`` when no metrics are
-    available in the requested range.
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource. Same time-range arguments as
+    hmc_get_processed_metric_links. Returns the parsed JSON of the newest
+    document, or ``{}`` when no metrics are available in the requested range.
     """
-    return _metrics_fetch(category, uuid, "processed", start_ts, end_ts, no_of_samples)
+    return _metrics_fetch(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_aggregated_metric_links(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
 ) -> list[dict[str, str]]:
     """List available aggregated PCM metrics JSON documents.
 
-    Aggregated metrics are the long-term rollup used for trend analysis.
-    Timestamps are ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
-    Returns the Atom feed links to the metric JSON documents. Pass one link's
-    ``link`` value to hmc_fetch_json, or call hmc_get_aggregated_metrics to
-    download the most recent document directly.
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource. Aggregated metrics are the
+    long-term rollup used for trend analysis. Timestamps are ISO-8601 UTC
+    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required. Returns the Atom feed links
+    to the metric JSON documents; call hmc_get_aggregated_metrics to download
+    the most recent document directly.
     """
-    return _metrics_links(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
+    return _metrics_links(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_aggregated_metrics(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
 ) -> dict[str, Any]:
     """Download the most recent aggregated PCM metrics JSON document.
 
-    Same time-range arguments as hmc_get_aggregated_metric_links. Requires
-    aggregation to be enabled in PCM preferences. Returns the parsed JSON of
-    the newest document, or ``{}`` when no metrics are available in the
-    requested range.
+    category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
+    resource_uuid is the UUID of that resource. Same time-range arguments as
+    hmc_get_aggregated_metric_links. Requires aggregation to be enabled in PCM
+    preferences. Returns the parsed JSON of the newest document, or ``{}``
+    when no metrics are available in the requested range.
     """
-    return _metrics_fetch(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
+    return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
 def _metric_links_method(hmc, kind: Literal["processed", "aggregated"]):
@@ -147,7 +155,7 @@ def _metric_links_method(hmc, kind: Literal["processed", "aggregated"]):
 
 def _metrics_links(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
@@ -155,14 +163,14 @@ def _metrics_links(
 ) -> list[dict[str, str]]:
     return with_client(
         lambda hmc: _metric_links_method(hmc, kind)(
-            category, uuid, start_ts, end_ts, no_of_samples
+            category, resource_uuid, start_ts, end_ts, no_of_samples
         )
     )
 
 
 def _metrics_fetch(
     category: str,
-    uuid: str,
+    resource_uuid: str,
     kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
@@ -171,7 +179,7 @@ def _metrics_fetch(
     async def _go():
         async with client_from_env() as hmc:
             links = await _metric_links_method(hmc, kind)(
-                category, uuid, start_ts, end_ts, no_of_samples
+                category, resource_uuid, start_ts, end_ts, no_of_samples
             )
             if not links:
                 return {}
@@ -186,4 +194,3 @@ def _metrics_fetch(
                 raise
 
     return _run(_go())
-

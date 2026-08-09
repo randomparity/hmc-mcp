@@ -22,11 +22,11 @@ from .cli_app import (
 @metrics_app.command("prefs")
 def metrics_prefs(
     category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
-    uuid: str = typer.Argument(..., help="Resource UUID"),
+    resource_uuid: str = typer.Argument(..., help="Resource UUID (type set by category)"),
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
 
-    prefs = _with_client(lambda hmc: hmc.get_pcm_preferences(category, uuid))
+    prefs = _with_client(lambda hmc: hmc.get_pcm_preferences(category, resource_uuid))
 
     _print_json(prefs)
 
@@ -34,7 +34,7 @@ def metrics_prefs(
 @metrics_app.command("set-prefs")
 def metrics_set_prefs(
     category: str = typer.Argument(..., help="e.g. ManagedSystem"),
-    uuid: str = typer.Argument(..., help="Resource UUID"),
+    resource_uuid: str = typer.Argument(..., help="Resource UUID (type set by category)"),
     ltm: bool | None = typer.Option(None, "--ltm/--no-ltm", help="Long-term monitoring"),
     aggregation: bool | None = typer.Option(None, "--aggregation/--no-aggregation"),
     stm: bool | None = typer.Option(None, "--stm/--no-stm", help="Short-term monitoring"),
@@ -54,15 +54,15 @@ def metrics_set_prefs(
         err_console.print("[yellow]No flags supplied; nothing to change.[/yellow]")
         raise typer.Exit(code=2)
 
-    _with_client(lambda hmc: hmc.set_pcm_preferences(category, uuid, **flags))
+    _with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
 
-    console.print(f"[green]Updated {category} {uuid}: {flags}[/green]")
+    console.print(f"[green]Updated {category} {resource_uuid}: {flags}[/green]")
 
 
 @metrics_app.command("show")
 def metrics_show(
     category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
-    uuid: str = typer.Argument(..., help="Resource UUID"),
+    resource_uuid: str = typer.Argument(..., help="Resource UUID (type set by category)"),
     start: str = typer.Option(..., "--start", help="Start TS yyyy-MM-ddTHH:mm:ssZ"),
     end: str | None = typer.Option(None, "--end", help="End TS (optional)"),
     samples: int | None = typer.Option(None, "--samples", help="Number of samples"),
@@ -74,7 +74,7 @@ def metrics_show(
     async def _go():
         async with _client() as hmc:
             fn = hmc.get_aggregated_metric_links if aggregated else hmc.get_processed_metric_links
-            links = await fn(category, uuid, start, end, samples)
+            links = await fn(category, resource_uuid, start, end, samples)
             if not fetch or not links:
                 return links
             # A 404 means the newest document aged out of PCM retention;
