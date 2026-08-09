@@ -27,6 +27,11 @@ class SystemsMixin:
     async def list_managed_systems(self) -> list[dict[str, Any]]:
         return await self.list_uom("ManagedSystem")
 
+    async def find_system_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find a managed system by its SystemName (exact match)."""
+        results = await self.search_uom("ManagedSystem", "SystemName", name)
+        return results[0] if results else None
+
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)
 

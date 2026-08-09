@@ -68,7 +68,8 @@ attribute).
 ```bash
 hmc-mcp console info                 # connectivity check / HMC version
 hmc-mcp systems list                 # table of managed systems
-hmc-mcp systems show <uuid>
+hmc-mcp systems show <uuid>          # by UUID
+hmc-mcp systems show my-server-name  # or by SystemName
 hmc-mcp systems capacity             # per-system memory/CPU capacity report
 hmc-mcp systems find-placement 4096  # systems with >= 4 GiB free
 hmc-mcp systems find-placement 8192 --procs 2.0
@@ -445,3 +446,4 @@ scripts/         # smoke/manual harnesses
 - State changes are asynchronous **jobs**: POST a JobRequest to
   `/rest/api/uom/<Type>/<uuid>/do/<Operation>`, then poll
   `/rest/api/uom/Job/<job-uuid>`.
+`.

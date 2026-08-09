@@ -154,6 +154,10 @@ class FakeHMC:
         self._record("list_managed_systems")
         return [self.system]
 
+    async def find_system_by_name(self, name):
+        self._record("find_system_by_name", name)
+        return self.system if name == self.system["Resource"]["SystemName"] else None
+
     async def get_managed_system(self, uuid):
         self._record("get_managed_system", uuid)
         return self.system if uuid == SYSTEM_UUID else None
@@ -685,7 +689,8 @@ def test_systems_show_not_found_exits_1(fake_hmc):
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("get_managed_system", ("ghost",), {})]
+    # "ghost" is not a UUID, so _resolve_system_uuid calls find_system_by_name
+    assert fake_hmc.calls == [("find_system_by_name", ("ghost",), {})]
 
 
 def test_systems_power_on(fake_hmc):

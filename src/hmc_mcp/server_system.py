@@ -75,6 +75,17 @@ def hmc_get_system(system_uuid: str) -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
+def hmc_find_system(name: str) -> dict[str, Any] | None:
+    """Find a managed system by its SystemName (exact match).
+
+    Returns the first managed system whose SystemName equals *name*, or None
+    if no system with that name is found.
+    """
+
+    return with_client(lambda hmc: hmc.find_system_by_name(name))
+
+
+@mcp.tool(annotations=_READ_ONLY)
 def hmc_list_lpars(system_uuid: str | None = None) -> list[dict[str, Any]]:
     """List logical partitions (LPARs).
 

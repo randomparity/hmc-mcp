@@ -50,6 +50,7 @@ READ_ONLY_TOOLS = frozenset({
     "hmc_console_info",
     "hmc_list_systems",
     "hmc_get_system",
+    "hmc_find_system",
     "hmc_list_lpars",
     "hmc_get_lpar",
     "hmc_find_lpar",

@@ -12,6 +12,7 @@ from .cli_app import (
     _output,
     _print_json,
     _with_client,
+    _resolve_system_uuid,
     console,
     err_console,
     systems_app,
@@ -42,14 +43,22 @@ def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
 
 
 @systems_app.command("show")
-def systems_show(uuid: str = typer.Argument(..., help="Managed system UUID"),
-                 as_json: bool = typer.Option(False, "--json")) -> None:
-    """Show full details of one managed system."""
+def systems_show(
+    name_or_uuid: str = typer.Argument(..., help="Managed system UUID or SystemName"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show full details of one managed system (accepts name or UUID)."""
 
-    system = _with_client(lambda hmc: hmc.get_managed_system(uuid))
+    async def _get(hmc):
+        resolved = await _resolve_system_uuid(hmc, name_or_uuid)
+        if resolved is None:
+            return None
+        return await hmc.get_managed_system(resolved)
+
+    system = _with_client(_get)
 
     if system is None:
-        err_console.print(f"[yellow]System {uuid} not found[/yellow]")
+        err_console.print(f"[yellow]System {name_or_uuid!r} not found[/yellow]")
         raise typer.Exit(code=1)
     _print_json(system)
 
