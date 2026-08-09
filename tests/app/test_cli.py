@@ -68,3 +68,25 @@ def test_output_table_none_prints_json_for_nonempty(capsys):
     captured = capsys.readouterr()
     assert "widget" in captured.out
     assert captured.err == ""
+
+
+def test_is_uuid_matches_hex_uuid():
+    """_is_uuid accepts canonical lowercase/uppercase hex UUIDs."""
+    assert cli_app._is_uuid("11111111-1111-4111-8111-111111111111")
+    assert cli_app._is_uuid("ABCDEFAB-1234-ABCD-EF01-23456789ABCD")
+
+
+def test_is_uuid_rejects_names_and_non_hex_shapes():
+    """_is_uuid rejects names and UUID-shaped strings that are not hex.
+
+    The old predicate accepted any 36-char dash-containing string, so a
+    partition name (or a typo'd UUID) with that shape silently bypassed
+    name resolution.
+    """
+    assert not cli_app._is_uuid("lpar1")
+    # 36-char dash-containing string with non-hex characters.
+    assert not cli_app._is_uuid("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz")
+    # A hex-shaped UUID with a single non-hex character.
+    assert not cli_app._is_uuid("11111111-1111-4111-8111-11111111111g")
+    # Wrong length.
+    assert not cli_app._is_uuid("11111111-1111-4111-8111-11111111111")

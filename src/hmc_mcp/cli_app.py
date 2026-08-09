@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, NoReturn
@@ -250,8 +251,17 @@ def _is_loopback(host: str) -> bool:
 
 
 
+# Canonical UUID shape: 8-4-4-4-12 hex groups. Any 36-char dash-containing
+# string is NOT a UUID (partition names can collide with that shape), so the
+# predicate must reject non-hex characters or the name/uuid disambiguation
+# silently misroutes them as UUIDs.
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
 def _is_uuid(value: str) -> bool:
-    return "-" in value and len(value) == 36
+    return _UUID_RE.fullmatch(value) is not None
 
 
 
