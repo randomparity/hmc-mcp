@@ -20,7 +20,8 @@ from .cli_app import (
 def raw_get(path: str = typer.Argument(..., help="Path under the HMC, e.g. /rest/api/uom/VirtualSwitch")) -> None:
     """Raw GET against the HMC; prints the XML response body."""
 
-    console.print(_with_client(lambda hmc: hmc.raw_get(path)))
+    body, _headers = _with_client(lambda hmc: hmc.raw_get(path))
+    console.print(body)
 
 
 @raw_app.command("post")

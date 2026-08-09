@@ -181,7 +181,7 @@ def _processor_config(
 def _lpar_envelope(body: str) -> str:
     """Wrap an LPAR document body in the LogicalPartition XML envelope."""
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_0">
 {body}
 </LogicalPartition>
 """
@@ -426,7 +426,7 @@ def build_managed_system_document(
 
     body = "\n".join(body_parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ManagedSystem xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<ManagedSystem xmlns="{UOM_NS}" schemaVersion="V1_0">
 {body}
 </ManagedSystem>
 """
@@ -465,7 +465,7 @@ def _adapter_document(
     if slot_number is not None:
         slot = f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>\n'
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<{root_element} xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<{root_element} xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
   <AdapterType kb="CUD" kxe="false">Client</AdapterType>
 {slot}  <{partition_id_field} kb="CUD" kxe="false">{vios_partition_id}</{partition_id_field}>
@@ -541,7 +541,7 @@ def build_client_network_adapter_document(
         parts.append(f'  <MACAddress kb="CUD" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ClientNetworkAdapter xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<ClientNetworkAdapter xmlns="{UOM_NS}" schemaVersion="V1_0">
 {body}
 </ClientNetworkAdapter>
 """
@@ -565,17 +565,17 @@ def build_client_network_adapter_document(
 def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
-        f'    <PhysicalVolume kb="CUD" kxe="false" schemaVersion="V1_8_0">\n'
+        f'    <PhysicalVolume kb="CUD" kxe="false" schemaVersion="V1_0">\n'
         f'      <Metadata><Atom/></Metadata>\n'
         f'      <VolumeName kb="CUD" kxe="false">{pv}</VolumeName>\n'
         f'    </PhysicalVolume>'
         for pv in physical_volumes
     )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
   <GroupName kb="CUD" kxe="false">{name}</GroupName>
-  <PhysicalVolumes kb="CUD" kxe="false" schemaVersion="V1_8_0">
+  <PhysicalVolumes kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
 {pvs}
   </PhysicalVolumes>
@@ -586,11 +586,11 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
 def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-  <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_8_0">
+  <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_8_0">
+    <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
       <DiskCapacity kb="CUD" kxe="false">{capacity_mb}</DiskCapacity>
@@ -621,15 +621,15 @@ def build_vscsi_mapping_document(
     if target_device:
         target = f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_8_0">
+<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_8_0">
+  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_8_0">
+    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
-      <Storage kb="CUD" kxe="false" schemaVersion="V1_8_0">
+      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
-        <{storage_kind} kb="CUD" kxe="false" schemaVersion="V1_8_0">
+        <{storage_kind} kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
           <{name_field} kb="CUD" kxe="false">{storage_name}</{name_field}>
         </{storage_kind}>
@@ -671,7 +671,7 @@ def build_virtual_network_document(
         )
     tagged_str = "true" if tagged else "false"
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_8_0">
+<VirtualNetwork xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
 {assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
   <NetworkVLANID kb="CUD" kxe="false">{vlan_id}</NetworkVLANID>
@@ -696,9 +696,9 @@ def build_media_repository_document(size_mb: int) -> str:
     The repository is always named VMLibrary; size_mb is RepositorySize.
     """
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_8_0">
+  <VirtualMediaRepository schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
     <RepositorySize kb="CUD" kxe="false">{size_mb}</RepositorySize>
@@ -714,11 +714,11 @@ def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
     file name (e.g. 'aix.iso'), size_mb is MediaSize.
     """
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_8_0">
+  <VirtualMediaRepository schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualOpticalMedia schemaVersion="V1_8_0">
+    <VirtualOpticalMedia schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
       <MediaSize kb="CUD" kxe="false">{size_mb}</MediaSize>
@@ -732,9 +732,9 @@ def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
 def build_media_repository_delete_document() -> str:
     """VolumeGroup document marking the VirtualMediaRepository for deletion (POST)."""
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_8_0">
+<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_8_0" kb="CUD">
+  <VirtualMediaRepository schemaVersion="V1_0" kb="CUD">
     <Metadata><Atom/></Metadata>
     <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
   </VirtualMediaRepository>
