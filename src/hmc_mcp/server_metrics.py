@@ -136,6 +136,15 @@ def hmc_get_aggregated_metrics(
     return _metrics_fetch(category, uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
+def _metric_links_method(hmc, kind: Literal["processed", "aggregated"]):
+    """Select the client link-fetch method for a PCM metric kind."""
+    return (
+        hmc.get_processed_metric_links
+        if kind == "processed"
+        else hmc.get_aggregated_metric_links
+    )
+
+
 def _metrics_links(
     category: str,
     uuid: str,
@@ -146,12 +155,9 @@ def _metrics_links(
 ) -> list[dict[str, str]]:
     async def _go():
         async with client_from_env() as hmc:
-            fn = (
-                hmc.get_processed_metric_links
-                if kind == "processed"
-                else hmc.get_aggregated_metric_links
+            return await _metric_links_method(hmc, kind)(
+                category, uuid, start_ts, end_ts, no_of_samples
             )
-            return await fn(category, uuid, start_ts, end_ts, no_of_samples)
 
     return _run(_go())
 
@@ -166,12 +172,9 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     async def _go():
         async with client_from_env() as hmc:
-            fn = (
-                hmc.get_processed_metric_links
-                if kind == "processed"
-                else hmc.get_aggregated_metric_links
+            links = await _metric_links_method(hmc, kind)(
+                category, uuid, start_ts, end_ts, no_of_samples
             )
-            links = await fn(category, uuid, start_ts, end_ts, no_of_samples)
             if not links:
                 return {}
             # Fetch the most recent metrics document. A 404 means the document
