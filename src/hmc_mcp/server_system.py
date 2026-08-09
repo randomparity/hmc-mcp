@@ -73,8 +73,7 @@ def hmc_lpars(
     Resolution priority (first match wins):
 
     1. lpar_uuid + state_only=True  →  str | None  — current LPAR state only
-       (uses the cheap quick-property endpoint; equivalent to calling
-       hmc_lpars(lpar_uuid=..., state_only=True)).
+       (uses the cheap quick-property endpoint instead of a full fetch).
     2. lpar_uuid                    →  dict | None  — full LPAR details.
        When both lpar_uuid and name are supplied, lpar_uuid takes priority
        and name is ignored.
@@ -106,8 +105,7 @@ def hmc_vios(
     """List Virtual I/O Servers or get storage-detail mappings for one.
 
     When vios_uuid is provided, returns the VIOS device mapping facts
-    (vSCSI, NPIV, virtual optical) for that VIOS — equivalent to calling
-    hmc_vios(vios_uuid=...).
+    (vSCSI, NPIV, virtual optical) for that VIOS.
 
     When vios_uuid is omitted, returns a list of all VIOS entries, optionally
     restricted to one managed system via system_uuid.
