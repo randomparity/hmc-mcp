@@ -86,11 +86,16 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert "pull_request:" in workflow
     assert re.search(r"push:\n\s+branches:\s+\[main\]", workflow)
     assert "permissions:\n  contents: read" in workflow
+    assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
     assert "runs-on: ubuntu-24.04" in workflow
+    assert "timeout-minutes: 20" in workflow
+    expected_actions = {f"{action}@{sha}" for action, (sha, _) in ACTION_PINS.items()}
+    assert set(re.findall(r"uses:\s+([^\s#]+)", workflow)) == expected_actions
     for action, (sha, version) in ACTION_PINS.items():
         assert f"uses: {action}@{sha}  # {version}" in workflow
     assert "persist-credentials: false" in workflow
+    assert 'version: "0.12.3"' in workflow
     assert 'just-version: "1.58.0"' in workflow
     for command in ("just setup", "just verify", "uv run prek run --all-files"):
         assert f"run: {command}" in workflow
