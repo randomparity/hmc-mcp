@@ -9,9 +9,9 @@ from hmc_mcp.server import hmc_list_fc_ports, hmc_list_sea_adapters
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9009-42A-SN12345"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "my-lpar"
 
 FC_CSV_OUTPUT = (
@@ -72,7 +72,7 @@ def test_list_fc_ports_filter_by_lpar(monkeypatch, mock_hmc):
     )
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_fc_ports(SYSTEM_UUID, lpar_uuid=LPAR_UUID)
+        result = hmc_list_fc_ports(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert f"--filter lpar_names={LPAR_NAME}" in called_cmd
@@ -136,7 +136,7 @@ def test_list_sea_adapters_filter_by_lpar(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock("my-lpar,1000,ETHERNET0,Open,1\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_uuid=LPAR_UUID)
+        result = hmc_list_sea_adapters(SYSTEM_UUID, lpar_name_or_uuid=LPAR_UUID)
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert f"--filter lpar_names={LPAR_NAME}" in called_cmd

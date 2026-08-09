@@ -13,9 +13,9 @@ from hmc_mcp.server import (
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "test-lpar-01"
 
 
@@ -53,7 +53,7 @@ def test_get_proc_compat_modes_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_get_proc_compat_modes(SYSTEM_UUID)
 
     expected_cmd = f"lssyscfg -r sys -m {SYSTEM_NAME} -F lpar_proc_compat_modes"
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ["default", "POWER8", "POWER9", "POWER10"]
 
 
@@ -87,7 +87,7 @@ def test_get_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
         f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} "
         "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == {"pend": "POWER9", "curr": "POWER8"}
 
 
@@ -121,5 +121,5 @@ def test_set_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i name={LPAR_NAME},lpar_proc_compat_mode=POWER9"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""

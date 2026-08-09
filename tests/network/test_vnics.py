@@ -11,9 +11,9 @@ from hmc_mcp.ssh import HMCCLIError
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "my-lpar"
 
 # Sample lshwres -r virtualio --rsubtype vnic output (key=value CSV-like format)
@@ -107,8 +107,8 @@ def test_add_vnic_correct_command_minimal(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_add_vnic(
-            system_uuid=SYSTEM_UUID,
-            lpar_uuid=LPAR_UUID,
+            system_name_or_uuid=SYSTEM_UUID,
+            lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
             vswitch_name="ETHERNET0",
             port_vlan_id=100,
@@ -135,8 +135,8 @@ def test_add_vnic_with_backing_devices(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_add_vnic(
-            system_uuid=SYSTEM_UUID,
-            lpar_uuid=LPAR_UUID,
+            system_name_or_uuid=SYSTEM_UUID,
+            lpar_name_or_uuid=LPAR_UUID,
             capacity=5,
             vswitch_name="ETHERNET0",
             port_vlan_id=200,
@@ -155,8 +155,8 @@ def test_add_vnic_without_backing_devices_excludes_it(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_add_vnic(
-            system_uuid=SYSTEM_UUID,
-            lpar_uuid=LPAR_UUID,
+            system_name_or_uuid=SYSTEM_UUID,
+            lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
             vswitch_name="ETHERNET0",
             port_vlan_id=100,
@@ -191,8 +191,8 @@ def test_add_vnic_sriov_mode_error_path(monkeypatch, mock_hmc):
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError) as exc_info:
             hmc_add_vnic(
-                system_uuid=SYSTEM_UUID,
-                lpar_uuid=LPAR_UUID,
+                system_name_or_uuid=SYSTEM_UUID,
+                lpar_name_or_uuid=LPAR_UUID,
                 capacity=2,
                 vswitch_name="ETHERNET0",
                 port_vlan_id=100,

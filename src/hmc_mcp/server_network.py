@@ -85,47 +85,51 @@ def hmc_list_network_bridges(system_uuid: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[dict[str, str]]:
+def hmc_list_fc_ports(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None) -> list[dict[str, str]]:
     """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
     on the HMC via SSH and returns parsed dicts with fields including
     lpar_name, slot_num, wwpns, and remote_lpar_id.
 
-    The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs. Pass lpar_uuid to restrict results to a single
-    partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
-    to find lpar_uuid.    """
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs. Pass lpar_name_or_uuid to restrict results to a single partition.
+    Either a CLI name or UUID works; use hmc_list_systems to find a system
+    UUID and hmc_list_lpars to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_fc_ports(config, system_name, lpar_name),
-        system_uuid=system_uuid,
-        lpar_uuid=lpar_uuid,
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
     )
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> list[dict[str, str]]:
+def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None) -> list[dict[str, str]]:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
     -F lpar_name,port_vlan_id,vswitch,state,trunk_priority`` on the HMC via
     SSH and returns parsed dicts with those five fields.
 
-    The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs. Pass lpar_uuid to restrict results to a single
-    partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
-    to find lpar_uuid.    """
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs. Pass lpar_name_or_uuid to restrict results to a single partition.
+    Either a CLI name or UUID works; use hmc_list_systems to find a system
+    UUID and hmc_list_lpars to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_sea_adapters(config, system_name, lpar_name),
-        system_uuid=system_uuid,
-        lpar_uuid=lpar_uuid,
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
     )
 
 
 
 @mcp.tool
 def hmc_set_sriov_adapter_mode(
-    system_uuid: str,
+    system_name_or_uuid: str,
     adapter_id: str,
     mode: Literal["sriov", "dedicated"],
 ) -> str:
@@ -135,8 +139,9 @@ def hmc_set_sriov_adapter_mode(
     -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
     command output.
 
-    The system UUID is resolved to its CLI name via REST before the command
-    runs.
+    The system may be given by CLI name or by UUID; a UUID is resolved to
+    its CLI name via REST (falling back to an lssyscfg lookup over SSH when
+    the REST API is unreachable) before the command runs.
 
     ``adapter_id`` is the physical adapter identifier as reported by
     ``hmc_list_io_slots``.
@@ -146,19 +151,19 @@ def hmc_set_sriov_adapter_mode(
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_uuid and adapter_id before calling.    """
+    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.    """
     return _ssh_with_client(
         lambda config, system_name, _: set_sriov_adapter_mode(
             config, system_name, adapter_id, mode
         ),
-        system_uuid=system_uuid,
+        system_name_or_uuid=system_name_or_uuid,
     )
 
 
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_vnics(system_name_or_uuid: str, lpar_name_or_uuid: str) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
@@ -166,20 +171,22 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
     per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
     ``port_vlan_id``, and ``backing_devices``.
 
-    The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs. Use ``hmc_list_systems`` to find system_uuid and
-    ``hmc_list_lpars`` to find lpar_uuid.    """
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs. Use ``hmc_list_systems`` to find a system UUID and
+    ``hmc_list_lpars`` to find an LPAR UUID.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_vnics(config, system_name, lpar_name),
-        system_uuid=system_uuid,
-        lpar_uuid=lpar_uuid,
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
     )
 
 
 @mcp.tool
 def hmc_add_vnic(
-    system_uuid: str,
-    lpar_uuid: str,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
     capacity: int,
     vswitch_name: str,
     port_vlan_id: int,
@@ -190,8 +197,10 @@ def hmc_add_vnic(
     Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
     --filter lpar_names=<lpar_name> -a "<attrs>"`` on the HMC via SSH.
 
-    The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs.
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs.
 
     **V1 scope boundary:** Only the following parameters are supported in
     this version: ``capacity``, ``vswitch_name``, ``port_vlan_id``, and
@@ -203,7 +212,7 @@ def hmc_add_vnic(
     Returns the raw HMC command output on success.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_uuid, lpar_uuid, and vswitch_name before calling.  The
+    system_name_or_uuid, lpar_name_or_uuid, and vswitch_name before calling.  The
     underlying physical adapter must be in SR-IOV mode (see
     ``hmc_set_sriov_adapter_mode``).
 
@@ -221,31 +230,33 @@ def hmc_add_vnic(
             port_vlan_id,
             backing_devices,
         ),
-        system_uuid=system_uuid,
-        lpar_uuid=lpar_uuid,
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
     )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
+def hmc_remove_vnic(system_name_or_uuid: str, lpar_name_or_uuid: str, vnic_id: str) -> str:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
     Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
     --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` on the HMC
     via SSH.
 
-    The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs.
+    The system and partition may be given by CLI name or by UUID; UUIDs
+    are resolved to their CLI names via REST (falling back to an lssyscfg
+    lookup over SSH when the REST API is unreachable) before the command
+    runs.
 
     ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_uuid, lpar_uuid, and vnic_id before calling. Returns the HMC CLI
+    system_name_or_uuid, lpar_name_or_uuid, and vnic_id before calling. Returns the HMC CLI
     output (immediate delete — no job to poll).    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: remove_vnic(
             config, system_name, lpar_name, vnic_id
         ),
-        system_uuid=system_uuid,
-        lpar_uuid=lpar_uuid,
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
     )

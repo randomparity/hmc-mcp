@@ -71,13 +71,48 @@ async def test_run_hmc_command_key_auth():
 
 @pytest.mark.asyncio
 async def test_run_hmc_command_passes_cmd():
-    """The exact command string is forwarded to conn.run()."""
+    """The exact command string is forwarded to conn.run() with the SSH timeout."""
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         await run_hmc_command(make_config(), "lshmc -v")
 
-    conn_mock.run.assert_called_once_with("lshmc -v", check=True)
+    conn_mock.run.assert_called_once_with("lshmc -v", check=True, timeout=300.0)
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_command_timeout_raises_hmcclierror():
+    """A command that exceeds ssh_timeout surfaces as HMCCLIError, not a hang."""
+    conn_mock = _make_ssh_mock()
+    conn_mock.run = AsyncMock(side_effect=TimeoutError("timed out"))
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        with pytest.raises(HMCCLIError, match="timed out after 300s") as exc_info:
+            await run_hmc_command(make_config(), "lssyscfg -r sys")
+
+    assert isinstance(exc_info.value, HMCError)
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_connect_timeout_raises_hmcclierror():
+    """A connect that never completes surfaces as HMCCLIError, not a hang."""
+    with patch(
+        "hmc_mcp.ssh.asyncssh.connect",
+        side_effect=TimeoutError("timed out"),
+    ):
+        with pytest.raises(HMCCLIError, match="timed out after 300s"):
+            await run_hmc_command(make_config(), "lssyscfg -r sys")
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_honours_custom_ssh_timeout():
+    """conn.run receives the configured ssh_timeout, not the hardcoded default."""
+    conn_mock = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        await run_hmc_command(make_config(ssh_timeout=45.0), "lssyscfg -r sys")
+
+    conn_mock.run.assert_called_once_with("lssyscfg -r sys", check=True, timeout=45.0)
 
 
 @pytest.mark.asyncio
@@ -131,6 +166,12 @@ def test_hmc_config_ssh_key_field_set():
     """ssh_key_file is accepted via constructor (mirrors env var mapping)."""
     cfg = HMCConfig(host="h", user="u", password="p", ssh_key_file="/tmp/key")
     assert cfg.ssh_key_file == "/tmp/key"
+
+
+def test_hmc_config_ssh_timeout_default():
+    """ssh_timeout defaults to 300s and honours an explicit override."""
+    assert HMCConfig(host="h", user="u", password="p").ssh_timeout == 300.0
+    assert HMCConfig(host="h", user="u", password="p", ssh_timeout=45.0).ssh_timeout == 45.0
 
 
 # ---------------------------------------------------------------------------

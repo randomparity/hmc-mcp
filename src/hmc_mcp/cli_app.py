@@ -3,8 +3,10 @@
 Holds the root :class:`typer.Typer` (``app``), every sub-command group
 (``systems_app``, ``lpars_app``, ...), the global option state
 (``GlobalOpts`` / ``GLOBALS``), the shared output / run helpers used by the
-command bodies, the ``serve`` command, and the cross-domain UUID helpers
-(``_is_uuid`` / ``_resolve_partition_uuid``).
+command bodies, the ``serve`` command, and the cross-domain name-or-uuid
+resolver (``_resolve_partition_uuid``). The ``is_uuid`` predicate itself lives
+in :mod:`hmc_mcp.common` so the server (``_app``) and CLI share one
+definition.
 
 The per-domain command modules (``cli_systems``, ``cli_lpars``, ...) import
 the group and helpers they need from here and register their commands via
@@ -16,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, NoReturn
@@ -25,7 +26,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .common import client_from_env, run_with_client
+from .common import client_from_env, is_uuid, run_with_client
 from .config import HMCConfig
 
 app = typer.Typer(
@@ -253,20 +254,6 @@ def _is_loopback(host: str) -> bool:
 
 
 
-# Canonical UUID shape: 8-4-4-4-12 hex groups. Any 36-char dash-containing
-# string is NOT a UUID (partition names can collide with that shape), so the
-# predicate must reject non-hex characters or the name/uuid disambiguation
-# silently misroutes them as UUIDs.
-_UUID_RE = re.compile(
-    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-)
-
-
-def _is_uuid(value: str) -> bool:
-    return _UUID_RE.fullmatch(value) is not None
-
-
-
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
     """Resolve an LPAR name or UUID to its UUID.
 
@@ -274,7 +261,7 @@ async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
     Returns None when *name_or_uuid* is neither a UUID nor a known partition
     name — callers decide how to report the miss.
     """
-    if _is_uuid(name_or_uuid):
+    if is_uuid(name_or_uuid):
         return name_or_uuid
     found = await hmc.find_partition_by_name(name_or_uuid)
     if not found or not found.get("UUID"):

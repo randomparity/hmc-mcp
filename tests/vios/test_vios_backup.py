@@ -49,7 +49,7 @@ def test_list_vios_backups_runs_correct_command(monkeypatch):
         result = hmc_list_vios_backups(VIOS_UUID)
 
     conn_mock.run.assert_called_once_with(
-        f"lsviosbackup -id {VIOS_UUID}", check=True
+        f"lsviosbackup -id {VIOS_UUID}", check=True, timeout=300.0
     )
     assert result == [
         {"BackupName": "vios1_backup_001", "Date": "2024-01-15", "Type": "vios"},
@@ -85,7 +85,7 @@ def test_backup_vios_valid_types(monkeypatch, backup_type):
     expected_cmd = (
         f"chviosbackup -id {VIOS_UUID} -operation backup -type {backup_type}"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "Backup completed" in result
 
 
@@ -125,7 +125,7 @@ def test_restore_vios_runs_correct_command(monkeypatch):
     expected_cmd = (
         f"chviosbackup -id {VIOS_UUID} -operation restore -file {BACKUP_NAME}"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "Restore completed" in result
 
 

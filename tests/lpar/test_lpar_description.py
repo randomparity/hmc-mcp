@@ -9,9 +9,9 @@ from hmc_mcp.server import hmc_get_lpar_description, hmc_set_lpar_description
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "test-lpar-01"
 
 
@@ -52,7 +52,7 @@ def test_get_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
         f"lssyscfg -r lpar -m {SYSTEM_NAME} "
         f"--filter lpar_names={LPAR_NAME} -F description"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == "production database server\n"
 
 
@@ -72,12 +72,12 @@ def test_get_lpar_description_resolves_uuids_to_names(monkeypatch, mock_hmc):
     """hmc_get_lpar_description embeds the resolved system/lpar names in the command."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(
-        mock_hmc, "sys-uuid-x", "my-system", "lpar-uuid-y", "my-lpar"
+        mock_hmc, "22222222-2222-4222-8222-222222222222", "my-system", "11111111-1111-4111-8111-111111111111", "my-lpar"
     )
     conn_mock = _make_ssh_mock("owner: ops-team\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_get_lpar_description("sys-uuid-x", "lpar-uuid-y")
+        hmc_get_lpar_description("22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111")
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "-m my-system" in called_cmd
@@ -104,7 +104,7 @@ def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i 'name={LPAR_NAME},description=new description'"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""
 
 
@@ -125,13 +125,13 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
     """hmc_set_lpar_description includes the description value in the -i argument."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(
-        mock_hmc, "sys-uuid-x", "mysystem", "lpar-uuid-y", "mylpar"
+        mock_hmc, "22222222-2222-4222-8222-222222222222", "mysystem", "11111111-1111-4111-8111-111111111111", "mylpar"
     )
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_set_lpar_description(
-            "sys-uuid-x", "lpar-uuid-y", "owner=alice env=prod"
+            "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner=alice env=prod"
         )
 
     called_cmd = conn_mock.run.call_args[0][0]

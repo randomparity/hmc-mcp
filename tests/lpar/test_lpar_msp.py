@@ -9,9 +9,9 @@ from hmc_mcp.server import hmc_get_lpar_msp, hmc_set_lpar_msp
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN123456"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "test-lpar-01"
 
 
@@ -52,7 +52,7 @@ def test_get_lpar_msp_runs_correct_command(monkeypatch, mock_hmc):
         f"lssyscfg -r lpar -m {SYSTEM_NAME} "
         f"--filter lpar_names={LPAR_NAME} -F msp"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result is True
 
 
@@ -98,7 +98,7 @@ def test_set_lpar_msp_enabled_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i name={LPAR_NAME},msp=1"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""
 
 
@@ -115,7 +115,7 @@ def test_set_lpar_msp_disabled_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i name={LPAR_NAME},msp=0"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""
 
 

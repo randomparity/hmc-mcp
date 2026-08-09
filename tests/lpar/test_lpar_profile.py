@@ -14,9 +14,9 @@ from hmc_mcp.server import (
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "managed_sys1"
-LPAR_UUID = "lpar-uuid-0001"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 LPAR_NAME = "lpar1"
 PROFILE_NAME = "profile1"
 DRC_INDEX = "10000000"
@@ -57,7 +57,7 @@ def test_backup_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_backup_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak")
 
     expected_cmd = f"bkprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "completed successfully" in result
 
 
@@ -90,7 +90,7 @@ def test_restore_lpar_profiles_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_restore_lpar_profiles(SYSTEM_UUID, "/tmp/lpar_profiles.bak")
 
     expected_cmd = f"rstprofdata -m {SYSTEM_NAME} -f /tmp/lpar_profiles.bak"
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "completed successfully" in result
 
 
@@ -125,7 +125,7 @@ def test_sync_lpar_profile_runs_correct_command(monkeypatch, mock_hmc):
     expected_cmd = (
         f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},sync_curr_profile=1"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "successfully" in result
 
 
@@ -163,7 +163,7 @@ def test_assign_profile_io_slot_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r prof -m {SYSTEM_NAME} "
         f"-i name={PROFILE_NAME},io_slots+={DRC_INDEX}//0,lpar_name={LPAR_NAME} --force"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "successfully" in result
 
 

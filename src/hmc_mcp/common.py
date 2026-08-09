@@ -1,13 +1,27 @@
-"""Shared helpers: build an HMCClient from env/CLI options."""
+"""Shared helpers: build an HMCClient from env/CLI options, UUID predicates."""
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .client import HMCClient
 from .config import HMCConfig
+
+# Canonical UUID shape: 8-4-4-4-12 hex groups. Any 36-char dash-containing
+# string is NOT a UUID (system/partition names can collide with that shape), so
+# the predicate must reject non-hex characters or name/uuid disambiguation
+# silently misroutes them as UUIDs.
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def is_uuid(value: str) -> bool:
+    """True if *value* is a canonical 8-4-4-4-12 hex UUID."""
+    return _UUID_RE.fullmatch(value) is not None
 
 
 def client_from_env(**overrides) -> HMCClient:

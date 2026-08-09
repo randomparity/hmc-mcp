@@ -6,10 +6,11 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
+from .common import is_uuid
+
 from .cli_app import (
     _client,
     _first_field,
-    _is_uuid,
     _output,
     _print_json,
     _resolve_partition_uuid,
@@ -71,7 +72,7 @@ def lpars_show(
 
     lpar = _with_client(
         lambda hmc: hmc.get_logical_partition(name_or_uuid)
-        if _is_uuid(name_or_uuid)
+        if is_uuid(name_or_uuid)
         else hmc.find_partition_by_name(name_or_uuid)
     )
 
@@ -226,7 +227,7 @@ def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool 
             if not yes:
                 op = "PowerOn" if on else ("Immediate PowerOff" if immediate else "PowerOff")
                 name = name_or_uuid
-                if not _is_uuid(name_or_uuid):
+                if not is_uuid(name_or_uuid):
                     found = await hmc.get_logical_partition(uuid)
                     if found:
                         name = _first_field(found, "PartitionName", default=name_or_uuid)

@@ -6,6 +6,7 @@ HMC CLI reference:
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import shlex
@@ -48,8 +49,9 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         ValueError: If required connection settings (host/user, and password
             when no SSH key is configured) are missing — the same actionable
             message the REST client uses.
-        HMCCLIError: If the SSH connection fails or the command exits
-            non-zero. The command's stderr is included when available.
+        HMCCLIError: If the SSH connection fails, the command exits non-zero,
+            or the command exceeds ``config.ssh_timeout``. The command's stderr
+            is included when available.
     """
     config.validate_credentials(require_password=not config.ssh_key_file)
 
@@ -65,9 +67,19 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         connect_kwargs["password"] = config.password
 
     try:
-        async with asyncssh.connect(**connect_kwargs) as conn:
-            result = await conn.run(cmd, check=True)
-            return result.stdout
+        # asyncssh.connect is a plain function returning a Future that also
+        # works as an async context manager (its __aenter__ awaits the
+        # connection); wrapping the whole block in asyncio.timeout bounds the
+        # connect phase, and conn.run(timeout=...) bounds the command itself.
+        async with asyncio.timeout(config.ssh_timeout):
+            async with asyncssh.connect(**connect_kwargs) as conn:
+                result = await conn.run(cmd, check=True, timeout=config.ssh_timeout)
+                return result.stdout
+    except TimeoutError as exc:
+        raise HMCCLIError(
+            f"SSH command timed out after {config.ssh_timeout:.0f}s: {cmd!r}. "
+            "The HMC CLI may be hung or the HMC may be under load."
+        ) from exc
     except asyncssh.Error as exc:
         # ProcessError (non-zero exit) and connection/auth errors both derive
         # from asyncssh.Error; surface them as HMCCLIError so no caller needs
@@ -84,6 +96,66 @@ async def run_hmc_cli(cmd: str) -> str:
     ``run_hmc_command(HMCConfig(), cmd)`` inline.
     """
     return await run_hmc_command(HMCConfig(), cmd)
+
+
+# ---------------------------------------------------------------------- #
+# UUID -> CLI-name lookup (SSH fallback for the REST-based resolvers)
+# ---------------------------------------------------------------------- #
+
+
+async def _ssh_system_name(config: HMCConfig, system_uuid: str) -> str:
+    """Look up a managed-system UUID's CLI SystemName over SSH.
+
+    Runs ``lssyscfg -r sys -F UUID,SystemName`` and returns the row whose
+    UUID column matches. Used as the fallback by the REST-based system-name
+    resolver in :mod:`hmc_mcp._app` when the REST API is unreachable.
+
+    Raises:
+        HMCCLIError: If no row matches *system_uuid* in the command output.
+    """
+    raw = await run_hmc_command(config, "lssyscfg -r sys -F UUID,SystemName")
+    return _match_uuid_name(raw, system_uuid, "system")
+
+
+async def _ssh_lpar_name(
+    config: HMCConfig,
+    lpar_uuid: str,
+    system_name: str | None = None,
+) -> str:
+    """Look up an LPAR UUID's CLI PartitionName over SSH.
+
+    Runs ``lssyscfg -r lpar [-m <system_name>] -F UUID,PartitionName``, scoped
+    to *system_name* when given and across all managed systems otherwise. Used
+    as the fallback by the REST-based LPAR-name resolver in :mod:`hmc_mcp._app`
+    when the REST API is unreachable.
+
+    Raises:
+        HMCCLIError: If no row matches *lpar_uuid* in the command output.
+    """
+    cmd = "lssyscfg -r lpar"
+    if system_name:
+        cmd += f" -m {shlex.quote(system_name)}"
+    cmd += " -F UUID,PartitionName"
+    raw = await run_hmc_command(config, cmd)
+    return _match_uuid_name(raw, lpar_uuid, "LPAR")
+
+
+def _match_uuid_name(raw: str, uuid: str, what: str) -> str:
+    """Return the name on the ``UUID,<name>`` line matching *uuid*.
+
+    Non-matching lines are skipped; a matching line with an empty name column
+    (malformed row) is not returned.
+    """
+    for line in raw.splitlines():
+        row_uuid, _, name = line.partition(",")
+        if row_uuid.strip() == uuid:
+            name = name.strip()
+            if name:
+                return name
+    raise HMCCLIError(
+        f"Could not resolve {what} UUID {uuid!r} to a CLI name over SSH. "
+        "No matching row in the lssyscfg UUID,name output."
+    )
 
 
 def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:

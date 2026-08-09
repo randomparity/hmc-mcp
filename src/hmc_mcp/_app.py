@@ -3,8 +3,8 @@
 Holds the single :class:`FastMCP` instance (``mcp``) that every domain
 tool module registers itself on via ``@mcp.tool``, the read-only /
 destructive capability annotations and the frozensets that document them,
-and the small sync-run / UUID-resolution / SSH-passthrough helpers used by
-the tool bodies.
+and the small sync-run / name-or-UUID-resolution (REST-first, SSH-fallback)
+/ SSH-passthrough helpers used by the tool bodies.
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
@@ -17,10 +17,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .common import client_from_env, run_with_client
+from .common import client_from_env, is_uuid, run_with_client
+from .config import HMCConfig
+from .ssh import _ssh_lpar_name, _ssh_system_name
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -125,11 +128,11 @@ def with_client(fn):
 
 
 # ---------------------------------------------------------------------- #
-# UUID -> CLI-name resolution (REST lookup for SSH passthrough tools)
+# Name-or-UUID resolution (REST-first, SSH fallback) for SSH tools
 # ---------------------------------------------------------------------- #
 
 
-async def _system_name(hmc, system_uuid: str) -> str:
+async def _system_name_from_rest(hmc, system_uuid: str) -> str:
     """Resolve a managed-system UUID to its CLI SystemName via REST."""
     entry = await hmc.get_managed_system(system_uuid)
     if not entry or "SystemName" not in entry.get("Resource", {}):
@@ -140,7 +143,7 @@ async def _system_name(hmc, system_uuid: str) -> str:
     return entry["Resource"]["SystemName"]
 
 
-async def _lpar_name(hmc, lpar_uuid: str) -> str:
+async def _lpar_name_from_rest(hmc, lpar_uuid: str) -> str:
     """Resolve an LPAR UUID to its CLI PartitionName via REST."""
     entry = await hmc.get_logical_partition(lpar_uuid)
     if not entry or "PartitionName" not in entry.get("Resource", {}):
@@ -151,25 +154,63 @@ async def _lpar_name(hmc, lpar_uuid: str) -> str:
     return entry["Resource"]["PartitionName"]
 
 
-def _ssh_with_client(fn, *, system_uuid=None, lpar_uuid=None):
-    """Resolve UUIDs to CLI names via REST, then run an SSH tool body.
+async def _resolve_system_name(
+    config: HMCConfig, system_name_or_uuid: str | None
+) -> str | None:
+    """Resolve a system name-or-uuid to a CLI SystemName.
 
-    Collapses the pervasive ``async def _go`` + ``client_from_env`` +
-    ``_system_name``/``_lpar_name`` + ``_run`` scaffold in the SSH-passthrough
-    tools, mirroring :func:`with_client` for the REST seam. *fn* is called with
-    the resolved config (``hmc.config``) followed by the resolved system and
-    LPAR CLI names (``None`` when the matching UUID was not supplied) and
-    returns an awaitable for the tool result — a ``run_hmc_command(...)`` call,
-    or a call into an :mod:`ssh` helper that runs the command itself. The REST
-    session is closed before the SSH command runs, but the config instance is
-    captured first so the SSH helpers use the same resolved settings as the
-    REST calls.
+    Names pass through untouched (no REST needed). UUIDs are resolved via
+    REST, falling back to an ``lssyscfg`` name lookup over SSH only when the
+    REST transport is unreachable (``httpx.HTTPError``). A REST 4xx/5xx
+    (``HMCError``) is *not* a transport failure — REST answered and the UUID
+    is unknown, so the error surfaces rather than falling back.
+    """
+    if system_name_or_uuid is None or not is_uuid(system_name_or_uuid):
+        return system_name_or_uuid
+    try:
+        async with client_from_env() as hmc:
+            return await _system_name_from_rest(hmc, system_name_or_uuid)
+    except httpx.HTTPError:
+        return await _ssh_system_name(config, system_name_or_uuid)
+
+
+async def _resolve_lpar_name(
+    config: HMCConfig,
+    lpar_name_or_uuid: str | None,
+    system_name: str | None = None,
+) -> str | None:
+    """Resolve an LPAR name-or-uuid to a CLI PartitionName.
+
+    Same REST-first / SSH-fallback contract as :func:`_resolve_system_name`;
+    *system_name* (when known) scopes the SSH name lookup to one system.
+    """
+    if lpar_name_or_uuid is None or not is_uuid(lpar_name_or_uuid):
+        return lpar_name_or_uuid
+    try:
+        async with client_from_env() as hmc:
+            return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
+    except httpx.HTTPError:
+        return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
+
+
+def _ssh_with_client(fn, *, system_name_or_uuid=None, lpar_name_or_uuid=None):
+    """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
+
+    Collapses the pervasive ``async def _go`` + name resolution + ``_run``
+    scaffold in the SSH-passthrough tools, mirroring :func:`with_client` for
+    the SSH seam. *system_name_or_uuid* and *lpar_name_or_uuid* may each be a
+    CLI name (passed through untouched) or a UUID (resolved via REST, falling
+    back to an ``lssyscfg`` name lookup over SSH when the REST transport is
+    unreachable). *fn* is called with the env-configured ``HMCConfig`` followed
+    by the resolved system and LPAR CLI names (``None`` when the matching arg
+    was not supplied) and returns an awaitable for the tool result — a
+    ``run_hmc_command(...)`` call, or a call into an :mod:`ssh` helper that
+    runs the command itself.
     """
     async def _go():
-        async with client_from_env() as hmc:
-            system_name = await _system_name(hmc, system_uuid) if system_uuid else None
-            lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-            config = hmc.config
+        config = HMCConfig()
+        system_name = await _resolve_system_name(config, system_name_or_uuid)
+        lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name)
         return await fn(config, system_name, lpar_name)
 
     return _run(_go)

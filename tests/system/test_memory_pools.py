@@ -11,7 +11,7 @@ from hmc_mcp.ssh import HMCCLIError
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9009-41A-SN12345"
 
 
@@ -59,7 +59,7 @@ def test_list_memory_pools_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_list_memory_pools(SYSTEM_UUID)
 
     conn_mock.run.assert_called_once_with(
-        f"lshwres -r mempool -m {SYSTEM_NAME}", check=True
+        f"lshwres -r mempool -m {SYSTEM_NAME}", check=True, timeout=300.0
     )
     assert isinstance(result, list)
     assert len(result) >= 1

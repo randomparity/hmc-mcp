@@ -10,7 +10,7 @@ from hmc_mcp.server import hmc_set_sriov_adapter_mode
 
 from conftest import mock_uuid_resolution
 
-SYSTEM_UUID = "system-uuid-0001"
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 SYSTEM_NAME = "Server-9080-M9S-SN12345"
 ADAPTER_ID = "U78DA.001.XYZ1234-P1-C2"
 
@@ -52,7 +52,7 @@ def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
         f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
         f" -a sriov_adapter_mode=sriov"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "completed successfully" in result
 
 
@@ -74,7 +74,7 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
         f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
         f" -a sriov_adapter_mode=dedicated"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True)
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result == ""
 
 

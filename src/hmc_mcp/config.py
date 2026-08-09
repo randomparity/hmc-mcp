@@ -29,6 +29,11 @@ class HMCConfig(BaseSettings):
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
+    ssh_timeout: float = Field(
+        default=300.0,
+        description="SSH command timeout in seconds (HMC CLI ops are slower "
+        "than REST calls, e.g. bkprofdata/rstprofdata; 60s is too tight)",
+    )
     audit_memento: str = Field(
         default="hmc-mcp",
         description="Value sent in the X-Audit-Memento header (shows up in HMC audit logs)",
