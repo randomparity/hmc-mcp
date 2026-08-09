@@ -281,7 +281,7 @@ def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
     result = hmc_delete_media_repository(VIOS_UUID, VG_UUID)
     body = route.calls.last.request.content.decode()
-    assert '<VirtualMediaRepository schemaVersion="V1_8_0" kb="CUD">' in body
+    assert '<VirtualMediaRepository schemaVersion="V1_0" kb="CUD">' in body
     assert result == f"Deleted media repository from VolumeGroup {VG_UUID}"
 
 

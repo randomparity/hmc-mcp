@@ -150,7 +150,10 @@ class HMCClient(
         accept = MEDIA_UOM
         if resource_type:
             accept = f"{MEDIA_UOM}; type={resource_type}"
-        return {"Accept": accept}
+        headers: dict[str, str] = {"Accept": accept}
+        if self.config.schema_version:
+            headers["X-HMC-Schema-Version"] = self.config.schema_version
+        return headers
 
     async def _get(self, path: str, resource_type: str | None = None) -> str:
         resp = await self._http.get(path, headers=self._uom_headers(resource_type))
@@ -356,13 +359,18 @@ class HMCClient(
     # Raw escape hatch
     # ------------------------------------------------------------------ #
 
-    async def raw_get(self, path: str, accept: str = "*/*") -> str:
+    async def raw_get(self, path: str, accept: str = "*/*") -> tuple[str, dict[str, str]]:
+        """GET a raw path and return (body, response_headers).
+
+        Returns a 2-tuple so callers can inspect response headers such as
+        ``X-HMC-Schema-Version`` to discover the schema version in effect.
+        """
         resp = await self._http.get(path, headers={"Accept": accept})
         if resp.status_code == 204:
-            return ""
+            return "", dict(resp.headers)
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        return resp.text
+        return resp.text, dict(resp.headers)
 
     async def raw_post(self, path: str, body: str, content_type: str = "application/xml") -> str:
         resp = await self._http.post(path, content=body, headers={"Content-Type": content_type})
