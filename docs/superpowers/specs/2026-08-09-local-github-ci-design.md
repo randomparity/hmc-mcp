@@ -92,12 +92,18 @@ ty's source include list names `src/hmc_mcp/config.py`,
 `src/hmc_mcp/documents.py`, and `src/hmc_mcp/errors.py`. No diagnostic category
 is disabled. This supplies a real, strict type gate while keeping the existing
 application diagnostics visible as future work rather than disguising them as
-success.
+success. It is explicitly partial coverage. A production module joins the
+include set when it becomes ty-clean, and a new production module that is
+ty-clean joins before merge. Reviewers own this manual ratchet because the
+existing excluded modules prevent an automatic whole-tree rule.
 
 The detect-secrets baseline is generated from the current tracked tree and
 reviewed to ensure its entries correspond only to intentional test fixtures.
 The scan never excludes `tests/`. Both the hook and `just secrets` use the same
-baseline and disable network verification for deterministic/offline runs.
+baseline and disable network verification for deterministic/offline runs. A
+baseline diff is a security-sensitive bypass: each added or changed entry must
+be matched to the corresponding intentional fixture during review, and merely
+regenerating the baseline never establishes that a finding is safe.
 
 ## Hook behavior
 

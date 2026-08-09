@@ -45,7 +45,17 @@ Changing a gate requires changing its just recipe once.
 The first type-check boundary is intentionally incremental, and Ruff format is
 not yet a gate. Expanding either boundary requires making the added files clean;
 it must not be done by globally disabling diagnostics. The secret baseline must
-be reviewed when intentional fixture values change.
+be reviewed when intentional fixture values change. Every new or changed
+baseline entry is a security-sensitive bypass and must be matched to its
+intentional fixture during review; a baseline update is not evidence that a
+finding is safe.
+
+Partial type coverage is an accepted residual of this change, not a claim that
+the repository is globally type-clean. Maintainers should add a production
+module to the explicit include set whenever they make that module clean, and
+new production modules should enter the set before merge when they pass ty.
+This is a manual ratchet: CI cannot prove coverage growth while existing modules
+remain outside the boundary, so reviewers still own that check.
 
 The CI workflow depends on pinned checkout, uv, and just-setup actions plus
 locked Python development dependencies. Dependabot's existing uv configuration
@@ -62,4 +72,3 @@ maintains the Python pins; action SHA updates remain ordinary reviewed changes.
 - **Gate the entire tree immediately.** This would require broad formatting,
   type fixes, or suppressions outside issue #48. It obscures the CI change and
   makes rollback harder without improving the requested coordination.
-
