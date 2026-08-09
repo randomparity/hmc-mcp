@@ -15,7 +15,7 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>newsysname</SystemName>
-      <PowerOffPolicy>autooff</PowerOffPolicy>
+      <PowerOffPolicy>1</PowerOffPolicy>
     </ManagedSystem>
   </content>
 </entry>
@@ -35,15 +35,24 @@ def test_build_managed_system_document_rename():
 
 
 def test_build_managed_system_document_power_off_policy():
-    xml = build_managed_system_document(power_off_policy="autooff")
-    assert "<PowerOffPolicy" in xml
-    assert "autooff" in xml
+    xml = build_managed_system_document(power_off_policy=1)
+    assert '<PowerOffPolicy kb="CUD" kxe="false">1</PowerOffPolicy>' in xml
+
+
+def test_build_managed_system_document_invalid_power_off_policy():
+    with pytest.raises(ValueError, match="power_off_policy"):
+        build_managed_system_document(power_off_policy=2)
 
 
 def test_build_managed_system_document_lpar_start_policy():
     xml = build_managed_system_document(power_on_lpar_start_policy="autostart")
     assert "<PowerOnLparStartPolicy" in xml
     assert "autostart" in xml
+
+
+def test_build_managed_system_document_invalid_lpar_start_policy():
+    with pytest.raises(ValueError, match="power_on_lpar_start_policy"):
+        build_managed_system_document(power_on_lpar_start_policy="always")
 
 
 def test_build_managed_system_document_mem_fields():
@@ -56,6 +65,11 @@ def test_build_managed_system_document_mem_fields():
     assert "256" in xml
     assert "4" in xml
     assert "sys_firmware_only" in xml
+
+
+def test_build_managed_system_document_invalid_mem_mirroring_mode():
+    with pytest.raises(ValueError, match="mem_mirroring_mode"):
+        build_managed_system_document(mem_mirroring_mode="weird")
 
 
 def test_build_managed_system_document_all_none_emits_metadata_only():
@@ -83,12 +97,12 @@ async def test_modify_managed_system(mock_hmc):
     route = mock_hmc.post("/rest/api/uom/ManagedSystem/sys-uuid-1").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
-    xml = build_managed_system_document(new_name="newsysname", power_off_policy="autooff")
+    xml = build_managed_system_document(new_name="newsysname", power_off_policy=1)
     async with HMCClient(make_config()) as hmc:
         result = await hmc.modify_managed_system("sys-uuid-1", xml)
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "newsysname" in body
-    assert "autooff" in body
+    assert '<PowerOffPolicy kb="CUD" kxe="false">1</PowerOffPolicy>' in body
     assert result is not None
     assert result["Resource"]["SystemName"] == "newsysname"

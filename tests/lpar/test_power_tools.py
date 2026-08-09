@@ -16,13 +16,14 @@ from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
+    hmc_modify_system,
     hmc_power_off_system,
     hmc_power_off_vios,
     hmc_power_on_system,
     hmc_power_on_vios,
 )
 
-from conftest import JOB_ENTRY
+from conftest import JOB_ENTRY, SYSTEM_ENTRY
 
 SYSTEM_UUID = "sys-uuid-0001"
 VIOS_UUID = "vios-uuid-0001"
@@ -148,3 +149,41 @@ def test_power_off_vios_submits_job(monkeypatch, mock_hmc):
     assert "PowerOff</OperationName>" in body
     # Graceful shutdown omits the immediate parameter entirely.
     assert "immediate" not in body
+
+
+def test_modify_system_builds_xml(monkeypatch, mock_hmc):
+    """hmc_modify_system maps its args into the ManagedSystem document."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.post(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name="newsysname")
+        )
+    )
+    result = hmc_modify_system(
+        SYSTEM_UUID,
+        new_name="newsysname",
+        power_off_policy=1,
+        power_on_lpar_start_policy="autostart",
+        mem_mirroring_mode="sys_firmware_only",
+    )
+    body = route.calls.last.request.content.decode()
+    assert "newsysname</SystemName>" in body
+    assert '<PowerOffPolicy kb="CUD" kxe="false">1</PowerOffPolicy>' in body
+    assert (
+        '<PowerOnLparStartPolicy kb="CUD" kxe="false">autostart</PowerOnLparStartPolicy>'
+        in body
+    )
+    assert (
+        '<MemoryMirroringMode kb="CUD" kxe="false">sys_firmware_only</MemoryMirroringMode>'
+        in body
+    )
+    assert result["Resource"]["SystemName"] == "newsysname"
+
+
+def test_modify_system_invalid_policy_rejected_before_http(monkeypatch, mock_hmc):
+    """An invalid power_off_policy raises ValueError before any HTTP call."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.post(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}")
+    with pytest.raises(ValueError, match="power_off_policy"):
+        hmc_modify_system(SYSTEM_UUID, power_off_policy=2)
+    assert not route.called

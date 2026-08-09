@@ -25,6 +25,7 @@ defaults (profiles, virtual adapters, boot mode, etc.).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from .xmlutil import ATOM_NS, WEB_NS
 
@@ -32,6 +33,27 @@ UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
 # Valid partition environments.
 PARTITION_TYPES = ("AIX/Linux", "OS400", "Virtual IO Server")
+
+# Closed vocabularies for the string/int attributes the document builders
+# validate. The sets mirror what the HMC accepts for each property; os_type
+# and keylock are LogicalPartition attributes, the rest are ManagedSystem
+# modify attributes (vocabularies per IBM's ansible-power-hmc collection).
+OS_TYPES = ("aix", "linux", "ibmi")
+KEYLOCK_POSITIONS = ("normal", "manual", "auto")
+# power_off_policy: 1 powers the managed system off after all partitions
+# shut down, 0 leaves it powered on.
+POWER_OFF_POLICIES = (0, 1)
+POWER_ON_LPAR_START_POLICIES = ("autostart", "userinit", "autorecovery")
+MEM_MIRRORING_MODES = ("none", "sys_firmware_only")
+
+# Type aliases for the closed sets above, used to annotate the document-builder
+# and MCP-tool parameters so MCP renders them as enums and static checkers catch
+# typos before they reach the HMC.
+OsType = Literal["aix", "linux", "ibmi"]
+Keylock = Literal["normal", "manual", "auto"]
+PowerOffPolicy = Literal[0, 1]
+PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
+MemoryMirroringMode = Literal["none", "sys_firmware_only"]
 
 
 @dataclass(frozen=True)
@@ -169,8 +191,8 @@ def build_lpar_document(
     partition_type: str = "AIX/Linux",
     partition_id: int | None = None,
     resources: LparResources | None = None,
-    os_type: str | None = None,
-    keylock: str | None = None,
+    os_type: OsType | None = None,
+    keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
 ) -> str:
     """Build a LogicalPartition document for PUT (create) or POST (modify).
@@ -187,6 +209,12 @@ def build_lpar_document(
     if partition_type not in PARTITION_TYPES:
         raise ValueError(
             f"partition_type must be one of {PARTITION_TYPES}, got {partition_type!r}"
+        )
+    if os_type is not None and os_type not in OS_TYPES:
+        raise ValueError(f"os_type must be one of {OS_TYPES}, got {os_type!r}")
+    if keylock is not None and keylock not in KEYLOCK_POSITIONS:
+        raise ValueError(
+            f"keylock must be one of {KEYLOCK_POSITIONS}, got {keylock!r}"
         )
 
     resources = resources or LparResources()
@@ -325,11 +353,11 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
 
 def build_managed_system_document(
     new_name: str | None = None,
-    power_off_policy: str | None = None,
-    power_on_lpar_start_policy: str | None = None,
+    power_off_policy: PowerOffPolicy | None = None,
+    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
     pend_mem_region_size: int | None = None,
     requested_num_sys_huge_pages: int | None = None,
-    mem_mirroring_mode: str | None = None,
+    mem_mirroring_mode: MemoryMirroringMode | None = None,
 ) -> str:
     """Build a ManagedSystem document for POST (modify).
 
@@ -337,12 +365,33 @@ def build_managed_system_document(
     The HMC merges the supplied fields with the existing system configuration.
 
     new_name: rename the managed system.
-    power_off_policy: system power-off policy (e.g. 'autooff').
-    power_on_lpar_start_policy: LPAR auto-start policy on system power-on.
+    power_off_policy: power-off policy — 1 powers the system off after all
+        partitions shut down, 0 leaves it powered on.
+    power_on_lpar_start_policy: LPAR auto-start policy on system power-on —
+        'autostart', 'userinit', or 'autorecovery'.
     pend_mem_region_size: pending memory region size (MiB).
     requested_num_sys_huge_pages: number of huge memory pages to allocate.
-    mem_mirroring_mode: memory mirroring mode (e.g. 'none', 'sys_firmware_only').
+    mem_mirroring_mode: memory mirroring mode — 'none' or 'sys_firmware_only'.
     """
+    if power_off_policy is not None and power_off_policy not in POWER_OFF_POLICIES:
+        raise ValueError(
+            f"power_off_policy must be one of {POWER_OFF_POLICIES}, got "
+            f"{power_off_policy!r}"
+        )
+    if (
+        power_on_lpar_start_policy is not None
+        and power_on_lpar_start_policy not in POWER_ON_LPAR_START_POLICIES
+    ):
+        raise ValueError(
+            f"power_on_lpar_start_policy must be one of "
+            f"{POWER_ON_LPAR_START_POLICIES}, got {power_on_lpar_start_policy!r}"
+        )
+    if mem_mirroring_mode is not None and mem_mirroring_mode not in MEM_MIRRORING_MODES:
+        raise ValueError(
+            f"mem_mirroring_mode must be one of {MEM_MIRRORING_MODES}, got "
+            f"{mem_mirroring_mode!r}"
+        )
+
     body_parts = ["  <Metadata><Atom/></Metadata>"]
 
     mem_fields = [mem_mirroring_mode, pend_mem_region_size, requested_num_sys_huge_pages]

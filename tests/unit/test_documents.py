@@ -83,6 +83,16 @@ def test_invalid_partition_type():
         build_lpar_document(name="bad", partition_type="Windows")
 
 
+def test_invalid_os_type():
+    with pytest.raises(ValueError, match="os_type"):
+        build_lpar_document(name="bad", os_type="windows")
+
+
+def test_invalid_keylock():
+    with pytest.raises(ValueError, match="keylock"):
+        build_lpar_document(name="bad", keylock="turbo")
+
+
 def test_all_partition_types_accepted():
     for pt in PARTITION_TYPES:
         build_lpar_document(name="ok", partition_type=pt)

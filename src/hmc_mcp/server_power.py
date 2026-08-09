@@ -15,7 +15,12 @@ from ._app import (
 from .client import HMCError
 from .common import client_from_env
 from .documents import (
+    Keylock,
     LparResources,
+    MemoryMirroringMode,
+    OsType,
+    PowerOffPolicy,
+    PowerOnLparStartPolicy,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_lpar_document,
@@ -42,8 +47,8 @@ def hmc_create_lpar(
     desired_vcpus: int | None = 1,
     max_vcpus: int | None = 2,
     uncapped: bool = True,
-    os_type: str | None = None,
-    keylock: str | None = None,
+    os_type: OsType | None = None,
+    keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
 ) -> dict[str, Any] | None:
     """Create a new LPAR on a managed system.
@@ -176,11 +181,11 @@ def hmc_dlpar_proc(
 def hmc_modify_system(
     system_uuid: str,
     new_name: str | None = None,
-    power_off_policy: str | None = None,
-    power_on_lpar_start_policy: str | None = None,
+    power_off_policy: PowerOffPolicy | None = None,
+    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
     pend_mem_region_size: int | None = None,
     requested_num_sys_huge_pages: int | None = None,
-    mem_mirroring_mode: str | None = None,
+    mem_mirroring_mode: MemoryMirroringMode | None = None,
 ) -> dict[str, Any] | None:
     """Modify a managed system's configuration.
 
@@ -188,11 +193,13 @@ def hmc_modify_system(
 
     system_uuid: UUID of the managed system (from hmc_list_systems).
     new_name: rename the managed system.
-    power_off_policy: system power-off policy (e.g. 'autooff').
-    power_on_lpar_start_policy: LPAR auto-start policy on system power-on.
+    power_off_policy: power-off policy — 1 powers the system off after all
+        partitions shut down, 0 leaves it powered on.
+    power_on_lpar_start_policy: LPAR auto-start policy on system power-on —
+        'autostart', 'userinit', or 'autorecovery'.
     pend_mem_region_size: pending memory region size (MiB).
     requested_num_sys_huge_pages: number of huge memory pages to allocate.
-    mem_mirroring_mode: memory mirroring mode (e.g. 'none', 'sys_firmware_only').
+    mem_mirroring_mode: memory mirroring mode — 'none' or 'sys_firmware_only'.
     """
     xml = build_managed_system_document(
         new_name=new_name,
