@@ -14,6 +14,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
+from .pcm import newest_metric_link
 
 
 
@@ -147,13 +148,22 @@ def hmc_get_aggregated_metrics(
     return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
 
 
-def _metric_links_method(hmc, kind: Literal["processed", "aggregated"]):
-    """Select the client link-fetch method for a PCM metric kind."""
-    return (
+async def _fetch_metric_links(
+    hmc: Any,
+    kind: Literal["processed", "aggregated"],
+    category: str,
+    resource_uuid: str,
+    start_ts: str,
+    end_ts: str | None,
+    no_of_samples: int | None,
+) -> list[dict[str, str]]:
+    """Fetch the PCM metric feed via the client method for *kind*."""
+    fn = (
         hmc.get_processed_metric_links
         if kind == "processed"
         else hmc.get_aggregated_metric_links
     )
+    return await fn(category, resource_uuid, start_ts, end_ts, no_of_samples)
 
 
 def _metrics_links(
@@ -165,8 +175,8 @@ def _metrics_links(
     no_of_samples: int | None,
 ) -> list[dict[str, str]]:
     return with_client(
-        lambda hmc: _metric_links_method(hmc, kind)(
-            category, resource_uuid, start_ts, end_ts, no_of_samples
+        lambda hmc: _fetch_metric_links(
+            hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
         )
     )
 
@@ -181,8 +191,8 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     async def _go():
         async with client_from_env() as hmc:
-            links = await _metric_links_method(hmc, kind)(
-                category, resource_uuid, start_ts, end_ts, no_of_samples
+            links = await _fetch_metric_links(
+                hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
             )
             if not links:
                 return {}
@@ -190,7 +200,7 @@ def _metrics_fetch(
             # has aged out of PCM retention; surface that as no-data, matching
             # the tool contract (``{}`` when no metrics are available).
             try:
-                return await hmc.fetch_json(links[-1]["link"])
+                return await hmc.fetch_json(newest_metric_link(links)["link"])
             except HMCError as exc:
                 if exc.status_code == 404:
                     return {}

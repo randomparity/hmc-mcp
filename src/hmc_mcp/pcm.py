@@ -15,6 +15,7 @@ ProcessedMetrics, AggregatedMetrics.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from defusedxml import ElementTree as ET
@@ -99,3 +100,24 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
                 }
             )
     return links
+
+
+def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
+    """Return the link whose ``updated`` timestamp is newest.
+
+    The PCM feed does not guarantee entries are ordered by age, so picking the
+    last row (``links[-1]``) could select a stale document. Compare each
+    entry's ISO-8601 ``updated`` stamp instead; stamps that fail to parse sort
+    as the earliest UTC instant so a real (even old) timestamp always wins.
+    """
+    def _key(link: dict[str, str]) -> datetime:
+        updated = link.get("updated", "")
+        try:
+            dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    return max(links, key=_key)

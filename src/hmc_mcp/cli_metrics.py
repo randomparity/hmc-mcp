@@ -16,6 +16,7 @@ from .cli_app import (
     err_console,
     metrics_app,
 )
+from .pcm import newest_metric_link
 
 
 
@@ -90,7 +91,7 @@ def metrics_show(
             # A 404 means the newest document aged out of PCM retention;
             # report that as no data rather than an error.
             try:
-                return await hmc.fetch_json(links[-1]["link"])
+                return await hmc.fetch_json(newest_metric_link(links)["link"])
             except HMCError as exc:
                 if exc.status_code == 404:
                     return {}

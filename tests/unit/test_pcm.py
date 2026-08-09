@@ -4,10 +4,12 @@ import httpx
 import pytest
 from defusedxml import ElementTree as ET
 
+from hmc_mcp.client import HMCError
 from hmc_mcp.jobs import create_logical_unit_job, delete_logical_unit_job
 from hmc_mcp.pcm import (
     build_pcm_preferences_document,
     metric_links,
+    newest_metric_link,
     pcm_preferences_to_dict,
 )
 from hmc_mcp.server import (
@@ -38,6 +40,23 @@ PCM_FEED = """<?xml version="1.0"?>
 
 EMPTY_FEED = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
+</feed>
+"""
+
+# Newest entry (_2.json, 12:00:30) listed FIRST — the HMC does not guarantee
+# the feed is ordered by age, so selection must be by updated stamp, not row.
+OUT_OF_ORDER_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>ManagedSystem ProcessedMetrics</title>
+    <updated>2026-08-07T12:00:30Z</updated>
+    <link rel="SELF" href="/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json" type="application/json"/>
+  </entry>
+  <entry>
+    <title>ManagedSystem ProcessedMetrics</title>
+    <updated>2026-08-07T12:00:00Z</updated>
+    <link rel="SELF" href="/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_1.json" type="application/json"/>
+  </entry>
 </feed>
 """
 
@@ -132,6 +151,26 @@ def test_metric_links_malformed_raises():
         metric_links("<feed><entry><unclosed>")
 
 
+def test_newest_metric_link_selects_by_updated_not_position():
+    """newest_metric_link returns the newest stamp regardless of feed order."""
+    links = [
+        {"link": "/old.json", "updated": "2026-08-07T12:00:00Z", "title": ""},
+        {"link": "/new.json", "updated": "2026-08-07T12:00:30Z", "title": ""},
+        {"link": "/mid.json", "updated": "2026-08-07T12:00:10Z", "title": ""},
+    ]
+    assert newest_metric_link(links)["link"] == "/new.json"
+
+
+def test_newest_metric_link_unparseable_stamp_sorts_oldest():
+    """A stamp that fails to parse never wins over a real timestamp."""
+    links = [
+        {"link": "/real.json", "updated": "2026-08-07T12:00:00Z", "title": ""},
+        {"link": "/garbage.json", "updated": "not-a-date", "title": ""},
+        {"link": "/missing.json", "updated": "", "title": ""},
+    ]
+    assert newest_metric_link(links)["link"] == "/real.json"
+
+
 # ---------------------------------------------------------------------- #
 # Metrics MCP tools (split link-list vs fetch)
 # ---------------------------------------------------------------------- #
@@ -158,6 +197,35 @@ def test_get_processed_metrics_fetches_latest(monkeypatch, mock_hmc):
     mock_hmc.get(
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
+
+    result = hmc_get_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    )
+
+    assert result == METRICS_JSON
+
+
+def test_get_processed_metrics_fetches_newest_not_last(monkeypatch, mock_hmc):
+    """The newest document is selected by updated stamp, not feed position.
+
+    The newest entry is listed first; the stale document (last row) returns a
+    404. The tool must fetch the newest and return its JSON rather than
+    surfacing no-data from the stale row.
+    """
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(
+        mock_hmc,
+        "ManagedSystem",
+        "sys-uuid",
+        "ProcessedMetrics",
+        text=OUT_OF_ORDER_FEED,
+    )
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_1.json"
+    ).mock(return_value=httpx.Response(404, text="<error>expired</error>"))
 
     result = hmc_get_processed_metrics(
         "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
@@ -193,6 +261,20 @@ def test_get_processed_metrics_expired_doc(monkeypatch, mock_hmc):
     )
 
     assert result == {}
+
+
+def test_get_processed_metrics_non_404_error_propagates(monkeypatch, mock_hmc):
+    """A non-404 HMCError from the document fetch is re-raised, not swallowed."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(500, text="<error>boom</error>"))
+
+    with pytest.raises(HMCError):
+        hmc_get_processed_metrics(
+            "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+        )
 
 
 def test_get_aggregated_metric_links(monkeypatch, mock_hmc):
