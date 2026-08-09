@@ -13,11 +13,11 @@ from ._app import (
 
 from .jobs import (
     RepositorySource,
-    firmware_update_job,
-    hmc_update_job,
-    hmc_upgrade_job,
-    vios_update_job,
-    vios_upgrade_job,
+    update_firmware_job,
+    update_hmc_job,
+    upgrade_hmc_job,
+    update_vios_job,
+    upgrade_vios_job,
 )
 
 
@@ -38,7 +38,7 @@ def hmc_update_hmc(system_uuid: str, repository: RepositorySource) -> dict[str, 
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Update",
-            hmc_update_job(repository),
+            update_hmc_job(repository),
         )
     )
 
@@ -55,7 +55,7 @@ def hmc_upgrade_hmc(system_uuid: str, repository: RepositorySource) -> dict[str,
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/ManagementConsole/{system_uuid}/do/Upgrade",
-            hmc_upgrade_job(repository),
+            upgrade_hmc_job(repository),
         )
     )
 
@@ -86,7 +86,7 @@ def hmc_update_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, A
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Update",
-            vios_update_job(repository),
+            update_vios_job(repository),
         )
     )
 
@@ -103,7 +103,7 @@ def hmc_upgrade_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, 
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/Upgrade",
-            vios_upgrade_job(repository),
+            upgrade_vios_job(repository),
         )
     )
 
@@ -121,7 +121,7 @@ def hmc_update_firmware(system_uuid: str, repository: RepositorySource) -> dict[
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
-            firmware_update_job(repository),
+            update_firmware_job(repository),
         )
     )
 

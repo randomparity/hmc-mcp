@@ -7,11 +7,11 @@ from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import (
-    firmware_update_job,
-    hmc_update_job,
-    hmc_upgrade_job,
-    vios_update_job,
-    vios_upgrade_job,
+    update_firmware_job,
+    update_hmc_job,
+    upgrade_hmc_job,
+    update_vios_job,
+    upgrade_vios_job,
 )
 
 
@@ -22,40 +22,40 @@ from hmc_mcp.jobs import (
 REPO_NFS = {"type": "nfs", "host": "repo.example.com", "path": "/images/hmc"}
 
 
-def test_hmc_update_job_xml():
-    xml = hmc_update_job(REPO_NFS)
+def test_update_hmc_job_xml():
+    xml = update_hmc_job(REPO_NFS)
     assert "Update" in xml
     assert "ManagementConsole" in xml
     assert "nfs" in xml
 
 
-def test_hmc_upgrade_job_xml():
-    xml = hmc_upgrade_job(REPO_NFS)
+def test_upgrade_hmc_job_xml():
+    xml = upgrade_hmc_job(REPO_NFS)
     assert "Upgrade" in xml
     assert "ManagementConsole" in xml
 
 
-def test_vios_update_job_xml():
-    xml = vios_update_job(REPO_NFS)
+def test_update_vios_job_xml():
+    xml = update_vios_job(REPO_NFS)
     assert "Update" in xml
     assert "VirtualIOServer" in xml
 
 
-def test_vios_upgrade_job_xml():
-    xml = vios_upgrade_job(REPO_NFS)
+def test_upgrade_vios_job_xml():
+    xml = upgrade_vios_job(REPO_NFS)
     assert "Upgrade" in xml
     assert "VirtualIOServer" in xml
 
 
-def test_firmware_update_job_xml():
-    xml = firmware_update_job({"type": "disk"})
+def test_update_firmware_job_xml():
+    xml = update_firmware_job({"type": "disk"})
     assert "UpdateFirmware" in xml
     assert "ManagedSystem" in xml
 
 
 def test_repository_params_none_values_excluded():
     """None values in the repository dict must not appear as job parameters."""
-    xml = hmc_update_job({"type": "nfs", "host": None, "path": "/images"})
+    xml = update_hmc_job({"type": "nfs", "host": None, "path": "/images"})
     assert "host" not in xml
     assert "/images" in xml
 
@@ -63,28 +63,28 @@ def test_repository_params_none_values_excluded():
 def test_repository_params_unknown_key_rejected():
     """A misspelled key must fail fast instead of reaching the HMC."""
     with pytest.raises(ValueError, match="Unknown repository key.*hst"):
-        hmc_update_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
+        update_hmc_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_missing_type_rejected():
     """A repository dict without 'type' must fail fast, not build a job."""
     with pytest.raises(ValueError, match="missing 'type'"):
-        hmc_update_job({"host": "repo.example.com", "path": "/images"})
+        update_hmc_job({"host": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_unknown_type_rejected():
     with pytest.raises(ValueError, match="Unknown repository type"):
-        hmc_update_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
+        update_hmc_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_missing_required_key_rejected():
     """nfs requires host+path; a missing one must fail fast."""
     with pytest.raises(ValueError, match="requires key.*host"):
-        hmc_update_job({"type": "nfs", "path": "/images"})
+        update_hmc_job({"type": "nfs", "path": "/images"})
 
 
 def test_repository_params_disk_requires_nothing():
-    xml = hmc_update_job({"type": "disk"})
+    xml = update_hmc_job({"type": "disk"})
     assert "Update" in xml
 
 
@@ -118,7 +118,7 @@ async def test_hmc_update_hmc(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update",
-            hmc_update_job(REPO_NFS),
+            update_hmc_job(REPO_NFS),
         )
 
     assert route.called
@@ -134,7 +134,7 @@ async def test_hmc_upgrade_hmc(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade",
-            hmc_upgrade_job({"type": "disk"}),
+            upgrade_hmc_job({"type": "disk"}),
         )
 
     assert route.called
@@ -163,7 +163,7 @@ async def test_hmc_update_vios(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update",
-            vios_update_job(REPO_NFS),
+            update_vios_job(REPO_NFS),
         )
 
     assert route.called
@@ -182,7 +182,7 @@ async def test_hmc_upgrade_vios(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade",
-            vios_upgrade_job({"type": "sftp", "host": "sftp.example.com", "path": "/vios"}),
+            upgrade_vios_job({"type": "sftp", "host": "sftp.example.com", "path": "/vios"}),
         )
 
     assert route.called
@@ -198,7 +198,7 @@ async def test_hmc_update_firmware(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/ManagedSystem/{SYS_UUID}/do/UpdateFirmware",
-            firmware_update_job({"type": "disk"}),
+            update_firmware_job({"type": "disk"}),
         )
 
     assert route.called

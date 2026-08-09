@@ -17,7 +17,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .jobs import install_lpar_job, vios_install_job
+from .jobs import install_lpar_job, install_vios_job
 from .ssh import run_hmc_cli
 from .documents import build_vios_document
 
@@ -117,7 +117,7 @@ def hmc_install_vios(
     job — poll hmc_get_job for status.
     """
 
-    job_xml = vios_install_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
+    job_xml = install_vios_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
     return with_client(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",

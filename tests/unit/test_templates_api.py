@@ -6,7 +6,7 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.jobs import partition_template_deploy_job
+from hmc_mcp.jobs import deploy_partition_template_job
 
 TEMPLATE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -36,7 +36,7 @@ TEMPLATE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_deploy_job():
-    xml = partition_template_deploy_job("sys-uuid", "memento-1")
+    xml = deploy_partition_template_job("sys-uuid", "memento-1")
     assert "Deploy" in xml
     assert "TargetUuid" in xml and "sys-uuid" in xml
     assert "TemplateUuid" not in xml  # draft UUID is in the URL, not a parameter

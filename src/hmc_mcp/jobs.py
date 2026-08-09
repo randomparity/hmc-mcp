@@ -209,7 +209,7 @@ def remote_restart_lpar_job(target_system: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
+def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
     """PartitionTemplate Deploy job.
 
     target_system_uuid is the managed system to create the partition on;
@@ -304,7 +304,7 @@ def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
-def hmc_update_job(repository: RepositorySource) -> str:
+def update_hmc_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software update (Install PTFs).
 
     target: ManagementConsole/{uuid}/do/Update
@@ -312,7 +312,7 @@ def hmc_update_job(repository: RepositorySource) -> str:
     return build_job_request("Update", "ManagementConsole", _repository_params(repository))
 
 
-def hmc_upgrade_job(repository: RepositorySource) -> str:
+def upgrade_hmc_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
 
     target: ManagementConsole/{uuid}/do/Upgrade
@@ -320,7 +320,7 @@ def hmc_upgrade_job(repository: RepositorySource) -> str:
     return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
 
 
-def vios_update_job(repository: RepositorySource) -> str:
+def update_vios_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS update.
 
     target: VirtualIOServer/{uuid}/do/Update
@@ -328,7 +328,7 @@ def vios_update_job(repository: RepositorySource) -> str:
     return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
 
 
-def vios_upgrade_job(repository: RepositorySource) -> str:
+def upgrade_vios_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS upgrade.
 
     target: VirtualIOServer/{uuid}/do/Upgrade
@@ -336,7 +336,7 @@ def vios_upgrade_job(repository: RepositorySource) -> str:
     return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
 
 
-def firmware_update_job(repository: RepositorySource) -> str:
+def update_firmware_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a managed system firmware update.
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware
@@ -349,7 +349,7 @@ def firmware_update_job(repository: RepositorySource) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def vios_install_job(
+def install_vios_job(
     nim_ip: str,
     nim_gateway: str,
     nim_subnetmask: str,

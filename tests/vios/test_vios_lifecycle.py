@@ -6,7 +6,7 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.jobs import vios_install_job
+from hmc_mcp.jobs import install_vios_job
 from hmc_mcp.documents import build_vios_document
 
 BASE = "https://hmc.test:12443"
@@ -62,12 +62,12 @@ def test_build_vios_document_custom_resources():
 
 
 # ---------------------------------------------------------------------- #
-# Unit: vios_install_job
+# Unit: install_vios_job
 # ---------------------------------------------------------------------- #
 
 
-def test_vios_install_job_xml():
-    xml = vios_install_job(
+def test_install_vios_job_xml():
+    xml = install_vios_job(
         nim_ip="192.168.1.10",
         nim_gateway="192.168.1.1",
         nim_subnetmask="255.255.255.0",
@@ -85,8 +85,8 @@ def test_vios_install_job_xml():
     assert "90" in xml
 
 
-def test_vios_install_job_default_timeout():
-    xml = vios_install_job(
+def test_install_vios_job_default_timeout():
+    xml = install_vios_job(
         nim_ip="10.0.0.1",
         nim_gateway="10.0.0.254",
         nim_subnetmask="255.255.255.0",
@@ -140,7 +140,7 @@ async def test_install_vios(mock_hmc):
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
-        job_xml = vios_install_job(
+        job_xml = install_vios_job(
             nim_ip="192.168.1.10",
             nim_gateway="192.168.1.1",
             nim_subnetmask="255.255.255.0",

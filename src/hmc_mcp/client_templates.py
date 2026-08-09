@@ -10,7 +10,7 @@ from typing import Any
 
 from .client_parse import _parse_feed
 from .errors import HMCError
-from .jobs import partition_template_deploy_job
+from .jobs import deploy_partition_template_job
 
 
 class TemplatesMixin:
@@ -53,7 +53,7 @@ class TemplatesMixin:
         """
 
         memento = self._session_token or ""
-        xml = partition_template_deploy_job(target_system_uuid, memento)
+        xml = deploy_partition_template_job(target_system_uuid, memento)
         return await self.submit_job(
             f"/rest/api/templates/PartitionTemplate/{draft_template_uuid}/do/deploy",
             xml,
