@@ -9,15 +9,16 @@ explicit init arg would otherwise shadow the environment).
 
 from __future__ import annotations
 
-from hmc_mcp import cli
+from hmc_mcp import cli, cli_app
 
 
 def test_ssh_config_uses_global_overrides(monkeypatch):
     """Set global flags are passed through to the SSH HMCConfig."""
-    monkeypatch.setattr(cli.GLOBALS, "host", "flag-host")
-    monkeypatch.setattr(cli.GLOBALS, "user", "flag-user")
-    monkeypatch.setattr(cli.GLOBALS, "password", "flag-pass")
-    monkeypatch.setattr(cli.GLOBALS, "verify_ssl", True)
+    monkeypatch.setattr(
+        cli_app,
+        "GLOBALS",
+        cli_app.GlobalOpts(host="flag-host", user="flag-user", password="flag-pass", verify_ssl=True),
+    )
 
     cfg = cli._ssh_config()
 
@@ -29,7 +30,7 @@ def test_ssh_config_uses_global_overrides(monkeypatch):
 
 def test_ssh_config_keeps_false_verify_ssl(monkeypatch):
     """An explicit ``--no-verify-ssl`` (False) is kept, not dropped as None."""
-    monkeypatch.setattr(cli.GLOBALS, "verify_ssl", False)
+    monkeypatch.setattr(cli_app, "GLOBALS", cli_app.GlobalOpts(verify_ssl=False))
     monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
 
     cfg = cli._ssh_config()

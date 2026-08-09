@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from .cli_app import (
     GLOBALS as GLOBALS,
+    GlobalOpts as GlobalOpts,
     _is_loopback as _is_loopback,
     _ssh_config as _ssh_config,
     app as app,

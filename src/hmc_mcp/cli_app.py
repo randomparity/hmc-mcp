@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, NoReturn
 
 import typer
@@ -65,7 +66,15 @@ app.add_typer(memory_pools_app, name="memory-pools")
 
 
 
+@dataclass(frozen=True)
 class GlobalOpts:
+    """Immutable snapshot of the CLI's global connection options.
+
+    The typer callback *replaces* ``GLOBALS`` with a fresh snapshot per
+    invocation; commands read it through ``_client`` / ``_ssh_config``. Frozen
+    so no command can mutate shared state.
+    """
+
     host: str | None = None
     user: str | None = None
     password: str | None = None
@@ -86,10 +95,8 @@ def main(
         None, "--verify-ssl/--no-verify-ssl", envvar="HMC_VERIFY_SSL", help="Verify the HMC TLS certificate"
     ),
 ) -> None:
-    GLOBALS.host = host
-    GLOBALS.user = user
-    GLOBALS.password = password
-    GLOBALS.verify_ssl = verify_ssl
+    global GLOBALS
+    GLOBALS = GlobalOpts(host=host, user=user, password=password, verify_ssl=verify_ssl)
 
 
 def _client():
