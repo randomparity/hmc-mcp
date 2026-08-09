@@ -185,3 +185,150 @@ def test_delete_vios_succeeds_when_powered_off(monkeypatch, mock_hmc):
     result = hmc_delete_vios(LPAR_UUID)
 
     assert result == f"Deleted VIOS {LPAR_UUID}"
+
+
+# ------------------------------------------------------------------ #
+# hmc_power_on_lpar precondition guard
+# ------------------------------------------------------------------ #
+
+POWER_ON_JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-power-on</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-power-on</JobID>
+      <Status>RUNNING</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def _mock_power_on_guard(router, state: str):
+    router.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
+    ).mock(return_value=httpx.Response(200, text=state))
+    return router.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
+    ).mock(return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY))
+
+
+def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
+    """hmc_power_on_lpar returns an already-running dict without submitting a job."""
+    from hmc_mcp.server import hmc_power_on_lpar
+
+    _hmc_env(monkeypatch)
+    power_on_route = _mock_power_on_guard(mock_hmc, "running")
+
+    result = hmc_power_on_lpar(LPAR_UUID)
+
+    assert not power_on_route.called
+    assert result is not None
+    assert result.get("already_running") is True
+    assert LPAR_UUID in result.get("message", "")
+
+
+def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
+    """hmc_power_on_lpar submits the PowerOn job when partition is not activated."""
+    from hmc_mcp.server import hmc_power_on_lpar
+
+    _hmc_env(monkeypatch)
+    power_on_route = _mock_power_on_guard(mock_hmc, "not activated")
+
+    result = hmc_power_on_lpar(LPAR_UUID)
+
+    assert power_on_route.called
+    assert result["Resource"]["JobID"] == "job-uuid-power-on"
+
+
+def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
+    """hmc_power_on_lpar(force=True) submits the job even when running."""
+    from hmc_mcp.server import hmc_power_on_lpar
+
+    _hmc_env(monkeypatch)
+    # When force=True the state check endpoint is not called; only the job PUT matters.
+    power_on_route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
+    ).mock(return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY))
+
+    result = hmc_power_on_lpar(LPAR_UUID, force=True)
+
+    assert power_on_route.called
+    assert result["Resource"]["JobID"] == "job-uuid-power-on"
+
+
+# ------------------------------------------------------------------ #
+# hmc_create_lpar name-collision guard
+# ------------------------------------------------------------------ #
+
+EXISTING_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>LogicalPartition:existing-lpar</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <PartitionName>existing-lpar</PartitionName>
+        <PartitionState>not activated</PartitionState>
+      </LogicalPartition>
+    </content>
+  </entry>
+</feed>
+""".format(uuid=LPAR_UUID)
+
+EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom"/>
+"""
+
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+
+NEW_LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:new-lpar-uuid-0001</id>
+    <title>LogicalPartition:new-lpar</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <PartitionName>new-lpar</PartitionName>
+      </LogicalPartition>
+    </content>
+  </entry>
+</feed>
+"""
+
+
+def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
+    """hmc_create_lpar raises ValueError when a partition with the same name exists."""
+    from hmc_mcp.server import hmc_create_lpar
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionName==existing-lpar)"
+    ).mock(return_value=httpx.Response(200, text=EXISTING_LPAR_FEED))
+    create_route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    )
+
+    with pytest.raises(ValueError, match="existing-lpar"):
+        hmc_create_lpar(SYSTEM_UUID, name="existing-lpar")
+
+    assert not create_route.called
+
+
+def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
+    """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
+    from hmc_mcp.server import hmc_create_lpar
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
+    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    create_route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
+
+    result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
+
+    assert create_route.called
+    assert result["Resource"]["PartitionName"] == "new-lpar"

@@ -146,12 +146,12 @@ Exposed tools:
 
 | Tool                  | Description |
 |-----------------------|-------------|
-| `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type) |
+| `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
 | `hmc_modify_lpar`     | Change an LPAR's name / memory / CPU (DLPAR when running) |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
 | `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
 | `hmc_delete_lpar`     | Destroy an LPAR (must be powered off; irreversible) |
-| `hmc_power_on_lpar`   | Submit PowerOn job |
+| `hmc_power_on_lpar`   | Submit PowerOn job; returns `already_running` if partition is running (`force=True` to override) |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
 | `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`) — job |
 

@@ -151,6 +151,10 @@ def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
 def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_power_on_lpar PUTs a PowerOn job to the do/ path."""
     _hmc_env(monkeypatch)
+    # Mock the precondition state check (not activated → proceed with PowerOn).
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
+        return_value=httpx.Response(200, text="not activated")
+    )
     route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
@@ -182,6 +186,10 @@ def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
 def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     """hmc_create_lpar maps its arguments into the LogicalPartition document."""
     _hmc_env(monkeypatch)
+    # Mock name-collision check (no existing LPAR with this name).
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==newlpar)").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar"))
     )
@@ -207,6 +215,10 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
 def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     """dedicated=True emits DedicatedProcessorConfiguration with int CPUs."""
     _hmc_env(monkeypatch)
+    # Mock name-collision check (no existing LPAR with this name).
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ded)").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded"))
     )

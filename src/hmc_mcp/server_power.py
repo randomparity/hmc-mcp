@@ -69,6 +69,9 @@ def hmc_create_lpar(
     profile edits) before it can boot an OS. This creates a real partition —
     confirm name/system_name_or_uuid before calling.
 
+    Raises ValueError if a partition with the given name already exists on
+    any managed system — names must be unique across the HMC.
+
     partition_type must be one of: 'AIX/Linux', 'OS400', 'Virtual IO Server'.
     os_type: target OS — ``aix``, ``linux``, or ``ibmi``.
     keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
@@ -98,6 +101,13 @@ def hmc_create_lpar(
 
     async def _go():
         async with client_from_env() as hmc:
+            existing = await hmc.find_partition_by_name(name)
+            if existing:
+                raise ValueError(
+                    f"An LPAR named {name!r} already exists "
+                    f"(UUID {existing.get('UUID')!r}). Choose a different name "
+                    "or delete the existing partition first."
+                )
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.create_logical_partition(system_uuid, xml)
 
@@ -339,6 +349,7 @@ def hmc_power_on_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    force: bool = False,
 ) -> dict[str, Any] | None:
     """Submit a PowerOn job for a logical partition.
 
@@ -347,12 +358,28 @@ def hmc_power_on_lpar(
     for status). This changes the state of a real partition — confirm the
     target with hmc_lpars(name=...) before calling.
 
+    If the partition is already in the 'running' state, the tool returns
+    ``{"already_running": True, "message": "..."}`` without submitting a job.
+    Pass force=True to skip this check and submit the PowerOn unconditionally.
+
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
     """
     async def _go():
         async with client_from_env() as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            if not force:
+                state = await hmc.get_quick_property(
+                    "LogicalPartition", lpar_uuid, "PartitionState"
+                )
+                if state == "running":
+                    return {
+                        "already_running": True,
+                        "message": (
+                            f"LPAR {lpar_uuid} is already running. "
+                            "Use force=True to submit PowerOn anyway."
+                        ),
+                    }
             job = await hmc.submit_job(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
                 power_on_lpar_job(),
