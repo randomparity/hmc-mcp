@@ -161,6 +161,9 @@ class FakeHMC:
     async def find_system_by_name(self, name):
         self._record("find_system_by_name", name)
         return self.system if name == "sys1" else None
+    async def wait_for_job(self, job_uuid, timeout_seconds=300, poll_interval=5):
+        self._record("wait_for_job", job_uuid, timeout_seconds, poll_interval)
+        return {**self.job, "Resource": {**self.job["Resource"], "Status": "COMPLETED"}}
 
     async def power_on_system(self, system_uuid):
         self._record("power_on_system", system_uuid)
@@ -1001,6 +1004,14 @@ def test_jobs_show_not_found_exits_1(fake_hmc):
     assert result.exit_code == 1
     assert "not found" in result.stderr
     assert fake_hmc.calls == [("get_job", ("ghost",), {})]
+
+
+def test_jobs_wait(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
+
+    assert result.exit_code == 0
+    assert "COMPLETED" in result.stdout
+    assert fake_hmc.calls == [("wait_for_job", (JOB_UUID, 300, 5), {})]
 
 
 # --------------------------------------------------------------------------- #

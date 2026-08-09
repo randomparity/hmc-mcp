@@ -28,6 +28,7 @@ from hmc_mcp.server import (
     hmc_run_command,
     hmc_update_firmware,
     hmc_vios_update,
+    hmc_wait_for_job,
 )
 
 from conftest import JOB_ENTRY
@@ -415,3 +416,40 @@ def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
     )
     result = hmc_recent_jobs()
     assert result == []
+# hmc_wait_for_job
+# ---------------------------------------------------------------------- #
+
+JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
+    """hmc_wait_for_job returns immediately when the first poll is COMPLETED."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_wait_for_job("job-uuid-999")
+    assert route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_wait_for_job_timeout_returns_last_entry(monkeypatch, mock_hmc):
+    """hmc_wait_for_job returns the RUNNING entry when timeout=0 elapses immediately."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
+    )
+    # timeout=0 means the deadline is already past after the first poll
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=0)
+    assert result["Resource"]["Status"] == "RUNNING"

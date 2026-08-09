@@ -352,6 +352,30 @@ class HMCClient(
     async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("Job", job_uuid)
 
+    async def wait_for_job(
+        self,
+        job_uuid: str,
+        timeout_seconds: int = 300,
+        poll_interval: int = 5,
+    ) -> dict[str, Any] | None:
+        """Poll an HMC job until it reaches a terminal state or timeout.
+
+        Terminal states: COMPLETED, FAILED, EXCEPTION.
+        Returns the last-seen job entry (terminal or not, after timeout).
+        """
+        import asyncio
+
+        _TERMINAL = {"COMPLETED", "FAILED", "EXCEPTION"}
+        deadline = asyncio.get_event_loop().time() + timeout_seconds
+        while True:
+            entry = await self.get_job(job_uuid)
+            status = (entry or {}).get("Resource", {}).get("Status", "")
+            if status in _TERMINAL:
+                return entry
+            if asyncio.get_event_loop().time() >= deadline:
+                return entry
+            await asyncio.sleep(poll_interval)
+
     async def delete_job(self, job_uuid: str) -> None:
         await self._delete(f"/rest/api/uom/Job/{job_uuid}")
 

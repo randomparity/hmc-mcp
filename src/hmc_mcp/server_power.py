@@ -278,64 +278,140 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
 
 
 
+async def _power_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a power job; optionally wait for it to reach a terminal state.
+
+    *submit_fn* is ``async (hmc) -> job_entry``.  When *wait* is False the
+    submitted job entry is returned immediately (the existing behaviour).
+    When *wait* is True the job UUID is extracted from the entry and
+    ``wait_for_job`` is called before returning.
+    """
+    async with client_from_env() as hmc:
+        job = await submit_fn(hmc)
+        if not wait or job is None:
+            return job
+        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+        if not job_uuid:
+            return job
+        return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+
+
 @mcp.tool
-def hmc_power_on_lpar(lpar_uuid: str) -> dict[str, Any] | None:
+def hmc_power_on_lpar(
+    lpar_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
     """Submit a PowerOn job for a logical partition.
 
     Returns the submitted job (check hmc_get_job for status). This changes
     the state of a real partition — confirm the UUID with hmc_lpars(name=...)
     before calling.
-    """
 
-    return with_client(
+    Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
+    (or until timeout_seconds elapses).
+    """
+    return _run(lambda: _power_op(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
             power_on_lpar_job(),
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_lpar(lpar_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+def hmc_power_off_lpar(
+    lpar_uuid: str,
+    immediate: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
     immediate=True forces an immediate power off (no graceful OS shutdown).
     Returns the submitted job. This changes the state of a real partition.
-    """
 
-    return with_client(
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _power_op(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
             power_off_lpar_job(immediate=immediate),
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool
-def hmc_power_on_system(system_uuid: str) -> dict[str, Any] | None:
-    """Power on a managed system (PowerOn job). Poll hmc_get_job for status."""
+def hmc_power_on_system(
+    system_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Power on a managed system (PowerOn job).
 
-    return with_client(lambda hmc: hmc.power_on_system(system_uuid))
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _power_op(
+        lambda hmc: hmc.power_on_system(system_uuid),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_system(system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
-    """Power off a managed system (PowerOff job). immediate skips graceful shutdown."""
+def hmc_power_off_system(
+    system_uuid: str,
+    immediate: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Power off a managed system (PowerOff job). immediate skips graceful shutdown.
 
-    return with_client(lambda hmc: hmc.power_off_system(system_uuid, immediate))
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _power_op(
+        lambda hmc: hmc.power_off_system(system_uuid, immediate),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool
-def hmc_power_on_vios(vios_uuid: str) -> dict[str, Any] | None:
-    """Power on a VIOS (PowerOn job). Poll hmc_get_job for status."""
+def hmc_power_on_vios(
+    vios_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Power on a VIOS (PowerOn job).
 
-    return with_client(lambda hmc: hmc.power_on_vios(vios_uuid))
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _power_op(
+        lambda hmc: hmc.power_on_vios(vios_uuid),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_vios(vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
-    """Power off a VIOS (PowerOff job). immediate skips graceful shutdown."""
+def hmc_power_off_vios(
+    vios_uuid: str,
+    immediate: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Power off a VIOS (PowerOff job). immediate skips graceful shutdown.
 
-    return with_client(lambda hmc: hmc.power_off_vios(vios_uuid, immediate))
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _power_op(
+        lambda hmc: hmc.power_off_vios(vios_uuid, immediate),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 

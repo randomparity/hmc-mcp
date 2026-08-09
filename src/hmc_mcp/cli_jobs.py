@@ -9,7 +9,10 @@ import typer
 from .cli_app import (
     _output,
     _print_json,
+    _run,
+    _client,
     _with_client,
+    console,
     err_console,
     jobs_app,
 )
@@ -38,5 +41,28 @@ def jobs_list(
     jobs = _with_client(lambda hmc: hmc.list_uom("Job"))
     jobs = jobs[:limit]
     _output(jobs, as_json, empty_msg="No jobs found")
+@jobs_app.command("wait")
+def jobs_wait(
+    uuid: str = typer.Argument(..., help="Job UUID to wait on"),
+    timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
+    interval: int = typer.Option(5, "--interval", "-i", help="Poll interval in seconds"),
+) -> None:
+    """Wait for an HMC job to reach a terminal state (COMPLETED / FAILED / EXCEPTION).
+
+    Prints the final job entry once a terminal state is reached or the
+    timeout elapses.
+    """
+    async def _go():
+        async with _client() as hmc:
+            return await hmc.wait_for_job(uuid, timeout, interval)
+
+    job = _run(_go)
+
+    if job is None:
+        err_console.print(f"[yellow]Job {uuid} not found[/yellow]")
+        raise typer.Exit(code=1)
+    status = (job.get("Resource") or {}).get("Status", "unknown")
+    console.print(f"[green]Job {uuid} status: {status}[/green]")
+    _print_json(job)
 
 
