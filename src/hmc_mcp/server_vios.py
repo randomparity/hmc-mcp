@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from typing import Any, Literal
 
@@ -159,16 +160,40 @@ def hmc_install_lpar_os(
 _VALID_BACKUP_TYPES = {"vios", "viosioconfig", "ssp"}
 
 
+def _parse_lsviosbackup_output(text: str) -> list[dict[str, str]]:
+    """Parse ``lsviosbackup`` fixed-width table output into a list of dicts.
+
+    The first non-empty line is the header; each subsequent non-empty line is
+    a backup row. Columns are separated by two or more spaces. Rows with fewer
+    values than headers are padded with empty strings so callers can tell a
+    missing field from an empty one.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    headers = [h for h in re.split(r"\s{2,}", lines[0]) if h]
+    results = []
+    for line in lines[1:]:
+        values = [v for v in re.split(r"\s{2,}", line) if v]
+        row = dict(zip(headers, values))
+        for header in headers[len(values):]:
+            row[header] = ""
+        results.append(row)
+    return results
+
+
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_vios_backups(vios_uuid: str) -> str:
+def hmc_list_vios_backups(vios_uuid: str) -> list[dict[str, str]]:
     """List existing VIOS backups for a given VIOS UUID.
 
-    Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and returns
-    the raw command output. Find vios_uuid with hmc_list_vios.
+    Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
+    fixed-width table into a list of dicts keyed by the output header
+    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    return _run(run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
+    output = _run(run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
+    return _parse_lsviosbackup_output(output)
 
 
 @mcp.tool

@@ -51,19 +51,21 @@ def test_list_vios_backups_runs_correct_command(monkeypatch):
     conn_mock.run.assert_called_once_with(
         f"lsviosbackup -id {VIOS_UUID}", check=True
     )
-    assert "vios1_backup_001" in result
-    assert "viosioconfig" in result
+    assert result == [
+        {"BackupName": "vios1_backup_001", "Date": "2024-01-15", "Type": "vios"},
+        {"BackupName": "vios1_backup_002", "Date": "2024-01-20", "Type": "viosioconfig"},
+    ]
 
 
-def test_list_vios_backups_returns_empty_output(monkeypatch):
-    """hmc_list_vios_backups returns empty string when there are no backups."""
+def test_list_vios_backups_returns_empty_list(monkeypatch):
+    """hmc_list_vios_backups returns an empty list when there are no backups."""
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_vios_backups(VIOS_UUID)
 
-    assert result == ""
+    assert result == []
 
 
 # ---------------------------------------------------------------------- #
