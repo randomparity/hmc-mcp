@@ -116,6 +116,22 @@ def test_repository_type_enum_matches_runtime_constant():
     assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
 
 
+def test_merged_metrics_tools_have_valid_output_schema():
+    """hmc_processed_metrics and hmc_aggregated_metrics must expose a non-trivial
+    output schema so MCP clients can understand their polymorphic return type."""
+    by_name = _tools_by_name()
+    for tool_name in ("hmc_processed_metrics", "hmc_aggregated_metrics"):
+        tool = by_name[tool_name]
+        # The tool must be registered and annotated as read-only
+        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, tool_name
+        # The input schema must include the 'mode' parameter
+        assert "mode" in tool.parameters.get("properties", {}), f"{tool_name} missing 'mode' param"
+        mode_schema = tool.parameters["properties"]["mode"]
+        assert set(mode_schema.get("enum", [])) == {"links", "fetch"}, (
+            f"{tool_name} mode enum incorrect: {mode_schema}"
+        )
+
+
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #

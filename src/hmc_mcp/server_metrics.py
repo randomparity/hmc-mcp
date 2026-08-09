@@ -94,7 +94,10 @@ def hmc_processed_metrics(
     """
     if mode == "links":
         return _metrics_links(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
-    return _metrics_fetch(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
+    elif mode == "fetch":
+        return _metrics_fetch(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
+    else:
+        raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -120,7 +123,10 @@ def hmc_aggregated_metrics(
     """
     if mode == "links":
         return _metrics_links(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
-    return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+    elif mode == "fetch":
+        return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+    else:
+        raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
 
 async def _fetch_metric_links(

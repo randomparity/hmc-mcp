@@ -13,6 +13,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -308,6 +309,24 @@ def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
     )
     hmc_vios_update(VIOS_UUID, REPO)
     assert route.calls.last.request.url.path.endswith("/do/Update")
+
+
+def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):
+    """hmc_hmc_update raises ValueError for an unknown kind, never reaching the HMC."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Invalid")
+    with pytest.raises(ValueError, match="Unknown kind"):
+        hmc_hmc_update(MC_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
+    assert not route.called
+
+
+def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):
+    """hmc_vios_update raises ValueError for an unknown kind, never reaching the HMC."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Invalid")
+    with pytest.raises(ValueError, match="Unknown kind"):
+        hmc_vios_update(VIOS_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
+    assert not route.called
 
 
 def test_update_firmware_submits_job(monkeypatch, mock_hmc):

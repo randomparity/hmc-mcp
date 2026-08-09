@@ -84,8 +84,12 @@ Common causes worth checking first:
 
 - **Local `.env` file supplying credentials** — `pydantic_settings` reads
   `env_file=".env"` at construction time, independent of `os.environ` patches.
-  Tests that need an empty `HMCConfig` must pass `_env_file=None` to suppress
-  `.env` loading; `monkeypatch.delenv` alone does not prevent `.env` reads.
+  Tests that need a credential-free `HMCConfig` must pass `_env_file=None` to
+  suppress `.env` loading: `HMCConfig(_env_file=None)` or
+  `HMCConfig(host="h", user="u", _env_file=None)`. Do not use
+  `monkeypatch.delenv` for this — it clears env vars but cannot prevent
+  `pydantic_settings` from reading the `.env` file. When `_env_file=None` is
+  applied, the `monkeypatch.delenv` calls are redundant and should be removed.
 - **Import name drift** — a tool or function renamed in source but still
   referenced by the old name in a test or fixture.
 

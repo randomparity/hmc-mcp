@@ -36,6 +36,18 @@ PCM_FEED = """<?xml version="1.0"?>
 </feed>
 """
 
+# Dedicated aggregated-metrics feed with AggregatedMetrics hrefs so that
+# aggregated fetch tests verify the correct URL path, not ProcessedMetrics ones.
+AGGREGATED_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>LogicalPartition AggregatedMetrics</title>
+    <updated>2026-08-07T12:00:30Z</updated>
+    <link rel="SELF" href="/rest/api/pcm/AggregatedMetrics/LogicalPartition_lpar_2.json" type="application/json"/>
+  </entry>
+</feed>
+"""
+
 EMPTY_FEED = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 </feed>
@@ -292,24 +304,40 @@ def test_processed_metrics_non_404_error_propagates(monkeypatch, mock_hmc):
 
 
 def test_aggregated_metrics_mode_links(monkeypatch, mock_hmc):
-    """hmc_aggregated_metrics with mode='links' uses the AggregatedMetrics endpoint."""
+    """hmc_aggregated_metrics with mode='links' uses the AggregatedMetrics endpoint.
+
+    Uses AGGREGATED_FEED so link hrefs carry AggregatedMetrics paths — the
+    assertion confirms endpoint routing, not just that some href ends in _2.json.
+    """
     _hmc_env(monkeypatch)
-    _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
+    _route_metrics_feed(
+        mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics",
+        text=AGGREGATED_FEED,
+    )
 
     result = hmc_aggregated_metrics(
         "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z", mode="links",
     )
 
     assert len(result) == 1
+    assert "AggregatedMetrics" in result[0]["link"]
     assert result[0]["link"].endswith("_2.json")
 
 
 def test_aggregated_metrics_mode_fetch_fetches_latest(monkeypatch, mock_hmc):
-    """hmc_aggregated_metrics with mode='fetch' downloads the most recent aggregated JSON."""
+    """hmc_aggregated_metrics with mode='fetch' downloads from the AggregatedMetrics URL.
+
+    Uses AGGREGATED_FEED so the document-fetch stub sits at an AggregatedMetrics
+    path — a regression that accidentally fetches from ProcessedMetrics would miss
+    the stub and raise an error rather than silently passing.
+    """
     _hmc_env(monkeypatch)
-    _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
+    _route_metrics_feed(
+        mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics",
+        text=AGGREGATED_FEED,
+    )
     mock_hmc.get(
-        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+        "/rest/api/pcm/AggregatedMetrics/LogicalPartition_lpar_2.json"
     ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
     result = hmc_aggregated_metrics(
@@ -351,3 +379,20 @@ def test_set_pcm_preferences_no_flags_raises(monkeypatch, mock_hmc):
 
     with pytest.raises(ValueError, match="No preference flags"):
         hmc_set_pcm_preferences("ManagedSystem", "sys-uuid")
+
+def test_processed_metrics_invalid_mode_raises(monkeypatch, mock_hmc):
+    """hmc_processed_metrics raises ValueError for an unknown mode value."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="Unknown mode"):
+        hmc_processed_metrics(
+            "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="invalid",  # type: ignore[arg-type]
+        )
+
+
+def test_aggregated_metrics_invalid_mode_raises(monkeypatch, mock_hmc):
+    """hmc_aggregated_metrics raises ValueError for an unknown mode value."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="Unknown mode"):
+        hmc_aggregated_metrics(
+            "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z", mode="invalid",  # type: ignore[arg-type]
+        )
