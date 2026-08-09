@@ -305,3 +305,31 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
     )
     candidates = hmc_find_placement(desired_memory_mb=8192, desired_proc_units=0.5)
     assert candidates == []
+
+
+# ---------------------------------------------------------------------- #
+# hmc_find_system (name-based lookup)
+# ---------------------------------------------------------------------- #
+
+from hmc_mcp.server import hmc_find_system  # noqa: E402
+
+
+def test_find_system_by_name_found(monkeypatch, mock_hmc):
+    """hmc_find_system searches by SystemName and returns the entry."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==s824-01)").mock(
+        return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01"))
+    )
+    result = hmc_find_system("s824-01")
+    assert result is not None
+    assert result["UUID"] == SYSTEM_UUID
+    assert result["Resource"]["SystemName"] == "s824-01"
+
+
+def test_find_system_by_name_not_found(monkeypatch, mock_hmc):
+    """hmc_find_system returns None when the search matches nothing."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==nobody)").mock(
+        return_value=httpx.Response(200, text='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>')
+    )
+    assert hmc_find_system("nobody") is None

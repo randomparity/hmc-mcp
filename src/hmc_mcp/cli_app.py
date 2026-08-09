@@ -268,3 +268,17 @@ async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
         return None
     return str(found["UUID"])
 
+
+async def _resolve_system_uuid(hmc, name_or_uuid: str) -> str | None:
+    """Resolve a managed system name or UUID to its UUID.
+
+    System-scoped: names are looked up via ``find_system_by_name`` only.
+    Returns None when *name_or_uuid* is neither a UUID nor a known system name.
+    """
+    if is_uuid(name_or_uuid):
+        return name_or_uuid
+    found = await hmc.find_system_by_name(name_or_uuid)
+    if not found or not found.get("UUID"):
+        return None
+    return str(found["UUID"])
+
