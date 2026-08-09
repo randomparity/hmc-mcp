@@ -228,7 +228,8 @@ def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool 
                 name = name_or_uuid
                 if not _is_uuid(name_or_uuid):
                     found = await hmc.get_logical_partition(uuid)
-                    name = _first_field(found, "PartitionName", default=name_or_uuid)
+                    if found:
+                        name = _first_field(found, "PartitionName", default=name_or_uuid)
                 if not typer.confirm(f"Really submit {op} for partition '{name}' ({uuid})?"):
                     err_console.print("Aborted.")
                     raise typer.Abort()

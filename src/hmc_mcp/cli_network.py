@@ -21,6 +21,7 @@ from .cli_app import (
 from .ssh import (
     add_vnic,
     list_fc_ports,
+    list_io_slots,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
@@ -151,6 +152,21 @@ def network_list_sea_adapters(
     adapters = _run(lambda: list_sea_adapters(_ssh_config(), system, lpar_name))
 
     _output(adapters, as_json, None, "No SEA adapters found")
+
+
+@network_app.command("list-io-slots")
+def network_list_io_slots(
+    system: str = typer.Argument(..., help="Managed system name"),
+    pci_class: str = typer.Option(
+        "all", "--pci-class", help="Filter by PCI class: all, eth, sas, san, nvme"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List physical I/O slots on a managed system (HMC CLI via SSH)."""
+
+    slots = _run(lambda: list_io_slots(_ssh_config(), system, pci_class))
+
+    _output(slots, as_json, None, "No I/O slots found")
 
 
 @network_app.command("set-sriov-mode")

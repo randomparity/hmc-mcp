@@ -277,5 +277,7 @@ async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
     if _is_uuid(name_or_uuid):
         return name_or_uuid
     found = await hmc.find_partition_by_name(name_or_uuid)
-    return str(found.get("UUID") or "") if found else None
+    if not found or not found.get("UUID"):
+        return None
+    return str(found["UUID"])
 

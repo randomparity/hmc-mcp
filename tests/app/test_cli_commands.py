@@ -299,6 +299,21 @@ def test_lpars_show_not_found_exits_1(fake_hmc):
     assert fake_hmc.calls == [("find_partition_by_name", ("ghost",), {})]
 
 
+def test_lpars_state_entry_without_uuid_reports_not_found(fake_hmc, monkeypatch):
+    """A resolved entry that lacks a UUID is a miss (None), never an empty
+    string — an empty UUID must not flow into the REST path."""
+    async def found_no_uuid(name):
+        fake_hmc._record("find_partition_by_name", name)
+        return {"Resource": {"PartitionName": LPAR_NAME}}
+
+    monkeypatch.setattr(fake_hmc, "find_partition_by_name", found_no_uuid)
+    result = RUNNER.invoke(cli.app, ["lpars", "state", LPAR_NAME])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+    assert fake_hmc.calls == [("find_partition_by_name", (LPAR_NAME,), {})]
+
+
 def test_lpars_state(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "state", LPAR_UUID])
 
@@ -345,6 +360,26 @@ def test_lpars_power_off_declined_confirm_aborts(fake_hmc):
     # No job submitted — the confirm gates the destructive call. A UUID needs
     # no resolution, so the fake client was never called.
     assert fake_hmc.calls == []
+
+
+def test_lpars_power_off_refetch_missing_still_submits(fake_hmc, monkeypatch):
+    """If the display re-fetch misses (e.g. concurrent delete), power-off must
+    fall back to the input name and submit against the resolved UUID instead
+    of crashing on a None entry."""
+    async def no_refetch(uuid):
+        fake_hmc._record("get_logical_partition", uuid)
+        return None
+
+    monkeypatch.setattr(fake_hmc, "get_logical_partition", no_refetch)
+    result = RUNNER.invoke(cli.app, ["lpars", "power-off", LPAR_NAME], input="y\n")
+
+    assert result.exit_code == 0
+    assert "Job submitted" in result.stdout
+    names = [c[0] for c in fake_hmc.calls]
+    assert names == ["find_partition_by_name", "get_logical_partition", "submit_job"]
+    path = fake_hmc.calls[2][1][0]
+    assert "/do/PowerOff" in path
+    assert LPAR_UUID in path
 
 
 # --------------------------------------------------------------------------- #
@@ -524,6 +559,34 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "enabled"
+
+
+# --------------------------------------------------------------------------- #
+# network I/O slots (SSH-backed)
+# --------------------------------------------------------------------------- #
+
+
+def test_network_list_io_slots_via_ssh(monkeypatch):
+    async def fake(cfg, cmd):
+        return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
+
+    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
+
+    assert result.exit_code == 0
+    assert "U78DA.ND1.ABC1234-P1-C1" in result.stdout
+    assert "lpar1" in result.stdout
+
+
+def test_network_list_io_slots_invalid_pci_class_exits_1(monkeypatch):
+    async def fake(cfg, cmd):
+        return ""
+
+    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"])
+
+    assert result.exit_code == 1
+    assert "pci_class" in result.stderr
 
 
 # --------------------------------------------------------------------------- #
