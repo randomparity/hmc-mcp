@@ -7,6 +7,7 @@ operator explicitly opts in with --allow-remote.
 
 from unittest.mock import patch
 
+from click import unstyle
 from typer.testing import CliRunner
 
 from hmc_mcp.cli import _is_loopback, app
@@ -35,10 +36,11 @@ def test_serve_http_loopback_bind_is_allowed():
 def test_serve_http_non_loopback_refuses_without_allow_remote():
     with patch("hmc_mcp.server.main_http") as main_http:
         result = CliRunner().invoke(app, ["serve", "--http", "--host", "0.0.0.0"])
+    output = unstyle(result.output)
     assert result.exit_code == 2  # usage error
-    assert "binds beyond loopback" in result.output
-    assert "no authentication" in result.output
-    assert "--allow-remote" in result.output
+    assert "binds beyond loopback" in output
+    assert "no authentication" in output
+    assert "--allow-remote" in output
     main_http.assert_not_called()
 
 
