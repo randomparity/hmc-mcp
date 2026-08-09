@@ -16,8 +16,8 @@ pinning and update policy.
 
 All direct dependencies in `[project].dependencies`, `[dependency-groups].dev`, and
 `[build-system].requires` will use exact PEP 440 `==` constraints at their currently
-declared releases. `uv lock` will produce a universal lockfile from those declarations,
-and the lockfile will be committed rather than hand-edited.
+declared releases. `uv lock` will re-resolve the existing committed universal lockfile from
+those declarations, and the lockfile will remain generated rather than hand-edited.
 
 `.github/dependabot.yml` will contain one root-level `uv` update entry. It will run weekly,
 apply a seven-day cooldown to new version releases, and group all version updates so that a
@@ -40,10 +40,12 @@ added.
 A policy test will parse `pyproject.toml` and `uv.lock` with the standard library and assert
 that every direct runtime, development, and build requirement is exactly pinned, every pin
 appears at that version in the lock, and the Dependabot configuration contains the selected
-uv schedule, grouping, and cooldown. The test will first fail on the current repository.
-From a clean working tree, `uv lock --check` will run before any `uv run` command that could
-refresh the lock, proving the committed lock matches the manifest. The repository's
-`just verify` recipe then remains the full functional guardrail. This ordered proof is a
+uv schedule, grouping, and cooldown. The test will first fail on the current broad direct
+constraints and missing Dependabot configuration. Before that red run, `uv lock --check`
+and `uv sync --locked` will validate the baseline and provision the worktree without
+refreshing the lock; the test then runs through `.venv/bin/python` rather than `uv run`.
+After implementation, a clean-tree `uv lock --check` will prove the committed lock matches
+the manifest before `just verify` executes any `uv run` command. This ordered proof is a
 maintainer and pull-request review responsibility because workflow changes are excluded and
 the repository has no checked-in CI workflow.
 

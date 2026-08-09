@@ -7,18 +7,19 @@ Accepted
 ## Context
 
 The project declares runtime and development dependencies with open-ended lower bounds,
-allows a range of build-backend releases, does not commit uv's resolution, and has no
-automated dependency-update configuration. A fresh install can therefore resolve a
-different transitive graph without a repository change. Issue #26 asks the repository to
-lock dependency inputs and enable Dependabot. The repository's supplied GitHub Actions
-standards require Dependabot update groups and seven-day cooldowns.
+allows a range of build-backend releases, commits uv's resolution, and has no automated
+dependency-update configuration. An install that consumes project metadata without the
+repository lock can therefore select different direct releases, while maintainers have no
+automated path for updating the declarations and lock together. Issue #26 asks the
+repository to lock dependency inputs and enable Dependabot. The repository's supplied
+GitHub Actions standards require Dependabot update groups and seven-day cooldowns.
 
 ## Decision
 
 Pin every direct runtime, development, and build dependency to one registry release with
-`==`. Commit the uv-managed universal `uv.lock` generated from those declarations. Configure
-Dependabot's `uv` ecosystem at the repository root to check weekly, group all version
-updates, and wait seven days after release before proposing them.
+`==`. Regenerate and continue committing the uv-managed universal `uv.lock` from those
+declarations. Configure Dependabot's `uv` ecosystem at the repository root to check weekly,
+group all version updates, and wait seven days after release before proposing them.
 
 The manifest remains the reviewable declaration of direct dependencies; `uv.lock` records
 the exact transitive resolution. Dependabot changes both together in reviewable pull
