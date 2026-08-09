@@ -38,6 +38,15 @@ class HMCConfig(BaseSettings):
         default="hmc-mcp",
         description="Value sent in the X-Audit-Memento header (shows up in HMC audit logs)",
     )
+    schema_version: str = Field(
+        default="",
+        description=(
+            "Schema version sent as X-HMC-Schema-Version request header "
+            "(e.g. 'V1_0'). Empty string disables the header (default). "
+            "HMC V8/V9 targets do not need this; uom documents already declare "
+            "schemaVersion=V1_0. Set it only to pin negotiation explicitly."
+        ),
+    )
 
     @property
     def base_url(self) -> str:

@@ -44,6 +44,25 @@ certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
 (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 
+## HMC version and schema compatibility
+
+`hmc-mcp` targets **HMC V8 through V11** and all the POWER generations they
+manage. All uom XML documents are written with `schemaVersion="V1_0"` — the
+floor every supported HMC understands — so create/modify operations succeed
+regardless of firmware age.
+
+| HMC version | POWER generations managed | uom schema floor |
+|-------------|--------------------------|------------------|
+| HMC V8      | POWER6, POWER7, POWER8   | V1_0             |
+| HMC V9      | POWER7, POWER8, POWER9   | V1_0             |
+| HMC V10     | POWER8, POWER9, POWER10  | V1_0             |
+| HMC V11     | POWER9, POWER10, POWER11 | V1_0             |
+
+The `HMC_SCHEMA_VERSION` environment variable (or `schema_version` in `.env`)
+optionally pins the `X-HMC-Schema-Version` request header. Leave it unset for
+the default behaviour (let the HMC negotiate via the document's `schemaVersion`
+attribute).
+
 ## CLI usage
 
 ```bash
