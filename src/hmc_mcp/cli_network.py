@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import shlex
-from typing import Optional
 
 import typer
 from rich.table import Table
@@ -149,7 +148,7 @@ def network_list_bridges(
 @network_app.command("list-fc-ports")
 def network_list_fc_ports(
     system: str = typer.Argument(..., help="Managed system name"),
-    lpar_name: Optional[str] = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
@@ -165,7 +164,7 @@ def network_list_fc_ports(
 @network_app.command("list-sea-adapters")
 def network_list_sea_adapters(
     system: str = typer.Argument(..., help="Managed system name"),
-    lpar_name: Optional[str] = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
@@ -225,7 +224,7 @@ def network_add_vnic(
     capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
     vswitch: str = typer.Option(..., "--vswitch", help="Virtual switch name"),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
-    backing_devices: Optional[str] = typer.Option(None, "--backing-devices", help="Backing devices (opaque string, v1 only)"),
+    backing_devices: str | None = typer.Option(None, "--backing-devices", help="Backing devices (opaque string, v1 only)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""

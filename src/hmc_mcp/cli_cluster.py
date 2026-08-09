@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 from rich.table import Table
@@ -76,7 +75,7 @@ def cluster_create_lu(
     size: int = typer.Option(..., "--size", help="Size in GB"),
     lu_type: str = typer.Option("THIN", "--type", help="THIN or THICK"),
     device_type: str = typer.Option("VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"),
-    cloned_from: Optional[str] = typer.Option(None, "--cloned-from", help="Source LU UDID to clone"),
+    cloned_from: str | None = typer.Option(None, "--cloned-from", help="Source LU UDID to clone"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Logical Unit in a Cluster/SSP (submits a job)."""

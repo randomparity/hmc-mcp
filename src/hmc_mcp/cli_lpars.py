@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import shlex
-from typing import Optional
 
 import typer
 from rich.table import Table
@@ -31,7 +30,7 @@ from .documents import LparResources, PARTITION_TYPES, build_lpar_document
 
 @lpars_app.command("list")
 def lpars_list(
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
+    system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List logical partitions."""
@@ -124,7 +123,7 @@ def lpars_power_off(
 
 
 
-def _lpm_run(name_or_uuid: str, fn, action: str, target: Optional[str], yes: bool) -> None:
+def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
     """Shared resolve -> confirm -> run helper for LPM operations."""
 
     async def _go():
@@ -151,8 +150,8 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: Optional[str], yes: boo
 def lpars_migrate(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
-    profile: Optional[str] = typer.Option(None, "--profile", help="Target profile name"),
-    wait_time: Optional[int] = typer.Option(None, "--wait-time", help="Override operation wait time"),
+    profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
+    wait_time: int | None = typer.Option(None, "--wait-time", help="Override operation wait time"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
@@ -167,8 +166,8 @@ def lpars_migrate(
 def lpars_migrate_validate(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
-    profile: Optional[str] = typer.Option(None, "--profile", help="Target profile name"),
-    wait_time: Optional[int] = typer.Option(None, "--wait-time"),
+    profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
+    wait_time: int | None = typer.Option(None, "--wait-time"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Validate whether an LPM migration would succeed."""
@@ -263,17 +262,17 @@ def lpars_create(
     name: str = typer.Argument(..., help="Name for the new partition"),
     system: str = typer.Option(..., "--system", "-s", help="Target managed system UUID"),
     partition_type: str = typer.Option("AIX/Linux", "--type", help=f"One of: {', '.join(PARTITION_TYPES)}"),
-    partition_id: Optional[int] = typer.Option(None, "--id", help="Partition ID (auto-assigned if omitted)"),
+    partition_id: int | None = typer.Option(None, "--id", help="Partition ID (auto-assigned if omitted)"),
     min_memory: int = typer.Option(256, "--min-mem", help="Minimum memory (MiB)"),
     memory: int = typer.Option(4096, "--mem", help="Desired memory (MiB)"),
     max_memory: int = typer.Option(8192, "--max-mem", help="Maximum memory (MiB)"),
     dedicated: bool = typer.Option(False, "--dedicated", help="Dedicated CPUs instead of shared"),
-    min_procs: Optional[float] = typer.Option(None, "--min-procs", help="Min processing units / dedicated CPUs"),
-    procs: Optional[float] = typer.Option(None, "--procs", help="Desired processing units / dedicated CPUs"),
-    max_procs: Optional[float] = typer.Option(None, "--max-procs", help="Max processing units / dedicated CPUs"),
-    min_vcpus: Optional[int] = typer.Option(None, "--min-vcpus", help="Min virtual processors (shared)"),
-    vcpus: Optional[int] = typer.Option(1, "--vcpus", help="Desired virtual processors (shared)"),
-    max_vcpus: Optional[int] = typer.Option(2, "--max-vcpus", help="Max virtual processors (shared)"),
+    min_procs: float | None = typer.Option(None, "--min-procs", help="Min processing units / dedicated CPUs"),
+    procs: float | None = typer.Option(None, "--procs", help="Desired processing units / dedicated CPUs"),
+    max_procs: float | None = typer.Option(None, "--max-procs", help="Max processing units / dedicated CPUs"),
+    min_vcpus: int | None = typer.Option(None, "--min-vcpus", help="Min virtual processors (shared)"),
+    vcpus: int | None = typer.Option(1, "--vcpus", help="Desired virtual processors (shared)"),
+    max_vcpus: int | None = typer.Option(2, "--max-vcpus", help="Max virtual processors (shared)"),
     capped: bool = typer.Option(False, "--capped", help="Cap shared CPU (default uncapped)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -319,17 +318,17 @@ def lpars_create(
 @lpars_app.command("modify")
 def lpars_modify(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    new_name: Optional[str] = typer.Option(None, "--name", help="Rename the partition"),
-    min_memory: Optional[int] = typer.Option(None, "--min-mem", help="Minimum memory (MiB)"),
-    memory: Optional[int] = typer.Option(None, "--mem", help="Desired memory (MiB)"),
-    max_memory: Optional[int] = typer.Option(None, "--max-mem", help="Maximum memory (MiB)"),
+    new_name: str | None = typer.Option(None, "--name", help="Rename the partition"),
+    min_memory: int | None = typer.Option(None, "--min-mem", help="Minimum memory (MiB)"),
+    memory: int | None = typer.Option(None, "--mem", help="Desired memory (MiB)"),
+    max_memory: int | None = typer.Option(None, "--max-mem", help="Maximum memory (MiB)"),
     dedicated: bool = typer.Option(False, "--dedicated", help="Assign dedicated CPUs"),
-    min_procs: Optional[float] = typer.Option(None, "--min-procs"),
-    procs: Optional[float] = typer.Option(None, "--procs"),
-    max_procs: Optional[float] = typer.Option(None, "--max-procs"),
-    min_vcpus: Optional[int] = typer.Option(None, "--min-vcpus"),
-    vcpus: Optional[int] = typer.Option(None, "--vcpus"),
-    max_vcpus: Optional[int] = typer.Option(None, "--max-vcpus"),
+    min_procs: float | None = typer.Option(None, "--min-procs"),
+    procs: float | None = typer.Option(None, "--procs"),
+    max_procs: float | None = typer.Option(None, "--max-procs"),
+    min_vcpus: int | None = typer.Option(None, "--min-vcpus"),
+    vcpus: int | None = typer.Option(None, "--vcpus"),
+    max_vcpus: int | None = typer.Option(None, "--max-vcpus"),
     capped: bool = typer.Option(False, "--capped", help="Cap shared CPU"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:

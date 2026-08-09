@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 from rich.table import Table
@@ -103,7 +102,7 @@ def storage_map(
     lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
     disk: str = typer.Option(..., "--disk", help="Storage name (DiskName or hdiskN)"),
     kind: str = typer.Option("VirtualDisk", "--kind", help="VirtualDisk or PhysicalVolume"),
-    target: Optional[str] = typer.Option(None, "--target", help="Pin the vtscsi device name"),
+    target: str | None = typer.Option(None, "--target", help="Pin the vtscsi device name"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""

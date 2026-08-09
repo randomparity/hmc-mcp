@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
-from typing import Any, Awaitable, Callable, NoReturn, Optional
+from typing import Any, Awaitable, Callable, NoReturn
 
 import typer
 from rich.console import Console
@@ -66,10 +66,10 @@ app.add_typer(memory_pools_app, name="memory-pools")
 
 
 class GlobalOpts:
-    host: Optional[str] = None
-    user: Optional[str] = None
-    password: Optional[str] = None
-    verify_ssl: Optional[bool] = None
+    host: str | None = None
+    user: str | None = None
+    password: str | None = None
+    verify_ssl: bool | None = None
 
 
 GLOBALS = GlobalOpts()
@@ -77,12 +77,12 @@ GLOBALS = GlobalOpts()
 
 @app.callback()
 def main(
-    host: Optional[str] = typer.Option(None, "--host", envvar="HMC_HOST", help="HMC hostname or IP"),
-    user: Optional[str] = typer.Option(None, "--user", "-u", envvar="HMC_USER", help="HMC user"),
-    password: Optional[str] = typer.Option(
+    host: str | None = typer.Option(None, "--host", envvar="HMC_HOST", help="HMC hostname or IP"),
+    user: str | None = typer.Option(None, "--user", "-u", envvar="HMC_USER", help="HMC user"),
+    password: str | None = typer.Option(
         None, "--password", "-p", envvar="HMC_PASSWORD", help="HMC password", hide_input=True
     ),
-    verify_ssl: Optional[bool] = typer.Option(
+    verify_ssl: bool | None = typer.Option(
         None, "--verify-ssl/--no-verify-ssl", envvar="HMC_VERIFY_SSL", help="Verify the HMC TLS certificate"
     ),
 ) -> None:

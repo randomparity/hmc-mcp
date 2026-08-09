@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -39,10 +38,10 @@ def metrics_prefs(
 def metrics_set_prefs(
     category: str = typer.Argument(..., help="e.g. ManagedSystem"),
     uuid: str = typer.Argument(..., help="Resource UUID"),
-    ltm: Optional[bool] = typer.Option(None, "--ltm/--no-ltm", help="Long-term monitoring"),
-    aggregation: Optional[bool] = typer.Option(None, "--aggregation/--no-aggregation"),
-    stm: Optional[bool] = typer.Option(None, "--stm/--no-stm", help="Short-term monitoring"),
-    energy: Optional[bool] = typer.Option(None, "--energy/--no-energy", help="Energy monitoring"),
+    ltm: bool | None = typer.Option(None, "--ltm/--no-ltm", help="Long-term monitoring"),
+    aggregation: bool | None = typer.Option(None, "--aggregation/--no-aggregation"),
+    stm: bool | None = typer.Option(None, "--stm/--no-stm", help="Short-term monitoring"),
+    energy: bool | None = typer.Option(None, "--energy/--no-energy", help="Energy monitoring"),
 ) -> None:
     """Enable/disable PCM data collection for a resource."""
     flags: dict[str, bool] = {}
@@ -73,8 +72,8 @@ def metrics_show(
     category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
     uuid: str = typer.Argument(..., help="Resource UUID"),
     start: str = typer.Option(..., "--start", help="Start TS yyyy-MM-ddTHH:mm:ssZ"),
-    end: Optional[str] = typer.Option(None, "--end", help="End TS (optional)"),
-    samples: Optional[int] = typer.Option(None, "--samples", help="Number of samples"),
+    end: str | None = typer.Option(None, "--end", help="End TS (optional)"),
+    samples: int | None = typer.Option(None, "--samples", help="Number of samples"),
     aggregated: bool = typer.Option(False, "--aggregated", help="Use aggregated (long-term) metrics"),
     fetch: bool = typer.Option(False, "--fetch", help="Also download the latest JSON doc"),
 ) -> None:

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -49,10 +48,10 @@ def adapters_list(
 def adapters_add_network(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID (PVID)"),
-    slot: Optional[int] = typer.Option(None, "--slot", help="Virtual slot (auto if omitted)"),
-    vswitch: Optional[int] = typer.Option(None, "--vswitch", help="VirtualSwitch ID"),
+    slot: int | None = typer.Option(None, "--slot", help="Virtual slot (auto if omitted)"),
+    vswitch: int | None = typer.Option(None, "--vswitch", help="VirtualSwitch ID"),
     tagged: bool = typer.Option(False, "--tagged", help="VLAN-tagged (trunking) adapter"),
-    mac: Optional[str] = typer.Option(None, "--mac", help="Pin the MAC address"),
+    mac: str | None = typer.Option(None, "--mac", help="Pin the MAC address"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual Ethernet (network) adapter to an LPAR."""
@@ -74,7 +73,7 @@ def adapters_add_vscsi(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
     vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server-side slot"),
-    slot: Optional[int] = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
+    slot: int | None = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual SCSI client adapter, paired to a VIOS."""
@@ -96,7 +95,7 @@ def adapters_add_vfc(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
     vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server-side FC slot"),
-    slot: Optional[int] = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
+    slot: int | None = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""

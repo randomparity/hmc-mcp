@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 from rich.table import Table
@@ -21,7 +20,7 @@ from .cli_app import (
 
 @vios_app.command("list")
 def vios_list(
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
+    system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual I/O Servers."""
