@@ -25,7 +25,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .common import client_from_env
+from .common import client_from_env, run_with_client
 from .config import HMCConfig
 
 app = typer.Typer(
@@ -145,10 +145,12 @@ def _with_client(fn: Callable[[Any], Awaitable[Any]]) -> Any:
     Collapses the pervasive ``async def _go`` + ``X = _run(_go)`` idiom into
     one line for the common case where the body is a single client call.
     """
-    async def _go():
-        async with _client() as hmc:
-            return await fn(hmc)
-    return _run(_go)
+    try:
+        return run_with_client(_client, fn)
+    except typer.Abort:
+        raise
+    except Exception as exc:
+        _fail(exc)
 
 
 def _print_json(data: Any) -> None:

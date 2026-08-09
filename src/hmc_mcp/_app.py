@@ -20,7 +20,7 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .common import client_from_env
+from .common import client_from_env, run_with_client
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -121,10 +121,7 @@ def with_client(fn):
     Collapses the pervasive ``async def _go`` + ``return _run(_go)`` idiom
     into one line for the common case where the body is a single client call.
     """
-    async def _go():
-        async with client_from_env() as hmc:
-            return await fn(hmc)
-    return _run(_go)
+    return run_with_client(client_from_env, fn)
 
 
 # ---------------------------------------------------------------------- #
