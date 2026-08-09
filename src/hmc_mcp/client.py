@@ -13,6 +13,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from defusedxml import ElementTree as DET
+
 from .config import HMCConfig
 from .jobs import (
     create_logical_unit_job,
@@ -58,6 +60,25 @@ LOGON_REQUEST_TEMPLATE = f"""<?xml version="1.0" encoding="UTF-8" standalone="ye
 """
 
 # Media-type fragments used by the HMC API.
+MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
+MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
+
+
+def _parse_feed(xml_text: str, context: str) -> list[dict[str, Any]]:
+    """parse_feed that tags XML failures with the HMC call that returned it."""
+    try:
+        return parse_feed(xml_text)
+    except DET.ParseError as exc:
+        raise HMCError(f"Failed to parse {context} response") from exc
+
+
+def _find_text(xml_text: str, context: str, *names: str) -> str | None:
+    """find_text that tags XML failures with the HMC call that returned it."""
+    try:
+        return find_text(xml_text, *names)
+    except DET.ParseError as exc:
+        raise HMCError(f"Failed to parse {context} response") from exc
+
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
@@ -151,7 +172,7 @@ class HMCClient:
         )
         if resp.status_code != 200:
             raise HMCError("HMC logon failed", resp.status_code, resp.text)
-        token = find_text(resp.text, "X-API-Session")
+        token = _find_text(resp.text, "/rest/api/web/Logon", "X-API-Session")
         if not token:
             raise HMCError("HMC logon response did not contain an X-API-Session token")
         self._session_token = token
@@ -362,7 +383,7 @@ class HMCClient:
         xml = await self._get(path, resource_type)
         if not xml:
             return []
-        return parse_feed(xml)
+        return _parse_feed(xml, path)
 
     async def get_uom(self, resource_type: str, uuid: str, group: str | None = None) -> dict[str, Any] | None:
         """GET /rest/api/uom/{ResourceType}/{uuid} and parse the entry."""
@@ -372,7 +393,7 @@ class HMCClient:
         xml = await self._get(path, resource_type)
         if not xml:
             return None
-        entries = parse_feed(xml)
+        entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
     async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> Any:
@@ -395,7 +416,7 @@ class HMCClient:
         xml = await self._get(path, resource_type)
         if not xml:
             return []
-        return parse_feed(xml)
+        return _parse_feed(xml, path)
 
     # -- Convenience wrappers for the common resources ----------------- #
 
@@ -414,7 +435,7 @@ class HMCClient:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
             xml = await self._get(path, "LogicalPartition")
-            return parse_feed(xml) if xml else []
+            return _parse_feed(xml, path) if xml else []
         return await self.list_uom("LogicalPartition")
 
     async def get_logical_partition(self, uuid: str) -> dict[str, Any] | None:
@@ -433,12 +454,9 @@ class HMCClient:
         to /rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition and
         returns the created partition entry.
         """
-        xml = await self._put(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition",
-            lpar_xml,
-            resource_type="LogicalPartition",
-        )
-        entries = parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
+        xml = await self._put(path, lpar_xml, resource_type="LogicalPartition")
+        entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
     async def modify_logical_partition(
@@ -450,12 +468,9 @@ class HMCClient:
         partition supports dynamic LPAR (DLPAR) and RMC is up; otherwise the
         change lands in the profile for the next activation.
         """
-        xml = await self._post(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}",
-            lpar_xml,
-            resource_type="LogicalPartition",
-        )
-        entries = parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+        xml = await self._post(path, lpar_xml, resource_type="LogicalPartition")
+        entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
     async def modify_managed_system(
@@ -467,12 +482,9 @@ class HMCClient:
         policy, pending memory region size, huge pages, and mirroring mode.
         See templates.build_managed_system_document for the document builder.
         """
-        xml = await self._post(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}",
-            system_xml,
-            resource_type="ManagedSystem",
-        )
-        entries = parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}"
+        xml = await self._post(path, system_xml, resource_type="ManagedSystem")
+        entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
     async def delete_logical_partition(self, lpar_uuid: str) -> None:
@@ -487,7 +499,7 @@ class HMCClient:
         """GET /rest/api/uom/{parent}/{uuid}/{child} and parse the feed."""
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._get(path, child_type)
-        return parse_feed(xml) if xml else []
+        return _parse_feed(xml, path) if xml else []
 
     async def create_child(
         self, parent_type: str, parent_uuid: str, child_type: str, child_xml: str
@@ -495,7 +507,7 @@ class HMCClient:
         """PUT a child resource (e.g. a virtual adapter) under a parent."""
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._put(path, child_xml, resource_type=child_type)
-        entries = parse_feed(xml) if xml else []
+        entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
     async def delete_child(
@@ -550,10 +562,9 @@ class HMCClient:
 
     async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]:
         """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
-        xml = await self._get(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup", "VolumeGroup"
-        )
-        return parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
+        xml = await self._get(path, "VolumeGroup")
+        return _parse_feed(xml, path) if xml else []
 
     async def get_volume_group(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
         return await self.get_uom_path(
@@ -564,7 +575,7 @@ class HMCClient:
         xml = await self._get(path, resource_type)
         if not xml:
             return None
-        entries = parse_feed(xml)
+        entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
     async def create_volume_group(
@@ -573,10 +584,9 @@ class HMCClient:
         """Create a Volume Group on a VIOS from physical volumes (e.g. ['hdisk10'])."""
 
         xml = build_volume_group_document(name, physical_volumes)
-        resp = await self._put(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup", xml, resource_type="VolumeGroup"
-        )
-        entries = parse_feed(resp) if resp else []
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
+        resp = await self._put(path, xml, resource_type="VolumeGroup")
+        entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
     async def create_virtual_disk(
@@ -585,11 +595,9 @@ class HMCClient:
         """Create a Virtual Disk (logical volume) in a Volume Group."""
 
         xml = build_virtual_disk_document(disk_name, capacity_mb)
-        resp = await self._post(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}",
-            xml, resource_type="VolumeGroup",
-        )
-        entries = parse_feed(resp) if resp else []
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        resp = await self._post(path, xml, resource_type="VolumeGroup")
+        entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
     async def map_storage_to_lpar(
@@ -611,10 +619,9 @@ class HMCClient:
         xml = build_vscsi_mapping_document(
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
-        resp = await self._post(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}", xml, resource_type="VirtualIOServer"
-        )
-        entries = parse_feed(resp) if resp else []
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+        resp = await self._post(path, xml, resource_type="VirtualIOServer")
+        entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
     # ------------------------------------------------------------------ #
@@ -820,24 +827,21 @@ class HMCClient:
 
     async def list_virtual_switches(self, system_uuid: str) -> list[dict[str, Any]]:
         """List VirtualSwitches on a managed system (names, IDs, mode)."""
-        xml = await self._get(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualSwitch", "VirtualSwitch"
-        )
-        return parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualSwitch"
+        xml = await self._get(path, "VirtualSwitch")
+        return _parse_feed(xml, path) if xml else []
 
     async def list_virtual_networks(self, system_uuid: str) -> list[dict[str, Any]]:
         """List Virtual Networks (VLANs) on a managed system."""
-        xml = await self._get(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork", "VirtualNetwork"
-        )
-        return parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
+        xml = await self._get(path, "VirtualNetwork")
+        return _parse_feed(xml, path) if xml else []
 
     async def list_network_bridges(self, system_uuid: str) -> list[dict[str, Any]]:
         """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
-        xml = await self._get(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/NetworkBridge", "NetworkBridge"
-        )
-        return parse_feed(xml) if xml else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/NetworkBridge"
+        xml = await self._get(path, "NetworkBridge")
+        return _parse_feed(xml, path) if xml else []
 
     async def create_virtual_network(
         self,
@@ -861,10 +865,9 @@ class HMCClient:
                 f"{system_uuid}/VirtualSwitch/{switch_uuid}"
             )
         xml = build_virtual_network_document(name, vlan_id, vswitch_id, switch_link, tagged)
-        resp = await self._put(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork", xml, resource_type="VirtualNetwork"
-        )
-        entries = parse_feed(resp) if resp else []
+        path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
+        resp = await self._put(path, xml, resource_type="VirtualNetwork")
+        entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
     async def delete_virtual_network(self, system_uuid: str, network_uuid: str) -> None:
@@ -892,14 +895,14 @@ class HMCClient:
     async def list_partition_templates(self) -> list[dict[str, Any]]:
         """List all partition templates in the template library."""
         xml = await self._templates_get("/rest/api/templates/PartitionTemplate")
-        return parse_feed(xml) if xml else []
+        return _parse_feed(xml, "/rest/api/templates/PartitionTemplate") if xml else []
 
     async def get_partition_template(self, template_uuid: str) -> dict[str, Any] | None:
         """Get one partition template by UUID."""
         xml = await self._templates_get(f"/rest/api/templates/PartitionTemplate/{template_uuid}")
         if not xml:
             return None
-        entries = parse_feed(xml)
+        entries = _parse_feed(xml, f"/rest/api/templates/PartitionTemplate/{template_uuid}")
         return entries[0] if entries else None
 
     async def deploy_partition_template(
@@ -958,12 +961,9 @@ class HMCClient:
     async def _post_volume_group_op(
         self, vios_uuid: str, vg_uuid: str, xml: str
     ) -> dict[str, Any] | None:
-        resp = await self._post(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}",
-            xml,
-            resource_type="VolumeGroup",
-        )
-        entries = parse_feed(resp) if resp else []
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        resp = await self._post(path, xml, resource_type="VolumeGroup")
+        entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
     async def create_media_repository(
@@ -995,7 +995,7 @@ class HMCClient:
         if system_uuid:
             path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer"
             xml = await self._get(path, "VirtualIOServer")
-            return parse_feed(xml) if xml else []
+            return _parse_feed(xml, path) if xml else []
         return await self.list_uom("VirtualIOServer")
 
     async def get_vios_storage_detail(self, vios_uuid: str) -> dict[str, Any] | None:
@@ -1005,13 +1005,11 @@ class HMCClient:
         and returns the parsed entry, which includes VirtualSCSIMappings and
         VirtualFibreChannelMappings populated with physical/virtual device info.
         """
-        xml = await self._get(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail",
-            "VirtualIOServer",
-        )
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
+        xml = await self._get(path, "VirtualIOServer")
         if not xml:
             return None
-        entries = parse_feed(xml)
+        entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
     # ------------------------------------------------------------------ #
@@ -1038,7 +1036,7 @@ class HMCClient:
         )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"PUT {job_path} failed", resp.status_code, resp.text)
-        entries = parse_feed(resp.text) if resp.text else []
+        entries = _parse_feed(resp.text, job_path) if resp.text else []
         return entries[0] if entries else None
 
     async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
