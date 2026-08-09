@@ -86,12 +86,9 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
 
     async def _go():
         async with _client() as hmc:
-            uuid = name_or_uuid
-            if not _is_uuid(name_or_uuid):
-                found = await hmc.find_partition_by_name(name_or_uuid)
-                if found is None:
-                    return None
-                uuid = str(found.get("UUID") or "")
+            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            if uuid is None:
+                return None
             return await hmc.get_quick_property("LogicalPartition", uuid, "PartitionState")
 
     state = _run(_go)
@@ -222,16 +219,15 @@ def lpars_remote_restart(
 def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool = False) -> None:
     async def _go():
         async with _client() as hmc:
-            uuid = name_or_uuid
-            name = name_or_uuid
-            if not _is_uuid(name_or_uuid):
-                found = await hmc.find_partition_by_name(name_or_uuid)
-                if found is None:
-                    return None, None
-                uuid = str(found.get("UUID") or "")
-                name = _g(found, "PartitionName", default=name_or_uuid)
+            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            if uuid is None:
+                return None, None
             if not yes:
                 op = "PowerOn" if on else ("Immediate PowerOff" if immediate else "PowerOff")
+                name = name_or_uuid
+                if not _is_uuid(name_or_uuid):
+                    found = await hmc.get_logical_partition(uuid)
+                    name = _g(found, "PartitionName", default=name_or_uuid)
                 if not typer.confirm(f"Really submit {op} for partition '{name}' ({uuid})?"):
                     err_console.print("Aborted.")
                     raise typer.Abort()
@@ -345,12 +341,9 @@ def lpars_modify(
 
     async def _go():
         async with _client() as hmc:
-            uuid = name_or_uuid
-            if not _is_uuid(name_or_uuid):
-                found = await hmc.find_partition_by_name(name_or_uuid)
-                if found is None:
-                    return None, None
-                uuid = str(found.get("UUID") or "")
+            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            if uuid is None:
+                return None, None
             if not yes:
                 if not typer.confirm(f"Apply resource changes to '{name_or_uuid}' ({uuid})?"):
                     raise typer.Abort()
@@ -390,12 +383,9 @@ def lpars_delete(
 
     async def _go():
         async with _client() as hmc:
-            uuid = name_or_uuid
-            if not _is_uuid(name_or_uuid):
-                found = await hmc.find_partition_by_name(name_or_uuid)
-                if found is None:
-                    return None
-                uuid = str(found.get("UUID") or "")
+            uuid = await _resolve_uuid(hmc, name_or_uuid)
+            if uuid is None:
+                return None
             if not yes:
                 if not typer.confirm(
                     f"Permanently DELETE partition '{name_or_uuid}' ({uuid})? This cannot be undone."
