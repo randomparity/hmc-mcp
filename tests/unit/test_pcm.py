@@ -13,11 +13,9 @@ from hmc_mcp.pcm import (
     pcm_preferences_to_dict,
 )
 from hmc_mcp.server import (
-    hmc_get_aggregated_metric_links,
-    hmc_get_aggregated_metrics,
+    hmc_aggregated_metrics,
     hmc_get_pcm_preferences,
-    hmc_get_processed_metric_links,
-    hmc_get_processed_metrics,
+    hmc_processed_metrics,
     hmc_set_pcm_preferences,
 )
 
@@ -177,11 +175,11 @@ def test_newest_metric_link_unparseable_stamp_sorts_oldest():
 
 
 def test_get_processed_metric_links(monkeypatch, mock_hmc):
-    """hmc_get_processed_metric_links returns the parsed link list."""
+    """hmc_processed_metrics(mode='links') returns the parsed link list."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
 
-    result = hmc_get_processed_metric_links(
+    result = hmc_processed_metrics(
         "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", no_of_samples=5
     )
 
@@ -191,15 +189,15 @@ def test_get_processed_metric_links(monkeypatch, mock_hmc):
 
 
 def test_get_processed_metrics_fetches_latest(monkeypatch, mock_hmc):
-    """hmc_get_processed_metrics downloads the most recent metrics JSON."""
+    """hmc_processed_metrics(mode='fetch') downloads the most recent JSON."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics")
     mock_hmc.get(
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
-    result = hmc_get_processed_metrics(
-        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    result = hmc_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="fetch"
     )
 
     assert result == METRICS_JSON
@@ -227,22 +225,22 @@ def test_get_processed_metrics_fetches_newest_not_last(monkeypatch, mock_hmc):
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_1.json"
     ).mock(return_value=httpx.Response(404, text="<error>expired</error>"))
 
-    result = hmc_get_processed_metrics(
-        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    result = hmc_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="fetch"
     )
 
     assert result == METRICS_JSON
 
 
 def test_get_processed_metrics_empty_feed(monkeypatch, mock_hmc):
-    """hmc_get_processed_metrics returns {} when no metrics are in range."""
+    """hmc_processed_metrics(mode='fetch') returns {} when no metrics in range."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(
         mock_hmc, "ManagedSystem", "sys-uuid", "ProcessedMetrics", text=EMPTY_FEED
     )
 
-    result = hmc_get_processed_metrics(
-        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    result = hmc_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="fetch"
     )
 
     assert result == {}
@@ -256,8 +254,8 @@ def test_get_processed_metrics_expired_doc(monkeypatch, mock_hmc):
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(404, text="<error>expired</error>"))
 
-    result = hmc_get_processed_metrics(
-        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+    result = hmc_processed_metrics(
+        "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="fetch"
     )
 
     assert result == {}
@@ -272,17 +270,17 @@ def test_get_processed_metrics_non_404_error_propagates(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(500, text="<error>boom</error>"))
 
     with pytest.raises(HMCError):
-        hmc_get_processed_metrics(
-            "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z"
+        hmc_processed_metrics(
+            "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", mode="fetch"
         )
 
 
 def test_get_aggregated_metric_links(monkeypatch, mock_hmc):
-    """hmc_get_aggregated_metric_links uses the AggregatedMetrics endpoint."""
+    """hmc_aggregated_metrics(mode='links') uses the AggregatedMetrics endpoint."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
 
-    result = hmc_get_aggregated_metric_links(
+    result = hmc_aggregated_metrics(
         "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z"
     )
 
@@ -291,15 +289,15 @@ def test_get_aggregated_metric_links(monkeypatch, mock_hmc):
 
 
 def test_get_aggregated_metrics_fetches_latest(monkeypatch, mock_hmc):
-    """hmc_get_aggregated_metrics downloads the most recent aggregated JSON."""
+    """hmc_aggregated_metrics(mode='fetch') downloads the most recent JSON."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(mock_hmc, "LogicalPartition", "lpar-uuid", "AggregatedMetrics")
     mock_hmc.get(
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
-    result = hmc_get_aggregated_metrics(
-        "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z"
+    result = hmc_aggregated_metrics(
+        "LogicalPartition", "lpar-uuid", "2026-08-07T11:00:00Z", mode="fetch"
     )
 
     assert result == METRICS_JSON

@@ -119,11 +119,9 @@ from .server_templates import (
     hmc_partition_templates as hmc_partition_templates,
 )
 from .server_metrics import (
-    hmc_get_aggregated_metric_links as hmc_get_aggregated_metric_links,
-    hmc_get_aggregated_metrics as hmc_get_aggregated_metrics,
+    hmc_aggregated_metrics as hmc_aggregated_metrics,
     hmc_get_pcm_preferences as hmc_get_pcm_preferences,
-    hmc_get_processed_metric_links as hmc_get_processed_metric_links,
-    hmc_get_processed_metrics as hmc_get_processed_metrics,
+    hmc_processed_metrics as hmc_processed_metrics,
     hmc_set_pcm_preferences as hmc_set_pcm_preferences,
 )
 from .server_users import (
@@ -141,11 +139,9 @@ from .server_users import (
 )
 from .server_updates import (
     hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
+    hmc_hmc_update as hmc_hmc_update,
     hmc_update_firmware as hmc_update_firmware,
-    hmc_update_hmc as hmc_update_hmc,
-    hmc_update_vios as hmc_update_vios,
-    hmc_upgrade_hmc as hmc_upgrade_hmc,
-    hmc_upgrade_vios as hmc_upgrade_vios,
+    hmc_vios_update as hmc_vios_update,
 )
 from .server_profiles import (
     hmc_assign_profile_io_slot as hmc_assign_profile_io_slot,

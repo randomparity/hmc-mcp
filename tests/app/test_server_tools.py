@@ -18,6 +18,7 @@ from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
+    hmc_hmc_update,
     hmc_lpars,
     hmc_modify_lpar,
     hmc_power_off_lpar,
@@ -25,10 +26,7 @@ from hmc_mcp.server import (
     hmc_recent_jobs,
     hmc_run_command,
     hmc_update_firmware,
-    hmc_update_hmc,
-    hmc_update_vios,
-    hmc_upgrade_hmc,
-    hmc_upgrade_vios,
+    hmc_vios_update,
 )
 
 from conftest import JOB_ENTRY
@@ -308,12 +306,12 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
 
 
 def test_update_hmc_submits_job(monkeypatch, mock_hmc):
-    """hmc_update_hmc PUTs an Update job with the repository parameters."""
+    """hmc_hmc_update(kind='update') PUTs an Update job."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_update_hmc(MC_UUID, REPO)
+    hmc_hmc_update(MC_UUID, REPO)
     body = route.calls.last.request.content.decode()
     assert "Update</OperationName>" in body
     assert "repo.example.com" in body
@@ -321,36 +319,36 @@ def test_update_hmc_submits_job(monkeypatch, mock_hmc):
 
 
 def test_upgrade_hmc_submits_job(monkeypatch, mock_hmc):
-    """hmc_upgrade_hmc PUTs an Upgrade job to the ManagementConsole."""
+    """hmc_hmc_update(kind='upgrade') PUTs an Upgrade job."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_upgrade_hmc(MC_UUID, REPO)
+    hmc_hmc_update(MC_UUID, REPO, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "Upgrade</OperationName>" in body
     assert "repo.example.com" in body
 
 
 def test_update_vios_submits_job(monkeypatch, mock_hmc):
-    """hmc_update_vios PUTs an Update job to the VirtualIOServer."""
+    """hmc_vios_update(kind='update') PUTs an Update job."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_update_vios(VIOS_UUID, REPO)
+    hmc_vios_update(VIOS_UUID, REPO)
     body = route.calls.last.request.content.decode()
     assert "Update</OperationName>" in body
     assert "repo.example.com" in body
 
 
 def test_upgrade_vios_submits_job(monkeypatch, mock_hmc):
-    """hmc_upgrade_vios PUTs an Upgrade job to the VirtualIOServer."""
+    """hmc_vios_update(kind='upgrade') PUTs an Upgrade job."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_upgrade_vios(VIOS_UUID, REPO)
+    hmc_vios_update(VIOS_UUID, REPO, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "Upgrade</OperationName>" in body
     assert "repo.example.com" in body
