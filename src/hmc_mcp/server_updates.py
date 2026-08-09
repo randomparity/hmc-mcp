@@ -7,10 +7,12 @@ from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
+    _run,
     mcp,
     with_client,
 )
 
+from .common import client_from_env
 from .jobs import (
     RepositorySource,
     update_firmware_job,
@@ -21,12 +23,26 @@ from .jobs import (
 )
 
 
+async def _update_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit an update/upgrade job; optionally wait for terminal state."""
+    async with client_from_env() as hmc:
+        job = await submit_fn(hmc)
+        if not wait or job is None:
+            return job
+        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+        if not job_uuid:
+            return job
+        return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+
 
 @mcp.tool
 def hmc_hmc_update(
     system_uuid: str,
     repository: RepositorySource,
     kind: Literal["update", "upgrade"] = "update",
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit an HMC software update or upgrade job.
 
@@ -38,6 +54,8 @@ def hmc_hmc_update(
 
     Submits an Update or Upgrade job to ManagementConsole; poll hmc_get_job
     for status. system_uuid is the ManagementConsole UUID (from hmc_console_info).
+
+    Set wait=True to block until the job reaches a terminal state.
     """
     if kind == "update":
         job_xml = update_hmc_job(repository)
@@ -48,12 +66,13 @@ def hmc_hmc_update(
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
 
-    return with_client(
+    return _run(lambda: _update_op(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/ManagementConsole/{system_uuid}/do/{operation}",
             job_xml,
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -75,6 +94,9 @@ def hmc_vios_update(
     vios_uuid: str,
     repository: RepositorySource,
     kind: Literal["update", "upgrade"] = "update",
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit a VIOS software update or upgrade job.
 
@@ -82,6 +104,8 @@ def hmc_vios_update(
     VIOS version upgrade. repository describes the image source (same format as
     hmc_hmc_update). Submits an Update or Upgrade job to VirtualIOServer; poll
     hmc_get_job for status. vios_uuid is the VIOS UUID (from hmc_vios).
+
+    Set wait=True to block until the job reaches a terminal state.
     """
     if kind == "update":
         job_xml = update_vios_job(repository)
@@ -92,29 +116,38 @@ def hmc_vios_update(
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
 
-    return with_client(
+    return _run(lambda: _update_op(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/{operation}",
             job_xml,
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool
-def hmc_update_firmware(system_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
+def hmc_update_firmware(
+    system_uuid: str,
+    repository: RepositorySource,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
     """Submit a managed system firmware update job.
 
     repository describes the firmware image source (same format as
     hmc_hmc_update). Submits an UpdateFirmware job to ManagedSystem; poll
     hmc_get_job for status. system_uuid is the managed system UUID
     (from hmc_systems).
-    """
 
-    return with_client(
+    Set wait=True to block until the job reaches a terminal state.
+    """
+    return _run(lambda: _update_op(
         lambda hmc: hmc.submit_job(
             f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
             update_firmware_job(repository),
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 

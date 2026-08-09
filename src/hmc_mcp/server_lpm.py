@@ -7,9 +7,29 @@ from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
+    _run,
     mcp,
     with_client,
 )
+
+from .common import client_from_env
+
+
+async def _job_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a job; optionally wait for it to reach a terminal state.
+
+    *submit_fn* is ``async (hmc) -> job_entry``.  When *wait* is False the
+    submitted job entry is returned immediately.  When *wait* is True the job
+    UUID is extracted and ``wait_for_job`` is called before returning.
+    """
+    async with client_from_env() as hmc:
+        job = await submit_fn(hmc)
+        if not wait or job is None:
+            return job
+        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+        if not job_uuid:
+            return job
+        return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
 
 
 @mcp.tool
@@ -18,19 +38,25 @@ def hmc_migrate_lpar(
     target_system: str,
     target_profile_name: str | None = None,
     wait_time: int | None = None,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Live-migrate (LPM) an LPAR to another managed system.
 
     Submits a Migrate job. target_system is the target managed-system name.
     Optionally pin the target profile / wait time. Poll hmc_get_job for status.
     Run hmc_migrate_validate_lpar first to pre-check.
-    """
 
-    return with_client(
+    Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
+    (or until timeout_seconds elapses).
+    """
+    return _run(lambda: _job_op(
         lambda hmc: hmc.lpar_migrate(
             lpar_uuid, target_system, target_profile_name, wait_time=wait_time
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool
@@ -39,14 +65,20 @@ def hmc_migrate_validate_lpar(
     target_system: str,
     target_profile_name: str | None = None,
     wait_time: int | None = None,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
-    """Validate whether an LPM migration of an LPAR to target_system would succeed."""
+    """Validate whether an LPM migration of an LPAR to target_system would succeed.
 
-    return with_client(
+    Set wait=True to block until the validation job reaches a terminal state.
+    """
+    return _run(lambda: _job_op(
         lambda hmc: hmc.lpar_migrate_validate(
             lpar_uuid, target_system, target_profile_name, wait_time=wait_time
-        )
-    )
+        ),
+        wait, timeout_seconds, poll_interval,
+    ))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -68,5 +100,3 @@ def hmc_remote_restart_lpar(lpar_uuid: str, target_system: str) -> dict[str, Any
     """Remote-restart a failed LPAR on another managed system."""
 
     return with_client(lambda hmc: hmc.lpar_remote_restart(lpar_uuid, target_system))
-
-

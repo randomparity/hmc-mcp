@@ -94,3 +94,49 @@ def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
         hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp")
     assert exc_info.value.status_code == 500
     assert "do/Migrate" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------- #
+# wait=True path: migrate_lpar blocks until job reaches terminal state
+# ---------------------------------------------------------------------- #
+
+JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED."""
+    _hmc_env(monkeypatch)
+    submit_route = _job_route(mock_hmc, "Migrate")
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_migrate_lpar(
+        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=0
+    )
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
+    """hmc_migrate_lpar(wait=False) returns the submitted job entry without polling."""
+    _hmc_env(monkeypatch)
+    submit_route = _job_route(mock_hmc, "Migrate")
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", wait=False)
+    assert submit_route.called
+    assert not poll_route.called
+    assert result["Resource"]["JobID"] == "job-uuid-999"

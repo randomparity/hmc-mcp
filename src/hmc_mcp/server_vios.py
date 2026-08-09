@@ -105,6 +105,9 @@ def hmc_install_vios(
     vios_ip: str,
     vlan_id: str = "0",
     timeout: int = 60,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit a NIM-based VIOS installation job.
 
@@ -115,15 +118,25 @@ def hmc_install_vios(
     vlan_id is the VLAN tag for the install network (use "0" for untagged).
     timeout is the job timeout in minutes (default 60). Returns the submitted
     job — poll hmc_get_job for status.
-    """
 
+    Set wait=True to block until the job reaches a terminal state.
+    """
     job_xml = install_vios_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
-    return with_client(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
-            job_xml,
-        )
-    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            job = await hmc.submit_job(
+                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
+                job_xml,
+            )
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            if not job_uuid:
+                return job
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+
+    return _run(_go)
 
 
 @mcp.tool
@@ -135,6 +148,9 @@ def hmc_install_lpar_os(
     lpar_ip: str,
     vlan_id: str = "0",
     timeout: int = 60,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
     """Submit a NIM-based LPAR OS installation job.
 
@@ -145,15 +161,25 @@ def hmc_install_lpar_os(
     vlan_id is the VLAN tag for the install network (use "0" for untagged).
     timeout is the job timeout in minutes (default 60). Returns the submitted
     job — poll hmc_get_job for status.
-    """
 
+    Set wait=True to block until the job reaches a terminal state.
+    """
     job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
-    return with_client(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
-            job_xml,
-        )
-    )
+
+    async def _go():
+        async with client_from_env() as hmc:
+            job = await hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
+                job_xml,
+            )
+            if not wait or job is None:
+                return job
+            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            if not job_uuid:
+                return job
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+
+    return _run(_go)
 
 
 
