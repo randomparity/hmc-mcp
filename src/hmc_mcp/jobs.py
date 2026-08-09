@@ -140,14 +140,15 @@ def _lpm_params(target_system: str, extra: dict[str, str]) -> dict[str, str]:
     return params
 
 
-def migrate_lpar_job(
+def _migrate_job(
+    operation: str,
     target_system: str,
     target_profile_name: str | None = None,
     destination_lpar_id: str | None = None,
     shared_proc_pool_id: str | None = None,
     wait_time: int | None = None,
 ) -> str:
-    """Migrate job: move an LPAR to another managed system."""
+    """Build a Migrate-family job request from the shared optional params."""
     extra: dict[str, str] = {}
     if target_profile_name:
         extra["TargetProfileName"] = target_profile_name
@@ -157,7 +158,20 @@ def migrate_lpar_job(
         extra["SharedProcPoolID"] = shared_proc_pool_id
     if wait_time is not None:
         extra["WaitTime"] = str(wait_time)
-    return build_job_request("Migrate", "LogicalPartition", _lpm_params(target_system, extra))
+    return build_job_request(operation, "LogicalPartition", _lpm_params(target_system, extra))
+
+
+def migrate_lpar_job(
+    target_system: str,
+    target_profile_name: str | None = None,
+    destination_lpar_id: str | None = None,
+    shared_proc_pool_id: str | None = None,
+    wait_time: int | None = None,
+) -> str:
+    """Migrate job: move an LPAR to another managed system."""
+    return _migrate_job(
+        "Migrate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+    )
 
 
 def migrate_validate_lpar_job(
@@ -168,16 +182,9 @@ def migrate_validate_lpar_job(
     wait_time: int | None = None,
 ) -> str:
     """MigrateValidate job: check whether a migration would succeed."""
-    extra: dict[str, str] = {}
-    if target_profile_name:
-        extra["TargetProfileName"] = target_profile_name
-    if destination_lpar_id:
-        extra["DestinationLparID"] = destination_lpar_id
-    if shared_proc_pool_id:
-        extra["SharedProcPoolID"] = shared_proc_pool_id
-    if wait_time is not None:
-        extra["WaitTime"] = str(wait_time)
-    return build_job_request("MigrateValidate", "LogicalPartition", _lpm_params(target_system, extra))
+    return _migrate_job(
+        "MigrateValidate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+    )
 
 
 def migrate_abort_lpar_job() -> str:
