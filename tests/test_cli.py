@@ -51,3 +51,20 @@ def test_ssh_config_falls_back_to_env(monkeypatch):
     assert cfg.user == "env-user"
     assert cfg.password == "env-pass"
     assert cfg.verify_ssl is True
+
+
+def test_output_table_none_honors_empty_msg(capsys):
+    """table=None with empty entries prints empty_msg, not JSON []."""
+    cli_app._output([], as_json=False, table=None, empty_msg="No widgets found")
+
+    captured = capsys.readouterr()
+    assert "No widgets found" in captured.err
+
+
+def test_output_table_none_prints_json_for_nonempty(capsys):
+    """table=None with entries prints the entries as JSON on stdout."""
+    cli_app._output([{"widget": 1}], as_json=False, table=None)
+
+    captured = capsys.readouterr()
+    assert "widget" in captured.out
+    assert captured.err == ""

@@ -170,6 +170,8 @@ def _output(entries: Any, as_json: bool, table: Table | None = None, empty_msg: 
             err_console.print(f"[yellow]{empty_msg}[/yellow]")
         else:
             console.print(table)
+    elif not entries:
+        err_console.print(f"[yellow]{empty_msg}[/yellow]")
     else:
         _print_json(entries)
 
