@@ -160,16 +160,20 @@ def _ssh_with_client(fn, *, system_uuid=None, lpar_uuid=None):
     Collapses the pervasive ``async def _go`` + ``client_from_env`` +
     ``_system_name``/``_lpar_name`` + ``_run`` scaffold in the SSH-passthrough
     tools, mirroring :func:`with_client` for the REST seam. *fn* is called with
-    the resolved system and LPAR CLI names (``None`` when the matching UUID was
-    not supplied) and returns an awaitable for the tool result — a
-    ``run_hmc_cli(...)`` command, or a call into an :mod:`ssh` helper that runs
-    the command itself. The REST session is closed before the SSH command runs.
+    the resolved config (``hmc.config``) followed by the resolved system and
+    LPAR CLI names (``None`` when the matching UUID was not supplied) and
+    returns an awaitable for the tool result — a ``run_hmc_command(...)`` call,
+    or a call into an :mod:`ssh` helper that runs the command itself. The REST
+    session is closed before the SSH command runs, but the config instance is
+    captured first so the SSH helpers use the same resolved settings as the
+    REST calls.
     """
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid) if system_uuid else None
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
-        return await fn(system_name, lpar_name)
+            config = hmc.config
+        return await fn(config, system_name, lpar_name)
 
     return _run(_go)
 

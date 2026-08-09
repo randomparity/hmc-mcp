@@ -13,7 +13,6 @@ from ._app import (
     with_client,
 )
 
-from .config import HMCConfig
 from .ssh import (
     add_vnic,
     list_fc_ports,
@@ -98,7 +97,7 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
     partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
     to find lpar_uuid.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: list_fc_ports(HMCConfig(), system_name, lpar_name),
+        lambda config, system_name, lpar_name: list_fc_ports(config, system_name, lpar_name),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
@@ -117,7 +116,7 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
     partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
     to find lpar_uuid.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: list_sea_adapters(HMCConfig(), system_name, lpar_name),
+        lambda config, system_name, lpar_name: list_sea_adapters(config, system_name, lpar_name),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
@@ -149,8 +148,8 @@ def hmc_set_sriov_adapter_mode(
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
     functions on that adapter. Confirm system_uuid and adapter_id before calling.    """
     return _ssh_with_client(
-        lambda system_name, _: set_sriov_adapter_mode(
-            HMCConfig(), system_name, adapter_id, mode
+        lambda config, system_name, _: set_sriov_adapter_mode(
+            config, system_name, adapter_id, mode
         ),
         system_uuid=system_uuid,
     )
@@ -171,7 +170,7 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
     before the command runs. Use ``hmc_list_systems`` to find system_uuid and
     ``hmc_list_lpars`` to find lpar_uuid.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: list_vnics(HMCConfig(), system_name, lpar_name),
+        lambda config, system_name, lpar_name: list_vnics(config, system_name, lpar_name),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
@@ -213,8 +212,8 @@ def hmc_add_vnic(
             SR-IOV adapter is not in SR-IOV mode.
     """
     return _ssh_with_client(
-        lambda system_name, lpar_name: add_vnic(
-            HMCConfig(),
+        lambda config, system_name, lpar_name: add_vnic(
+            config,
             system_name,
             lpar_name,
             capacity,
@@ -244,8 +243,8 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
     system_uuid, lpar_uuid, and vnic_id before calling. Returns the HMC CLI
     output (immediate delete — no job to poll).    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: remove_vnic(
-            HMCConfig(), system_name, lpar_name, vnic_id
+        lambda config, system_name, lpar_name: remove_vnic(
+            config, system_name, lpar_name, vnic_id
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,

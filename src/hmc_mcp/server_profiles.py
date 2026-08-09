@@ -11,7 +11,7 @@ from ._app import (
     mcp,
 )
 
-from .ssh import run_hmc_cli
+from .ssh import run_hmc_command
 
 
 
@@ -35,8 +35,8 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda system_name, _: run_hmc_cli(
-            f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        lambda config, system_name, _: run_hmc_command(
+            config, f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
         ),
         system_uuid=system_uuid,
     )
@@ -65,8 +65,8 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda system_name, _: run_hmc_cli(
-            f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        lambda config, system_name, _: run_hmc_command(
+            config, f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
         ),
         system_uuid=system_uuid,
     )
@@ -95,9 +95,10 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
+        lambda config, system_name, lpar_name: run_hmc_command(
+            config,
             f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}"
+            f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}",
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -128,9 +129,10 @@ def hmc_assign_profile_io_slot(
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: run_hmc_cli(
+        lambda config, system_name, lpar_name: run_hmc_command(
+            config,
             f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force"
+            f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force",
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,

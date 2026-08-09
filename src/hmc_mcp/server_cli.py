@@ -12,7 +12,6 @@ from ._app import (
     mcp,
 )
 
-from .config import HMCConfig
 from .ssh import (
     get_lpar_description,
     get_lpar_msp,
@@ -42,8 +41,8 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: get_lpar_description(
-            HMCConfig(), system_name, lpar_name
+        lambda config, system_name, lpar_name: get_lpar_description(
+            config, system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -67,8 +66,8 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid and system_uuid before calling.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: set_lpar_description(
-            HMCConfig(), system_name, lpar_name, description
+        lambda config, system_name, lpar_name: set_lpar_description(
+            config, system_name, lpar_name, description
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -86,8 +85,8 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: get_lpar_msp(
-            HMCConfig(), system_name, lpar_name
+        lambda config, system_name, lpar_name: get_lpar_msp(
+            config, system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -107,8 +106,8 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid and system_uuid before calling.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: set_lpar_msp(
-            HMCConfig(), system_name, lpar_name, enabled
+        lambda config, system_name, lpar_name: set_lpar_msp(
+            config, system_name, lpar_name, enabled
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -127,7 +126,7 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     The system UUID is resolved to its CLI name via REST before the command
     runs.    """
     return _ssh_with_client(
-        lambda system_name, _: get_proc_compat_modes(HMCConfig(), system_name),
+        lambda config, system_name, _: get_proc_compat_modes(config, system_name),
         system_uuid=system_uuid,
     )
 
@@ -144,8 +143,8 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
 
     Returns a dict with keys "pend" and "curr".    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: get_lpar_proc_compat(
-            HMCConfig(), system_name, lpar_name
+        lambda config, system_name, lpar_name: get_lpar_proc_compat(
+            config, system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -165,8 +164,8 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_uuid, system_uuid, and mode before calling.    """
     return _ssh_with_client(
-        lambda system_name, lpar_name: set_lpar_proc_compat(
-            HMCConfig(), system_name, lpar_name, mode
+        lambda config, system_name, lpar_name: set_lpar_proc_compat(
+            config, system_name, lpar_name, mode
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -198,7 +197,7 @@ def hmc_list_io_slots(
       - ``"nvme"``  — NVMe adapters (PCI class 0108)
     """
     return _ssh_with_client(
-        lambda system_name, _: list_io_slots(HMCConfig(), system_name, pci_class),
+        lambda config, system_name, _: list_io_slots(config, system_name, pci_class),
         system_uuid=system_uuid,
     )
 
@@ -216,7 +215,7 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     The system UUID is resolved to its CLI name via REST before the command
     runs.    """
     return _ssh_with_client(
-        lambda system_name, _: list_memory_pools(HMCConfig(), system_name),
+        lambda config, system_name, _: list_memory_pools(config, system_name),
         system_uuid=system_uuid,
     )
 
@@ -244,7 +243,7 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
         HMCCLIError: If *pool_name* still has LPARs assigned to it.
     """
     return _ssh_with_client(
-        lambda system_name, _: remove_memory_pool(HMCConfig(), system_name, pool_name),
+        lambda config, system_name, _: remove_memory_pool(config, system_name, pool_name),
         system_uuid=system_uuid,
     )
 
