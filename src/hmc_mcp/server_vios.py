@@ -16,9 +16,8 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .config import HMCConfig
 from .jobs import install_lpar_job, vios_install_job
-from .ssh import run_hmc_command
+from .ssh import run_hmc_cli
 from .documents import build_vios_document
 
 
@@ -173,8 +172,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> str:
 
     Auth: same env-var configuration as hmc_run_command (see module docstring).
     """
-    config = HMCConfig()
-    return _run(run_hmc_command(config, f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
+    return _run(run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
 
 
 @mcp.tool
@@ -197,9 +195,8 @@ def hmc_backup_vios(vios_uuid: str, backup_type: str = "vios") -> str:
             f"Invalid backup_type {backup_type!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
-    config = HMCConfig()
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation backup -type {shlex.quote(backup_type)}"
-    return _run(run_hmc_command(config, cmd))
+    return _run(run_hmc_cli(cmd))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -215,8 +212,7 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
 
     Returns the raw HMC CLI output.
     """
-    config = HMCConfig()
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
-    return _run(run_hmc_command(config, cmd))
+    return _run(run_hmc_cli(cmd))
 
 

@@ -19,13 +19,13 @@ from .cli_app import (
     console,
     err_console,
     network_app,
+    run_hmc,
 )
 
 from .ssh import (
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
-    run_hmc_command,
 )
 
 
@@ -179,13 +179,11 @@ def network_set_sriov_mode(
         f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
     ):
         raise typer.Abort()
-    config = _ssh_config()
     payload = f"sriov_adapter_mode={mode}"
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)} "
-    f"-a {shlex.quote(payload)}",
-    ))
+    result = run_hmc(
+        f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)} "
+        f"-a {shlex.quote(payload)}",
+    )
 
     console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
     if result.strip():
@@ -224,13 +222,11 @@ def network_add_vnic(
     if backing_devices:
         attrs += f",backing_devices={backing_devices}"
 
-    config = _ssh_config()
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system)} "
-    f"--filter lpar_names={shlex.quote(lpar)} "
-    f"-a {shlex.quote(attrs)}",
-    ))
+    result = run_hmc(
+        f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system)} "
+        f"--filter lpar_names={shlex.quote(lpar)} "
+        f"-a {shlex.quote(attrs)}",
+    )
 
     console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
     if result.strip():
@@ -250,14 +246,12 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    config = _ssh_config()
     payload = f"vnic_id={vnic_id}"
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system)} "
-    f"--filter lpar_names={shlex.quote(lpar)} "
-    f"-a {shlex.quote(payload)}",
-    ))
+    result = run_hmc(
+        f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system)} "
+        f"--filter lpar_names={shlex.quote(lpar)} "
+        f"-a {shlex.quote(payload)}",
+    )
 
     console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
     if result.strip():

@@ -23,7 +23,7 @@ from .ssh import (
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
-    run_hmc_command,
+    run_hmc_cli,
 )
 
 
@@ -180,13 +180,12 @@ def hmc_set_sriov_adapter_mode(
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
         payload = f"sriov_adapter_mode={mode}"
         cmd = (
             f"chhwres -r sriov -m {shlex.quote(system_name)} -o s --id {shlex.quote(adapter_id)}"
             f" -a {shlex.quote(payload)}"
         )
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -262,14 +261,13 @@ def hmc_add_vnic(
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         cmd = (
             f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
             f" --filter lpar_names={shlex.quote(lpar_name)}"
             f" -a {shlex.quote(attrs)}"
         )
         try:
-            return await run_hmc_command(config, cmd)
+            return await run_hmc_cli(cmd)
         except HMCCLIError as exc:
             raise HMCCLIError(
                 f"Failed to add vNIC to '{lpar_name}' on '{system_name}': {exc}. "
@@ -303,13 +301,12 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         payload = f"vnic_id={vnic_id}"
         cmd = (
             f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
             f" --filter lpar_names={shlex.quote(lpar_name)}"
             f" -a {shlex.quote(payload)}"
         )
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())

@@ -14,8 +14,7 @@ from ._app import (
 )
 
 from .common import client_from_env
-from .config import HMCConfig
-from .ssh import run_hmc_command
+from .ssh import run_hmc_cli
 
 
 
@@ -44,9 +43,8 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
         cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -79,9 +77,8 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
         cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -112,10 +109,9 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         payload = f"name={lpar_name},sync_curr_profile=1"
         cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -150,10 +146,9 @@ def hmc_assign_profile_io_slot(
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         payload = f"name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}"
         cmd = f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(payload)} --force"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 

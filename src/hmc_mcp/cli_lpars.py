@@ -16,15 +16,14 @@ from .cli_app import (
     _print_json,
     _resolve_uuid,
     _run,
-    _ssh_config,
     _with_client,
     console,
     err_console,
     lpars_app,
+    run_hmc,
 )
 
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import run_hmc_command
 from .documents import LparResources, PARTITION_TYPES, build_lpar_document
 
 
@@ -403,12 +402,10 @@ def lpars_get_description(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the description field of an LPAR (HMC CLI via SSH)."""
-    config = _ssh_config()
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-    f"--filter lpar_names={shlex.quote(lpar_name)} -F description",
-    ))
+    result = run_hmc(
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F description",
+    )
 
     console.print(result.strip() or "(no description set)")
 
@@ -425,12 +422,10 @@ def lpars_set_description(
         f"Set description on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = _ssh_config()
     payload = f"name={lpar_name},description={description}"
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
-    ))
+    result = run_hmc(
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
+    )
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -443,12 +438,10 @@ def lpars_get_msp(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the MSP (Migratable Service Partition) flag of an LPAR (HMC CLI via SSH)."""
-    config = _ssh_config()
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-    f"--filter lpar_names={shlex.quote(lpar_name)} -F msp",
-    ))
+    result = run_hmc(
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F msp",
+    )
 
     enabled = result.strip() == "1"
     console.print("enabled" if enabled else "disabled")
@@ -466,13 +459,11 @@ def lpars_set_msp(
         f"Set MSP={'1' if enabled else '0'} on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = _ssh_config()
     value = "1" if enabled else "0"
     payload = f"name={lpar_name},msp={value}"
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
-    ))
+    result = run_hmc(
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
+    )
 
     console.print(f"[green]MSP updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -486,11 +477,9 @@ def lpars_get_proc_compat_modes(
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get processor compatibility modes supported by a managed system (HMC CLI via SSH)."""
-    config = _ssh_config()
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes",
-    ))
+    result = run_hmc(
+        f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes",
+    )
 
     console.print(result.strip() or "(no modes returned)")
 
@@ -502,13 +491,11 @@ def lpars_get_proc_compat(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
-    config = _ssh_config()
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-    f"--filter lpar_names={shlex.quote(lpar_name)} -F "
-    f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
-    ))
+    result = run_hmc(
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F "
+        f"pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode",
+    )
 
     raw = result.strip()
     parts = raw.split(",") if raw else []
@@ -538,12 +525,10 @@ def lpars_set_proc_compat(
         f"Set processor compatibility mode to '{mode}' on LPAR '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    config = _ssh_config()
     payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
-    result = _run(lambda: run_hmc_command(
-    config,
-    f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
-    ))
+    result = run_hmc(
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}",
+    )
 
     console.print(f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]")
     if result.strip():

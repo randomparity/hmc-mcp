@@ -13,9 +13,8 @@ from ._app import (
     with_client,
 )
 
-from .config import HMCConfig
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import run_hmc_command
+from .ssh import run_hmc_cli
 
 
 
@@ -33,8 +32,7 @@ def hmc_run_command(cmd: str) -> str:
 
     Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
     """
-    config = HMCConfig()
-    return _run(run_hmc_command(config, cmd))
+    return _run(run_hmc_cli(cmd))
 
 
 

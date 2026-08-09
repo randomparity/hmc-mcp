@@ -21,7 +21,7 @@ from .ssh import (
     list_io_slots,
     list_memory_pools,
     remove_memory_pool,
-    run_hmc_command,
+    run_hmc_cli,
 )
 
 
@@ -46,9 +46,8 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F description"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -76,10 +75,9 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         payload = f"name={lpar_name},description={description}"
         cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -101,9 +99,8 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F msp"
-        raw = await run_hmc_command(config, cmd)
+        raw = await run_hmc_cli(cmd)
         return raw.strip() == "1"
 
     return _run(_go())
@@ -128,11 +125,10 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         value = "1" if enabled else "0"
         payload = f"name={lpar_name},msp={value}"
         cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 
@@ -154,9 +150,8 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     async def _go():
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
-        config = HMCConfig()
         cmd = f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
-        raw = await run_hmc_command(config, cmd)
+        raw = await run_hmc_cli(cmd)
         if not raw.strip():
             return []
         return [mode.strip() for mode in raw.strip().split(",") if mode.strip()]
@@ -182,9 +177,8 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         cmd = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter lpar_names={shlex.quote(lpar_name)} -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
-        raw = await run_hmc_command(config, cmd)
+        raw = await run_hmc_cli(cmd)
         if not raw.strip():
             return {"pend": "", "curr": ""}
         parts = raw.strip().split(",")
@@ -214,10 +208,9 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
         async with client_from_env() as hmc:
             system_name = await _system_name(hmc, system_uuid)
             lpar_name = await _lpar_name(hmc, lpar_uuid)
-        config = HMCConfig()
         payload = f"name={lpar_name},lpar_proc_compat_mode={mode}"
         cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(payload)}"
-        return await run_hmc_command(config, cmd)
+        return await run_hmc_cli(cmd)
 
     return _run(_go())
 

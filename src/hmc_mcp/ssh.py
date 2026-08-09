@@ -76,6 +76,16 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         raise HMCCLIError(f"SSH command failed: {detail.strip()}") from exc
 
 
+async def run_hmc_cli(cmd: str) -> str:
+    """Run an HMC CLI command over SSH with env-configured credentials.
+
+    Thin convenience wrapper around :func:`run_hmc_command` that builds the
+    :class:`HMCConfig` from the environment, so tool bodies don't repeat
+    ``run_hmc_command(HMCConfig(), cmd)`` inline.
+    """
+    return await run_hmc_command(HMCConfig(), cmd)
+
+
 def _parse_lshwres_output(text: str) -> list[dict[str, Any]]:
     """Parse ``lshwres`` key=value output into a list of dicts.
 
