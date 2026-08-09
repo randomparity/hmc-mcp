@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
@@ -19,6 +19,7 @@ from .documents import (
     LparResources,
     MemoryMirroringMode,
     OsType,
+    PartitionType,
     PowerOffPolicy,
     PowerOnLparStartPolicy,
     build_dlpar_mem_document,
@@ -34,7 +35,7 @@ from .jobs import power_off_lpar_job, power_on_lpar_job
 def hmc_create_lpar(
     system_uuid: str,
     name: str,
-    partition_type: Literal["AIX/Linux", "OS400", "Virtual IO Server"] = "AIX/Linux",
+    partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
     min_memory: int = 256,
     desired_memory: int = 4096,

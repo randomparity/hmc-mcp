@@ -157,7 +157,8 @@ def hmc_install_lpar_os(
 
 
 
-_VALID_BACKUP_TYPES = {"vios", "viosioconfig", "ssp"}
+BackupType = Literal["vios", "viosioconfig", "ssp"]
+_VALID_BACKUP_TYPES: frozenset[BackupType] = frozenset({"vios", "viosioconfig", "ssp"})
 
 
 def _parse_lsviosbackup_output(text: str) -> list[dict[str, str]]:
@@ -195,7 +196,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> list[dict[str, str]]:
 
 @mcp.tool
 def hmc_backup_vios(
-    vios_uuid: str, backup_type: Literal["vios", "viosioconfig", "ssp"] = "vios"
+    vios_uuid: str, backup_type: BackupType = "vios"
 ) -> str:
     """Create a VIOS backup via the HMC CLI.
 

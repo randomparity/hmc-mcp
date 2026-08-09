@@ -32,7 +32,7 @@ from .xmlutil import ATOM_NS, WEB_NS
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
 # Valid partition environments.
-PARTITION_TYPES = ("AIX/Linux", "OS400", "Virtual IO Server")
+PARTITION_TYPES: tuple[PartitionType, ...] = ("AIX/Linux", "OS400", "Virtual IO Server")
 
 # Closed vocabularies for the string/int attributes the document builders
 # validate. The sets mirror what the HMC accepts for each property; os_type
@@ -49,6 +49,7 @@ MEM_MIRRORING_MODES = ("none", "sys_firmware_only")
 # Type aliases for the closed sets above, used to annotate the document-builder
 # and MCP-tool parameters so MCP renders them as enums and static checkers catch
 # typos before they reach the HMC.
+PartitionType = Literal["AIX/Linux", "OS400", "Virtual IO Server"]
 OsType = Literal["aix", "linux", "ibmi"]
 Keylock = Literal["normal", "manual", "auto"]
 PowerOffPolicy = Literal[0, 1]
@@ -188,7 +189,7 @@ def _lpar_envelope(body: str) -> str:
 
 def build_lpar_document(
     name: str | None,
-    partition_type: str = "AIX/Linux",
+    partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
     resources: LparResources | None = None,
     os_type: OsType | None = None,

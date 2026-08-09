@@ -75,6 +75,28 @@ def test_arbitrary_command_tool_is_neither_readonly_nor_destructive():
     )
 
 
+def test_closed_vocab_enum_matches_runtime_constant():
+    """The MCP enum for closed-vocab params must not drift from the runtime set.
+
+    The tool parameters are annotated with Literal aliases that share their
+    values with the runtime constants (PARTITION_TYPES / _VALID_BACKUP_TYPES);
+    adding a value must be a single edit. This pins the rendered schema to the
+    constant so either side changing alone is caught.
+    """
+    from hmc_mcp.documents import PARTITION_TYPES
+    from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
+
+    by_name = _tools_by_name()
+
+    partition_type = by_name["hmc_create_lpar"].parameters["properties"]["partition_type"]
+    assert set(partition_type["enum"]) == set(PARTITION_TYPES)
+    assert partition_type["default"] in PARTITION_TYPES
+
+    backup_type = by_name["hmc_backup_vios"].parameters["properties"]["backup_type"]
+    assert set(backup_type["enum"]) == set(_VALID_BACKUP_TYPES)
+    assert backup_type["default"] in _VALID_BACKUP_TYPES
+
+
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #
