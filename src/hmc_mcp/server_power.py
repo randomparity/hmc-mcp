@@ -13,7 +13,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .templates import (
+from .documents import (
     LparResources,
     build_dlpar_mem_document,
     build_dlpar_proc_document,

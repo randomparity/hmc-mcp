@@ -9,7 +9,7 @@ from hmc_mcp.server import (
     hmc_list_ldap_config,
     hmc_remove_ldap_config,
 )
-from hmc_mcp.templates import build_ldap_config_document
+from hmc_mcp.documents import build_ldap_config_document
 
 from conftest import make_config
 

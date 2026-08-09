@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .client_parse import _parse_feed
-from .templates import (
+from .documents import (
     build_media_repository_delete_document,
     build_media_repository_document,
     build_virtual_disk_document,

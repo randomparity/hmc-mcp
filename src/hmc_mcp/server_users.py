@@ -13,7 +13,7 @@ from ._app import (
 )
 
 from .common import client_from_env
-from .templates import (
+from .documents import (
     build_hmc_user_document,
     build_ldap_config_document,
     build_password_policy_document,

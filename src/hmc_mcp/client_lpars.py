@@ -31,7 +31,7 @@ class LparsMixin:
     ) -> dict[str, Any] | None:
         """Create an LPAR on a managed system.
 
-        PUTs a LogicalPartition document (see templates.build_lpar_document)
+        PUTs a LogicalPartition document (see documents.build_lpar_document)
         to /rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition and
         returns the created partition entry.
         """

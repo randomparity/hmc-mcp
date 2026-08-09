@@ -18,7 +18,7 @@ from .common import client_from_env
 from .config import HMCConfig
 from .jobs import install_lpar_job, vios_install_job
 from .ssh import run_hmc_command
-from .templates import build_vios_document
+from .documents import build_vios_document
 
 
 

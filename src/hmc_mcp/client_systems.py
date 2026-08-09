@@ -37,7 +37,7 @@ class SystemsMixin:
 
         Supported fields include system name, power-off policy, LPAR start
         policy, pending memory region size, huge pages, and mirroring mode.
-        See templates.build_managed_system_document for the document builder.
+        See documents.build_managed_system_document for the document builder.
         """
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}"
         xml = await self._post(path, system_xml, resource_type="ManagedSystem")

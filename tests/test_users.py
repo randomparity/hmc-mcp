@@ -11,7 +11,7 @@ from hmc_mcp.server import (
     hmc_list_users,
     hmc_modify_user,
 )
-from hmc_mcp.templates import build_hmc_user_document
+from hmc_mcp.documents import build_hmc_user_document
 
 from conftest import make_config
 

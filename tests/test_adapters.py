@@ -1,6 +1,6 @@
 """Tests for the virtual adapter document builders."""
 
-from hmc_mcp.templates import (
+from hmc_mcp.documents import (
     build_client_network_adapter_document,
     build_vfc_adapter_document,
     build_vscsi_adapter_document,

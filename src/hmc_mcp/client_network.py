@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .client_parse import _parse_feed
-from .templates import build_virtual_network_document
+from .documents import build_virtual_network_document
 
 
 class NetworkMixin:

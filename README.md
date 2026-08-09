@@ -386,7 +386,7 @@ src/hmc_mcp/
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   common.py      # shared HMCClient/config helpers for tool definitions
   ssh.py         # asyncssh helpers running HMC CLI commands over SSH
-  templates.py   # LogicalPartition create/modify XML documents
+  documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
   server.py      # FastMCP server + tool definitions (server_*.py per domain)

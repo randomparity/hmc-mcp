@@ -6,7 +6,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.templates import (
+from hmc_mcp.documents import (
     build_media_repository_document,
     build_virtual_optical_media_document,
 )

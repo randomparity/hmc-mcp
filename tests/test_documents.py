@@ -2,7 +2,7 @@
 
 import pytest
 
-from hmc_mcp.templates import LparResources, PARTITION_TYPES, build_lpar_document
+from hmc_mcp.documents import LparResources, PARTITION_TYPES, build_lpar_document
 
 
 def test_minimal_create_document():

@@ -10,7 +10,7 @@ from hmc_mcp.server import (
     hmc_list_password_policies,
     hmc_modify_password_policy,
 )
-from hmc_mcp.templates import build_password_policy_document
+from hmc_mcp.documents import build_password_policy_document
 
 from conftest import make_config
 

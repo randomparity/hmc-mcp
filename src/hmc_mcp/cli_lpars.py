@@ -25,7 +25,7 @@ from .cli_app import (
 
 from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import run_hmc_command
-from .templates import LparResources, PARTITION_TYPES, build_lpar_document
+from .documents import LparResources, PARTITION_TYPES, build_lpar_document
 
 
 

@@ -6,7 +6,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.templates import build_virtual_network_document
+from hmc_mcp.documents import build_virtual_network_document
 
 VSWITCH_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

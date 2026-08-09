@@ -1,4 +1,12 @@
-"""XML builders for LogicalPartition and ManagedSystem create/modify documents.
+"""XML request-document builders for the HMC REST API.
+
+Each ``build_*_document`` produces the XML body for one HMC operation: LPAR /
+VIOS / managed-system create and modify (LogicalPartition and ManagedSystem
+documents), DLPAR processor/memory change documents, virtual adapters
+(vSCSI / vFC / network), storage (volume groups, virtual disks, vSCSI
+mappings), networking (virtual networks), virtual media (media repository,
+optical media), and web resources (HMC users, password policies, LDAP
+configuration).
 
 The HMC creates an LPAR from a PUT of a LogicalPartition document to
 /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition, and modifies one with a

@@ -6,7 +6,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
-from hmc_mcp.templates import (
+from hmc_mcp.documents import (
     LparResources,
     build_dlpar_mem_document,
     build_dlpar_proc_document,

@@ -7,7 +7,7 @@ from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import vios_install_job
-from hmc_mcp.templates import build_vios_document
+from hmc_mcp.documents import build_vios_document
 
 BASE = "https://hmc.test:12443"
 
