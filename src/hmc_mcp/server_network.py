@@ -96,10 +96,7 @@ def hmc_list_fc_ports(system_uuid: str, lpar_uuid: str | None = None) -> list[di
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs. Pass lpar_uuid to restrict results to a single
     partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
-    to find lpar_uuid.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    to find lpar_uuid.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: list_fc_ports(HMCConfig(), system_name, lpar_name),
         system_uuid=system_uuid,
@@ -118,10 +115,7 @@ def hmc_list_sea_adapters(system_uuid: str, lpar_uuid: str | None = None) -> lis
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs. Pass lpar_uuid to restrict results to a single
     partition. Use hmc_list_systems to find system_uuid and hmc_list_lpars
-    to find lpar_uuid.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    to find lpar_uuid.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: list_sea_adapters(HMCConfig(), system_name, lpar_name),
         system_uuid=system_uuid,
@@ -156,10 +150,7 @@ def hmc_set_sriov_adapter_mode(
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_uuid and adapter_id before calling.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    functions on that adapter. Confirm system_uuid and adapter_id before calling.    """
     if mode not in _VALID_SRIOV_MODES:
         raise ValueError(
             f"Invalid mode {mode!r}. "
@@ -188,10 +179,7 @@ def hmc_list_vnics(system_uuid: str, lpar_uuid: str) -> list[dict[str, Any]]:
 
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs. Use ``hmc_list_systems`` to find system_uuid and
-    ``hmc_list_lpars`` to find lpar_uuid.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    ``hmc_list_lpars`` to find lpar_uuid.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: list_vnics(HMCConfig(), system_name, lpar_name),
         system_uuid=system_uuid,
@@ -229,8 +217,6 @@ def hmc_add_vnic(
     system_uuid, lpar_uuid, and vswitch_name before calling.  The
     underlying physical adapter must be in SR-IOV mode (see
     ``hmc_set_sriov_adapter_mode``).
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
 
     Raises:
         HMCCLIError: If the HMC command fails, e.g. because the underlying
@@ -277,10 +263,7 @@ def hmc_remove_vnic(system_uuid: str, lpar_uuid: str, vnic_id: str) -> str:
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     system_uuid, lpar_uuid, and vnic_id before calling. Returns the HMC CLI
-    output (immediate delete — no job to poll).
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    output (immediate delete — no job to poll).    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"

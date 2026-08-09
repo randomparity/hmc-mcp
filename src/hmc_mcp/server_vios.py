@@ -188,10 +188,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> list[dict[str, str]]:
 
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
     fixed-width table into a list of dicts keyed by the output header
-    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.    """
     output = _run(run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
     return _parse_lsviosbackup_output(output)
 

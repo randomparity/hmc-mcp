@@ -35,10 +35,7 @@ def hmc_get_lpar_description(system_uuid: str, lpar_uuid: str) -> str:
     description visible in the HMC GUI Partitions tab.
 
     The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    before the command runs.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -64,10 +61,7 @@ def hmc_set_lpar_description(system_uuid: str, lpar_uuid: str, description: str)
     before the command runs.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_uuid and system_uuid before calling.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    lpar_uuid and system_uuid before calling.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
@@ -87,10 +81,7 @@ def hmc_get_lpar_msp(system_uuid: str, lpar_uuid: str) -> bool:
     ``False`` if ``0``.
 
     The system and partition UUIDs are resolved to their CLI names via REST
-    before the command runs.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    before the command runs.    """
     raw = _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -113,10 +104,7 @@ def hmc_set_lpar_msp(system_uuid: str, lpar_uuid: str, enabled: bool) -> str:
     before the command runs.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_uuid and system_uuid before calling.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    lpar_uuid and system_uuid before calling.    """
     value = "1" if enabled else "0"
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
@@ -138,10 +126,7 @@ def hmc_get_proc_compat_modes(system_uuid: str) -> list[str]:
     on the HMC via SSH and returns a list of supported mode strings.
 
     The system UUID is resolved to its CLI name via REST before the command
-    runs.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    runs.    """
     raw = _ssh_with_client(
         lambda system_name, _: run_hmc_cli(
             f"lssyscfg -r sys -m {shlex.quote(system_name)} -F lpar_proc_compat_modes"
@@ -163,10 +148,7 @@ def hmc_get_lpar_proc_compat(system_uuid: str, lpar_uuid: str) -> dict[str, str]
     The system and partition UUIDs are resolved to their CLI names via REST
     before the command runs.
 
-    Returns a dict with keys "pend" and "curr".
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    Returns a dict with keys "pend" and "curr".    """
     raw = _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
@@ -195,10 +177,7 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
     before the command runs.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_uuid, system_uuid, and mode before calling.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    lpar_uuid, system_uuid, and mode before calling.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
@@ -231,10 +210,7 @@ def hmc_list_io_slots(
       - ``"eth"``   — Ethernet adapters (PCI class 0200)
       - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
       - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
-      - ``"nvme"``  — NVMe adapters (PCI class 0108)
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+      - ``"nvme"``  — NVMe adapters (PCI class 0108)    """
     return _ssh_with_client(
         lambda system_name, _: list_io_slots(HMCConfig(), system_name, adapter_type),
         system_uuid=system_uuid,
@@ -252,10 +228,7 @@ def hmc_list_memory_pools(system_uuid: str) -> list[dict[str, Any]]:
     ``lpar_names``, and ``curr_lpar_names`` (comma-separated).
 
     The system UUID is resolved to its CLI name via REST before the command
-    runs.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+    runs.    """
     return _ssh_with_client(
         lambda system_name, _: list_memory_pools(HMCConfig(), system_name),
         system_uuid=system_uuid,
@@ -280,8 +253,6 @@ def hmc_remove_memory_pool(system_uuid: str, pool_name: str) -> str:
     WARNING: This permanently removes the pool — confirm system_uuid and
     pool_name before calling. Returns the HMC CLI output (immediate delete —
     no job to poll).
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
 
     Raises:
         HMCCLIError: If *pool_name* still has LPARs assigned to it.

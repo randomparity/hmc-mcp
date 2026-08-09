@@ -33,10 +33,7 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
         file_path: Path on the HMC filesystem where the backup file will be saved.
 
     Returns:
-        The raw HMC CLI output.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+        The raw HMC CLI output.    """
     return _ssh_with_client(
         lambda system_name, _: run_hmc_cli(
             f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
@@ -66,10 +63,7 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
         file_path: Path on the HMC filesystem where the backup file is located.
 
     Returns:
-        The raw HMC CLI output.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+        The raw HMC CLI output.    """
     return _ssh_with_client(
         lambda system_name, _: run_hmc_cli(
             f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
@@ -99,10 +93,7 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
         lpar_uuid: The UUID of the logical partition to sync.
 
     Returns:
-        The raw HMC CLI output.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+        The raw HMC CLI output.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
@@ -135,10 +126,7 @@ def hmc_assign_profile_io_slot(
         drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
 
     Returns:
-        The raw HMC CLI output.
-
-    Auth: same env-var configuration as hmc_run_command (see module docstring).
-    """
+        The raw HMC CLI output.    """
     return _ssh_with_client(
         lambda system_name, lpar_name: run_hmc_cli(
             f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
