@@ -82,6 +82,7 @@ hmc-mcp lpars list                   # all LPARs
 hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)
 hmc-mcp lpars state mylpar           # just "running", "not activated", ...
+hmc-mcp lpars summary mylpar         # one-call summary: state, RMC, memory, CPU, OS, adapters
 hmc-mcp lpars create web01 --system <uuid> --mem 8192 --vcpus 2
 hmc-mcp lpars modify web01 --mem 16384 --procs 2.0   # assign resources
 hmc-mcp lpars delete web01           # destroy (must be powered off)
@@ -129,6 +130,7 @@ Exposed tools:
 | `hmc_console_info`    | HMC version/network info; cheap connectivity check |
 | `hmc_systems`         | All managed systems, or one by UUID |
 | `hmc_lpars`           | All LPARs, one by UUID, find by name, or quick state |
+| `hmc_lpar_summary`    | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
 | `hmc_vios`            | Virtual I/O Servers, or storage-detail mappings for one |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |

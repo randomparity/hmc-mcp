@@ -36,6 +36,46 @@ from .ssh import (
 
 
 
+@lpars_app.command("summary")
+def lpars_summary(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
+    from .server_composite import hmc_lpar_summary
+
+    summary = hmc_lpar_summary(name_or_uuid)
+
+    if as_json:
+        _print_json(summary)
+        return
+
+    table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+    rows = [
+        ("UUID", summary.get("uuid") or "-"),
+        ("Name", summary.get("name") or "-"),
+        ("State", summary.get("state") or "-"),
+        ("RMC State", summary.get("rmc_state") or "-"),
+        ("Type", summary.get("partition_type") or "-"),
+        ("Partition ID", str(summary.get("partition_id") or "-")),
+        ("Current Memory (MiB)", str(summary.get("current_memory_mb") or "-")),
+        ("Desired Memory (MiB)", str(summary.get("desired_memory_mb") or "-")),
+        ("Current Proc Units", str(summary.get("current_proc_units") or "-")),
+        ("Desired Proc Units", str(summary.get("desired_proc_units") or "-")),
+        ("Desired vCPUs", str(summary.get("desired_vcpus") or "-")),
+        ("Dedicated Procs", str(summary.get("dedicated_procs") or "-")),
+        ("OS Version", summary.get("os_version") or "-"),
+        ("OS Type", summary.get("os_type") or "-"),
+        ("Client Network Adapters", str(summary.get("client_network_adapter_count", 0))),
+        ("Description", summary.get("description") or "-"),
+    ]
+    for prop, val in rows:
+        table.add_row(prop, val)
+    console.print(table)
+
+
 @lpars_app.command("list")
 def lpars_list(
     system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
