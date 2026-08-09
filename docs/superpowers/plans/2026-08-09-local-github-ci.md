@@ -58,9 +58,9 @@ artifacts. Assert exact dev pins for Ruff, ty, prek, and detect-secrets; assert
 the exact ty include set and absence of `[tool.ty.rules]`; assert the six just
 recipe headers and that `verify` depends on `static test smoke`; assert all
 three local hooks call `just <focused-recipe>` with `pass_filenames: false`;
-and assert the baseline's complete result set contains exactly seven findings
-whose paths equal the reviewed fixture-path set, with no other result or
-excluded `tests/` path.
+and assert the baseline's complete result set contains exactly eight findings:
+the seven reviewed fixture findings and the justfile scanner self-reference,
+with no other result or excluded `tests/` path.
 
 - [ ] **Step 2: Run the focused tests and confirm the expected red state**
 
