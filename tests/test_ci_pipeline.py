@@ -1,5 +1,7 @@
 import json
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -10,6 +12,7 @@ TOOL_PINS = {
     "prek==0.4.10",
     "ruff==0.15.22",
     "ty==0.0.62",
+    "zizmor==1.29.0",
 }
 TY_INCLUDE = [
     "src/hmc_mcp/config.py",
@@ -52,9 +55,18 @@ def test_quality_tools_are_pinned_with_a_strict_type_boundary() -> None:
 def test_justfile_exposes_one_composed_verification_graph() -> None:
     justfile = (ROOT / "justfile").read_text()
 
-    for recipe in ("setup", "lint", "typecheck", "secrets", "static"):
+    for recipe in (
+        "setup",
+        "lint",
+        "typecheck",
+        "secrets",
+        "workflow-security",
+        "static",
+    ):
         assert f"\n{recipe}:" in justfile
+    assert "\nstatic: lint typecheck secrets workflow-security\n" in justfile
     assert "\nverify: static test smoke\n" in justfile
+    assert "--baseline .secrets.baseline --no-verify --" in justfile
     assert "uv run hmc-mcp metrics --help" in justfile
 
 
@@ -62,9 +74,9 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
     assert config.count("repo: local") == 1
-    for recipe in ("lint", "typecheck", "secrets"):
+    for recipe in ("lint", "typecheck", "secrets", "workflow-security"):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 3
+    assert config.count("pass_filenames: false") == 4
     assert "entry: uv run" not in config
 
 
@@ -78,6 +90,32 @@ def test_secret_baseline_is_an_exact_reviewed_fixture_allowlist() -> None:
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
     )
+
+
+def test_secret_scanner_treats_option_shaped_names_as_files(tmp_path: Path) -> None:
+    (tmp_path / "--exclude-files").write_text("")
+    (tmp_path / "credential.txt").write_text(
+        'password = "option-probe-48"\n'  # pragma: allowlist secret
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "detect_secrets.pre_commit_hook",
+            "--no-verify",
+            "--",
+            "--exclude-files",
+            "credential.txt",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "credential.txt:1" in result.stdout
 
 
 def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:

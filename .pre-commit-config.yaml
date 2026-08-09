@@ -16,3 +16,8 @@ repos:
         entry: just secrets
         language: system
         pass_filenames: false
+      - id: workflow-security
+        name: Audit GitHub Actions
+        entry: just workflow-security
+        language: system
+        pass_filenames: false
