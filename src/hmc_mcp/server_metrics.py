@@ -7,9 +7,10 @@ from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
+    _resolve_lpar_uuid,
+    _resolve_system_uuid,
     _run,
     mcp,
-    with_client,
 )
 
 from .client import HMCError
@@ -17,25 +18,43 @@ from .common import client_from_env
 from .pcm import newest_metric_link
 
 
+async def _resolve_resource_uuid(hmc: Any, category: str, resource_name_or_uuid: str) -> str:
+    """Resolve a PCM resource name-or-UUID based on its category.
+
+    For 'ManagedSystem' uses _resolve_system_uuid; for 'LogicalPartition'
+    uses _resolve_lpar_uuid. Other categories pass through untouched (only
+    UUIDs are valid for other PCM resource types).
+    """
+    if category == "ManagedSystem":
+        return await _resolve_system_uuid(hmc, resource_name_or_uuid)
+    if category == "LogicalPartition":
+        return await _resolve_lpar_uuid(hmc, resource_name_or_uuid)
+    return resource_name_or_uuid
+
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_pcm_preferences(category: str, resource_uuid: str) -> dict[str, Any]:
+def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource (from hmc_systems or
-    hmc_lpars). Returns flags like LongTermMonitorEnabled,
-    AggregationEnabled, ShortTermMonitorEnabled, ComputeLTMEnabled,
-    EnergyMonitorEnabled.
+    resource_name_or_uuid is the name or UUID of that resource (a SystemName
+    or UUID from hmc_systems, or a PartitionName or UUID from hmc_lpars).
+    Returns flags like LongTermMonitorEnabled, AggregationEnabled,
+    ShortTermMonitorEnabled, ComputeLTMEnabled, EnergyMonitorEnabled.
     """
 
-    return with_client(lambda hmc: hmc.get_pcm_preferences(category, resource_uuid))
+    async def _go():
+        async with client_from_env() as hmc:
+            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            return await hmc.get_pcm_preferences(category, resource_uuid)
+
+    return _run(_go)
 
 
 @mcp.tool
 def hmc_set_pcm_preferences(
     category: str,
-    resource_uuid: str,
+    resource_name_or_uuid: str,
     long_term_monitor: bool | None = None,
     aggregation: bool | None = None,
     short_term_monitor: bool | None = None,
@@ -45,9 +64,9 @@ def hmc_set_pcm_preferences(
     """Enable/disable PCM data collection for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource. Only the flags you set are
-    changed. Turning on aggregation implicitly enables long-term monitoring
-    on the HMC. Long-term + aggregation are required before
+    resource_name_or_uuid is the name or UUID of that resource. Only the flags
+    you set are changed. Turning on aggregation implicitly enables long-term
+    monitoring on the HMC. Long-term + aggregation are required before
     processed/aggregated metrics become available. Returns the updated
     preferences dict (``{}`` if the HMC returns no body).
 
@@ -68,13 +87,18 @@ def hmc_set_pcm_preferences(
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
 
-    return with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
+    async def _go():
+        async with client_from_env() as hmc:
+            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_processed_metrics(
     category: str,
-    resource_uuid: str,
+    resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
@@ -83,9 +107,9 @@ def hmc_processed_metrics(
     """List or download processed PCM metrics JSON documents.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource. Processed metrics have 30s
-    granularity and ~2h retention. Timestamps are ISO-8601 UTC
-    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+    resource_name_or_uuid is the name or UUID of that resource. Processed
+    metrics have 30s granularity and ~2h retention. Timestamps are ISO-8601
+    UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
 
     mode='links' returns the Atom feed link list (list of dicts with 'link',
     'updated', 'title' keys). mode='fetch' (default) downloads and returns the
@@ -93,9 +117,9 @@ def hmc_processed_metrics(
     available in the requested range.
     """
     if mode == "links":
-        return _metrics_links(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
+        return _metrics_links(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples)
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_uuid, "processed", start_ts, end_ts, no_of_samples)
+        return _metrics_fetch(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples)
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -103,7 +127,7 @@ def hmc_processed_metrics(
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_aggregated_metrics(
     category: str,
-    resource_uuid: str,
+    resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
@@ -112,9 +136,9 @@ def hmc_aggregated_metrics(
     """List or download aggregated PCM metrics JSON documents.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource. Aggregated metrics are the
-    long-term rollup used for trend analysis. Timestamps are ISO-8601 UTC
-    (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
+    resource_name_or_uuid is the name or UUID of that resource. Aggregated
+    metrics are the long-term rollup used for trend analysis. Timestamps are
+    ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
 
     mode='links' returns the Atom feed link list. mode='fetch' (default)
     downloads and returns the parsed JSON of the most recent document, or
@@ -122,9 +146,9 @@ def hmc_aggregated_metrics(
     aggregation to be enabled in PCM preferences.
     """
     if mode == "links":
-        return _metrics_links(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+        return _metrics_links(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples)
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+        return _metrics_fetch(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples)
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -149,22 +173,25 @@ async def _fetch_metric_links(
 
 def _metrics_links(
     category: str,
-    resource_uuid: str,
+    resource_name_or_uuid: str,
     kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
 ) -> list[dict[str, str]]:
-    return with_client(
-        lambda hmc: _fetch_metric_links(
-            hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
-        )
-    )
+    async def _go():
+        async with client_from_env() as hmc:
+            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            return await _fetch_metric_links(
+                hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
+            )
+
+    return _run(_go)
 
 
 def _metrics_fetch(
     category: str,
-    resource_uuid: str,
+    resource_name_or_uuid: str,
     kind: Literal["processed", "aggregated"],
     start_ts: str,
     end_ts: str | None,
@@ -172,6 +199,7 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     async def _go():
         async with client_from_env() as hmc:
+            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
             links = await _fetch_metric_links(
                 hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
             )
