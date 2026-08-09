@@ -108,10 +108,12 @@ regenerating the baseline never establishes that a finding is safe.
 ## Hook behavior
 
 `.pre-commit-config.yaml` defines local system hooks managed by prek. Hooks
-invoke project-pinned tools through uv and never download a second tool copy.
-Ruff receives staged Python filenames. The type check runs once without passed
-filenames because its reviewed include boundary is project-level. Secret
-detection receives all staged text files and the shared baseline.
+invoke the focused just recipes and never duplicate their tool commands or
+download a second tool copy. Every hook sets `pass_filenames: false`: Ruff runs
+over the repository, ty runs over its reviewed include boundary, and secret
+detection scans every tracked file against the shared baseline. The broader
+hook boundary is intentional because these tools are fast and it makes hook,
+manual, and hosted results identical.
 
 `just setup` installs the pre-commit hook type. `prek run --all-files` is an
 additional verification arm to prove the committed hook configuration works;
@@ -144,7 +146,11 @@ write permission and stores no project credentials.
 
 - **Pull-request content to a hosted CI runner:** an untrusted contributor can
   alter repository files executed by CI. The workflow uses no repository
-  secrets and has read-only contents permission.
+  secrets and has read-only contents permission. The contributor can also edit
+  the workflow, justfile, hook configuration, tool pins, tests, and baseline,
+  so a successful job does not attest to its own control-plane integrity.
+  Reviewers must scrutinize changes to those files, especially baseline diffs;
+  branch protection and CODEOWNERS remain outside this issue.
 - **Third-party actions to runner execution:** action maintainers publish code
   that GitHub executes. Every action is pinned to a reviewed full commit SHA
   with a release comment; checkout does not persist credentials.
