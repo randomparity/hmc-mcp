@@ -7,7 +7,10 @@ for status.
 
 from __future__ import annotations
 
-WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
+from collections.abc import Mapping
+from typing import Literal, Required, TypedDict, get_args
+
+from .xmlutil import WEB_NS
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -137,14 +140,15 @@ def _lpm_params(target_system: str, extra: dict[str, str]) -> dict[str, str]:
     return params
 
 
-def migrate_lpar_job(
+def _migrate_job(
+    operation: str,
     target_system: str,
     target_profile_name: str | None = None,
     destination_lpar_id: str | None = None,
     shared_proc_pool_id: str | None = None,
     wait_time: int | None = None,
 ) -> str:
-    """Migrate job: move an LPAR to another managed system."""
+    """Build a Migrate-family job request from the shared optional params."""
     extra: dict[str, str] = {}
     if target_profile_name:
         extra["TargetProfileName"] = target_profile_name
@@ -154,7 +158,20 @@ def migrate_lpar_job(
         extra["SharedProcPoolID"] = shared_proc_pool_id
     if wait_time is not None:
         extra["WaitTime"] = str(wait_time)
-    return build_job_request("Migrate", "LogicalPartition", _lpm_params(target_system, extra))
+    return build_job_request(operation, "LogicalPartition", _lpm_params(target_system, extra))
+
+
+def migrate_lpar_job(
+    target_system: str,
+    target_profile_name: str | None = None,
+    destination_lpar_id: str | None = None,
+    shared_proc_pool_id: str | None = None,
+    wait_time: int | None = None,
+) -> str:
+    """Migrate job: move an LPAR to another managed system."""
+    return _migrate_job(
+        "Migrate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+    )
 
 
 def migrate_validate_lpar_job(
@@ -165,16 +182,9 @@ def migrate_validate_lpar_job(
     wait_time: int | None = None,
 ) -> str:
     """MigrateValidate job: check whether a migration would succeed."""
-    extra: dict[str, str] = {}
-    if target_profile_name:
-        extra["TargetProfileName"] = target_profile_name
-    if destination_lpar_id:
-        extra["DestinationLparID"] = destination_lpar_id
-    if shared_proc_pool_id:
-        extra["SharedProcPoolID"] = shared_proc_pool_id
-    if wait_time is not None:
-        extra["WaitTime"] = str(wait_time)
-    return build_job_request("MigrateValidate", "LogicalPartition", _lpm_params(target_system, extra))
+    return _migrate_job(
+        "MigrateValidate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+    )
 
 
 def migrate_abort_lpar_job() -> str:
@@ -199,7 +209,7 @@ def remote_restart_lpar_job(target_system: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
+def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
     """PartitionTemplate Deploy job.
 
     target_system_uuid is the managed system to create the partition on;
@@ -221,10 +231,13 @@ def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def _repository_params(repository: dict) -> dict[str, str]:
-    """Convert a repository dict to JobParameter key/value pairs.
+RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
 
-    Recognised keys (all optional):
+
+class RepositorySource(TypedDict, total=False):
+    """Software source for an update/upgrade job.
+
+    Recognised keys:
         type        – repository type: nfs | sftp | disk | ibmfixcentral
         host        – NFS/SFTP server hostname or IP
         path        – NFS export path or SFTP remote path
@@ -234,13 +247,72 @@ def _repository_params(repository: dict) -> dict[str, str]:
         insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
         ibm_id      – IBM FixCentral account ID
         ibm_token   – IBM FixCentral account token
-    The raw dict values are passed through; callers may include any
-    parameter the HMC operation accepts.
     """
+
+    type: Required[RepositoryType]
+    host: str
+    path: str
+    user: str
+    sftp_pw: str
+    mount_loc: str
+    insecure: str
+    ibm_id: str
+    ibm_token: str
+
+
+_REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
+
+# The accepted repository types, derived from the RepositoryType Literal so the
+# annotation and the runtime enforcement cannot drift.
+_REPOSITORY_TYPES = frozenset(get_args(RepositoryType))
+
+# Required keys per repository type; a missing one fails fast with a clear
+# message instead of producing a job the HMC rejects at runtime.
+_REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
+    "nfs": frozenset({"host", "path"}),
+    "sftp": frozenset({"host", "path"}),
+    "disk": frozenset(),
+    "ibmfixcentral": frozenset({"ibm_id", "ibm_token"}),
+}
+
+
+def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
+    """Convert a repository dict to JobParameter key/value pairs.
+
+    Unknown keys are rejected, the repository type must be present, and
+    required keys are checked per repository type, so a typo like
+    ``{'type': 'nfs', 'hst': '...'}`` fails here with an actionable message
+    instead of producing a job the HMC rejects at runtime.
+    """
+    unknown = set(repository) - _REPOSITORY_KEYS
+    if unknown:
+        raise ValueError(
+            f"Unknown repository key(s): {', '.join(sorted(unknown))}. "
+            f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
+        )
+    repo_type = repository.get("type")
+    expected = ", ".join(sorted(_REPOSITORY_TYPES))
+    if repo_type is None:
+        raise ValueError(
+            "Repository dict is missing 'type'. Expected one of: "
+            f"{expected}."
+        )
+    required = _REQUIRED_KEYS.get(repo_type)
+    if required is None:
+        raise ValueError(
+            f"Unknown repository type {repo_type!r}. Expected one of: "
+            f"{expected}."
+        )
+    missing = required - set(repository)
+    if missing:
+        raise ValueError(
+            f"Repository type {repo_type!r} requires key(s): "
+            f"{', '.join(sorted(missing))}."
+        )
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
-def hmc_update_job(repository: dict) -> str:
+def update_hmc_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software update (Install PTFs).
 
     target: ManagementConsole/{uuid}/do/Update
@@ -248,7 +320,7 @@ def hmc_update_job(repository: dict) -> str:
     return build_job_request("Update", "ManagementConsole", _repository_params(repository))
 
 
-def hmc_upgrade_job(repository: dict) -> str:
+def upgrade_hmc_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
 
     target: ManagementConsole/{uuid}/do/Upgrade
@@ -256,7 +328,7 @@ def hmc_upgrade_job(repository: dict) -> str:
     return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
 
 
-def vios_update_job(repository: dict) -> str:
+def update_vios_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS update.
 
     target: VirtualIOServer/{uuid}/do/Update
@@ -264,7 +336,7 @@ def vios_update_job(repository: dict) -> str:
     return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
 
 
-def vios_upgrade_job(repository: dict) -> str:
+def upgrade_vios_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS upgrade.
 
     target: VirtualIOServer/{uuid}/do/Upgrade
@@ -272,7 +344,7 @@ def vios_upgrade_job(repository: dict) -> str:
     return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
 
 
-def firmware_update_job(repository: dict) -> str:
+def update_firmware_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a managed system firmware update.
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware
@@ -285,7 +357,7 @@ def firmware_update_job(repository: dict) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def vios_install_job(
+def install_vios_job(
     nim_ip: str,
     nim_gateway: str,
     nim_subnetmask: str,

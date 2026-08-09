@@ -1,0 +1,141 @@
+"""Tests for VIOS backup / restore / list tools (SSH CLI path)."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from hmc_mcp.server import hmc_backup_vios, hmc_list_vios_backups, hmc_restore_vios
+
+VIOS_UUID = "vios-uuid-abc123"
+
+
+def _make_ssh_mock(stdout: str = "") -> MagicMock:
+    """Return a minimal asyncssh connection mock."""
+    result = MagicMock()
+    result.stdout = stdout
+
+    conn = AsyncMock()
+    conn.run = AsyncMock(return_value=result)
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    return conn
+
+
+def _hmc_env(monkeypatch):
+    """Set env vars so HMCConfig() succeeds inside the tool."""
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+
+# ---------------------------------------------------------------------- #
+# hmc_list_vios_backups
+# ---------------------------------------------------------------------- #
+
+
+def test_list_vios_backups_runs_correct_command(monkeypatch):
+    """hmc_list_vios_backups issues lsviosbackup with the correct vios_uuid."""
+    _hmc_env(monkeypatch)
+    LIST_OUTPUT = (
+        "BackupName         Date        Type\n"
+        "vios1_backup_001   2024-01-15  vios\n"
+        "vios1_backup_002   2024-01-20  viosioconfig\n"
+    )
+    conn_mock = _make_ssh_mock(LIST_OUTPUT)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_vios_backups(VIOS_UUID)
+
+    conn_mock.run.assert_called_once_with(
+        f"lsviosbackup -id {VIOS_UUID}", check=True, timeout=300.0
+    )
+    assert result == [
+        {"BackupName": "vios1_backup_001", "Date": "2024-01-15", "Type": "vios"},
+        {"BackupName": "vios1_backup_002", "Date": "2024-01-20", "Type": "viosioconfig"},
+    ]
+
+
+def test_list_vios_backups_returns_empty_list(monkeypatch):
+    """hmc_list_vios_backups returns an empty list when there are no backups."""
+    _hmc_env(monkeypatch)
+    conn_mock = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_vios_backups(VIOS_UUID)
+
+    assert result == []
+
+
+# ---------------------------------------------------------------------- #
+# hmc_backup_vios
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("backup_type", ["vios", "viosioconfig", "ssp"])
+def test_backup_vios_valid_types(monkeypatch, backup_type):
+    """hmc_backup_vios accepts each valid backup_type and passes it to chviosbackup."""
+    _hmc_env(monkeypatch)
+    conn_mock = _make_ssh_mock("Backup completed successfully.\n")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_backup_vios(VIOS_UUID, backup_type)
+
+    expected_cmd = (
+        f"chviosbackup -id {VIOS_UUID} -operation backup -type {backup_type}"
+    )
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    assert "Backup completed" in result
+
+
+def test_backup_vios_default_type_is_vios(monkeypatch):
+    """hmc_backup_vios defaults to backup_type='vios'."""
+    _hmc_env(monkeypatch)
+    conn_mock = _make_ssh_mock("Done.\n")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        hmc_backup_vios(VIOS_UUID)
+
+    called_cmd = conn_mock.run.call_args[0][0]
+    assert "-type vios" in called_cmd
+
+
+def test_backup_vios_invalid_type_raises(monkeypatch):
+    """hmc_backup_vios raises ValueError for unknown backup_type."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="Invalid backup_type"):
+        hmc_backup_vios(VIOS_UUID, "bogus")
+
+
+# ---------------------------------------------------------------------- #
+# hmc_restore_vios
+# ---------------------------------------------------------------------- #
+
+
+def test_restore_vios_runs_correct_command(monkeypatch):
+    """hmc_restore_vios issues chviosbackup restore with vios_uuid and backup_name."""
+    _hmc_env(monkeypatch)
+    BACKUP_NAME = "vios1_backup_001"
+    conn_mock = _make_ssh_mock("Restore completed successfully.\n")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_restore_vios(VIOS_UUID, BACKUP_NAME)
+
+    expected_cmd = (
+        f"chviosbackup -id {VIOS_UUID} -operation restore -file {BACKUP_NAME}"
+    )
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    assert "Restore completed" in result
+
+
+def test_restore_vios_returns_cli_output(monkeypatch):
+    """hmc_restore_vios returns the raw SSH stdout verbatim."""
+    _hmc_env(monkeypatch)
+    RAW_OUTPUT = "Operation: restore\nStatus: OK\nFile: mybackup\n"
+    conn_mock = _make_ssh_mock(RAW_OUTPUT)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_restore_vios(VIOS_UUID, "mybackup")
+
+    assert result == RAW_OUTPUT

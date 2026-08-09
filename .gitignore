@@ -5,9 +5,18 @@ build/
 dist/
 wheels/
 *.egg-info
+.coverage
+.coverage.*
 
 # Virtual environments
 .venv
 
 # Local HMC credentials
 .env
+
+# desloppify local state
+.desloppify/
+scorecard.png
+
+# local Claude Code settings
+.claude/settings.local.json

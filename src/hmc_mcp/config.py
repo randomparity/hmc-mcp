@@ -29,6 +29,11 @@ class HMCConfig(BaseSettings):
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
     verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
+    ssh_timeout: float = Field(
+        default=300.0,
+        description="SSH command timeout in seconds (HMC CLI ops are slower "
+        "than REST calls, e.g. bkprofdata/rstprofdata; 60s is too tight)",
+    )
     audit_memento: str = Field(
         default="hmc-mcp",
         description="Value sent in the X-Audit-Memento header (shows up in HMC audit logs)",
@@ -39,13 +44,18 @@ class HMCConfig(BaseSettings):
         host = self.host.removeprefix("https://").removeprefix("http://").rstrip("/")
         return f"https://{host}:{self.port}"
 
-    def validate_credentials(self) -> None:
+    def validate_credentials(self, require_password: bool = True) -> None:
+        """Raise ValueError naming any missing connection settings.
+
+        ``require_password`` is False for key-based SSH auth, where a private
+        key replaces the password; the REST path always requires it.
+        """
         missing = []
         if not self.host:
             missing.append("host (HMC_HOST / --host)")
         if not self.user:
             missing.append("user (HMC_USER / --user)")
-        if not self.password:
+        if require_password and not self.password:
             missing.append("password (HMC_PASSWORD / --password)")
         if missing:
             raise ValueError(

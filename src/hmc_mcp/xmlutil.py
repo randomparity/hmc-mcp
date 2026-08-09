@@ -25,10 +25,15 @@ element names.
 from __future__ import annotations
 
 from typing import Any
+# Element is used only as a type annotation; all XML parsing uses defusedxml.
+from xml.etree.ElementTree import Element  # nosec B405
 
 from defusedxml import ElementTree as DET
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
+
+# web/mc namespace: Logon, HmcUser, HmcPasswordPolicy, HmcLdapServer docs.
+WEB_NS = "http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/"
 
 # HMC bookkeeping attributes carried on nearly every uom element; they are
 # noise for consumers, so we drop them during flattening.
@@ -42,7 +47,7 @@ def localname(tag: str) -> str:
     return tag
 
 
-def element_to_dict(el) -> Any:
+def element_to_dict(el: Element) -> dict[str, Any] | str:
     """Recursively convert an ElementTree element to plain Python data.
 
     - Leaf elements become their text (or their attribute dict if they only
@@ -50,6 +55,9 @@ def element_to_dict(el) -> Any:
     - Repeated child element names are collected into a list.
     - Attributes are preserved under an "@attrs" key when an element also has
       children or meaningful text.
+
+    Returns a dict for elements with children or attributes, otherwise the
+    element's text as a string.
     """
     children = list(el)
     attrs = {
@@ -146,11 +154,6 @@ def parse_feed(xml_text: str) -> list[dict[str, Any]]:
         )
 
     return entries
-
-
-def parse_response(xml_text: str) -> list[dict[str, Any]]:
-    """Alias for parse_feed for readability at call sites."""
-    return parse_feed(xml_text)
 
 
 def find_text(xml_text: str, *names: str) -> str | None:

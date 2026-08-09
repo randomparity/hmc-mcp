@@ -15,12 +15,15 @@ ProcessedMetrics, AggregatedMetrics.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from defusedxml import ElementTree as ET
 
+from .xmlutil import ATOM_NS
+
 PCM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/"
-ATOM = "{http://www.w3.org/2005/Atom}"
+ATOM = f"{{{ATOM_NS}}}"  # braced tag prefix: {http://www.w3.org/2005/Atom}
 
 PREFERENCE_FIELDS = (
     "LongTermMonitorEnabled",
@@ -53,11 +56,14 @@ def build_pcm_preferences_document(**flags: bool) -> str:
 
 
 def pcm_preferences_to_dict(xml: str) -> dict[str, Any]:
-    """Parse a PCM preferences GET response into {field: bool/str}."""
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return {}
+    """Parse a PCM preferences GET response into {field: bool/str}.
+
+    Raises:
+        ET.ParseError: If *xml* is malformed — callers must not mistake a
+            parse failure for "no preferences" (an empty dict is returned
+            only for well-formed XML without recognized preference fields).
+    """
+    root = ET.fromstring(xml)
     out: dict[str, Any] = {}
     for el in root.iter():
         tag = el.tag.rsplit("}", 1)[-1]
@@ -71,12 +77,15 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
     """Extract metric JSON links from a PCM Atom feed.
 
     Returns a list of {link, updated, title} — 'link' is the absolute or
-    relative URL to the JSON metrics document.
+    relative URL to the JSON metrics document. An empty list means a
+    well-formed feed with no entries (e.g. no metrics in the requested
+    range), never a parse failure.
+
+    Raises:
+        ET.ParseError: If *feed_xml* is malformed — propagated so callers
+            surface the failure instead of mistaking it for "no metrics".
     """
-    try:
-        root = ET.fromstring(feed_xml)
-    except ET.ParseError:
-        return []
+    root = ET.fromstring(feed_xml)
     links = []
     for entry in root.iter(f"{ATOM}entry"):
         link = entry.find(f"{ATOM}link")
@@ -91,3 +100,24 @@ def metric_links(feed_xml: str) -> list[dict[str, str]]:
                 }
             )
     return links
+
+
+def newest_metric_link(links: list[dict[str, str]]) -> dict[str, str]:
+    """Return the link whose ``updated`` timestamp is newest.
+
+    The PCM feed does not guarantee entries are ordered by age, so picking the
+    last row (``links[-1]``) could select a stale document. Compare each
+    entry's ISO-8601 ``updated`` stamp instead; stamps that fail to parse sort
+    as the earliest UTC instant so a real (even old) timestamp always wins.
+    """
+    def _key(link: dict[str, str]) -> datetime:
+        updated = link.get("updated", "")
+        try:
+            dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    return max(links, key=_key)
