@@ -12,8 +12,7 @@ import pytest
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_deploy_partition_template,
-    hmc_get_partition_template,
-    hmc_list_partition_templates,
+    hmc_partition_templates,
 )
 
 from conftest import JOB_ENTRY
@@ -40,35 +39,35 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
-def test_list_partition_templates(monkeypatch, mock_hmc):
-    """hmc_list_partition_templates GETs the template library feed."""
+def test_partition_templates_lists_all(monkeypatch, mock_hmc):
+    """hmc_partition_templates() GETs the template library feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_list_partition_templates()
+    result = hmc_partition_templates()
     assert result[0]["UUID"] == TEMPLATE_UUID
     assert result[0]["Resource"]["templateName"] == "aix-gold"
 
 
-def test_get_partition_template(monkeypatch, mock_hmc):
-    """hmc_get_partition_template GETs one template by UUID."""
+def test_partition_templates_with_uuid_gets_one(monkeypatch, mock_hmc):
+    """hmc_partition_templates(template_uuid=...) GETs one template by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_get_partition_template(TEMPLATE_UUID)
+    result = hmc_partition_templates(TEMPLATE_UUID)
     assert result["Resource"]["templateName"] == "aix-gold"
 
 
-def test_get_partition_template_error_propagates(monkeypatch, mock_hmc):
+def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
     """A non-200 template GET surfaces as HMCError."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_get_partition_template(TEMPLATE_UUID)
+        hmc_partition_templates(TEMPLATE_UUID)
     assert exc_info.value.status_code == 404
 
 

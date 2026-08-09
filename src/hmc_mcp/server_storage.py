@@ -61,7 +61,7 @@ def hmc_add_vscsi_adapter(
     """Add a Virtual SCSI client adapter to an LPAR, paired to a VIOS.
 
     vios_partition_id is the integer PartitionID of the serving VIOS (find it
-    with hmc_list_vios), and vios_slot is that VIOS's server-side virtual
+    with hmc_vios), and vios_slot is that VIOS's server-side virtual
     SCSI slot number that owns the backing storage. slot_number is the client
     adapter's virtual slot (auto-assigned if omitted). Storage backing devices
     (disks / logical volumes) are then mapped to this adapter on the VIOS.
@@ -118,7 +118,7 @@ def hmc_list_volume_groups(vios_uuid: str) -> list[dict[str, Any]]:
 
     Each Volume Group shows free space (MiB), the physical volumes backing it
     and the virtual disks already carved out. Find the VIOS UUID with
-    hmc_list_vios.
+    hmc_vios.
     """
 
     return with_client(lambda hmc: hmc.list_volume_groups(vios_uuid))
@@ -231,17 +231,18 @@ def hmc_list_clusters() -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_shared_storage_pools() -> list[dict[str, Any]]:
-    """List Shared Storage Pools (capacity, free space, logical units)."""
+def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
+    """List Shared Storage Pools or get one by UUID.
 
+    When ssp_uuid is omitted, returns a list of all Shared Storage Pools
+    (capacity, free space, logical units).
+
+    When ssp_uuid is provided, returns the full details dict for that one
+    pool (physical volumes, logical units), or None if not found.
+    """
+    if ssp_uuid is not None:
+        return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid))
     return with_client(lambda hmc: hmc.list_shared_storage_pools())
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_get_shared_storage_pool(ssp_uuid: str) -> dict[str, Any] | None:
-    """Get one Shared Storage Pool by UUID (physical volumes, logical units)."""
-
-    return with_client(lambda hmc: hmc.get_shared_storage_pool(ssp_uuid))
 
 
 @mcp.tool

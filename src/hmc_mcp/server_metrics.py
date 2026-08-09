@@ -23,8 +23,8 @@ def hmc_get_pcm_preferences(category: str, resource_uuid: str) -> dict[str, Any]
     """Get PCM monitoring preferences for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
-    resource_uuid is the UUID of that resource (from hmc_list_systems or
-    hmc_list_lpars). Returns flags like LongTermMonitorEnabled,
+    resource_uuid is the UUID of that resource (from hmc_systems or
+    hmc_lpars). Returns flags like LongTermMonitorEnabled,
     AggregationEnabled, ShortTermMonitorEnabled, ComputeLTMEnabled,
     EnergyMonitorEnabled.
     """

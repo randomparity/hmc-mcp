@@ -39,7 +39,7 @@ def hmc_create_vios(
 ) -> dict[str, Any] | None:
     """Create a new Virtual IO Server (VIOS) partition on a managed system.
 
-    system_uuid is the target managed system (find it with hmc_list_systems).
+    system_uuid is the target managed system (find it with hmc_systems).
     Memory values are in MiB; procs are shared processing units (fractional
     ok). The VIOS is created powered off with default settings — install the
     OS with hmc_install_vios before using it as a storage/network server.
@@ -66,12 +66,12 @@ def hmc_delete_vios(vios_uuid: str) -> str:
     """Delete (destroy) a VIOS partition by UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
-    with hmc_lpar_state). This tool refuses to delete a VIOS whose current
-    state is anything other than 'not activated', matching the precondition
-    check pattern used by hmc_remove_memory_pool. This permanently removes
-    the VIOS and its profiles from the HMC — it is irreversible. Confirm the
-    UUID with hmc_list_vios before calling. Returns a confirmation string
-    (immediate delete — no job to poll).
+    with hmc_lpars(vios_uuid=..., state_only=True)). This tool refuses to
+    delete a VIOS whose current state is anything other than 'not activated',
+    matching the precondition check pattern used by hmc_remove_memory_pool.
+    This permanently removes the VIOS and its profiles from the HMC — it is
+    irreversible. Confirm the UUID with hmc_vios before calling. Returns a
+    confirmation string (immediate delete — no job to poll).
 
     Raises:
         HMCError: If the VIOS state is not 'not activated' (HTTP 409).
@@ -86,8 +86,8 @@ def hmc_delete_vios(vios_uuid: str) -> str:
                 raise HMCError(
                     f"Cannot delete VIOS {vios_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
-                    "off (hmc_power_off_vios) and confirm with hmc_lpar_state "
-                    "before retrying.",
+                    "off (hmc_power_off_vios) and confirm with "
+                    "hmc_lpars(lpar_uuid=..., state_only=True) before retrying.",
                     status_code=409,
                 )
             await hmc.delete_logical_partition(vios_uuid)
@@ -189,7 +189,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> list[dict[str, str]]:
 
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
     fixed-width table into a list of dicts keyed by the output header
-    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.    """
+    (BackupName, Date, Type). Find vios_uuid with hmc_vios.    """
     output = _run(lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
     return _parse_lsviosbackup_output(output)
 
@@ -201,7 +201,7 @@ def hmc_backup_vios(
     """Create a VIOS backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation backup -type <backup_type>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_vios).
 
     backup_type must be one of:
       - ``vios``       — full VIOS configuration backup (default)
@@ -225,7 +225,7 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
     """Restore a VIOS from a named backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation restore -file <backup_name>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios);
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_vios);
     backup_name is the backup file name as listed by hmc_list_vios_backups.
 
     WARNING: Restoring overwrites the current VIOS configuration. Confirm

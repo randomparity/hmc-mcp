@@ -97,14 +97,9 @@ Exposed tools:
 | Tool                  | Description |
 |-----------------------|-------------|
 | `hmc_console_info`    | HMC version/network info; cheap connectivity check |
-| `hmc_list_systems`    | All managed systems |
-| `hmc_get_system`      | One managed system by UUID |
-| `hmc_list_lpars`      | All LPARs, or those of one system |
-| `hmc_get_lpar`        | One LPAR by UUID |
-| `hmc_find_lpar`       | Find an LPAR by exact name |
-| `hmc_lpar_state`      | Quick PartitionState property |
-| `hmc_list_vios`       | Virtual I/O Servers |
-| `hmc_vios_mappings`   | VIOS device mapping facts (vSCSI, NPIV, virtual optical) |
+| `hmc_systems`         | All managed systems, or one by UUID |
+| `hmc_lpars`           | All LPARs, one by UUID, find by name, or quick state |
+| `hmc_vios`            | Virtual I/O Servers, or storage-detail mappings for one |
 | `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`         | Job status/result |
 
@@ -193,8 +188,7 @@ Exposed tools:
 
 | Tool                              | Description |
 |-----------------------------------|-------------|
-| `hmc_list_partition_templates`    | List partition templates |
-| `hmc_get_partition_template`      | One template by UUID |
+| `hmc_partition_templates`         | All partition templates, or one by UUID |
 | `hmc_deploy_partition_template`   | Deploy a partition from a draft template — job |
 
 **Live Partition Mobility (LPM)**
@@ -222,8 +216,7 @@ Exposed tools:
 | Tool                            | Description |
 |---------------------------------|-------------|
 | `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
-| `hmc_list_shared_storage_pools` | List SSPs (capacity, free space, logical units) |
-| `hmc_get_shared_storage_pool`   | One SSP by UUID (PVs, logical units) |
+| `hmc_shared_storage_pools`      | All SSPs, or one by UUID (capacity, free space, logical units) |
 | `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
 | `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
 
@@ -251,8 +244,7 @@ Exposed tools:
 
 | Tool                          | Description |
 |-------------------------------|-------------|
-| `hmc_list_users`              | List HMC user accounts |
-| `hmc_get_user`                | One HMC user account by username |
+| `hmc_users`                   | All HMC user accounts, or one by username |
 | `hmc_create_user`             | Create a new HMC local user account |
 | `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
 | `hmc_delete_user`             | Delete an HMC user account (irreversible) |
@@ -366,7 +358,7 @@ connects with a real FastMCP client and prints the tools:
 uv run python scripts/smoke_mcp.py
 # Connected. <N> tools exposed:
 #   - hmc_console_info
-#   - hmc_list_systems
+#   - hmc_systems
 #   ...
 ```
 

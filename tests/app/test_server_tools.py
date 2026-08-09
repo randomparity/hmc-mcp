@@ -16,9 +16,9 @@ import httpx
 
 from hmc_mcp.server import (
     hmc_create_lpar,
-    hmc_find_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
+    hmc_lpars,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
@@ -98,7 +98,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
 
 
 # ---------------------------------------------------------------------- #
-# hmc_get_job / hmc_find_lpar (REST reads)
+# hmc_get_job / hmc_lpars name-lookup (REST reads)
 # ---------------------------------------------------------------------- #
 
 
@@ -122,24 +122,24 @@ def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
     assert hmc_get_job("job-uuid-999") is None
 
 
-def test_find_lpar_by_name(monkeypatch, mock_hmc):
-    """hmc_find_lpar searches by PartitionName and returns the entry."""
+def test_lpars_by_name(monkeypatch, mock_hmc):
+    """hmc_lpars(name=...) searches by PartitionName and returns the entry."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="aixprod"))
     )
-    result = hmc_find_lpar("aixprod")
+    result = hmc_lpars(name="aixprod")
     assert result["UUID"] == LPAR_UUID
     assert result["Resource"]["PartitionName"] == "aixprod"
 
 
-def test_find_lpar_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_find_lpar returns None when the search matches nothing."""
+def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
+    """hmc_lpars(name=...) returns None when the search matches nothing."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    assert hmc_find_lpar("ghost") is None
+    assert hmc_lpars(name="ghost") is None
 
 
 # ---------------------------------------------------------------------- #
