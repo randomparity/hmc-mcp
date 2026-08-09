@@ -1,4 +1,5 @@
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -22,6 +23,20 @@ BASELINED_FIXTURES = {
     "tests/conftest.py": 1,
     "tests/security/test_users.py": 2,
     "tests/unit/test_ssh.py": 1,
+}
+ACTION_PINS = {
+    "actions/checkout": (
+        "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
+        "v7.0.1",
+    ),
+    "astral-sh/setup-uv": (
+        "c771a70e6277c0a99b617c7a806ffedaca235ff9",  # pragma: allowlist secret
+        "v9.0.0",
+    ),
+    "extractions/setup-just": (
+        "53165ef7e734c5c07cb06b3c8e7b647c5aa16db3",  # pragma: allowlist secret
+        "v4",
+    ),
 }
 
 
@@ -63,3 +78,19 @@ def test_secret_baseline_is_an_exact_reviewed_fixture_allowlist() -> None:
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
     )
+
+
+def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "pull_request:" in workflow
+    assert re.search(r"push:\n\s+branches:\s+\[main\]", workflow)
+    assert "permissions:\n  contents: read" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "runs-on: ubuntu-24.04" in workflow
+    for action, (sha, version) in ACTION_PINS.items():
+        assert f"uses: {action}@{sha}  # {version}" in workflow
+    assert "persist-credentials: false" in workflow
+    assert 'just-version: "1.58.0"' in workflow
+    for command in ("just setup", "just verify", "uv run prek run --all-files"):
+        assert f"run: {command}" in workflow
