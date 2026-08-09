@@ -60,6 +60,28 @@ def test_repository_params_none_values_excluded():
     assert "/images" in xml
 
 
+def test_repository_params_unknown_key_rejected():
+    """A misspelled key must fail fast instead of reaching the HMC."""
+    with pytest.raises(ValueError, match="Unknown repository key.*hst"):
+        hmc_update_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
+
+
+def test_repository_params_unknown_type_rejected():
+    with pytest.raises(ValueError, match="Unknown repository type"):
+        hmc_update_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
+
+
+def test_repository_params_missing_required_key_rejected():
+    """nfs requires host+path; a missing one must fail fast."""
+    with pytest.raises(ValueError, match="requires key.*host"):
+        hmc_update_job({"type": "nfs", "path": "/images"})
+
+
+def test_repository_params_disk_requires_nothing():
+    xml = hmc_update_job({"type": "disk"})
+    assert "Update" in xml
+
+
 # ---------------------------------------------------------------------- #
 # Client integration tests (respx-mocked)
 # ---------------------------------------------------------------------- #

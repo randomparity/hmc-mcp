@@ -8,6 +8,7 @@ for status.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TypedDict
 
 from .xmlutil import WEB_NS
 
@@ -223,10 +224,10 @@ def partition_template_deploy_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
-    """Convert a repository dict to JobParameter key/value pairs.
+class RepositorySource(TypedDict, total=False):
+    """Software source for an update/upgrade job.
 
-    Recognised keys (all optional):
+    Recognised keys:
         type        – repository type: nfs | sftp | disk | ibmfixcentral
         host        – NFS/SFTP server hostname or IP
         path        – NFS export path or SFTP remote path
@@ -236,13 +237,62 @@ def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
         insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
         ibm_id      – IBM FixCentral account ID
         ibm_token   – IBM FixCentral account token
-    The raw dict values are passed through; callers may include any
-    parameter the HMC operation accepts.
     """
+
+    type: str
+    host: str
+    path: str
+    user: str
+    sftp_pw: str
+    mount_loc: str
+    insecure: str
+    ibm_id: str
+    ibm_token: str
+
+
+_REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
+
+# Required keys per repository type; a missing one fails fast with a clear
+# message instead of producing a job the HMC rejects at runtime.
+_REQUIRED_KEYS: dict[str, frozenset[str]] = {
+    "nfs": frozenset({"host", "path"}),
+    "sftp": frozenset({"host", "path"}),
+    "disk": frozenset(),
+    "ibmfixcentral": frozenset({"ibm_id", "ibm_token"}),
+}
+
+
+def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
+    """Convert a repository dict to JobParameter key/value pairs.
+
+    Unknown keys are rejected and required keys are checked per repository
+    type, so a typo like ``{'type': 'nfs', 'hst': '...'}`` fails here with an
+    actionable message instead of producing a job the HMC rejects at runtime.
+    """
+    unknown = set(repository) - _REPOSITORY_KEYS
+    if unknown:
+        raise ValueError(
+            f"Unknown repository key(s): {', '.join(sorted(unknown))}. "
+            f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
+        )
+    repo_type = repository.get("type")
+    if repo_type is not None:
+        required = _REQUIRED_KEYS.get(repo_type)
+        if required is None:
+            raise ValueError(
+                f"Unknown repository type {repo_type!r}. "
+                "Expected one of: nfs, sftp, disk, ibmfixcentral."
+            )
+        missing = required - set(repository)
+        if missing:
+            raise ValueError(
+                f"Repository type {repo_type!r} requires key(s): "
+                f"{', '.join(sorted(missing))}."
+            )
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
-def hmc_update_job(repository: Mapping[str, str | None]) -> str:
+def hmc_update_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software update (Install PTFs).
 
     target: ManagementConsole/{uuid}/do/Update
@@ -250,7 +300,7 @@ def hmc_update_job(repository: Mapping[str, str | None]) -> str:
     return build_job_request("Update", "ManagementConsole", _repository_params(repository))
 
 
-def hmc_upgrade_job(repository: Mapping[str, str | None]) -> str:
+def hmc_upgrade_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
 
     target: ManagementConsole/{uuid}/do/Upgrade
@@ -258,7 +308,7 @@ def hmc_upgrade_job(repository: Mapping[str, str | None]) -> str:
     return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
 
 
-def vios_update_job(repository: Mapping[str, str | None]) -> str:
+def vios_update_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS update.
 
     target: VirtualIOServer/{uuid}/do/Update
@@ -266,7 +316,7 @@ def vios_update_job(repository: Mapping[str, str | None]) -> str:
     return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
 
 
-def vios_upgrade_job(repository: Mapping[str, str | None]) -> str:
+def vios_upgrade_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a VIOS upgrade.
 
     target: VirtualIOServer/{uuid}/do/Upgrade
@@ -274,7 +324,7 @@ def vios_upgrade_job(repository: Mapping[str, str | None]) -> str:
     return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
 
 
-def firmware_update_job(repository: Mapping[str, str | None]) -> str:
+def firmware_update_job(repository: RepositorySource) -> str:
     """Build a JobRequest XML for a managed system firmware update.
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware

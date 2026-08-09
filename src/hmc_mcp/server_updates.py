@@ -12,6 +12,7 @@ from ._app import (
 )
 
 from .jobs import (
+    RepositorySource,
     firmware_update_job,
     hmc_update_job,
     hmc_upgrade_job,
@@ -22,7 +23,7 @@ from .jobs import (
 
 
 @mcp.tool
-def hmc_update_hmc(system_uuid: str, repository: dict[str, str | None]) -> dict[str, Any] | None:
+def hmc_update_hmc(system_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
     """Submit an HMC software update job (install PTFs).
 
     repository is a dict describing the software source, e.g.:
@@ -43,7 +44,7 @@ def hmc_update_hmc(system_uuid: str, repository: dict[str, str | None]) -> dict[
 
 
 @mcp.tool
-def hmc_upgrade_hmc(system_uuid: str, repository: dict[str, str | None]) -> dict[str, Any] | None:
+def hmc_upgrade_hmc(system_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
     """Submit an HMC software upgrade job (full version upgrade).
 
     repository describes the upgrade image source (same format as
@@ -74,7 +75,7 @@ def hmc_list_available_hmc_ptfs(system_uuid: str) -> dict[str, Any] | None:
 
 
 @mcp.tool
-def hmc_update_vios(vios_uuid: str, repository: dict[str, str | None]) -> dict[str, Any] | None:
+def hmc_update_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
     """Submit a VIOS software update job.
 
     repository describes the update image source (same format as
@@ -91,7 +92,7 @@ def hmc_update_vios(vios_uuid: str, repository: dict[str, str | None]) -> dict[s
 
 
 @mcp.tool
-def hmc_upgrade_vios(vios_uuid: str, repository: dict[str, str | None]) -> dict[str, Any] | None:
+def hmc_upgrade_vios(vios_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
     """Submit a VIOS software upgrade job.
 
     repository describes the upgrade image source (same format as
@@ -108,7 +109,7 @@ def hmc_upgrade_vios(vios_uuid: str, repository: dict[str, str | None]) -> dict[
 
 
 @mcp.tool
-def hmc_update_firmware(system_uuid: str, repository: dict[str, str | None]) -> dict[str, Any] | None:
+def hmc_update_firmware(system_uuid: str, repository: RepositorySource) -> dict[str, Any] | None:
     """Submit a managed system firmware update job.
 
     repository describes the firmware image source (same format as
