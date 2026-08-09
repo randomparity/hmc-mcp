@@ -39,8 +39,13 @@ def metrics_set_prefs(
     aggregation: bool | None = typer.Option(None, "--aggregation/--no-aggregation"),
     stm: bool | None = typer.Option(None, "--stm/--no-stm", help="Short-term monitoring"),
     energy: bool | None = typer.Option(None, "--energy/--no-energy", help="Energy monitoring"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Enable/disable PCM data collection for a resource."""
+    """Enable/disable PCM data collection for a resource.
+
+    Mutates HMC monitoring configuration, so it is gated by the same
+    --yes/confirm convention as every other mutating CLI command.
+    """
     flags: dict[str, bool] = {}
     if ltm is not None:
         flags["LongTermMonitorEnabled"] = ltm
@@ -53,6 +58,11 @@ def metrics_set_prefs(
     if not flags:
         err_console.print("[yellow]No flags supplied; nothing to change.[/yellow]")
         raise typer.Exit(code=2)
+
+    if not yes and not typer.confirm(
+        f"Enable/disable PCM monitoring on {category} {resource_uuid}?"
+    ):
+        raise typer.Abort()
 
     _with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
 

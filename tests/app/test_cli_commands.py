@@ -911,10 +911,23 @@ def test_metrics_prefs(fake_hmc):
     assert fake_hmc.calls == [("get_pcm_preferences", ("ManagedSystem", SYSTEM_UUID), {})]
 
 
+def test_metrics_set_prefs_requires_confirmation(fake_hmc):
+    """metrics set-prefs is gated by the same --yes/confirm convention as other mutating commands."""
+    result = RUNNER.invoke(
+        cli.app,
+        ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID, "--ltm"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_metrics_set_prefs_builds_flags(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID, "--ltm", "--no-aggregation"],
+        ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID, "--ltm", "--no-aggregation", "--yes"],
     )
 
     assert result.exit_code == 0
