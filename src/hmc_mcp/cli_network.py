@@ -10,7 +10,7 @@ from rich.table import Table
 
 from .cli_app import (
     _client,
-    _g,
+    _first_field,
     _output,
     _print_json,
     _run,
@@ -46,9 +46,9 @@ def network_list_switches(
             table.add_column(col)
         for s in switches:
             table.add_row(
-                _g(s, "SwitchName"),
-                _g(s, "SwitchID"),
-                _g(s, "SwitchMode"),
+                _first_field(s, "SwitchName"),
+                _first_field(s, "SwitchID"),
+                _first_field(s, "SwitchMode"),
                 s.get("UUID") or "-",
             )
     _output(switches, as_json, table, "No virtual switches found")
@@ -70,10 +70,10 @@ def network_list_networks(
             table.add_column(col)
         for n in nets:
             table.add_row(
-                _g(n, "NetworkName"),
-                _g(n, "NetworkVLANID"),
-                _g(n, "VswitchID"),
-                _g(n, "TaggedNetwork"),
+                _first_field(n, "NetworkName"),
+                _first_field(n, "NetworkVLANID"),
+                _first_field(n, "VswitchID"),
+                _first_field(n, "TaggedNetwork"),
                 n.get("UUID") or "-",
             )
     _output(nets, as_json, table, "No virtual networks found")

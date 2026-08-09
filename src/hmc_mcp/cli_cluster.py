@@ -8,7 +8,7 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _g,
+    _first_field,
     _output,
     _print_json,
     _with_client,
@@ -32,7 +32,7 @@ def cluster_list(
         for col in ("Name", "UUID"):
             table.add_column(col)
         for c in clusters:
-            table.add_row(_g(c, "ClusterName"), c.get("UUID") or "-")
+            table.add_row(_first_field(c, "ClusterName"), c.get("UUID") or "-")
     _output(clusters, as_json, table, "No clusters found")
 
 
@@ -51,10 +51,10 @@ def cluster_list_ssps(
             table.add_column(col)
         for s in ssps:
             table.add_row(
-                _g(s, "StoragePoolName"),
+                _first_field(s, "StoragePoolName"),
                 s.get("UUID") or "-",
-                _g(s, "Capacity"),
-                _g(s, "FreeSpace"),
+                _first_field(s, "Capacity"),
+                _first_field(s, "FreeSpace"),
             )
     _output(ssps, as_json, table, "No shared storage pools found")
 

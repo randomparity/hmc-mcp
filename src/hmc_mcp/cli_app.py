@@ -169,7 +169,7 @@ def _resource(entry: dict[str, Any]) -> dict[str, Any]:
     return entry.get("Resource") or {}
 
 
-def _g(entry: dict[str, Any], *names: str, default: str = "-") -> str:
+def _first_field(entry: dict[str, Any], *names: str, default: str = "-") -> str:
     """Get the first present key from an entry's Resource dict as a string."""
     res = _resource(entry)
     for name in names:

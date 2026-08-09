@@ -10,7 +10,7 @@ from rich.table import Table
 
 from .cli_app import (
     _client,
-    _g,
+    _first_field,
     _is_uuid,
     _output,
     _print_json,
@@ -44,13 +44,13 @@ def lpars_list(
             table.add_column(col)
         for lpar in lpars:
             table.add_row(
-                _g(lpar, "PartitionName"),
-                _g(lpar, "PartitionID"),
+                _first_field(lpar, "PartitionName"),
+                _first_field(lpar, "PartitionID"),
                 lpar.get("UUID") or "-",
-                _g(lpar, "PartitionState"),
-                _g(lpar, "PartitionType"),
-                _g(lpar, "OperatingSystemVersion", default="-"),
-                _g(lpar, "ResourceMonitoringControlState", "RMCState"),
+                _first_field(lpar, "PartitionState"),
+                _first_field(lpar, "PartitionType"),
+                _first_field(lpar, "OperatingSystemVersion", default="-"),
+                _first_field(lpar, "ResourceMonitoringControlState", "RMCState"),
             )
     _output(lpars, as_json, table, "No logical partitions found")
 
@@ -223,7 +223,7 @@ def _power_lpar(name_or_uuid: str, on: bool, immediate: bool = False, yes: bool 
                 name = name_or_uuid
                 if not _is_uuid(name_or_uuid):
                     found = await hmc.get_logical_partition(uuid)
-                    name = _g(found, "PartitionName", default=name_or_uuid)
+                    name = _first_field(found, "PartitionName", default=name_or_uuid)
                 if not typer.confirm(f"Really submit {op} for partition '{name}' ({uuid})?"):
                     err_console.print("Aborted.")
                     raise typer.Abort()

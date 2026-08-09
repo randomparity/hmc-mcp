@@ -8,7 +8,7 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _g,
+    _first_field,
     _output,
     _print_json,
     _with_client,
@@ -32,11 +32,11 @@ def systems_list(as_json: bool = typer.Option(False, "--json")) -> None:
             table.add_column(col)
         for s in systems:
             table.add_row(
-                _g(s, "SystemName"),
+                _first_field(s, "SystemName"),
                 s.get("UUID") or "-",
-                _g(s, "State"),
-                _g(s, "MachineTypeModelSerialNumber", "MTMS"),
-                _g(s, "IPAddress", "PrimaryIPAddress"),
+                _first_field(s, "State"),
+                _first_field(s, "MachineTypeModelSerialNumber", "MTMS"),
+                _first_field(s, "IPAddress", "PrimaryIPAddress"),
             )
     _output(systems, as_json, table, "No managed systems found")
 

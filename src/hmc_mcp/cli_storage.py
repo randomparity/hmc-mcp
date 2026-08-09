@@ -9,7 +9,7 @@ from rich.table import Table
 
 from .cli_app import (
     _client,
-    _g,
+    _first_field,
     _output,
     _print_json,
     _resolve_uuid,
@@ -38,10 +38,10 @@ def storage_list_vgs(
             table.add_column(col)
         for v in vgs:
             table.add_row(
-                _g(v, "GroupName"),
+                _first_field(v, "GroupName"),
                 v.get("UUID") or "-",
-                _g(v, "FreeSpace", "FreeSpaceInMBytes"),
-                _g(v, "GroupCapacity", "Capacity"),
+                _first_field(v, "FreeSpace", "FreeSpaceInMBytes"),
+                _first_field(v, "GroupCapacity", "Capacity"),
             )
     _output(vgs, as_json, table, "No volume groups found")
 

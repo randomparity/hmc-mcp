@@ -8,7 +8,7 @@ import typer
 from rich.table import Table
 
 from .cli_app import (
-    _g,
+    _first_field,
     _output,
     _print_json,
     _with_client,
@@ -33,11 +33,11 @@ def vios_list(
             table.add_column(col)
         for v in vios:
             table.add_row(
-                _g(v, "PartitionName"),
-                _g(v, "PartitionID"),
+                _first_field(v, "PartitionName"),
+                _first_field(v, "PartitionID"),
                 v.get("UUID") or "-",
-                _g(v, "PartitionState"),
-                _g(v, "IOSLevel", "VIOSVersion", default="-"),
+                _first_field(v, "PartitionState"),
+                _first_field(v, "IOSLevel", "VIOSVersion", default="-"),
             )
     _output(vios, as_json, table, "No VIOS found")
 
