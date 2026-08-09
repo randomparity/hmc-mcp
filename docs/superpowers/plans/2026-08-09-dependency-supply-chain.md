@@ -12,8 +12,9 @@
 
 1. Parse `pyproject.toml` and assert every runtime, development, and build requirement has
    exactly one `==` specifier with no direct URL or additional range operator.
-2. Parse the existing `uv.lock` and check that every direct pinned name/version is in the
-   resolved package set.
+2. Parse the existing `uv.lock` and check that every pinned runtime/development name and
+   version is in the resolved package set. The build backend is outside uv's project lock
+   and is covered by the exact-declaration assertion.
 3. Read `.github/dependabot.yml` and assert the one intended updater is the root `uv`
    ecosystem with a weekly schedule, seven-day default cooldown, and an all-dependencies
    version-update group.
@@ -27,9 +28,9 @@
 
 **Files:** modify `pyproject.toml` and `uv.lock`.
 
-1. Replace each runtime, development, and build requirement's range with an exact `==` pin
-   at its currently declared release. Do not add, remove, substitute, or opportunistically
-   upgrade dependencies.
+1. Replace each runtime and development requirement's range with an exact `==` pin at its
+   existing locked release. Pin `uv_build` to current stable 0.12.3, matching uv 0.12.3 and
+   eliminating the build-range warning. Do not add, remove, or substitute dependencies.
 2. Run `uv lock` to regenerate the universal lockfile; never hand-edit it.
 3. Run `uv lock --check` from the clean pre-test state before any `uv run`, then run the
    focused policy test. Confirm the test still fails only because Dependabot configuration

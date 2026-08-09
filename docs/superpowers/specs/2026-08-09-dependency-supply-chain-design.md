@@ -15,9 +15,12 @@ pinning and update policy.
 ## Design
 
 All direct dependencies in `[project].dependencies`, `[dependency-groups].dev`, and
-`[build-system].requires` will use exact PEP 440 `==` constraints at their currently
-declared releases. `uv lock` will re-resolve the existing committed universal lockfile from
-those declarations, and the lockfile will remain generated rather than hand-edited.
+`[build-system].requires` will use exact PEP 440 `==` constraints. Runtime and development
+pins will match their existing locked releases, avoiding a runtime-graph upgrade. The build
+backend, which uv does not include in the project lock, will use current stable uv-build
+0.12.3, matching the current uv tool and removing its incompatible-build-range warning.
+`uv lock` will re-resolve the existing committed universal lockfile from the runtime and
+development declarations, and the lockfile will remain generated rather than hand-edited.
 
 `.github/dependabot.yml` will contain one root-level `uv` update entry. It will run weekly,
 apply a seven-day cooldown to new version releases, and group all version updates so that a
@@ -39,9 +42,11 @@ added.
 
 A policy test will parse `pyproject.toml` and `uv.lock` with the standard library and assert
 that every direct runtime, development, and build requirement is exactly pinned, every pin
-appears at that version in the lock, and the Dependabot configuration contains the selected
-uv schedule, grouping, and cooldown. The test will first fail on the current broad direct
-constraints and missing Dependabot configuration. Before that red run, `uv lock --check`
+managed by the project resolver appears at that version in the lock, and the Dependabot
+configuration contains the selected uv schedule, grouping, and cooldown. (The build backend
+is exact in `pyproject.toml` but is outside uv's project lock.) The test will first fail on
+the current broad direct constraints and missing Dependabot configuration. Before that red
+run, `uv lock --check`
 and `uv sync --locked` will validate the baseline and provision the worktree without
 refreshing the lock; the test then runs through `.venv/bin/python` rather than `uv run`.
 After implementation, a clean-tree `uv lock --check` will prove the committed lock matches
@@ -76,12 +81,15 @@ distribution services. Maintainers remain responsible for reviewing and merging 
 
 ### Controls
 
-- Exact direct pins and the committed hash-bearing uv lockfile bound resolution to reviewed
-  releases and artifacts.
+- Exact runtime and development pins plus the committed hash-bearing uv lockfile bind the
+  project resolution to reviewed releases and artifacts. The build backend is version-bound
+  only in `pyproject.toml`; manifest review and the functional build/verification path cover
+  it because uv excludes it from the project lock.
 - A seven-day version cooldown reduces immediate exposure to newly published releases;
   security updates are not delayed by that cooldown.
-- Grouped Dependabot PRs keep the direct declarations and complete resolution together, and
-  the required ordered local proof checks the proposed graph before maintainers merge it.
+- Grouped Dependabot PRs keep project/runtime and development declarations with their
+  complete resolution; a build-backend-only update is manifest-only. The required ordered
+  local and functional proof checks each proposed change before maintainers merge it.
 - Dependabot receives no credentials, permissions expansion, or auto-merge path from the
   configuration.
 
