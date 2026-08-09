@@ -193,7 +193,7 @@ def hmc_set_lpar_proc_compat(system_uuid: str, lpar_uuid: str, mode: str) -> str
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_io_slots(
     system_uuid: str,
-    adapter_type: str = "all",
+    pci_class: str = "all",
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on a managed system via the HMC CLI.
 
@@ -205,14 +205,15 @@ def hmc_list_io_slots(
     The system UUID is resolved to its CLI name via REST before the command
     runs.
 
-    adapter_type filters by PCI class:
+    pci_class filters by PCI class:
       - ``"all"``   — return every slot (default)
       - ``"eth"``   — Ethernet adapters (PCI class 0200)
       - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
       - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
-      - ``"nvme"``  — NVMe adapters (PCI class 0108)    """
+      - ``"nvme"``  — NVMe adapters (PCI class 0108)
+    """
     return _ssh_with_client(
-        lambda system_name, _: list_io_slots(HMCConfig(), system_name, adapter_type),
+        lambda system_name, _: list_io_slots(HMCConfig(), system_name, pci_class),
         system_uuid=system_uuid,
     )
 

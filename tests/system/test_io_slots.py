@@ -31,7 +31,7 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_list_io_slots_all_returns_list():
-    """list_io_slots(adapter_type='all') returns a list of dicts from parsed output."""
+    """list_io_slots(pci_class='all') returns a list of dicts from parsed output."""
     conn = _make_ssh_mock(IO_SLOT_OUTPUT)
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
         slots = await list_io_slots(make_config(), "sys1")
@@ -45,10 +45,10 @@ async def test_list_io_slots_all_returns_list():
 
 @pytest.mark.asyncio
 async def test_list_io_slots_command_all():
-    """adapter_type='all' issues lshwres without a grep filter."""
+    """pci_class='all' issues lshwres without a grep filter."""
     conn = _make_ssh_mock(IO_SLOT_OUTPUT)
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", adapter_type="all")
+        await list_io_slots(make_config(), "sys1", pci_class="all")
 
     cmd_called = conn.run.call_args[0][0]
     assert "lshwres" in cmd_called
@@ -59,11 +59,11 @@ async def test_list_io_slots_command_all():
 
 @pytest.mark.asyncio
 async def test_list_io_slots_eth_filter():
-    """adapter_type='eth' appends a pci_class=0200 grep."""
+    """pci_class='eth' appends a pci_class=0200 grep."""
     eth_output = "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,feature_codes=EN0S,lpar_name=lpar1\n"
     conn = _make_ssh_mock(eth_output)
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        slots = await list_io_slots(make_config(), "sys1", adapter_type="eth")
+        slots = await list_io_slots(make_config(), "sys1", pci_class="eth")
 
     cmd_called = conn.run.call_args[0][0]
     assert "pci_class=0200" in cmd_called
@@ -73,10 +73,10 @@ async def test_list_io_slots_eth_filter():
 
 @pytest.mark.asyncio
 async def test_list_io_slots_sas_filter():
-    """adapter_type='sas' appends a pci_class=0104 grep."""
+    """pci_class='sas' appends a pci_class=0104 grep."""
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", adapter_type="sas")
+        await list_io_slots(make_config(), "sys1", pci_class="sas")
 
     cmd_called = conn.run.call_args[0][0]
     assert "pci_class=0104" in cmd_called
@@ -84,10 +84,10 @@ async def test_list_io_slots_sas_filter():
 
 @pytest.mark.asyncio
 async def test_list_io_slots_san_filter():
-    """adapter_type='san' appends a pci_class=0C04 grep."""
+    """pci_class='san' appends a pci_class=0C04 grep."""
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", adapter_type="san")
+        await list_io_slots(make_config(), "sys1", pci_class="san")
 
     cmd_called = conn.run.call_args[0][0]
     assert "pci_class=0C04" in cmd_called
@@ -95,10 +95,10 @@ async def test_list_io_slots_san_filter():
 
 @pytest.mark.asyncio
 async def test_list_io_slots_nvme_filter():
-    """adapter_type='nvme' appends a pci_class=0108 grep."""
+    """pci_class='nvme' appends a pci_class=0108 grep."""
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        await list_io_slots(make_config(), "sys1", adapter_type="nvme")
+        await list_io_slots(make_config(), "sys1", pci_class="nvme")
 
     cmd_called = conn.run.call_args[0][0]
     assert "pci_class=0108" in cmd_called
@@ -115,7 +115,7 @@ async def test_list_io_slots_empty_output():
 
 
 @pytest.mark.asyncio
-async def test_list_io_slots_invalid_adapter_type():
-    """Unknown adapter_type raises ValueError before SSH is attempted."""
-    with pytest.raises(ValueError, match="adapter_type"):
-        await list_io_slots(make_config(), "sys1", adapter_type="bogus")
+async def test_list_io_slots_invalid_pci_class():
+    """Unknown pci_class raises ValueError before SSH is attempted."""
+    with pytest.raises(ValueError, match="pci_class"):
+        await list_io_slots(make_config(), "sys1", pci_class="bogus")

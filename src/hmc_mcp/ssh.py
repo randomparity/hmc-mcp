@@ -129,14 +129,14 @@ _IO_SLOT_PCI_CLASS = {
 async def list_io_slots(
     config: HMCConfig,
     system_name: str,
-    adapter_type: str = "all",
+    pci_class: str = "all",
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on *system_name* via SSH.
 
     Runs ``lshwres -r io --rsubtype slot -m <system_name>`` and optionally
     filters by PCI class using ``grep pci_class=<code>``.
 
-    adapter_type may be one of:
+    pci_class may be one of:
       - ``"all"``   — return every slot (default, no filter)
       - ``"eth"``   — Ethernet adapters (PCI class 0200)
       - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
@@ -148,17 +148,17 @@ async def list_io_slots(
     ``lpar_name`` (empty string when the slot is unassigned).
 
     Raises:
-        ValueError: If *adapter_type* is not one of the recognised values.
+        ValueError: If *pci_class* is not one of the recognised values.
     """
-    if adapter_type != "all" and adapter_type not in _IO_SLOT_PCI_CLASS:
+    if pci_class != "all" and pci_class not in _IO_SLOT_PCI_CLASS:
         valid = ", ".join(["all"] + sorted(_IO_SLOT_PCI_CLASS))
         raise ValueError(
-            f"Invalid adapter_type {adapter_type!r}. Must be one of: {valid}"
+            f"Invalid pci_class {pci_class!r}. Must be one of: {valid}"
         )
     cmd = f"lshwres -r io --rsubtype slot -m {shlex.quote(system_name)}"
-    if adapter_type != "all":
-        pci_class = _IO_SLOT_PCI_CLASS[adapter_type]
-        cmd += f" | grep pci_class={shlex.quote(pci_class)}"
+    if pci_class != "all":
+        pci_code = _IO_SLOT_PCI_CLASS[pci_class]
+        cmd += f" | grep pci_class={shlex.quote(pci_code)}"
     output = await run_hmc_command(config, cmd)
     return _parse_lshwres_output(output)
 
