@@ -3,15 +3,18 @@
 
 from __future__ import annotations
 
-import shlex
-
 from ._app import (
     _DESTRUCTIVE,
     _ssh_with_client,
     mcp,
 )
 
-from .ssh import run_hmc_command
+from .ssh import (
+    assign_profile_io_slot,
+    backup_lpar_profiles,
+    restore_lpar_profiles,
+    sync_lpar_profile,
+)
 
 
 
@@ -35,8 +38,8 @@ def hmc_backup_lpar_profiles(system_uuid: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda config, system_name, _: run_hmc_command(
-            config, f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        lambda config, system_name, _: backup_lpar_profiles(
+            config, system_name, file_path
         ),
         system_uuid=system_uuid,
     )
@@ -65,8 +68,8 @@ def hmc_restore_lpar_profiles(system_uuid: str, file_path: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda config, system_name, _: run_hmc_command(
-            config, f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+        lambda config, system_name, _: restore_lpar_profiles(
+            config, system_name, file_path
         ),
         system_uuid=system_uuid,
     )
@@ -95,10 +98,8 @@ def hmc_sync_lpar_profile(system_uuid: str, lpar_uuid: str) -> str:
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda config, system_name, lpar_name: run_hmc_command(
-            config,
-            f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}",
+        lambda config, system_name, lpar_name: sync_lpar_profile(
+            config, system_name, lpar_name
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
@@ -129,12 +130,9 @@ def hmc_assign_profile_io_slot(
     Returns:
         The raw HMC CLI output.    """
     return _ssh_with_client(
-        lambda config, system_name, lpar_name: run_hmc_command(
-            config,
-            f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
-            f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force",
+        lambda config, system_name, lpar_name: assign_profile_io_slot(
+            config, system_name, lpar_name, profile_name, drc_index
         ),
         system_uuid=system_uuid,
         lpar_uuid=lpar_uuid,
     )
-

@@ -562,3 +562,79 @@ async def remove_vnic(
         f" -a {shlex.quote(f'vnic_id={vnic_id}')}"
     )
     return await run_hmc_command(config, cmd)
+
+
+# ---------------------------------------------------------------------- #
+# LPAR profile backup/restore/sync and I/O slot assignment (bkprofdata /
+# rstprofdata / chsyscfg — no REST equivalent)
+# ---------------------------------------------------------------------- #
+
+
+async def backup_lpar_profiles(
+    config: HMCConfig,
+    system_name: str,
+    file_path: str,
+) -> str:
+    """Backup all LPAR profiles on *system_name* to *file_path* via SSH.
+
+    Runs ``bkprofdata -m <system_name> -f <file_path>`` and returns the raw
+    command output. *file_path* is on the HMC filesystem, not the local
+    machine; the backup file is created at that path on the HMC host.
+    """
+    cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+    return await run_hmc_command(config, cmd)
+
+
+async def restore_lpar_profiles(
+    config: HMCConfig,
+    system_name: str,
+    file_path: str,
+) -> str:
+    """Restore LPAR profiles from *file_path* on *system_name* via SSH.
+
+    Runs ``rstprofdata -m <system_name> -f <file_path>`` and returns the raw
+    command output. *file_path* must already exist on the HMC filesystem.
+    Restoring overwrites the current LPAR profile configuration.
+    """
+    cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+    return await run_hmc_command(config, cmd)
+
+
+async def sync_lpar_profile(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> str:
+    """Sync *lpar_name*'s running configuration back to its current profile.
+
+    Runs ``chsyscfg -r lpar -m <system_name>
+    -i "name=<lpar_name>,sync_curr_profile=1"`` and returns the raw command
+    output. This saves the LPAR's current running configuration to its
+    current named profile, overwriting the previous profile definition.
+    """
+    cmd = (
+        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
+        f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}"
+    )
+    return await run_hmc_command(config, cmd)
+
+
+async def assign_profile_io_slot(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+) -> str:
+    """Add a physical I/O slot DRC index to *profile_name* via SSH.
+
+    Runs ``chsyscfg -r prof -m <system_name>
+    -i "name=<profile_name>,io_slots+=<drc_index>//0,lpar_name=<lpar_name>"
+    --force`` and returns the raw command output. Appends the slot to the
+    profile's I/O slot list; ``--force`` overrides any conflicts.
+    """
+    cmd = (
+        f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
+        f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force"
+    )
+    return await run_hmc_command(config, cmd)
