@@ -14,6 +14,8 @@ cycles).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -108,21 +110,21 @@ DESTRUCTIVE_TOOLS = frozenset({
 })
 
 
-def _run(coro):
-    """Run an async client call from a sync tool function."""
-    return asyncio.run(coro)
+def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
+    """Run a coroutine-returning closure from a sync tool function."""
+    return asyncio.run(fn())
 
 
 def with_client(fn):
     """Run an async client call against the env-configured HMC.
 
-    Collapses the pervasive ``async def _go`` + ``return _run(_go())`` idiom
+    Collapses the pervasive ``async def _go`` + ``return _run(_go)`` idiom
     into one line for the common case where the body is a single client call.
     """
     async def _go():
         async with client_from_env() as hmc:
             return await fn(hmc)
-    return _run(_go())
+    return _run(_go)
 
 
 # ---------------------------------------------------------------------- #
@@ -169,7 +171,7 @@ def _ssh_with_client(fn, *, system_uuid=None, lpar_uuid=None):
             lpar_name = await _lpar_name(hmc, lpar_uuid) if lpar_uuid else None
         return await fn(system_name, lpar_name)
 
-    return _run(_go())
+    return _run(_go)
 
 
 

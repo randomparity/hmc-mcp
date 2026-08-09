@@ -32,7 +32,7 @@ def hmc_run_command(cmd: str) -> str:
 
     Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
     """
-    return _run(run_hmc_cli(cmd))
+    return _run(lambda: run_hmc_cli(cmd))
 
 
 

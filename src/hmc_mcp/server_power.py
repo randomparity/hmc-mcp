@@ -263,7 +263,7 @@ def hmc_delete_lpar(lpar_uuid: str) -> str:
             await hmc.delete_logical_partition(lpar_uuid)
             return f"Deleted LPAR {lpar_uuid}"
 
-    return _run(_go())
+    return _run(_go)
 
 
 

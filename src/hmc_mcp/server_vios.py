@@ -93,7 +93,7 @@ def hmc_delete_vios(vios_uuid: str) -> str:
             await hmc.delete_logical_partition(vios_uuid)
             return f"Deleted VIOS {vios_uuid}"
 
-    return _run(_go())
+    return _run(_go)
 
 
 @mcp.tool
@@ -189,7 +189,7 @@ def hmc_list_vios_backups(vios_uuid: str) -> list[dict[str, str]]:
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
     fixed-width table into a list of dicts keyed by the output header
     (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.    """
-    output = _run(run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
+    output = _run(lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}"))
     return _parse_lsviosbackup_output(output)
 
 
@@ -216,7 +216,7 @@ def hmc_backup_vios(
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation backup -type {shlex.quote(backup_type)}"
-    return _run(run_hmc_cli(cmd))
+    return _run(lambda: run_hmc_cli(cmd))
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -233,6 +233,6 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str) -> str:
     Returns the raw HMC CLI output.
     """
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
-    return _run(run_hmc_cli(cmd))
+    return _run(lambda: run_hmc_cli(cmd))
 
 

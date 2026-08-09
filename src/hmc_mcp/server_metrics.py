@@ -196,4 +196,4 @@ def _metrics_fetch(
                     return {}
                 raise
 
-    return _run(_go())
+    return _run(_go)
