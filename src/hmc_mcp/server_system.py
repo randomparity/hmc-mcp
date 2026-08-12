@@ -215,8 +215,10 @@ def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
     updates, migrations, etc.
 
     On HMC versions that do not expose Job as a root UOM resource type
-    (HTTP 400), returns a single-element list with an ``error`` key
-    describing the failure rather than raising an exception.
+    (HTTP 400), returns a single-element list containing an error sentinel
+    dict (identified by ``"type": "error"``) rather than raising an
+    exception.  Normal job dicts never carry a ``"type"`` key at the top
+    level, so callers can reliably distinguish the two cases.
     """
     from .errors import HMCError
 
@@ -226,6 +228,7 @@ def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
         if exc.status_code == 400:
             return [
                 {
+                    "type": "error",
                     "error": (
                         "This HMC version does not support the global Job "
                         "listing endpoint (GET /rest/api/uom/Job). "

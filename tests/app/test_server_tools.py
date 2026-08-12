@@ -530,6 +530,7 @@ def test_recent_jobs_400_returns_graceful_error(monkeypatch, mock_hmc):
     result = hmc_recent_jobs()
     assert isinstance(result, list)
     assert len(result) == 1
+    assert result[0].get("type") == "error"
     assert result[0].get("error") is not None
     assert result[0].get("status_code") == 400
 

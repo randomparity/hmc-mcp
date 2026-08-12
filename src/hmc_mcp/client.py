@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import warnings
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -365,7 +366,6 @@ class HMCClient(
         some versions (see issue #95).
         """
         if job_href:
-            from urllib.parse import urlparse
             path = urlparse(job_href).path
             return await self.get_uom_path(path, "Job")
         return await self.get_uom("Job", job_uuid)
