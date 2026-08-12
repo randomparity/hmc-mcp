@@ -9,10 +9,30 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
-    with_client,
 )
 
+from .client import HMCError
 from .common import client_from_env
+
+
+def _check_templates_error(exc: HMCError) -> None:
+    """Re-raise *exc* with an actionable message for known template HTTP errors.
+
+    HTTP 406 means partition templates are not licensed or not supported on this HMC.
+    All other errors are left unchanged.
+
+    The replacement HMCError intentionally does not forward ``body=exc.body``:
+    the constructor would append the parsed HMC body text after the actionable
+    message, degrading readability. ``from exc`` sets ``__cause__`` and, combined
+    with the implicit ``__context__`` set by the ``except`` block, makes the
+    original exception accessible in developer diagnostics.
+    """
+    if exc.status_code == 406:
+        raise HMCError(
+            "Partition templates are not licensed or not supported on this HMC. "
+            "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
+            exc.status_code,
+        ) from exc
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -25,9 +45,17 @@ def hmc_partition_templates(template_uuid: str | None = None) -> Any:
     When template_uuid is provided, returns the full config dict for that one
     template, or None if not found.
     """
-    if template_uuid is not None:
-        return with_client(lambda hmc: hmc.get_partition_template(template_uuid))
-    return with_client(lambda hmc: hmc.list_partition_templates())
+    async def _go():
+        async with client_from_env() as hmc:
+            try:
+                if template_uuid is not None:
+                    return await hmc.get_partition_template(template_uuid)
+                return await hmc.list_partition_templates()
+            except HMCError as exc:
+                _check_templates_error(exc)
+                raise
+
+    return _run(_go)
 
 
 @mcp.tool
@@ -48,7 +76,11 @@ def hmc_deploy_partition_template(
     """
     async def _go():
         async with client_from_env() as hmc:
-            job = await hmc.deploy_partition_template(draft_template_uuid, target_system_uuid)
+            try:
+                job = await hmc.deploy_partition_template(draft_template_uuid, target_system_uuid)
+            except HMCError as exc:
+                _check_templates_error(exc)
+                raise
             if not wait or job is None:
                 return job
             job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
