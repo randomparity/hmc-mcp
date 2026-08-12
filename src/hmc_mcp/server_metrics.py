@@ -24,6 +24,11 @@ def _check_pcm_error(exc: HMCError) -> None:
     HTTP 406 means PCM is not licensed or not enabled on this HMC.
     HTTP 403 means the connecting user does not have PCM authority.
     All other errors are left unchanged.
+
+    The replacement HMCError intentionally does not forward ``body=exc.body``:
+    the constructor would append the parsed HMC body text after the actionable
+    message, degrading readability.  The ``from exc`` chain preserves the body
+    in the traceback for developer diagnostics.
     """
     if exc.status_code == 406:
         raise HMCError(

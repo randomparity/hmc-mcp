@@ -303,6 +303,34 @@ def test_processed_metrics_non_404_error_propagates(monkeypatch, mock_hmc):
         )
 
 
+def test_processed_metrics_doc_fetch_406_actionable(monkeypatch, mock_hmc):
+    """A 406 on the metrics document fetch surfaces an actionable 'not licensed' message."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "00000000-0000-0000-0000-000000000001", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
+
+    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_processed_metrics_doc_fetch_403_actionable(monkeypatch, mock_hmc):
+    """A 403 on the metrics document fetch surfaces an actionable PCM authority message."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "00000000-0000-0000-0000-000000000001", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(403, text="<error>Forbidden</error>"))
+
+    with pytest.raises(HMCError, match="(?i)does not have.*authority|lacks.*authority"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
 def test_aggregated_metrics_mode_links(monkeypatch, mock_hmc):
     """hmc_aggregated_metrics with mode='links' uses the AggregatedMetrics endpoint.
 
