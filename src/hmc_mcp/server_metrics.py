@@ -27,16 +27,14 @@ def _check_pcm_error(exc: HMCError) -> None:
     """
     if exc.status_code == 406:
         raise HMCError(
-            "PCM is not licensed or not enabled on this HMC "
-            "(HTTP 406 Not Acceptable). Enable PCM in the HMC settings or "
-            "use an HMC that has the PCM feature licensed.",
+            "PCM is not licensed or not enabled on this HMC. "
+            "Enable PCM in the HMC settings or use an HMC that has the PCM feature licensed.",
             exc.status_code,
         ) from exc
     if exc.status_code == 403:
         raise HMCError(
-            "The connecting user does not have PCM authority on this HMC "
-            "(HTTP 403 Forbidden). Grant the user PCM authority in HMC "
-            "user management and retry.",
+            "The connecting user does not have PCM authority on this HMC. "
+            "Grant the user PCM authority in HMC user management and retry.",
             exc.status_code,
         ) from exc
 
@@ -247,11 +245,15 @@ def _metrics_fetch(
             # Fetch the most recent metrics document. A 404 means the document
             # has aged out of PCM retention; surface that as no-data, matching
             # the tool contract (``{}`` when no metrics are available).
+            # Note: 403/406 from name resolution (_resolve_resource_uuid) are
+            # intentionally not wrapped: those endpoints are not PCM-specific,
+            # so a PCM authority / not-licensed message would be misleading.
             try:
                 return await hmc.fetch_json(newest_metric_link(links)["link"])
             except HMCError as exc:
                 if exc.status_code == 404:
                     return {}
+                _check_pcm_error(exc)
                 raise
 
     return _run(_go)
