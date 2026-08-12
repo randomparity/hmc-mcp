@@ -63,10 +63,13 @@ async def call(client: Client, tool: str, **kwargs) -> tuple[str, Any]:
     """Call a tool and return (status, result). status is 'PASS' or 'FAIL'."""
     try:
         result = await client.call_tool(tool, kwargs)
-        # FastMCP returns a list of content blocks; extract text
-        if isinstance(result, list):
+        # FastMCP returns a CallToolResult; prefer .data (pre-parsed), else
+        # extract text from .content blocks and JSON-parse.
+        if hasattr(result, "data") and result.data is not None:
+            return "PASS", result.data
+        if hasattr(result, "content"):
             parts = []
-            for block in result:
+            for block in result.content:
                 if hasattr(block, "text"):
                     parts.append(block.text)
                 else:
@@ -74,7 +77,6 @@ async def call(client: Client, tool: str, **kwargs) -> tuple[str, Any]:
             text = "\n".join(parts)
         else:
             text = str(result)
-        # Try to parse as JSON for pretty display
         try:
             data = json.loads(text)
         except Exception:
@@ -366,14 +368,16 @@ async def subtask_5(client: Client) -> None:
     st, data = await call(client, "hmc_processed_metrics",
                           category="ManagedSystem",
                           resource_name_or_uuid=CTX["system_name"],
-                          mode="list")
-    record(5, "hmc_processed_metrics (list)", st, data)
+                          start_ts="2026-01-01T00:00:00.000Z",
+                          mode="links")
+    record(5, "hmc_processed_metrics (links)", st, data)
 
     st, data = await call(client, "hmc_aggregated_metrics",
                           category="ManagedSystem",
                           resource_name_or_uuid=CTX["system_name"],
-                          mode="list")
-    record(5, "hmc_aggregated_metrics (list)", st, data)
+                          start_ts="2026-01-01T00:00:00.000Z",
+                          mode="links")
+    record(5, "hmc_aggregated_metrics (links)", st, data)
 
     st, data = await call(client, "hmc_partition_templates")
     record(5, "hmc_partition_templates", st, data)

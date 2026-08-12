@@ -64,43 +64,47 @@ that is filled in with actual values during execution.
 - `src/hmc_mcp/server_composite.py`
 - `src/hmc_mcp/server_cli.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Baseline Record — ltczz386-lp3
 
 | Attribute | Pre-Test Value |
 |---|---|
-| UUID | |
-| State | |
-| Memory min/desired/max (MiB) | |
-| vCPU min/desired/max | |
-| Proc units min/desired/max | |
-| Dedicated procs | |
-| Uncapped | |
-| OS type | |
-| RMC state | |
-| Description | |
-| MSP flag | |
-| Proc compat mode (current) | |
-| Proc compat mode (pending) | |
-| Network adapters (slot → PVID) | |
-| Raw lssyscfg output | *(paste below)* |
+| UUID | 231DF5E5-5212-432B-8298-152D12AA028D |
+| State | running |
+| Memory min/desired/max (MiB) | see lssyscfg |
+| vCPU min/desired/max | see lssyscfg |
+| Proc units min/desired/max | see lssyscfg |
+| Dedicated procs | false (shared) |
+| Uncapped | see lssyscfg |
+| OS type | AIX/Linux (linux) |
+| RMC state | see lpar_summary |
+| Description | (empty) |
+| MSP flag | false |
+| Proc compat mode (desired) | default |
+| Proc compat mode (current) | POWER9_base |
+| Network adapters (slot → PVID) | see lpar_summary |
+| Raw lssyscfg output | see test-results.json lp3_baseline.lssyscfg |
 
 ```
-<paste lssyscfg output here>
+name=ltczz386-lp3,lpar_id=3,lpar_env=aixlinux,state=Running,
+resource_config=1,os=linux,os_version=Unknown,
+logical_serial_num=13C732W3,default_profile=default_profile,
+curr_profile=P1-C4-T2-VF,...
+(full output in test-results.json)
 ```
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_lpars` (baseline) | | |
-| `hmc_lpar_summary` (baseline) | | |
-| `hmc_get_lpar_description` (baseline) | | |
-| `hmc_get_lpar_msp` (baseline) | | |
-| `hmc_get_lpar_proc_compat` (baseline) | | |
-| `hmc_list_adapters` (baseline) | | |
-| `hmc_run_command` (lssyscfg baseline) | | |
+| `hmc_lpars` (baseline) | ✅ PASS | UUID: 231DF5E5-5212-432B-8298-152D12AA028D |
+| `hmc_lpar_summary` (baseline) | ✅ PASS | State: running, OS: linux |
+| `hmc_get_lpar_description` (baseline) | ✅ PASS | Value: (empty) |
+| `hmc_get_lpar_msp` (baseline) | ✅ PASS | Value: false |
+| `hmc_get_lpar_proc_compat` (baseline) | ✅ PASS | desired=default curr=POWER9_base (fixed: was using invalid pend_ field) |
+| `hmc_list_adapters` (baseline) | ✅ PASS | Adapters listed |
+| `hmc_run_command` (lssyscfg baseline) | ✅ PASS | Full attr string captured |
 
 ---
 
@@ -136,25 +140,25 @@ before touching anything mutable.
 - `src/hmc_mcp/server_composite.py` — summary tools
 - `src/hmc_mcp/server_provision.py` — placement tool
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_console_info` | | |
-| `hmc_systems` (list) | | |
-| `hmc_systems` (single) | | |
-| `hmc_lpars` (list) | | |
-| `hmc_lpars` (single) | | |
-| `hmc_vios` | | |
-| `hmc_capacity_report` | | |
-| `hmc_find_placement` | | |
-| `hmc_find_system` | | |
-| `hmc_list_resources` | | |
-| `hmc_recent_jobs` | | |
-| `hmc_system_summary` | | |
-| `hmc_lpar_summary` | | |
+| `hmc_console_info` | ✅ PASS | HMC version and network info returned |
+| `hmc_systems` (list) | ✅ PASS | System UUID: 4c3c8ee8-c2af-371e-8dfa-fe061d36afea |
+| `hmc_systems` (single) | ✅ PASS | Single system by name returned |
+| `hmc_lpars` (list) | ✅ PASS | All 3 LPARs visible |
+| `hmc_lpars` (single) | ✅ PASS | lp3 found by name |
+| `hmc_vios` | ✅ PASS | VIOS UUID: 673028F0-06D3-4D3F-8B83-A7ECB5CF6F30 PartitionID=100 |
+| `hmc_capacity_report` | ✅ PASS | Memory/CPU report returned |
+| `hmc_find_placement` | ✅ PASS | Placement candidates returned |
+| `hmc_find_system` | ✅ PASS | System found by name |
+| `hmc_list_resources` | ✅ PASS | LPARs listed via generic resource endpoint |
+| `hmc_recent_jobs` | ❌ FAIL | HTTP 400: "Unrecognized root REST type of Job" — wrong endpoint for this HMC version |
+| `hmc_system_summary` | ✅ PASS | Composite summary with LPARs + VIOS returned |
+| `hmc_lpar_summary` | ✅ PASS | lp3 summary with adapters returned |
 
 ---
 
@@ -178,18 +182,18 @@ before touching anything mutable.
 - `src/hmc_mcp/server_network.py`
 - `src/hmc_mcp/server_cli.py` (SSH/CLI tools)
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_list_virtual_switches` | | |
-| `hmc_list_virtual_networks` | | |
-| `hmc_list_network_bridges` | | |
-| `hmc_list_fc_ports` | | |
-| `hmc_list_sea_adapters` | | |
-| `hmc_list_adapters` (CNA) | | |
+| `hmc_list_virtual_switches` | ✅ PASS | Switches listed; SwitchID=0 captured |
+| `hmc_list_virtual_networks` | ✅ PASS | Existing VLANs enumerated; VLAN 3000 chosen as unused test VLAN |
+| `hmc_list_network_bridges` | ✅ PASS | Network bridges listed |
+| `hmc_list_fc_ports` | ✅ PASS | FC/NPIV ports returned via SSH/CLI |
+| `hmc_list_sea_adapters` | ✅ PASS | SEA adapters returned via SSH/CLI |
+| `hmc_list_adapters` (CNA) | ✅ PASS | CNAs on lp3 listed |
 
 ---
 
@@ -214,17 +218,17 @@ before touching anything mutable.
 - `src/hmc_mcp/server_storage.py`
 - `src/hmc_mcp/server_cli.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_list_volume_groups` | | |
-| `hmc_list_clusters` | | |
-| `hmc_shared_storage_pools` | | |
-| `hmc_list_io_slots` | | |
-| `hmc_list_memory_pools` | | |
+| `hmc_list_volume_groups` | ✅ PASS | Volume groups on VIOS returned |
+| `hmc_list_clusters` | ✅ PASS | Empty list (no clusters configured) |
+| `hmc_shared_storage_pools` | ✅ PASS | Empty list (no SSP configured) |
+| `hmc_list_io_slots` | ✅ PASS | Physical I/O slots listed via SSH/CLI |
+| `hmc_list_memory_pools` | ✅ PASS | Memory pools listed via SSH/CLI |
 
 ---
 
@@ -247,17 +251,17 @@ before touching anything mutable.
 - `src/hmc_mcp/server_cli.py`
 - `src/hmc_mcp/server_profiles.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_get_lpar_description` | | |
-| `hmc_get_lpar_msp` | | |
-| `hmc_get_proc_compat_modes` | | |
-| `hmc_get_lpar_proc_compat` | | |
-| `hmc_list_vnics` | | |
+| `hmc_get_lpar_description` | ✅ PASS | Description returned (empty) |
+| `hmc_get_lpar_msp` | ✅ PASS | MSP=false |
+| `hmc_get_proc_compat_modes` | ✅ PASS | Modes listed (default, POWER8, POWER9, etc.) |
+| `hmc_get_lpar_proc_compat` | ✅ PASS | desired=default curr=POWER9_base |
+| `hmc_list_vnics` | ✅ PASS | vNIC list returned (none configured) |
 
 ---
 
@@ -279,16 +283,16 @@ before touching anything mutable.
 - `src/hmc_mcp/server_metrics.py`
 - `src/hmc_mcp/server_templates.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_get_pcm_preferences` | | |
-| `hmc_processed_metrics` (list) | | |
-| `hmc_aggregated_metrics` (list) | | |
-| `hmc_partition_templates` | | |
+| `hmc_get_pcm_preferences` | ❌ FAIL | HTTP 406 — PCM not licensed/enabled on this HMC |
+| `hmc_processed_metrics` (links) | ❌ FAIL | HTTP 403 — user lacks PCM authority |
+| `hmc_aggregated_metrics` (links) | ❌ FAIL | HTTP 403 — user lacks PCM authority |
+| `hmc_partition_templates` | ❌ FAIL | HTTP 406 — partition templates not supported on this HMC version |
 
 ---
 
@@ -309,15 +313,15 @@ before touching anything mutable.
 **Relevant Context:**
 - `src/hmc_mcp/server_users.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_users` | | |
-| `hmc_list_password_policies` | | |
-| `hmc_get_ldap_config` | | |
+| `hmc_users` | ❌ FAIL | HTTP 400: "Unrecognized root REST type of HmcUser" — web API path not supported |
+| `hmc_list_password_policies` | ❌ FAIL | HTTP 400: "Unrecognized root REST type of HmcPasswordPolicy" |
+| `hmc_get_ldap_config` | ❌ FAIL | HTTP 400: "Unrecognized root REST type of HmcLdapServer" |
 
 ---
 
@@ -335,14 +339,14 @@ before touching anything mutable.
 **Relevant Context:**
 - `src/hmc_mcp/server_system.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_run_command` (lshmc -V) | | |
-| `hmc_run_command` (lssyscfg -r sys) | | |
+| `hmc_run_command` (lshmc -V) | ✅ PASS | HMC version returned via SSH |
+| `hmc_run_command` (lssyscfg -r sys) | ✅ PASS | System list returned via SSH |
 
 ---
 
@@ -381,18 +385,18 @@ at the end.
 **Relevant Context:**
 - `src/hmc_mcp/server_power.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_create_lpar` | | |
-| `hmc_modify_lpar` | | |
-| `hmc_lpar_summary` (post-modify) | | |
-| `hmc_power_on_lpar` | | |
-| `hmc_power_off_lpar` | | |
-| `hmc_delete_lpar` | | |
+| `hmc_create_lpar` | ❌ FAIL | HTTP 406 "Console Internal Error" — REST LPAR create rejected by this HMC; all downstream lifecycle tests cascaded as FAIL |
+| `hmc_modify_lpar` | ❌ FAIL | cascade: scratch LPAR not created |
+| `hmc_lpar_summary` (post-modify) | ❌ FAIL | cascade |
+| `hmc_power_on_lpar` | ❌ FAIL | cascade |
+| `hmc_power_off_lpar` | ❌ FAIL | cascade |
+| `hmc_delete_lpar` | ❌ FAIL | cascade |
 
 ---
 
@@ -425,17 +429,17 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 - `src/hmc_mcp/server_network.py`
 - `src/hmc_mcp/server_storage.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_create_virtual_network` | | |
-| `hmc_add_network_adapter` | | |
-| `hmc_list_adapters` (post-add) | | |
-| `hmc_delete_adapter` | | |
-| `hmc_delete_virtual_network` | | |
+| `hmc_create_virtual_network` | ❌ FAIL | HTTP 406 — same pattern as hmc_create_lpar; REST create rejected |
+| `hmc_add_network_adapter` | ❌ FAIL | cascade: no scratch LPAR or network created |
+| `hmc_list_adapters` (post-add) | ❌ FAIL | cascade |
+| `hmc_delete_adapter` | ⚠️ SKIP | no adapter UUID captured |
+| `hmc_delete_virtual_network` | ⚠️ SKIP | no network UUID captured |
 
 ---
 
@@ -470,19 +474,19 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 - `src/hmc_mcp/server_cli.py`
 - `src/hmc_mcp/server_profiles.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_set_lpar_description` | | |
-| `hmc_get_lpar_description` (verify) | | |
-| `hmc_set_lpar_msp` | | |
-| `hmc_get_lpar_msp` (verify) | | |
-| `hmc_set_lpar_proc_compat` | | |
-| `hmc_sync_lpar_profile` | | |
-| `hmc_backup_lpar_profiles` | | |
+| `hmc_set_lpar_description` | ❌ FAIL | HSCLC63B: "Partition description cannot contain non-ASCII characters" — test string contained em dash/special chars |
+| `hmc_get_lpar_description` (verify) | ✅ PASS | read-back succeeded |
+| `hmc_set_lpar_msp` | ❌ FAIL | "msp attribute only valid for VIOS partition or profile" — lp3 is AIX/Linux not VIOS |
+| `hmc_get_lpar_msp` (verify) | ✅ PASS | read-back succeeded |
+| `hmc_set_lpar_proc_compat` | ❌ FAIL | "lpar_proc_compat_mode is an invalid attribute" — chsyscfg uses different field name |
+| `hmc_sync_lpar_profile` | ✅ PASS | Profile sync succeeded |
+| `hmc_backup_lpar_profiles` | ❌ FAIL | File /tmp/mcp-lp3-profiles-test already exists — need --force flag or unique filename |
 
 ---
 
@@ -514,18 +518,18 @@ user-admin mutating tools without touching any existing production user.
 **Relevant Context:**
 - `src/hmc_mcp/server_users.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_create_user` | | |
-| `hmc_modify_user` | | |
-| `hmc_create_password_policy` | | |
-| `hmc_modify_password_policy` | | |
-| `hmc_delete_user` | | |
-| `hmc_delete_password_policy` | | |
+| `hmc_create_user` | ❌ FAIL | HTTP 400: "Unrecognized root REST type of HmcUser" — web API path not supported on this HMC version |
+| `hmc_modify_user` | ❌ FAIL | same root cause |
+| `hmc_create_password_policy` | ❌ FAIL | same root cause |
+| `hmc_modify_password_policy` | ❌ FAIL | same root cause |
+| `hmc_delete_user` | ❌ FAIL | same root cause |
+| `hmc_delete_password_policy` | ❌ FAIL | same root cause |
 
 ---
 
@@ -551,16 +555,16 @@ tooling by submitting a job and polling it to completion.
 - `src/hmc_mcp/server_metrics.py`
 - `src/hmc_mcp/server_system.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_set_pcm_preferences` | | |
-| `hmc_get_job` | | |
-| `hmc_wait_for_job` | | |
-| `hmc_recent_jobs` (post-tests) | | |
+| `hmc_set_pcm_preferences` | ❌ FAIL | HTTP 406 — PCM not licensed/enabled |
+| `hmc_get_job` | ⚠️ SKIP | no job UUID available (hmc_recent_jobs failed) |
+| `hmc_wait_for_job` | ⚠️ SKIP | no job UUID |
+| `hmc_recent_jobs` (post-tests) | ❌ FAIL | HTTP 400: "Unrecognized root REST type of Job" |
 
 ---
 
@@ -587,14 +591,14 @@ check HMC PTF/update status without applying any firmware changes.
 - `src/hmc_mcp/server_provision.py`
 - `src/hmc_mcp/server_updates.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_get_available_hmc_ptfs` | | |
-| `hmc_provision_lpar` (dry_run) | | |
+| `hmc_get_available_hmc_ptfs` | ❌ FAIL | HTTP 400: "Unknown extended attribute group SoftwareUpdate" — not supported on this HMC version |
+| `hmc_provision_lpar` (dry_run) | ❌ FAIL | No VirtualNetwork with VLAN 3000 (create failed in ST9); dry-run validation detected missing network correctly |
 
 ---
 
@@ -634,57 +638,88 @@ corrective tool calls for any attribute that differs.
 - `src/hmc_mcp/server_power.py`
 - `src/hmc_mcp/server_cli.py`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Restore Actions Taken
 
 | Attribute | Baseline Value | Post-Test Value | Action Taken |
 |---|---|---|---|
-| Memory min/desired/max | | | |
-| vCPU min/desired/max | | | |
-| Proc units min/desired/max | | | |
-| Description | | | |
-| MSP flag | | | |
-| Proc compat mode | | | |
-| Adapters | | | |
+| Memory min/desired/max | see baseline | unchanged (no memory mutations ran) | none needed |
+| vCPU min/desired/max | see baseline | unchanged | none needed |
+| Proc units min/desired/max | see baseline | unchanged | none needed |
+| Description | (empty) | unchanged (set_description failed) | restore attempt made |
+| MSP flag | false | false (set_msp failed, non-VIOS) | no change |
+| Proc compat mode | desired=default, curr=POWER9_base | unchanged (set_proc_compat failed) | restore attempt made |
+| Adapters | per baseline | unchanged | none needed |
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_lpar_summary` (post-test) | | |
-| `hmc_modify_lpar` (restore, if needed) | | |
-| `hmc_set_lpar_description` (restore, if needed) | | |
-| `hmc_set_lpar_msp` (restore, if needed) | | |
-| `hmc_set_lpar_proc_compat` (restore, if needed) | | |
-| `hmc_sync_lpar_profile` | | |
-| `hmc_run_command` (lssyscfg final) | | |
-| `hmc_lpar_summary` (final confirm) | | |
+| `hmc_lpar_summary` (post-test) | ✅ PASS | lp3 still running, state unchanged |
+| `hmc_modify_lpar` (restore, if needed) | ⚠️ SKIP | no memory values in baseline dict (memory not mutated) |
+| `hmc_set_lpar_description` (restore, if needed) | ✅ PASS | description restored to empty |
+| `hmc_set_lpar_msp` (restore, if needed) | ❌ FAIL | "msp only valid for VIOS" — same as ST10 |
+| `hmc_set_lpar_proc_compat` (restore, if needed) | ❌ FAIL | "lpar_proc_compat_mode is an invalid attribute" — same as ST10 |
+| `hmc_sync_lpar_profile` | ✅ PASS | Profile synced |
+| `hmc_run_command` (lssyscfg final) | ✅ PASS | Final dump matches baseline |
+| `hmc_lpar_summary` (final confirm) | ✅ PASS | lp3 running, no changes from baseline |
 
 ---
 
 ## Issues Filed
 
-| # | GitHub Issue | Tool | Summary |
+| # | GitHub Issue | Tool(s) | Summary |
 |---|---|---|---|
-| — | — | — | — |
+| 1 | TBD | `hmc_recent_jobs`, `hmc_get_job`, `hmc_wait_for_job` | GET /rest/api/uom/Job returns HTTP 400 "Unrecognized root REST type of Job" |
+| 2 | TBD | `hmc_users`, `hmc_list_password_policies`, `hmc_get_ldap_config`, `hmc_create_user`, all user/policy tools | GET/POST /rest/api/web/Hmc* returns HTTP 400 "Unrecognized root REST type" — web API not supported on this HMC version |
+| 3 | TBD | `hmc_create_lpar`, `hmc_create_virtual_network` | PUT/POST REST create calls return HTTP 406 "Console Internal Error" — REST write path not working |
+| 4 | TBD | `hmc_get_pcm_preferences`, `hmc_processed_metrics`, `hmc_aggregated_metrics`, `hmc_set_pcm_preferences` | PCM endpoints return HTTP 406/403 — PCM not licensed or user lacks authority |
+| 5 | TBD | `hmc_partition_templates` | HTTP 406 — template API not supported on this HMC version |
+| 6 | TBD | `hmc_set_lpar_msp` | "msp attribute only valid for VIOS" — tool should validate partition type before attempting |
+| 7 | TBD | `hmc_set_lpar_proc_compat` | chsyscfg rejects lpar_proc_compat_mode as invalid attribute — wrong chsyscfg field name |
+| 8 | TBD | `hmc_set_lpar_description` | Test string contained non-ASCII characters (em dash) — test string bug; also reveals no validation before SSH call |
+| 9 | TBD | `hmc_backup_lpar_profiles` | Fails if output file already exists — needs --force flag or unique filename handling |
+| 10 | TBD | `hmc_get_available_hmc_ptfs` | HTTP 400 "Unknown extended attribute group SoftwareUpdate" — not supported on this HMC version |
+
+---
+
+## Test Run Summary (2026-08-12)
+
+| Category | Count |
+|---|---|
+| Total tool calls | 97 |
+| ✅ PASS | 49 |
+| ❌ FAIL | 43 |
+| ⚠️ SKIP | 5 |
+
+**Root cause breakdown of failures:**
+- HTTP 400 "Unrecognized root REST type" — HMC web API endpoint not available (affects Job, HmcUser, HmcPasswordPolicy, HmcLdapServer, ManagementConsole SoftwareUpdate group): **13 failures**
+- HTTP 406 on REST write path — LPAR/network/PCM create/update rejected: **8 failures** + **9 cascade failures**
+- HTTP 403 PCM authority: **2 failures**
+- SSH/CLI wrong attribute names (`lpar_proc_compat_mode`, `msp`): **5 failures**
+- Backup file collision: **1 failure**
+- Non-ASCII in test description string: **1 failure**
+- Provision dry-run detected missing network (expected): **1 failure**
+
+**lp3 state after testing:** ✅ Running, no changes from baseline. Profile synced.
 
 ---
 
 ## Final Status
 
-- [ ] Sub-Task 0 — Capture ltczz386-lp3 Baseline Configuration
-- [ ] Sub-Task 1 — Connectivity & Inventory
-- [ ] Sub-Task 2 — Network Inventory
-- [ ] Sub-Task 3 — Storage & SSP Inventory
-- [ ] Sub-Task 4 — LPAR Properties & Profile Inventory
-- [ ] Sub-Task 5 — Metrics & Templates
-- [ ] Sub-Task 6 — User & Policy Inventory
-- [ ] Sub-Task 7 — CLI Escape Hatch
-- [ ] Sub-Task 8 — LPAR Lifecycle
-- [ ] Sub-Task 9 — Virtual Networking Mutations
-- [ ] Sub-Task 10 — LPAR Properties Mutations
-- [ ] Sub-Task 11 — User Administration
-- [ ] Sub-Task 12 — PCM Metrics & Job Monitoring
-- [ ] Sub-Task 13 — Provision Dry Run & Updates Check
-- [ ] Sub-Task 14 — Restore ltczz386-lp3 to Baseline
+- [x] Sub-Task 0 — Capture ltczz386-lp3 Baseline Configuration
+- [x] Sub-Task 1 — Connectivity & Inventory
+- [x] Sub-Task 2 — Network Inventory
+- [x] Sub-Task 3 — Storage & SSP Inventory
+- [x] Sub-Task 4 — LPAR Properties & Profile Inventory
+- [x] Sub-Task 5 — Metrics & Templates
+- [x] Sub-Task 6 — User & Policy Inventory
+- [x] Sub-Task 7 — CLI Escape Hatch
+- [x] Sub-Task 8 — LPAR Lifecycle
+- [x] Sub-Task 9 — Virtual Networking Mutations
+- [x] Sub-Task 10 — LPAR Properties Mutations
+- [x] Sub-Task 11 — User Administration
+- [x] Sub-Task 12 — PCM Metrics & Job Monitoring
+- [x] Sub-Task 13 — Provision Dry Run & Updates Check
+- [x] Sub-Task 14 — Restore ltczz386-lp3 to Baseline
