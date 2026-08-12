@@ -170,14 +170,9 @@ class HMCClient(
         body: str | bytes,
         resource_type: str | None = None,
     ) -> str:
-        content_type = MEDIA_UOM
-        if resource_type:
-            content_type = f"{MEDIA_UOM}; type={resource_type}"
-        resp = await self._http.post(
-            path,
-            content=body,
-            headers={"Content-Type": content_type, "Accept": content_type},
-        )
+        headers = self._uom_headers(resource_type)
+        headers["Content-Type"] = headers["Accept"]
+        resp = await self._http.post(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
@@ -188,20 +183,15 @@ class HMCClient(
         body: str | bytes,
         resource_type: str | None = None,
     ) -> str:
-        content_type = MEDIA_UOM
-        if resource_type:
-            content_type = f"{MEDIA_UOM}; type={resource_type}"
-        resp = await self._http.put(
-            path,
-            content=body,
-            headers={"Content-Type": content_type, "Accept": content_type},
-        )
+        headers = self._uom_headers(resource_type)
+        headers["Content-Type"] = headers["Accept"]
+        resp = await self._http.put(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202, 204):
             raise HMCError(f"PUT {path} failed", resp.status_code, resp.text)
         return resp.text
 
     async def _delete(self, path: str) -> None:
-        resp = await self._http.delete(path)
+        resp = await self._http.delete(path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
@@ -252,7 +242,7 @@ class HMCClient(
         return resp.text
 
     async def _web_delete(self, path: str) -> None:
-        resp = await self._http.delete(path, headers=self._web_headers({}))
+        resp = await self._http.delete(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 

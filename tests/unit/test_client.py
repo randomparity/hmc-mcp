@@ -646,6 +646,46 @@ async def test_uom_headers_omits_schema_version_when_not_configured(mock_hmc):
     sent_headers = route.calls.last.request.headers
     assert "x-hmc-schema-version" not in sent_headers
 
+
+@pytest.mark.asyncio
+async def test_uom_post_sends_schema_version_when_configured(mock_hmc):
+    """_post() includes X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.post("/rest/api/uom/LogicalPartition").mock(
+        return_value=httpx.Response(
+            201,
+            text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>",
+        )
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc._post("/rest/api/uom/LogicalPartition", b"<xml/>")
+    sent_headers = route.calls.last.request.headers
+    assert sent_headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_uom_put_sends_schema_version_when_configured(mock_hmc):
+    """_put() includes X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.put("/rest/api/uom/LogicalPartition/uuid1").mock(
+        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc._put("/rest/api/uom/LogicalPartition/uuid1", b"<xml/>")
+    sent_headers = route.calls.last.request.headers
+    assert sent_headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_uom_delete_sends_schema_version_when_configured(mock_hmc):
+    """_delete() includes X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/uuid1").mock(
+        return_value=httpx.Response(204)
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc._delete("/rest/api/uom/LogicalPartition/uuid1")
+    sent_headers = route.calls.last.request.headers
+    assert sent_headers.get("x-hmc-schema-version") == "V1_0"
+
+
 # ---------------------------------------------------------------------- #
 # get_job / wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #

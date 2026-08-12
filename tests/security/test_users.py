@@ -218,6 +218,29 @@ async def test_web_get_omits_schema_version_when_not_configured(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_web_post_omits_schema_version_when_not_configured(mock_hmc):
+    """_web_post does not send X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.post("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(201, text=CREATED_USER)
+    )
+    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    async with HMCClient(make_config()) as hmc:
+        await hmc.create_hmc_user(user_xml)
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+async def test_web_delete_omits_schema_version_when_not_configured(mock_hmc):
+    """_web_delete does not send X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.delete("/rest/api/web/HmcUser/operator1").mock(
+        return_value=httpx.Response(204)
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_hmc_user("operator1")
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
 async def test_web_post_sends_schema_version_when_configured(mock_hmc):
     """_web_post forwards X-HMC-Schema-Version when schema_version is set."""
     route = mock_hmc.post("/rest/api/web/HmcUser").mock(
