@@ -71,6 +71,49 @@ def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 404
 
 
+def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
+    """hmc_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
+        return_value=httpx.Response(406, text="<error>Not supported</error>")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_partition_templates()
+    assert exc_info.value.status_code == 406
+    error_msg = str(exc_info.value)
+    # The message should be actionable and mention templates specifically, not raw HTTP error
+    assert "not licensed" in error_msg.lower()
+    assert "partition templates" in error_msg.lower()
+
+
+def test_partition_templates_get_http_406_not_licensed(monkeypatch, mock_hmc):
+    """hmc_partition_templates(template_uuid=...) returns clear message when templates not licensed (HTTP 406)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
+        return_value=httpx.Response(406, text="<error>Not supported</error>")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_partition_templates(TEMPLATE_UUID)
+    assert exc_info.value.status_code == 406
+    error_msg = str(exc_info.value)
+    assert "not licensed" in error_msg.lower()
+    assert "partition templates" in error_msg.lower()
+
+
+def test_deploy_partition_template_http_406_not_licensed(monkeypatch, mock_hmc):
+    """hmc_deploy_partition_template returns clear message when templates not licensed (HTTP 406)."""
+    _hmc_env(monkeypatch)
+    mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
+        return_value=httpx.Response(406, text="<error>Not supported</error>")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_deploy_partition_template("draft-uuid", "sys-uuid")
+    assert exc_info.value.status_code == 406
+    error_msg = str(exc_info.value)
+    assert "not licensed" in error_msg.lower()
+    assert "partition templates" in error_msg.lower()
+
+
 def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     """hmc_deploy_partition_template PUTs a Deploy job to the draft template."""
     _hmc_env(monkeypatch)
