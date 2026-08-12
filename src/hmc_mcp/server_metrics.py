@@ -245,6 +245,9 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     async def _go():
         async with client_from_env() as hmc:
+            # Note: 403/406 from _resolve_resource_uuid are intentionally not
+            # wrapped: those list/lookup endpoints are not PCM-specific, so a
+            # PCM authority / not-licensed message would be misleading.
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
             try:
                 links = await _fetch_metric_links(
@@ -258,9 +261,7 @@ def _metrics_fetch(
             # Fetch the most recent metrics document. A 404 means the document
             # has aged out of PCM retention; surface that as no-data, matching
             # the tool contract (``{}`` when no metrics are available).
-            # Note: 403/406 from name resolution (_resolve_resource_uuid) are
-            # intentionally not wrapped: those endpoints are not PCM-specific,
-            # so a PCM authority / not-licensed message would be misleading.
+            # 406/403 are translated to actionable messages; other non-404 codes propagate.
             try:
                 return await hmc.fetch_json(newest_metric_link(links)["link"])
             except HMCError as exc:

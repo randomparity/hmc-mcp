@@ -325,7 +325,7 @@ def test_processed_metrics_doc_fetch_403_actionable(monkeypatch, mock_hmc):
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(403, text="<error>Forbidden</error>"))
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
         )
@@ -449,7 +449,7 @@ def test_get_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
 
 
@@ -473,7 +473,7 @@ def test_processed_metrics_403_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
         )
@@ -499,7 +499,7 @@ def test_aggregated_metrics_403_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_aggregated_metrics(
             "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
         )
@@ -523,7 +523,7 @@ def test_set_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001", long_term_monitor=True)
 
 
@@ -565,8 +565,30 @@ def test_processed_metrics_links_mode_403_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)pcm authority|lacks.*authority|does not have.*authority"):
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
             mode="links",
         )
+
+
+def test_resolution_403_not_wrapped_as_pcm_error(monkeypatch, mock_hmc):
+    """A 403 from the UUID-resolution endpoint does NOT get a PCM-specific message.
+
+    When a resource *name* (not UUID) is passed, _resolve_resource_uuid issues a
+    GET to the UOM list endpoint.  A 403 on that endpoint is NOT PCM-specific —
+    the charter exclusion says it should propagate as a raw HMCError.
+    """
+    _hmc_env(monkeypatch)
+    # Stub the system name-search endpoint to return 403.
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==my-system-name)").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_get_pcm_preferences("ManagedSystem", "my-system-name")
+
+    # The error must NOT contain the PCM-specific actionable messages.
+    msg = str(exc_info.value)
+    assert "not licensed or not enabled" not in msg.lower()
+    assert "does not have PCM authority" not in msg
