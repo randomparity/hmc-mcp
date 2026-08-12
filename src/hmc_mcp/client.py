@@ -221,8 +221,20 @@ class HMCClient(
     # implementation uses the same session token for HmcUser operations.
     # ------------------------------------------------------------------ #
 
+    def _web_headers(self, extra: dict[str, str]) -> dict[str, str]:
+        """Build headers for a web-endpoint request.
+
+        Merges *extra* with a conditional X-HMC-Schema-Version header so that
+        HMC versions requiring the header on /rest/api/web/ endpoints receive
+        it whenever the caller has configured schema_version (issue #99).
+        """
+        headers = dict(extra)
+        if self.config.schema_version:
+            headers["X-HMC-Schema-Version"] = self.config.schema_version
+        return headers
+
     async def _web_get(self, path: str) -> str:
-        resp = await self._http.get(path, headers={"Accept": MEDIA_WEB})
+        resp = await self._http.get(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
         if resp.status_code == 204:
             return ""
         if resp.status_code != 200:
@@ -233,14 +245,14 @@ class HMCClient(
         resp = await self._http.post(
             path,
             content=body,
-            headers={"Content-Type": MEDIA_WEB, "Accept": MEDIA_WEB},
+            headers=self._web_headers({"Content-Type": MEDIA_WEB, "Accept": MEDIA_WEB}),
         )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
 
     async def _web_delete(self, path: str) -> None:
-        resp = await self._http.delete(path)
+        resp = await self._http.delete(path, headers=self._web_headers({}))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 

@@ -192,6 +192,55 @@ async def test_web_get_error_raises(mock_hmc):
 
 
 # ------------------------------------------------------------------ #
+# X-HMC-Schema-Version forwarding on web endpoints (issue #99)
+# ------------------------------------------------------------------ #
+
+@pytest.mark.asyncio
+async def test_web_get_sends_schema_version_when_configured(mock_hmc):
+    """_web_get forwards X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.get("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(200, text=USER_FEED)
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc.list_hmc_users()
+    assert route.calls.last.request.headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_web_get_omits_schema_version_when_not_configured(mock_hmc):
+    """_web_get does not send X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.get("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(200, text=USER_FEED)
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc.list_hmc_users()
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+async def test_web_post_sends_schema_version_when_configured(mock_hmc):
+    """_web_post forwards X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.post("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(201, text=CREATED_USER)
+    )
+    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc.create_hmc_user(user_xml)
+    assert route.calls.last.request.headers.get("x-hmc-schema-version") == "V1_0"
+
+
+@pytest.mark.asyncio
+async def test_web_delete_sends_schema_version_when_configured(mock_hmc):
+    """_web_delete forwards X-HMC-Schema-Version when schema_version is set."""
+    route = mock_hmc.delete("/rest/api/web/HmcUser/operator1").mock(
+        return_value=httpx.Response(204)
+    )
+    async with HMCClient(make_config(schema_version="V1_0")) as hmc:
+        await hmc.delete_hmc_user("operator1")
+    assert route.calls.last.request.headers.get("x-hmc-schema-version") == "V1_0"
+
+
+# ------------------------------------------------------------------ #
 # Server-tool tests (parsed dict returns, not raw XML)
 # ------------------------------------------------------------------ #
 
