@@ -18,6 +18,29 @@ from .common import client_from_env
 from .pcm import newest_metric_link
 
 
+def _check_pcm_error(exc: HMCError) -> None:
+    """Re-raise *exc* with an actionable message for known PCM HTTP errors.
+
+    HTTP 406 means PCM is not licensed or not enabled on this HMC.
+    HTTP 403 means the connecting user does not have PCM authority.
+    All other errors are left unchanged.
+    """
+    if exc.status_code == 406:
+        raise HMCError(
+            "PCM is not licensed or not enabled on this HMC "
+            "(HTTP 406 Not Acceptable). Enable PCM in the HMC settings or "
+            "use an HMC that has the PCM feature licensed.",
+            exc.status_code,
+        ) from exc
+    if exc.status_code == 403:
+        raise HMCError(
+            "The connecting user does not have PCM authority on this HMC "
+            "(HTTP 403 Forbidden). Grant the user PCM authority in HMC "
+            "user management and retry.",
+            exc.status_code,
+        ) from exc
+
+
 async def _resolve_resource_uuid(hmc: Any, category: str, resource_name_or_uuid: str) -> str:
     """Resolve a PCM resource name-or-UUID based on its category.
 
@@ -46,7 +69,11 @@ def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str) -> dict[s
     async def _go():
         async with client_from_env() as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
-            return await hmc.get_pcm_preferences(category, resource_uuid)
+            try:
+                return await hmc.get_pcm_preferences(category, resource_uuid)
+            except HMCError as exc:
+                _check_pcm_error(exc)
+                raise
 
     return _run(_go)
 
@@ -90,7 +117,11 @@ def hmc_set_pcm_preferences(
     async def _go():
         async with client_from_env() as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
-            return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
+            try:
+                return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
+            except HMCError as exc:
+                _check_pcm_error(exc)
+                raise
 
     return _run(_go)
 
@@ -182,9 +213,13 @@ def _metrics_links(
     async def _go():
         async with client_from_env() as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
-            return await _fetch_metric_links(
-                hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
-            )
+            try:
+                return await _fetch_metric_links(
+                    hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
+                )
+            except HMCError as exc:
+                _check_pcm_error(exc)
+                raise
 
     return _run(_go)
 
@@ -200,9 +235,13 @@ def _metrics_fetch(
     async def _go():
         async with client_from_env() as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
-            links = await _fetch_metric_links(
-                hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
-            )
+            try:
+                links = await _fetch_metric_links(
+                    hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
+                )
+            except HMCError as exc:
+                _check_pcm_error(exc)
+                raise
             if not links:
                 return {}
             # Fetch the most recent metrics document. A 404 means the document
