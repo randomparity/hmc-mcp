@@ -303,6 +303,34 @@ def test_processed_metrics_non_404_error_propagates(monkeypatch, mock_hmc):
         )
 
 
+def test_processed_metrics_doc_fetch_406_actionable(monkeypatch, mock_hmc):
+    """A 406 on the metrics document fetch surfaces an actionable 'not licensed' message."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "00000000-0000-0000-0000-000000000001", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_processed_metrics_doc_fetch_403_actionable(monkeypatch, mock_hmc):
+    """A 403 on the metrics document fetch surfaces an actionable PCM authority message."""
+    _hmc_env(monkeypatch)
+    _route_metrics_feed(mock_hmc, "ManagedSystem", "00000000-0000-0000-0000-000000000001", "ProcessedMetrics")
+    mock_hmc.get(
+        "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    ).mock(return_value=httpx.Response(403, text="<error>Forbidden</error>"))
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
 def test_aggregated_metrics_mode_links(monkeypatch, mock_hmc):
     """hmc_aggregated_metrics with mode='links' uses the AggregatedMetrics endpoint.
 
@@ -396,3 +424,171 @@ def test_aggregated_metrics_invalid_mode_raises(monkeypatch, mock_hmc):
         hmc_aggregated_metrics(
             "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z", mode="invalid",  # type: ignore[arg-type]
         )
+
+
+# ---------------------------------------------------------------------- #
+# PCM 406 / 403 actionable error messages (issue #98)
+# ---------------------------------------------------------------------- #
+
+
+def test_get_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
+    """hmc_get_pcm_preferences on HTTP 406 raises HMCError mentioning 'not licensed'."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
+
+
+def test_get_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
+    """hmc_get_pcm_preferences on HTTP 403 raises HMCError mentioning PCM authority."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
+
+
+def test_processed_metrics_406_actionable(monkeypatch, mock_hmc):
+    """hmc_processed_metrics on HTTP 406 raises HMCError mentioning 'not licensed'."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_processed_metrics_403_actionable(monkeypatch, mock_hmc):
+    """hmc_processed_metrics on HTTP 403 raises HMCError mentioning PCM authority."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_aggregated_metrics_406_actionable(monkeypatch, mock_hmc):
+    """hmc_aggregated_metrics on HTTP 406 raises HMCError mentioning 'not licensed'."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_aggregated_metrics(
+            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_aggregated_metrics_403_actionable(monkeypatch, mock_hmc):
+    """hmc_aggregated_metrics on HTTP 403 raises HMCError mentioning PCM authority."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_aggregated_metrics(
+            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
+        )
+
+
+def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
+    """hmc_set_pcm_preferences on HTTP 406 raises HMCError mentioning 'not licensed'."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001", long_term_monitor=True)
+
+
+def test_set_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
+    """hmc_set_pcm_preferences on HTTP 403 raises HMCError mentioning PCM authority."""
+    _hmc_env(monkeypatch)
+    mock_hmc.post("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001", long_term_monitor=True)
+
+
+def test_check_pcm_error_body_is_none(monkeypatch, mock_hmc):
+    """The replacement HMCError from _check_pcm_error has body=None (documented invariant).
+
+    HMCError.__init__ would append parsed body text after the actionable message,
+    degrading readability. The from-exc chain preserves the body in tracebacks.
+    """
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
+
+    assert exc_info.value.body is None
+
+
+def test_processed_metrics_links_mode_406_actionable(monkeypatch, mock_hmc):
+    """hmc_processed_metrics with mode='links' on HTTP 406 raises HMCError mentioning 'not licensed'."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
+            mode="links",
+        )
+
+
+def test_processed_metrics_links_mode_403_actionable(monkeypatch, mock_hmc):
+    """hmc_processed_metrics with mode='links' on HTTP 403 raises HMCError mentioning PCM authority."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
+        hmc_processed_metrics(
+            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
+            mode="links",
+        )
+
+
+def test_resolution_403_not_wrapped_as_pcm_error(monkeypatch, mock_hmc):
+    """A 403 from the UUID-resolution endpoint does NOT get a PCM-specific message.
+
+    When a resource *name* (not UUID) is passed, _resolve_resource_uuid issues a
+    GET to the UOM list endpoint.  A 403 on that endpoint is NOT PCM-specific —
+    the charter exclusion says it should propagate as a raw HMCError.
+    """
+    _hmc_env(monkeypatch)
+    # Stub the system name-search endpoint to return 403.
+    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==my-system-name)").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_get_pcm_preferences("ManagedSystem", "my-system-name")
+
+    # The error must NOT contain the PCM-specific actionable messages.
+    msg = str(exc_info.value)
+    assert "not licensed or not enabled" not in msg.lower()
+    assert "does not have PCM authority" not in msg
