@@ -671,16 +671,16 @@ corrective tool calls for any attribute that differs.
 
 | # | GitHub Issue | Tool(s) | Summary |
 |---|---|---|---|
-| 1 | TBD | `hmc_recent_jobs`, `hmc_get_job`, `hmc_wait_for_job` | GET /rest/api/uom/Job returns HTTP 400 "Unrecognized root REST type of Job" |
-| 2 | TBD | `hmc_users`, `hmc_list_password_policies`, `hmc_get_ldap_config`, `hmc_create_user`, all user/policy tools | GET/POST /rest/api/web/Hmc* returns HTTP 400 "Unrecognized root REST type" — web API not supported on this HMC version |
-| 3 | TBD | `hmc_create_lpar`, `hmc_create_virtual_network` | PUT/POST REST create calls return HTTP 406 "Console Internal Error" — REST write path not working |
-| 4 | TBD | `hmc_get_pcm_preferences`, `hmc_processed_metrics`, `hmc_aggregated_metrics`, `hmc_set_pcm_preferences` | PCM endpoints return HTTP 406/403 — PCM not licensed or user lacks authority |
-| 5 | TBD | `hmc_partition_templates` | HTTP 406 — template API not supported on this HMC version |
-| 6 | TBD | `hmc_set_lpar_msp` | "msp attribute only valid for VIOS" — tool should validate partition type before attempting |
-| 7 | TBD | `hmc_set_lpar_proc_compat` | chsyscfg rejects lpar_proc_compat_mode as invalid attribute — wrong chsyscfg field name |
-| 8 | TBD | `hmc_set_lpar_description` | Test string contained non-ASCII characters (em dash) — test string bug; also reveals no validation before SSH call |
-| 9 | TBD | `hmc_backup_lpar_profiles` | Fails if output file already exists — needs --force flag or unique filename handling |
-| 10 | TBD | `hmc_get_available_hmc_ptfs` | HTTP 400 "Unknown extended attribute group SoftwareUpdate" — not supported on this HMC version |
+| 1 | [#95](https://github.com/randomparity/hmc-mcp/issues/95) | `hmc_recent_jobs`, `hmc_get_job`, `hmc_wait_for_job` | GET /rest/api/uom/Job returns HTTP 400 "Unrecognized root REST type of Job" |
+| 2 | [#99](https://github.com/randomparity/hmc-mcp/issues/99) | `hmc_users`, `hmc_list_password_policies`, `hmc_get_ldap_config`, `hmc_create_user`, all user/policy tools | GET/POST /rest/api/web/Hmc* returns HTTP 400 "Unrecognized root REST type" — web API not supported on this HMC version |
+| 3 | [#96](https://github.com/randomparity/hmc-mcp/issues/96) | `hmc_create_lpar`, `hmc_create_virtual_network` | PUT/POST REST create calls return HTTP 406 "Console Internal Error" — REST write path not working |
+| 4 | [#98](https://github.com/randomparity/hmc-mcp/issues/98) | `hmc_get_pcm_preferences`, `hmc_processed_metrics`, `hmc_aggregated_metrics`, `hmc_set_pcm_preferences` | PCM endpoints return HTTP 406/403 — PCM not licensed or user lacks authority |
+| 5 | [#97](https://github.com/randomparity/hmc-mcp/issues/97) | `hmc_partition_templates` | HTTP 406 — template API not supported on this HMC version |
+| 6 | [#102](https://github.com/randomparity/hmc-mcp/issues/102) | `hmc_set_lpar_msp` | "msp attribute only valid for VIOS" — tool should validate partition type before attempting |
+| 7 | [#101](https://github.com/randomparity/hmc-mcp/issues/101) | `hmc_set_lpar_proc_compat` | chsyscfg rejects lpar_proc_compat_mode as invalid attribute — wrong chsyscfg field name |
+| 8 | [#100](https://github.com/randomparity/hmc-mcp/issues/100) | `hmc_set_lpar_description` | Test string contained non-ASCII characters (em dash) — test string bug; also reveals no validation before SSH call |
+| 9 | [#103](https://github.com/randomparity/hmc-mcp/issues/103) | `hmc_backup_lpar_profiles` | Fails if output file already exists — needs --force flag or unique filename handling |
+| 10 | [#104](https://github.com/randomparity/hmc-mcp/issues/104) | `hmc_get_available_hmc_ptfs` | HTTP 400 "Unknown extended attribute group SoftwareUpdate" — not supported on this HMC version |
 
 ---
 
