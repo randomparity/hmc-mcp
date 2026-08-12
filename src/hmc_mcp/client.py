@@ -349,7 +349,25 @@ class HMCClient(
         entries = _parse_feed(resp.text, job_path) if resp.text else []
         return entries[0] if entries else None
 
-    async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
+    async def get_job(
+        self,
+        job_uuid: str,
+        *,
+        job_href: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Fetch an HMC job by UUID.
+
+        When *job_href* is provided (the SELF link returned by ``submit_job``),
+        it is used directly so the request hits the per-operation path — e.g.
+        ``/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn/Job/{job_uuid}`` —
+        which works on all HMC versions.  Without it the legacy global path
+        ``/rest/api/uom/Job/{job_uuid}`` is used, which returns HTTP 400 on
+        some versions (see issue #95).
+        """
+        if job_href:
+            from urllib.parse import urlparse
+            path = urlparse(job_href).path
+            return await self.get_uom_path(path, "Job")
         return await self.get_uom("Job", job_uuid)
 
     async def wait_for_job(
@@ -357,18 +375,23 @@ class HMCClient(
         job_uuid: str,
         timeout_seconds: int = 300,
         poll_interval: int = 5,
+        *,
+        job_href: str | None = None,
     ) -> dict[str, Any] | None:
         """Poll an HMC job until it reaches a terminal state or timeout.
 
         Terminal states: COMPLETED, FAILED, EXCEPTION.
         Returns the last-seen job entry (terminal or not, after timeout).
+
+        When *job_href* is provided it is forwarded to ``get_job`` so polling
+        uses the per-operation SELF link instead of the global UOM path.
         """
         import asyncio
 
         _TERMINAL = {"COMPLETED", "FAILED", "EXCEPTION"}
         deadline = asyncio.get_event_loop().time() + timeout_seconds
         while True:
-            entry = await self.get_job(job_uuid)
+            entry = await self.get_job(job_uuid, job_href=job_href)
             status = (entry or {}).get("Resource", {}).get("Status", "")
             if status in _TERMINAL:
                 return entry

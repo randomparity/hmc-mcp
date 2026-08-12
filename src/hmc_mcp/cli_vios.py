@@ -66,7 +66,7 @@ def vios_power_on(
             if wait and job is not None:
                 job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
                 if job_uuid:
-                    job = await hmc.wait_for_job(job_uuid, timeout, interval)
+                    job = await hmc.wait_for_job(job_uuid, timeout, interval, job_href=job.get("link"))
             return job
     job = _run(_go)
 
@@ -94,7 +94,7 @@ def vios_power_off(
             if wait and job is not None:
                 job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
                 if job_uuid:
-                    job = await hmc.wait_for_job(job_uuid, timeout, interval)
+                    job = await hmc.wait_for_job(job_uuid, timeout, interval, job_href=job.get("link"))
             return job
     job = _run(_go)
 

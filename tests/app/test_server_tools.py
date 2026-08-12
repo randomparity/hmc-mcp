@@ -480,3 +480,109 @@ def test_wait_for_job_timeout_returns_last_entry(monkeypatch, mock_hmc):
     # timeout=0 means the deadline is already past after the first poll
     result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=0)
     assert result["Resource"]["Status"] == "RUNNING"
+
+
+# ---------------------------------------------------------------------- #
+# hmc_get_job / hmc_wait_for_job — SELF-link-based polling (issue #95)
+# ---------------------------------------------------------------------- #
+
+_JOB_OP_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
+
+
+def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
+    """hmc_get_job(uuid, job_href=...) GETs the exact href, not /uom/Job/{uuid}."""
+    _hmc_env(monkeypatch)
+    href_route = mock_hmc.get(_JOB_OP_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+    result = hmc_get_job("job-uuid-999", job_href=_JOB_OP_HREF)
+    assert href_route.called
+    assert not global_route.called
+    assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
+    """hmc_wait_for_job(uuid, ..., job_href=...) polls the exact href path."""
+    _hmc_env(monkeypatch)
+    href_route = mock_hmc.get(_JOB_OP_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_OP_HREF)
+    assert href_route.called
+    assert not global_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+def test_recent_jobs_400_returns_graceful_error(monkeypatch, mock_hmc):
+    """hmc_recent_jobs returns a diagnostic error list when the HMC returns 400."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(
+            400, text="REST000E Unrecognized root REST type of Job"
+        )
+    )
+    result = hmc_recent_jobs()
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0].get("error") is not None
+    assert result[0].get("status_code") == 400
+
+
+_JOB_SELF_LINK = f"https://hmc.test:12443{_JOB_OP_HREF}"
+
+# A job entry that includes a SELF link (as submit_job returns on some HMC builds).
+JOB_ENTRY_WITH_LINK = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <link rel="SELF" href="{_JOB_SELF_LINK}"/>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>RUNNING</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+JOB_ENTRY_COMPLETED_WITH_LINK = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <link rel="SELF" href="{_JOB_SELF_LINK}"/>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+
+def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
+    """hmc_power_on_lpar(wait=True) polls the SELF link from the submitted job entry."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
+    ).mock(return_value=httpx.Response(200, text="not activated"))
+    mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY_WITH_LINK))
+    # The SELF link path should be polled, not the global /uom/Job/ path.
+    poll_route = mock_hmc.get(_JOB_OP_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED_WITH_LINK)
+    )
+    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+    result = hmc_power_on_lpar(LPAR_UUID, wait=True, poll_interval=0)
+    assert poll_route.called
+    assert not global_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"

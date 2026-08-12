@@ -134,7 +134,9 @@ def hmc_install_vios(
             job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
             if not job_uuid:
                 return job
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+            return await hmc.wait_for_job(
+                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            )
 
     return _run(_go)
 
@@ -177,7 +179,9 @@ def hmc_install_lpar_os(
             job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
             if not job_uuid:
                 return job
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+            return await hmc.wait_for_job(
+                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            )
 
     return _run(_go)
 
