@@ -1,18 +1,18 @@
-# HMC MCP Live Testing Plan — ltczz386 System
+# HMC MCP Live Testing Plan — <system-name> System
 
 ## Environment
 
 | Component | Details |
 |---|---|
-| **HMC hostname** | ltcvhmc1b |
+| **HMC hostname** | <hmc-hostname> |
 | **HMC version** | V10R3 (10.3.1060) |
 | **HMC build level** | 2408210051 (2024-08-21) |
 | **HMC iFixes** | MF71689, MF71697, MF71699, MF71703 |
-| **HMC machine** | VMware virtual HMC (Vbf7/fe4 S/N 7344954) |
-| **Managed system** | ltczz386 (POWER9) |
-| **System UUID** | 4c3c8ee8-c2af-371e-8dfa-fe061d36afea |
-| **VIOS UUID** | 673028F0-06D3-4D3F-8B83-A7ECB5CF6F30 |
-| **Test LPAR** | ltczz386-lp3 (UUID: 231DF5E5-5212-432B-8298-152D12AA028D) |
+| **HMC machine** | VMware virtual HMC |
+| **Managed system** | <system-name> (POWER9) |
+| **System UUID** | <system-uuid> |
+| **VIOS UUID** | <vios-uuid> |
+| **Test LPAR** | <system-name>-lp3 (UUID: <lp3-uuid>) |
 | **HMC_SCHEMA_VERSION** | (not set during test run) |
 
 > **Note:** V10R3 is current HMC software (2024). The POWER9 hardware is managed by a fully modern HMC. Failures are likely API/header issues (wrong endpoint, missing Accept header, schema version) rather than firmware age. See Issue [#96](https://github.com/randomparity/hmc-mcp/issues/96) — setting `HMC_SCHEMA_VERSION=V1_0` may resolve REST create (HTTP 406) and web API (HTTP 400) failures.
@@ -21,24 +21,24 @@
 ## Overview
 
 Exercise as many of the 103 HMC MCP tools as possible against a real HMC.
-Three LPARs exist on the system: **ltczz386-lp1** and **ltczz386-lp2** are
-powered off and **must not be touched**. **ltczz386-lp3** is running and is
+Three LPARs exist on the system: **<system-name>-lp1** and **<system-name>-lp2** are
+powered off and **must not be touched**. **<system-name>-lp3** is running and is
 fully authorized for modification, deletion, and recreation.
 
-Where a mutating test requires a scratch LPAR we use ltczz386-lp3 directly or
-create a temporary partition named **ltczz386-lp3-test** that is deleted at
+Where a mutating test requires a scratch LPAR we use <system-name>-lp3 directly or
+create a temporary partition named **<system-name>-lp3-test** that is deleted at
 the end of the relevant sub-task.
 
-**ltczz386-lp3 baseline snapshot** is captured in Sub-Task 0 before any
+**<system-name>-lp3 baseline snapshot** is captured in Sub-Task 0 before any
 mutation and restored in Sub-Task 14 at the end.
 
 ### Test constraints
 
 | Constraint | Detail |
 |---|---|
-| HANDS-OFF | ltczz386-lp1, ltczz386-lp2 (powered off, must not be modified) |
-| AUTHORIZED | ltczz386-lp3 (running; modify/destroy/recreate freely) |
-| Scratch name | ltczz386-lp3-test (create and delete within tests) |
+| HANDS-OFF | <system-name>-lp1, <system-name>-lp2 (powered off, must not be modified) |
+| AUTHORIZED | <system-name>-lp3 (running; modify/destroy/recreate freely) |
+| Scratch name | <system-name>-lp3-test (create and delete within tests) |
 
 ### Results tracking
 
@@ -52,29 +52,29 @@ Issues discovered are filed in GitHub and cross-referenced from the Results tabl
 
 ---
 
-## Sub-Task 0 — Capture ltczz386-lp3 Baseline Configuration
+## Sub-Task 0 — Capture <system-name>-lp3 Baseline Configuration
 
-**Intent:** Record the complete current configuration of ltczz386-lp3 before
+**Intent:** Record the complete current configuration of <system-name>-lp3 before
 any mutating step touches it, so Sub-Task 14 can restore it faithfully.
 This sub-task is purely read-only and produces a **Baseline Record** section
 that is filled in with actual values during execution.
 
 **Expected Outcomes:**
-- All key configuration attributes of ltczz386-lp3 are documented.
+- All key configuration attributes of <system-name>-lp3 are documented.
 - The record is sufficient for a human or tool to verify that the final state
   after Sub-Task 14 matches the pre-test state.
 
 **Todo List:**
-1. `hmc_lpars` with `lpar_name_or_uuid=ltczz386-lp3` — capture UUID, state,
+1. `hmc_lpars` with `lpar_name_or_uuid=<system-name>-lp3` — capture UUID, state,
    memory (min/desired/max), vCPU (min/desired/max), proc units, dedicated flag.
-2. `hmc_lpar_summary` with `lpar_name_or_uuid=ltczz386-lp3` — capture OS info,
+2. `hmc_lpar_summary` with `lpar_name_or_uuid=<system-name>-lp3` — capture OS info,
    RMC state, adapter list.
 3. `hmc_get_lpar_description` — capture description string.
 4. `hmc_get_lpar_msp` — capture MSP flag value.
 5. `hmc_get_lpar_proc_compat` — capture current and pending proc compat mode.
 6. `hmc_list_adapters` with `adapter_type=ClientNetworkAdapter` — list all CNAs
    (slot numbers, PVID, vswitch).
-7. `hmc_run_command` with `cmd="lssyscfg -r lpar -m ltczz386 --filter lpar_names=ltczz386-lp3"` —
+7. `hmc_run_command` with `cmd="lssyscfg -r lpar -m <system-name> --filter lpar_names=<system-name>-lp3"` —
    full CLI attribute dump; paste raw output into Baseline Record.
 8. Record all values in the **Baseline Record** table below.
 
@@ -84,11 +84,11 @@ that is filled in with actual values during execution.
 
 **Status:** [x] done
 
-### Baseline Record — ltczz386-lp3
+### Baseline Record — <system-name>-lp3
 
 | Attribute | Pre-Test Value |
 |---|---|
-| UUID | 231DF5E5-5212-432B-8298-152D12AA028D |
+| UUID | <lp3-uuid> |
 | State | running |
 | Memory min/desired/max (MiB) | see lssyscfg |
 | vCPU min/desired/max | see lssyscfg |
@@ -102,21 +102,21 @@ that is filled in with actual values during execution.
 | Proc compat mode (desired) | default |
 | Proc compat mode (current) | POWER9_base |
 | Network adapters (slot → PVID) | see lpar_summary |
-| Raw lssyscfg output | see test-results.json lp3_baseline.lssyscfg |
+| Raw lssyscfg output | see local test-results.json (not committed; contains raw API data) |
 
 ```
-name=ltczz386-lp3,lpar_id=3,lpar_env=aixlinux,state=Running,
+name=<system-name>-lp3,lpar_id=3,lpar_env=aixlinux,state=Running,
 resource_config=1,os=linux,os_version=Unknown,
-logical_serial_num=13C732W3,default_profile=default_profile,
+logical_serial_num=<lpar-serial>,default_profile=default_profile,
 curr_profile=P1-C4-T2-VF,...
-(full output in test-results.json)
+(full output in local test-results.json, not committed)
 ```
 
 ### Results
 
 | Tool | Status | Notes |
 |---|---|---|
-| `hmc_lpars` (baseline) | ✅ PASS | UUID: 231DF5E5-5212-432B-8298-152D12AA028D |
+| `hmc_lpars` (baseline) | ✅ PASS | UUID: <lp3-uuid> |
 | `hmc_lpar_summary` (baseline) | ✅ PASS | State: running, OS: linux |
 | `hmc_get_lpar_description` (baseline) | ✅ PASS | Value: (empty) |
 | `hmc_get_lpar_msp` (baseline) | ✅ PASS | Value: false |
@@ -133,25 +133,25 @@ before touching anything mutable.
 
 **Expected Outcomes:**
 - HMC console info returns version/network data
-- Systems list includes the ltczz386 CPC
+- Systems list includes the <system-name> CPC
 - LPAR list shows all three partitions with correct states
 - VIOS list (if any VIOS exists) returns entries
 - Capacity and placement reports return numeric data
 
 **Todo List:**
 1. Run `hmc_console_info` — baseline connectivity check.
-2. Run `hmc_systems` (no args) — list all managed systems; note the UUID of ltczz386.
-3. Run `hmc_systems` with `system_name_or_uuid=ltczz386` — single-system lookup.
+2. Run `hmc_systems` (no args) — list all managed systems; note the UUID of <system-name>.
+3. Run `hmc_systems` with `system_name_or_uuid=<system-name>` — single-system lookup.
 4. Run `hmc_lpars` (no args) — list all LPARs; confirm lp1/lp2/lp3 visible.
-5. Run `hmc_lpars` with `lpar_name_or_uuid=ltczz386-lp3` — single-LPAR lookup.
+5. Run `hmc_lpars` with `lpar_name_or_uuid=<system-name>-lp3` — single-LPAR lookup.
 6. Run `hmc_vios` (no args) — list VIOSes.
 7. Run `hmc_capacity_report` — per-system resource summary.
 8. Run `hmc_find_placement` with `desired_memory_mb=1024` — placement candidate search.
 9. Run `hmc_find_system` with `name=<system name from step 2>` — exact name lookup.
 10. Run `hmc_list_resources` with `resource_type=LogicalPartition` — generic resource lister.
 11. Run `hmc_recent_jobs` with `limit=10` — job history.
-12. Run `hmc_system_summary` with `system_name_or_uuid=ltczz386` — composite summary.
-13. Run `hmc_lpar_summary` with `lpar_name_or_uuid=ltczz386-lp3` — per-LPAR composite summary.
+12. Run `hmc_system_summary` with `system_name_or_uuid=<system-name>` — composite summary.
+13. Run `hmc_lpar_summary` with `lpar_name_or_uuid=<system-name>-lp3` — per-LPAR composite summary.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_system.py` — inventory tools
@@ -165,11 +165,11 @@ before touching anything mutable.
 | Tool | Status | Notes |
 |---|---|---|
 | `hmc_console_info` | ✅ PASS | HMC version and network info returned |
-| `hmc_systems` (list) | ✅ PASS | System UUID: 4c3c8ee8-c2af-371e-8dfa-fe061d36afea |
+| `hmc_systems` (list) | ✅ PASS | System UUID: <system-uuid> |
 | `hmc_systems` (single) | ✅ PASS | Single system by name returned |
 | `hmc_lpars` (list) | ✅ PASS | All 3 LPARs visible |
 | `hmc_lpars` (single) | ✅ PASS | lp3 found by name |
-| `hmc_vios` | ✅ PASS | VIOS UUID: 673028F0-06D3-4D3F-8B83-A7ECB5CF6F30 PartitionID=100 |
+| `hmc_vios` | ✅ PASS | VIOS UUID: <vios-uuid> PartitionID=100 |
 | `hmc_capacity_report` | ✅ PASS | Memory/CPU report returned |
 | `hmc_find_placement` | ✅ PASS | Placement candidates returned |
 | `hmc_find_system` | ✅ PASS | System found by name |
@@ -182,19 +182,19 @@ before touching anything mutable.
 
 ## Sub-Task 2 — Network Inventory (Read-Only)
 
-**Intent:** Exercise all virtual-networking read tools against the ltczz386 system.
+**Intent:** Exercise all virtual-networking read tools against the <system-name> system.
 
 **Expected Outcomes:**
 - Virtual switches, virtual networks (VLANs), and network bridges are listed.
 - FC port and SEA adapter lists return for the system.
 
 **Todo List:**
-1. Run `hmc_list_virtual_switches` with `system_name_or_uuid=ltczz386`.
-2. Run `hmc_list_virtual_networks` with `system_name_or_uuid=ltczz386`.
-3. Run `hmc_list_network_bridges` with `system_name_or_uuid=ltczz386`.
-4. Run `hmc_list_fc_ports` with `system_name_or_uuid=ltczz386` (SSH/CLI).
-5. Run `hmc_list_sea_adapters` with `system_name_or_uuid=ltczz386` (SSH/CLI).
-6. Run `hmc_list_adapters` with `lpar_name_or_uuid=ltczz386-lp3` and `adapter_type=ClientNetworkAdapter`.
+1. Run `hmc_list_virtual_switches` with `system_name_or_uuid=<system-name>`.
+2. Run `hmc_list_virtual_networks` with `system_name_or_uuid=<system-name>`.
+3. Run `hmc_list_network_bridges` with `system_name_or_uuid=<system-name>`.
+4. Run `hmc_list_fc_ports` with `system_name_or_uuid=<system-name>` (SSH/CLI).
+5. Run `hmc_list_sea_adapters` with `system_name_or_uuid=<system-name>` (SSH/CLI).
+6. Run `hmc_list_adapters` with `lpar_name_or_uuid=<system-name>-lp3` and `adapter_type=ClientNetworkAdapter`.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_network.py`
@@ -225,12 +225,12 @@ before touching anything mutable.
 - I/O slots and memory pool lists return.
 
 **Todo List:**
-1. Run `hmc_vios` to obtain VIOS UUID(s) on ltczz386.
+1. Run `hmc_vios` to obtain VIOS UUID(s) on <system-name>.
 2. If a VIOS exists: run `hmc_list_volume_groups` with `vios_name_or_uuid=<uuid>`.
 3. Run `hmc_list_clusters` (global).
 4. Run `hmc_shared_storage_pools` (no args).
-5. Run `hmc_list_io_slots` with `system_name_or_uuid=ltczz386`.
-6. Run `hmc_list_memory_pools` with `system_name_or_uuid=ltczz386`.
+5. Run `hmc_list_io_slots` with `system_name_or_uuid=<system-name>`.
+6. Run `hmc_list_memory_pools` with `system_name_or_uuid=<system-name>`.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_storage.py`
@@ -255,15 +255,15 @@ before touching anything mutable.
 **Intent:** Exercise the SSH/CLI read tools that inspect individual LPAR configuration.
 
 **Expected Outcomes:**
-- Description, MSP flag, processor compat mode return for ltczz386-lp3.
+- Description, MSP flag, processor compat mode return for <system-name>-lp3.
 - Profile backup list, proc compat modes for system, vNIC list all return.
 
 **Todo List:**
-1. Run `hmc_get_lpar_description` with `system_name_or_uuid=ltczz386`, `lpar_name_or_uuid=ltczz386-lp3`.
-2. Run `hmc_get_lpar_msp` with `system_name_or_uuid=ltczz386`, `lpar_name_or_uuid=ltczz386-lp3`.
-3. Run `hmc_get_proc_compat_modes` with `system_name_or_uuid=ltczz386`.
-4. Run `hmc_get_lpar_proc_compat` with `system_name_or_uuid=ltczz386`, `lpar_name_or_uuid=ltczz386-lp3`.
-5. Run `hmc_list_vnics` with `system_name_or_uuid=ltczz386`, `lpar_name_or_uuid=ltczz386-lp3`.
+1. Run `hmc_get_lpar_description` with `system_name_or_uuid=<system-name>`, `lpar_name_or_uuid=<system-name>-lp3`.
+2. Run `hmc_get_lpar_msp` with `system_name_or_uuid=<system-name>`, `lpar_name_or_uuid=<system-name>-lp3`.
+3. Run `hmc_get_proc_compat_modes` with `system_name_or_uuid=<system-name>`.
+4. Run `hmc_get_lpar_proc_compat` with `system_name_or_uuid=<system-name>`, `lpar_name_or_uuid=<system-name>-lp3`.
+5. Run `hmc_list_vnics` with `system_name_or_uuid=<system-name>`, `lpar_name_or_uuid=<system-name>-lp3`.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_cli.py`
@@ -292,8 +292,8 @@ before touching anything mutable.
 - Partition template list returns (empty is acceptable).
 
 **Todo List:**
-1. Run `hmc_get_pcm_preferences` with `category=ManagedSystem` and `resource_name_or_uuid=ltczz386`.
-2. Run `hmc_processed_metrics` with `category=ManagedSystem`, `resource_name_or_uuid=ltczz386`, `mode=list`.
+1. Run `hmc_get_pcm_preferences` with `category=ManagedSystem` and `resource_name_or_uuid=<system-name>`.
+2. Run `hmc_processed_metrics` with `category=ManagedSystem`, `resource_name_or_uuid=<system-name>`, `mode=list`.
 3. Run `hmc_aggregated_metrics` with same args and `mode=list`.
 4. Run `hmc_partition_templates` (no args).
 
@@ -368,37 +368,37 @@ before touching anything mutable.
 
 ---
 
-## Sub-Task 8 — LPAR Lifecycle on ltczz386-lp3 (Mutating)
+## Sub-Task 8 — LPAR Lifecycle on <system-name>-lp3 (Mutating)
 
 **Intent:** Create, inspect, modify, power off, and delete a scratch LPAR to
-exercise the full partition lifecycle. ltczz386-lp3 is the authorized scratch
+exercise the full partition lifecycle. <system-name>-lp3 is the authorized scratch
 LPAR; we will power it off and back on as needed, then restore it afterward.
-We also create a second scratch LPAR named **ltczz386-lp3-test** and delete it
+We also create a second scratch LPAR named **<system-name>-lp3-test** and delete it
 at the end.
 
 **Expected Outcomes:**
-- `hmc_create_lpar` creates ltczz386-lp3-test successfully.
-- `hmc_modify_lpar` updates memory on ltczz386-lp3-test.
-- `hmc_power_on_lpar` powers on ltczz386-lp3-test (may fail if no network/boot
+- `hmc_create_lpar` creates <system-name>-lp3-test successfully.
+- `hmc_modify_lpar` updates memory on <system-name>-lp3-test.
+- `hmc_power_on_lpar` powers on <system-name>-lp3-test (may fail if no network/boot
   device; job submission success is the observable result).
-- `hmc_power_off_lpar` powers off ltczz386-lp3-test.
-- `hmc_delete_lpar` removes ltczz386-lp3-test.
+- `hmc_power_off_lpar` powers off <system-name>-lp3-test.
+- `hmc_delete_lpar` removes <system-name>-lp3-test.
 
 **Todo List:**
-1. Get the system UUID: `hmc_systems` with `system_name_or_uuid=ltczz386`.
-2. Create scratch: `hmc_create_lpar` with `system_name_or_uuid=ltczz386`,
-   `name=ltczz386-lp3-test`, `desired_memory=512`, `max_memory=1024`,
+1. Get the system UUID: `hmc_systems` with `system_name_or_uuid=<system-name>`.
+2. Create scratch: `hmc_create_lpar` with `system_name_or_uuid=<system-name>`,
+   `name=<system-name>-lp3-test`, `desired_memory=512`, `max_memory=1024`,
    `desired_vcpus=1`, `max_vcpus=2`.
-3. List: `hmc_lpars` — confirm ltczz386-lp3-test visible.
-4. Modify: `hmc_modify_lpar` with `lpar_name_or_uuid=ltczz386-lp3-test`,
+3. List: `hmc_lpars` — confirm <system-name>-lp3-test visible.
+4. Modify: `hmc_modify_lpar` with `lpar_name_or_uuid=<system-name>-lp3-test`,
    `desired_memory=768`, `max_memory=1536`.
-5. Summary: `hmc_lpar_summary` with `lpar_name_or_uuid=ltczz386-lp3-test`.
-6. Power on: `hmc_power_on_lpar` with `lpar_name_or_uuid=ltczz386-lp3-test`,
+5. Summary: `hmc_lpar_summary` with `lpar_name_or_uuid=<system-name>-lp3-test`.
+6. Power on: `hmc_power_on_lpar` with `lpar_name_or_uuid=<system-name>-lp3-test`,
    `wait=True`. (Note outcome; failure to boot is expected without install.)
-7. Power off: `hmc_power_off_lpar` with `lpar_name_or_uuid=ltczz386-lp3-test`,
+7. Power off: `hmc_power_off_lpar` with `lpar_name_or_uuid=<system-name>-lp3-test`,
    `immediate=True`, `wait=True`.
-8. Delete: `hmc_delete_lpar` with `lpar_name_or_uuid=ltczz386-lp3-test`.
-9. Confirm gone: `hmc_lpars` — ltczz386-lp3-test should not appear.
+8. Delete: `hmc_delete_lpar` with `lpar_name_or_uuid=<system-name>-lp3-test`.
+9. Confirm gone: `hmc_lpars` — <system-name>-lp3-test should not appear.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_power.py`
@@ -425,7 +425,7 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 
 **Expected Outcomes:**
 - A new virtual network is created with a test VLAN ID.
-- A network adapter is added to ltczz386-lp3-test (within sub-task 8 lifecycle
+- A network adapter is added to <system-name>-lp3-test (within sub-task 8 lifecycle
   or as part of this task using a short-lived test LPAR).
 - Virtual network is deleted.
 
@@ -434,8 +434,8 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 2. Identify a virtual switch ID from `hmc_list_virtual_switches`.
 3. Run `hmc_create_virtual_network` with the unused VLAN ID and vswitch ID.
 4. Confirm: `hmc_list_virtual_networks` — new entry visible.
-5. Create a short-lived LPAR (ltczz386-lp3-nettest) for adapter tests.
-6. Run `hmc_add_network_adapter` with `lpar_name_or_uuid=ltczz386-lp3-nettest`,
+5. Create a short-lived LPAR (<system-name>-lp3-nettest) for adapter tests.
+6. Run `hmc_add_network_adapter` with `lpar_name_or_uuid=<system-name>-lp3-nettest`,
    the test VLAN ID, and vswitch ID.
 7. Confirm: `hmc_list_adapters` with `adapter_type=ClientNetworkAdapter`.
 8. Note adapter UUID from step 7.
@@ -463,7 +463,7 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 
 ## Sub-Task 10 — LPAR Properties Mutations (Mutating, SSH/CLI)
 
-**Intent:** Exercise the SSH/CLI mutating LPAR-property tools on ltczz386-lp3
+**Intent:** Exercise the SSH/CLI mutating LPAR-property tools on <system-name>-lp3
 (or a scratch LPAR), confirming changes are applied and can be read back.
 
 **Expected Outcomes:**
@@ -474,19 +474,19 @@ mutable networking tools without touching existing adapters on lp1/lp2.
 - Profile backup produces a file on the HMC.
 
 **Todo List:**
-1. Record current description: `hmc_get_lpar_description` for ltczz386-lp3.
+1. Record current description: `hmc_get_lpar_description` for <system-name>-lp3.
 2. Set description: `hmc_set_lpar_description` with a test string.
 3. Read back: `hmc_get_lpar_description` — confirm change.
 4. Restore original: `hmc_set_lpar_description` back to original value.
-5. Record current MSP: `hmc_get_lpar_msp` for ltczz386-lp3.
+5. Record current MSP: `hmc_get_lpar_msp` for <system-name>-lp3.
 6. Toggle MSP on: `hmc_set_lpar_msp` with `enabled=True` (or inverse of current).
 7. Read back: `hmc_get_lpar_msp`.
 8. Restore: `hmc_set_lpar_msp` back to original.
 9. Get compat modes: `hmc_get_proc_compat_modes`.
-10. Get current compat: `hmc_get_lpar_proc_compat` for ltczz386-lp3.
+10. Get current compat: `hmc_get_lpar_proc_compat` for <system-name>-lp3.
 11. Set compat mode: `hmc_set_lpar_proc_compat` — use the system's default mode.
-12. Sync profile: `hmc_sync_lpar_profile` with `system_name_or_uuid=ltczz386`, `lpar_name_or_uuid=ltczz386-lp3`.
-13. Backup profiles: `hmc_backup_lpar_profiles` with `system_name_or_uuid=ltczz386`, `file_path=/tmp/lp3-profiles-test`.
+12. Sync profile: `hmc_sync_lpar_profile` with `system_name_or_uuid=<system-name>`, `lpar_name_or_uuid=<system-name>-lp3`.
+13. Backup profiles: `hmc_backup_lpar_profiles` with `system_name_or_uuid=<system-name>`, `file_path=/tmp/lp3-profiles-test`.
 
 **Relevant Context:**
 - `src/hmc_mcp/server_cli.py`
@@ -561,7 +561,7 @@ tooling by submitting a job and polling it to completion.
 - `hmc_get_job` and `hmc_wait_for_job` operate against a real job UUID.
 
 **Todo List:**
-1. Read current PCM prefs: `hmc_get_pcm_preferences` with `category=ManagedSystem`, `resource_name_or_uuid=ltczz386`.
+1. Read current PCM prefs: `hmc_get_pcm_preferences` with `category=ManagedSystem`, `resource_name_or_uuid=<system-name>`.
 2. Toggle long-term monitoring: `hmc_set_pcm_preferences` with `long_term_monitor=True` (or inverse).
 3. Read back: confirm change.
 4. Restore original setting.
@@ -600,8 +600,8 @@ check HMC PTF/update status without applying any firmware changes.
 1. Retrieve console UUID from `hmc_console_info` output.
 2. Run `hmc_get_available_hmc_ptfs` with `console_uuid=<uuid>`.
 3. Identify a VIOS UUID (from sub-task 3) for the dry-run provision call.
-4. Run `hmc_provision_lpar` with `dry_run=True`, `system_name_or_uuid=ltczz386`,
-   `name=ltczz386-lp3-dry`, `port_vlan_id=<test vlan>`, `vios_uuid=<uuid>`,
+4. Run `hmc_provision_lpar` with `dry_run=True`, `system_name_or_uuid=<system-name>`,
+   `name=<system-name>-lp3-dry`, `port_vlan_id=<test vlan>`, `vios_uuid=<uuid>`,
    `vios_partition_id=<id>`, `vios_slot=<slot>`, `storage_name=test-dry-disk`,
    `desired_memory=512`.
 
@@ -620,10 +620,10 @@ check HMC PTF/update status without applying any firmware changes.
 
 ---
 
-## Sub-Task 14 — Restore ltczz386-lp3 to Baseline
+## Sub-Task 14 — Restore <system-name>-lp3 to Baseline
 
 **Intent:** After all mutating sub-tasks have run, compare the current state of
-ltczz386-lp3 against the Baseline Record captured in Sub-Task 0 and issue
+<system-name>-lp3 against the Baseline Record captured in Sub-Task 0 and issue
 corrective tool calls for any attribute that differs.
 
 **Expected Outcomes:**
@@ -634,7 +634,7 @@ corrective tool calls for any attribute that differs.
 - A final `hmc_lpar_summary` confirms the restored state.
 
 **Todo List:**
-1. Run `hmc_lpar_summary` with `lpar_name_or_uuid=ltczz386-lp3` — compare
+1. Run `hmc_lpar_summary` with `lpar_name_or_uuid=<system-name>-lp3` — compare
    against Baseline Record.
 2. If memory differs: `hmc_modify_lpar` to restore min/desired/max values
    from baseline.
@@ -647,7 +647,7 @@ corrective tool calls for any attribute that differs.
 7. Run `hmc_list_adapters` — confirm no unexpected extra adapters.
 8. Run `hmc_sync_lpar_profile` to sync the running config back to the
    partition profile.
-9. Run `hmc_run_command` with `cmd="lssyscfg -r lpar -m ltczz386 --filter lpar_names=ltczz386-lp3"` —
+9. Run `hmc_run_command` with `cmd="lssyscfg -r lpar -m <system-name> --filter lpar_names=<system-name>-lp3"` —
    final CLI dump; compare with baseline raw output in Sub-Task 0.
 10. Final `hmc_lpar_summary` — record in Restored State table below.
 
@@ -726,7 +726,7 @@ corrective tool calls for any attribute that differs.
 
 ## Final Status
 
-- [x] Sub-Task 0 — Capture ltczz386-lp3 Baseline Configuration
+- [x] Sub-Task 0 — Capture <system-name>-lp3 Baseline Configuration
 - [x] Sub-Task 1 — Connectivity & Inventory
 - [x] Sub-Task 2 — Network Inventory
 - [x] Sub-Task 3 — Storage & SSP Inventory
@@ -740,4 +740,4 @@ corrective tool calls for any attribute that differs.
 - [x] Sub-Task 11 — User Administration
 - [x] Sub-Task 12 — PCM Metrics & Job Monitoring
 - [x] Sub-Task 13 — Provision Dry Run & Updates Check
-- [x] Sub-Task 14 — Restore ltczz386-lp3 to Baseline
+- [x] Sub-Task 14 — Restore <system-name>-lp3 to Baseline
