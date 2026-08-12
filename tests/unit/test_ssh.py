@@ -215,11 +215,13 @@ def test_validate_credentials_key_auth_skips_password():
     HMCConfig(host="h", user="u").validate_credentials(require_password=False)
 
 
-def test_validate_credentials_password_still_required_by_default():
+def test_validate_credentials_password_still_required_by_default(monkeypatch):
     """validate_credentials() raises when password is absent.
 
     Uses _env_file=None so the local .env file (if present) does not supply
-    a password and mask the missing-password condition under test.
+    a password, and monkeypatches HMC_PASSWORD out of the process environment
+    so a locally-exported credential cannot mask the missing-password condition.
     """
+    monkeypatch.delenv("HMC_PASSWORD", raising=False)
     with pytest.raises(ValueError, match="password"):
         HMCConfig(host="h", user="u", _env_file=None).validate_credentials()
