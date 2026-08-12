@@ -27,8 +27,16 @@ def _check_pcm_error(exc: HMCError) -> None:
 
     The replacement HMCError intentionally does not forward ``body=exc.body``:
     the constructor would append the parsed HMC body text after the actionable
-    message, degrading readability.  The ``from exc`` chain preserves the body
-    in the traceback for developer diagnostics.
+    message, degrading readability.  ``from exc`` sets ``__cause__`` (rendered
+    as "direct cause" in tracebacks) and, combined with the implicit
+    ``__context__`` set by the ``except`` block, makes the original exception
+    accessible in developer diagnostics.
+
+    Note: the CLI ``metrics`` commands call ``PcmMixin`` methods directly and
+    do not share this wrapper; they surface raw HTTP errors for 403/406.
+    Narrowing that gap would require either pushing the translation into
+    ``PcmMixin`` itself (client-layer change) or adding wrapping to
+    ``cli_metrics.py`` — both are out of scope for issue #98.
     """
     if exc.status_code == 406:
         raise HMCError(
