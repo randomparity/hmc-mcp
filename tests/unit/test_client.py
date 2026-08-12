@@ -712,3 +712,50 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     assert not global_route.called
     assert result is not None
     assert result["Resource"]["Status"] == "COMPLETED"
+
+
+# web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR
+_JOB_WEB_HREF = "/rest/api/uom/jobs/1778083847656"
+
+JOB_RESPONSE_COMPLETED_OK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>JobResponse</title>
+  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
+    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
+      <JobID>1778083847656</JobID>
+      <Status>COMPLETED_OK</Status>
+    </JobResponse>
+  </content>
+</entry>
+"""
+
+
+@pytest.mark.asyncio
+async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
+    """get_job(uuid, job_href=...) sends Accept: web+xml, not uom+xml."""
+    # The route matches any GET on that path; we verify the Accept header sent
+    route = mock_hmc.get(_JOB_WEB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.get_job("job-uuid-999", job_href=_JOB_WEB_HREF)
+    assert route.called
+    sent_accept = route.calls.last.request.headers.get("accept", "")
+    assert "powervm.web+xml" in sent_accept, f"Expected web+xml Accept, got: {sent_accept}"
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_recognises_completed_ok(mock_hmc):
+    """wait_for_job treats COMPLETED_OK as a terminal state (web+xml JobResponse)."""
+    mock_hmc.get(_JOB_WEB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.wait_for_job(
+            "1778083847656", timeout_seconds=5, poll_interval=0, job_href=_JOB_WEB_HREF
+        )
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
