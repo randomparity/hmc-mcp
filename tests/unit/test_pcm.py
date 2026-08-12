@@ -311,7 +311,7 @@ def test_processed_metrics_doc_fetch_406_actionable(monkeypatch, mock_hmc):
         "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
     ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
         )
@@ -438,7 +438,7 @@ def test_get_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
 
 
@@ -460,7 +460,7 @@ def test_processed_metrics_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z"
         )
@@ -486,7 +486,7 @@ def test_aggregated_metrics_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_aggregated_metrics(
             "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
         )
@@ -512,7 +512,7 @@ def test_set_pcm_preferences_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001", long_term_monitor=True)
 
 
@@ -551,7 +551,7 @@ def test_processed_metrics_links_mode_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
-    with pytest.raises(HMCError, match="(?i)not licensed|not enabled"):
+    with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_processed_metrics(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
             mode="links",
