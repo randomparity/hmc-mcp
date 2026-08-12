@@ -1,5 +1,23 @@
 # HMC MCP Live Testing Plan — ltczz386 System
 
+## Environment
+
+| Component | Details |
+|---|---|
+| **HMC hostname** | ltcvhmc1b |
+| **HMC version** | V10R3 (10.3.1060) |
+| **HMC build level** | 2408210051 (2024-08-21) |
+| **HMC iFixes** | MF71689, MF71697, MF71699, MF71703 |
+| **HMC machine** | VMware virtual HMC (Vbf7/fe4 S/N 7344954) |
+| **Managed system** | ltczz386 (POWER9) |
+| **System UUID** | 4c3c8ee8-c2af-371e-8dfa-fe061d36afea |
+| **VIOS UUID** | 673028F0-06D3-4D3F-8B83-A7ECB5CF6F30 |
+| **Test LPAR** | ltczz386-lp3 (UUID: 231DF5E5-5212-432B-8298-152D12AA028D) |
+| **HMC_SCHEMA_VERSION** | (not set during test run) |
+
+> **Note:** V10R3 is current HMC software (2024). The POWER9 hardware is managed by a fully modern HMC. Failures are likely API/header issues (wrong endpoint, missing Accept header, schema version) rather than firmware age. See Issue [#96](https://github.com/randomparity/hmc-mcp/issues/96) — setting `HMC_SCHEMA_VERSION=V1_0` may resolve REST create (HTTP 406) and web API (HTTP 400) failures.
+
+
 ## Overview
 
 Exercise as many of the 103 HMC MCP tools as possible against a real HMC.
