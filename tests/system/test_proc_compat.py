@@ -85,10 +85,10 @@ def test_get_lpar_proc_compat_runs_correct_command(monkeypatch, mock_hmc):
 
     expected_cmd = (
         f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} "
-        "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
-    assert result == {"pend": "POWER9", "curr": "POWER8"}
+    assert result == {"desired": "POWER9", "curr": "POWER8"}
 
 
 def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
@@ -100,7 +100,7 @@ def test_get_lpar_proc_compat_handles_empty_output(monkeypatch, mock_hmc):
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_get_lpar_proc_compat(SYSTEM_UUID, LPAR_UUID)
 
-    assert result == {"pend": "", "curr": ""}
+    assert result == {"desired": "", "curr": ""}
 
 
 # ---------------------------------------------------------------------- #

@@ -557,7 +557,7 @@ def lpars_get_proc_compat(
         lambda: get_lpar_proc_compat(_ssh_config(), system_name, lpar_name)
     )
 
-    pend = info["pend"]
+    desired = info["desired"]
     curr = info["curr"]
 
     if as_json:
@@ -566,7 +566,7 @@ def lpars_get_proc_compat(
         table = Table(title=f"Processor Compatibility Mode: {lpar_name}")
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
-        table.add_row("Pending Mode", pend or "-")
+        table.add_row("Desired Mode", desired or "-")
         table.add_row("Current Mode", curr or "-")
         console.print(table)
 
