@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import warnings
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -349,7 +350,33 @@ class HMCClient(
         entries = _parse_feed(resp.text, job_path) if resp.text else []
         return entries[0] if entries else None
 
-    async def get_job(self, job_uuid: str) -> dict[str, Any] | None:
+    async def get_job(
+        self,
+        job_uuid: str,
+        *,
+        job_href: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Fetch an HMC job by UUID.
+
+        When *job_href* is provided (the SELF link returned by ``submit_job``),
+        it is used directly so the request hits the per-operation path.
+
+        HMC versions that do not expose ``Job`` as a root UOM resource type
+        return HTTP 400 on ``GET /rest/api/uom/Job/{uuid}``.  Those versions
+        use the ``web+xml`` content type for job responses (the SELF link in
+        the submission response points to ``/rest/api/uom/jobs/{id}`` and
+        requires ``Accept: application/vnd.ibm.powervm.web+xml``).  When a
+        ``job_href`` is supplied the request is sent with the ``web+xml``
+        Accept header so it works on both endpoint shapes (see issue #95).
+        Without ``job_href`` the legacy uom path is used for backward compat.
+        """
+        if job_href:
+            path = urlparse(job_href).path
+            xml = await self._web_get(path)
+            if not xml:
+                return None
+            entries = _parse_feed(xml, path)
+            return entries[0] if entries else None
         return await self.get_uom("Job", job_uuid)
 
     async def wait_for_job(
@@ -357,18 +384,26 @@ class HMCClient(
         job_uuid: str,
         timeout_seconds: int = 300,
         poll_interval: int = 5,
+        *,
+        job_href: str | None = None,
     ) -> dict[str, Any] | None:
         """Poll an HMC job until it reaches a terminal state or timeout.
 
-        Terminal states: COMPLETED, FAILED, EXCEPTION.
+        Terminal states: COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR,
+        FAILED, EXCEPTION (covers both UOM Job and web+xml JobResponse shapes).
         Returns the last-seen job entry (terminal or not, after timeout).
+
+        When *job_href* is provided it is forwarded to ``get_job`` so polling
+        uses the per-operation SELF link instead of the global UOM path.
         """
         import asyncio
 
-        _TERMINAL = {"COMPLETED", "FAILED", "EXCEPTION"}
+        # UOM Job shape:     COMPLETED, FAILED, EXCEPTION
+        # web+xml JobResponse shape: COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED
+        _TERMINAL = {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"}
         deadline = asyncio.get_event_loop().time() + timeout_seconds
         while True:
-            entry = await self.get_job(job_uuid)
+            entry = await self.get_job(job_uuid, job_href=job_href)
             status = (entry or {}).get("Resource", {}).get("Status", "")
             if status in _TERMINAL:
                 return entry

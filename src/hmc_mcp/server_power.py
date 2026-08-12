@@ -325,6 +325,11 @@ def hmc_delete_lpar(lpar_name_or_uuid: str) -> str:
 
 
 
+def _extract_job_id(job: dict[str, Any]) -> str | None:
+    """Extract the job UUID from a submitted job dict."""
+    return job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+
+
 async def _power_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
     """Submit a power job; optionally wait for it to reach a terminal state.
 
@@ -337,10 +342,12 @@ async def _power_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: 
         job = await submit_fn(hmc)
         if not wait or job is None:
             return job
-        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+        job_uuid = _extract_job_id(job)
         if not job_uuid:
             return job
-        return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+        return await hmc.wait_for_job(
+            job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+        )
 
 
 @mcp.tool
@@ -386,8 +393,8 @@ def hmc_power_on_lpar(
             )
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 
@@ -417,8 +424,8 @@ def hmc_power_off_lpar(
             )
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 
@@ -442,8 +449,8 @@ def hmc_power_on_system(
             job = await hmc.power_on_system(system_uuid)
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 
@@ -467,8 +474,8 @@ def hmc_power_off_system(
             job = await hmc.power_off_system(system_uuid, immediate)
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 
@@ -492,8 +499,8 @@ def hmc_power_on_vios(
             job = await hmc.power_on_vios(vios_uuid)
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 
@@ -517,8 +524,8 @@ def hmc_power_off_vios(
             job = await hmc.power_off_vios(vios_uuid, immediate)
             if not wait or job is None:
                 return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval) if job_uuid else job
+            job_uuid = _extract_job_id(job)
+            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
 
     return _run(_go)
 

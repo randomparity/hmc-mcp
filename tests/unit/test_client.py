@@ -645,3 +645,117 @@ async def test_uom_headers_omits_schema_version_when_not_configured(mock_hmc):
         await hmc.list_logical_partitions()
     sent_headers = route.calls.last.request.headers
     assert "x-hmc-schema-version" not in sent_headers
+
+# ---------------------------------------------------------------------- #
+# get_job / wait_for_job — SELF-link-based polling (issue #95)
+# ---------------------------------------------------------------------- #
+
+JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job:PowerOn</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED</Status>
+    </Job>
+  </content>
+</entry>
+"""
+
+_JOB_HREF = "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999"
+
+
+@pytest.mark.asyncio
+async def test_get_job_uses_href_when_provided(mock_hmc):
+    """get_job(uuid, job_href=...) GETs the exact href, not /rest/api/uom/Job/{uuid}."""
+    href_route = mock_hmc.get(_JOB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.get_job("job-uuid-999", job_href=_JOB_HREF)
+    assert href_route.called
+    assert not global_route.called
+    assert result is not None
+    assert result["Resource"]["Status"] == "RUNNING"
+
+
+@pytest.mark.asyncio
+async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
+    """get_job(uuid) without job_href uses the legacy /rest/api/uom/Job/{uuid} path."""
+    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.get_job("job-uuid-999")
+    assert route.called
+    assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_uses_href_when_provided(mock_hmc):
+    """wait_for_job passes job_href to get_job so polling uses the SELF link."""
+    href_route = mock_hmc.get(_JOB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.wait_for_job(
+            "job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_HREF
+        )
+    assert href_route.called
+    assert not global_route.called
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+# web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR
+_JOB_WEB_HREF = "/rest/api/uom/jobs/1778083847656"
+
+JOB_RESPONSE_COMPLETED_OK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>JobResponse</title>
+  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
+    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
+      <JobID>1778083847656</JobID>
+      <Status>COMPLETED_OK</Status>
+    </JobResponse>
+  </content>
+</entry>
+"""
+
+
+@pytest.mark.asyncio
+async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
+    """get_job(uuid, job_href=...) sends Accept: web+xml, not uom+xml."""
+    # The route matches any GET on that path; we verify the Accept header sent
+    route = mock_hmc.get(_JOB_WEB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.get_job("job-uuid-999", job_href=_JOB_WEB_HREF)
+    assert route.called
+    sent_accept = route.calls.last.request.headers.get("accept", "")
+    assert "powervm.web+xml" in sent_accept, f"Expected web+xml Accept, got: {sent_accept}"
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED_OK"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_recognises_completed_ok(mock_hmc):
+    """wait_for_job treats COMPLETED_OK as a terminal state (web+xml JobResponse)."""
+    mock_hmc.get(_JOB_WEB_HREF).mock(
+        return_value=httpx.Response(200, text=JOB_RESPONSE_COMPLETED_OK)
+    )
+    async with HMCClient(make_config()) as hmc:
+        result = await hmc.wait_for_job(
+            "1778083847656", timeout_seconds=5, poll_interval=0, job_href=_JOB_WEB_HREF
+        )
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED_OK"

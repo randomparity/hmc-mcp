@@ -191,10 +191,19 @@ def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_job(job_uuid: str) -> dict[str, Any] | None:
-    """Get the status/result of an HMC job by UUID."""
+def hmc_get_job(
+    job_uuid: str,
+    job_href: str | None = None,
+) -> dict[str, Any] | None:
+    """Get the status/result of an HMC job by UUID.
 
-    return with_client(lambda hmc: hmc.get_job(job_uuid))
+    *job_href* is the SELF link returned by the job-submission tool (e.g.
+    hmc_power_on_lpar).  When supplied, it is used directly for the GET so
+    the call works on HMC versions that do not expose Job as a root UOM
+    resource type (returns HTTP 400 on those versions without this hint).
+    """
+
+    return with_client(lambda hmc: hmc.get_job(job_uuid, job_href=job_href))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -204,8 +213,33 @@ def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
     Returns a list of parsed job dicts with at minimum JobID and Status.
     Useful for auditing recent HMC activity — power operations, firmware
     updates, migrations, etc.
+
+    On HMC versions that do not expose Job as a root UOM resource type
+    (HTTP 400), returns a single-element list containing an error sentinel
+    dict (identified by ``"type": "error"``) rather than raising an
+    exception.  Normal job dicts never carry a ``"type"`` key at the top
+    level, so callers can reliably distinguish the two cases.
     """
-    jobs = with_client(lambda hmc: hmc.list_uom("Job"))
+    from .errors import HMCError
+
+    try:
+        jobs = with_client(lambda hmc: hmc.list_uom("Job"))
+    except HMCError as exc:
+        if exc.status_code == 400:
+            return [
+                {
+                    "type": "error",
+                    "error": (
+                        "This HMC version does not support the global Job "
+                        "listing endpoint (GET /rest/api/uom/Job). "
+                        "Use hmc_get_job(job_uuid, job_href=<link from "
+                        "submission>) to query individual jobs."
+                    ),
+                    "status_code": 400,
+                    "detail": str(exc),
+                }
+            ]
+        raise
     return jobs[:limit]
 
 
@@ -306,13 +340,20 @@ def hmc_wait_for_job(
     job_uuid: str,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    job_href: str | None = None,
 ) -> dict[str, Any] | None:
     """Poll an HMC job until it reaches a terminal state (COMPLETED / FAILED / EXCEPTION).
 
     Returns the final job entry. If *timeout_seconds* elapses before a
     terminal state is reached, returns the last-seen entry regardless of
     status — check the Status field to distinguish timeout from completion.
+
+    *job_href* is the SELF link returned by the job-submission tool.
+    When supplied, polling uses that path directly so the call works on
+    HMC versions that return HTTP 400 for the global Job endpoint.
     """
     return with_client(
-        lambda hmc: hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval)
+        lambda hmc: hmc.wait_for_job(
+            job_uuid, timeout_seconds, poll_interval, job_href=job_href
+        )
     )
