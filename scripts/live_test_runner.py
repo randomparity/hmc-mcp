@@ -31,11 +31,15 @@ from hmc_mcp.server import mcp
 RESULTS: list[dict] = []
 
 # Carry runtime context between sub-tasks
+# Throwaway password for the ephemeral test user created and deleted in ST11.
+# Not a real credential — the account is deleted at the end of the test run.
+_TEST_USER_PASSWORD = "Mcp1T3stUs3r!"  # pragma: allowlist secret
+
 CTX: dict[str, Any] = {
-    "system_name": "ltczz386",
-    "lp3_name": "ltczz386-lp3",
-    "scratch_name": "ltczz386-lp3-test",
-    "nettest_name": "ltczz386-lp3-nettest",
+    "system_name": "<system-name>",         # override via env or edit before running
+    "lp3_name": "<system-name>-lp3",
+    "scratch_name": "<system-name>-lp3-test",
+    "nettest_name": "<system-name>-lp3-nettest",
     "test_user": "hmc-mcp-testuser",
     "test_policy": "hmc-mcp-test-policy",
     # populated at runtime:
@@ -661,7 +665,7 @@ async def subtask_11(client: Client) -> None:
     st, data = await call(client, "hmc_create_user",
                           name=CTX["test_user"],
                           taskrole="viewer",
-                          password="Mcp1T3stUs3r!",
+                          password=_TEST_USER_PASSWORD,
                           description="MCP live test user")
     record(11, "hmc_create_user", st, data)
 
@@ -815,12 +819,8 @@ async def subtask_14(client: Client) -> None:
         b_min_mem = res.get("MinimumMemory")
         b_des_mem = res.get("DesiredMemory")
         b_max_mem = res.get("MaximumMemory")
-        b_min_cpu = res.get("MinimumProcessingUnits")
-        b_des_cpu = res.get("DesiredProcessingUnits")
-        b_max_cpu = res.get("MaximumProcessingUnits")
     else:
         b_min_mem = b_des_mem = b_max_mem = None
-        b_min_cpu = b_des_cpu = b_max_cpu = None
 
     # Restore memory/CPU if we have baseline values
     modify_kwargs: dict = {}
