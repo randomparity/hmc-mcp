@@ -1,3 +1,6 @@
+# Live integration test results (contains raw API data with internal hostnames/IPs/serials)
+test-results.json
+
 # Python-generated files
 __pycache__/
 *.py[oc]

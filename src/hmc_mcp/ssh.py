@@ -84,7 +84,13 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         # ProcessError (non-zero exit) and connection/auth errors both derive
         # from asyncssh.Error; surface them as HMCCLIError so no caller needs
         # to import the SSH library just to name the exception type.
-        detail = getattr(exc, "stderr", None) or str(exc)
+        # HMC CLI commands write error messages to stdout (not stderr) on
+        # non-zero exit; prefer stderr, fall back to stdout, then str(exc).
+        detail = (
+            getattr(exc, "stderr", None)
+            or getattr(exc, "stdout", None)
+            or str(exc)
+        )
         raise HMCCLIError(f"SSH command failed: {detail.strip()}") from exc
 
 
@@ -481,24 +487,27 @@ async def get_lpar_proc_compat(
     system_name: str,
     lpar_name: str,
 ) -> dict[str, str]:
-    """Get the current and pending processor compatibility modes of an LPAR.
+    """Get the current and desired processor compatibility modes of an LPAR.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
-    -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` and returns a
-    dict with keys ``"pend"`` and ``"curr"``.
+    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` and returns a
+    dict with keys ``"desired"`` and ``"curr"``.
+
+    Note: ``pend_lpar_proc_compat_mode`` is not a valid HMC CLI attribute;
+    ``desired_lpar_proc_compat_mode`` is the correct field name.
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
         f"--filter lpar_names={shlex.quote(lpar_name)} "
-        "-F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
+        "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
     )
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
-        return {"pend": "", "curr": ""}
+        return {"desired": "", "curr": ""}
     parts = raw.strip().split(",")
-    pend = parts[0].strip() if len(parts) > 0 else ""
+    desired = parts[0].strip() if len(parts) > 0 else ""
     curr = parts[1].strip() if len(parts) > 1 else ""
-    return {"pend": pend, "curr": curr}
+    return {"desired": desired, "curr": curr}
 
 
 async def set_lpar_proc_compat(

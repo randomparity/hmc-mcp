@@ -145,14 +145,14 @@ def hmc_get_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str) -
     """Get the current and pending processor compatibility modes for an LPAR.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
-    -F pend_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` on the HMC via SSH.
+    -F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode`` on the HMC via SSH.
 
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs.
 
-    Returns a dict with keys "pend" and "curr".    """
+    Returns a dict with keys "desired" and "curr".    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_proc_compat(
             config, system_name, lpar_name
