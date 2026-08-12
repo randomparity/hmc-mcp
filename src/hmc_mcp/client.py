@@ -119,10 +119,10 @@ class HMCClient(
         resp = await self._http.put(
             "/rest/api/web/Logon",
             content=body,
-            headers={
+            headers=self._web_headers({
                 "Content-Type": f"{MEDIA_WEB}; type=LogonRequest",
                 "Accept": f"{MEDIA_WEB}; type=LogonResponse",
-            },
+            }),
         )
         if resp.status_code != 200:
             raise HMCError("HMC logon failed", resp.status_code, resp.text)
@@ -138,7 +138,7 @@ class HMCClient(
         if not self._session_token:
             return
         try:
-            await self._http.delete("/rest/api/web/Logon")
+            await self._http.delete("/rest/api/web/Logon", headers=self._web_headers({"Accept": MEDIA_WEB}))
         finally:
             self._session_token = None
             self._http.headers.pop("X-API-Session", None)

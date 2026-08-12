@@ -686,6 +686,39 @@ async def test_uom_delete_sends_schema_version_when_configured(mock_hmc):
     assert sent_headers.get("x-hmc-schema-version") == "V1_0"
 
 
+@pytest.mark.asyncio
+async def test_uom_post_omits_schema_version_when_not_configured(mock_hmc):
+    """_post() does not include X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.post("/rest/api/uom/LogicalPartition").mock(
+        return_value=httpx.Response(201, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._post("/rest/api/uom/LogicalPartition", b"<xml/>")
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+async def test_uom_put_omits_schema_version_when_not_configured(mock_hmc):
+    """_put() does not include X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.put("/rest/api/uom/LogicalPartition/uuid1").mock(
+        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._put("/rest/api/uom/LogicalPartition/uuid1", b"<xml/>")
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+async def test_uom_delete_omits_schema_version_when_not_configured(mock_hmc):
+    """_delete() does not include X-HMC-Schema-Version when schema_version is empty."""
+    route = mock_hmc.delete("/rest/api/uom/LogicalPartition/uuid1").mock(
+        return_value=httpx.Response(204)
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._delete("/rest/api/uom/LogicalPartition/uuid1")
+    assert "x-hmc-schema-version" not in route.calls.last.request.headers
+
+
 # ---------------------------------------------------------------------- #
 # get_job / wait_for_job — SELF-link-based polling (issue #95)
 # ---------------------------------------------------------------------- #
