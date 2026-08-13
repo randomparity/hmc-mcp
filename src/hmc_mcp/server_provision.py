@@ -19,7 +19,7 @@ from .client import HMCError
 from .common import client_from_env
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
+from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
 
 
 # ---------------------------------------------------------------------- #
@@ -189,6 +189,7 @@ def hmc_provision_lpar(
                 return {
                     "created": False,
                     "dry_run": True,
+                    "ownership_stamped": None,
                     "steps": [_step(n, "dry_run") for n in step_names],
                     "warnings": [],
                 }
@@ -248,6 +249,28 @@ def hmc_provision_lpar(
             except Exception as exc:
                 steps.append(_step("create", "error", str(exc)))
                 failed = True
+
+            # ----------------------------------------------------------------
+            # Ownership stamp (best-effort, after successful create)
+            # ----------------------------------------------------------------
+            stamp_warnings: list[str] = []
+            ownership_stamped: bool | None = None
+            if not failed and lpar_uuid:
+                cfg = hmc.config
+                try:
+                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                except (HMCCLIError, Exception):
+                    sys_name_for_stamp = system_name_or_uuid
+                token = await stamp_lpar_ownership(
+                    cfg, sys_name_for_stamp, name, agent_id=cfg.agent_id
+                )
+                if token is not None:
+                    ownership_stamped = True
+                else:
+                    ownership_stamped = False
+                    stamp_warnings.append(
+                        f"ownership stamp failed for LPAR {name!r}"
+                    )
 
             # ----------------------------------------------------------------
             # Step: network adapter
@@ -318,8 +341,9 @@ def hmc_provision_lpar(
             return {
                 "created": not failed,
                 "dry_run": False,
+                "ownership_stamped": ownership_stamped,
                 "steps": steps,
-                "warnings": [],
+                "warnings": stamp_warnings,
             }
 
     return _run(_go)

@@ -8,11 +8,27 @@ interactions are mocked with the respx ``mock_hmc`` fixture from conftest.py.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 
 from hmc_mcp.server import hmc_provision_lpar
 from conftest import JOB_ENTRY
+
+
+@pytest.fixture(autouse=True)
+def _patch_stamp_ownership():
+    """Stub out ownership stamping in all provision tests.
+
+    stamp_lpar_ownership makes an SSH call; provision tests use respx (HTTP
+    only) and must not attempt real SSH connections to hmc.test.
+    """
+    with patch(
+        "hmc_mcp.server_provision.stamp_lpar_ownership",
+        new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
+    ):
+        yield
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
