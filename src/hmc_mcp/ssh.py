@@ -53,6 +53,9 @@ def validate_agent_id(agent_id: str) -> None:
 
     Rules:
     - Must be 1–64 printable ASCII characters (same base constraint as descriptions).
+    - Must not be the reserved value ``"hmc-mcp"`` — that is the default fallback used
+      when no agent_id is set.  An agent_id of ``"hmc-mcp"`` produces a token
+      indistinguishable from a pre-feature LPAR, defeating ownership attribution.
     - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
       is embedded in the ownership token written via ``chsyscfg``.
     - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
@@ -64,6 +67,12 @@ def validate_agent_id(agent_id: str) -> None:
     """
     if not agent_id:
         raise ValueError("agent_id must not be empty")
+    if agent_id == "hmc-mcp":
+        raise ValueError(
+            "agent_id 'hmc-mcp' is reserved — it is the default fallback used when no "
+            "agent_id is set and produces a token indistinguishable from a pre-feature LPAR; "
+            "choose a distinct identifier"
+        )
     if len(agent_id) > 64:
         raise ValueError(
             f"agent_id is {len(agent_id)} characters; maximum is 64"
@@ -630,9 +639,11 @@ async def set_lpar_description(
     Raises ``ValueError`` if *description* is not printable ASCII; see
     :func:`validate_lpar_description` for the constraint and error code.
 
-    Raises :class:`HMCCLIError` if *lpar_name* contains a comma or equals sign.
-    The HMC CLI ``-i`` parser is comma-delimited and equals-delimited; either
-    character in the LPAR name would corrupt the attribute pair.
+    Raises :class:`HMCCLIError` if *lpar_name* contains a character that would
+    corrupt the ``chsyscfg -i`` attribute string.  The HMC CLI ``-i`` parser
+    is comma-delimited and equals-delimited; a space in the name may cause the
+    HMC's internal parser to tokenise incorrectly even when the shell argument
+    is properly quoted.
     """
     if "," in lpar_name:
         raise HMCCLIError(
@@ -643,6 +654,16 @@ async def set_lpar_description(
         raise HMCCLIError(
             f"LPAR name {lpar_name!r} contains '='; cannot safely write "
             "description via chsyscfg -i (equals-delimited key/value parser)"
+        )
+    if " " in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains a space; cannot safely write "
+            "description via chsyscfg -i (space may corrupt the HMC CLI -i parser)"
+        )
+    if ";" in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains a semicolon; cannot safely write "
+            "description via chsyscfg -i (semicolon may corrupt the HMC CLI -i parser)"
         )
     validate_lpar_description(description)
     cmd = (

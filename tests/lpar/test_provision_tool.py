@@ -188,11 +188,26 @@ def _mock_preconditions(mock_hmc, *, name="web01", has_lpar=False, has_vlan=True
     )
 
 
+SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:{system_uuid}</id>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <SystemName>sys1</SystemName>
+    </ManagedSystem>
+  </content>
+</entry>""".format(system_uuid=SYSTEM_UUID)
+
+
 def _mock_execution_steps(mock_hmc):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
     mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
+    # get_managed_system for stamp system-name resolution (REST-first)
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
+    ).mock(return_value=httpx.Response(200, text=SYSTEM_ENTRY))
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"

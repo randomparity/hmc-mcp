@@ -258,54 +258,9 @@ def hmc_provision_lpar(
                 failed = True
 
             # ----------------------------------------------------------------
-            # Ownership stamp (best-effort, after successful create)
+            # Steps: network adapter, vSCSI, storage, power on
+            # (Ownership stamp runs after all steps — see below)
             # ----------------------------------------------------------------
-            ownership_stamped: bool | None = None
-            if not failed and lpar_uuid:
-                cfg = hmc.config
-                try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                except (HMCCLIError, Exception):
-                    sys_name_for_stamp = system_name_or_uuid
-                # Use server-confirmed PartitionName if available; fall back to
-                # the constructor argument in case the HMC normalised the name.
-                confirmed_name = (
-                    ((created_lpar or {}).get("Resource") or {}).get("PartitionName")
-                    or name
-                )
-                if is_uuid(sys_name_for_stamp):
-                    # sys_name_for_stamp is still a UUID — system-name resolution
-                    # failed and the HMC CLI will reject a UUID as a managed-system
-                    # name.  Skip the stamp and surface a clear advisory.
-                    warnings.append(
-                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
-                        "stamp manually via hmc_set_lpar_description"
-                    )
-                else:
-                    token = await stamp_lpar_ownership(
-                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
-                    )
-                    if token is not None:
-                        ownership_stamped = True
-                    else:
-                        ownership_stamped = False
-                        _logger.warning(
-                            "ownership stamp failed for LPAR %r on %r",
-                            confirmed_name,
-                            sys_name_for_stamp,
-                        )
-                        warnings.append(
-                            f"ownership stamp failed for LPAR {confirmed_name!r}"
-                        )
-            elif not failed and not lpar_uuid:
-                # Create succeeded but the REST body did not return a UUID — stamp
-                # cannot proceed without the LPAR UUID to locate the system name.
-                # Mirrors the no-body skip warning in hmc_create_lpar.
-                warnings.append(
-                    f"ownership stamp skipped for LPAR {name!r}: "
-                    "create returned no UUID; stamp manually via hmc_set_lpar_description"
-                )
 
             # ----------------------------------------------------------------
             # Step: network adapter
@@ -372,6 +327,65 @@ def hmc_provision_lpar(
                         failed = True
                 else:
                     steps.append(_step("power_on", "skipped"))
+
+            # ----------------------------------------------------------------
+            # Ownership stamp (best-effort, after all provisioning steps)
+            # Stamp only runs when the full provision succeeded, so
+            # ownership_stamped=True implies created=True.
+            # ----------------------------------------------------------------
+            ownership_stamped: bool | None = None
+            if not failed and lpar_uuid:
+                cfg = hmc.config
+                # Try REST first (already authenticated), then SSH as fallback.
+                sys_name_for_stamp: str | None = None
+                try:
+                    sys_entry = await hmc.get_managed_system(system_uuid)
+                    sys_name_for_stamp = (
+                        (sys_entry.get("Resource") or {}).get("SystemName")
+                        if sys_entry
+                        else None
+                    ) or None
+                except Exception:
+                    sys_name_for_stamp = None
+                if not sys_name_for_stamp:
+                    try:
+                        sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                    except (HMCCLIError, Exception):
+                        sys_name_for_stamp = system_name_or_uuid
+                # Use server-confirmed PartitionName if available.
+                confirmed_name = (
+                    ((created_lpar or {}).get("Resource") or {}).get("PartitionName")
+                    or name
+                )
+                if is_uuid(sys_name_for_stamp):
+                    # Both REST and SSH resolution failed; skip the stamp.
+                    warnings.append(
+                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
+                        "stamp manually via hmc_set_lpar_description"
+                    )
+                else:
+                    token = await stamp_lpar_ownership(
+                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
+                    )
+                    if token is not None:
+                        ownership_stamped = True
+                    else:
+                        ownership_stamped = False
+                        _logger.warning(
+                            "ownership stamp failed for LPAR %r on %r",
+                            confirmed_name,
+                            sys_name_for_stamp,
+                        )
+                        warnings.append(
+                            f"ownership stamp failed for LPAR {confirmed_name!r}"
+                        )
+            elif not failed and not lpar_uuid:
+                # Create succeeded but no UUID returned — cannot locate the LPAR for stamp.
+                warnings.append(
+                    f"ownership stamp skipped for LPAR {name!r}: "
+                    "create returned no UUID; stamp manually via hmc_set_lpar_description"
+                )
 
             return {
                 "created": not failed,

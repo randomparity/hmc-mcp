@@ -20,7 +20,11 @@ def test_validate_agent_id_valid():
     validate_agent_id("agent-1")         # hyphens ok
     validate_agent_id("agent.1")         # dots ok
     validate_agent_id("a" * 64)          # max length
-    validate_agent_id("hmc-mcp")         # default fallback
+
+
+def test_validate_agent_id_reserved():
+    with pytest.raises(ValueError, match="reserved"):
+        validate_agent_id("hmc-mcp")
 
 
 def test_validate_agent_id_empty():
