@@ -195,8 +195,9 @@ class HMCClient(
         path: str,
         body: str | bytes,
         resource_type: str | None = None,
+        include_schema_version: bool = True,
     ) -> str:
-        headers = self._uom_headers(resource_type)
+        headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
         resp = await self._http.put(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202, 204):
@@ -345,9 +346,14 @@ class HMCClient(
     async def create_child(
         self, parent_type: str, parent_uuid: str, child_type: str, child_xml: str
     ) -> dict[str, Any] | None:
-        """PUT a child resource (e.g. a virtual adapter) under a parent."""
+        """PUT a child resource (e.g. a virtual adapter) under a parent.
+
+        Omits X-HMC-Schema-Version header — the HMC returns HTTP 406 on adapter
+        PUT endpoints when this header is present (same as VolumeGroup and LPAR).
+        """
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
-        xml = await self._put(path, child_xml, resource_type=child_type)
+        xml = await self._put(path, child_xml, resource_type=child_type,
+                              include_schema_version=False)
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 

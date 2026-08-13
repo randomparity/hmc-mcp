@@ -15,9 +15,12 @@ from ._app import (
     mcp,
 )
 
+from .client import HMCError
 from .common import client_from_env
+from .config import HMCConfig
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
+from .ssh import HMCCLIError, create_lpar_via_cli
 
 
 # ---------------------------------------------------------------------- #
@@ -210,10 +213,37 @@ def hmc_provision_lpar(
             failed = False
 
             # ----------------------------------------------------------------
-            # Step: create
+            # Step: create — REST first, CLI fallback on HTTP 406
             # ----------------------------------------------------------------
             try:
-                created_lpar = await hmc.create_logical_partition(system_uuid, lpar_xml)
+                created_lpar = None
+                try:
+                    created_lpar = await hmc.create_logical_partition(system_uuid, lpar_xml)
+                except HMCError as rest_exc:
+                    if rest_exc.status_code != 406:
+                        raise
+                    # 406 → REST LPAR create not supported on this firmware;
+                    # fall back to mksyscfg CLI (same approach as hmc_create_lpar).
+                    from .ssh import _ssh_system_name
+                    cfg = HMCConfig()
+                    try:
+                        sys_name = await _ssh_system_name(cfg, system_uuid)
+                    except HMCCLIError:
+                        sys_name = system_name_or_uuid
+                    await create_lpar_via_cli(
+                        cfg,
+                        system_name=sys_name,
+                        name=name,
+                        partition_type=partition_type,
+                        min_memory=min_memory,
+                        desired_memory=desired_memory,
+                        max_memory=max_memory,
+                        desired_vcpus=desired_vcpus,
+                        max_vcpus=max_vcpus,
+                    )
+                    # Fetch the newly created entry
+                    created_lpar = await hmc.find_partition_by_name(name)
+
                 lpar_uuid = (created_lpar or {}).get("UUID")
                 steps.append(_step("create", "ok", created_lpar))
             except Exception as exc:

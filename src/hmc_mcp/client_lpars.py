@@ -34,9 +34,13 @@ class LparsMixin:
         PUTs a LogicalPartition document (see documents.build_lpar_document)
         to /rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition and
         returns the created partition entry.
+
+        Omits X-HMC-Schema-Version header — some HMC firmware versions return
+        HTTP 406 for this PUT when the schema-version header is present.
         """
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
-        xml = await self._put(path, lpar_xml, resource_type="LogicalPartition")
+        xml = await self._put(path, lpar_xml, resource_type="LogicalPartition",
+                              include_schema_version=False)
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
