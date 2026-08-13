@@ -177,10 +177,14 @@ def test_set_lpar_msp_rejects_aix_lpar(monkeypatch, mock_hmc):
 
 
 def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
-    """hmc_set_lpar_msp raises HMCCLIError when the partition is Linux."""
+    """hmc_set_lpar_msp raises HMCCLIError when the partition is Linux (lpar_env=aixlinux).
+
+    The HMC CLI returns 'aixlinux' for both AIX and Linux partitions — it is the
+    combined label for those two OS families.
+    """
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn_mock = _make_ssh_mock_seq("linux\n")
+    conn_mock = _make_ssh_mock_seq("aixlinux\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         with pytest.raises(HMCCLIError, match="only valid for a VIOS"):
