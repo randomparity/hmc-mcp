@@ -20,7 +20,7 @@ from .common import client_from_env
 from .config import HMCConfig
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
-from .ssh import HMCCLIError, create_lpar_via_cli
+from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
 
 
 # ---------------------------------------------------------------------- #
@@ -224,7 +224,6 @@ def hmc_provision_lpar(
                         raise
                     # 406 → REST LPAR create not supported on this firmware;
                     # fall back to mksyscfg CLI (same approach as hmc_create_lpar).
-                    from .ssh import _ssh_system_name
                     cfg = HMCConfig()
                     try:
                         sys_name = await _ssh_system_name(cfg, system_uuid)
@@ -240,13 +239,6 @@ def hmc_provision_lpar(
                         max_memory=max_memory,
                         desired_vcpus=desired_vcpus,
                         max_vcpus=max_vcpus,
-                        # Mirror the full parameter set from hmc_create_lpar's
-                        # CLI fallback so all resource axes are forwarded.
-                        desired_procs=None,
-                        min_procs=None,
-                        max_procs=None,
-                        min_vcpus=None,
-                        max_virtual_slots=None,
                     )
                     # Fetch the newly created entry
                     created_lpar = await hmc.find_partition_by_name(name)

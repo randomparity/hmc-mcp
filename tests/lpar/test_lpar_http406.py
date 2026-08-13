@@ -84,11 +84,10 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
 
-    # Patch the CLI helpers so no real SSH connection is attempted.
-    # _ssh_system_name is imported locally inside _go(), so patch it on the
-    # ssh module; create_lpar_via_cli is imported at module level in server_power.
+    # Patch both CLI helpers at their import site in server_power (both are
+    # now module-level imports there, so patching the ssh module wouldn't work).
     with (
-        patch("hmc_mcp.ssh._ssh_system_name", new=AsyncMock(return_value="sys1")),
+        patch("hmc_mcp.server_power._ssh_system_name", new=AsyncMock(return_value="sys1")),
         patch("hmc_mcp.server_power.create_lpar_via_cli", new=AsyncMock(return_value="")),
     ):
         result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")

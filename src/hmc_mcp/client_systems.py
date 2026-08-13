@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .client_parse import _parse_feed
+from .errors import HMCError
 from .jobs import (
     power_off_system_job,
     power_off_vios_job,
@@ -43,7 +44,6 @@ class SystemsMixin:
         try:
             return await self.list_uom("ManagedSystem")
         except Exception as exc:
-            from .errors import HMCError
             if (
                 isinstance(exc, HMCError)
                 and exc.status_code == 500

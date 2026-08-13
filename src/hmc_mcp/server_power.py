@@ -31,7 +31,7 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import HMCCLIError, create_lpar_via_cli
+from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -152,9 +152,7 @@ def hmc_create_lpar(
                 # internal provisioning toolkits.
 
             # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
-            # Resolve the system name for the CLI (mksyscfg uses the managed
-            # system name, not UUID).
-            from .ssh import _ssh_system_name
+            # mksyscfg uses the managed system name, not UUID.
             cfg = HMCConfig()
             try:
                 sys_name = await _ssh_system_name(cfg, system_uuid)

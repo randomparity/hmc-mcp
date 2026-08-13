@@ -162,7 +162,7 @@ async def create_lpar_via_cli(
     _pt = partition_type.lower()
     if "ios" in _pt or "vios" in _pt:
         lpar_env = "vioserver"
-    elif "os400" in _pt or "ibmi" in _pt or "i" == _pt:
+    elif "os400" in _pt or "ibmi" in _pt or _pt == "i":
         lpar_env = "os400"
     else:
         lpar_env = "aixlinux"
