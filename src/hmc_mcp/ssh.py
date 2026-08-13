@@ -26,13 +26,18 @@ class HMCCLIError(HMCError):
     """
 
 
-def _validate_description(description: str) -> None:
+def validate_lpar_description(description: str) -> None:
     """Raise ``ValueError`` if *description* is not printable ASCII.
 
     The HMC enforces printable ASCII-only partition descriptions (HSCLC63B).
     Control characters (NUL, LF, CR, ESC, …) are also rejected because they
     can corrupt the HMC CLI's CSV-like ``-i`` parser or be silently truncated
     at the C-string layer.
+
+    Called at the MCP tool layer before UUID resolution and again inside
+    :func:`set_lpar_description` as a defensive check.  Both call sites are
+    intentional: the outer call provides fast rejection without REST
+    round-trips; the inner call guards callers that bypass the MCP tool.
     """
     if not description.isascii() or any(
         ord(c) < 0x20 or ord(c) == 0x7F for c in description
@@ -435,9 +440,9 @@ async def set_lpar_description(
     command output.
 
     Raises ``ValueError`` if *description* is not printable ASCII; see
-    :func:`_validate_description` for the constraint and error code.
+    :func:`validate_lpar_description` for the constraint and error code.
     """
-    _validate_description(description)
+    validate_lpar_description(description)
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
         f"{shlex.quote(f'name={lpar_name},description={description}')}"
