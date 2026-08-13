@@ -53,6 +53,12 @@ _SSH_ONLY_TOOLS = frozenset({
     "hmc_list_sea_adapters",
 })
 
+# These tools make no network calls and therefore have no profile= parameter.
+# They are excluded from the profile-routing registry check.
+_NO_NETWORK_TOOLS = frozenset({
+    "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
+})
+
 
 def _tools_by_name():
     return {t.name: t for t in asyncio.run(mcp.list_tools())}
@@ -65,7 +71,8 @@ def _tools_by_name():
 def test_every_rest_tool_has_profile_param():
     """Every REST-backed MCP tool must expose 'profile' in its JSON schema.
 
-    SSH-only tools are explicitly excluded; all others must have the param.
+    SSH-only tools and no-network tools are explicitly excluded; all others
+    must have the param.
     """
     by_name = _tools_by_name()
     # Guard: every name in _SSH_ONLY_TOOLS must actually exist in the registry.
@@ -74,9 +81,13 @@ def test_every_rest_tool_has_profile_param():
     assert not orphaned, (
         f"_SSH_ONLY_TOOLS has stale entries not in the live registry: {sorted(orphaned)}"
     )
+    orphaned_no_network = _NO_NETWORK_TOOLS - set(by_name)
+    assert not orphaned_no_network, (
+        f"_NO_NETWORK_TOOLS has stale entries not in the live registry: {sorted(orphaned_no_network)}"
+    )
     missing = []
     for name, tool in by_name.items():
-        if name in _SSH_ONLY_TOOLS:
+        if name in _SSH_ONLY_TOOLS or name in _NO_NETWORK_TOOLS:
             continue
         props = tool.parameters.get("properties", {})
         if "profile" not in props:
@@ -91,7 +102,7 @@ def test_profile_param_is_optional_string():
     by_name = _tools_by_name()
     bad = []
     for name, tool in by_name.items():
-        if name in _SSH_ONLY_TOOLS:
+        if name in _SSH_ONLY_TOOLS or name in _NO_NETWORK_TOOLS:
             continue
         props = tool.parameters.get("properties", {})
         if "profile" not in props:

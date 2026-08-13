@@ -101,6 +101,7 @@ READ_ONLY_TOOLS = frozenset({
     "hmc_find_system",
     "hmc_wait_for_job",
     "hmc_list_adapters",
+    "hmc_list_configured_hosts",
     "hmc_list_volume_groups",
     "hmc_list_virtual_switches",
     "hmc_list_virtual_networks",

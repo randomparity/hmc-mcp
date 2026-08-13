@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from typing import Any
 
 from ._app import (
@@ -14,6 +15,7 @@ from ._app import (
     mcp,
 )
 from .common import client_from_env
+from .config import HMCConfig, resolve_config_path
 
 from .ssh import run_hmc_cli
 
@@ -51,6 +53,67 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
         async with client_from_env(profile) as hmc:
             return await hmc.get_console_info()
     return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_list_configured_hosts() -> dict:
+    """List all configured HMC profiles from the platform-native TOML config.
+
+    Returns profile names, hostnames, users, ports, TLS settings, default
+    status, and credential-presence booleans. Never returns passwords, resolved
+    password_env values, or SSH key contents — only has_password / has_ssh_key
+    presence indicators.
+
+    No network calls are made. When no config file exists, returns an empty
+    profile list.
+    """
+    config_path = resolve_config_path()
+    if config_path is None:
+        return {"profiles": [], "config_file": None}
+
+    try:
+        raw_text = config_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"{config_path}: cannot read config file: {exc}") from exc
+
+    try:
+        doc = tomllib.loads(raw_text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{config_path}: TOML parse error: {exc}") from exc
+
+    default_profile = doc.get("default_profile")
+    profiles_raw: dict = doc.get("profiles", {})
+
+    # Read the HMCConfig field defaults once — port and verify_ssl come from
+    # the model, not hardcoded constants, so they stay in sync if the model changes.
+    _fields = HMCConfig.model_fields
+    _default_port = int(_fields["port"].default)
+    _default_verify_ssl = bool(_fields["verify_ssl"].default)
+
+    profiles = []
+    for name, entry in profiles_raw.items():
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{config_path}: profile {name!r} must be a TOML table, "
+                f"got {type(entry).__name__}"
+            )
+        # Build each profile dict from named fields only.
+        # NEVER spread entry directly — it may contain a literal "password" key.
+        # Use key-presence ('in') for credential booleans — truthiness would give
+        # False for password = "" which is present-but-empty, diverging from
+        # load_profile()'s "key" in entry check.
+        profiles.append({
+            "name": name,
+            "host": entry.get("host", ""),
+            "user": entry.get("user", ""),
+            "port": int(entry.get("port", _default_port)),
+            "verify_ssl": bool(entry.get("verify_ssl", _default_verify_ssl)),
+            "is_default": (name == default_profile),
+            "has_password": ("password" in entry or "password_env" in entry),
+            "has_ssh_key": ("ssh_key_file" in entry),
+        })
+
+    return {"profiles": profiles, "config_file": str(config_path)}
 
 
 @mcp.tool(annotations=_READ_ONLY)

@@ -166,21 +166,22 @@ Exposed tools:
 
 **Read-only / inventory**
 
-| Tool                  | Description |
-|-----------------------|-------------|
-| `hmc_console_info`    | HMC version/network info; cheap connectivity check |
-| `hmc_systems`         | All managed systems, or one by UUID |
-| `hmc_lpars`           | All LPARs, one by UUID, find by name, or quick state |
-| `hmc_lpar_summary`    | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
-| `hmc_system_summary`  | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
-| `hmc_vios`            | Virtual I/O Servers, or storage-detail mappings for one |
-| `hmc_list_resources`  | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
-| `hmc_get_job`         | Job status/result |
-| `hmc_recent_jobs`     | Recent HMC jobs list (limit=20) |
-| `hmc_capacity_report` | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
-| `hmc_find_placement`  | Systems with enough free memory + CPU to host a new LPAR |
-| `hmc_find_system`     | Find a managed system by SystemName (exact match) |
-| `hmc_wait_for_job`    | Poll a job until COMPLETED / FAILED / EXCEPTION (or timeout) |
+| Tool                          | Description |
+|-------------------------------|-------------|
+| `hmc_console_info`            | HMC version/network info; cheap connectivity check |
+| `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
+| `hmc_systems`                 | All managed systems, or one by UUID |
+| `hmc_lpars`                   | All LPARs, one by UUID, find by name, or quick state |
+| `hmc_lpar_summary`            | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
+| `hmc_system_summary`          | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
+| `hmc_vios`                    | Virtual I/O Servers, or storage-detail mappings for one |
+| `hmc_list_resources`          | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
+| `hmc_get_job`                 | Job status/result |
+| `hmc_recent_jobs`             | Recent HMC jobs list (limit=20) |
+| `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
+| `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
+| `hmc_find_system`             | Find a managed system by SystemName (exact match) |
+| `hmc_wait_for_job`            | Poll a job until COMPLETED / FAILED / EXCEPTION (or timeout) |
 
 **Mutating / lifecycle**
 
@@ -410,8 +411,6 @@ hmc-mcp lpars power-on web01
 hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve
 ```
 
-(or point your MCP client's env at `HMC_HOST`/`HMC_USER`/`HMC_PASSWORD`).
-
 ## Testing
 
 ### 1. Unit tests (no HMC needed)
@@ -455,7 +454,7 @@ lifecycle all work; everything else uses the same path.
 
 ```
 src/hmc_mcp/
-  config.py      # pydantic-settings config (env/.env/flags)
+  config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
   client.py      # async HMCClient: session, transport, uom helpers, jobs
