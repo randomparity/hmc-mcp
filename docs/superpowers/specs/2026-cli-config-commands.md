@@ -78,9 +78,13 @@ access are unchanged from the loader (ADR-0006).
    - We need a `config_dir()` helper (or inline) that returns the parent dir
      without checking existence; this is a thin wrapper on the same logic in
      `resolve_config_path()` but without the existence check.
-3. If the file already exists: print error, exit 1.
+3. If the file already exists: print error, exit 1. (Race with another process
+   between the existence check and the write is an accepted known risk —
+   the window is milliseconds and the consequence is a harmless TOML syntax
+   error or corruption; on POSIX the implementation SHOULD use `open(path, 'x')`
+   (`O_CREAT|O_EXCL`) for atomic exclusive creation.)
 4. Create parent directories (`mkdir -p`).
-5. Write starter TOML; on POSIX apply `chmod 0o600`.
+5. Write starter TOML using exclusive-create; on POSIX apply `chmod 0o600`.
 6. Print the absolute path to stdout.
 
 Starter TOML content:
@@ -100,13 +104,21 @@ password_env = "HMC_PASSWORD"  # or: password = "..."
 1. Calls `resolve_config_path()` → None → print "No config file found at
    `<platform path>`." and exit 0.
 2. Calls `list_profiles()` with the resolved path.
-3. Gets the default from the TOML `default_profile` key.
-4. Prints each name; appends `(default)` to the matching one.
+3. Gets the `default_profile` key from the TOML document (via a separate
+   `tomllib.loads` read, or extracted by a thin helper in `config.py`).
+4. Prints each name; appends `(default)` to the name matching `default_profile`.
+   When `default_profile` is absent from the TOML, no name is marked — the
+   `HMC_PROFILE` env var is not considered here (it is a runtime selector, not
+   a saved default).
 
 ### `config show [--profile NAME]`
 
-1. Calls `load_profile(profile=...)` using `GLOBALS.profile` or the command's
-   `--profile` arg.
+The command's own `--profile` arg takes precedence over the global `--profile`
+(`GLOBALS.profile`). If the command's `--profile` is `None`, fall through to
+`GLOBALS.profile`. This mirrors the resolution order used by `_client()`.
+
+1. Calls `load_profile(profile=effective_profile)` where `effective_profile =
+   local_profile or GLOBALS.profile`.
 2. Inspects the loaded `HMCConfig`:
    - Emits all non-secret fields.
    - `password_configured`: `True` if `cfg.password != ""`.
@@ -133,6 +145,7 @@ the real filesystem. No test touches the real user home.
 | 2 | `init` existing file refusal | exit 1, "already exists" in stderr, file unchanged |
 | 3 | `init` permissions (POSIX only) | mode 0o600, parent dirs created |
 | 4 | `list` with two profiles + default | both names present, default marked |
+| 4b | `list` with profiles, no `default_profile` key | names printed, none marked `(default)` |
 | 5 | `list` absent config file | exit 0, "No config file" in output |
 | 6 | `show` password redaction | `password_configured: true`, no literal password |
 | 7 | `show` password_env non-resolution | shows `password_configured: true` without resolving var |
