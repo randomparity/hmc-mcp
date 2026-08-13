@@ -21,7 +21,7 @@ import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .common import client_from_env, is_uuid, run_with_client
+from .common import client_from_env, is_uuid
 from .config import HMCConfig
 from .ssh import _ssh_lpar_name, _ssh_system_name
 
@@ -155,14 +155,6 @@ def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
 
-
-def with_client(fn):
-    """Run an async client call against the env-configured HMC.
-
-    Collapses the pervasive ``async def _go`` + ``return _run(_go)`` idiom
-    into one line for the common case where the body is a single client call.
-    """
-    return run_with_client(client_from_env, fn)
 
 
 # ---------------------------------------------------------------------- #

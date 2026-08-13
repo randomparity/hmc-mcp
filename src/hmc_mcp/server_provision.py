@@ -17,7 +17,6 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .config import HMCConfig
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
 from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
@@ -104,6 +103,7 @@ def hmc_provision_lpar(
     vg_uuid: str | None = None,
     power_on: bool = True,
     dry_run: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -164,7 +164,7 @@ def hmc_provision_lpar(
     """
 
     async def _go() -> dict[str, Any]:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             # ----------------------------------------------------------------
             # 1. Resolve system UUID
             # ----------------------------------------------------------------
@@ -224,7 +224,7 @@ def hmc_provision_lpar(
                         raise
                     # 406 → REST LPAR create not supported on this firmware;
                     # fall back to mksyscfg CLI (same approach as hmc_create_lpar).
-                    cfg = HMCConfig()
+                    cfg = hmc.config
                     try:
                         sys_name = await _ssh_system_name(cfg, system_uuid)
                     except HMCCLIError:

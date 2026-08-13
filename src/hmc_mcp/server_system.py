@@ -12,7 +12,6 @@ from ._app import (
     _resolve_vios_uuid,
     _run,
     mcp,
-    with_client,
 )
 from .common import client_from_env
 
@@ -40,19 +39,22 @@ def hmc_run_command(cmd: str) -> str:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_console_info() -> dict[str, Any] | None:
+def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
     Useful as a connectivity check — this is the cheapest HMC call.
     """
-
-    return with_client(lambda hmc: hmc.get_console_info())
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_console_info()
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_systems(
     system_name_or_uuid: str | None = None,
     state: str | None = None,
+    profile: str | None = None,
 ) -> Any:
     """List all managed systems or get one by name or UUID.
 
@@ -67,13 +69,12 @@ def hmc_systems(
     systems whose State property matches the given value, using the HMC
     server-side search endpoint.
     """
-    if system_name_or_uuid is None:
-        if state is not None:
-            return with_client(lambda hmc: hmc.search_uom("ManagedSystem", "State", state))
-        return with_client(lambda hmc: hmc.list_managed_systems())
-
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
+            if system_name_or_uuid is None:
+                if state is not None:
+                    return await hmc.search_uom("ManagedSystem", "State", state)
+                return await hmc.list_managed_systems()
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.get_managed_system(system_uuid)
 
@@ -87,6 +88,7 @@ def hmc_lpars(
     name: str | None = None,
     state_only: bool = False,
     state: str | None = None,
+    profile: str | None = None,
 ) -> Any:
     """List logical partitions (LPARs) or get/find one.
 
@@ -111,31 +113,25 @@ def hmc_lpars(
     The state filter is ignored when lpar_name_or_uuid or system_name_or_uuid
     is supplied.
     """
-    if lpar_name_or_uuid is not None and state_only:
-        async def _go_state():
-            async with client_from_env() as hmc:
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            if lpar_name_or_uuid is not None and state_only:
                 lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
                 return await hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
-        return _run(_go_state)
-    if lpar_name_or_uuid is not None:
-        async def _go_lpar():
-            async with client_from_env() as hmc:
+            if lpar_name_or_uuid is not None:
                 lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
                 return await hmc.get_logical_partition(lpar_uuid)
-        return _run(_go_lpar)
-    if name is not None:
-        return with_client(lambda hmc: hmc.find_partition_by_name(name))
-    if state_only:
-        raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
-    if system_name_or_uuid is not None:
-        async def _go_sys():
-            async with client_from_env() as hmc:
+            if name is not None:
+                return await hmc.find_partition_by_name(name)
+            if state_only:
+                raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
+            if system_name_or_uuid is not None:
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
-        return _run(_go_sys)
-    if state is not None:
-        return with_client(lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state))
-    return with_client(lambda hmc: hmc.list_logical_partitions(None))
+            if state is not None:
+                return await hmc.search_uom("LogicalPartition", "PartitionState", state)
+            return await hmc.list_logical_partitions(None)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -143,6 +139,7 @@ def hmc_vios(
     system_name_or_uuid: str | None = None,
     vios_name_or_uuid: str | None = None,
     state: str | None = None,
+    profile: str | None = None,
 ) -> Any:
     """List Virtual I/O Servers or get storage-detail mappings for one.
 
@@ -159,33 +156,32 @@ def hmc_vios(
     server-side search endpoint. The state filter is ignored when
     vios_name_or_uuid or system_name_or_uuid is supplied.
     """
-    if vios_name_or_uuid is not None:
-        async def _go_vios():
-            async with client_from_env() as hmc:
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            if vios_name_or_uuid is not None:
                 vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
                 return await hmc.get_vios_storage_detail(vios_uuid)
-        return _run(_go_vios)
-    if system_name_or_uuid is not None:
-        async def _go_sys():
-            async with client_from_env() as hmc:
+            if system_name_or_uuid is not None:
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_vios(system_uuid)
-        return _run(_go_sys)
-    if state is not None:
-        return with_client(lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state))
-    return with_client(lambda hmc: hmc.list_vios(None))
+            if state is not None:
+                return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
+            return await hmc.list_vios(None)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
+def hmc_list_resources(resource_type: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List any uom resource type exposed by the HMC.
 
     Examples: ManagedSystem, LogicalPartition, VirtualIOServer,
     LogicalPartitionProfile, VirtualSwitch, VirtualNetwork, SharedMemoryPool,
     SharedProcessorPool, HostEthernetAdapter, SRIOVAdapter, Cluster.
     """
-
-    return with_client(lambda hmc: hmc.list_uom(resource_type))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.list_uom(resource_type)
+    return _run(_go)
 
 
 
@@ -194,6 +190,7 @@ def hmc_list_resources(resource_type: str) -> list[dict[str, Any]]:
 def hmc_get_job(
     job_uuid: str,
     job_href: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Get the status/result of an HMC job by UUID.
 
@@ -202,12 +199,14 @@ def hmc_get_job(
     the call works on HMC versions that do not expose Job as a root UOM
     resource type (returns HTTP 400 on those versions without this hint).
     """
-
-    return with_client(lambda hmc: hmc.get_job(job_uuid, job_href=job_href))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_job(job_uuid, job_href=job_href)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
+def hmc_recent_jobs(limit: int = 20, profile: str | None = None) -> list[dict[str, Any]]:
     """List recent HMC jobs (most recent first, up to *limit* entries).
 
     Returns a list of parsed job dicts with at minimum JobID and Status.
@@ -222,8 +221,12 @@ def hmc_recent_jobs(limit: int = 20) -> list[dict[str, Any]]:
     """
     from .errors import HMCError
 
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.list_uom("Job")
+
     try:
-        jobs = with_client(lambda hmc: hmc.list_uom("Job"))
+        jobs = _run(_go)
     except HMCError as exc:
         if exc.status_code == 400:
             return [
@@ -277,7 +280,7 @@ def _system_capacity(system: dict[str, Any], lpars: list[dict[str, Any]]) -> dic
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_capacity_report() -> list[dict[str, Any]]:
+def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     """Capacity report: for each managed system, total/assigned/free memory (MiB)
     and processor units, plus running and total LPAR counts.
 
@@ -285,7 +288,7 @@ def hmc_capacity_report() -> list[dict[str, Any]]:
     system to compute assigned resources. Free = total − assigned.
     """
     async def _go() -> list[dict[str, Any]]:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             systems = await hmc.list_managed_systems()
             result = []
             for system in systems:
@@ -301,6 +304,7 @@ def hmc_capacity_report() -> list[dict[str, Any]]:
 def hmc_find_placement(
     desired_memory_mb: int,
     desired_proc_units: float = 0.5,
+    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Find managed systems that can host a new LPAR of the given size.
 
@@ -309,7 +313,7 @@ def hmc_find_placement(
     Each result has the same fields as :func:`hmc_capacity_report`.
     """
     async def _go() -> list[dict[str, Any]]:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             systems = await hmc.list_managed_systems()
             candidates = []
             for system in systems:
@@ -325,14 +329,19 @@ def hmc_find_placement(
             return candidates
 
     return _run(_go)
+
+
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_find_system(name: str) -> dict[str, Any] | None:
+def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | None:
     """Find a managed system by its SystemName (exact match).
 
     Returns the full system dict if found, or None if no system with that
     name is known to the HMC.
     """
-    return with_client(lambda hmc: hmc.find_system_by_name(name))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.find_system_by_name(name)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -341,6 +350,7 @@ def hmc_wait_for_job(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     job_href: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Poll an HMC job until it reaches a terminal state (COMPLETED / FAILED / EXCEPTION).
 
@@ -352,8 +362,9 @@ def hmc_wait_for_job(
     When supplied, polling uses that path directly so the call works on
     HMC versions that return HTTP 400 for the global Job endpoint.
     """
-    return with_client(
-        lambda hmc: hmc.wait_for_job(
-            job_uuid, timeout_seconds, poll_interval, job_href=job_href
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.wait_for_job(
+                job_uuid, timeout_seconds, poll_interval, job_href=job_href
+            )
+    return _run(_go)

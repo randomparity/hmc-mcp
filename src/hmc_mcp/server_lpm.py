@@ -15,23 +15,22 @@ from ._app import (
 from .common import client_from_env
 
 
-async def _job_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
-    """Submit a job; optionally wait for it to reach a terminal state.
+async def _job_op(hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a job on an already-open *hmc* client; optionally wait for it to reach a terminal state.
 
     *submit_fn* is ``async (hmc) -> job_entry``.  When *wait* is False the
     submitted job entry is returned immediately.  When *wait* is True the job
     UUID is extracted and ``wait_for_job`` is called before returning.
     """
-    async with client_from_env() as hmc:
-        job = await submit_fn(hmc)
-        if not wait or job is None:
-            return job
-        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-        if not job_uuid:
-            return job
-        return await hmc.wait_for_job(
-            job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-        )
+    job = await submit_fn(hmc)
+    if not wait or job is None:
+        return job
+    job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    if not job_uuid:
+        return job
+    return await hmc.wait_for_job(
+        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
 
 
 @mcp.tool
@@ -43,6 +42,7 @@ def hmc_migrate_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Live-migrate (LPM) an LPAR to another managed system.
 
@@ -56,9 +56,10 @@ def hmc_migrate_lpar(
     (or until timeout_seconds elapses).
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await _job_op(
+                hmc,
                 lambda hmc2: hmc2.lpar_migrate(
                     lpar_uuid, target_system, target_profile_name, wait_time=wait_time
                 ),
@@ -77,6 +78,7 @@ def hmc_migrate_validate_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Validate whether an LPM migration of an LPAR to target_system would succeed.
 
@@ -85,9 +87,10 @@ def hmc_migrate_validate_lpar(
     Set wait=True to block until the validation job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await _job_op(
+                hmc,
                 lambda hmc2: hmc2.lpar_migrate_validate(
                     lpar_uuid, target_system, target_profile_name, wait_time=wait_time
                 ),
@@ -98,7 +101,7 @@ def hmc_migrate_validate_lpar(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_migrate_abort_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
+def hmc_migrate_abort_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> dict[str, Any] | None:
     """Abort an in-progress LPM migration of an LPAR.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -106,7 +109,7 @@ def hmc_migrate_abort_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_migrate_abort(lpar_uuid)
 
@@ -114,7 +117,7 @@ def hmc_migrate_abort_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
 
 
 @mcp.tool
-def hmc_migrate_recover_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
+def hmc_migrate_recover_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> dict[str, Any] | None:
     """Recover an LPAR after a failed LPM migration.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -122,7 +125,7 @@ def hmc_migrate_recover_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_migrate_recover(lpar_uuid)
 
@@ -130,7 +133,7 @@ def hmc_migrate_recover_lpar(lpar_name_or_uuid: str) -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remote_restart_lpar(lpar_name_or_uuid: str, target_system: str) -> dict[str, Any] | None:
+def hmc_remote_restart_lpar(lpar_name_or_uuid: str, target_system: str, profile: str | None = None) -> dict[str, Any] | None:
     """Remote-restart a failed LPAR on another managed system.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -138,7 +141,7 @@ def hmc_remote_restart_lpar(lpar_name_or_uuid: str, target_system: str) -> dict[
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_remote_restart(lpar_uuid, target_system)
 

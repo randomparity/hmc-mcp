@@ -16,7 +16,6 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .config import HMCConfig
 from .documents import (
     Keylock,
     LparResources,
@@ -81,6 +80,7 @@ def hmc_create_lpar(
     os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new LPAR on a managed system.
 
@@ -128,7 +128,7 @@ def hmc_create_lpar(
     )
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             existing = await hmc.find_partition_by_name(name)
             if existing:
                 raise ValueError(
@@ -153,7 +153,7 @@ def hmc_create_lpar(
 
             # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
             # mksyscfg uses the managed system name, not UUID.
-            cfg = HMCConfig()
+            cfg = hmc.config
             try:
                 sys_name = await _ssh_system_name(cfg, system_uuid)
             except HMCCLIError:
@@ -197,6 +197,7 @@ def hmc_modify_lpar(
     desired_vcpus: int | None = None,
     max_vcpus: int | None = None,
     uncapped: bool | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
 
@@ -226,7 +227,7 @@ def hmc_modify_lpar(
     )
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
@@ -248,6 +249,7 @@ def hmc_dlpar_proc(
     max_vcpus: int | None = None,
     dedicated: bool | None = None,
     uncapped: bool | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
@@ -275,7 +277,7 @@ def hmc_dlpar_proc(
     )
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
@@ -295,6 +297,7 @@ def hmc_modify_system(
     pend_mem_region_size: int | None = None,
     requested_num_sys_huge_pages: int | None = None,
     mem_mirroring_mode: MemoryMirroringMode | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify a managed system's configuration.
 
@@ -321,7 +324,7 @@ def hmc_modify_system(
     )
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             # HTTP 406 interception not applied here — hmc_modify_system is
             # outside the scope of issue #96 (which covers LogicalPartition
@@ -337,6 +340,7 @@ def hmc_dlpar_mem(
     desired_memory: int | None = None,
     min_memory: int | None = None,
     max_memory: int | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
@@ -356,7 +360,7 @@ def hmc_dlpar_mem(
     )
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
@@ -368,7 +372,7 @@ def hmc_dlpar_mem(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_lpar(lpar_name_or_uuid: str) -> str:
+def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     """Delete (destroy) an LPAR by name or UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
@@ -387,7 +391,7 @@ def hmc_delete_lpar(lpar_name_or_uuid: str) -> str:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             state = await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
@@ -413,24 +417,17 @@ def _extract_job_id(job: dict[str, Any]) -> str | None:
     return job.get("UUID") or (job.get("Resource") or {}).get("JobID")
 
 
-async def _power_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
-    """Submit a power job; optionally wait for it to reach a terminal state.
-
-    *submit_fn* is ``async (hmc) -> job_entry``.  When *wait* is False the
-    submitted job entry is returned immediately (the existing behaviour).
-    When *wait* is True the job UUID is extracted from the entry and
-    ``wait_for_job`` is called before returning.
-    """
-    async with client_from_env() as hmc:
-        job = await submit_fn(hmc)
-        if not wait or job is None:
-            return job
-        job_uuid = _extract_job_id(job)
-        if not job_uuid:
-            return job
-        return await hmc.wait_for_job(
-            job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-        )
+async def _power_op(hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a power job on an already-open *hmc* client; optionally wait for terminal state."""
+    job = await submit_fn(hmc)
+    if not wait or job is None:
+        return job
+    job_uuid = _extract_job_id(job)
+    if not job_uuid:
+        return job
+    return await hmc.wait_for_job(
+        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
 
 
 @mcp.tool
@@ -440,6 +437,7 @@ def hmc_power_on_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     force: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a PowerOn job for a logical partition.
 
@@ -456,7 +454,7 @@ def hmc_power_on_lpar(
     (or until timeout_seconds elapses).
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             if not force:
                 state = await hmc.get_quick_property(
@@ -489,6 +487,7 @@ def hmc_power_off_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
@@ -499,7 +498,7 @@ def hmc_power_off_lpar(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             job = await hmc.submit_job(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
@@ -519,6 +518,7 @@ def hmc_power_on_system(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power on a managed system (PowerOn job).
 
@@ -527,7 +527,7 @@ def hmc_power_on_system(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             job = await hmc.power_on_system(system_uuid)
             if not wait or job is None:
@@ -545,6 +545,7 @@ def hmc_power_off_system(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power off a managed system (PowerOff job). immediate skips graceful shutdown.
 
@@ -552,7 +553,7 @@ def hmc_power_off_system(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             job = await hmc.power_off_system(system_uuid, immediate)
             if not wait or job is None:
@@ -569,6 +570,7 @@ def hmc_power_on_vios(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power on a VIOS (PowerOn job).
 
@@ -577,7 +579,7 @@ def hmc_power_on_vios(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             job = await hmc.power_on_vios(vios_uuid)
             if not wait or job is None:
@@ -595,6 +597,7 @@ def hmc_power_off_vios(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power off a VIOS (PowerOff job). immediate skips graceful shutdown.
 
@@ -602,7 +605,7 @@ def hmc_power_off_vios(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             job = await hmc.power_off_vios(vios_uuid, immediate)
             if not wait or job is None:

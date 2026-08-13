@@ -52,7 +52,7 @@ def _lpar_summary(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_lpar_summary(lpar_name_or_uuid: str) -> dict[str, Any]:
+def hmc_lpar_summary(lpar_name_or_uuid: str, profile: str | None = None) -> dict[str, Any]:
     """One-call LPAR summary: state, RMC, memory/CPU, OS, adapter count, description.
 
     Composes data from three HMC endpoints in a single call:
@@ -82,7 +82,7 @@ def hmc_lpar_summary(lpar_name_or_uuid: str) -> dict[str, Any]:
     Raises ``ValueError`` when the partition cannot be found.
     """
     async def _go() -> dict[str, Any]:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             lpar, adapters = await _fetch_lpar_data(hmc, lpar_uuid)
             return _lpar_summary(lpar, adapters)
@@ -176,7 +176,7 @@ def _system_summary(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_system_summary(system_name_or_uuid: str) -> dict:
+def hmc_system_summary(system_name_or_uuid: str, profile: str | None = None) -> dict:
     """One-call managed system summary: state, MTMS, firmware, LPAR counts, free resources, VIOS count.
 
     Composes data from three HMC endpoints in a single call:
@@ -203,7 +203,7 @@ def hmc_system_summary(system_name_or_uuid: str) -> dict:
     Raises ``ValueError`` when the system cannot be found.
     """
     async def _go() -> dict:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             system, lpars, vios_list = await _fetch_system_summary_data(hmc, system_uuid)
             return _system_summary(system, lpars, vios_list)

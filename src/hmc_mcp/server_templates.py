@@ -36,7 +36,7 @@ def _check_templates_error(exc: HMCError) -> None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_partition_templates(template_uuid: str | None = None) -> Any:
+def hmc_partition_templates(template_uuid: str | None = None, profile: str | None = None) -> Any:
     """List partition templates or get one by UUID.
 
     When template_uuid is omitted, returns a list of all partition templates
@@ -46,7 +46,7 @@ def hmc_partition_templates(template_uuid: str | None = None) -> Any:
     template, or None if not found.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             try:
                 if template_uuid is not None:
                     return await hmc.get_partition_template(template_uuid)
@@ -65,6 +65,7 @@ def hmc_deploy_partition_template(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Deploy a partition from a *draft* partition template.
 
@@ -75,7 +76,7 @@ def hmc_deploy_partition_template(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             try:
                 job = await hmc.deploy_partition_template(draft_template_uuid, target_system_uuid)
             except HMCError as exc:

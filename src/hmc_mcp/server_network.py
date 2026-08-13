@@ -54,7 +54,7 @@ def _check_network_write_error(exc: HMCError) -> None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_virtual_switches(system_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_virtual_switches(system_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
     system_name_or_uuid: accepts either a SystemName or a UUID
@@ -64,7 +64,7 @@ def hmc_list_virtual_switches(system_name_or_uuid: str) -> list[dict[str, Any]]:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_virtual_switches(system_uuid)
 
@@ -72,7 +72,7 @@ def hmc_list_virtual_switches(system_name_or_uuid: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_virtual_networks(system_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_virtual_networks(system_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List Virtual Networks (VLANs) on a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
@@ -80,7 +80,7 @@ def hmc_list_virtual_networks(system_name_or_uuid: str) -> list[dict[str, Any]]:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_virtual_networks(system_uuid)
 
@@ -94,6 +94,7 @@ def hmc_create_virtual_network(
     vlan_id: int,
     vswitch_id: int,
     tagged: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a Virtual Network (VLAN) on a managed system.
 
@@ -105,7 +106,7 @@ def hmc_create_virtual_network(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             try:
                 return await hmc.create_virtual_network(
@@ -119,7 +120,7 @@ def hmc_create_virtual_network(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_virtual_network(system_name_or_uuid: str, network_uuid: str) -> str:
+def hmc_delete_virtual_network(system_name_or_uuid: str, network_uuid: str, profile: str | None = None) -> str:
     """Delete a Virtual Network from a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
@@ -130,7 +131,7 @@ def hmc_delete_virtual_network(system_name_or_uuid: str, network_uuid: str) -> s
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             await hmc.delete_virtual_network(system_uuid, network_uuid)
         return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
@@ -139,7 +140,7 @@ def hmc_delete_virtual_network(system_name_or_uuid: str, network_uuid: str) -> s
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_network_bridges(system_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_network_bridges(system_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
@@ -147,7 +148,7 @@ def hmc_list_network_bridges(system_name_or_uuid: str) -> list[dict[str, Any]]:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_network_bridges(system_uuid)
 
