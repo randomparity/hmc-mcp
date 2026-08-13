@@ -77,8 +77,10 @@ def hmc_deploy_partition_template(
 
     The result always includes an ``ownership_stamped`` key:
     - ``None`` — stamping was not attempted (``wait=False``, or the job did not
-      complete, or the LPAR name was not available from the job result).
-    - ``True`` — stamp succeeded (reserved for future use when LPAR name
+      complete, or the LPAR name was not available from the job result). This is
+      the only value currently reachable; automatic stamping requires the deploy
+      job to reliably return the new LPAR name, which varies across HMC firmware.
+    - ``True`` — stamp succeeded (not yet reachable; will be set when LPAR name
       resolution from the job result is implemented).
     - ``False`` — stamp was attempted but failed.
 

@@ -79,6 +79,11 @@ class HMCConfig(BaseSettings):
 
         Returns ``hmc-mcp/<agent_id>`` when ``agent_id`` is set and non-empty;
         otherwise returns ``audit_memento`` (default ``"hmc-mcp"``).
+
+        Note: when ``agent_id`` is set, ``audit_memento`` is ignored — the prefix
+        is always ``hmc-mcp``.  An operator who has customised ``HMC_AUDIT_MEMENTO``
+        and then sets ``HMC_AGENT_ID`` will see the audit prefix revert to
+        ``hmc-mcp``.
         """
         if self.agent_id:
             return f"hmc-mcp/{self.agent_id}"

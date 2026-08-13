@@ -104,6 +104,15 @@ def hmc_create_lpar(
     os_type: target OS — ``aix``, ``linux``, or ``ibmi``.
     keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
     max_virtual_slots: maximum number of virtual I/O slots.
+
+    Returns a dict with the following keys:
+
+    - ``lpar`` — the created partition entry (dict), or ``None`` when the HMC
+      returned no body (HTTP 201 with empty body, seen on some firmware versions).
+    - ``ownership_stamped`` — ``True`` when the description-field ownership token
+      was written; ``False`` when the SSH stamp attempt failed; ``None`` when the
+      stamp was not attempted (no LPAR body available to confirm the partition name).
+    - ``warnings`` — list of human-readable warning strings (empty on clean success).
     """
     xml = build_lpar_document(
         name=name,
@@ -178,22 +187,34 @@ def hmc_create_lpar(
 
             # --- Ownership stamp (best-effort) ---
             warnings: list[str] = []
-            ownership_stamped = False
-            if sys_name_for_stamp is None:
-                # REST path: resolve system name for the SSH stamp call
-                try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                except (HMCCLIError, Exception):
-                    sys_name_for_stamp = system_name_or_uuid
-            token = await stamp_lpar_ownership(
-                cfg, sys_name_for_stamp, name, agent_id=cfg.agent_id
-            )
-            if token is not None:
-                ownership_stamped = True
-            else:
+            ownership_stamped: bool | None = None
+            if lpar_result is None:
+                # Some HMC firmware returns HTTP 201 with no body. The LPAR was
+                # created but is not yet confirmed queryable — skip the stamp to
+                # avoid a timing-window HSCL3205 "Object not found" error from
+                # chsyscfg, and report that the stamp was skipped rather than failed.
+                # ownership_stamped stays None (skip), not False (attempt failed).
                 warnings.append(
-                    f"ownership stamp failed for LPAR {name!r} on {sys_name_for_stamp!r}"
+                    f"ownership stamp skipped for LPAR {name!r}: REST create "
+                    "returned no LPAR body; stamp manually via hmc_set_lpar_description"
                 )
+            else:
+                if sys_name_for_stamp is None:
+                    # REST path: resolve system name for the SSH stamp call
+                    try:
+                        sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                    except (HMCCLIError, Exception):
+                        sys_name_for_stamp = system_name_or_uuid
+                token = await stamp_lpar_ownership(
+                    cfg, sys_name_for_stamp, name, agent_id=cfg.agent_id
+                )
+                if token is not None:
+                    ownership_stamped = True
+                else:
+                    ownership_stamped = False
+                    warnings.append(
+                        f"ownership stamp failed for LPAR {name!r} on {sys_name_for_stamp!r}"
+                    )
 
             return {
                 "lpar": lpar_result,
