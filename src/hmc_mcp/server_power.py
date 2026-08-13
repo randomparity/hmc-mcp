@@ -216,7 +216,7 @@ def hmc_create_lpar(
                     if not sys_name_for_stamp:
                         try:
                             sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                        except (HMCCLIError, Exception):
+                        except Exception:
                             sys_name_for_stamp = system_name_or_uuid
                 # Use the server-confirmed PartitionName if available; fall back to
                 # the constructor argument in case the HMC normalised the name.

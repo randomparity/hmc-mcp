@@ -353,7 +353,7 @@ def hmc_provision_lpar(
                 if not sys_name_for_stamp:
                     try:
                         sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                    except (HMCCLIError, Exception):
+                    except Exception:
                         sys_name_for_stamp = system_name_or_uuid
                 # Use server-confirmed PartitionName if available.
                 confirmed_name = (
@@ -383,7 +383,7 @@ def hmc_provision_lpar(
                         warnings.append(
                             f"ownership stamp failed for LPAR {confirmed_name!r}"
                         )
-            elif not lpar_uuid and not failed:
+            elif not failed:
                 # Create succeeded but returned no UUID — cannot locate the LPAR for stamp.
                 warnings.append(
                     f"ownership stamp skipped for LPAR {name!r}: "
