@@ -33,10 +33,13 @@ class SystemsMixin:
 
     async def list_managed_systems(self) -> list[dict[str, Any]]:
         # Some HMC firmware builds return HTTP 500 on the unfiltered
-        # ManagedSystem feed due to a null UUID in VirtualPersistentMemoryVolume
-        # ("Nested path contains null property …/VirtualPersistentMemoryVolume/…").
-        # Return an empty list only for that specific HMC firmware bug; re-raise
-        # everything else (auth errors, parse errors, other HMC errors, etc.).
+        # ManagedSystem feed due to null property values in hardware-inventory
+        # sub-elements (e.g. VirtualPersistentMemoryVolume/Uuid,
+        # PersistentMemoryDevice/DynamicReconfigurationConnectorIndex, …).
+        # The HMC serialiser trips on null-valued sub-fields it cannot encode.
+        # Return an empty list for any such HMC firmware serialisation bug
+        # (HTTP 500 + "Nested path contains null property"); re-raise everything
+        # else (auth errors, parse errors, non-500 HMC errors, etc.).
         try:
             return await self.list_uom("ManagedSystem")
         except Exception as exc:
@@ -44,7 +47,7 @@ class SystemsMixin:
             if (
                 isinstance(exc, HMCError)
                 and exc.status_code == 500
-                and "VirtualPersistentMemoryVolume" in str(exc)
+                and "Nested path contains null property" in str(exc)
             ):
                 return []
             raise

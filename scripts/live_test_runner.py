@@ -317,10 +317,14 @@ async def subtask_1(client: Client) -> None:
             first = _entries(data)
             if first:
                 CTX["system_uuid"] = first[0].get("UUID")
-    print(f"  System UUID: {CTX.get('system_uuid')}")
 
     st, data = await call(client, "hmc_systems", system_name_or_uuid=CTX["system_name"])
     record(1, "hmc_systems (single)", st, data)
+    # Fall back: extract system UUID from the single-system lookup if the list
+    # returned empty (e.g. HMC firmware bug on unfiltered ManagedSystem feed)
+    if st == "PASS" and isinstance(data, dict) and not CTX["system_uuid"]:
+        CTX["system_uuid"] = data.get("UUID") or data.get("uuid")
+    print(f"  System UUID: {CTX.get('system_uuid')}")
 
     st, data = await call(client, "hmc_lpars")
     record(1, "hmc_lpars (list)", st, data)
