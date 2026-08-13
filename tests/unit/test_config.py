@@ -27,7 +27,7 @@ MINIMAL_TOML = """\
 [profiles.dev]
 host = "hmc-dev.example.com"
 user = "admin"
-password = "devpass"
+password = "devpass"  # pragma: allowlist secret
 """
 
 TWO_PROFILE_TOML = """\
@@ -36,12 +36,12 @@ default_profile = "prod"
 [profiles.prod]
 host = "hmc.example.com"
 user = "admin"
-password = "prodpass"
+password = "prodpass"  # pragma: allowlist secret
 
 [profiles.dev]
 host = "hmc-dev.example.com"
 user = "devadmin"
-password = "devpass"
+password = "devpass"  # pragma: allowlist secret
 """
 
 
@@ -124,7 +124,7 @@ def test_load_profile_explicit(tmp_path, monkeypatch):
     result = load_profile("dev", config_path=cfg)
     assert result.host == "hmc-dev.example.com"
     assert result.user == "devadmin"
-    assert result.password == "devpass"
+    assert result.password == "devpass"  # pragma: allowlist secret
 
 
 def test_load_profile_env_var(tmp_path, monkeypatch):
@@ -171,11 +171,11 @@ def test_load_profile_password_env(tmp_path, monkeypatch):
 [profiles.prod]
 host = "hmc.example.com"
 user = "admin"
-password_env = "MY_PW"
+password_env = "MY_PW"  # pragma: allowlist secret
 """
     cfg = _write_toml(tmp_path / "config.toml", toml)
     result = load_profile("prod", config_path=cfg)
-    assert result.password == "supersecret"
+    assert result.password == "supersecret"  # pragma: allowlist secret
 
 
 def test_load_profile_both_passwords_error(tmp_path, monkeypatch):
@@ -186,8 +186,8 @@ def test_load_profile_both_passwords_error(tmp_path, monkeypatch):
 [profiles.bad]
 host = "hmc.example.com"
 user = "admin"
-password = "plain"
-password_env = "MY_PW"
+password = "plain"  # pragma: allowlist secret
+password_env = "MY_PW"  # pragma: allowlist secret
 """
     cfg = _write_toml(tmp_path / "config.toml", toml)
     with pytest.raises(ConfigError, match="password or password_env"):
@@ -202,7 +202,7 @@ def test_load_profile_missing_password_env(tmp_path, monkeypatch):
 [profiles.prod]
 host = "hmc.example.com"
 user = "admin"
-password_env = "MISSING_VAR"
+password_env = "MISSING_VAR"  # pragma: allowlist secret
 """
     cfg = _write_toml(tmp_path / "config.toml", toml)
     with pytest.raises(ConfigError, match="MISSING_VAR") as exc_info:
@@ -280,7 +280,7 @@ def test_direct_construction_still_works(monkeypatch):
     monkeypatch.delenv("HMC_HOST", raising=False)
     monkeypatch.delenv("HMC_USER", raising=False)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
-    cfg = HMCConfig(host="myhost", user="myuser", password="mypass", _env_file=None)
+    cfg = HMCConfig(host="myhost", user="myuser", password="mypass", _env_file=None)  # pragma: allowlist secret
     assert cfg.host == "myhost"
     assert cfg.user == "myuser"
-    assert cfg.password == "mypass"
+    assert cfg.password == "mypass"  # pragma: allowlist secret
