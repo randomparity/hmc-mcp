@@ -113,6 +113,10 @@ def hmc_lpars(
     The state filter is ignored when lpar_name_or_uuid or system_name_or_uuid
     is supplied.
     """
+    # Guard before opening a client: state_only requires a target partition.
+    if state_only and lpar_name_or_uuid is None:
+        raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
+
     async def _go():
         async with client_from_env(profile) as hmc:
             if lpar_name_or_uuid is not None and state_only:
@@ -123,8 +127,6 @@ def hmc_lpars(
                 return await hmc.get_logical_partition(lpar_uuid)
             if name is not None:
                 return await hmc.find_partition_by_name(name)
-            if state_only:
-                raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
             if system_name_or_uuid is not None:
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
