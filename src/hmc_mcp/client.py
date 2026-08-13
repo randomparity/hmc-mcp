@@ -181,8 +181,9 @@ class HMCClient(
         path: str,
         body: str | bytes,
         resource_type: str | None = None,
+        include_schema_version: bool = True,
     ) -> str:
-        headers = self._uom_headers(resource_type)
+        headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
         resp = await self._http.post(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202):

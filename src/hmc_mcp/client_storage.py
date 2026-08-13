@@ -59,11 +59,17 @@ class StorageMixin:
     async def create_virtual_disk(
         self, vios_uuid: str, vg_uuid: str, disk_name: str, capacity_mb: int
     ) -> dict[str, Any] | None:
-        """Create a Virtual Disk (logical volume) in a Volume Group."""
+        """Create a Virtual Disk (logical volume) in a Volume Group.
+
+        The VolumeGroup POST endpoint returns HTTP 406 when X-HMC-Schema-Version
+        is present on some HMC firmware (same behaviour as the GET), so we omit
+        the schema-version header here.
+        """
 
         xml = build_virtual_disk_document(disk_name, capacity_mb)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(path, xml, resource_type="VolumeGroup")
+        resp = await self._post(path, xml, resource_type="VolumeGroup",
+                                include_schema_version=False)
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
@@ -80,6 +86,9 @@ class StorageMixin:
         storage_kind is "PhysicalVolume" (whole hdisk) or "VirtualDisk" (a
         logical volume created with create_virtual_disk). storage_name is the
         device or disk name. lpar_uuid is the client partition to attach to.
+
+        Omits X-HMC-Schema-Version for the same reason as the VolumeGroup
+        endpoints — the schema-version header causes HTTP 406 on some firmware.
         """
 
         lpar_link = self.get_lpar_link(lpar_uuid)
@@ -87,7 +96,8 @@ class StorageMixin:
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        resp = await self._post(path, xml, resource_type="VirtualIOServer")
+        resp = await self._post(path, xml, resource_type="VirtualIOServer",
+                                include_schema_version=False)
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
