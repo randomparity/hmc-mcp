@@ -191,6 +191,59 @@ async def test_web_get_error_raises(mock_hmc):
     assert exc_info.value.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_web_get_rest000e_raises_actionable_error(mock_hmc):
+    """_web_get converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
+    mock_hmc.get("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.list_hmc_users()
+    err = exc_info.value
+    assert err.status_code == 400
+    msg = str(err)
+    assert "REST000E" in msg
+    assert "/rest/api/web/HmcUser" in msg
+    assert "not available" in msg
+    assert "documentation" in msg
+
+
+@pytest.mark.asyncio
+async def test_web_post_rest000e_raises_actionable_error(mock_hmc):
+    """_web_post converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
+    mock_hmc.post("/rest/api/web/HmcUser").mock(
+        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+    )
+    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.create_hmc_user(user_xml)
+    err = exc_info.value
+    assert err.status_code == 400
+    msg = str(err)
+    assert "REST000E" in msg
+    assert "not available" in msg
+    assert "documentation" in msg
+
+
+@pytest.mark.asyncio
+async def test_web_delete_rest000e_raises_actionable_error(mock_hmc):
+    """_web_delete converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
+    mock_hmc.delete("/rest/api/web/HmcUser/someuser").mock(
+        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+    )
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.delete_hmc_user("someuser")
+    err = exc_info.value
+    assert err.status_code == 400
+    msg = str(err)
+    assert "REST000E" in msg
+    assert "not available" in msg
+    assert "documentation" in msg
+
+
 # ------------------------------------------------------------------ #
 # X-HMC-Schema-Version forwarding on web endpoints (issue #99)
 # ------------------------------------------------------------------ #

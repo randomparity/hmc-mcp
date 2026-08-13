@@ -223,11 +223,31 @@ class HMCClient(
             headers["X-HMC-Schema-Version"] = self.config.schema_version
         return headers
 
+    @staticmethod
+    def _check_web_rest000e(path: str, status_code: int, body: str) -> None:
+        """Raise an actionable HMCError when an HTTP 400 body contains REST000E.
+
+        REST000E ('Unrecognized root REST type') means the /rest/api/web/ endpoint
+        is not present on this HMC.  The cause is unknown from the client side: it
+        may require a specific configuration, license, or PTF level.  Convert the
+        raw error into a message that names the endpoint, the error code, and the
+        remediation hint (issue #113).
+        """
+        if status_code == 400 and "REST000E" in body:
+            raise HMCError(
+                f"{path} returned HTTP 400 (REST000E: Unrecognized root REST type). "
+                "This endpoint is not available on this HMC. "
+                "The HMC may require a specific configuration, license, or PTF level. "
+                "Check your HMC documentation.",
+                status_code,
+            )
+
     async def _web_get(self, path: str) -> str:
         resp = await self._http.get(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
         if resp.status_code == 204:
             return ""
         if resp.status_code != 200:
+            self._check_web_rest000e(path, resp.status_code, resp.text)
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
         return resp.text
 
@@ -238,12 +258,14 @@ class HMCClient(
             headers=self._web_headers({"Content-Type": MEDIA_WEB, "Accept": MEDIA_WEB}),
         )
         if resp.status_code not in (200, 201, 202):
+            self._check_web_rest000e(path, resp.status_code, resp.text)
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
 
     async def _web_delete(self, path: str) -> None:
         resp = await self._http.delete(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
         if resp.status_code not in (200, 202, 204):
+            self._check_web_rest000e(path, resp.status_code, resp.text)
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
     # ------------------------------------------------------------------ #
