@@ -33,10 +33,13 @@ audit log. This spec covers Phase 0 (per-agent attribution) and Phase 1
 
 3. **`hmc_create_lpar`** (in `server_power.py`) stamps the ownership token
    immediately after a successful REST create *or* CLI fallback create. The tool
-   return value gains an optional `"ownership_stamped"` key:
-   - `True` when the stamp succeeded.
-   - `False` when stamping failed (tool still returns the created LPAR data;
-     a `"warnings"` key lists the stamp failure reason).
+   wraps its return in a dict:
+   ```python
+   {"lpar": <original result>, "ownership_stamped": True, "warnings": []}
+   ```
+   When stamping fails: `"ownership_stamped": False`, `"warnings": ["stamp failed: <reason>"]`.
+   The existing `dict[str, Any] | None` return type becomes `dict[str, Any]`
+   (never `None`; the `lpar` key may be `None` on HMC versions that return no body).
 
 4. **`hmc_provision_lpar`** (in `server_provision.py`) stamps after the "create"
    step succeeds (LPAR UUID is known). Stamp is best-effort: failure appends to
@@ -70,12 +73,13 @@ audit log. This spec covers Phase 0 (per-agent attribution) and Phase 1
 
 9. **Tests:**
    - `tests/unit/test_ownership.py`: unit tests for `stamp_lpar_ownership`
-     (success, SSH error swallowed, token format).
-   - `tests/app/test_capabilities.py` or a new test: verifies
-     `HMC_AGENT_ID` round-trips correctly through `HMCConfig` and that
-     `effective_audit_memento` returns the right values.
+     (success, SSH error swallowed, token format) and `validate_agent_id`
+     (valid IDs, rejected commas/`=`/brackets, length overflow).
+   - `tests/unit/test_config.py` or new: verifies `HMC_AGENT_ID` round-trips
+     through `HMCConfig` and that `effective_audit_memento` returns the right
+     values (unset → `"hmc-mcp"`, set → `"hmc-mcp/alice"`).
    - `tests/app/test_server_tools.py` or a new test: verifies
-     `hmc_create_lpar` result contains `ownership_stamped` key.
+     `hmc_create_lpar` result dict contains `"ownership_stamped"` and `"lpar"` keys.
 
 ---
 
@@ -87,7 +91,7 @@ This change is security-adjacent (attribution), but its threat surface is narrow
 
 | Boundary | What enters | From whom | Control |
 |---|---|---|---|
-| `HMC_AGENT_ID` env var read | Agent-operator-supplied string | Process owner | `validate_lpar_description` already rejects non-printable ASCII; same validator applied to `agent_id` before use in the token |
+| `HMC_AGENT_ID` env var read | Agent-operator-supplied string | Process owner | New `validate_agent_id()` in `ssh.py`: printable ASCII, ≤ 64 chars, no commas or `=` (HMC CLI `-i` parser hazard) |
 | Token written to LPAR description via SSH `chsyscfg` | Token string | This server | `validate_lpar_description` validates the full token before sending |
 | `X-Audit-Memento` header value | `effective_audit_memento` string | This server | Derived from controlled fields; pydantic validates string type |
 
@@ -99,10 +103,11 @@ inject `agent_id` at runtime.
 
 ### Controls per boundary
 
-- `agent_id` is validated as printable ASCII (length ≤ 64 characters) before
-  being embedded in the token. Colons and spaces are allowed; commas and `=` are
-  not (they would corrupt the HMC CLI `-i` parser). The validator rejects invalid
-  values with a clear error at config construction time.
+- A new `validate_agent_id(agent_id: str) -> None` function in `ssh.py` enforces:
+  printable ASCII only, length 1–64 characters, no commas or `=` signs (those
+  corrupt the HMC CLI `-i` parser), no square brackets (would break token parsing).
+  Called from `HMCConfig` model validator on `agent_id` construction, so the error
+  surfaces before any SSH call is made.
 - The full token string is validated by `validate_lpar_description` before the
   SSH command runs. This is the existing defense layer; no new bypass is added.
 - `X-Audit-Memento` is an HTTP header whose value is the pydantic-validated

@@ -32,7 +32,11 @@ of the stack.
 
 The three LPAR create paths — `hmc_create_lpar`, `hmc_provision_lpar`,
 `hmc_deploy_partition_template` — stamp the LPAR description field after
-successful creation using a best-effort SSH call. The token format is:
+successful creation using a best-effort SSH call. For
+`hmc_deploy_partition_template`, which submits an async job, stamping is only
+attempted when `wait=True`; `wait=False` (the default) produces an unstamped
+LPAR, since the job outcome is unknown at return time. Operators who require the
+ownership token should pass `wait=True`. The token format is:
 
 ```
 [hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]
@@ -91,6 +95,12 @@ Adds a persistence dependency for no durable guarantee.
 **Hard enforcement via middleware + `hmc_run_command` gating (Phase B).**
 Out of scope for this PR (operator decision). A future ADR will cover it once
 the advisory layer has demonstrated the protocol's utility.
+
+**Advisory docstrings only, no description stamping.**
+Rejected: without a machine-readable token in the description, agents cannot
+programmatically detect foreign ownership; free-text advisory language alone is
+fragile and relies entirely on an agent reading and interpreting arbitrary prose.
+The stamp is the protocol's one verifiable artifact.
 
 **Skip stamping when the LPAR was created via the CLI fallback path.**
 Rejected: the CLI fallback path (HTTP 406 → mksyscfg) also creates an LPAR;
