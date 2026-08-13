@@ -223,6 +223,7 @@ async def test_web_post_rest000e_raises_actionable_error(mock_hmc):
     assert err.status_code == 400
     msg = str(err)
     assert "REST000E" in msg
+    assert "/rest/api/web/HmcUser" in msg
     assert "not available" in msg
     assert "documentation" in msg
 
@@ -240,6 +241,7 @@ async def test_web_delete_rest000e_raises_actionable_error(mock_hmc):
     assert err.status_code == 400
     msg = str(err)
     assert "REST000E" in msg
+    assert "/rest/api/web/HmcUser/someuser" in msg
     assert "not available" in msg
     assert "documentation" in msg
 
