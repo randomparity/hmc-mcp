@@ -41,7 +41,13 @@ def hmc_backup_lpar_profiles(
             existing file at ``file_path`` is overwritten. Defaults to False.
 
     Returns:
-        The raw HMC CLI output.    """
+        The raw HMC CLI output.
+
+    Raises:
+        ValueError: if ``file_path`` is empty or whitespace-only.
+    """
+    if not file_path or not file_path.strip():
+        raise ValueError("file_path must not be empty")
     return _ssh_with_client(
         lambda config, system_name, _: backup_lpar_profiles(
             config, system_name, file_path, force=force

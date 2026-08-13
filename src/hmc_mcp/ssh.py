@@ -731,7 +731,7 @@ async def backup_lpar_profiles(
         raise ValueError("file_path must not be empty")
     cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
     if force:
-        cmd += " --force"
+        cmd += " --force"  # literal flag — not a user value, no quoting needed
     return await run_hmc_command(config, cmd)
 
 
@@ -746,6 +746,9 @@ async def restore_lpar_profiles(
     command output. *file_path* must already exist on the HMC filesystem.
     Restoring overwrites the current LPAR profile configuration.
     """
+    # NOTE: no empty file_path guard here; see backup_lpar_profiles for the
+    # guard pattern. A blank path produces an opaque HMC error rather than a
+    # clear ValueError — tracked as a follow-on improvement.
     cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
     return await run_hmc_command(config, cmd)
 
