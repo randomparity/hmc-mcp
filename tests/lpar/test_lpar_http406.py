@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCError
-from hmc_mcp.server import hmc_create_lpar, hmc_modify_lpar
+from hmc_mcp.server import hmc_create_lpar, hmc_dlpar_mem, hmc_dlpar_proc, hmc_modify_lpar
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -99,6 +99,58 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 
     with pytest.raises(HMCError) as exc_info:
         hmc_modify_lpar(lpar_name_or_uuid=LPAR_UUID, desired_memory=8192)
+
+    assert exc_info.value.status_code == 406
+    msg = str(exc_info.value)
+    assert "406" in msg
+    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+
+
+# ---------------------------------------------------------------------- #
+# hmc_dlpar_proc — HTTP 406 actionable error
+# ---------------------------------------------------------------------- #
+
+
+def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
+    """hmc_dlpar_proc returns an actionable message on HTTP 406."""
+    _hmc_env(monkeypatch)
+    # LPAR UUID resolution
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    # DLPAR POST returns 406
+    mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_dlpar_proc(lpar_name_or_uuid=LPAR_UUID, desired_procs=0.5)
+
+    assert exc_info.value.status_code == 406
+    msg = str(exc_info.value)
+    assert "406" in msg
+    assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+
+
+# ---------------------------------------------------------------------- #
+# hmc_dlpar_mem — HTTP 406 actionable error
+# ---------------------------------------------------------------------- #
+
+
+def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
+    """hmc_dlpar_mem returns an actionable message on HTTP 406."""
+    _hmc_env(monkeypatch)
+    # LPAR UUID resolution
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    # DLPAR POST returns 406
+    mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
+
+    with pytest.raises(HMCError) as exc_info:
+        hmc_dlpar_mem(lpar_name_or_uuid=LPAR_UUID, desired_memory=8192)
 
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)

@@ -59,7 +59,6 @@ def _check_lpar_write_error(exc: HMCError) -> None:
         ) from exc
 
 
-
 @mcp.tool
 def hmc_create_lpar(
     system_name_or_uuid: str,
@@ -240,7 +239,11 @@ def hmc_dlpar_proc(
     async def _go():
         async with client_from_env() as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
+            try:
+                return await hmc.modify_logical_partition(lpar_uuid, xml)
+            except HMCError as exc:
+                _check_lpar_write_error(exc)
+                raise
 
     return _run(_go)
 
@@ -314,7 +317,11 @@ def hmc_dlpar_mem(
     async def _go():
         async with client_from_env() as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
+            try:
+                return await hmc.modify_logical_partition(lpar_uuid, xml)
+            except HMCError as exc:
+                _check_lpar_write_error(exc)
+                raise
 
     return _run(_go)
 
