@@ -33,14 +33,30 @@ inline `.env` reference in the *Use with Hermes Agent* section and the stale
 - Agents can discover configured profiles with a single MCP tool call before
   issuing any REST or SSH call.
 - The tool is placed in `READ_ONLY_TOOLS` and tagged `_READ_ONLY`; the
-  capability test already enforces that classification.
-- The tool is implemented in `server_system.py` (alongside `hmc_console_info`,
-  the closest analogue) — no new module or server.py import chain is needed.
-- `.env.example` removal is a breaking change for any user who relied on
-  the `.env` workflow; ADR 0006 superseded that workflow and the README
-  already documents the TOML-first path.
+  existing capability test (`test_every_registered_tool_matches_its_category`)
+  enforces that classification and catches divergence between the decorator
+  tag and the `_app.py` set.
+- The tool is implemented in `server_system.py` because a single lightweight
+  function does not warrant a new module; avoiding a new `server.py` import
+  chain is the governing reason, not a loose analogy to the other tools in
+  that file.
+- `.env.example` removal is a breaking change for any user who relied on the
+  `.env` workflow. ADR 0006 superseded that workflow and the README already
+  documents the TOML-first path. The change is accompanied by a PR description
+  noting the removal and pointing to `hmc-mcp config init` as the replacement.
+  Both changes ship in the same PR because they implement the same
+  configuration contract: the discovery tool is only useful once the old
+  credential path no longer misleads new users.
 
 ## Considered & rejected
+
+**Do nothing / document the TOML file path instead of adding a tool.** An
+agent could discover profiles by reading the config file directly via a
+filesystem MCP tool, or the operator could supply `profile=` values
+manually. Rejected because it requires the agent to know the platform-native
+config path, parse TOML, and apply secret-redaction logic itself — every agent
+would duplicate that logic. A first-class tool centralises the redaction
+contract where it can be tested and enforced.
 
 **Implement in a new `server_config.py` module.** Rejected because the tool is
 a single lightweight function; a new file adds an import chain in `server.py`
@@ -54,3 +70,8 @@ inspection. The raw TOML metadata is sufficient.
 **Add a `profile=` parameter to select a single profile.** Rejected as YAGNI.
 The tool's purpose is enumeration; callers can filter the returned list
 themselves.
+
+**Expose profiles as an MCP prompt resource instead of a tool.** Rejected
+because the issue body specifies a tool, and a prompt resource is passive text
+rather than a callable that returns structured data. Agents query tools for
+structured results; the prompt surface is for instructions, not inventory.

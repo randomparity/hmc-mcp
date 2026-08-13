@@ -66,8 +66,23 @@ existing module avoids a new import in `server.py` and a new test fixture file.
 
 The tool reads the TOML file as a raw dict (`tomllib.loads`) — **not** through
 `load_profile`, which resolves `password_env` values and would require the
-secret to be set. The raw dict is inspected for key presence only. This matches
-the pattern already used in `cli_config.py`'s `config_show` command.
+secret to be set. The raw dict is inspected for **key presence only**.
+
+**Critical constraint:** The response object must be built field-by-field from
+the named fields in §2.1. Spreading or forwarding the raw TOML profile dict
+(e.g. `return {**profile_dict}`) is forbidden — it would forward literal
+`password` values verbatim. Each response field must be an explicit assignment
+from a named source.
+
+Known credential keys in the current TOML schema: `password`, `password_env`,
+`ssh_key_file`. None of these appear in the output; only their presence
+booleans do. The `port` (default `12443`) and `verify_ssl` (default `False`)
+defaults are sourced from `HMCConfig.model_fields` defaults, not hardcoded.
+
+`PermissionError` reading the config file (file exists but is unreadable)
+surfaces as a `ValueError` with the config path and the OS error, matching the
+TOML parse error pattern. The MCP framework converts unhandled exceptions to
+tool-error responses; the server process is not killed.
 
 ### 2.4 Registration
 
@@ -138,18 +153,22 @@ entries — run `just verify` to confirm.
 
 ### 4.1 Unit tests (no network)
 
-New test file `tests/unit/test_server_hosts.py` (or tests added to
-`tests/unit/test_config.py`) covering:
+New test file `tests/unit/test_server_hosts.py` covering:
 
 1. **No config file** → returns `{"profiles": [], "config_file": None}`.
 2. **Single profile, is default** → correct fields, `is_default=True`.
 3. **Two profiles, one default** → both returned; only one has `is_default=True`.
-4. **Password literal present** → `has_password=True`, no password value in
-   output.
+4. **Password literal present** → `has_password=True`, no `password` key in
+   response (raw dict forwarding guard).
 5. **password_env present** → `has_password=True`, env var is NOT resolved.
-6. **ssh_key_file present** → `has_ssh_key=True`, no key content in output.
-7. **TOML parse error** → `ValueError` raised, message includes config path.
-8. **port and verify_ssl defaults** → correct when not specified in profile.
+6. **No credentials** → `has_password=False`, `has_ssh_key=False` (negative
+   case).
+7. **ssh_key_file present** → `has_ssh_key=True`, no key content in output.
+8. **TOML parse error** → `ValueError` raised, message includes config path.
+9. **PermissionError reading config** → `ValueError` raised with path and OS
+   error.
+10. **port and verify_ssl defaults** → sourced from `HMCConfig` defaults when
+    not specified in profile.
 
 ### 4.2 Capability test update
 
@@ -165,12 +184,14 @@ New test file `tests/unit/test_server_hosts.py` (or tests added to
 |---|-----------|------|
 | AC1 | `hmc_list_configured_hosts` is in `READ_ONLY_TOOLS` and carries `readOnlyHint=True` | `test_every_registered_tool_matches_its_category` |
 | AC2 | Returns correct fields for each profile without network calls | unit tests 1–3 |
-| AC3 | `has_password=True` when `password` key present; never emits password value | unit test 4 |
+| AC3 | `has_password=True` when `password` key present; no `password` key in response | unit test 4 |
 | AC4 | `has_password=True` when `password_env` key present; env var NOT resolved | unit test 5 |
-| AC5 | `has_ssh_key=True` when `ssh_key_file` key present; no path or content emitted | unit test 6 |
-| AC6 | `ValueError` on TOML parse error | unit test 7 |
+| AC4b | `has_password=False` and `has_ssh_key=False` when no credential keys | unit test 6 |
+| AC5 | `has_ssh_key=True` when `ssh_key_file` key present; no path or content emitted | unit test 7 |
+| AC6 | `ValueError` on TOML parse error | unit test 8 |
+| AC6b | `ValueError` on `PermissionError` reading config | unit test 9 |
 | AC7 | Empty list when no config file | unit test 1 |
-| AC8 | README documents the tool | manual / smoke |
+| AC8 | README tool table under *Read-only / inventory* includes `hmc_list_configured_hosts` | grep README.md |
 | AC9 | `.env.example` removed from repo | `git ls-files` |
 | AC10 | `just verify` green with no new warnings | CI |
 
