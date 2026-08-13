@@ -156,7 +156,7 @@ def hmc_list_network_bridges(system_name_or_uuid: str, profile: str | None = Non
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_fc_ports(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None) -> list[dict[str, str]]:
+def hmc_list_fc_ports(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None, profile: str | None = None) -> list[dict[str, str]]:
     """List Virtual Fibre Channel (NPIV) adapters for a managed system via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype fc --level lpar -m <system_name>``
@@ -168,16 +168,19 @@ def hmc_list_fc_ports(system_name_or_uuid: str, lpar_name_or_uuid: str | None = 
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
     Either a CLI name or UUID works; use hmc_systems to find a system
-    UUID and hmc_lpars to find an LPAR UUID.    """
+    UUID and hmc_lpars to find an LPAR UUID.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_fc_ports(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None) -> list[dict[str, str]]:
+def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | None = None, profile: str | None = None) -> list[dict[str, str]]:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype eth --level lpar -m <system_name>
@@ -189,11 +192,14 @@ def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | Non
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
     Either a CLI name or UUID works; use hmc_systems to find a system
-    UUID and hmc_lpars to find an LPAR UUID.    """
+    UUID and hmc_lpars to find an LPAR UUID.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_sea_adapters(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
@@ -203,6 +209,7 @@ def hmc_set_sriov_adapter_mode(
     system_name_or_uuid: str,
     adapter_id: str,
     mode: Literal["sriov", "dedicated"],
+    profile: str | None = None,
 ) -> str:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
 
@@ -222,19 +229,22 @@ def hmc_set_sriov_adapter_mode(
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.    """
+    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, _: set_sriov_adapter_mode(
             config, system_name, adapter_id, mode
         ),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_vnics(system_name_or_uuid: str, lpar_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_vnics(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
     Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
@@ -246,11 +256,14 @@ def hmc_list_vnics(system_name_or_uuid: str, lpar_name_or_uuid: str) -> list[dic
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs. Use ``hmc_systems`` to find a system UUID and
-    ``hmc_lpars`` to find an LPAR UUID.    """
+    ``hmc_lpars`` to find an LPAR UUID.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: list_vnics(config, system_name, lpar_name),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
@@ -262,6 +275,7 @@ def hmc_add_vnic(
     vswitch_name: str,
     port_vlan_id: int,
     backing_devices: str | None = None,
+    profile: str | None = None,
 ) -> str:
     """Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI.
 
@@ -290,6 +304,8 @@ def hmc_add_vnic(
     Raises:
         HMCCLIError: If the HMC command fails, e.g. because the underlying
             SR-IOV adapter is not in SR-IOV mode.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: add_vnic(
@@ -303,11 +319,12 @@ def hmc_add_vnic(
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remove_vnic(system_name_or_uuid: str, lpar_name_or_uuid: str, vnic_id: str) -> str:
+def hmc_remove_vnic(system_name_or_uuid: str, lpar_name_or_uuid: str, vnic_id: str, profile: str | None = None) -> str:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
     Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
@@ -323,11 +340,14 @@ def hmc_remove_vnic(system_name_or_uuid: str, lpar_name_or_uuid: str, vnic_id: s
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     system_name_or_uuid, lpar_name_or_uuid, and vnic_id before calling. Returns the HMC CLI
-    output (immediate delete — no job to poll).    """
+    output (immediate delete — no job to poll).
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: remove_vnic(
             config, system_name, lpar_name, vnic_id
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )

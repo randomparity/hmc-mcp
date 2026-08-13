@@ -29,7 +29,7 @@ from .ssh import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str) -> str:
+def hmc_get_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> str:
     """Get the description field of an LPAR via the HMC CLI.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
@@ -42,18 +42,21 @@ def hmc_get_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str) -
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
-    runs.    """
+    runs.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_description(
             config, system_name, lpar_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool
-def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, description: str) -> str:
+def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, description: str, profile: str | None = None) -> str:
     """Set the description field of an LPAR via the HMC CLI.
 
     Runs ``chsyscfg -r lpar -m <system_name>
@@ -75,7 +78,9 @@ def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, d
     non-ASCII or non-printable characters are detected.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name_or_uuid and system_name_or_uuid before calling.    """
+    lpar_name_or_uuid and system_name_or_uuid before calling.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     validate_lpar_description(description)
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_description(
@@ -83,11 +88,12 @@ def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, d
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str) -> bool:
+def hmc_get_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> bool:
     """Get the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
@@ -97,18 +103,21 @@ def hmc_get_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str) -> bool:
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
-    runs.    """
+    runs.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_msp(
             config, system_name, lpar_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool
-def hmc_set_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, enabled: bool) -> str:
+def hmc_set_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, enabled: bool, profile: str | None = None) -> str:
     """Set the MSP (Migratable Service Partition) flag of a VIOS partition via the HMC CLI.
 
     Runs ``chsyscfg -r lpar -m <system_name>
@@ -124,20 +133,23 @@ def hmc_set_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, enabled: 
     HMCCLIError with a clear message if the partition is an AIX or Linux LPAR.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name_or_uuid and system_name_or_uuid before calling.    """
+    lpar_name_or_uuid and system_name_or_uuid before calling.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_msp(
             config, system_name, lpar_name, enabled
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_proc_compat_modes(system_name_or_uuid: str) -> list[str]:
+def hmc_get_proc_compat_modes(system_name_or_uuid: str, profile: str | None = None) -> list[str]:
     """Get processor compatibility modes supported by a managed system.
 
     Runs ``lssyscfg -r sys -m <system_name> -F lpar_proc_compat_modes``
@@ -145,15 +157,18 @@ def hmc_get_proc_compat_modes(system_name_or_uuid: str) -> list[str]:
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
-    the REST API is unreachable) before the command runs.    """
+    the REST API is unreachable) before the command runs.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, _: get_proc_compat_modes(config, system_name),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str) -> dict[str, str]:
+def hmc_get_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> dict[str, str]:
     """Get the current and pending processor compatibility modes for an LPAR.
 
     Runs ``lssyscfg -r lpar -m <system_name> --filter lpar_names=<lpar_name>
@@ -164,18 +179,21 @@ def hmc_get_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str) -
     lookup over SSH when the REST API is unreachable) before the command
     runs.
 
-    Returns a dict with keys "desired" and "curr".    """
+    Returns a dict with keys "desired" and "curr".
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_proc_compat(
             config, system_name, lpar_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool
-def hmc_set_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, mode: str) -> str:
+def hmc_set_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, mode: str, profile: str | None = None) -> str:
     """Set the processor compatibility mode of an LPAR.
 
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"``
@@ -187,13 +205,16 @@ def hmc_set_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, m
     runs.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    lpar_name_or_uuid, system_name_or_uuid, and mode before calling.    """
+    lpar_name_or_uuid, system_name_or_uuid, and mode before calling.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_proc_compat(
             config, system_name, lpar_name, mode
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
@@ -203,6 +224,7 @@ def hmc_set_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, m
 def hmc_list_io_slots(
     system_name_or_uuid: str,
     pci_class: str = "all",
+    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on a managed system via the HMC CLI.
 
@@ -221,17 +243,20 @@ def hmc_list_io_slots(
       - ``"sas"``   — SAS/SCSI adapters (PCI class 0104)
       - ``"san"``   — Fibre Channel / SAN adapters (PCI class 0C04)
       - ``"nvme"``  — NVMe adapters (PCI class 0108)
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
     return _ssh_with_client(
         lambda config, system_name, _: list_io_slots(config, system_name, pci_class),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_memory_pools(system_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_memory_pools(system_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List shared memory pools on a managed system via the HMC CLI.
 
     Runs ``lshwres -r mempool -m <system_name>`` on the HMC via SSH and
@@ -240,15 +265,18 @@ def hmc_list_memory_pools(system_name_or_uuid: str) -> list[dict[str, Any]]:
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
-    the REST API is unreachable) before the command runs.    """
+    the REST API is unreachable) before the command runs.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
     return _ssh_with_client(
         lambda config, system_name, _: list_memory_pools(config, system_name),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remove_memory_pool(system_name_or_uuid: str, pool_name: str) -> str:
+def hmc_remove_memory_pool(system_name_or_uuid: str, pool_name: str, profile: str | None = None) -> str:
     """Remove a shared memory pool from a managed system via the HMC CLI.
 
     Before issuing the remove command, fetches the current pool list and
@@ -271,10 +299,11 @@ def hmc_remove_memory_pool(system_name_or_uuid: str, pool_name: str) -> str:
     Raises:
         HMCCLIError: If *pool_name* has LPARs still assigned to it, or if
             no pool with that name exists on the managed system.
+
+    profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
     return _ssh_with_client(
         lambda config, system_name, _: remove_memory_pool(config, system_name, pool_name),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
-
-

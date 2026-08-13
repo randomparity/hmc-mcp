@@ -20,7 +20,7 @@ from .ssh import run_hmc_cli
 
 
 @mcp.tool
-def hmc_run_command(cmd: str) -> str:
+def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     """Execute an arbitrary HMC CLI command over SSH and return its output.
 
     WARNING: This tool executes arbitrary commands on the HMC with the
@@ -31,9 +31,12 @@ def hmc_run_command(cmd: str) -> str:
     Authentication follows the same env-var configuration as all other tools:
     set HMC_SSH_KEY_FILE to use key-based auth, otherwise password auth is used.
 
+    profile: optional TOML profile name; when omitted the env-default HMC is used.
+
     Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
     """
-    return _run(lambda: run_hmc_cli(cmd))
+    config = client_from_env(profile).config
+    return _run(lambda: run_hmc_cli(cmd, config))
 
 
 
