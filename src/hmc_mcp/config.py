@@ -16,9 +16,10 @@ from __future__ import annotations
 import os
 import sys
 import tomllib
+import warnings
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,6 +73,25 @@ class HMCConfig(BaseSettings):
             from .ssh import validate_agent_id  # deferred — ssh imports config; avoid circular
             validate_agent_id(v)
         return v
+
+    @model_validator(mode="after")
+    def _warn_audit_memento_override(self) -> "HMCConfig":
+        """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
+
+        When both are set, effective_audit_memento returns ``hmc-mcp/<agent_id>``
+        and ignores the custom audit_memento.  Emitting a warning at construction
+        time prevents silent surprises in HMC audit logs.
+        """
+        if self.agent_id and self.audit_memento != "hmc-mcp":
+            warnings.warn(
+                f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
+                f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
+                "ignored — X-Audit-Memento is always sent as "
+                f"hmc-mcp/{self.agent_id}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return self
 
     @property
     def effective_audit_memento(self) -> str:

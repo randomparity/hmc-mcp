@@ -115,16 +115,18 @@ async def stamp_lpar_ownership(
     effective_id = agent_id if agent_id else "hmc-mcp"
     today = datetime.date.today().isoformat()
     token = f"[hmc-mcp owner:{effective_id} created:{today}]"
-    # Pre-validate the token against the same constraints as any description;
-    # this surfaces a descriptive error at construction time rather than a
-    # generic "stamp failed" warning from the SSH rejection.
-    validate_lpar_description(token)
     try:
+        # Pre-validate the token before the SSH round-trip.  Kept inside the
+        # try block so that a ValueError (should not fire when agent_id was
+        # validated by HMCConfig, but may if called directly) is caught and
+        # treated as a best-effort failure rather than propagating to the caller.
+        validate_lpar_description(token)
         await set_lpar_description(config, system_name, lpar_name, token)
         return token
-    except (HMCCLIError, asyncssh.Error, OSError):
+    except (HMCCLIError, asyncssh.Error, OSError, ValueError):
         # Catches SSH protocol errors (asyncssh.Error), pre-handshake network
-        # failures (OSError — DNS, TCP refused), and HMC CLI errors (HMCCLIError).
+        # failures (OSError — DNS, TCP refused), HMC CLI errors (HMCCLIError),
+        # and description-validation errors (ValueError).
         # Stamping is best-effort: none of these should fail the owning create call.
         return None
 

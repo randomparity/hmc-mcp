@@ -271,6 +271,14 @@ def hmc_provision_lpar(
                     warnings.append(
                         f"ownership stamp failed for LPAR {name!r}"
                     )
+            elif not failed and not lpar_uuid:
+                # Create succeeded but the REST body did not return a UUID — stamp
+                # cannot proceed without the LPAR UUID to locate the system name.
+                # Mirrors the no-body skip warning in hmc_create_lpar.
+                warnings.append(
+                    f"ownership stamp skipped for LPAR {name!r}: "
+                    "create returned no UUID; stamp manually via hmc_set_lpar_description"
+                )
 
             # ----------------------------------------------------------------
             # Step: network adapter
