@@ -416,7 +416,15 @@ async def set_lpar_description(
     Runs ``chsyscfg -r lpar -m <system_name>
     -i "name=<lpar_name>,description=<description>"`` and returns the raw
     command output.
+
+    Raises ``ValueError`` if *description* contains non-ASCII characters; the
+    HMC enforces ASCII-only partition descriptions (HSCLC63B).
     """
+    if not description.isascii():
+        raise ValueError(
+            "description contains non-ASCII characters; "
+            "the HMC only accepts ASCII partition descriptions (HSCLC63B)"
+        )
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
         f"{shlex.quote(f'name={lpar_name},description={description}')}"
