@@ -712,14 +712,21 @@ async def backup_lpar_profiles(
     config: HMCConfig,
     system_name: str,
     file_path: str,
+    *,
+    force: bool = False,
 ) -> str:
     """Backup all LPAR profiles on *system_name* to *file_path* via SSH.
 
     Runs ``bkprofdata -m <system_name> -f <file_path>`` and returns the raw
     command output. *file_path* is on the HMC filesystem, not the local
     machine; the backup file is created at that path on the HMC host.
+
+    When *force* is ``True``, ``--force`` is appended to the command so that
+    an existing file at *file_path* is overwritten instead of raising an error.
     """
     cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
+    if force:
+        cmd += " --force"  # literal flag — not a user value, no quoting needed
     return await run_hmc_command(config, cmd)
 
 
@@ -734,6 +741,9 @@ async def restore_lpar_profiles(
     command output. *file_path* must already exist on the HMC filesystem.
     Restoring overwrites the current LPAR profile configuration.
     """
+    # NOTE: no empty file_path guard here; see backup_lpar_profiles for the
+    # guard pattern. A blank path produces an opaque HMC error rather than a
+    # clear ValueError — tracked as a follow-on improvement.
     cmd = f"rstprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
     return await run_hmc_command(config, cmd)
 

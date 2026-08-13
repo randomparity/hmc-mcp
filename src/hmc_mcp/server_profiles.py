@@ -17,9 +17,11 @@ from .ssh import (
 )
 
 
-
-@mcp.tool
-def hmc_backup_lpar_profiles(system_name_or_uuid: str, file_path: str) -> str:
+# destructive because force=True silently overwrites an existing backup file on the HMC
+@mcp.tool(annotations=_DESTRUCTIVE)
+def hmc_backup_lpar_profiles(
+    system_name_or_uuid: str, file_path: str, force: bool = False
+) -> str:
     """Backup all LPAR profiles on a Power system via the HMC CLI.
 
     Runs ``bkprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
@@ -35,12 +37,20 @@ def hmc_backup_lpar_profiles(system_name_or_uuid: str, file_path: str) -> str:
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file will be saved.
+        force: When True, passes ``--force`` to ``bkprofdata`` so that an
+            existing file at ``file_path`` is overwritten. Defaults to False.
 
     Returns:
-        The raw HMC CLI output.    """
+        The raw HMC CLI output.
+
+    Raises:
+        ValueError: if ``file_path`` is empty or whitespace-only.
+    """
+    if not file_path or not file_path.strip():
+        raise ValueError("file_path must not be empty")
     return _ssh_with_client(
         lambda config, system_name, _: backup_lpar_profiles(
-            config, system_name, file_path
+            config, system_name, file_path, force=force
         ),
         system_name_or_uuid=system_name_or_uuid,
     )
