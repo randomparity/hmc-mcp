@@ -66,6 +66,8 @@ app.add_typer(raw_app, name="raw")
 memory_pools_app = typer.Typer(help="Shared memory pools.", no_args_is_help=True)
 app.add_typer(memory_pools_app, name="memory-pools")
 
+config_app = typer.Typer(help="Profile configuration commands.", no_args_is_help=True)
+app.add_typer(config_app, name="config")
 
 
 @dataclass(frozen=True)
