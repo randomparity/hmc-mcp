@@ -21,19 +21,33 @@ class SystemsMixin:
     # -- Convenience wrappers for the common resources ----------------- #
     async def get_console_info(self) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
-        # Some HMC firmware builds return HTTP 500 on the unfiltered feed;
-        # retrying with group=ConsoleDetails avoids the problematic sub-elements.
+        # Some HMC firmware builds return HTTP 500 on the unfiltered
+        # ManagementConsole feed due to a null SessionId in the response XML.
+        # Catch the error and return None instead of raising — the caller can
+        # treat None as "HMC is reachable but console info is unavailable".
         try:
             entries = await self.list_uom("ManagementConsole")
+            return entries[0] if entries else None
         except Exception:
-            entries = await self.list_uom("ManagementConsole", group="ConsoleDetails")
-        return entries[0] if entries else None
+            return None
 
     async def list_managed_systems(self) -> list[dict[str, Any]]:
-        # The unfiltered ManagedSystem feed can trigger HTTP 500 on HMC firmware
-        # that has a null UUID in VirtualPersistentMemoryVolume; SystemSummary is
-        # a lighter group that omits the problematic sub-elements.
-        return await self.list_uom("ManagedSystem", group="SystemSummary")
+        # Some HMC firmware builds return HTTP 500 on the unfiltered
+        # ManagedSystem feed due to a null UUID in VirtualPersistentMemoryVolume
+        # ("Nested path contains null property …/VirtualPersistentMemoryVolume/…").
+        # Return an empty list only for that specific HMC firmware bug; re-raise
+        # everything else (auth errors, parse errors, other HMC errors, etc.).
+        try:
+            return await self.list_uom("ManagedSystem")
+        except Exception as exc:
+            from .errors import HMCError
+            if (
+                isinstance(exc, HMCError)
+                and exc.status_code == 500
+                and "VirtualPersistentMemoryVolume" in str(exc)
+            ):
+                return []
+            raise
 
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)
