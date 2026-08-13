@@ -194,6 +194,19 @@ def test_set_lpar_msp_rejects_linux_lpar(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
+def test_set_lpar_msp_rejects_partition_not_found(monkeypatch, mock_hmc):
+    """hmc_set_lpar_msp raises HMCCLIError when lssyscfg returns empty (LPAR not found)."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock_seq("\n")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        with pytest.raises(HMCCLIError, match="not found"):
+            hmc_set_lpar_msp(SYSTEM_UUID, LPAR_UUID, True)
+
+    assert conn_mock.run.call_count == 1
+
+
 def test_set_lpar_msp_ssh_layer_rejects_non_vios():
     """set_lpar_msp (ssh) raises HMCCLIError for non-VIOS — inner guard."""
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
