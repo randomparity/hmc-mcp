@@ -48,6 +48,11 @@ def test_validate_agent_id_bracket():
         validate_agent_id("alice[1]")
 
 
+def test_validate_agent_id_slash():
+    with pytest.raises(ValueError, match="slash"):
+        validate_agent_id("team/agent")
+
+
 def test_validate_agent_id_non_ascii():
     with pytest.raises(ValueError, match="printable ASCII"):
         validate_agent_id("alicé")

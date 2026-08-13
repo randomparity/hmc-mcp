@@ -56,6 +56,8 @@ def validate_agent_id(agent_id: str) -> None:
     - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
       is embedded in the ownership token written via ``chsyscfg``.
     - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
+    - No forward slashes — the audit memento is formatted as ``hmc-mcp/<agent_id>``;
+      a slash in the agent_id would produce an ambiguous multi-segment path.
 
     Called from :class:`.config.HMCConfig` model validator so errors surface at
     construction time, before any SSH call is made.
@@ -82,6 +84,11 @@ def validate_agent_id(agent_id: str) -> None:
     if "[" in agent_id or "]" in agent_id:
         raise ValueError(
             "agent_id contains a square bracket; brackets break the ownership token format"
+        )
+    if "/" in agent_id:
+        raise ValueError(
+            "agent_id contains '/'; slashes make the audit memento path "
+            "(hmc-mcp/<agent_id>) ambiguous"
         )
 
 
