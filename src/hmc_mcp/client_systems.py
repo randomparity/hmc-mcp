@@ -21,11 +21,19 @@ class SystemsMixin:
     # -- Convenience wrappers for the common resources ----------------- #
     async def get_console_info(self) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
-        entries = await self.list_uom("ManagementConsole")
+        # Some HMC firmware builds return HTTP 500 on the unfiltered feed;
+        # retrying with group=ConsoleDetails avoids the problematic sub-elements.
+        try:
+            entries = await self.list_uom("ManagementConsole")
+        except Exception:
+            entries = await self.list_uom("ManagementConsole", group="ConsoleDetails")
         return entries[0] if entries else None
 
     async def list_managed_systems(self) -> list[dict[str, Any]]:
-        return await self.list_uom("ManagedSystem")
+        # The unfiltered ManagedSystem feed can trigger HTTP 500 on HMC firmware
+        # that has a null UUID in VirtualPersistentMemoryVolume; SystemSummary is
+        # a lighter group that omits the problematic sub-elements.
+        return await self.list_uom("ManagedSystem", group="SystemSummary")
 
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)

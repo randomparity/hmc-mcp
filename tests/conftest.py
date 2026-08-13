@@ -88,6 +88,7 @@ def make_config(**kw) -> HMCConfig:
         "user": "hscroot",
         "password": "abc123",
         "verify_ssl": False,
+        "_env_file": None,  # suppress .env loading so live creds/schema don't bleed in
     }
     defaults.update(kw)
     return HMCConfig(**defaults)

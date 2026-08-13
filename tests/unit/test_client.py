@@ -563,13 +563,15 @@ async def test_fetch_json_404_raises(mock_hmc):
 @pytest.mark.asyncio
 async def test_parse_failure_names_failing_call(mock_hmc):
     """A 200 with malformed XML surfaces as HMCError naming the failing path."""
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+    # list_managed_systems now appends ?group=SystemSummary to avoid HTTP 500
+    # on HMC firmware with null VirtualPersistentMemoryVolume UUIDs.
+    mock_hmc.get("/rest/api/uom/ManagedSystem", params={"group": "SystemSummary"}).mock(
         return_value=httpx.Response(200, text="<feed><entry>")
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
             await hmc.list_managed_systems()
-    assert "Failed to parse /rest/api/uom/ManagedSystem response" in str(exc_info.value)
+    assert "Failed to parse /rest/api/uom/ManagedSystem" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

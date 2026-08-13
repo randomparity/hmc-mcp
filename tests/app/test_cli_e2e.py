@@ -112,9 +112,11 @@ class _MockHMC(BaseHTTPRequestHandler):
         self._send(b"", 204)
 
     def do_GET(self):
-        if self.path == "/rest/api/uom/ManagedSystem":
+        # Strip query string for routing — the client may append ?group=...
+        path = self.path.split("?")[0]
+        if path == "/rest/api/uom/ManagedSystem":
             self._send(SYSTEMS)
-        elif self.path == "/rest/api/uom/LogicalPartition":
+        elif path == "/rest/api/uom/LogicalPartition":
             self._send(LPARS)
         else:
             self._send(b"", 404)
