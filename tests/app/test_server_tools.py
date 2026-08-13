@@ -194,15 +194,18 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar"))
     )
-    result = hmc_create_lpar(
-        system_name_or_uuid=SYSTEM_UUID,
-        name="newlpar",
-        min_memory=512,
-        desired_memory=2048,
-        max_memory=4096,
-        desired_procs=0.5,
-        desired_vcpus=2,
-    )
+    # stamp_lpar_ownership calls _ssh_system_name then set_lpar_description over SSH;
+    # patch stamp to avoid needing a live SSH server in this XML-building test.
+    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]")):
+        result = hmc_create_lpar(
+            system_name_or_uuid=SYSTEM_UUID,
+            name="newlpar",
+            min_memory=512,
+            desired_memory=2048,
+            max_memory=4096,
+            desired_procs=0.5,
+            desired_vcpus=2,
+        )
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "newlpar</PartitionName>" in body
@@ -210,7 +213,10 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     assert '<MinimumMemory kb="CUD" kxe="false">512</MinimumMemory>' in body
     assert '<DesiredProcessingUnits kb="CUD" kxe="false">0.5</DesiredProcessingUnits>' in body
     assert '<DesiredVirtualProcessors kb="CUD" kxe="false">2</DesiredVirtualProcessors>' in body
-    assert result["Resource"]["PartitionName"] == "newlpar"
+    # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
+    assert result["lpar"]["Resource"]["PartitionName"] == "newlpar"
+    assert result["ownership_stamped"] is True
+    assert result["warnings"] == []
 
 
 def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
@@ -223,13 +229,14 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded"))
     )
-    hmc_create_lpar(
-        system_name_or_uuid=SYSTEM_UUID,
-        name="ded",
-        dedicated=True,
-        desired_procs=2.0,
-        max_procs=4.0,
-    )
+    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
+        hmc_create_lpar(
+            system_name_or_uuid=SYSTEM_UUID,
+            name="ded",
+            dedicated=True,
+            desired_procs=2.0,
+            max_procs=4.0,
+        )
     body = route.calls.last.request.content.decode()
     assert "<DedicatedProcessorConfiguration" in body
     assert '<DesiredProcessors kb="CUD" kxe="false">2</DesiredProcessors>' in body
