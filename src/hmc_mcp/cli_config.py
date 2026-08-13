@@ -124,14 +124,14 @@ def config_show(
 
     config_path = resolve_config_path()
     if config_path is None:
-        would_be = config_dir() / "config.toml"
-        _fail(ConfigError(f"No config file found at {would_be}"))
+        _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
+    assert config_path is not None  # _fail raises; narrowing for type checker
     # Read the raw TOML dict to determine credential presence WITHOUT
     # resolving password_env (load_profile() resolves it, which requires
     # the env var to be present — a production secret may not be set locally).
     try:
-        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))  # type: ignore[union-attr]
+        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         _fail(ConfigError(f"{config_path}: TOML parse error: {exc}"))
         return  # unreachable but satisfies type checker
