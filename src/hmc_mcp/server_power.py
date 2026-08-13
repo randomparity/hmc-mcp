@@ -32,6 +32,33 @@ from .documents import (
 from .jobs import power_off_lpar_job, power_on_lpar_job
 
 
+def _check_lpar_write_error(exc: HMCError) -> None:
+    """Re-raise *exc* with an actionable message for known LPAR write HTTP errors.
+
+    HTTP 406 on a UOM write (PUT LogicalPartition / POST LogicalPartition) means
+    the HMC rejected the request due to a header or XML schema mismatch — the most
+    common causes are a wrong or missing Accept/Content-Type media type or a schema
+    version the HMC does not recognise.
+
+    All other errors are left unchanged.
+
+    The replacement HMCError intentionally does not forward ``body=exc.body``:
+    the constructor would append the parsed HMC body text after the actionable
+    message, degrading readability. ``from exc`` sets ``__cause__`` and, combined
+    with the implicit ``__context__`` set by the ``except`` block, makes the
+    original exception accessible in developer diagnostics.
+    """
+    if exc.status_code == 406:
+        raise HMCError(
+            "The HMC rejected the LPAR write request with HTTP 406 "
+            "(Not Acceptable). Likely causes: (1) Accept or Content-Type "
+            "header mismatch — the HMC may require a more specific media type; "
+            "(2) XML schema version mismatch — try setting "
+            "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
+            exc.status_code,
+        ) from exc
+
+
 
 @mcp.tool
 def hmc_create_lpar(
@@ -109,7 +136,11 @@ def hmc_create_lpar(
                     "or delete the existing partition first."
                 )
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.create_logical_partition(system_uuid, xml)
+            try:
+                return await hmc.create_logical_partition(system_uuid, xml)
+            except HMCError as exc:
+                _check_lpar_write_error(exc)
+                raise
 
     return _run(_go)
 
@@ -160,7 +191,11 @@ def hmc_modify_lpar(
     async def _go():
         async with client_from_env() as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.modify_logical_partition(lpar_uuid, xml)
+            try:
+                return await hmc.modify_logical_partition(lpar_uuid, xml)
+            except HMCError as exc:
+                _check_lpar_write_error(exc)
+                raise
 
     return _run(_go)
 
