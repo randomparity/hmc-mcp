@@ -74,7 +74,7 @@ class HMCClient(
             verify=config.verify_ssl,
             timeout=config.timeout,
             headers={
-                "X-Audit-Memento": config.audit_memento,
+                "X-Audit-Memento": config.effective_audit_memento,
                 # Most HMC builds ignore charset but honour JSON when asked;
                 # we stick to the canonical XML representation everywhere.
             },

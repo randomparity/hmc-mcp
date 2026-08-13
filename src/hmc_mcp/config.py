@@ -18,7 +18,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +55,34 @@ class HMCConfig(BaseSettings):
             "schemaVersion=V1_0. Set it only to pin negotiation explicitly."
         ),
     )
+    agent_id: str | None = Field(
+        default=None,
+        description=(
+            "Per-agent identifier folded into the X-Audit-Memento header as "
+            "hmc-mcp/<agent_id>. Used for multi-agent LPAR ownership attribution. "
+            "Must be 1–64 printable ASCII characters with no commas, = signs, or "
+            "square brackets. (HMC_AGENT_ID)"
+        ),
+    )
+
+    @field_validator("agent_id")
+    @classmethod
+    def _validate_agent_id_field(cls, v: str | None) -> str | None:
+        if v is not None and v != "":
+            from .ssh import validate_agent_id  # deferred — ssh imports config; avoid circular
+            validate_agent_id(v)
+        return v
+
+    @property
+    def effective_audit_memento(self) -> str:
+        """Audit memento value sent in the X-Audit-Memento header.
+
+        Returns ``hmc-mcp/<agent_id>`` when ``agent_id`` is set and non-empty;
+        otherwise returns ``audit_memento`` (default ``"hmc-mcp"``).
+        """
+        if self.agent_id:
+            return f"hmc-mcp/{self.agent_id}"
+        return self.audit_memento
 
     @property
     def base_url(self) -> str:
