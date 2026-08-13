@@ -56,16 +56,21 @@ def config_init() -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # O_CREAT|O_EXCL: atomic exclusive create — fails if another process
-        # raced us to the file between the existence check above and now.
-        with open(target, "x", encoding="utf-8") as fh:
-            fh.write(_STARTER_TOML)
+        if sys.platform != "win32":
+            # O_CREAT|O_EXCL|mode=0o600: atomic exclusive create with restrictive
+            # permissions — no create-then-chmod window.  The mode is set before
+            # any other process can open the file descriptor.
+            fd = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(_STARTER_TOML)
+        else:
+            # Windows: os.open mode bits are no-ops; use plain open() with O_EXCL
+            # semantics via 'x' mode.  The file inherits the user-account ACL from
+            # %APPDATA%, which is the accepted Windows security posture (ADR-0007).
+            with open(target, "x", encoding="utf-8") as fh:
+                fh.write(_STARTER_TOML)
     except FileExistsError:
         _fail(FileExistsError(f"Config file already exists: {target}"))
-
-    # Apply restrictive permissions on POSIX; chmod is a no-op on Windows.
-    if sys.platform != "win32":
-        os.chmod(target, 0o600)
 
     console.print(str(target))
 
@@ -154,7 +159,7 @@ def config_show(
 
     # Gather all output fields before emitting anything (no partial output).
     data: dict[str, Any] = {
-        "profile": effective_profile or "(default)",
+        "profile": _resolved_profile or "(default)",
         "host": cfg.host,
         "port": cfg.port,
         "user": cfg.user,
