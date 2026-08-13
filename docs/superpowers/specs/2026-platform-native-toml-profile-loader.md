@@ -43,12 +43,12 @@ default_profile = "prod"      # optional
 [profiles.prod]
 host = "hmc.example.com"
 user = "admin"
-password_env = "HMC_PROD_PASSWORD"
+password_env = "HMC_PROD_PASSWORD"  # pragma: allowlist secret
 
 [profiles.dev]
 host = "hmc-dev.example.com"
 user = "admin"
-password = "devpassword"
+password = "devpassword"  # pragma: allowlist secret
 ```
 
 All fields from `HMCConfig` except `password` are valid in a profile entry.
@@ -91,7 +91,7 @@ Given a selected profile `P` with fields `host`, `user`, `password`/`password_en
 
 1. If `HMC_HOST` (or `--host`) is set, it overrides the TOML `host`.
 2. TOML fills fields not present in the environment.
-3. `password_env = "VAR"` is resolved via `os.environ["VAR"]` at construction
+3. `password_env = "VAR"` is resolved via `os.environ["VAR"]` at construction  # pragma: allowlist secret
    time, only for the selected profile.
 
 `HMCConfig` remains a `pydantic_settings.BaseSettings` with `env_prefix="HMC_"`

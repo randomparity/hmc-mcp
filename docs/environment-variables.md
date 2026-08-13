@@ -1,10 +1,10 @@
 # Environment Variables
 
-`hmc-mcp` reads configuration from a `.env` file, environment variables, or
-CLI flags (priority: CLI flags > environment variables > `.env` file).
+`hmc-mcp` reads configuration from a platform-native TOML profile file,
+environment variables, or CLI flags (priority: CLI flags > environment variables > TOML profile).
 
-Copy `.env.example` to `.env` and fill in at minimum `HMC_HOST`, `HMC_USER`,
-and `HMC_PASSWORD`.
+See [Configure](#configure) in the README for the TOML profile format.
+Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a profile file.
 
 ## Reference
 
@@ -14,6 +14,7 @@ and `HMC_PASSWORD`.
 | `HMC_PORT` | integer | `12443` | HMC REST API port |
 | `HMC_USER` | string | _(required)_ | HMC user name |
 | `HMC_PASSWORD` | string | _(required)_ | HMC password |
+| `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent). Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
 | `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |

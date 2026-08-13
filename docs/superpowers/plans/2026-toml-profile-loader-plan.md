@@ -53,11 +53,11 @@ test plan. All tests must **fail** (or skip) before any implementation changes.
    selects dev profile
 8. `test_load_profile_env_overrides_toml` — TOML has `host=toml-host`, env has
    `HMC_HOST=env-host` → `HMCConfig.host == "env-host"`
-9. `test_load_profile_password_env` — `password_env="MY_PW"`, env has
-   `MY_PW=secret` → `HMCConfig.password == "secret"`
+9. `test_load_profile_password_env` — `password_env="MY_PW"`, env has  # pragma: allowlist secret
+   `MY_PW=secret` → `HMCConfig.password == "secret"`  # pragma: allowlist secret
 10. `test_load_profile_both_passwords_error` — both `password` and
     `password_env` in TOML → `ConfigError`
-11. `test_load_profile_missing_password_env` — `password_env="MISSING_VAR"`, var
+11. `test_load_profile_missing_password_env` — `password_env="MISSING_VAR"`, var  # pragma: allowlist secret
     not set → `ConfigError` mentioning var name; no secret in message
 12. `test_load_profile_no_default_no_arg` — TOML has profiles but no
     `default_profile`, no arg, `HMC_PROFILE` unset → `ConfigError`
