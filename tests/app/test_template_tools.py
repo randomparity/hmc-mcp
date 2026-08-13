@@ -125,7 +125,9 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert "Deploy</OperationName>" in body
     assert "TargetUuid" in body and "sys-uuid" in body
     assert "K_X_API_SESSION_MEMENTO" in body
-    assert result["Resource"]["JobID"] == "job-uuid-999"
+    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
+    assert result["ownership_stamped"] is None
 
 
 # ---------------------------------------------------------------------- #
@@ -160,4 +162,6 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     )
     assert submit_route.called
     assert poll_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert result["job"]["Resource"]["Status"] == "COMPLETED"
+    assert result["ownership_stamped"] is None
