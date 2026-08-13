@@ -9,7 +9,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import pytest
 import respx
 
 from hmc_mcp.server import hmc_create_lpar
@@ -55,7 +54,7 @@ def _setup_mock(router):
         return_value=httpx.Response(204)
     )
     # Name-uniqueness check — no existing LPAR
-    router.get(f"/rest/api/uom/LogicalPartition/search/(PartitionName==test-lpar)").mock(
+    router.get("/rest/api/uom/LogicalPartition/search/(PartitionName==test-lpar)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
     # System UUID lookup (resolve_system_uuid called with a UUID → direct GET)

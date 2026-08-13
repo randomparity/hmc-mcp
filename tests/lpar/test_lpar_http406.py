@@ -84,18 +84,17 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
 
-    # Patch both CLI helpers at their import site in server_power (both are
-    # now module-level imports there, so patching the ssh module wouldn't work).
+    # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
     with (
         patch("hmc_mcp.server_power._ssh_system_name", new=AsyncMock(return_value="sys1")),
         patch("hmc_mcp.server_power.create_lpar_via_cli", new=AsyncMock(return_value="")),
+        patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")),
     ):
         result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")
 
-    # The tool should return the new LPAR entry dict (from the post-create fetch).
-    # The entry is a parsed feed dict: {"UUID": ..., "Resource": {"PartitionName": ...}, ...}
+    # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
     assert result is not None
-    assert result.get("UUID") == LPAR_UUID
+    assert result["lpar"].get("UUID") == LPAR_UUID
 
 
 # ---------------------------------------------------------------------- #
