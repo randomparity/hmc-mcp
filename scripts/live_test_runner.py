@@ -265,8 +265,9 @@ async def subtask_0(client: Client) -> None:
                 CTX["lp3_baseline"]["vios_slot"] = int(vios_slot)
             break
 
-    # 8. VIOS — capture UUID and numeric PartitionID
-    st, data = await call(client, "hmc_vios")
+    # 8. VIOS — capture UUID and numeric PartitionID scoped to our managed system
+    st, data = await call(client, "hmc_vios",
+                          system_name_or_uuid=CTX["system_name"])
     record(0, "hmc_vios (baseline)", st, data)
     if st == "PASS":
         for e in _entries(data):
@@ -334,7 +335,8 @@ async def subtask_1(client: Client) -> None:
     if st == "PASS" and isinstance(data, dict) and not CTX["lp3_uuid"]:
         CTX["lp3_uuid"] = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_vios")
+    st, data = await call(client, "hmc_vios",
+                          system_name_or_uuid=CTX["system_name"])
     record(1, "hmc_vios", st, data)
     if st == "PASS" and not CTX["vios_uuid"]:
         for e in _entries(data):
@@ -1206,10 +1208,38 @@ SUBTASKS = {
 }
 
 
+def _restore_ctx_from_results(results_path: str = "test-results-round2.json") -> None:
+    """Pre-seed CTX from the previous results file when running a single sub-task.
+
+    This allows sub-tasks run in isolation (e.g. `python runner.py 3`) to use
+    context captured by earlier sub-tasks (VIOS UUID, system UUID, etc.).
+    """
+    p = Path(results_path)
+    if not p.exists():
+        return
+    try:
+        saved = json.loads(p.read_text())
+        saved_ctx = saved.get("context") or {}
+        for key in list(CTX.keys()):
+            if CTX[key] is None and saved_ctx.get(key) is not None:
+                CTX[key] = saved_ctx[key]
+            elif key == "lp3_baseline" and not CTX[key] and saved_ctx.get(key):
+                CTX[key] = saved_ctx[key]
+        print(f"  ℹ  Context restored from {results_path} "
+              f"(vios_uuid={CTX.get('vios_uuid')}, "
+              f"system_uuid={CTX.get('system_uuid')}, "
+              f"vg_uuid={CTX.get('vg_uuid')})")
+    except Exception as e:
+        print(f"  ⚠️  Could not restore context from {results_path}: {e}")
+
+
 async def main(subtask_filter: int | None = None) -> None:
     print(f"Starting live integration tests (Round 2) at "
           f"{datetime.now(timezone.utc).isoformat()}")
     print(f"HMC_SCHEMA_VERSION={os.environ.get('HMC_SCHEMA_VERSION', '(not set)')}")
+
+    if subtask_filter is not None:
+        _restore_ctx_from_results()
 
     async with Client(mcp) as client:
         tasks = [subtask_filter] if subtask_filter is not None else sorted(SUBTASKS.keys())

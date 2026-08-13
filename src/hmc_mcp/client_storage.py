@@ -28,15 +28,22 @@ class StorageMixin:
         return f"{self.config.base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
 
     async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]:
-        """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
+        """List Volume Groups on a VIOS (free space, PVs, virtual disks).
+
+        The VolumeGroup endpoint returns HTTP 204 when X-HMC-Schema-Version is
+        present, so we deliberately omit the schema-version header here.
+        """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        xml = await self._get(path, "VolumeGroup")
+        xml = await self._get(path, "VolumeGroup", include_schema_version=False)
         return _parse_feed(xml, path) if xml else []
 
     async def get_volume_group(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
-        return await self.get_uom_path(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}", "VolumeGroup"
-        )
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+        if not xml:
+            return None
+        entries = _parse_feed(xml, path)
+        return entries[0] if entries else None
 
     async def create_volume_group(
         self, vios_uuid: str, name: str, physical_volumes: list[str]

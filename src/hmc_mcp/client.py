@@ -147,17 +147,29 @@ class HMCClient(
     # Generic request helpers
     # ------------------------------------------------------------------ #
 
-    def _uom_headers(self, resource_type: str | None) -> dict[str, str]:
+    def _uom_headers(
+        self,
+        resource_type: str | None,
+        include_schema_version: bool = True,
+    ) -> dict[str, str]:
         accept = MEDIA_UOM
         if resource_type:
             accept = f"{MEDIA_UOM}; type={resource_type}"
         headers: dict[str, str] = {"Accept": accept}
-        if self.config.schema_version:
+        if include_schema_version and self.config.schema_version:
             headers["X-HMC-Schema-Version"] = self.config.schema_version
         return headers
 
-    async def _get(self, path: str, resource_type: str | None = None) -> str:
-        resp = await self._http.get(path, headers=self._uom_headers(resource_type))
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str:
+        resp = await self._http.get(
+            path,
+            headers=self._uom_headers(resource_type, include_schema_version),
+        )
         if resp.status_code == 204:
             return ""
         if resp.status_code != 200:
