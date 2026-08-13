@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from hmc_mcp.errors import HMCError
 from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_get_job,
@@ -379,6 +380,21 @@ def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
     result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_list_available_hmc_ptfs_unsupported(monkeypatch, mock_hmc):
+    """hmc_get_available_hmc_ptfs converts HTTP 400 REST0026 to actionable error."""
+    _hmc_env(monkeypatch)
+    error_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<HttpErrorResponseResult><Message>REST0026 Unknown extended attribute group SoftwareUpdate</Message>'
+        '</HttpErrorResponseResult>'
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate").mock(
+        return_value=httpx.Response(400, text=error_xml)
+    )
+    with pytest.raises(HMCError, match="SoftwareUpdate attribute group not supported on this HMC version"):
+        hmc_get_available_hmc_ptfs(MC_UUID)
 
 
 # ---------------------------------------------------------------------- #
