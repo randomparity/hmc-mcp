@@ -630,14 +630,19 @@ async def set_lpar_description(
     Raises ``ValueError`` if *description* is not printable ASCII; see
     :func:`validate_lpar_description` for the constraint and error code.
 
-    Raises :class:`HMCCLIError` if *lpar_name* contains a comma.  The HMC
-    CLI ``-i`` parser is comma-delimited; a comma in the LPAR name would split
-    the attribute pair and corrupt the configuration.
+    Raises :class:`HMCCLIError` if *lpar_name* contains a comma or equals sign.
+    The HMC CLI ``-i`` parser is comma-delimited and equals-delimited; either
+    character in the LPAR name would corrupt the attribute pair.
     """
     if "," in lpar_name:
         raise HMCCLIError(
             f"LPAR name {lpar_name!r} contains a comma; cannot safely write "
             "description via chsyscfg -i (comma-delimited attribute parser)"
+        )
+    if "=" in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains '='; cannot safely write "
+            "description via chsyscfg -i (equals-delimited key/value parser)"
         )
     validate_lpar_description(description)
     cmd = (

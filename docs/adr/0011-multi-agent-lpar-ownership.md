@@ -70,6 +70,11 @@ per-HMC-user isolation) are explicit future work and require a separate ADR.
 - Every LPAR created through the three create paths carries a machine-readable
   ownership token visible in the HMC GUI Partitions tab and readable via
   `hmc_get_lpar_description`.
+  **Known gap (issue #135):** `hmc_deploy_partition_template` currently stubs
+  ownership stamping with `ownership_stamped=None` for all outcomes because the
+  deploy job does not reliably return the new LPAR name across HMC firmware
+  versions.  Full implementation (diff the LPAR list before/after the job) is
+  tracked in issue #135.
 - Attribution in the HMC REST audit log improves: `X-Audit-Memento` is now
   `hmc-mcp/<agent_id>` rather than the generic `hmc-mcp` when `HMC_AGENT_ID` is
   set.

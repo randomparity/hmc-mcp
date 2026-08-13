@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ._app import (
@@ -13,7 +14,6 @@ from ._app import (
     _run,
     mcp,
 )
-
 from .client import HMCError
 from .common import client_from_env
 from .documents import (
@@ -31,6 +31,8 @@ from .documents import (
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
 from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+
+_logger = logging.getLogger(__name__)
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -205,15 +207,26 @@ def hmc_create_lpar(
                         sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
                     except (HMCCLIError, Exception):
                         sys_name_for_stamp = system_name_or_uuid
+                # Use the server-confirmed PartitionName if available; fall back to
+                # the constructor argument in case the HMC normalised the name.
+                confirmed_name = (
+                    (lpar_result.get("Resource") or {}).get("PartitionName")
+                    or name
+                )
                 token = await stamp_lpar_ownership(
-                    cfg, sys_name_for_stamp, name, agent_id=cfg.agent_id
+                    cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
                 )
                 if token is not None:
                     ownership_stamped = True
                 else:
                     ownership_stamped = False
+                    _logger.warning(
+                        "ownership stamp failed for LPAR %r on %r",
+                        confirmed_name,
+                        sys_name_for_stamp,
+                    )
                     warnings.append(
-                        f"ownership stamp failed for LPAR {name!r} on {sys_name_for_stamp!r}"
+                        f"ownership stamp failed for LPAR {confirmed_name!r} on {sys_name_for_stamp!r}"
                     )
 
             return {

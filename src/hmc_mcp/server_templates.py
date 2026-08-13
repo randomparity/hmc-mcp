@@ -120,8 +120,10 @@ def hmc_deploy_partition_template(
             job_status = (final_job or {}).get("Status") or (
                 ((final_job or {}).get("Resource") or {}).get("Status")
             )
-            # Automatic stamping is deferred: deploy job does not reliably return
-            # the new LPAR name across HMC firmware versions.
+            # TODO (#135): Automatic stamping deferred — deploy job does not
+            # reliably return the new LPAR name across HMC firmware versions.
+            # Full implementation: diff the LPAR list before/after the deploy job
+            # to identify the new partition and stamp it. See ADR 0011 and issue #135.
             return {
                 "job": final_job,
                 "ownership_stamped": None,
