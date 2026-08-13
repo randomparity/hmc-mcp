@@ -817,11 +817,21 @@ async def subtask_10(client: Client) -> None:
                           lpar_name_or_uuid=CTX["lp3_name"])
     record(10, "hmc_get_lpar_description (verify)", st, data)
 
-    st, data = await call(client, "hmc_set_lpar_description",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          description=str(orig_desc) if orig_desc else "")
-    record(10, "hmc_set_lpar_description (restore)", st, data)
+    # Restore only if the original description is printable ASCII (non-ASCII
+    # descriptions cannot be round-tripped through the CLI set command).
+    _restore_desc = str(orig_desc) if orig_desc else ""
+    if _restore_desc and (
+        not _restore_desc.isascii()
+        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in _restore_desc)
+    ):
+        skip(10, "hmc_set_lpar_description (restore)",
+             "original description contains non-ASCII/non-printable chars — cannot restore via CLI")
+    else:
+        st, data = await call(client, "hmc_set_lpar_description",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              description=_restore_desc)
+        record(10, "hmc_set_lpar_description (restore)", st, data)
 
     # Determine lp3 partition environment
     st_env, data_env = await call(
@@ -875,18 +885,26 @@ async def subtask_10(client: Client) -> None:
         skip(10, "hmc_set_lpar_msp (toggle/verify/restore)",
              f"lp3 is not a VIOS (lpar_env={lp3_env!r})")
 
-    # Proc compat — set to current mode (idempotent; fix #101)
-    orig_compat = CTX["lp3_baseline"].get("proc_compat")
-    if isinstance(orig_compat, dict):
-        mode = orig_compat.get("current") or orig_compat.get("mode") or "default"
+    # Proc compat — fetch actual current mode and set idempotently.
+    # Use hmc_get_lpar_proc_compat to get the live value; fall back to
+    # "default" only if the fetch fails. Skip if we can't get a real mode.
+    st_pc, data_pc = await call(client, "hmc_get_lpar_proc_compat",
+                                system_name_or_uuid=CTX["system_name"],
+                                lpar_name_or_uuid=CTX["lp3_name"])
+    if st_pc == "PASS" and isinstance(data_pc, dict):
+        mode = (data_pc.get("desired") or data_pc.get("curr") or "").strip()
     else:
-        mode = "default"
+        mode = ""
 
-    st, data = await call(client, "hmc_set_lpar_proc_compat",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          mode=mode)
-    record(10, "hmc_set_lpar_proc_compat", st, data)
+    if mode and mode.lower() not in ("default", ""):
+        st, data = await call(client, "hmc_set_lpar_proc_compat",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              mode=mode)
+        record(10, "hmc_set_lpar_proc_compat", st, data)
+    else:
+        skip(10, "hmc_set_lpar_proc_compat",
+             f"proc compat mode is {mode!r} — skipping idempotent set (chsyscfg rejects 'default' as invalid attribute value)")
 
     st, data = await call(client, "hmc_get_lpar_proc_compat",
                           system_name_or_uuid=CTX["system_name"],
