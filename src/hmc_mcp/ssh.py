@@ -26,6 +26,23 @@ class HMCCLIError(HMCError):
     """
 
 
+def _validate_description(description: str) -> None:
+    """Raise ``ValueError`` if *description* is not printable ASCII.
+
+    The HMC enforces printable ASCII-only partition descriptions (HSCLC63B).
+    Control characters (NUL, LF, CR, ESC, …) are also rejected because they
+    can corrupt the HMC CLI's CSV-like ``-i`` parser or be silently truncated
+    at the C-string layer.
+    """
+    if not description.isascii() or any(
+        ord(c) < 0x20 or ord(c) == 0x7F for c in description
+    ):
+        raise ValueError(
+            "description contains non-ASCII or non-printable characters; "
+            "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
+        )
+
+
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute an HMC CLI command over SSH and return its stdout.
 
@@ -417,19 +434,10 @@ async def set_lpar_description(
     -i "name=<lpar_name>,description=<description>"`` and returns the raw
     command output.
 
-    Raises ``ValueError`` if *description* contains non-ASCII or non-printable
-    characters; the HMC enforces printable ASCII-only partition descriptions
-    (HSCLC63B).  Control characters (NUL, LF, CR, ESC, …) are also rejected
-    because they can corrupt the HMC CLI's CSV-like ``-i`` parser or be
-    silently truncated at the C-string layer.
+    Raises ``ValueError`` if *description* is not printable ASCII; see
+    :func:`_validate_description` for the constraint and error code.
     """
-    if not description.isascii() or any(
-        ord(c) < 0x20 or ord(c) == 0x7F for c in description
-    ):
-        raise ValueError(
-            "description contains non-ASCII or non-printable characters; "
-            "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
-        )
+    _validate_description(description)
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
         f"{shlex.quote(f'name={lpar_name},description={description}')}"
