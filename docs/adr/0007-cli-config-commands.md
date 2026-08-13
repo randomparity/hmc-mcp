@@ -31,13 +31,19 @@ regardless of whether the referenced env var is present.
 `config init` writes the platform-native path returned by
 `resolve_config_path()` logic (i.e., the same path resolution, without the
 existence check). On POSIX it applies mode `0o600` immediately after creation.
+On Windows, `0o600` is a no-op; the file inherits the user-account ACL from
+`%APPDATA%`, which is accepted as the Windows security posture for this issue.
 
 ## Consequences
 
 - Operators get a `hmc-mcp config init` bootstrap command that creates a
-  well-commented starter TOML without overwriting existing config.
+  well-commented starter TOML, prints the created path on success, and exits
+  non-zero with a message if the file already exists.
 - `hmc-mcp config list` is safe for tab-completion and scripting; it exits 0
   even when no config file exists.
+- `hmc-mcp config show` exits non-zero with a human-readable message when no
+  profile is resolvable (no config file, no matching profile name, no
+  default). It does not attempt to resolve `password_env`.
 - `hmc-mcp config show` can reveal hostname and username; it cannot reveal
   passwords or private-key contents. This is the same exposure level as
   `hmc-mcp --help`.
@@ -45,6 +51,14 @@ existence check). On POSIX it applies mode `0o600` immediately after creation.
   new file and the two lines in `cli_app.py` that register the group.
 
 ## Considered & Rejected
+
+**No CLI surface (rely on text editor + README).** The loader API from #124 is
+fully functional without any CLI wrapper. Operators can locate the platform
+path from the README and write a config file directly. This is rejected because
+`config init` does work a text editor cannot: it creates the directory tree if
+absent and applies restrictive file permissions (`0o600`) on first creation.
+`config list` and `config show` reduce the support burden for operators who
+need to verify their setup without inspecting raw TOML.
 
 **Inline `config` commands in `cli_app.py`.** The pattern in this repo is one
 file per domain group. Inlining would make `cli_app.py` the right place to look

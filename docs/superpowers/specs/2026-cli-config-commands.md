@@ -32,7 +32,7 @@ present in `GlobalOpts`) selects the profile for commands that consume it.
    booleans `password_configured` / `ssh_key_configured`. Never resolves
    `password_env`, never emits literal passwords. `--json` flag emits JSON.
 4. All three commands exit 0 on success, exit 1 with a red `Error:` line on
-   failure (consistent with other CLI commands using `_fail`).
+   **stderr** on failure (consistent with other CLI commands using `_fail`).
 5. `--profile` selects the profile for `show`; `list` is profile-independent.
 6. Tests cover: `init` happy path, `init` existing-file refusal, `init`
    permissions (POSIX), `list` with profiles, `list` absent file, `show`
@@ -51,7 +51,7 @@ beyond those already introduced by #124.
 
 | Boundary | What enters | Control |
 |---|---|---|
-| `config show` output | Caller-provided `--profile` name (CLI arg) | Passed to `load_profile()` — unknown profiles raise `ConfigError` before any output |
+| `config show` output | Caller-provided `--profile` name (CLI arg) | Resolved to a raw TOML dict (unknown profile → empty dict → `ConfigError` from `load_profile()`) — all fields gathered before any output, so no partial output on error |
 | File write (`init`) | Target path from `resolve_config_path()` | Path is always under platform config dir, never user-supplied; no path traversal possible |
 | Secret values | Literal password from TOML, `password_env` value | `show` never resolves `password_env`; literal password suppressed and replaced with a boolean |
 
@@ -73,19 +73,20 @@ access are unchanged from the loader (ADR-0006).
 
 ### `config init`
 
-1. Calls `resolve_config_path()` — returns None when absent or the existing path.
-2. Computes the target path: `<platform_dir>/hmc-mcp/config.toml`.
-   - We need a `config_dir()` helper (or inline) that returns the parent dir
-     without checking existence; this is a thin wrapper on the same logic in
-     `resolve_config_path()` but without the existence check.
-3. If the file already exists: print error, exit 1. (Race with another process
-   between the existence check and the write is an accepted known risk —
-   the window is milliseconds and the consequence is a harmless TOML syntax
-   error or corruption; on POSIX the implementation SHOULD use `open(path, 'x')`
-   (`O_CREAT|O_EXCL`) for atomic exclusive creation.)
-4. Create parent directories (`mkdir -p`).
-5. Write starter TOML using exclusive-create; on POSIX apply `chmod 0o600`.
-6. Print the absolute path to stdout.
+1. Computes the target path using a `config_dir()` helper (or inline equivalent)
+   that returns `<platform_dir>/hmc-mcp/config.toml` without checking for file
+   existence — this is the same path logic as `resolve_config_path()` minus the
+   existence check.
+2. Calls `resolve_config_path()` to check whether the file already exists.
+   - If it returns non-None (file exists): print error to stderr, exit 1. Do
+     **not** call `os.path.exists()` separately — the `resolve_config_path()`
+     result is the definitive existence check; a second stat re-opens the TOCTOU
+     window that `O_EXCL` is meant to close.
+3. Create parent directories (`mkdir -p`).
+4. Write starter TOML using `open(path, 'x')` (`O_CREAT|O_EXCL`) — MUST use
+   exclusive-create; without it a concurrent process could silently overwrite an
+   existing config file, destroying credentials. On POSIX apply `chmod 0o600`.
+5. Print the absolute path to stdout.
 
 Starter TOML content:
 ```toml
@@ -95,7 +96,8 @@ Starter TOML content:
 [profiles.example]
 host = "hmc.example.com"
 user = "admin"
-password_env = "HMC_PASSWORD"  # or: password = "..."
+password_env = "HMC_PASSWORD"  # preferred: secret stays out of the file  # pragma: allowlist secret
+# password = "..."             # alternative: literal password (less secure)
 # verify_ssl = false
 ```
 
@@ -104,8 +106,11 @@ password_env = "HMC_PASSWORD"  # or: password = "..."
 1. Calls `resolve_config_path()` → None → print "No config file found at
    `<platform path>`." and exit 0.
 2. Calls `list_profiles()` with the resolved path.
-3. Gets the `default_profile` key from the TOML document (via a separate
-   `tomllib.loads` read, or extracted by a thin helper in `config.py`).
+3. Gets the `default_profile` key from the TOML document in the same pass as
+   `list_profiles()` — either extend `list_profiles()` to return both names and
+   default, or use a single-read helper in `config.py`. A second `tomllib.loads`
+   call is not acceptable: the file could be deleted between reads, and two reads
+   give two inconsistent views of the same file.
 4. Prints each name; appends `(default)` to the name matching `default_profile`.
    When `default_profile` is absent from the TOML, no name is marked — the
    `HMC_PROFILE` env var is not considered here (it is a runtime selector, not
@@ -117,15 +122,33 @@ The command's own `--profile` arg takes precedence over the global `--profile`
 (`GLOBALS.profile`). If the command's `--profile` is `None`, fall through to
 `GLOBALS.profile`. This mirrors the resolution order used by `_client()`.
 
-1. Calls `load_profile(profile=effective_profile)` where `effective_profile =
-   local_profile or GLOBALS.profile`.
-2. Inspects the loaded `HMCConfig`:
-   - Emits all non-secret fields.
-   - `password_configured`: `True` if `cfg.password != ""`.
-   - `ssh_key_configured`: `True` if `cfg.ssh_key_file is not None`.
-   - Never emits `cfg.password` value.
-3. On `ConfigError`: `_fail(exc)`.
-4. With `--json`: emits JSON dict; without: aligned key-value table.
+1. Read the config file path via `resolve_config_path()`. If None, `_fail` (exit 1).
+2. Parse the raw TOML dict directly in the command body:
+   ```python
+   raw = tomllib.loads(config_path.read_text())
+   # effective_profile is resolved before this point via the local/global chain
+   profile_dict = raw.get("profiles", {}).get(effective_profile, {})
+   ```
+   This is the **only** read of the file for credential-presence detection; it
+   must happen before `load_profile()` so that `password_env` absence from the
+   environment does not prevent the booleans from being computed. An unknown
+   profile name yields an empty `profile_dict`; the `ConfigError` fires later
+   when `load_profile()` is called in step 3.
+3. **Gather all output fields before emitting any output:**
+   - `password_configured`: `True` if `profile_dict` contains a non-empty
+     `"password"` key **or** a `"password_env"` key. Never derived from
+     `cfg.password` — `load_profile()` resolves `password_env` at construction
+     (ADR-0006), so `cfg.password` may be empty or may raise `ConfigError` when
+     the env var is absent.
+   - `ssh_key_configured`: `True` if `profile_dict` contains a non-empty
+     `"ssh_key_file"` key.
+   - Remaining non-secret fields (host, port, user, verify_ssl, timeout,
+     audit_memento, schema_version): call `load_profile(profile=effective_profile)`
+     and read from the returned `HMCConfig`.
+   - Never emit `cfg.password`.
+4. Only after all fields are gathered: emit output (key-value table or `--json`).
+   A `ConfigError` at any point in the gather phase calls `_fail(exc)` — no
+   partial output is ever emitted.
 
 The `show` command deliberately does **not** try to resolve `password_env`:
 the TOML file may store a variable name pointing to a secret that is not
@@ -152,6 +175,7 @@ the real filesystem. No test touches the real user home.
 | 8 | `show` `--json` flag | valid JSON, no `password` key |
 | 9 | `show` unknown profile → error | exit 1, error message contains profile name |
 | 10 | `show` absent config file → error | exit 1, helpful message |
+| 11 | `show` — no `--profile`, no `HMC_PROFILE` env var, no `default_profile` in TOML | exit 1, error references no profile selected |
 
 ---
 
