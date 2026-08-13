@@ -317,7 +317,11 @@ class HMCClient(
             return None
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        return resp.text.strip() or None
+        # The HMC sometimes wraps the value in double-quotes; strip them.
+        value = resp.text.strip()
+        if value.startswith('"') and value.endswith('"') and len(value) > 1:
+            value = value[1:-1]
+        return value or None
 
     async def search_uom(self, resource_type: str, property_name: str, property_value: str) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
