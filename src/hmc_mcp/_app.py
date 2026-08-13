@@ -21,7 +21,7 @@ import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .common import client_from_env, is_uuid, run_with_client
+from .common import client_from_env, is_uuid
 from .config import HMCConfig
 from .ssh import _ssh_lpar_name, _ssh_system_name
 
@@ -156,14 +156,6 @@ def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
     return asyncio.run(fn())
 
 
-def with_client(fn):
-    """Run an async client call against the env-configured HMC.
-
-    Collapses the pervasive ``async def _go`` + ``return _run(_go)`` idiom
-    into one line for the common case where the body is a single client call.
-    """
-    return run_with_client(client_from_env, fn)
-
 
 # ---------------------------------------------------------------------- #
 # Name-or-UUID resolution (REST-first, SSH fallback) for SSH tools
@@ -206,6 +198,8 @@ async def _resolve_system_name(
     if system_name_or_uuid is None or not is_uuid(system_name_or_uuid):
         return system_name_or_uuid
     try:
+        # TODO(#127): thread profile through SSH tools so this resolver uses the
+        # correct profile instead of the env-var default when profiles differ.
         async with client_from_env() as hmc:
             return await _system_name_from_rest(hmc, system_name_or_uuid)
     except httpx.HTTPError:
@@ -225,6 +219,8 @@ async def _resolve_lpar_name(
     if lpar_name_or_uuid is None or not is_uuid(lpar_name_or_uuid):
         return lpar_name_or_uuid
     try:
+        # TODO(#127): thread profile through SSH tools so this resolver uses the
+        # correct profile instead of the env-var default when profiles differ.
         async with client_from_env() as hmc:
             return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
     except httpx.HTTPError:

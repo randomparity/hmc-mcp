@@ -67,7 +67,7 @@ async def _resolve_resource_uuid(hmc: Any, category: str, resource_name_or_uuid:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str) -> dict[str, Any]:
+def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str, profile: str | None = None) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
@@ -78,7 +78,7 @@ def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str) -> dict[s
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
             try:
                 return await hmc.get_pcm_preferences(category, resource_uuid)
@@ -98,6 +98,7 @@ def hmc_set_pcm_preferences(
     short_term_monitor: bool | None = None,
     compute_ltm: bool | None = None,
     energy_monitor: bool | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Enable/disable PCM data collection for a resource.
 
@@ -126,7 +127,7 @@ def hmc_set_pcm_preferences(
         raise ValueError("No preference flags supplied; nothing to change.")
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
             try:
                 return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
@@ -145,6 +146,7 @@ def hmc_processed_metrics(
     end_ts: str | None = None,
     no_of_samples: int | None = None,
     mode: Literal["links", "fetch"] = "fetch",
+    profile: str | None = None,
 ) -> list[dict[str, str]] | dict[str, Any]:
     """List or download processed PCM metrics JSON documents.
 
@@ -159,9 +161,9 @@ def hmc_processed_metrics(
     available in the requested range.
     """
     if mode == "links":
-        return _metrics_links(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples)
+        return _metrics_links(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples, profile)
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples)
+        return _metrics_fetch(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples, profile)
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -174,6 +176,7 @@ def hmc_aggregated_metrics(
     end_ts: str | None = None,
     no_of_samples: int | None = None,
     mode: Literal["links", "fetch"] = "fetch",
+    profile: str | None = None,
 ) -> list[dict[str, str]] | dict[str, Any]:
     """List or download aggregated PCM metrics JSON documents.
 
@@ -188,9 +191,9 @@ def hmc_aggregated_metrics(
     aggregation to be enabled in PCM preferences.
     """
     if mode == "links":
-        return _metrics_links(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+        return _metrics_links(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples, profile)
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples)
+        return _metrics_fetch(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples, profile)
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -220,9 +223,10 @@ def _metrics_links(
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
+    profile: str | None = None,
 ) -> list[dict[str, str]]:
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
             try:
                 return await _fetch_metric_links(
@@ -242,9 +246,10 @@ def _metrics_fetch(
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             # Note: 403/406 from _resolve_resource_uuid are intentionally not
             # wrapped: those list/lookup endpoints are not PCM-specific, so a
             # PCM authority / not-licensed message would be misleading.

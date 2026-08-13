@@ -8,10 +8,11 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
+    _run,
     mcp,
-    with_client,
 )
 
+from .common import client_from_env
 from .documents import (
     build_hmc_user_document,
     build_ldap_config_document,
@@ -23,6 +24,7 @@ from .documents import (
 def hmc_users(
     name: str | None = None,
     user_type: Literal["local", "kerberos", "all"] = "all",
+    profile: str | None = None,
 ) -> Any:
     """List HMC user accounts or get one by username.
 
@@ -35,9 +37,12 @@ def hmc_users(
     Returns one dict per user: {UUID, title, link, ResourceType, Resource}
     where Resource holds the flattened HmcUser fields.
     """
-    if name is not None:
-        return with_client(lambda hmc: hmc.get_hmc_user(name))
-    return with_client(lambda hmc: hmc.list_hmc_users(user_type))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            if name is not None:
+                return await hmc.get_hmc_user(name)
+            return await hmc.list_hmc_users(user_type)
+    return _run(_go)
 
 
 @mcp.tool
@@ -47,6 +52,7 @@ def hmc_create_user(
     password: str,
     description: str = "",
     pwage: int = 0,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new HMC local user account.
 
@@ -65,7 +71,10 @@ def hmc_create_user(
         pwage=pwage,
     )
 
-    return with_client(lambda hmc: hmc.create_hmc_user(xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.create_hmc_user(xml)
+    return _run(_go)
 
 
 @mcp.tool
@@ -75,6 +84,7 @@ def hmc_modify_user(
     password: str | None = None,
     description: str | None = None,
     enable: bool | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an existing HMC user account.
 
@@ -90,27 +100,31 @@ def hmc_modify_user(
         enable=enable,
     )
 
-    return with_client(lambda hmc: hmc.modify_hmc_user(name, xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.modify_hmc_user(name, xml)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_user(name: str) -> str:
+def hmc_delete_user(name: str, profile: str | None = None) -> str:
     """Delete an HMC user account by username.
 
     This permanently removes the account — it is irreversible. Confirm
     the username with hmc_users(name=...) before calling. Returns a confirmation
     string (immediate delete — no job to poll).
     """
-
-    with_client(lambda hmc: hmc.delete_hmc_user(name))
-    return f"Deleted HMC user {name}"
-
-
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            await hmc.delete_hmc_user(name)
+            return f"Deleted HMC user {name}"
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(
     policy_type: Literal["policies", "status"] = "policies",
+    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List HMC password policies.
 
@@ -118,8 +132,10 @@ def hmc_list_password_policies(
     of defined password policies, 'status' returns activation status.
     Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
     """
-
-    return with_client(lambda hmc: hmc.list_password_policies(policy_type))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.list_password_policies(policy_type)
+    return _run(_go)
 
 
 @mcp.tool
@@ -134,6 +150,7 @@ def hmc_create_password_policy(
     hist_size: int = 0,
     warn_pwage: int = 0,
     min_pwage: int = 0,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new HMC password policy.
 
@@ -159,7 +176,10 @@ def hmc_create_password_policy(
         min_pwage=min_pwage,
     )
 
-    return with_client(lambda hmc: hmc.create_password_policy(xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.create_password_policy(xml)
+    return _run(_go)
 
 
 @mcp.tool
@@ -174,6 +194,7 @@ def hmc_modify_password_policy(
     hist_size: int | None = None,
     warn_pwage: int | None = None,
     min_pwage: int | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an existing HMC password policy.
 
@@ -195,26 +216,29 @@ def hmc_modify_password_policy(
         min_pwage=min_pwage,
     )
 
-    return with_client(lambda hmc: hmc.modify_password_policy(policy_name, xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.modify_password_policy(policy_name, xml)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_password_policy(policy_name: str) -> str:
+def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> str:
     """Delete an HMC password policy by name.
 
     This permanently removes the policy — it is irreversible.  Confirm
     the policy_name with hmc_list_password_policies before calling. Returns
     a confirmation string (immediate delete — no job to poll).
     """
-
-    with_client(lambda hmc: hmc.delete_password_policy(policy_name))
-    return f"Deleted HMC password policy {policy_name}"
-
-
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            await hmc.delete_password_policy(policy_name)
+            return f"Deleted HMC password policy {policy_name}"
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_ldap_config() -> dict[str, Any] | None:
+def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
     """Get the current HMC LDAP server configuration.
 
     Returns a single resource dict describing the configured LDAP server URL,
@@ -222,8 +246,10 @@ def hmc_get_ldap_config() -> dict[str, Any] | None:
     LDAP is configured.
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
     """
-
-    return with_client(lambda hmc: hmc.get_ldap_config())
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_ldap_config()
+    return _run(_go)
 
 
 @mcp.tool
@@ -235,6 +261,7 @@ def hmc_configure_ldap(
     search_filter: str | None = None,
     hmc_groups: str | None = None,
     group_member_attributes: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Configure the HMC LDAP server integration.
 
@@ -261,11 +288,14 @@ def hmc_configure_ldap(
         group_member_attributes=group_member_attributes,
     )
 
-    return with_client(lambda hmc: hmc.configure_ldap(xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.configure_ldap(xml)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remove_ldap_config(resource: str) -> str:
+def hmc_remove_ldap_config(resource: str, profile: str | None = None) -> str:
     """Remove a component of the HMC LDAP server configuration.
 
     resource selects what to remove.  Valid values:
@@ -281,8 +311,8 @@ def hmc_remove_ldap_config(resource: str) -> str:
     Use hmc_get_ldap_config to inspect the current state before calling.
     Returns a confirmation string (immediate delete — no job to poll).
     """
-
-    with_client(lambda hmc: hmc.remove_ldap_config(resource))
-    return f"Removed LDAP configuration component: {resource}"
-
-
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            await hmc.remove_ldap_config(resource)
+            return f"Removed LDAP configuration component: {resource}"
+    return _run(_go)

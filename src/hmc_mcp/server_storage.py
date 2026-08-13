@@ -18,7 +18,7 @@ from .common import client_from_env
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_adapters(lpar_name_or_uuid: str, adapter_type: str = "ClientNetworkAdapter") -> list[dict[str, Any]]:
+def hmc_list_adapters(lpar_name_or_uuid: str, adapter_type: str = "ClientNetworkAdapter", profile: str | None = None) -> list[dict[str, Any]]:
     """List an LPAR's virtual adapters of a given type.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -28,7 +28,7 @@ def hmc_list_adapters(lpar_name_or_uuid: str, adapter_type: str = "ClientNetwork
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.list_child("LogicalPartition", lpar_uuid, adapter_type)
 
@@ -43,6 +43,7 @@ def hmc_add_network_adapter(
     virtual_switch_id: int | None = None,
     tagged: bool = False,
     mac_address: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Add a Virtual Ethernet (client network) adapter to an LPAR.
 
@@ -57,7 +58,7 @@ def hmc_add_network_adapter(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_network_adapter(
                 lpar_uuid, port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
@@ -72,6 +73,7 @@ def hmc_add_vscsi_adapter(
     vios_partition_id: int,
     vios_slot: int,
     slot_number: int | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Add a Virtual SCSI client adapter to an LPAR, paired to a VIOS.
 
@@ -85,7 +87,7 @@ def hmc_add_vscsi_adapter(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
 
@@ -98,6 +100,7 @@ def hmc_add_vfc_adapter(
     vios_partition_id: int,
     vios_slot: int,
     slot_number: int | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Add a Virtual Fibre Channel (NPIV) client adapter to an LPAR.
 
@@ -109,7 +112,7 @@ def hmc_add_vfc_adapter(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_vfc_adapter(lpar_uuid, vios_partition_id, vios_slot, slot_number)
 
@@ -117,7 +120,7 @@ def hmc_add_vfc_adapter(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: str) -> str:
+def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: str, profile: str | None = None) -> str:
     """Remove a virtual adapter from an LPAR by its UUID.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -130,7 +133,7 @@ def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: 
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             await hmc.delete_child(
                 "LogicalPartition", lpar_uuid, adapter_type, adapter_uuid
@@ -143,7 +146,7 @@ def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: 
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_volume_groups(vios_name_or_uuid: str) -> list[dict[str, Any]]:
+def hmc_list_volume_groups(vios_name_or_uuid: str, profile: str | None = None) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
@@ -153,7 +156,7 @@ def hmc_list_volume_groups(vios_name_or_uuid: str) -> list[dict[str, Any]]:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.list_volume_groups(vios_uuid)
 
@@ -162,7 +165,7 @@ def hmc_list_volume_groups(vios_name_or_uuid: str) -> list[dict[str, Any]]:
 
 @mcp.tool
 def hmc_create_volume_group(
-    vios_name_or_uuid: str, name: str, physical_volumes: list[str]
+    vios_name_or_uuid: str, name: str, physical_volumes: list[str], profile: str | None = None
 ) -> dict[str, Any] | None:
     """Create a Volume Group on a VIOS from one or more physical volumes.
 
@@ -174,7 +177,7 @@ def hmc_create_volume_group(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.create_volume_group(vios_uuid, name, physical_volumes)
 
@@ -183,7 +186,7 @@ def hmc_create_volume_group(
 
 @mcp.tool
 def hmc_create_virtual_disk(
-    vios_name_or_uuid: str, vg_uuid: str, disk_name: str, capacity_mb: int
+    vios_name_or_uuid: str, vg_uuid: str, disk_name: str, capacity_mb: int, profile: str | None = None
 ) -> dict[str, Any] | None:
     """Create a Virtual Disk (logical volume) inside a Volume Group.
 
@@ -195,7 +198,7 @@ def hmc_create_virtual_disk(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.create_virtual_disk(vios_uuid, vg_uuid, disk_name, capacity_mb)
 
@@ -209,6 +212,7 @@ def hmc_map_storage_to_lpar(
     lpar_name_or_uuid: str,
     storage_kind: Literal["VirtualDisk", "PhysicalVolume"] = "VirtualDisk",
     target_device: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
@@ -224,7 +228,7 @@ def hmc_map_storage_to_lpar(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.map_storage_to_lpar(
@@ -238,7 +242,7 @@ def hmc_map_storage_to_lpar(
 
 @mcp.tool
 def hmc_create_media_repository(
-    vios_name_or_uuid: str, vg_uuid: str, size_mb: int
+    vios_name_or_uuid: str, vg_uuid: str, size_mb: int, profile: str | None = None
 ) -> dict[str, Any] | None:
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
@@ -249,7 +253,7 @@ def hmc_create_media_repository(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.create_media_repository(vios_uuid, vg_uuid, size_mb)
 
@@ -258,7 +262,7 @@ def hmc_create_media_repository(
 
 @mcp.tool
 def hmc_create_optical_media(
-    vios_name_or_uuid: str, vg_uuid: str, media_name: str, size_mb: int
+    vios_name_or_uuid: str, vg_uuid: str, media_name: str, size_mb: int, profile: str | None = None
 ) -> dict[str, Any] | None:
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
 
@@ -269,7 +273,7 @@ def hmc_create_optical_media(
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await hmc.create_optical_media(vios_uuid, vg_uuid, media_name, size_mb)
 
@@ -277,7 +281,7 @@ def hmc_create_optical_media(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_media_repository(vios_name_or_uuid: str, vg_uuid: str) -> str:
+def hmc_delete_media_repository(vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
@@ -287,7 +291,7 @@ def hmc_delete_media_repository(vios_name_or_uuid: str, vg_uuid: str) -> str:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             await hmc.delete_media_repository(vios_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
@@ -298,18 +302,18 @@ def hmc_delete_media_repository(vios_name_or_uuid: str, vg_uuid: str) -> str:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_clusters() -> list[dict[str, Any]]:
+def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
     """List Clusters (sets of VIOS nodes sharing a storage pool)."""
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             return await hmc.list_clusters()
 
     return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
+def hmc_shared_storage_pools(ssp_uuid: str | None = None, profile: str | None = None) -> Any:
     """List Shared Storage Pools or get one by UUID.
 
     When ssp_uuid is omitted, returns a list of all Shared Storage Pools
@@ -320,7 +324,7 @@ def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             if ssp_uuid is not None:
                 return await hmc.get_shared_storage_pool(ssp_uuid)
             return await hmc.list_shared_storage_pools()
@@ -328,18 +332,17 @@ def hmc_shared_storage_pools(ssp_uuid: str | None = None) -> Any:
     return _run(_go)
 
 
-async def _lu_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
-    """Submit a logical-unit job; optionally wait for terminal state."""
-    async with client_from_env() as hmc:
-        job = await submit_fn(hmc)
-        if not wait or job is None:
-            return job
-        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-        if not job_uuid:
-            return job
-        return await hmc.wait_for_job(
-            job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-        )
+async def _lu_op(hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit a logical-unit job on an already-open *hmc* client; optionally wait for terminal state."""
+    job = await submit_fn(hmc)
+    if not wait or job is None:
+        return job
+    job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    if not job_uuid:
+        return job
+    return await hmc.wait_for_job(
+        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
 
 
 @mcp.tool
@@ -353,6 +356,7 @@ def hmc_create_logical_unit(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a Logical Unit (file-backed disk) in a Cluster/SSP.
 
@@ -364,12 +368,16 @@ def hmc_create_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _lu_op(
-        lambda hmc: hmc.create_logical_unit(
-            cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await _lu_op(
+                hmc,
+                lambda hmc2: hmc2.create_logical_unit(
+                    cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
+                ),
+                wait, timeout_seconds, poll_interval,
+            )
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
@@ -379,6 +387,7 @@ def hmc_delete_logical_unit(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete a Logical Unit from a Cluster/SSP by its UDID.
 
@@ -387,7 +396,11 @@ def hmc_delete_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    return _run(lambda: _lu_op(
-        lambda hmc: hmc.delete_logical_unit(cluster_uuid, lu_udid),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await _lu_op(
+                hmc,
+                lambda hmc2: hmc2.delete_logical_unit(cluster_uuid, lu_udid),
+                wait, timeout_seconds, poll_interval,
+            )
+    return _run(_go)

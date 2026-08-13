@@ -12,7 +12,6 @@ from ._app import (
     _READ_ONLY,
     _run,
     mcp,
-    with_client,
 )
 
 from .client import HMCError
@@ -36,6 +35,7 @@ def hmc_create_vios(
     desired_procs: float = 0.5,
     min_procs: float = 0.1,
     max_procs: float = 1.0,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new Virtual IO Server (VIOS) partition on a managed system.
 
@@ -58,11 +58,14 @@ def hmc_create_vios(
         max_procs=max_procs,
     )
 
-    return with_client(lambda hmc: hmc.create_logical_partition(system_uuid, xml))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.create_logical_partition(system_uuid, xml)
+    return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_vios(vios_uuid: str) -> str:
+def hmc_delete_vios(vios_uuid: str, profile: str | None = None) -> str:
     """Delete (destroy) a VIOS partition by UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
@@ -78,7 +81,7 @@ def hmc_delete_vios(vios_uuid: str) -> str:
     """
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             state = await hmc.get_quick_property(
                 "LogicalPartition", vios_uuid, "PartitionState"
             )
@@ -108,6 +111,7 @@ def hmc_install_vios(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a NIM-based VIOS installation job.
 
@@ -124,7 +128,7 @@ def hmc_install_vios(
     job_xml = install_vios_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             job = await hmc.submit_job(
                 f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
                 job_xml,
@@ -153,6 +157,7 @@ def hmc_install_lpar_os(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a NIM-based LPAR OS installation job.
 
@@ -169,7 +174,7 @@ def hmc_install_lpar_os(
     job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             job = await hmc.submit_job(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
                 job_xml,

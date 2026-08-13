@@ -212,9 +212,8 @@ def load_profile(
 
     profiles = doc.get("profiles", {})
     if name not in profiles:
-        available = list(profiles.keys())
         raise ConfigError(
-            f"{path}: profile {name!r} not found; available: {available}"
+            f"profile {name!r} not found in {path}; check the [profiles] table"
         )
 
     entry = dict(profiles[name])

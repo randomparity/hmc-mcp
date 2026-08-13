@@ -56,7 +56,12 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                     base = HMCConfig(_env_file=None, **merged)  # type: ignore[call-arg]
                 return HMCClient(base)
             except ConfigError:
-                pass  # Fall through to env-var-only construction
+                if profile:
+                    # An explicit profile name was supplied but not found — raise
+                    # so the caller gets a clear error rather than silently routing
+                    # to the env-var default HMC.
+                    raise
+                pass  # No profile specified; fall through to env-var-only construction
 
     config = HMCConfig(_env_file=None, **filtered)  # type: ignore[call-arg]
     return HMCClient(config)
@@ -68,11 +73,9 @@ def run_with_client(
 ) -> Any:
     """Open an HMC client from *client_factory*, run async *fn*, return the result.
 
-    The single implementation of the "open a client session, run a coroutine
-    against it, close" seam shared by the MCP server tools
-    (:func:`hmc_mcp._app.with_client`) and the CLI commands
-    (:func:`hmc_mcp.cli_app._with_client`). *client_factory* is what varies —
-    env-only config for the server, env-plus-CLI-flag overrides for the CLI.
+    Shared by CLI commands (:func:`hmc_mcp.cli_app._with_client`).
+    *client_factory* is what varies — env-only config for the server,
+    env-plus-CLI-flag overrides for the CLI.
     """
     async def _go() -> Any:
         async with client_factory() as hmc:

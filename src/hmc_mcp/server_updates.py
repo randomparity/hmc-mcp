@@ -11,7 +11,6 @@ from ._app import (
     _resolve_vios_uuid,
     _run,
     mcp,
-    with_client,
 )
 
 from .common import client_from_env
@@ -26,18 +25,17 @@ from .jobs import (
 )
 
 
-async def _update_op(submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
-    """Submit an update/upgrade job; optionally wait for terminal state."""
-    async with client_from_env() as hmc:
-        job = await submit_fn(hmc)
-        if not wait or job is None:
-            return job
-        job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-        if not job_uuid:
-            return job
-        return await hmc.wait_for_job(
-            job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-        )
+async def _update_op(hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+    """Submit an update/upgrade job on an already-open *hmc* client; optionally wait for terminal state."""
+    job = await submit_fn(hmc)
+    if not wait or job is None:
+        return job
+    job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    if not job_uuid:
+        return job
+    return await hmc.wait_for_job(
+        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
 
 
 @mcp.tool
@@ -48,6 +46,7 @@ def hmc_hmc_update(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit an HMC software update or upgrade job.
 
@@ -72,13 +71,17 @@ def hmc_hmc_update(
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
 
-    return _run(lambda: _update_op(
-        lambda hmc: hmc.submit_job(
-            f"/rest/api/uom/ManagementConsole/{console_uuid}/do/{operation}",
-            job_xml,
-        ),
-        wait, timeout_seconds, poll_interval,
-    ))
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await _update_op(
+                hmc,
+                lambda hmc2: hmc2.submit_job(
+                    f"/rest/api/uom/ManagementConsole/{console_uuid}/do/{operation}",
+                    job_xml,
+                ),
+                wait, timeout_seconds, poll_interval,
+            )
+    return _run(_go)
 
 
 def _check_ptf_error(exc: HMCError) -> None:
@@ -98,17 +101,19 @@ def _check_ptf_error(exc: HMCError) -> None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_available_hmc_ptfs(console_uuid: str) -> dict[str, Any] | None:
+def hmc_get_available_hmc_ptfs(console_uuid: str, profile: str | None = None) -> dict[str, Any] | None:
     """Get available PTFs (fixes) for the HMC software.
 
     Issues a GET to the ManagementConsole resource with the SoftwareUpdate
     group, which returns available PTF information. console_uuid is the
     ManagementConsole UUID (from hmc_console_info). Does not submit a job.
     """
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_uom("ManagementConsole", console_uuid, group="SoftwareUpdate")
+
     try:
-        return with_client(
-            lambda hmc: hmc.get_uom("ManagementConsole", console_uuid, group="SoftwareUpdate")
-        )
+        return _run(_go)
     except HMCError as exc:
         _check_ptf_error(exc)
         raise
@@ -122,6 +127,7 @@ def hmc_vios_update(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a VIOS software update or upgrade job.
 
@@ -144,9 +150,10 @@ def hmc_vios_update(
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
 
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await _update_op(
+                hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/{operation}",
                     job_xml,
@@ -164,6 +171,7 @@ def hmc_update_firmware(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a managed system firmware update job.
 
@@ -176,9 +184,10 @@ def hmc_update_firmware(
     Set wait=True to block until the job reaches a terminal state.
     """
     async def _go():
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await _update_op(
+                hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
                     update_firmware_job(repository),
