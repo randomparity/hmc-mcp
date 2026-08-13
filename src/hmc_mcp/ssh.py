@@ -48,6 +48,73 @@ def validate_lpar_description(description: str) -> None:
         )
 
 
+def validate_agent_id(agent_id: str) -> None:
+    """Raise ``ValueError`` if *agent_id* is not a safe ownership token component.
+
+    Rules:
+    - Must be 1–64 printable ASCII characters (same base constraint as descriptions).
+    - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
+      is embedded in the ownership token written via ``chsyscfg``.
+    - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
+
+    Called from :class:`.config.HMCConfig` model validator so errors surface at
+    construction time, before any SSH call is made.
+    """
+    if not agent_id:
+        raise ValueError("agent_id must not be empty")
+    if len(agent_id) > 64:
+        raise ValueError(
+            f"agent_id is {len(agent_id)} characters; maximum is 64"
+        )
+    if not agent_id.isascii() or any(ord(c) < 0x20 or ord(c) == 0x7F for c in agent_id):
+        raise ValueError(
+            "agent_id contains non-ASCII or non-printable characters; "
+            "only printable ASCII is accepted"
+        )
+    if "," in agent_id:
+        raise ValueError(
+            "agent_id contains a comma; commas corrupt the HMC CLI -i parser"
+        )
+    if "=" in agent_id:
+        raise ValueError(
+            "agent_id contains '='; equals signs corrupt the HMC CLI -i parser"
+        )
+    if "[" in agent_id or "]" in agent_id:
+        raise ValueError(
+            "agent_id contains a square bracket; brackets break the ownership token format"
+        )
+
+
+async def stamp_lpar_ownership(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    *,
+    agent_id: str | None = None,
+) -> str | None:
+    """Write an ownership token to *lpar_name*'s description field.
+
+    Builds the token ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and
+    calls :func:`set_lpar_description` to write it over SSH.
+
+    Returns the token string on success; returns ``None`` (without raising) on
+    any SSH or network failure — this is a best-effort post-create call that
+    must not fail the LPAR creation itself.
+
+    *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
+    """
+    import datetime
+
+    effective_id = agent_id if agent_id else "hmc-mcp"
+    today = datetime.date.today().isoformat()
+    token = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    try:
+        await set_lpar_description(config, system_name, lpar_name, token)
+        return token
+    except (HMCCLIError, asyncssh.Error):
+        return None
+
+
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute an HMC CLI command over SSH and return its stdout.
 
