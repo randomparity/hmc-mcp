@@ -41,7 +41,7 @@ cp .env.example .env   # then edit
 | SSH timeout (s)   | `HMC_SSH_TIMEOUT`    | —                 | `300.0`   |
 | SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
 | Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmc-mcp` |
-| Schema version    | `HMC_SCHEMA_VERSION` | —                 | —         |
+| Schema version    | `HMC_SCHEMA_VERSION` | —                 | _(unset)_ |
 
 See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.
@@ -52,7 +52,7 @@ certificate, install its CA locally and set `HMC_VERIFY_SSL=true`
 (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 
-## HMC version and schema compatibility
+## HMC version compatibility
 
 `hmc-mcp` targets **HMC V8 through V11** and all the POWER generations they
 manage. All uom XML documents are written with `schemaVersion="V1_0"` — the
@@ -66,11 +66,32 @@ regardless of firmware age.
 | HMC V10     | POWER8, POWER9, POWER10  | V1_0             |
 | HMC V11     | POWER9, POWER10, POWER11 | V1_0             |
 
-The `HMC_SCHEMA_VERSION` environment variable (or `schema_version` in `.env`)
-optionally pins the `X-HMC-Schema-Version` request header. Leave it unset for
-the default behaviour (let the HMC negotiate via the document's `schemaVersion`
-attribute). See [`docs/environment-variables.md`](docs/environment-variables.md)
-for all supported variables.
+**`HMC_SCHEMA_VERSION` — leave this unset for normal operation.**
+`hmc-mcp` omits the `X-HMC-Schema-Version` request header from all write
+paths (`PUT`/`POST`) regardless of this setting — some HMC firmware versions
+return HTTP 406 on every UOM write when that header is present. The variable
+only affects `GET` requests. Set it only if you are debugging schema
+negotiation on a specific HMC read path; it has no effect on LPAR creation,
+adapter configuration, storage operations, or any other mutating call.
+See [`docs/environment-variables.md`](docs/environment-variables.md) for all
+supported variables.
+
+### Firmware write-path compatibility
+
+Some HMC V10 firmware builds return HTTP 406 for all UOM write paths — even
+without the schema-version header — for child-resource endpoints such as
+`ClientNetworkAdapter` and `VirtualSCSIClientAdapter` PUT. On those builds:
+
+- **LPAR creation** (`hmc_create_lpar`, `hmc_provision_lpar`): automatically
+  falls back to `mksyscfg` over SSH. `HMC_PASSWORD` (or `HMC_SSH_KEY_FILE`)
+  must be set for SSH auth; the fallback is transparent to the caller.
+- **Virtual adapter attachment** (`hmc_add_network_adapter`,
+  `hmc_add_vscsi_adapter`): no automatic fallback. Configure adapter profiles
+  via the HMC GUI, the HMC CLI (`chhwres`), or the `hmc_run_command` escape
+  hatch if this affects your firmware.
+- **Virtual disk creation** (`hmc_create_virtual_disk`): no automatic fallback.
+  The disk can be created directly on the VIOS with `mkbdsp` and then mapped
+  with `hmc_map_storage_to_lpar`.
 
 ## CLI usage
 
@@ -146,7 +167,7 @@ Exposed tools:
 
 | Tool                  | Description |
 |-----------------------|-------------|
-| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting |
+| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
 | `hmc_modify_lpar`     | Change an LPAR's name / memory / CPU (DLPAR when running) |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
