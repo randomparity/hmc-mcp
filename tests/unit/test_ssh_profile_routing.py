@@ -32,11 +32,11 @@ LPAR_NAME = "my-lpar"
 
 DEV_HOST = "dev-hmc.example.com"
 DEV_USER = "devuser"
-DEV_PASSWORD = "devpass"
+DEV_PASSWORD = "devpass"  # pragma: allowlist secret
 
 PROD_HOST = "prod-hmc.example.com"
 PROD_USER = "produser"
-PROD_PASSWORD = "prodpass"
+PROD_PASSWORD = "prodpass"  # pragma: allowlist secret
 
 DEV_CONFIG = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
 PROD_CONFIG = HMCConfig(host=PROD_HOST, user=PROD_USER, password=PROD_PASSWORD)
