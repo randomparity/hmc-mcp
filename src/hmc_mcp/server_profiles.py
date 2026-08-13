@@ -17,7 +17,6 @@ from .ssh import (
 )
 
 
-
 # destructive because force=True silently overwrites an existing backup file on the HMC
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_backup_lpar_profiles(
