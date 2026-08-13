@@ -24,10 +24,12 @@ recreating the `ltczz386-lp3` virtual disk as part of the storage lifecycle.
 - lp3 runs RHEL and boots from a 48 GB virtual disk named **VG1-lp3** inside
   the VIOS volume group `VG1`.
 - Sub-Task 3 captures the VG UUID and the virtual disk details at runtime.
-- Sub-Task 14 deletes the existing VG1-lp3 logical volume and creates a new
-  48 GB virtual disk with the same name before provision; this exercises
-  `hmc_create_virtual_disk` and verifies that the HMC can manage the full
-  storage lifecycle.
+- Sub-Task 14 deletes the existing VG1-lp3 logical volume via `viosvrcmd` +
+  `rmvlog` on the VIOS (the HMC REST API has no standalone delete-disk endpoint),
+  then creates a new 48 GB virtual disk with the same name via
+  `hmc_create_virtual_disk`, and finally calls `hmc_provision_lpar` to map and
+  boot. If the REST `VolumeGroup` POST returns 406, that step is skipped and the
+  LV must be recreated manually on the VIOS before re-running ST14.
 
 ### What changed since Round 1
 
@@ -41,12 +43,19 @@ recreating the `ltczz386-lp3` virtual disk as part of the storage lifecycle.
 | #96 | `hmc_create_lpar` / `hmc_create_virtual_network` | HTTP 406 diagnostic + `HMC_SCHEMA_VERSION=V1_0` support |
 | #99 | User/policy/LDAP tools | REST000E detection + `X-HMC-Schema-Version` header |
 
-### Critical requirement: HMC_SCHEMA_VERSION
+### HMC_SCHEMA_VERSION
 
-`HMC_SCHEMA_VERSION=V1_0` **must** be set in `.env` before running any
-mutating sub-task. The HTTP 406 "Console Internal Error" that killed the Round 1
-REST write path (`hmc_create_lpar`, `hmc_create_virtual_network`) requires this
-header. The pre-run script step adds it automatically if missing.
+`HMC_SCHEMA_VERSION=V1_0` **must** be set in `.env` before running the test
+runner. The pre-run script enforces this and exits with a clear error if it is
+absent.
+
+**Important:** this variable only affects `GET` requests — it pins the
+`X-HMC-Schema-Version` request header on read paths. It has **no effect** on
+write-path HTTP 406 errors. The fix for the Round 1 HTTP 406 failures
+(`hmc_create_lpar`, `hmc_create_virtual_network`, storage and adapter PUT/POST)
+is that the client now omits `X-HMC-Schema-Version` from all write paths
+(`PUT`/`POST`) entirely — regardless of what `HMC_SCHEMA_VERSION` is set to.
+See [`src/hmc_mcp/client.py`](src/hmc_mcp/client.py) (`include_schema_version=False`).
 
 ### Test constraints
 

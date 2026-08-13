@@ -53,20 +53,21 @@ def _load_dotenv() -> None:
 
 
 def _ensure_schema_version() -> None:
-    """Load .env and ensure HMC_SCHEMA_VERSION=V1_0 is present."""
+    """Warn if HMC_SCHEMA_VERSION is absent; exit so the operator sets it explicitly.
+
+    Note: HMC_SCHEMA_VERSION only affects GET requests — it has no effect on
+    write-path HTTP 406 errors (those are fixed by suppressing the header on
+    PUT/POST paths entirely).  We still require it to be present so that the
+    test runner's GET paths behave deterministically, but we do not silently
+    mutate .env — the operator must add it intentionally.
+    """
     _load_dotenv()
     if os.environ.get("HMC_SCHEMA_VERSION"):
         return
     print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
-    if _ENV_FILE.exists():
-        content = _ENV_FILE.read_text()
-        if "HMC_SCHEMA_VERSION" not in content:
-            _ENV_FILE.write_text(content.rstrip("\n") + "\nHMC_SCHEMA_VERSION=V1_0\n")
-            # Reload so this run picks it up
-            os.environ["HMC_SCHEMA_VERSION"] = "V1_0"
-            print("  → Added HMC_SCHEMA_VERSION=V1_0 to .env and environment.")
-            return
-    print("  → No .env file found.  Create one with HMC_SCHEMA_VERSION=V1_0.")
+    print("   Add 'HMC_SCHEMA_VERSION=V1_0' to your .env file and re-run.")
+    print("   Note: this variable only affects GET requests; it does NOT fix")
+    print("   HTTP 406 on write paths (LPAR create, adapter PUT, etc.).")
     sys.exit(1)
 
 
@@ -227,7 +228,12 @@ async def subtask_0(client: Client) -> None:
                           lpar_name_or_uuid=CTX["lp3_name"])
     record(0, "hmc_get_lpar_description (baseline)", st, data)
     if st == "PASS":
-        CTX["lp3_baseline"]["description"] = data
+        # Store the plain string value, not the raw result dict, so ST10/ST15
+        # restore guards don't have to unwrap a nested dict at restore time.
+        desc_val = data
+        if isinstance(desc_val, dict):
+            desc_val = desc_val.get("description") or desc_val.get("value") or ""
+        CTX["lp3_baseline"]["description"] = str(desc_val) if desc_val else ""
 
     # 4. MSP flag
     st, data = await call(client, "hmc_get_lpar_msp",
@@ -1173,21 +1179,38 @@ async def subtask_14(client: Client) -> None:
                           vios_name_or_uuid=vios_uuid)
     record(14, "hmc_list_volume_groups (pre-create)", st, data)
 
-    # Step 4 — Create new VG1-lp3 virtual disk.
-    # Note: the disk persists after the LPAR is deleted (only the vSCSI mapping
-    # is removed). Attempt to create; if 406 (REST unsupported on this firmware)
-    # or the disk already exists, record as expected and continue — the existing
-    # LV will be mapped by hmc_provision_lpar in the next step.
+    # Step 4 — Delete the old VG1-lp3 logical volume via the VIOS CLI.
+    # The HMC REST API has no standalone delete-virtual-disk endpoint; the
+    # logical volume persists on the VIOS after the LPAR is removed (only the
+    # vSCSI mapping is dropped).  We remove it with `rmvlog` so the subsequent
+    # `hmc_create_virtual_disk` call exercises the full creation path rather
+    # than mapping the pre-existing LV.
+    #
+    # rmvlog syntax: rmvlog -vg <VGName> -lv <LVName>
+    # VGName defaults to "VG1" if we don't have the actual name; fall back to
+    # the known-good value for this test system.
+    vg_name = CTX.get("vdisk_vg_name") or "VG1"
+    vdisk_name = CTX["vdisk_name"]
+    rmvlog_cmd = (
+        f"viosvrcmd -m {CTX['system_name']} -p {CTX.get('vios_uuid', vios_uuid)}"
+        f" -c \"rmvlog -vg {vg_name} -lv {vdisk_name}\""
+    )
+    st, data = await call(client, "hmc_run_command", cmd=rmvlog_cmd)
+    _record_expected_or_real(14, "hmc_run_command rmvlog (delete old VG1-lp3)", st, data,
+                             expected_fail_substrings=["does not exist", "not found",
+                                                       "No such", "0516-306", "0516-404"],
+                             skip_reason="VG1-lp3 LV not present on VIOS (already cleaned up or never existed)")
+
+    # Step 5 — Create new VG1-lp3 virtual disk via REST.
     st, data = await call(client, "hmc_create_virtual_disk",
                           vios_name_or_uuid=vios_uuid,
                           vg_uuid=vg_uuid,
                           disk_name=CTX["vdisk_name"],
                           capacity_mb=int(vdisk_size_mb))
     _record_expected_or_real(14, "hmc_create_virtual_disk (VG1-lp3)", st, data,
-                             expected_fail_substrings=["406", "not acceptable", "already exists",
-                                                       "duplicate", "LV with that name"],
+                             expected_fail_substrings=["406", "not acceptable"],
                              skip_reason="REST VolumeGroup POST not supported on this HMC firmware — "
-                                         "pre-existing VG1-lp3 LV will be mapped directly by hmc_provision_lpar")
+                                         "pre-existing VG1-lp3 LV must be recreated manually on the VIOS")
 
     # Confirm new disk visible
     st, data = await call(client, "hmc_list_volume_groups",

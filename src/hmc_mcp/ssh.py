@@ -217,7 +217,13 @@ async def create_lpar_via_cli(
         config_pairs.append("all_resources=1")
 
     config_str = ",".join(config_pairs)
-    cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i \"{config_str}\""
+    # Use shlex.quote for both the system name and the -i value so that
+    # special characters (spaces, quotes, commas in names) cannot break the
+    # shell command or the mksyscfg attribute string.
+    cmd = (
+        f"mksyscfg -r lpar -m {shlex.quote(system_name)}"
+        f" -i {shlex.quote(config_str)}"
+    )
     return await run_hmc_command(config, cmd)
 
 
