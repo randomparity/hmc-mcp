@@ -14,7 +14,9 @@ import pytest
 from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
+    config_dir,
     list_profiles,
+    list_profiles_with_default,
     load_profile,
     resolve_config_path,
 )
@@ -284,3 +286,63 @@ def test_direct_construction_still_works(monkeypatch):
     assert cfg.host == "myhost"
     assert cfg.user == "myuser"
     assert cfg.password == "mypass"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# config_dir — unconditional platform path (no existence check)
+# ---------------------------------------------------------------------------
+
+
+def test_config_dir_linux_xdg(monkeypatch):
+    """config_dir() returns XDG-based path without checking existence."""
+    xdg = Path("/tmp/fake_xdg")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    with patch.object(sys, "platform", "linux"):
+        result = config_dir()
+    assert result == xdg / "hmc-mcp"
+
+
+def test_config_dir_macos(monkeypatch):
+    """config_dir() returns ~/Library/Application Support/hmc-mcp on macOS."""
+    fake_home = Path("/tmp/fake_home")
+    with patch.object(sys, "platform", "darwin"), \
+         patch("pathlib.Path.home", return_value=fake_home):
+        result = config_dir()
+    assert result == fake_home / "Library" / "Application Support" / "hmc-mcp"
+
+
+def test_config_dir_returns_path_even_when_absent(tmp_path, monkeypatch):
+    """config_dir() does not require the directory to exist."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "nonexistent"))
+    with patch.object(sys, "platform", "linux"):
+        result = config_dir()
+    assert not result.exists()
+    assert result.name == "hmc-mcp"
+
+
+# ---------------------------------------------------------------------------
+# list_profiles_with_default
+# ---------------------------------------------------------------------------
+
+
+def test_list_profiles_with_default_normal(tmp_path, monkeypatch):
+    """Returns (names, default) from TOML."""
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    names, default = list_profiles_with_default(config_path=cfg)
+    assert set(names) == {"prod", "dev"}
+    assert default == "prod"
+
+
+def test_list_profiles_with_default_no_default(tmp_path, monkeypatch):
+    """Returns (names, None) when no default_profile key."""
+    cfg = _write_toml(tmp_path / "config.toml", MINIMAL_TOML)
+    names, default = list_profiles_with_default(config_path=cfg)
+    assert "dev" in names
+    assert default is None
+
+
+def test_list_profiles_with_default_absent(tmp_path):
+    """Returns ([], None) when file absent."""
+    names, default = list_profiles_with_default(config_path=tmp_path / "nonexistent.toml")
+    assert names == []
+    assert default is None

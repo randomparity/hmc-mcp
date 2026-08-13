@@ -108,6 +108,45 @@ def resolve_config_path() -> Path | None:
     return p if p.exists() else None
 
 
+def config_dir() -> Path:
+    """Return the platform-native hmc-mcp/ config directory (no existence check).
+
+    Same platform resolution as resolve_config_path() but never checks whether
+    the directory or file exists. Used by ``config init`` to compute the target
+    path.
+    """
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        base = Path(appdata) if appdata else Path.home() / ".config"
+    else:
+        xdg = os.environ.get("XDG_CONFIG_HOME", "")
+        base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "hmc-mcp"
+
+
+def list_profiles_with_default(
+    config_path: Path | None = None,
+) -> tuple[list[str], str | None]:
+    """Return (profile_names, default_profile_or_none) from one TOML read.
+
+    Never resolves secrets — safe for diagnostics.
+    Returns ([], None) when the file is absent or path is None.
+    Raises ConfigError on TOML parse errors.
+    """
+    path = config_path if config_path is not None else resolve_config_path()
+    if path is None or not path.exists():
+        return [], None
+    try:
+        doc = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    names = list(doc.get("profiles", {}).keys())
+    default = doc.get("default_profile")
+    return names, default
+
+
 def list_profiles(config_path: Path | None = None) -> list[str]:
     """Return profile names from the config file; empty list when absent.
 
