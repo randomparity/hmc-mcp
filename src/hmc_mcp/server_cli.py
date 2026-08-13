@@ -77,6 +77,11 @@ def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, d
     This tool raises ``ValueError`` before issuing the SSH command when
     non-ASCII or non-printable characters are detected.
 
+    **Multi-agent ownership:** If the current description contains
+    ``[hmc-mcp owner:<id> ...]``, compare the owner to ``HMC_AGENT_ID``. If
+    they differ, stop and ask the operator before overwriting — the token
+    records which agent created this LPAR.
+
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name_or_uuid and system_name_or_uuid before calling.
 

@@ -408,6 +408,11 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
 
+    **Multi-agent ownership:** Before deleting, read the LPAR description with
+    ``hmc_get_lpar_description``. If it contains ``[hmc-mcp owner:<id> ...]``,
+    verify the owner matches the current agent (``HMC_AGENT_ID``) before
+    proceeding. If owned by a different agent, stop and ask the operator.
+
     Raises:
         HMCError: If the partition state is not 'not activated' (HTTP 409).
     """
