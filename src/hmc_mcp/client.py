@@ -147,17 +147,29 @@ class HMCClient(
     # Generic request helpers
     # ------------------------------------------------------------------ #
 
-    def _uom_headers(self, resource_type: str | None) -> dict[str, str]:
+    def _uom_headers(
+        self,
+        resource_type: str | None,
+        include_schema_version: bool = True,
+    ) -> dict[str, str]:
         accept = MEDIA_UOM
         if resource_type:
             accept = f"{MEDIA_UOM}; type={resource_type}"
         headers: dict[str, str] = {"Accept": accept}
-        if self.config.schema_version:
+        if include_schema_version and self.config.schema_version:
             headers["X-HMC-Schema-Version"] = self.config.schema_version
         return headers
 
-    async def _get(self, path: str, resource_type: str | None = None) -> str:
-        resp = await self._http.get(path, headers=self._uom_headers(resource_type))
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str:
+        resp = await self._http.get(
+            path,
+            headers=self._uom_headers(resource_type, include_schema_version),
+        )
         if resp.status_code == 204:
             return ""
         if resp.status_code != 200:
@@ -169,8 +181,9 @@ class HMCClient(
         path: str,
         body: str | bytes,
         resource_type: str | None = None,
+        include_schema_version: bool = True,
     ) -> str:
-        headers = self._uom_headers(resource_type)
+        headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
         resp = await self._http.post(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202):
@@ -182,8 +195,9 @@ class HMCClient(
         path: str,
         body: str | bytes,
         resource_type: str | None = None,
+        include_schema_version: bool = True,
     ) -> str:
-        headers = self._uom_headers(resource_type)
+        headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
         resp = await self._http.put(path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202, 204):
@@ -305,7 +319,11 @@ class HMCClient(
             return None
         if resp.status_code != 200:
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
-        return resp.text.strip() or None
+        # The HMC sometimes wraps the value in double-quotes; strip them.
+        value = resp.text.strip()
+        if value.startswith('"') and value.endswith('"') and len(value) > 1:
+            value = value[1:-1]
+        return value or None
 
     async def search_uom(self, resource_type: str, property_name: str, property_value: str) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
@@ -328,9 +346,14 @@ class HMCClient(
     async def create_child(
         self, parent_type: str, parent_uuid: str, child_type: str, child_xml: str
     ) -> dict[str, Any] | None:
-        """PUT a child resource (e.g. a virtual adapter) under a parent."""
+        """PUT a child resource (e.g. a virtual adapter) under a parent.
+
+        Omits X-HMC-Schema-Version header — the HMC returns HTTP 406 on adapter
+        PUT endpoints when this header is present (same as VolumeGroup and LPAR).
+        """
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
-        xml = await self._put(path, child_xml, resource_type=child_type)
+        xml = await self._put(path, child_xml, resource_type=child_type,
+                              include_schema_version=False)
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 

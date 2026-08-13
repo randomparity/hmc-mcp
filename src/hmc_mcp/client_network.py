@@ -57,7 +57,8 @@ class NetworkMixin:
             )
         xml = build_virtual_network_document(name, vlan_id, vswitch_id, switch_link, tagged)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
-        resp = await self._put(path, xml, resource_type="VirtualNetwork")
+        resp = await self._put(path, xml, resource_type="VirtualNetwork",
+                               include_schema_version=False)
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 

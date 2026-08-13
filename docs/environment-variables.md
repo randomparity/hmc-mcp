@@ -19,7 +19,7 @@ and `HMC_PASSWORD`.
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
 | `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs |
-| `HMC_SCHEMA_VERSION` | string | _(empty)_ | Pins the `X-HMC-Schema-Version` request header (e.g. `V1_0`). Leave unset to let the HMC negotiate via the document's `schemaVersion` attribute |
+| `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. **Leave unset for normal operation** — see note below. |
 
 ## Notes
 
@@ -32,9 +32,14 @@ and `HMC_PASSWORD`.
   (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
   use `HMC_PASSWORD`.
 
-- **Schema version** (`HMC_SCHEMA_VERSION`): HMC V8/V9 targets do not need this
-  set; uom documents already declare `schemaVersion=V1_0`. Set it only to pin
-  negotiation explicitly or to test against a specific schema revision.
+- **Schema version** (`HMC_SCHEMA_VERSION`): **do not set this for normal
+  operation.** `hmc-mcp` omits `X-HMC-Schema-Version` from all write paths
+  (`PUT`/`POST`) regardless of this setting — some HMC firmware versions return
+  HTTP 406 on every UOM write endpoint when that header is present (confirmed on
+  HMC V10R3 build 2408210051 and likely other V10 builds). The variable only
+  affects `GET` requests. Set it only if you are debugging schema negotiation on
+  a specific read path; it has no effect on LPAR creation, adapter
+  configuration, storage operations, or any other mutating call.
 
 ## Adding a New Variable
 

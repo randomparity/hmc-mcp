@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .client_parse import _parse_feed
+from .errors import HMCError
 from .jobs import (
     power_off_system_job,
     power_off_vios_job,
@@ -21,11 +22,35 @@ class SystemsMixin:
     # -- Convenience wrappers for the common resources ----------------- #
     async def get_console_info(self) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
-        entries = await self.list_uom("ManagementConsole")
-        return entries[0] if entries else None
+        # Some HMC firmware builds return HTTP 500 on the unfiltered
+        # ManagementConsole feed due to a null SessionId in the response XML.
+        # Catch the error and return None instead of raising — the caller can
+        # treat None as "HMC is reachable but console info is unavailable".
+        try:
+            entries = await self.list_uom("ManagementConsole")
+            return entries[0] if entries else None
+        except Exception:
+            return None
 
     async def list_managed_systems(self) -> list[dict[str, Any]]:
-        return await self.list_uom("ManagedSystem")
+        # Some HMC firmware builds return HTTP 500 on the unfiltered
+        # ManagedSystem feed due to null property values in hardware-inventory
+        # sub-elements (e.g. VirtualPersistentMemoryVolume/Uuid,
+        # PersistentMemoryDevice/DynamicReconfigurationConnectorIndex, …).
+        # The HMC serialiser trips on null-valued sub-fields it cannot encode.
+        # Return an empty list for any such HMC firmware serialisation bug
+        # (HTTP 500 + "Nested path contains null property"); re-raise everything
+        # else (auth errors, parse errors, non-500 HMC errors, etc.).
+        try:
+            return await self.list_uom("ManagedSystem")
+        except Exception as exc:
+            if (
+                isinstance(exc, HMCError)
+                and exc.status_code == 500
+                and "Nested path contains null property" in str(exc)
+            ):
+                return []
+            raise
 
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
         return await self.get_uom("ManagedSystem", uuid)
