@@ -196,3 +196,35 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
 
     conn_mock.run.assert_called_once()
     assert result == ""
+
+
+# ---------------------------------------------------------------------- #
+# set_lpar_description (ssh-layer) — inner defensive guard
+# ---------------------------------------------------------------------- #
+# hmc_set_lpar_description (MCP tool) validates before UUID resolution.
+# set_lpar_description (ssh function) carries its own defensive guard so
+# callers that bypass the tool layer are also protected.
+
+
+def test_set_lpar_description_ssh_layer_rejects_non_ascii():
+    """set_lpar_description (ssh) raises ValueError for non-ASCII — inner guard."""
+    import asyncio
+    import pytest
+    from hmc_mcp.config import HMCConfig
+    from hmc_mcp.ssh import set_lpar_description
+
+    cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
+    with pytest.raises(ValueError, match="non-ASCII or non-printable"):
+        asyncio.run(set_lpar_description(cfg, "sys", "lpar", "em\u2014dash"))
+
+
+def test_set_lpar_description_ssh_layer_rejects_control_characters():
+    """set_lpar_description (ssh) raises ValueError for control chars — inner guard."""
+    import asyncio
+    import pytest
+    from hmc_mcp.config import HMCConfig
+    from hmc_mcp.ssh import set_lpar_description
+
+    cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
+    with pytest.raises(ValueError, match="non-ASCII or non-printable"):
+        asyncio.run(set_lpar_description(cfg, "sys", "lpar", "desc\x00bad"))
