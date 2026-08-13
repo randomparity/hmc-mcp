@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import hmc_get_lpar_description, hmc_set_lpar_description
+from hmc_mcp.ssh import set_lpar_description
 
 from conftest import mock_uuid_resolution
 
@@ -152,8 +156,6 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
 
 def test_set_lpar_description_rejects_non_ascii(monkeypatch, mock_hmc):
     """hmc_set_lpar_description raises ValueError for non-ASCII descriptions."""
-    import pytest
-
     _hmc_env(monkeypatch)
     with pytest.raises(ValueError, match="non-ASCII or non-printable"):
         hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, "em\u2014dash")
@@ -161,8 +163,6 @@ def test_set_lpar_description_rejects_non_ascii(monkeypatch, mock_hmc):
 
 def test_set_lpar_description_rejects_non_ascii_various(monkeypatch, mock_hmc):
     """hmc_set_lpar_description rejects a range of non-ASCII characters."""
-    import pytest
-
     _hmc_env(monkeypatch)
     for bad in ["\u2014", "\u00e9", "\u4e2d\u6587", "\u00a0"]:
         with pytest.raises(ValueError, match="non-ASCII or non-printable"):
@@ -171,8 +171,6 @@ def test_set_lpar_description_rejects_non_ascii_various(monkeypatch, mock_hmc):
 
 def test_set_lpar_description_rejects_control_characters(monkeypatch, mock_hmc):
     """hmc_set_lpar_description rejects ASCII control characters (NUL, LF, CR, ESC)."""
-    import pytest
-
     _hmc_env(monkeypatch)
     for ctrl in ["\x00", "\n", "\r", "\x1b", "\x7f"]:
         with pytest.raises(ValueError, match="non-ASCII or non-printable"):
@@ -208,11 +206,6 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
 
 def test_set_lpar_description_ssh_layer_rejects_non_ascii():
     """set_lpar_description (ssh) raises ValueError for non-ASCII — inner guard."""
-    import asyncio
-    import pytest
-    from hmc_mcp.config import HMCConfig
-    from hmc_mcp.ssh import set_lpar_description
-
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(ValueError, match="non-ASCII or non-printable"):
         asyncio.run(set_lpar_description(cfg, "sys", "lpar", "em\u2014dash"))
@@ -220,11 +213,6 @@ def test_set_lpar_description_ssh_layer_rejects_non_ascii():
 
 def test_set_lpar_description_ssh_layer_rejects_control_characters():
     """set_lpar_description (ssh) raises ValueError for control chars — inner guard."""
-    import asyncio
-    import pytest
-    from hmc_mcp.config import HMCConfig
-    from hmc_mcp.ssh import set_lpar_description
-
     cfg = HMCConfig(host="hmc.test", user="hscroot", password="abc123", _env_file=None)
     with pytest.raises(ValueError, match="non-ASCII or non-printable"):
         asyncio.run(set_lpar_description(cfg, "sys", "lpar", "desc\x00bad"))
