@@ -230,6 +230,12 @@ def hmc_modify_lpar(
     change applies on next activation. Set dedicated=True to assign whole
     CPUs, False for shared processing units + virtual processors; omit it
     to leave the sharing mode unchanged.
+
+    **Multi-agent ownership:** When renaming an LPAR (``name`` parameter), first
+    read its description with ``hmc_get_lpar_description``. If it contains
+    ``[hmc-mcp owner:<id> ...]`` and the owner differs from ``HMC_AGENT_ID``,
+    stop and ask the operator before renaming. Renaming an LPAR owned by another
+    agent breaks that agent's ability to locate its partition by name.
     """
     xml = build_lpar_document(
         name=name,

@@ -210,6 +210,7 @@ def hmc_provision_lpar(
             )
 
             steps: list[dict[str, Any]] = []
+            warnings: list[str] = []
             lpar_uuid: str | None = None
             failed = False
 
@@ -253,7 +254,6 @@ def hmc_provision_lpar(
             # ----------------------------------------------------------------
             # Ownership stamp (best-effort, after successful create)
             # ----------------------------------------------------------------
-            stamp_warnings: list[str] = []
             ownership_stamped: bool | None = None
             if not failed and lpar_uuid:
                 cfg = hmc.config
@@ -268,7 +268,7 @@ def hmc_provision_lpar(
                     ownership_stamped = True
                 else:
                     ownership_stamped = False
-                    stamp_warnings.append(
+                    warnings.append(
                         f"ownership stamp failed for LPAR {name!r}"
                     )
 
@@ -343,7 +343,7 @@ def hmc_provision_lpar(
                 "dry_run": False,
                 "ownership_stamped": ownership_stamped,
                 "steps": steps,
-                "warnings": stamp_warnings,
+                "warnings": warnings,
             }
 
     return _run(_go)
