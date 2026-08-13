@@ -28,8 +28,6 @@ from hmc_mcp.server import mcp
 # They are listed explicitly so the registry test can skip them.
 _SSH_ONLY_TOOLS = frozenset({
     "hmc_run_command",
-    "hmc_lpar_console",
-    "hmc_virtual_terminal",
     "hmc_get_lpar_description",
     "hmc_set_lpar_description",
     "hmc_get_lpar_msp",
@@ -53,9 +51,6 @@ _SSH_ONLY_TOOLS = frozenset({
     "hmc_list_vios_backups",
     "hmc_list_fc_ports",
     "hmc_list_sea_adapters",
-    "hmc_add_virtual_switch",
-    "hmc_add_virtual_network",
-    "hmc_delete_virtual_switch",
 })
 
 
@@ -73,6 +68,12 @@ def test_every_rest_tool_has_profile_param():
     SSH-only tools are explicitly excluded; all others must have the param.
     """
     by_name = _tools_by_name()
+    # Guard: every name in _SSH_ONLY_TOOLS must actually exist in the registry.
+    # If a tool is renamed or removed the exclusion set must be updated too.
+    orphaned = _SSH_ONLY_TOOLS - set(by_name)
+    assert not orphaned, (
+        f"_SSH_ONLY_TOOLS has stale entries not in the live registry: {sorted(orphaned)}"
+    )
     missing = []
     for name, tool in by_name.items():
         if name in _SSH_ONLY_TOOLS:
@@ -119,12 +120,12 @@ def _toml_two_profiles(tmp_path: Path) -> Path:
         "[profiles.alpha]\n"
         "host = 'hmc-a.test'\n"
         "user = 'hscroot'\n"
-        "password = 'pass-a'\n"
+        "password = 'pass-a'\n"  # pragma: allowlist secret
         "\n"
         "[profiles.beta]\n"
         "host = 'hmc-b.test'\n"
         "user = 'hscroot'\n"
-        "password = 'pass-b'\n"
+        "password = 'pass-b'\n"  # pragma: allowlist secret
     )
     return cfg
 
@@ -183,10 +184,14 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
 # T-3: Concurrent profile isolation
 # ---------------------------------------------------------------------- #
 
-def test_concurrent_profile_isolation(tmp_path, monkeypatch):
-    """Two concurrent asyncio tasks with different profiles reach distinct HMC hosts.
+def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
+    """Two calls with different profile strings produce clients pointing at different hosts.
 
-    This confirms no shared mutable selection state exists between calls.
+    Uses asyncio.gather for structural concurrency; the mock has no await
+    points so tasks run to completion without interleaving. This confirms
+    that client_from_env constructs an independent HMCClient per call
+    (no shared cached instance).  For thread/coroutine interleaving coverage
+    see the sequential routing test.
     """
     from hmc_mcp.client import HMCClient
 

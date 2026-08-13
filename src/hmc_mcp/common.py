@@ -56,7 +56,12 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                     base = HMCConfig(_env_file=None, **merged)  # type: ignore[call-arg]
                 return HMCClient(base)
             except ConfigError:
-                pass  # Fall through to env-var-only construction
+                if profile:
+                    # An explicit profile name was supplied but not found — raise
+                    # so the caller gets a clear error rather than silently routing
+                    # to the env-var default HMC.
+                    raise
+                pass  # No profile specified; fall through to env-var-only construction
 
     config = HMCConfig(_env_file=None, **filtered)  # type: ignore[call-arg]
     return HMCClient(config)

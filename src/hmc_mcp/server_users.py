@@ -117,8 +117,8 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.delete_hmc_user(name)
-    _run(_go)
-    return f"Deleted HMC user {name}"
+            return f"Deleted HMC user {name}"
+    return _run(_go)
 
 
 
@@ -235,8 +235,8 @@ def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> 
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.delete_password_policy(policy_name)
-    _run(_go)
-    return f"Deleted HMC password policy {policy_name}"
+            return f"Deleted HMC password policy {policy_name}"
+    return _run(_go)
 
 
 
@@ -318,5 +318,5 @@ def hmc_remove_ldap_config(resource: str, profile: str | None = None) -> str:
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.remove_ldap_config(resource)
-    _run(_go)
-    return f"Removed LDAP configuration component: {resource}"
+            return f"Removed LDAP configuration component: {resource}"
+    return _run(_go)

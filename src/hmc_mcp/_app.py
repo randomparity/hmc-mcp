@@ -198,6 +198,8 @@ async def _resolve_system_name(
     if system_name_or_uuid is None or not is_uuid(system_name_or_uuid):
         return system_name_or_uuid
     try:
+        # TODO(#127): thread profile through SSH tools so this resolver uses the
+        # correct profile instead of the env-var default when profiles differ.
         async with client_from_env() as hmc:
             return await _system_name_from_rest(hmc, system_name_or_uuid)
     except httpx.HTTPError:
@@ -217,6 +219,8 @@ async def _resolve_lpar_name(
     if lpar_name_or_uuid is None or not is_uuid(lpar_name_or_uuid):
         return lpar_name_or_uuid
     try:
+        # TODO(#127): thread profile through SSH tools so this resolver uses the
+        # correct profile instead of the env-var default when profiles differ.
         async with client_from_env() as hmc:
             return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
     except httpx.HTTPError:
