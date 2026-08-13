@@ -723,7 +723,12 @@ async def backup_lpar_profiles(
 
     When *force* is ``True``, ``--force`` is appended to the command so that
     an existing file at *file_path* is overwritten instead of raising an error.
+
+    Raises:
+        ValueError: if *file_path* is empty or whitespace-only.
     """
+    if not file_path or not file_path.strip():
+        raise ValueError("file_path must not be empty")
     cmd = f"bkprofdata -m {shlex.quote(system_name)} -f {shlex.quote(file_path)}"
     if force:
         cmd += " --force"

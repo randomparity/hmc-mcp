@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -100,6 +101,24 @@ def test_backup_lpar_profiles_no_force_by_default(monkeypatch, mock_hmc):
 
     called_cmd = conn_mock.run.call_args[0][0]
     assert "--force" not in called_cmd
+
+
+def test_backup_lpar_profiles_empty_file_path_raises(monkeypatch, mock_hmc):
+    """hmc_backup_lpar_profiles raises ValueError for empty file_path."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+
+    with pytest.raises(ValueError, match="file_path must not be empty"):
+        hmc_backup_lpar_profiles(SYSTEM_UUID, "")
+
+
+def test_backup_lpar_profiles_whitespace_file_path_raises(monkeypatch, mock_hmc):
+    """hmc_backup_lpar_profiles raises ValueError for whitespace-only file_path."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+
+    with pytest.raises(ValueError, match="file_path must not be empty"):
+        hmc_backup_lpar_profiles(SYSTEM_UUID, "   ")
 
 
 # ---------------------------------------------------------------------- #
