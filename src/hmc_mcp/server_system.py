@@ -92,8 +92,16 @@ def hmc_list_configured_hosts() -> dict:
 
     profiles = []
     for name, entry in profiles_raw.items():
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{config_path}: profile {name!r} must be a TOML table, "
+                f"got {type(entry).__name__}"
+            )
         # Build each profile dict from named fields only.
         # NEVER spread entry directly — it may contain a literal "password" key.
+        # Use key-presence ('in') for credential booleans — truthiness would give
+        # False for password = "" which is present-but-empty, diverging from
+        # load_profile()'s "key" in entry check.
         profiles.append({
             "name": name,
             "host": entry.get("host", ""),
@@ -101,8 +109,8 @@ def hmc_list_configured_hosts() -> dict:
             "port": int(entry.get("port", _default_port)),
             "verify_ssl": bool(entry.get("verify_ssl", _default_verify_ssl)),
             "is_default": (name == default_profile),
-            "has_password": bool(entry.get("password") or entry.get("password_env")),
-            "has_ssh_key": bool(entry.get("ssh_key_file")),
+            "has_password": ("password" in entry or "password_env" in entry),
+            "has_ssh_key": ("ssh_key_file" in entry),
         })
 
     return {"profiles": profiles, "config_file": str(config_path)}
