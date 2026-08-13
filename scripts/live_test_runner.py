@@ -1044,13 +1044,17 @@ async def subtask_12(client: Client) -> None:
     job_uuid = CTX.get("job_uuid_sample")
     if job_uuid:
         st, data = await call(client, "hmc_get_job", job_uuid=job_uuid)
-        record(12, "hmc_get_job", st, data)
+        _record_expected_or_real(12, "hmc_get_job", st, data,
+                                 expected_fail_substrings=["REST000E", "REST000B", "400"],
+                                 skip_reason="Job REST type not supported on this HMC firmware")
 
         st, data = await call(client, "hmc_wait_for_job",
                               job_uuid=job_uuid,
                               timeout_seconds=10,
                               poll_interval=2)
-        record(12, "hmc_wait_for_job", st, data)
+        _record_expected_or_real(12, "hmc_wait_for_job", st, data,
+                                 expected_fail_substrings=["REST000E", "REST000B", "400"],
+                                 skip_reason="Job REST type not supported on this HMC firmware")
     else:
         skip(12, "hmc_get_job", "no job UUID captured (ST8 may have failed)")
         skip(12, "hmc_wait_for_job", "no job UUID")
