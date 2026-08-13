@@ -82,7 +82,22 @@ is owned by #127.
 - Adding the parameter is backward-compatible with MCP clients that do not
   supply it.
 - No shared mutable state: every call resolves its own `HMCConfig` from its
-  own `profile` argument; the test for concurrent isolation confirms this.
+  own `profile` argument; the test for concurrent independence confirms this.
 - `with_client` helper is removed: the single-line pattern it replaced is now
   spelled `async with client_from_env(profile) as hmc:` at the call site.
   This makes profile propagation explicit and removes an invisible seam.
+
+### Trust model
+
+The `profile` parameter is accepted verbatim from any MCP caller and resolved
+against the operator's local TOML config file.  This is intentional: the MCP
+server is designed for **single-user local deployment** over stdio transport,
+where the caller identity is the same as the config-file owner.  All configured
+profiles are equally accessible to any caller because there is no multi-tenant
+trust boundary between the server process and its MCP clients.
+
+Operators who expose the MCP server to untrusted callers (e.g., as a shared
+network gateway) must ensure that every profile in their TOML file grants only
+the minimum required privilege, or restrict the exposed parameter via a
+proxy/gateway layer, since the server itself performs no per-caller profile
+authorization check.
