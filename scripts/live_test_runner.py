@@ -1252,27 +1252,42 @@ async def subtask_15(client: Client) -> None:
 
     baseline = CTX["lp3_baseline"]
 
-    # Restore description (ASCII-safe; fix #100)
+    # Restore description — only if original was printable ASCII (same guard as ST10)
     orig_desc = baseline.get("description", "")
     if isinstance(orig_desc, dict):
         orig_desc = orig_desc.get("description") or ""
-    st, data = await call(client, "hmc_set_lpar_description",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          description=str(orig_desc) if orig_desc else "")
-    record(15, "hmc_set_lpar_description (restore)", st, data)
-
-    # Restore proc compat (fix #101)
-    orig_compat = baseline.get("proc_compat")
-    if isinstance(orig_compat, dict):
-        mode = orig_compat.get("current") or orig_compat.get("mode") or "default"
+    _restore_desc = str(orig_desc) if orig_desc else ""
+    if _restore_desc and (
+        not _restore_desc.isascii()
+        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in _restore_desc)
+    ):
+        skip(15, "hmc_set_lpar_description (restore)",
+             "original description contains non-ASCII/non-printable chars — cannot restore via CLI")
     else:
-        mode = "default"
-    st, data = await call(client, "hmc_set_lpar_proc_compat",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          mode=mode)
-    record(15, "hmc_set_lpar_proc_compat (restore)", st, data)
+        st, data = await call(client, "hmc_set_lpar_description",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              description=_restore_desc)
+        record(15, "hmc_set_lpar_description (restore)", st, data)
+
+    # Restore proc compat — fetch live mode; skip if "default" (same guard as ST10)
+    st_pc, data_pc = await call(client, "hmc_get_lpar_proc_compat",
+                                system_name_or_uuid=CTX["system_name"],
+                                lpar_name_or_uuid=CTX["lp3_name"])
+    if st_pc == "PASS" and isinstance(data_pc, dict):
+        mode = (data_pc.get("desired") or data_pc.get("curr") or "").strip()
+    else:
+        mode = ""
+
+    if mode and mode.lower() not in ("default", ""):
+        st, data = await call(client, "hmc_set_lpar_proc_compat",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              mode=mode)
+        record(15, "hmc_set_lpar_proc_compat (restore)", st, data)
+    else:
+        skip(15, "hmc_set_lpar_proc_compat (restore)",
+             f"proc compat mode is {mode!r} — skipping restore (chsyscfg rejects 'default')")
 
     # Final adapter audit
     st, data = await call(client, "hmc_list_adapters",
