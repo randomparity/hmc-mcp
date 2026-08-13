@@ -15,7 +15,7 @@ from ._app import (
     mcp,
 )
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, is_uuid
 from .documents import (
     Keylock,
     LparResources,
@@ -202,32 +202,53 @@ def hmc_create_lpar(
                 )
             else:
                 if sys_name_for_stamp is None:
-                    # REST path: resolve system name for the SSH stamp call
+                    # REST path: resolve system name for the SSH stamp call.
+                    # Try REST first (already authenticated), then SSH as fallback.
                     try:
-                        sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                    except (HMCCLIError, Exception):
-                        sys_name_for_stamp = system_name_or_uuid
+                        sys_entry = await hmc.get_managed_system(system_uuid)
+                        sys_name_for_stamp = (
+                            (sys_entry.get("Resource") or {}).get("SystemName")
+                            if sys_entry
+                            else None
+                        ) or None
+                    except Exception:
+                        sys_name_for_stamp = None
+                    if not sys_name_for_stamp:
+                        try:
+                            sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                        except (HMCCLIError, Exception):
+                            sys_name_for_stamp = system_name_or_uuid
                 # Use the server-confirmed PartitionName if available; fall back to
                 # the constructor argument in case the HMC normalised the name.
                 confirmed_name = (
                     (lpar_result.get("Resource") or {}).get("PartitionName")
                     or name
                 )
-                token = await stamp_lpar_ownership(
-                    cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
-                )
-                if token is not None:
-                    ownership_stamped = True
-                else:
-                    ownership_stamped = False
-                    _logger.warning(
-                        "ownership stamp failed for LPAR %r on %r",
-                        confirmed_name,
-                        sys_name_for_stamp,
-                    )
+                if is_uuid(sys_name_for_stamp):
+                    # sys_name_for_stamp is still a UUID — both REST and SSH system-name
+                    # resolution failed and the HMC CLI will reject a UUID as a
+                    # managed-system name.  Skip and surface a clear advisory.
                     warnings.append(
-                        f"ownership stamp failed for LPAR {confirmed_name!r} on {sys_name_for_stamp!r}"
+                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
+                        "stamp manually via hmc_set_lpar_description"
                     )
+                else:
+                    token = await stamp_lpar_ownership(
+                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
+                    )
+                    if token is not None:
+                        ownership_stamped = True
+                    else:
+                        ownership_stamped = False
+                        _logger.warning(
+                            "ownership stamp failed for LPAR %r on %r",
+                            confirmed_name,
+                            sys_name_for_stamp,
+                        )
+                        warnings.append(
+                            f"ownership stamp failed for LPAR {confirmed_name!r} on {sys_name_for_stamp!r}"
+                        )
 
             return {
                 "lpar": lpar_result,

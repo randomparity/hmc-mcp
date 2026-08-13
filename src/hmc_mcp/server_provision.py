@@ -16,7 +16,7 @@ from ._app import (
     mcp,
 )
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, is_uuid
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
 from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
@@ -162,7 +162,11 @@ def hmc_provision_lpar(
     - ``dry_run`` (bool): mirrors the input flag.
     - ``steps`` (list): per-step result dicts ``{step, status, result?}``.
       status is ``"ok"``, ``"error"``, ``"skipped"``, or ``"dry_run"``.
-    - ``warnings`` (list): non-fatal notices (currently always empty).
+    - ``warnings`` (list): non-fatal notices; includes ownership stamp failures
+      or skips when the stamp could not be applied after creation.
+    - ``ownership_stamped`` (bool | None): ``True`` when the description-field
+      ownership token was written; ``False`` when the SSH stamp attempt failed;
+      ``None`` when the stamp was not attempted.
     """
 
     async def _go() -> dict[str, Any]:
@@ -269,21 +273,31 @@ def hmc_provision_lpar(
                     ((created_lpar or {}).get("Resource") or {}).get("PartitionName")
                     or name
                 )
-                token = await stamp_lpar_ownership(
-                    cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
-                )
-                if token is not None:
-                    ownership_stamped = True
-                else:
-                    ownership_stamped = False
-                    _logger.warning(
-                        "ownership stamp failed for LPAR %r on %r",
-                        confirmed_name,
-                        sys_name_for_stamp,
-                    )
+                if is_uuid(sys_name_for_stamp):
+                    # sys_name_for_stamp is still a UUID — system-name resolution
+                    # failed and the HMC CLI will reject a UUID as a managed-system
+                    # name.  Skip the stamp and surface a clear advisory.
                     warnings.append(
-                        f"ownership stamp failed for LPAR {confirmed_name!r}"
+                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
+                        "stamp manually via hmc_set_lpar_description"
                     )
+                else:
+                    token = await stamp_lpar_ownership(
+                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
+                    )
+                    if token is not None:
+                        ownership_stamped = True
+                    else:
+                        ownership_stamped = False
+                        _logger.warning(
+                            "ownership stamp failed for LPAR %r on %r",
+                            confirmed_name,
+                            sys_name_for_stamp,
+                        )
+                        warnings.append(
+                            f"ownership stamp failed for LPAR {confirmed_name!r}"
+                        )
             elif not failed and not lpar_uuid:
                 # Create succeeded but the REST body did not return a UUID — stamp
                 # cannot proceed without the LPAR UUID to locate the system name.

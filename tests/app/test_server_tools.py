@@ -194,7 +194,22 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar"))
     )
-    # stamp_lpar_ownership calls _ssh_system_name then set_lpar_description over SSH;
+    # system name resolution for stamp (REST-first: get_managed_system)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200,
+            text=f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:{SYSTEM_UUID}</id>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <SystemName>server1</SystemName>
+    </ManagedSystem>
+  </content>
+</entry>""",
+        )
+    )
+    # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]")):
         result = hmc_create_lpar(
