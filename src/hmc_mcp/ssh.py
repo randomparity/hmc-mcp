@@ -417,13 +417,18 @@ async def set_lpar_description(
     -i "name=<lpar_name>,description=<description>"`` and returns the raw
     command output.
 
-    Raises ``ValueError`` if *description* contains non-ASCII characters; the
-    HMC enforces ASCII-only partition descriptions (HSCLC63B).
+    Raises ``ValueError`` if *description* contains non-ASCII or non-printable
+    characters; the HMC enforces printable ASCII-only partition descriptions
+    (HSCLC63B).  Control characters (NUL, LF, CR, ESC, …) are also rejected
+    because they can corrupt the HMC CLI's CSV-like ``-i`` parser or be
+    silently truncated at the C-string layer.
     """
-    if not description.isascii():
+    if not description.isascii() or any(
+        ord(c) < 0x20 or ord(c) == 0x7F for c in description
+    ):
         raise ValueError(
-            "description contains non-ASCII characters; "
-            "the HMC only accepts ASCII partition descriptions (HSCLC63B)"
+            "description contains non-ASCII or non-printable characters; "
+            "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
         )
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "

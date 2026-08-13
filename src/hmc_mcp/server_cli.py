@@ -67,9 +67,11 @@ def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, d
     lookup over SSH when the REST API is unreachable) before the command
     runs.
 
-    The description must contain only ASCII characters; the HMC rejects
-    non-ASCII values with HSCLC63B. This tool raises ``ValueError`` before
-    issuing the SSH command when non-ASCII characters are detected.
+    The description must contain only printable ASCII characters; the HMC
+    rejects non-ASCII values with HSCLC63B, and control characters (NUL, LF,
+    CR, ESC, …) can silently corrupt the HMC CLI's CSV-like ``-i`` parser.
+    This tool raises ``ValueError`` before issuing the SSH command when
+    non-ASCII or non-printable characters are detected.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name_or_uuid and system_name_or_uuid before calling.    """

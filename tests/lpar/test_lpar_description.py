@@ -156,7 +156,7 @@ def test_set_lpar_description_rejects_non_ascii(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        with pytest.raises(ValueError, match="non-ASCII"):
+        with pytest.raises(ValueError, match="non-ASCII or non-printable"):
             hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, "em\u2014dash")
 
     conn_mock.run.assert_not_called()
@@ -172,6 +172,21 @@ def test_set_lpar_description_rejects_non_ascii_various(monkeypatch, mock_hmc):
     for bad in ["\u2014", "\u00e9", "\u4e2d\u6587", "\u00a0"]:
         conn_mock = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-            with pytest.raises(ValueError, match="non-ASCII"):
+            with pytest.raises(ValueError, match="non-ASCII or non-printable"):
                 hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, f"desc{bad}")
+        conn_mock.run.assert_not_called()
+
+
+def test_set_lpar_description_rejects_control_characters(monkeypatch, mock_hmc):
+    """hmc_set_lpar_description rejects ASCII control characters (NUL, LF, CR, ESC)."""
+    import pytest
+
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+
+    for ctrl in ["\x00", "\n", "\r", "\x1b", "\x7f"]:
+        conn_mock = _make_ssh_mock("")
+        with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+            with pytest.raises(ValueError, match="non-ASCII or non-printable"):
+                hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, f"desc{ctrl}bad")
         conn_mock.run.assert_not_called()
