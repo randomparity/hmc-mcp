@@ -15,6 +15,7 @@ from ._app import (
 )
 
 from .common import client_from_env
+from .errors import HMCError
 from .jobs import (
     RepositorySource,
     update_firmware_job,
@@ -80,6 +81,22 @@ def hmc_hmc_update(
     ))
 
 
+def _check_ptf_error(exc: HMCError) -> None:
+    """Re-raise *exc* with an actionable message if SoftwareUpdate group is unsupported.
+
+    HTTP 400 with REST0026 indicates the SoftwareUpdate attribute group is not
+    supported on this HMC version or firmware level. All other errors are left unchanged.
+    """
+    if exc.status_code == 400:
+        msg_str = str(exc)
+        body_str = exc.body or ""
+        if "REST0026" in msg_str or "REST0026" in body_str or "SoftwareUpdate" in msg_str or "SoftwareUpdate" in body_str:
+            raise HMCError(
+                "SoftwareUpdate attribute group not supported on this HMC version.",
+                exc.status_code,
+            ) from exc
+
+
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_available_hmc_ptfs(console_uuid: str) -> dict[str, Any] | None:
     """Get available PTFs (fixes) for the HMC software.
@@ -88,10 +105,13 @@ def hmc_get_available_hmc_ptfs(console_uuid: str) -> dict[str, Any] | None:
     group, which returns available PTF information. console_uuid is the
     ManagementConsole UUID (from hmc_console_info). Does not submit a job.
     """
-
-    return with_client(
-        lambda hmc: hmc.get_uom("ManagementConsole", console_uuid, group="SoftwareUpdate")
-    )
+    try:
+        return with_client(
+            lambda hmc: hmc.get_uom("ManagementConsole", console_uuid, group="SoftwareUpdate")
+        )
+    except HMCError as exc:
+        _check_ptf_error(exc)
+        raise
 
 
 @mcp.tool
