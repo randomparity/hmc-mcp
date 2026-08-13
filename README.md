@@ -23,15 +23,34 @@ uv sync
 
 ## Configure
 
-Credentials come from a `.env` file, environment variables, or CLI flags
-(priority: flags > env > .env). Copy the example:
+Configuration priority (highest to lowest): **CLI flags > `HMC_*` env vars > TOML profile**.
 
-```bash
-cp .env.example .env   # then edit
+### TOML profile (recommended for multi-HMC setups)
+
+Create `~/.config/hmc-mcp/config.toml` (Linux / macOS `~/Library/Application Support/hmc-mcp/config.toml` / Windows `%APPDATA%/hmc-mcp/config.toml`):
+
+```toml
+default_profile = "prod"
+
+[profiles.prod]
+host = "hmc.example.com"
+user = "admin"
+password_env = "HMC_PROD_PASSWORD"   # resolved from the environment at runtime  # pragma: allowlist secret
+
+[profiles.dev]
+host = "hmc-dev.example.com"
+user = "devadmin"
+password = "devpassword"              # or store inline for non-production  # pragma: allowlist secret
 ```
+
+Select a profile with `--profile <name>` or `HMC_PROFILE=<name>`.
+`password_env` keeps secrets out of the file; `password` is accepted for convenience.
+
+### Environment variables (single-HMC / MCP server)
 
 | Setting           | Env var              | CLI flag          | Default   |
 |-------------------|----------------------|-------------------|-----------|
+| Profile           | `HMC_PROFILE`        | `--profile`       | —         |
 | HMC host / IP     | `HMC_HOST`           | `--host`          | —         |
 | REST port         | `HMC_PORT`           | —                 | `12443`   |
 | User              | `HMC_USER`           | `--user, -u`      | —         |
@@ -421,7 +440,7 @@ uv run python scripts/smoke_mcp.py
 
 ### 3. Live check against a real HMC
 
-With credentials configured (`.env` or flags), the cheapest end-to-end check
+With credentials configured (TOML profile, env vars, or flags), the cheapest end-to-end check
 is `console info` — one Logon + one ManagementConsole GET:
 
 ```bash

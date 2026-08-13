@@ -81,6 +81,7 @@ class GlobalOpts:
     user: str | None = None
     password: str | None = None
     verify_ssl: bool | None = None
+    profile: str | None = None
 
 
 GLOBALS = GlobalOpts()
@@ -96,13 +97,18 @@ def main(
     verify_ssl: bool | None = typer.Option(
         None, "--verify-ssl/--no-verify-ssl", envvar="HMC_VERIFY_SSL", help="Verify the HMC TLS certificate"
     ),
+    profile: str | None = typer.Option(
+        None, "--profile", envvar="HMC_PROFILE",
+        help="Named profile from ~/.config/hmc-mcp/config.toml (or platform equivalent)",
+    ),
 ) -> None:
     global GLOBALS
-    GLOBALS = GlobalOpts(host=host, user=user, password=password, verify_ssl=verify_ssl)
+    GLOBALS = GlobalOpts(host=host, user=user, password=password, verify_ssl=verify_ssl, profile=profile)
 
 
 def _client():
     return client_from_env(
+        profile=GLOBALS.profile,
         host=GLOBALS.host,
         user=GLOBALS.user,
         password=GLOBALS.password,
@@ -113,17 +119,34 @@ def _client():
 def _ssh_config() -> HMCConfig:
     """Build the SSH HMCConfig, honoring the global CLI options.
 
-    None overrides are dropped so env vars / .env fill the rest — the same
-    contract as ``client_from_env`` (explicit init args would otherwise
-    shadow the environment).
+    None overrides are dropped so env vars and the TOML profile fill the rest.
+    When no explicit host is given, the TOML profile loader is tried first
+    (same logic as ``client_from_env``).
     """
-    overrides = {
+    from .config import load_profile, ConfigError, resolve_config_path
+    import os
+
+    overrides = {k: v for k, v in {
         "host": GLOBALS.host,
         "user": GLOBALS.user,
         "password": GLOBALS.password,
         "verify_ssl": GLOBALS.verify_ssl,
-    }
-    return HMCConfig(**{k: v for k, v in overrides.items() if v is not None})
+    }.items() if v is not None}
+
+    if not overrides.get("host") and not os.environ.get("HMC_HOST"):
+        config_path = resolve_config_path()
+        if config_path is not None or GLOBALS.profile or os.environ.get("HMC_PROFILE"):
+            try:
+                base = load_profile(profile=GLOBALS.profile)
+                if overrides:
+                    merged = {k: getattr(base, k) for k in base.model_fields}
+                    merged.update(overrides)
+                    return HMCConfig(_env_file=None, **merged)  # type: ignore[call-arg]
+                return base
+            except ConfigError:
+                pass
+
+    return HMCConfig(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
 def _run(fn: Callable[[], Awaitable[Any]]) -> Any:

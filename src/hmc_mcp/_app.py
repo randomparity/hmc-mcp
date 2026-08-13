@@ -305,7 +305,7 @@ def _ssh_with_client(fn, *, system_name_or_uuid=None, lpar_name_or_uuid=None):
     runs the command itself.
     """
     async def _go():
-        config = HMCConfig()
+        config = HMCConfig(_env_file=None)  # type: ignore[call-arg]
         system_name = await _resolve_system_name(config, system_name_or_uuid)
         lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name)
         return await fn(config, system_name, lpar_name)
