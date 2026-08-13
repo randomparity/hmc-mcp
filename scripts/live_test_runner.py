@@ -964,18 +964,20 @@ async def subtask_11(client: Client) -> None:
     _record_expected_or_real(11, "hmc_create_password_policy", st, data,
                              expected_fail_substrings=_REST000E_SKIP,
                              skip_reason="HmcPasswordPolicy REST not supported (expected)")
+    policy_created = st == "PASS"
 
     st, data = await call(client, "hmc_list_password_policies")
     _record_expected_or_real(11, "hmc_list_password_policies (confirm)", st, data,
                              expected_fail_substrings=_REST000E_SKIP,
                              skip_reason="HmcPasswordPolicy REST not supported (expected)")
 
-    st, data = await call(client, "hmc_modify_password_policy",
-                          policy_name=CTX["test_policy"],
-                          min_length=12)
-    _record_expected_or_real(11, "hmc_modify_password_policy", st, data,
-                             expected_fail_substrings=_REST000E_SKIP,
-                             skip_reason="HmcPasswordPolicy REST not supported (expected)")
+    if policy_created:
+        st, data = await call(client, "hmc_modify_password_policy",
+                              policy_name=CTX["test_policy"],
+                              min_length=12)
+        record(11, "hmc_modify_password_policy", st, data)
+    else:
+        skip(11, "hmc_modify_password_policy", "policy not created (REST not supported)")
 
     if user_created:
         st, data = await call(client, "hmc_delete_user", name=CTX["test_user"])
@@ -983,11 +985,12 @@ async def subtask_11(client: Client) -> None:
     else:
         skip(11, "hmc_delete_user", "user not created (REST000E expected)")
 
-    st, data = await call(client, "hmc_delete_password_policy",
-                          policy_name=CTX["test_policy"])
-    _record_expected_or_real(11, "hmc_delete_password_policy", st, data,
-                             expected_fail_substrings=_REST000E_SKIP,
-                             skip_reason="HmcPasswordPolicy REST not supported (expected)")
+    if policy_created:
+        st, data = await call(client, "hmc_delete_password_policy",
+                              policy_name=CTX["test_policy"])
+        record(11, "hmc_delete_password_policy", st, data)
+    else:
+        skip(11, "hmc_delete_password_policy", "policy not created (REST not supported)")
 
     st, data = await call(client, "hmc_users")
     _record_expected_or_real(11, "hmc_users (confirm deleted)", st, data,
