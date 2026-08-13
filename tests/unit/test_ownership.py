@@ -57,6 +57,11 @@ def test_validate_agent_id_slash():
         validate_agent_id("team/agent")
 
 
+def test_validate_agent_id_colon():
+    with pytest.raises(ValueError, match="colon"):
+        validate_agent_id("team:agent")
+
+
 def test_validate_agent_id_non_ascii():
     with pytest.raises(ValueError, match="printable ASCII"):
         validate_agent_id("alicé")

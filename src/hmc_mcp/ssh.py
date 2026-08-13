@@ -61,6 +61,8 @@ def validate_agent_id(agent_id: str) -> None:
     - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
     - No forward slashes — the audit memento is formatted as ``hmc-mcp/<agent_id>``;
       a slash in the agent_id would produce an ambiguous multi-segment path.
+    - No colons — the ownership token format is ``[hmc-mcp owner:<agent_id> …]``;
+      a colon in the agent_id would produce an ambiguous ``owner:a:b`` value.
 
     Called from :class:`.config.HMCConfig` model validator so errors surface at
     construction time, before any SSH call is made.
@@ -98,6 +100,10 @@ def validate_agent_id(agent_id: str) -> None:
         raise ValueError(
             "agent_id contains '/'; slashes make the audit memento path "
             "(hmc-mcp/<agent_id>) ambiguous"
+        )
+    if ":" in agent_id:
+        raise ValueError(
+            "agent_id contains ':'; colons break the 'owner:<agent_id>' token format"
         )
 
 

@@ -330,11 +330,14 @@ def hmc_provision_lpar(
 
             # ----------------------------------------------------------------
             # Ownership stamp (best-effort, after all provisioning steps)
-            # Stamp only runs when the full provision succeeded, so
-            # ownership_stamped=True implies created=True.
+            # Stamp runs whenever the LPAR was created (lpar_uuid is not None),
+            # regardless of whether downstream steps (network, storage, power_on)
+            # succeeded. An LPAR that exists but is incompletely provisioned
+            # should still carry an ownership token so agents can identify it.
+            # ownership_stamped is orthogonal to created (per ADR 0011).
             # ----------------------------------------------------------------
             ownership_stamped: bool | None = None
-            if not failed and lpar_uuid:
+            if lpar_uuid:
                 cfg = hmc.config
                 # Try REST first (already authenticated), then SSH as fallback.
                 sys_name_for_stamp: str | None = None
@@ -380,8 +383,8 @@ def hmc_provision_lpar(
                         warnings.append(
                             f"ownership stamp failed for LPAR {confirmed_name!r}"
                         )
-            elif not failed and not lpar_uuid:
-                # Create succeeded but no UUID returned — cannot locate the LPAR for stamp.
+            elif not lpar_uuid and not failed:
+                # Create succeeded but returned no UUID — cannot locate the LPAR for stamp.
                 warnings.append(
                     f"ownership stamp skipped for LPAR {name!r}: "
                     "create returned no UUID; stamp manually via hmc_set_lpar_description"
