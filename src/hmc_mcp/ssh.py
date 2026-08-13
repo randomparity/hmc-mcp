@@ -126,6 +126,101 @@ async def run_hmc_cli(cmd: str) -> str:
     return await run_hmc_command(HMCConfig(), cmd)
 
 
+async def create_lpar_via_cli(
+    config: HMCConfig,
+    system_name: str,
+    name: str,
+    partition_type: str = "AIX/Linux",
+    min_memory: int | None = None,
+    desired_memory: int | None = None,
+    max_memory: int | None = None,
+    desired_vcpus: int | None = None,
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+    desired_procs: float | None = None,
+    min_procs: float | None = None,
+    max_procs: float | None = None,
+    max_virtual_slots: int | None = None,
+    profile_name: str = "default_profile",
+) -> str:
+    """Create an LPAR via ``mksyscfg`` over SSH.
+
+    Uses the HMC CLI (SSH) instead of the REST API because some HMC firmware
+    versions return HTTP 406 for ``PUT ManagedSystem/{uuid}/LogicalPartition``
+    regardless of schema-version headers.  This is the same approach used by
+    the IBM ansible-power-hmc collection and IBM internal provisioning toolkits.
+
+    When no explicit resource values (memory/proc/vcpu) are provided, the
+    ``all_resources=1`` flag is used, which allocates all available system
+    resources and skips the need for exact proc/memory configuration.  This is
+    the most reliable approach for HMC firmware that enforces strict resource
+    accounting.  Pass explicit values to override individual resources.
+
+    Returns the raw ``mksyscfg`` stdout (typically empty on success).
+    Raises :class:`HMCCLIError` on non-zero exit.
+    """
+    _pt = partition_type.lower()
+    if "ios" in _pt or "vios" in _pt:
+        lpar_env = "vioserver"
+    elif "os400" in _pt or "ibmi" in _pt or "i" == _pt:
+        lpar_env = "os400"
+    else:
+        lpar_env = "aixlinux"
+
+    config_pairs = [
+        f"name={name}",
+        f"lpar_env={lpar_env}",
+        f"profile_name={profile_name}",
+    ]
+
+    # Determine whether any explicit resource values were provided.
+    # If none are given, use all_resources=1 (simplest and most compatible).
+    explicit_resources = any(
+        v is not None
+        for v in (
+            min_memory, desired_memory, max_memory,
+            min_procs, desired_procs, max_procs,
+            min_vcpus, desired_vcpus, max_vcpus,
+        )
+    )
+
+    if explicit_resources:
+        # mksyscfg requires min/desired/max for all three resource axes when
+        # any explicit value is given; fall back to safe defaults for omitted
+        # fields so the command does not fail with a missing-attribute error.
+        _min_mem = min_memory or 256
+        _des_mem = desired_memory or 4096
+        _max_mem = max_memory or max(_des_mem, 8192)
+        _min_pu = min_procs or 0.1
+        _des_pu = desired_procs or 0.1
+        _max_pu = max_procs or max(_des_pu, 2.0)
+        _min_vp = min_vcpus or 1
+        _des_vp = desired_vcpus or 1
+        _max_vp = max_vcpus or max(_des_vp, 2)
+
+        config_pairs += [
+            f"min_mem={_min_mem}",
+            f"desired_mem={_des_mem}",
+            f"max_mem={_max_mem}",
+            "proc_mode=shared",
+            "sharing_mode=uncap",
+            f"min_proc_units={_min_pu}",
+            f"desired_proc_units={_des_pu}",
+            f"max_proc_units={_max_pu}",
+            f"min_procs={_min_vp}",
+            f"desired_procs={_des_vp}",
+            f"max_procs={_max_vp}",
+        ]
+        if max_virtual_slots is not None:
+            config_pairs.append(f"max_virtual_slots={max_virtual_slots}")
+    else:
+        config_pairs.append("all_resources=1")
+
+    config_str = ",".join(config_pairs)
+    cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i \"{config_str}\""
+    return await run_hmc_command(config, cmd)
+
+
 # ---------------------------------------------------------------------- #
 # UUID -> CLI-name lookup (SSH fallback for the REST-based resolvers)
 # ---------------------------------------------------------------------- #

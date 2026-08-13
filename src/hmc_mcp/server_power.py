@@ -16,6 +16,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
+from .config import HMCConfig
 from .documents import (
     Keylock,
     LparResources,
@@ -30,6 +31,7 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
+from .ssh import HMCCLIError, create_lpar_via_cli
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -134,12 +136,50 @@ def hmc_create_lpar(
                     f"(UUID {existing.get('UUID')!r}). Choose a different name "
                     "or delete the existing partition first."
                 )
+
+            # --- REST path (preferred) ---
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             try:
-                return await hmc.create_logical_partition(system_uuid, xml)
+                result = await hmc.create_logical_partition(system_uuid, xml)
+                if result is not None:
+                    return result
             except HMCError as exc:
-                _check_lpar_write_error(exc)
-                raise
+                if exc.status_code != 406:
+                    _check_lpar_write_error(exc)
+                    raise
+                # 406 → REST create not supported on this HMC firmware; fall
+                # through to the CLI path used by ansible-power-hmc and IBM
+                # internal provisioning toolkits.
+
+            # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
+            # Resolve the system name for the CLI (mksyscfg uses the managed
+            # system name, not UUID).
+            from .ssh import _ssh_system_name
+            cfg = HMCConfig()
+            try:
+                sys_name = await _ssh_system_name(cfg, system_uuid)
+            except HMCCLIError:
+                # If SSH name lookup also fails, use the original arg as-is
+                sys_name = system_name_or_uuid
+            await create_lpar_via_cli(
+                cfg,
+                system_name=sys_name,
+                name=name,
+                partition_type=partition_type,
+                min_memory=min_memory,
+                desired_memory=desired_memory,
+                max_memory=max_memory,
+                desired_vcpus=desired_vcpus,
+                min_vcpus=min_vcpus,
+                max_vcpus=max_vcpus,
+                desired_procs=desired_procs,
+                min_procs=min_procs,
+                max_procs=max_procs,
+                max_virtual_slots=max_virtual_slots,
+            )
+            # Fetch and return the newly created LPAR entry
+            new_entry = await hmc.find_partition_by_name(name)
+            return new_entry
 
     return _run(_go)
 
