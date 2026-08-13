@@ -75,6 +75,13 @@ def hmc_set_lpar_description(system_name_or_uuid: str, lpar_name_or_uuid: str, d
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name_or_uuid and system_name_or_uuid before calling.    """
+    if not description.isascii() or any(
+        ord(c) < 0x20 or ord(c) == 0x7F for c in description
+    ):
+        raise ValueError(
+            "description contains non-ASCII or non-printable characters; "
+            "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
+        )
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_description(
             config, system_name, lpar_name, description
