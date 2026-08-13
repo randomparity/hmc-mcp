@@ -37,22 +37,36 @@ from hmc_mcp.server import mcp
 _ENV_FILE = Path(".env")
 
 
+def _load_dotenv() -> None:
+    """Load key=value pairs from .env into os.environ (simple, no deps)."""
+    if not _ENV_FILE.exists():
+        return
+    for line in _ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+
+
 def _ensure_schema_version() -> None:
-    """Warn and patch .env if HMC_SCHEMA_VERSION=V1_0 is not set."""
+    """Load .env and ensure HMC_SCHEMA_VERSION=V1_0 is present."""
+    _load_dotenv()
     if os.environ.get("HMC_SCHEMA_VERSION"):
         return
-    print("⚠️  HMC_SCHEMA_VERSION is not set in the environment.")
+    print("⚠️  HMC_SCHEMA_VERSION is not set in .env or the environment.")
     if _ENV_FILE.exists():
         content = _ENV_FILE.read_text()
         if "HMC_SCHEMA_VERSION" not in content:
             _ENV_FILE.write_text(content.rstrip("\n") + "\nHMC_SCHEMA_VERSION=V1_0\n")
-            print("  → Added HMC_SCHEMA_VERSION=V1_0 to .env")
-            print("  → Restart the script so the updated .env is loaded.")
-        else:
-            print("  → HMC_SCHEMA_VERSION is in .env but not exported to the shell.")
-            print("  → Source .env or export HMC_SCHEMA_VERSION=V1_0 before running.")
-    else:
-        print("  → No .env file found.  Create one with HMC_SCHEMA_VERSION=V1_0.")
+            # Reload so this run picks it up
+            os.environ["HMC_SCHEMA_VERSION"] = "V1_0"
+            print("  → Added HMC_SCHEMA_VERSION=V1_0 to .env and environment.")
+            return
+    print("  → No .env file found.  Create one with HMC_SCHEMA_VERSION=V1_0.")
     sys.exit(1)
 
 
@@ -232,8 +246,19 @@ async def subtask_0(client: Client) -> None:
         CTX["lp3_baseline"]["vscsi_adapters"] = data
         for e in _entries(data):
             r = _res(e)
-            vios_pid = r.get("ServerPartitionID") or r.get("server_partition_id")
-            vios_slot = r.get("ServerAdapterID") or r.get("server_adapter_id")
+            # The HMC REST API uses RemoteLogicalPartitionID/RemoteSlotNumber
+            # on the client adapter to describe the VIOS side.  The nested
+            # ServerAdapter block holds the VIOS's VirtualSlotNumber.
+            vios_pid = (
+                r.get("RemoteLogicalPartitionID") or r.get("remote_logical_partition_id")
+                or r.get("ServerPartitionID") or r.get("server_partition_id")
+            )
+            server_adapter = r.get("ServerAdapter") or {}
+            vios_slot = (
+                server_adapter.get("VirtualSlotNumber") or server_adapter.get("virtual_slot_number")
+                or r.get("RemoteSlotNumber") or r.get("remote_slot_number")
+                or r.get("ServerAdapterID") or r.get("server_adapter_id")
+            )
             if vios_pid is not None:
                 CTX["lp3_baseline"]["vios_partition_id"] = int(vios_pid)
             if vios_slot is not None:
