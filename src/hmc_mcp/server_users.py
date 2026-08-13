@@ -121,8 +121,6 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     return _run(_go)
 
 
-
-
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(
     policy_type: Literal["policies", "status"] = "policies",
@@ -237,8 +235,6 @@ def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> 
             await hmc.delete_password_policy(policy_name)
             return f"Deleted HMC password policy {policy_name}"
     return _run(_go)
-
-
 
 
 @mcp.tool(annotations=_READ_ONLY)
