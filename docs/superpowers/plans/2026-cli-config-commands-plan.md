@@ -201,7 +201,7 @@ git commit -m "feat(config): add config_dir() and list_profiles_with_default() (
 - Consumes: `typer.Typer` (already imported in cli_app.py)
 - Produces: `config_app` Typer instance (used by `cli_config.py` Task 3)
 
-This task only adds the wiring — no command bodies yet. The import in `cli.py` will fail until Task 3 creates `cli_config.py`, so Task 3 must follow immediately.
+This task only adds the wiring — no command bodies yet. **All three steps below (cli_app.py, the stub, and cli.py) must be completed before committing — do not commit after Step 1 or Step 2 alone, as cli.py will not import without the stub in place.**
 
 - [ ] **Step 1: Add `config_app` to `cli_app.py`**
 
@@ -217,15 +217,7 @@ And immediately after `app.add_typer(memory_pools_app, name="memory-pools")`:
 app.add_typer(config_app, name="config")
 ```
 
-- [ ] **Step 2: Add `cli_config` import to `cli.py`**
-
-In `src/hmc_mcp/cli.py`, after the last `from . import cli_vios` line, add:
-
-```python
-from . import cli_config  # noqa: F401  (side-effect: registers commands)
-```
-
-- [ ] **Step 3: Create an empty `cli_config.py` stub so the import doesn't fail**
+- [ ] **Step 2: Create an empty `cli_config.py` stub** *(must exist before adding the import)*
 
 Create `src/hmc_mcp/cli_config.py` with just:
 
@@ -235,6 +227,14 @@ Create `src/hmc_mcp/cli_config.py` with just:
 from __future__ import annotations
 
 from .cli_app import config_app  # noqa: F401  (import required; commands registered below)
+```
+
+- [ ] **Step 3: Add `cli_config` import to `cli.py`**
+
+In `src/hmc_mcp/cli.py`, after the last `from . import cli_vios` line, add:
+
+```python
+from . import cli_config  # noqa: F401  (side-effect: registers commands)
 ```
 
 - [ ] **Step 4: Verify the CLI loads cleanly**
@@ -254,10 +254,10 @@ just static
 
 Expected: passes
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit** *(all three files together — cli_app.py, cli_config.py, cli.py)*
 
 ```bash
-git add src/hmc_mcp/cli_app.py src/hmc_mcp/cli.py src/hmc_mcp/cli_config.py
+git add src/hmc_mcp/cli_app.py src/hmc_mcp/cli_config.py src/hmc_mcp/cli.py
 git commit -m "feat(cli): register config_app subgroup (#125)"
 ```
 
@@ -297,6 +297,7 @@ from typer.testing import CliRunner
 from hmc_mcp import cli
 
 RUNNER = CliRunner()
+RUNNER_NO_MIX = CliRunner(mix_stderr=False)
 
 TWO_PROFILE_TOML = """\
 default_profile = "prod"
@@ -488,6 +489,32 @@ def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
     with patch.object(sys, "platform", "linux"):
         result = RUNNER.invoke(cli.app, ["config", "show"])
     assert result.exit_code == 1
+
+
+def test_show_local_profile_flag(tmp_path, monkeypatch):
+    """show --profile at subcommand level (local position) selects the profile."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        # --profile appears after 'show', not before 'config' — exercises the
+        # local typer.Option, not the global callback.
+        result = RUNNER.invoke(cli.app, ["config", "show", "--profile", "dev"])
+    assert result.exit_code == 0, result.output
+    assert "hmc-dev.example.com" in result.output
+
+
+def test_error_message_goes_to_stderr(tmp_path, monkeypatch):
+    """Error messages from _fail() must go to stderr, not stdout (criterion 4)."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER_NO_MIX.invoke(cli.app, ["--profile", "nonexistent", "config", "show"])
+    assert result.exit_code == 1
+    # Error line must be on stderr, not on stdout
+    assert "nonexistent" in result.stderr
+    assert result.output == ""  # stdout must be empty (result.output = stdout when mix_stderr=False)
 ```
 
 - [ ] **Step 2: Run tests to confirm they fail**
@@ -554,8 +581,10 @@ def config_init() -> None:
     """
     target = config_dir() / "config.toml"
 
-    # Use resolve_config_path() as the authoritative existence check —
-    # do not call os.path.exists() separately (would re-open TOCTOU window).
+    # resolve_config_path() provides a friendly early error for the common case.
+    # Do not add a second os.path.exists() call — that would create a separate
+    # TOCTOU race. The real atomic guard against concurrent creation is
+    # O_CREAT|O_EXCL (open with 'x') below.
     if resolve_config_path() is not None:
         _fail(FileExistsError(f"Config file already exists: {target}"))
 
@@ -677,7 +706,7 @@ def config_show(
 uv run pytest tests/app/test_cli_config.py -v
 ```
 
-Expected: all 11 tests pass.
+Expected: all 14 tests pass.
 
 - [ ] **Step 5: Run the full guardrail suite**
 
@@ -763,8 +792,9 @@ Expected: green across all checks.
 | `config list` prints profiles + marks default, exit 0 when absent | Task 3 |
 | `config show` non-secret metadata, redacts password, no password_env resolution, --json | Task 3 |
 | Exit codes: 0 success, 1 failure | Task 3 |
-| `--profile` selects profile for show | Task 3 |
-| All 11 test cases from spec test plan | Task 3 |
+| `--profile` selects profile for show (global and local positions) | Task 3 |
+| Error messages go to stderr (criterion 4) | Task 3 |
+| All 10 spec test cases + 4 supplementary tests (12 original + 2 added) = 14 total | Task 3 |
 | `just verify` passes | Tasks 1, 2, 3, 4 |
 | `config_dir()` needed by init | Task 1 |
 | `list_profiles_with_default()` needed by list (single TOML read) | Task 1 |
