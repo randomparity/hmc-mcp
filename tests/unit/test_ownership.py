@@ -62,6 +62,11 @@ def test_validate_agent_id_colon():
         validate_agent_id("team:agent")
 
 
+def test_validate_agent_id_space():
+    with pytest.raises(ValueError, match="space"):
+        validate_agent_id("alice smith")
+
+
 def test_validate_agent_id_non_ascii():
     with pytest.raises(ValueError, match="printable ASCII"):
         validate_agent_id("alicé")

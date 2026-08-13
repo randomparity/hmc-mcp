@@ -63,6 +63,8 @@ def validate_agent_id(agent_id: str) -> None:
       a slash in the agent_id would produce an ambiguous multi-segment path.
     - No colons — the ownership token format is ``[hmc-mcp owner:<agent_id> …]``;
       a colon in the agent_id would produce an ambiguous ``owner:a:b`` value.
+    - No spaces — a space in the agent_id would be embedded in the description token
+      and may corrupt the HMC CLI ``-i`` parser (same concern as for lpar_name).
 
     Called from :class:`.config.HMCConfig` model validator so errors surface at
     construction time, before any SSH call is made.
@@ -104,6 +106,11 @@ def validate_agent_id(agent_id: str) -> None:
     if ":" in agent_id:
         raise ValueError(
             "agent_id contains ':'; colons break the 'owner:<agent_id>' token format"
+        )
+    if " " in agent_id:
+        raise ValueError(
+            "agent_id contains a space; spaces would corrupt the ownership token "
+            "embedded in the chsyscfg -i parser"
         )
 
 

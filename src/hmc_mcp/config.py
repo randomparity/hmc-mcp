@@ -13,6 +13,7 @@ Use HMCConfig(...) directly for explicit construction (tests, programmatic use).
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tomllib
@@ -21,6 +22,8 @@ from pathlib import Path
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_logger = logging.getLogger(__name__)
 
 
 class HMCConfig(BaseSettings):
@@ -83,14 +86,14 @@ class HMCConfig(BaseSettings):
         time prevents silent surprises in HMC audit logs.
         """
         if self.agent_id and self.audit_memento != "hmc-mcp":
-            warnings.warn(
+            msg = (
                 f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
                 f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
                 "ignored — X-Audit-Memento is always sent as "
-                f"hmc-mcp/{self.agent_id}",
-                UserWarning,
-                stacklevel=2,
+                f"hmc-mcp/{self.agent_id}"
             )
+            warnings.warn(msg, UserWarning, stacklevel=2)
+            _logger.warning(msg)
         return self
 
     @property
