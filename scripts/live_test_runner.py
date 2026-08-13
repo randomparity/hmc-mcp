@@ -106,7 +106,8 @@ CTX: dict[str, Any] = {
     # --- storage context for ST14 ---
     "vg_uuid": None,
     "vdisk_name": "VG1-lp3",
-    "vdisk_size_mb": 49152,  # 48 GB default; overwritten by actual API value in ST3
+    "vdisk_vg_name": None,  # VG GroupName — populated by ST3
+    "vdisk_size_mb": 49152,  # 48 GB default (in MB); overwritten by actual API value in ST3
     # --- lp3 snapshot captured in ST0 ---
     "lp3_baseline": {},
 }
@@ -449,27 +450,31 @@ async def subtask_3(client: Client) -> None:
                 r = _res(vg)
                 vg_name = r.get("GroupName") or r.get("group_name") or ""
                 uuid = vg.get("UUID") or vg.get("uuid")
-                # Pick VG1 specifically; fall back to first VG if none named VG1
-                if "VG1" in vg_name or not CTX["vg_uuid"]:
+                # Accept any VG that contains our target disk; fall back to first
+                vdisks = r.get("VirtualDisks") or r.get("virtual_disks") or []
+                if isinstance(vdisks, dict):
+                    # May be wrapped: {"VirtualDisk": [...]} or {"VirtualDisk": {...}}
+                    vdisks = vdisks.get("VirtualDisk") or []
+                if isinstance(vdisks, dict):
+                    vdisks = [vdisks]
+                found_target_disk = False
+                for vd in (vdisks if isinstance(vdisks, list) else []):
+                    vd_r = _res(vd)
+                    if vd_r.get("DiskName") == CTX["vdisk_name"]:
+                        found_target_disk = True
+                        raw = vd_r.get("DiskCapacity") or vd_r.get("disk_capacity")
+                        if raw is not None:
+                            try:
+                                # DiskCapacity is in GB — convert to MB
+                                gb = int(float(raw))
+                                CTX["vdisk_size_mb"] = gb * 1024
+                            except (TypeError, ValueError):
+                                pass
+                if found_target_disk or not CTX["vg_uuid"]:
                     CTX["vg_uuid"] = uuid
-                    # Hunt for the VG1-lp3 virtual disk to capture its size
-                    vdisks = r.get("VirtualDisks") or r.get("virtual_disks") or []
-                    if isinstance(vdisks, dict):
-                        # May be wrapped: {"VirtualDisk": [...]} or {"VirtualDisk": {...}}
-                        vdisks = vdisks.get("VirtualDisk") or []
-                    if isinstance(vdisks, dict):
-                        vdisks = [vdisks]
-                    for vd in (vdisks if isinstance(vdisks, list) else []):
-                        vd_r = _res(vd)
-                        if vd_r.get("DiskName") == CTX["vdisk_name"]:
-                            raw = vd_r.get("DiskCapacity") or vd_r.get("disk_capacity")
-                            if raw is not None:
-                                try:
-                                    CTX["vdisk_size_mb"] = int(float(raw))
-                                except (TypeError, ValueError):
-                                    pass
-                    if "VG1" in vg_name:
-                        break  # found the right VG; stop
+                    CTX["vdisk_vg_name"] = vg_name
+                if found_target_disk:
+                    break  # found the VG containing lp3's disk
         print(f"  VG UUID: {CTX.get('vg_uuid')}  vdisk_size_mb: {CTX.get('vdisk_size_mb')}")
     else:
         skip(3, "hmc_list_volume_groups", "no VIOS UUID in context (ST0/ST1 failed)")
