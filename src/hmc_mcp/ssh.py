@@ -476,9 +476,40 @@ async def set_lpar_msp(
 ) -> str:
     """Set the MSP (Migratable Service Partition) flag of *lpar_name* via SSH.
 
+    Checks that *lpar_name* is a VIOS partition (``lpar_env=vioserver``) before
+    issuing the command.  The HMC rejects ``msp=...`` for AIX/Linux partitions
+    with a confusing generic error; this guard surfaces a clear diagnostic
+    before the SSH round-trip.
+
+    Note: the ``lpar_env`` probe and the ``chsyscfg`` write are two separate
+    SSH connections (each ``run_hmc_command`` call opens its own connection).
+    The guard is not atomic with the write; the HMC itself enforces the
+    VIOS-only invariant and returns an error if the race were to occur.
+
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,msp=<0|1>"``
     and returns the raw command output.
+
+    Raises:
+        HMCCLIError: If the partition is not found on the system, or if its
+            ``lpar_env`` is not ``vioserver``.
     """
+    env_cmd = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter lpar_names={shlex.quote(lpar_name)} -F lpar_env"
+    )
+    lpar_env = (await run_hmc_command(config, env_cmd)).strip()
+    if not lpar_env:
+        raise HMCCLIError(
+            f"Cannot set MSP on '{lpar_name}': lssyscfg returned no output — "
+            f"partition not found on system '{system_name}'. "
+            "Check the partition name with hmc_lpars."
+        )
+    if lpar_env != "vioserver":
+        raise HMCCLIError(
+            f"Cannot set MSP on '{lpar_name}': the msp attribute is only valid "
+            f"for a VIOS partition (lpar_env=vioserver), but '{lpar_name}' has "
+            f"lpar_env='{lpar_env}'. Use hmc_vios to confirm the partition type."
+        )
     value = "1" if enabled else "0"
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "

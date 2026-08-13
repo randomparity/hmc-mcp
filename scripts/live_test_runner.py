@@ -36,10 +36,10 @@ RESULTS: list[dict] = []
 _TEST_USER_PASSWORD = "Mcp1T3stUs3r!"  # pragma: allowlist secret
 
 CTX: dict[str, Any] = {
-    "system_name": "<system-name>",         # override via env or edit before running
-    "lp3_name": "<system-name>-lp3",
-    "scratch_name": "<system-name>-lp3-test",
-    "nettest_name": "<system-name>-lp3-nettest",
+    "system_name": "ltczz386",
+    "lp3_name": "ltczz386-lp3",
+    "scratch_name": "ltczz386-lp3-test",
+    "nettest_name": "ltczz386-lp3-nettest",
     "test_user": "hmc-mcp-testuser",
     "test_policy": "hmc-mcp-test-policy",
     # populated at runtime:
@@ -588,7 +588,7 @@ async def subtask_10(client: Client) -> None:
     if isinstance(orig_desc, dict):
         orig_desc = orig_desc.get("description") or ""
 
-    test_desc = "MCP live-test probe — safe to clear"
+    test_desc = "MCP live-test probe - safe to clear"
     st, data = await call(client, "hmc_set_lpar_description",
                           system_name_or_uuid=CTX["system_name"],
                           lpar_name_or_uuid=CTX["lp3_name"],
@@ -607,28 +607,50 @@ async def subtask_10(client: Client) -> None:
                           description=str(orig_desc) if orig_desc else "")
     record(10, "hmc_set_lpar_description (restore)", st, data)
 
-    # MSP toggle
-    orig_msp = CTX["lp3_baseline"].get("msp")
-    if isinstance(orig_msp, dict):
-        orig_msp = orig_msp.get("msp") or orig_msp.get("enabled")
-    new_msp = not bool(orig_msp)
-    st, data = await call(client, "hmc_set_lpar_msp",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          enabled=new_msp)
-    record(10, "hmc_set_lpar_msp (toggle)", st, data)
+    # MSP toggle — only valid on VIOS partitions (lpar_env=vioserver).
+    # ltczz386-lp3 is an AIX partition; verify that the tool raises a clear
+    # error (HMCCLIError) rather than sending a bad chsyscfg command.
+    st_env, data_env = await call(client, "hmc_run_command",
+                                  cmd=f"lssyscfg -r lpar -m {CTX['system_name']} "
+                                      f"--filter lpar_names={CTX['lp3_name']} -F lpar_env")
+    record(10, "lssyscfg lpar_env check", st_env, data_env)
+    lp3_env = (data_env or "").strip() if st_env == "PASS" else ""
 
-    st, data = await call(client, "hmc_get_lpar_msp",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"])
-    record(10, "hmc_get_lpar_msp (verify)", st, data)
+    if lp3_env == "vioserver":
+        # Partition is a VIOS — exercise the full toggle/verify/restore flow.
+        orig_msp = CTX["lp3_baseline"].get("msp")
+        if isinstance(orig_msp, dict):
+            orig_msp = orig_msp.get("msp") or orig_msp.get("enabled")
+        new_msp = not bool(orig_msp)
+        st, data = await call(client, "hmc_set_lpar_msp",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              enabled=new_msp)
+        record(10, "hmc_set_lpar_msp (toggle)", st, data)
 
-    # Restore MSP
-    st, data = await call(client, "hmc_set_lpar_msp",
-                          system_name_or_uuid=CTX["system_name"],
-                          lpar_name_or_uuid=CTX["lp3_name"],
-                          enabled=bool(orig_msp))
-    record(10, "hmc_set_lpar_msp (restore)", st, data)
+        st, data = await call(client, "hmc_get_lpar_msp",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"])
+        record(10, "hmc_get_lpar_msp (verify)", st, data)
+
+        st, data = await call(client, "hmc_set_lpar_msp",
+                              system_name_or_uuid=CTX["system_name"],
+                              lpar_name_or_uuid=CTX["lp3_name"],
+                              enabled=bool(orig_msp))
+        record(10, "hmc_set_lpar_msp (restore)", st, data)
+    else:
+        # Partition is not a VIOS — verify the fix: expect HMCCLIError before
+        # any chsyscfg command is sent.
+        st_bad, data_bad = await call(client, "hmc_set_lpar_msp",
+                                      system_name_or_uuid=CTX["system_name"],
+                                      lpar_name_or_uuid=CTX["lp3_name"],
+                                      enabled=True)
+        if st_bad == "FAIL" and ("only valid for a VIOS" in str(data_bad) or "not found" in str(data_bad)):
+            record(10, "hmc_set_lpar_msp (non-VIOS rejection — expected)", "PASS",
+                   f"correctly rejected with: {str(data_bad)[:200]}")
+        else:
+            record(10, "hmc_set_lpar_msp (non-VIOS rejection)", st_bad, data_bad)
+        skip(10, "hmc_set_lpar_msp (toggle/verify/restore)", f"lp3 is not a VIOS (lpar_env={lp3_env!r})")
 
     # Proc compat — set to same mode (idempotent)
     orig_compat = CTX["lp3_baseline"].get("proc_compat")

@@ -109,7 +109,7 @@ def hmc_get_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str) -> bool:
 
 @mcp.tool
 def hmc_set_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, enabled: bool) -> str:
-    """Set the MSP (Migratable Service Partition) flag of an LPAR via the HMC CLI.
+    """Set the MSP (Migratable Service Partition) flag of a VIOS partition via the HMC CLI.
 
     Runs ``chsyscfg -r lpar -m <system_name>
     -i "name=<lpar_name>,msp=<0|1>"`` on the HMC via SSH.
@@ -118,6 +118,10 @@ def hmc_set_lpar_msp(system_name_or_uuid: str, lpar_name_or_uuid: str, enabled: 
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs.
+
+    The MSP attribute is only valid for VIOS partitions (lpar_env=vioserver).
+    This tool checks the partition type before issuing the command and raises
+    HMCCLIError with a clear message if the partition is an AIX or Linux LPAR.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
     lpar_name_or_uuid and system_name_or_uuid before calling.    """
