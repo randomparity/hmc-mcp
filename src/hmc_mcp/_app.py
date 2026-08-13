@@ -185,7 +185,9 @@ async def _lpar_name_from_rest(hmc, lpar_uuid: str) -> str:
 
 
 async def _resolve_system_name(
-    config: HMCConfig, system_name_or_uuid: str | None
+    config: HMCConfig,
+    system_name_or_uuid: str | None,
+    profile: str | None = None,
 ) -> str | None:
     """Resolve a system name-or-uuid to a CLI SystemName.
 
@@ -194,13 +196,15 @@ async def _resolve_system_name(
     REST transport is unreachable (``httpx.HTTPError``). A REST 4xx/5xx
     (``HMCError``) is *not* a transport failure — REST answered and the UUID
     is unknown, so the error surfaces rather than falling back.
+
+    *profile* selects the HMC connection profile for the REST lookup; when
+    ``None`` the env-default resolution order is used (matching the behavior
+    of all pre-#127 calls).
     """
     if system_name_or_uuid is None or not is_uuid(system_name_or_uuid):
         return system_name_or_uuid
     try:
-        # TODO(#127): thread profile through SSH tools so this resolver uses the
-        # correct profile instead of the env-var default when profiles differ.
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             return await _system_name_from_rest(hmc, system_name_or_uuid)
     except httpx.HTTPError:
         return await _ssh_system_name(config, system_name_or_uuid)
@@ -210,18 +214,18 @@ async def _resolve_lpar_name(
     config: HMCConfig,
     lpar_name_or_uuid: str | None,
     system_name: str | None = None,
+    profile: str | None = None,
 ) -> str | None:
     """Resolve an LPAR name-or-uuid to a CLI PartitionName.
 
     Same REST-first / SSH-fallback contract as :func:`_resolve_system_name`;
     *system_name* (when known) scopes the SSH name lookup to one system.
+    *profile* selects the HMC connection profile for the REST lookup.
     """
     if lpar_name_or_uuid is None or not is_uuid(lpar_name_or_uuid):
         return lpar_name_or_uuid
     try:
-        # TODO(#127): thread profile through SSH tools so this resolver uses the
-        # correct profile instead of the env-var default when profiles differ.
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
     except httpx.HTTPError:
         return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
@@ -286,7 +290,13 @@ async def _resolve_vios_uuid(hmc, vios_name_or_uuid: str) -> str:
     return str(entry["UUID"])
 
 
-def _ssh_with_client(fn, *, system_name_or_uuid=None, lpar_name_or_uuid=None):
+def _ssh_with_client(
+    fn,
+    *,
+    system_name_or_uuid=None,
+    lpar_name_or_uuid=None,
+    profile: str | None = None,
+):
     """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
 
     Collapses the pervasive ``async def _go`` + name resolution + ``_run``
@@ -294,16 +304,21 @@ def _ssh_with_client(fn, *, system_name_or_uuid=None, lpar_name_or_uuid=None):
     the SSH seam. *system_name_or_uuid* and *lpar_name_or_uuid* may each be a
     CLI name (passed through untouched) or a UUID (resolved via REST, falling
     back to an ``lssyscfg`` name lookup over SSH when the REST transport is
-    unreachable). *fn* is called with the env-configured ``HMCConfig`` followed
-    by the resolved system and LPAR CLI names (``None`` when the matching arg
-    was not supplied) and returns an awaitable for the tool result — a
-    ``run_hmc_command(...)`` call, or a call into an :mod:`ssh` helper that
+    unreachable). *fn* is called with the profile-selected ``HMCConfig``
+    followed by the resolved system and LPAR CLI names (``None`` when the
+    matching arg was not supplied) and returns an awaitable for the tool result
+    — a ``run_hmc_command(...)`` call, or a call into an :mod:`ssh` helper that
     runs the command itself.
+
+    *profile* selects the HMC connection profile; when ``None`` the env-default
+    resolution order is used.  The same profile is used for both SSH and the
+    REST name-resolution leg so that both operations target the same HMC.
+    Selection is local to this call with no cross-call shared state.
     """
     async def _go():
-        config = HMCConfig(_env_file=None)  # type: ignore[call-arg]
-        system_name = await _resolve_system_name(config, system_name_or_uuid)
-        lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name)
+        config = client_from_env(profile).config
+        system_name = await _resolve_system_name(config, system_name_or_uuid, profile)
+        lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name, profile)
         return await fn(config, system_name, lpar_name)
 
     return _run(_go)

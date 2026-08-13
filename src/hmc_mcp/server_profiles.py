@@ -20,7 +20,7 @@ from .ssh import (
 # destructive because force=True silently overwrites an existing backup file on the HMC
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_backup_lpar_profiles(
-    system_name_or_uuid: str, file_path: str, force: bool = False
+    system_name_or_uuid: str, file_path: str, force: bool = False, profile: str | None = None
 ) -> str:
     """Backup all LPAR profiles on a Power system via the HMC CLI.
 
@@ -39,6 +39,7 @@ def hmc_backup_lpar_profiles(
         file_path: Path on the HMC filesystem where the backup file will be saved.
         force: When True, passes ``--force`` to ``bkprofdata`` so that an
             existing file at ``file_path`` is overwritten. Defaults to False.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output.
@@ -53,11 +54,12 @@ def hmc_backup_lpar_profiles(
             config, system_name, file_path, force=force
         ),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str) -> str:
+def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str, profile: str | None = None) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
     Runs ``rstprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
@@ -76,6 +78,7 @@ def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str) -> str:
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         file_path: Path on the HMC filesystem where the backup file is located.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output.    """
@@ -84,11 +87,12 @@ def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str) -> str:
             config, system_name, file_path
         ),
         system_name_or_uuid=system_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str) -> str:
+def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> str:
     """Sync an LPAR's running configuration back to its current profile.
 
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=1"``
@@ -108,6 +112,7 @@ def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str) -> s
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         lpar_name_or_uuid: The name or UUID of the logical partition to sync.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output.    """
@@ -117,12 +122,13 @@ def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str) -> s
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )
 
 
 @mcp.tool
 def hmc_assign_profile_io_slot(
-    system_name_or_uuid: str, lpar_name_or_uuid: str, profile_name: str, drc_index: str
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile_name: str, drc_index: str, profile: str | None = None
 ) -> str:
     """Add a physical I/O slot DRC index to an LPAR's profile.
 
@@ -142,6 +148,7 @@ def hmc_assign_profile_io_slot(
         lpar_name_or_uuid: The name or UUID of the logical partition to assign the slot to.
         profile_name: The name of the profile to modify.
         drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
+        profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
         The raw HMC CLI output.    """
@@ -151,4 +158,5 @@ def hmc_assign_profile_io_slot(
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
     )

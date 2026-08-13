@@ -116,14 +116,18 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         raise HMCCLIError(f"SSH command failed: {detail.strip()}") from exc
 
 
-async def run_hmc_cli(cmd: str) -> str:
+async def run_hmc_cli(cmd: str, config: HMCConfig | None = None) -> str:
     """Run an HMC CLI command over SSH with env-configured credentials.
 
     Thin convenience wrapper around :func:`run_hmc_command` that builds the
     :class:`HMCConfig` from the environment, so tool bodies don't repeat
     ``run_hmc_command(HMCConfig(), cmd)`` inline.
+
+    When *config* is supplied it is passed directly to :func:`run_hmc_command`,
+    allowing callers to use a profile-selected config (built via
+    ``client_from_env(profile).config``) rather than the env-default config.
     """
-    return await run_hmc_command(HMCConfig(), cmd)
+    return await run_hmc_command(config if config is not None else HMCConfig(), cmd)
 
 
 async def create_lpar_via_cli(
