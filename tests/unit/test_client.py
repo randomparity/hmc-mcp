@@ -718,6 +718,27 @@ async def test_uom_delete_omits_schema_version_when_not_configured(mock_hmc):
         await hmc._delete("/rest/api/uom/LogicalPartition/uuid1")
     assert "x-hmc-schema-version" not in route.calls.last.request.headers
 
+@pytest.mark.asyncio
+async def test_uom_post_and_put_headers_include_content_type_and_accept(mock_hmc):
+    """_post() and _put() send Content-Type equal to Accept header with resource type."""
+    post_route = mock_hmc.post("/rest/api/uom/ManagedSystem/sys1/VirtualNetwork").mock(
+        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+    )
+    put_route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys1/LogicalPartition").mock(
+        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+    )
+    async with HMCClient(make_config()) as hmc:
+        await hmc._post("/rest/api/uom/ManagedSystem/sys1/VirtualNetwork", b"<xml/>", resource_type="VirtualNetwork")
+        await hmc._put("/rest/api/uom/ManagedSystem/sys1/LogicalPartition", b"<xml/>", resource_type="LogicalPartition")
+
+    post_headers = post_route.calls.last.request.headers
+    assert post_headers.get("accept") == "application/vnd.ibm.powervm.uom+xml; type=VirtualNetwork"
+    assert post_headers.get("content-type") == "application/vnd.ibm.powervm.uom+xml; type=VirtualNetwork"
+
+    put_headers = put_route.calls.last.request.headers
+    assert put_headers.get("accept") == "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
+    assert put_headers.get("content-type") == "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
+
 
 # ---------------------------------------------------------------------- #
 # get_job / wait_for_job — SELF-link-based polling (issue #95)
