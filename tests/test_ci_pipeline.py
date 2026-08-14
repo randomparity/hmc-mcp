@@ -231,6 +231,7 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert "RUST_VERSION=1.97.1" in dockerfile
     assert "RUSTUP_SHA256=" in dockerfile
     assert r'test \"$(uname -m)\" = \"ppc64le\"' in dockerfile
+    assert "git config --global --add safe.directory /workspace" in dockerfile
     assert dockerfile.count("just setup") == 1
     assert dockerfile.count("just verify") == 1
     assert "COPY" not in dockerfile

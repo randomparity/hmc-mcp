@@ -20,7 +20,8 @@ The ppc64le job runs on `ubuntu-24.04`, installs only the ppc64le binfmt handler
 The action commit, binfmt image, base image, uv version, uv archive checksum, and Rust toolchain
 version are immutable in the repository. Ubuntu's Python 3.12 executes the project. The Rust
 toolchain builds locked development tools that do not publish ppc64le wheels. The container
-asserts `uname -m` equals `ppc64le`, runs `just setup`, then runs `just verify`.
+asserts `uname -m` equals `ppc64le`, trusts only the fixed `/workspace` bind mount for Git's
+cross-UID ownership check, runs `just setup`, then runs `just verify`.
 Cross-compilation never counts as execution.
 
 All verification jobs have explicit timeouts. A missing runner, registry artifact, emulator,

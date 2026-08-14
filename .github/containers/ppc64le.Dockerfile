@@ -46,4 +46,4 @@ RUN rustup_init="rustup-init" \
 WORKDIR /workspace
 
 CMD ["bash", "-euo", "pipefail", "-c", \
-    "test \"$(uname -m)\" = \"ppc64le\" && just setup && just verify"]
+    "test \"$(uname -m)\" = \"ppc64le\" && git config --global --add safe.directory /workspace && just setup && just verify"]
