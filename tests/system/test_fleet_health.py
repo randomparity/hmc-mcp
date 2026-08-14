@@ -67,9 +67,7 @@ async def test_degraded_estate_returns_curated_sorted_exceptions() -> None:
 
     async def vios(system_uuid: str) -> list[dict]:
         if system_uuid == "sys-b":
-            return [
-                _entry("vios-z", PartitionName="zeta-vios", PartitionState="down")
-            ]
+            return [_entry("vios-z", PartitionName="zeta-vios", PartitionState="down")]
         return []
 
     client.list_logical_partitions.side_effect = lpars
@@ -143,9 +141,7 @@ async def test_job_filter_uses_first_twenty_feed_records_and_bounds_error() -> N
     client.list_uom.return_value = [
         _entry(f"ok-{index}", JobName=f"ok-{index}", Status="COMPLETED_OK")
         for index in range(20)
-    ] + [
-        _entry("late-failure", JobName="late", Status="FAILED")
-    ]
+    ] + [_entry("late-failure", JobName="late", Status="FAILED")]
     assert (await fleet_health(client)).failed_jobs == ()
 
     client.list_uom.return_value = [
@@ -172,12 +168,8 @@ async def test_malformed_child_identities_remain_visible_as_unknown() -> None:
             ResourceMonitoringControlState=None,
         )
     ]
-    client.list_vios.return_value = [
-        _entry(None, PartitionName=7, PartitionState=None)
-    ]
-    client.list_uom.return_value = [
-        _entry(None, JobName=7, Status="FAILED")
-    ]
+    client.list_vios.return_value = [_entry(None, PartitionName=7, PartitionState=None)]
+    client.list_uom.return_value = [_entry(None, JobName=7, Status="FAILED")]
 
     result = await fleet_health(client)
 
@@ -309,6 +301,29 @@ async def test_malformed_system_identity_fails_before_child_reads(uuid: object) 
 
     client.list_logical_partitions.assert_not_awaited()
     client.list_vios.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_estate_fails_before_child_reads(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_SYSTEMS", 1)
+    client = _healthy_client()
+    client.list_managed_systems.return_value *= 2
+
+    with pytest.raises(ValueError, match="safe limit of 1 managed systems"):
+        await fleet_health(client)
+
+    client.list_logical_partitions.assert_not_awaited()
+    client.list_vios.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_system_inventory_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_RESOURCES_PER_SYSTEM", 1)
+    client = _healthy_client()
+    client.list_logical_partitions.return_value *= 2
+
+    with pytest.raises(ValueError, match="safe limit of 1 resources per category"):
+        await fleet_health(client)
 
 
 @pytest.mark.asyncio

@@ -12,11 +12,11 @@ from .jobs import FAILED_JOB_STATUSES, job_outcome
 
 
 _SYSTEM_WORKERS = 8
+_MAX_SYSTEMS = 256
+_MAX_RESOURCES_PER_SYSTEM = 10_000
 _RECENT_JOB_LIMIT = 20
 _MAX_ERROR_LENGTH = 500
-_UNSUPPORTED_JOB_WARNING = (
-    "Recent job health is unavailable because this HMC does not support global Job listing."
-)
+_UNSUPPORTED_JOB_WARNING = "Recent job health is unavailable because this HMC does not support global Job listing."
 
 
 @dataclass(frozen=True)
@@ -149,12 +149,27 @@ async def _system_inventory(
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    return lpar_task.result(), vios_task.result()
+    lpars = lpar_task.result()
+    vioses = vios_task.result()
+    if (
+        len(lpars) > _MAX_RESOURCES_PER_SYSTEM
+        or len(vioses) > _MAX_RESOURCES_PER_SYSTEM
+    ):
+        raise ValueError(
+            f"Fleet health inventory for system {system_uuid} exceeds the safe "
+            f"limit of {_MAX_RESOURCES_PER_SYSTEM} resources per category"
+        )
+    return lpars, vioses
 
 
 async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
     """Return curated unhealthy resources from the configured HMC estate."""
     systems = await hmc.list_managed_systems()
+    if len(systems) > _MAX_SYSTEMS:
+        raise ValueError(
+            f"Fleet health inventory exceeds the safe limit of {_MAX_SYSTEMS} "
+            "managed systems"
+        )
     queue: asyncio.Queue[tuple[dict[str, Any], str, str]] = asyncio.Queue()
     system_exceptions: list[dict[str, Any]] = []
     for system in systems:
@@ -182,30 +197,20 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
                 lpar_exceptions.extend(
                     exception
                     for lpar in lpars
-                    if (
-                        exception := _lpar_exception(
-                            lpar, system_uuid, system_name
-                        )
-                    )
+                    if (exception := _lpar_exception(lpar, system_uuid, system_name))
                     is not None
                 )
                 vios_exceptions.extend(
                     exception
                     for vios in vioses
-                    if (
-                        exception := _vios_exception(
-                            vios, system_uuid, system_name
-                        )
-                    )
+                    if (exception := _vios_exception(vios, system_uuid, system_name))
                     is not None
                 )
             finally:
                 queue.task_done()
 
     worker_count = min(_SYSTEM_WORKERS, len(systems))
-    worker_tasks = [
-        asyncio.create_task(inspect_systems()) for _ in range(worker_count)
-    ]
+    worker_tasks = [asyncio.create_task(inspect_systems()) for _ in range(worker_count)]
     job_task = asyncio.create_task(_recent_failed_jobs(hmc))
     tasks = (*worker_tasks, job_task)
     try:
