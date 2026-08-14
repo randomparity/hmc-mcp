@@ -22,7 +22,7 @@ The existing CI job becomes an explicit Python matrix containing `3.11`, `3.12`,
 timeout, pinned actions, setup, `just verify`, and hook validation. This issue does not claim
 native multi-architecture coverage.
 
-A second bounded job runs only on the weekly schedule and manual dispatch. It invokes
+A second bounded job runs only on the weekly schedule. It invokes
 `scripts/check_python_support.py` with the same explicit versions. The checker fetches the Python
 PEP release-cycle JSON and selects versions at or above 3.11 whose status is exactly `bugfix` or
 `security`. Equality means the repository includes every stable supported line and retains no EOL
@@ -58,8 +58,8 @@ comparison-only behavior prevent remote input from becoming commands, paths, dep
 dynamic workflow jobs. Error
 messages expose no credentials because the request sends none.
 
-The existing GitHub workflow boundary is widened only by `schedule` and `workflow_dispatch`
-triggers. Permissions remain `contents: read`, action references remain immutable SHA pins, and
+The existing GitHub workflow boundary is widened only by a `schedule` trigger. Permissions remain
+`contents: read`, action references remain immutable SHA pins, and
 the remote response is never interpolated into shell or `${{ }}` expressions. Compromise of
 Python's publication process and denial of service at the remote endpoint are outside scope; the
 former is an accepted upstream-authority risk, and the latter intentionally causes a visible
@@ -70,7 +70,7 @@ scheduled failure.
 - Parser tests cover the current 3.11–3.14 fixture, a new stable line, EOL retention, prerelease
   exclusion, malformed roots/entries, oversized input, duplicate or below-floor expectations,
   redirect rejection, timeout propagation, and actionable network failure.
-- Workflow tests prove the explicit matrix, scheduled/manual trigger, identical matrix values
+- Workflow tests prove the explicit matrix, scheduled trigger, identical matrix values
   passed to the drift job, fixed least privilege, immutable action pins, bounded jobs, and
   delegation to `just verify`.
 - Metadata tests prove the package floor, developer default, README policy, and lockfile floor.
