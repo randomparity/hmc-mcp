@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; module ownership superseded by ADR 0013
 
 ## Context
 
