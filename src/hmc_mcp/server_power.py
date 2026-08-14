@@ -27,7 +27,7 @@ from .documents import (
     build_lpar_document,
     build_managed_system_document,
 )
-from .jobs import power_off_lpar_job, power_on_lpar_job
+from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .operations_lpar import LparCreation, create_and_stamp_lpar
 
 
@@ -383,24 +383,12 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     return _run(_go)
 
 
-def _extract_job_id(job: dict[str, Any]) -> str | None:
-    """Extract the job UUID from a submitted job dict."""
-    return job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-
-
 async def _power_op(
     hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
 ) -> dict[str, Any] | None:
     """Submit a power job on an already-open *hmc* client; optionally wait for terminal state."""
     job = await submit_fn(hmc)
-    if not wait or job is None:
-        return job
-    job_uuid = _extract_job_id(job)
-    if not job_uuid:
-        return job
-    return await hmc.wait_for_job(
-        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
 @mcp.tool

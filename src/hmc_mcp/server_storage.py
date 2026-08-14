@@ -15,7 +15,12 @@ from ._app import (
 
 from .common import client_from_env
 from .documents import StorageKind
-from .jobs import DeviceType, LuType, validate_logical_unit_types
+from .jobs import (
+    DeviceType,
+    LuType,
+    validate_logical_unit_types,
+    wait_for_submitted_job,
+)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -227,14 +232,7 @@ async def _lu_op(
 ) -> dict[str, Any] | None:
     """Submit a logical-unit job on an already-open *hmc* client; optionally wait for terminal state."""
     job = await submit_fn(hmc)
-    if not wait or job is None:
-        return job
-    job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-    if not job_uuid:
-        return job
-    return await hmc.wait_for_job(
-        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
 @mcp.tool

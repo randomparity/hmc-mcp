@@ -21,6 +21,7 @@ from .jobs import (
     upgrade_hmc_job,
     update_vios_job,
     upgrade_vios_job,
+    wait_for_submitted_job,
 )
 
 
@@ -29,14 +30,7 @@ async def _update_op(
 ) -> dict[str, Any] | None:
     """Submit an update/upgrade job on an already-open *hmc* client; optionally wait for terminal state."""
     job = await submit_fn(hmc)
-    if not wait or job is None:
-        return job
-    job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-    if not job_uuid:
-        return job
-    return await hmc.wait_for_job(
-        job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
 @mcp.tool

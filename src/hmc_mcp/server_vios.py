@@ -17,7 +17,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import build_config, client_from_env
-from .jobs import install_lpar_job, install_vios_job
+from .jobs import install_lpar_job, install_vios_job, wait_for_submitted_job
 from .ssh import run_hmc_cli
 from .documents import build_vios_document
 
@@ -139,13 +139,8 @@ def hmc_install_vios(
                 f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
                 job_xml,
             )
-            if not wait or job is None:
-                return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            if not job_uuid:
-                return job
-            return await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
             )
 
     return _run(_go)
@@ -187,13 +182,8 @@ def hmc_install_lpar_os(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
                 job_xml,
             )
-            if not wait or job is None:
-                return job
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            if not job_uuid:
-                return job
-            return await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
             )
 
     return _run(_go)

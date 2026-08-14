@@ -7,7 +7,7 @@ for status.
 
 from __future__ import annotations
 
-from typing import Literal, Required, TypedDict, get_args
+from typing import Any, Literal, Protocol, Required, TypedDict, get_args
 
 from .xmlutil import WEB_NS
 
@@ -15,6 +15,43 @@ LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+
+
+class JobWaitClient(Protocol):
+    """Client capability required to wait for a submitted HMC job."""
+
+    async def wait_for_job(
+        self,
+        job_uuid: str,
+        timeout_seconds: int,
+        poll_interval: int,
+        *,
+        job_href: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
+
+def job_identifier(job: dict[str, Any]) -> str | None:
+    """Return a valid top-level UUID or nested JobID from a job response."""
+    identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    return identifier if isinstance(identifier, str) and identifier else None
+
+
+async def wait_for_submitted_job(
+    client: JobWaitClient,
+    job: dict[str, Any] | None,
+    wait: bool,
+    timeout_seconds: int,
+    poll_interval: int,
+) -> dict[str, Any] | None:
+    """Optionally wait for a submitted job, preserving unusable responses."""
+    if not wait or job is None:
+        return job
+    identifier = job_identifier(job)
+    if identifier is None:
+        return job
+    return await client.wait_for_job(
+        identifier, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
 
 
 def validate_logical_unit_types(
@@ -31,6 +68,7 @@ def validate_logical_unit_types(
             f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
         )
     return lu_type, device_type
+
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -81,19 +119,27 @@ def build_job_request(
 
 
 def power_on_lpar_job() -> str:
-    return build_job_request("PowerOn", "LogicalPartition", {
-        "force": "false",
-        "novsi": "true",
-        "bootmode": "norm",
-    })
+    return build_job_request(
+        "PowerOn",
+        "LogicalPartition",
+        {
+            "force": "false",
+            "novsi": "true",
+            "bootmode": "norm",
+        },
+    )
 
 
 def power_off_lpar_job(immediate: bool = False) -> str:
-    return build_job_request("PowerOff", "LogicalPartition", {
-        "immediate": "true" if immediate else "false",
-        "restart": "false",
-        "operation": "shutdown",
-    })
+    return build_job_request(
+        "PowerOff",
+        "LogicalPartition",
+        {
+            "immediate": "true" if immediate else "false",
+            "restart": "false",
+            "operation": "shutdown",
+        },
+    )
 
 
 def power_on_system_job() -> str:
@@ -179,7 +225,9 @@ def _migrate_job(
         extra["SharedProcPoolID"] = shared_proc_pool_id
     if wait_time is not None:
         extra["WaitTime"] = str(wait_time)
-    return build_job_request(operation, "LogicalPartition", _lpm_params(target_system, extra))
+    return build_job_request(
+        operation, "LogicalPartition", _lpm_params(target_system, extra)
+    )
 
 
 def migrate_lpar_job(
@@ -191,7 +239,12 @@ def migrate_lpar_job(
 ) -> str:
     """Migrate job: move an LPAR to another managed system."""
     return _migrate_job(
-        "Migrate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+        "Migrate",
+        target_system,
+        target_profile_name,
+        destination_lpar_id,
+        shared_proc_pool_id,
+        wait_time,
     )
 
 
@@ -204,7 +257,12 @@ def migrate_validate_lpar_job(
 ) -> str:
     """MigrateValidate job: check whether a migration would succeed."""
     return _migrate_job(
-        "MigrateValidate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+        "MigrateValidate",
+        target_system,
+        target_profile_name,
+        destination_lpar_id,
+        shared_proc_pool_id,
+        wait_time,
     )
 
 
@@ -315,14 +373,12 @@ def _repository_params(repository: RepositorySource) -> dict[str, str]:
     expected = ", ".join(sorted(_REPOSITORY_TYPES))
     if repo_type is None:
         raise ValueError(
-            "Repository dict is missing 'type'. Expected one of: "
-            f"{expected}."
+            f"Repository dict is missing 'type'. Expected one of: {expected}."
         )
     required = _REQUIRED_KEYS.get(repo_type)
     if required is None:
         raise ValueError(
-            f"Unknown repository type {repo_type!r}. Expected one of: "
-            f"{expected}."
+            f"Unknown repository type {repo_type!r}. Expected one of: {expected}."
         )
     missing = required - set(repository)
     if missing:
@@ -338,7 +394,9 @@ def update_hmc_job(repository: RepositorySource) -> str:
 
     target: ManagementConsole/{uuid}/do/Update
     """
-    return build_job_request("Update", "ManagementConsole", _repository_params(repository))
+    return build_job_request(
+        "Update", "ManagementConsole", _repository_params(repository)
+    )
 
 
 def upgrade_hmc_job(repository: RepositorySource) -> str:
@@ -346,7 +404,9 @@ def upgrade_hmc_job(repository: RepositorySource) -> str:
 
     target: ManagementConsole/{uuid}/do/Upgrade
     """
-    return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
+    return build_job_request(
+        "Upgrade", "ManagementConsole", _repository_params(repository)
+    )
 
 
 def update_vios_job(repository: RepositorySource) -> str:
@@ -354,7 +414,9 @@ def update_vios_job(repository: RepositorySource) -> str:
 
     target: VirtualIOServer/{uuid}/do/Update
     """
-    return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
+    return build_job_request(
+        "Update", "VirtualIOServer", _repository_params(repository)
+    )
 
 
 def upgrade_vios_job(repository: RepositorySource) -> str:
@@ -362,7 +424,9 @@ def upgrade_vios_job(repository: RepositorySource) -> str:
 
     target: VirtualIOServer/{uuid}/do/Upgrade
     """
-    return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
+    return build_job_request(
+        "Upgrade", "VirtualIOServer", _repository_params(repository)
+    )
 
 
 def update_firmware_job(repository: RepositorySource) -> str:
@@ -370,7 +434,9 @@ def update_firmware_job(repository: RepositorySource) -> str:
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware
     """
-    return build_job_request("UpdateFirmware", "ManagedSystem", _repository_params(repository))
+    return build_job_request(
+        "UpdateFirmware", "ManagedSystem", _repository_params(repository)
+    )
 
 
 # ---------------------------------------------------------------------- #

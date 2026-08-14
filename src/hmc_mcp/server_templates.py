@@ -12,6 +12,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
+from .jobs import job_identifier, wait_for_submitted_job
 
 
 def _check_templates_error(exc: HMCError) -> None:
@@ -102,7 +103,7 @@ def hmc_deploy_partition_template(
                         "the new LPAR after deployment to stamp the description manually"
                     ],
                 }
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+            job_uuid = job_identifier(job)
             if not job_uuid:
                 return {
                     "job": job,
@@ -111,8 +112,8 @@ def hmc_deploy_partition_template(
                         "ownership stamp not attempted: no job UUID in response"
                     ],
                 }
-            final_job = await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            final_job = await wait_for_submitted_job(
+                hmc, job, True, timeout_seconds, poll_interval
             )
             job_status = (final_job or {}).get("Status") or (
                 ((final_job or {}).get("Resource") or {}).get("Status")
