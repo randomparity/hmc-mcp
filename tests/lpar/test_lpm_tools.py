@@ -31,6 +31,20 @@ from conftest import JOB_ENTRY
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+LPM_RECOVERY_TOOL_CASES = [
+    (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
+    (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
+    (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+]
+LPM_RECOVERY_OPERATION_CASES = [
+    (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
+    (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
+    (
+        remote_restart_lpar,
+        "lpar_remote_restart",
+        (LPAR_UUID, "target-system"),
+    ),
+]
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -111,11 +125,7 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
 
 @pytest.mark.parametrize(
     ("tool_fn", "operation", "args"),
-    [
-        (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
-        (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
-        (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
-    ],
+    LPM_RECOVERY_TOOL_CASES,
 )
 def test_lpm_recovery_tools_wait_for_terminal_outcome(
     monkeypatch, mock_hmc, tool_fn, operation, args
@@ -139,11 +149,7 @@ def test_lpm_recovery_tools_wait_for_terminal_outcome(
 
 @pytest.mark.parametrize(
     ("tool_fn", "operation", "args"),
-    [
-        (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
-        (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
-        (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
-    ],
+    LPM_RECOVERY_TOOL_CASES,
 )
 def test_lpm_recovery_tools_return_explicit_timeout(
     monkeypatch, mock_hmc, tool_fn, operation, args
@@ -167,15 +173,7 @@ def test_lpm_recovery_tools_return_explicit_timeout(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "submit_method", "args"),
-    [
-        (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-        (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
-        (
-            remote_restart_lpar,
-            "lpar_remote_restart",
-            (LPAR_UUID, "target-system"),
-        ),
-    ],
+    LPM_RECOVERY_OPERATION_CASES,
 )
 async def test_lpm_recovery_operations_return_stable_submission_outcome(
     operation, submit_method, args
@@ -196,15 +194,7 @@ async def test_lpm_recovery_operations_return_stable_submission_outcome(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "submit_method", "args"),
-    [
-        (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-        (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
-        (
-            remote_restart_lpar,
-            "lpar_remote_restart",
-            (LPAR_UUID, "target-system"),
-        ),
-    ],
+    LPM_RECOVERY_OPERATION_CASES,
 )
 async def test_lpm_recovery_operations_wait_for_terminal_outcome(
     operation, submit_method, args
@@ -230,15 +220,7 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "submit_method", "args"),
-    [
-        (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-        (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
-        (
-            remote_restart_lpar,
-            "lpar_remote_restart",
-            (LPAR_UUID, "target-system"),
-        ),
-    ],
+    LPM_RECOVERY_OPERATION_CASES,
 )
 async def test_lpm_recovery_operations_surface_terminal_failure(
     operation, submit_method, args
@@ -273,15 +255,7 @@ async def test_lpm_recovery_operations_surface_terminal_failure(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "submit_method", "args"),
-    [
-        (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
-        (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
-        (
-            remote_restart_lpar,
-            "lpar_remote_restart",
-            (LPAR_UUID, "target-system"),
-        ),
-    ],
+    LPM_RECOVERY_OPERATION_CASES,
 )
 async def test_lpm_recovery_operations_reject_invalid_active_timing_before_work(
     operation, submit_method, args
