@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import job_identifier, wait_for_submitted_job
 
 
@@ -14,6 +15,8 @@ from hmc_mcp.jobs import job_identifier, wait_for_submitted_job
     [
         ({"UUID": "top"}, "top"),
         ({"Resource": {"JobID": "nested"}}, "nested"),
+        ({"link": "https://hmc.test/rest/api/uom/jobs/from-link"}, "from-link"),
+        ({"UUID": "  trimmed  "}, "trimmed"),
         ({"UUID": 42}, None),
         ({"Resource": {"JobID": ""}}, None),
         ({}, None),
@@ -24,11 +27,11 @@ def test_job_identifier_accepts_only_nonempty_strings(job, expected) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("wait,job", [(False, {"UUID": "job-1"}), (True, None)])
-async def test_wait_for_submitted_job_returns_without_polling(wait, job) -> None:
+@pytest.mark.parametrize("job", [{"UUID": "job-1"}, None])
+async def test_wait_for_submitted_job_returns_without_polling(job) -> None:
     client = AsyncMock()
 
-    assert await wait_for_submitted_job(client, job, wait, 30, 2) is job
+    assert await wait_for_submitted_job(client, job, False, 30, 2) is job
     client.wait_for_job.assert_not_awaited()
 
 
@@ -45,11 +48,12 @@ async def test_wait_for_submitted_job_forwards_identifier_link_and_timing() -> N
 
 
 @pytest.mark.asyncio
-async def test_wait_for_submitted_job_preserves_malformed_response() -> None:
+@pytest.mark.parametrize("job", [None, {"UUID": 42}, {}, {"link": "  "}])
+async def test_wait_for_submitted_job_rejects_unpollable_response(job) -> None:
     client = AsyncMock()
-    job = {"UUID": 42}
 
-    assert await wait_for_submitted_job(client, job, True, 30, 2) is job
+    with pytest.raises(HMCError, match="Cannot wait for the submitted HMC job"):
+        await wait_for_submitted_job(client, job, True, 30, 2)
     client.wait_for_job.assert_not_awaited()
 
 

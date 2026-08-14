@@ -9,7 +9,9 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
+from urllib.parse import urlparse
 
+from .errors import HMCError
 from .xmlutil import WEB_NS
 
 LuType = Literal["THIN", "THICK"]
@@ -32,9 +34,15 @@ class JobWaitClient(Protocol):
 
 
 def job_identifier(job: dict[str, Any]) -> str | None:
-    """Return a valid top-level UUID or nested JobID from a job response."""
+    """Return a polling identifier from a UUID, JobID, or SELF link."""
     identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-    return identifier if isinstance(identifier, str) and identifier else None
+    if isinstance(identifier, str) and identifier.strip():
+        return identifier.strip()
+    link = job.get("link")
+    if not isinstance(link, str) or not link.strip():
+        return None
+    path = urlparse(link.strip()).path.rstrip("/")
+    return path.rsplit("/", 1)[-1] if path else None
 
 
 async def wait_for_submitted_job(
@@ -44,12 +52,19 @@ async def wait_for_submitted_job(
     timeout_seconds: int,
     poll_interval: int,
 ) -> dict[str, Any] | None:
-    """Optionally wait for a submitted job, preserving unusable responses."""
-    if not wait or job is None:
+    """Return immediately or honor the caller's request to poll the job."""
+    if not wait:
         return job
+    if job is None:
+        raise HMCError(
+            "Cannot wait for the submitted HMC job: the submission returned no job resource"
+        )
     identifier = job_identifier(job)
     if identifier is None:
-        return job
+        raise HMCError(
+            "Cannot wait for the submitted HMC job: the response contained no usable "
+            "UUID, JobID, or polling link"
+        )
     return await client.wait_for_job(
         identifier, timeout_seconds, poll_interval, job_href=job.get("link")
     )
