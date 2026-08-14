@@ -37,6 +37,7 @@ ACTION_PINS = {
         "v4",
     ),
 }
+SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 SCORECARD_ACTION_PINS = {
     "actions/checkout": (
         "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
@@ -100,7 +101,9 @@ def test_secret_baseline_is_an_exact_reviewed_allowlist() -> None:
         baseline = json.load(file)
 
     results = baseline["results"]
-    assert {path: len(findings) for path, findings in results.items()} == BASELINED_FINDINGS
+    assert {
+        path: len(findings) for path, findings in results.items()
+    } == BASELINED_FINDINGS
     excluded_paths = baseline.get("exclude", {})
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
@@ -138,13 +141,18 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
 
     assert "pull_request:" in workflow
     assert re.search(r"push:\n\s+branches:\s+\[main\]", workflow)
-    permissions = re.search(r"^permissions:\n(?P<body>(?:  .+\n)+)\n", workflow, re.MULTILINE)
+    assert re.search(r"schedule:\n\s+- cron: '[^']+'", workflow)
+    assert "workflow_dispatch:" not in workflow
+    permissions = re.search(
+        r"^permissions:\n(?P<body>(?:  .+\n)+)\n", workflow, re.MULTILINE
+    )
     assert permissions
     assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
-    assert "runs-on: ubuntu-24.04" in workflow
+    assert workflow.count("runs-on: ubuntu-24.04") == 2
     assert "timeout-minutes: 20" in workflow
+    assert "timeout-minutes: 5" in workflow
     expected_actions = {f"{action}@{sha}" for action, (sha, _) in ACTION_PINS.items()}
     assert set(re.findall(r"uses:\s+([^\s#]+)", workflow)) == expected_actions
     for action, (sha, version) in ACTION_PINS.items():
@@ -154,6 +162,48 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert 'just-version: "1.58.0"' in workflow
     for command in ("just setup", "just verify", "uv run prek run --all-files"):
         assert f"run: {command}" in workflow
+
+
+def test_github_ci_uses_an_explicit_supported_python_matrix() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    matrix = re.search(r"matrix:\n\s+python-version: \[(?P<versions>[^]]+)\]", workflow)
+    assert matrix
+    assert re.findall(r'"(\d+\.\d+)"', matrix["versions"]) == SUPPORTED_PYTHONS
+    assert "python-version: ${{ matrix.python-version }}" in workflow
+    assert workflow.count("run: just verify") == 1
+
+
+def test_scheduled_job_checks_the_same_explicit_versions() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    drift_job = re.search(
+        r"^  python-support-drift:\n(?P<body>.*)", workflow, re.MULTILINE | re.DOTALL
+    )
+    assert drift_job
+    body = drift_job["body"]
+    assert "if: github.event_name == 'schedule'" in body
+    assert "timeout-minutes: 5" in body
+    command = re.search(
+        r"run: uv run python scripts/check_python_support.py (?P<args>[^\n]+)", body
+    )
+    assert command
+    assert command["args"].split() == SUPPORTED_PYTHONS
+    assert "just verify" not in body
+
+
+def test_python_policy_metadata_is_aligned() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        project = tomllib.load(file)
+    with (ROOT / "uv.lock").open("rb") as file:
+        lockfile = tomllib.load(file)
+
+    assert project["project"]["requires-python"] == ">=3.11"
+    assert (ROOT / ".python-version").read_text().strip() == "3.11"
+    assert lockfile["requires-python"] == ">=3.11"
+    readme = (ROOT / "README.md").read_text()
+    assert "Python ≥3.11" in readme
+    assert "stable, non-EOL CPython release" in readme
 
 
 def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
@@ -169,9 +219,7 @@ def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
     )
     assert job_permissions
     assert job_permissions["body"] == (
-        "      contents: read\n"
-        "      security-events: write\n"
-        "      id-token: write\n"
+        "      contents: read\n      security-events: write\n      id-token: write\n"
     )
     assert "runs-on: ubuntu-24.04" in workflow
     assert "timeout-minutes: 10" in workflow
