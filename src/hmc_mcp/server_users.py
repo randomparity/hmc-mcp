@@ -51,7 +51,12 @@ def hmc_get_user(
     name: str,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Get one HMC user account by username, or None when it does not exist."""
+    """Get one HMC user account by username.
+
+    Returns None only when the HMC sends an empty successful response. A
+    missing account reported as HTTP 404 raises HMCError like other REST
+    lookup failures.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
