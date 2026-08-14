@@ -149,7 +149,7 @@ class UsersMixin:
         path = "/rest/api/web/HmcPasswordPolicy"
         return self._web_entries(await self._web_get(path), path)
 
-    async def get_password_policy_status(self) -> list[dict[str, Any]]:
+    async def list_password_policy_status(self) -> list[dict[str, Any]]:
         """Return activation status entries for HMC password policies."""
         path = "/rest/api/web/HmcPasswordPolicy?PolicyType=status"
         return self._web_entries(await self._web_get(path), path)

@@ -7,7 +7,7 @@ from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.server import (
     hmc_create_password_policy,
     hmc_delete_password_policy,
-    hmc_get_password_policy_status,
+    hmc_list_password_policy_status,
     hmc_list_password_policies,
     hmc_modify_password_policy,
 )
@@ -142,7 +142,7 @@ async def test_get_password_policy_status(mock_hmc):
         return_value=httpx.Response(200, text=STATUS_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        entries = await hmc.get_password_policy_status()
+        entries = await hmc.list_password_policy_status()
     assert "PolicyType=status" in str(route.calls.last.request.url)
     assert entries[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"
 
@@ -230,7 +230,7 @@ def test_hmc_get_password_policy_status_parses(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
         return_value=httpx.Response(200, text=STATUS_FEED)
     )
-    result = hmc_get_password_policy_status()
+    result = hmc_list_password_policy_status()
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"

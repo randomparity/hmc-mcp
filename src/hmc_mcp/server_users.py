@@ -159,14 +159,14 @@ def hmc_list_password_policies(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_password_policy_status(
+def hmc_list_password_policy_status(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get activation-status resources for HMC password policies."""
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.get_password_policy_status()
+            return await hmc.list_password_policy_status()
 
     return _run(_go)
 

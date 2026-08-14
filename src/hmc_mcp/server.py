@@ -154,7 +154,7 @@ from .server_users import (
     hmc_delete_password_policy as hmc_delete_password_policy,
     hmc_delete_user as hmc_delete_user,
     hmc_get_ldap_config as hmc_get_ldap_config,
-    hmc_get_password_policy_status as hmc_get_password_policy_status,
+    hmc_list_password_policy_status as hmc_list_password_policy_status,
     hmc_get_user as hmc_get_user,
     hmc_list_password_policies as hmc_list_password_policies,
     hmc_modify_password_policy as hmc_modify_password_policy,
