@@ -1,5 +1,4 @@
-"""CLI commands for Virtual I/O Servers.
-"""
+"""CLI commands for Virtual I/O Servers."""
 
 from __future__ import annotations
 
@@ -17,19 +16,25 @@ from .cli_app import (
     console,
     vios_app,
 )
-from .jobs import wait_for_submitted_job
+from .jobs import validate_wait_timing, wait_for_submitted_job
 
 
 @vios_app.command("list")
 def vios_list(
-    system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
-    state: str | None = typer.Option(None, "--state", help="Filter by PartitionState (server-side search)"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Restrict to this managed system UUID"
+    ),
+    state: str | None = typer.Option(
+        None, "--state", help="Filter by PartitionState (server-side search)"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual I/O Servers."""
 
     if state is not None:
-        vios = _with_client(lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state))
+        vios = _with_client(
+            lambda hmc: hmc.search_uom("VirtualIOServer", "PartitionState", state)
+        )
     else:
         vios = _with_client(lambda hmc: hmc.list_vios(system))
 
@@ -52,12 +57,17 @@ def vios_list(
 @vios_app.command("power-on")
 def vios_power_on(
     uuid: str = typer.Argument(..., help="VIOS UUID"),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for job completion"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
     timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(5, "--interval", help="Poll interval seconds (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power on a VIOS (submits a PowerOn job)."""
+    validate_wait_timing(wait, timeout, interval)
     if not yes and not typer.confirm(f"Really PowerOn VIOS {uuid}?"):
         raise typer.Abort()
 
@@ -65,6 +75,7 @@ def vios_power_on(
         async with _client() as hmc:
             job = await hmc.power_on_vios(uuid)
             return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
+
     job = _run(_go)
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
@@ -75,12 +86,17 @@ def vios_power_on(
 def vios_power_off(
     uuid: str = typer.Argument(..., help="VIOS UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for job completion"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
     timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(5, "--interval", help="Poll interval seconds (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Power off a VIOS (submits a PowerOff job)."""
+    validate_wait_timing(wait, timeout, interval)
     op = "Immediate PowerOff" if immediate else "PowerOff"
     if not yes and not typer.confirm(f"Really {op} VIOS {uuid}?"):
         raise typer.Abort()
@@ -89,8 +105,8 @@ def vios_power_off(
         async with _client() as hmc:
             job = await hmc.power_off_vios(uuid, immediate=immediate)
             return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
+
     job = _run(_go)
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)
-

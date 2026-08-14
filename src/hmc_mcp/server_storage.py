@@ -17,6 +17,7 @@ from .jobs import (
     DeviceType,
     LuType,
     validate_logical_unit_types,
+    validate_wait_timing,
     wait_for_submitted_job,
 )
 
@@ -257,6 +258,7 @@ def hmc_create_logical_unit(
     Set wait=True to block until the job reaches a terminal state.
     """
     validate_logical_unit_types(lu_type, device_type)
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -289,6 +291,8 @@ def hmc_delete_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

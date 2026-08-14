@@ -13,7 +13,7 @@ from ._app import (
 from .errors import HMCError
 from .error_translation import translate_template_error
 from .common import client_from_env
-from .jobs import wait_for_submitted_job
+from .jobs import validate_wait_timing, wait_for_submitted_job
 
 _MANUAL_STAMP_WARNING = (
     "ownership stamp not attempted: template deployment does not identify and stamp "
@@ -74,6 +74,8 @@ def hmc_deploy_partition_template(
     firmware, so it returns a warning directing callers to identify and stamp
     the new partition manually.
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

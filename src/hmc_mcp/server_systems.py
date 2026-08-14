@@ -25,7 +25,7 @@ from .documents import (
     PowerOnLparStartPolicy,
     build_managed_system_document,
 )
-from .jobs import wait_for_submitted_job
+from .jobs import validate_wait_timing, wait_for_submitted_job
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -305,6 +305,8 @@ def hmc_power_on_system(
 ) -> dict[str, Any] | None:
     """Power on a managed system, optionally waiting for a terminal job state."""
 
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
@@ -326,6 +328,8 @@ def hmc_power_off_system(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power off a managed system, optionally waiting for a terminal job state."""
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

@@ -25,7 +25,12 @@ from .cli_app import (
     lpars_app,
 )
 
-from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
+from .jobs import (
+    power_off_lpar_job,
+    power_on_lpar_job,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 from .operations_lpar import (
     LparCreation,
     authorize_lpar_mutation,
@@ -335,6 +340,8 @@ def _power_lpar(
     timeout: int = 300,
     interval: int = 5,
 ) -> None:
+    validate_wait_timing(wait, timeout, interval)
+
     async def _go():
         async with _client() as hmc:
             uuid = await _resolve_partition_uuid(hmc, name_or_uuid)

@@ -23,8 +23,22 @@ from hmc_mcp.server import (
     hmc_power_on_system,
     hmc_power_on_vios,
 )
-
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
+
+
+def test_power_off_rejects_invalid_wait_timing_before_client_creation(monkeypatch):
+    called = False
+
+    def unexpected_client(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("client must not be created")
+
+    monkeypatch.setattr("hmc_mcp.server_systems.client_from_env", unexpected_client)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        hmc_power_off_system(SYSTEM_UUID, wait=True, timeout_seconds=-1)
+    assert called is False
+
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"

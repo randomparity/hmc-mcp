@@ -21,7 +21,12 @@ from .common import (
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from .jobs import install_lpar_job, install_vios_job, wait_for_submitted_job
+from .jobs import (
+    install_lpar_job,
+    install_vios_job,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
 
@@ -116,6 +121,7 @@ def hmc_install_vios(
     job_xml = install_vios_job(
         nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout
     )
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -160,6 +166,7 @@ def hmc_install_lpar_os(
     job_xml = install_lpar_job(
         nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout
     )
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -280,6 +287,8 @@ def hmc_power_on_vios(
 ) -> dict[str, Any] | None:
     """Power on a VIOS, optionally waiting for a terminal job state."""
 
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
@@ -301,6 +310,8 @@ def hmc_power_off_vios(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power off a VIOS, optionally waiting for a terminal job state."""
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

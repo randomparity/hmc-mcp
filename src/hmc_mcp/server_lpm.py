@@ -9,7 +9,7 @@ from ._app import (
 )
 
 from .common import client_from_env, resolve_lpar_uuid
-from .jobs import wait_for_submitted_job
+from .jobs import validate_wait_timing, wait_for_submitted_job
 
 from typing import Any
 
@@ -36,6 +36,8 @@ def hmc_migrate_lpar(
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -67,6 +69,8 @@ def hmc_migrate_validate_lpar(
     (find it with hmc_lpars).
     Set wait=True to block until the validation job reaches a terminal state.
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

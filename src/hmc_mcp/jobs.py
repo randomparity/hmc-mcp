@@ -33,6 +33,16 @@ class JobWaitClient(Protocol):
     ) -> dict[str, Any] | None: ...
 
 
+def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -> None:
+    """Reject invalid polling settings before a caller submits remote work."""
+    if not wait:
+        return
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be greater than or equal to 0")
+    if poll_interval < 0:
+        raise ValueError("poll_interval must be greater than or equal to 0")
+
+
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
@@ -55,6 +65,7 @@ async def wait_for_submitted_job(
     """Return immediately or honor the caller's request to poll the job."""
     if not wait:
         return job
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
     if job is None:
         raise HMCError(
             "Cannot wait for the submitted HMC job: the submission returned no job resource"

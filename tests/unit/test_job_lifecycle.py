@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import job_identifier, wait_for_submitted_job
+from hmc_mcp.jobs import job_identifier, validate_wait_timing, wait_for_submitted_job
 
 
 @pytest.mark.parametrize(
@@ -24,6 +24,21 @@ from hmc_mcp.jobs import job_identifier, wait_for_submitted_job
 )
 def test_job_identifier_accepts_only_nonempty_strings(job, expected) -> None:
     assert job_identifier(job) == expected
+
+
+@pytest.mark.parametrize(
+    ("timeout_seconds", "poll_interval", "message"),
+    [(-1, 5, "timeout_seconds"), (300, -1, "poll_interval")],
+)
+def test_validate_wait_timing_rejects_negative_values(
+    timeout_seconds, poll_interval, message
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_wait_timing(True, timeout_seconds, poll_interval)
+
+
+def test_validate_wait_timing_ignores_unused_values() -> None:
+    validate_wait_timing(False, -1, -1)
 
 
 @pytest.mark.asyncio

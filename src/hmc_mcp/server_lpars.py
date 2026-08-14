@@ -24,7 +24,12 @@ from .documents import (
     build_dlpar_proc_document,
     build_lpar_document,
 )
-from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
+from .jobs import (
+    power_off_lpar_job,
+    power_on_lpar_job,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 from .operations_lpar import (
     LparCreation,
     LparCreationResult,
@@ -337,6 +342,8 @@ def hmc_power_on_lpar(
     (or until timeout_seconds elapses).
     """
 
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
@@ -383,6 +390,8 @@ def hmc_power_off_lpar(
 
     Set wait=True to block until the job reaches a terminal state.
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:

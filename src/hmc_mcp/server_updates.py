@@ -19,6 +19,7 @@ from .jobs import (
     upgrade_hmc_job,
     update_vios_job,
     upgrade_vios_job,
+    validate_wait_timing,
     wait_for_submitted_job,
 )
 
@@ -63,6 +64,7 @@ def hmc_update_console_software(
         operation = "Upgrade"
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -154,6 +156,7 @@ def hmc_vios_update(
         operation = "Upgrade"
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -191,6 +194,8 @@ def hmc_update_firmware(
 
     Set wait=True to block until the job reaches a terminal state.
     """
+
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
