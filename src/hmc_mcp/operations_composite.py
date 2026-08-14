@@ -10,6 +10,11 @@ from .common import resolve_lpar_uuid, resolve_system_uuid
 from .operations_capacity import lpar_processing_units
 
 
+def _current_or_desired(resource: dict[str, Any], current: str, desired: str) -> Any:
+    value = resource.get(current)
+    return resource.get(desired) if value is None else value
+
+
 def _lpar_summary(
     lpar: dict[str, Any],
     adapters: list[dict[str, Any]],
@@ -24,11 +29,14 @@ def _lpar_summary(
         "partition_type": res.get("PartitionType"),
         "partition_id": res.get("PartitionID"),
         # Current memory/CPU (what the LPAR currently has)
-        "current_memory_mb": res.get("CurrentMemory") or res.get("DesiredMemory"),
+        "current_memory_mb": _current_or_desired(
+            res, "CurrentMemory", "DesiredMemory"
+        ),
         "desired_memory_mb": res.get("DesiredMemory"),
         # Current CPU: shared-processor units or dedicated CPUs
-        "current_proc_units": res.get("CurrentProcessingUnits")
-        or res.get("DesiredProcessingUnits"),
+        "current_proc_units": _current_or_desired(
+            res, "CurrentProcessingUnits", "DesiredProcessingUnits"
+        ),
         "desired_proc_units": res.get("DesiredProcessingUnits"),
         "desired_vcpus": res.get("DesiredVirtualProcessors"),
         "dedicated_procs": res.get("DedicatedProcessors"),

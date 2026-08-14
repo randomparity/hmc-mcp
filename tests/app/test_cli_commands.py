@@ -551,6 +551,25 @@ def test_lpars_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_logical_partitions", (None,), {})]
 
 
+def test_lpars_summary_renders_numeric_zero(monkeypatch):
+    summary = {
+        "name": "zero-lpar",
+        "current_memory_mb": 0,
+        "desired_memory_mb": 0,
+        "current_proc_units": 0.0,
+        "desired_proc_units": 0.0,
+    }
+    monkeypatch.setattr("hmc_mcp.cli_lpars._run", lambda _operation: summary)
+
+    result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
+
+    assert result.exit_code == 0
+    assert "Current Memory (MiB)" in result.stdout
+    assert "│ 0" in result.stdout
+    assert "Current Proc Units" in result.stdout
+    assert "0.0" in result.stdout
+
+
 def test_lpars_show_by_uuid(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "show", LPAR_UUID])
 

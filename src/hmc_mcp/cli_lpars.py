@@ -66,19 +66,23 @@ def lpars_summary(
     table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
+    def value_or_missing(key: str) -> str:
+        value = summary.get(key)
+        return "-" if value is None else str(value)
+
     rows = [
         ("UUID", summary.get("uuid") or "-"),
         ("Name", summary.get("name") or "-"),
         ("State", summary.get("state") or "-"),
         ("RMC State", summary.get("rmc_state") or "-"),
         ("Type", summary.get("partition_type") or "-"),
-        ("Partition ID", str(summary.get("partition_id") or "-")),
-        ("Current Memory (MiB)", str(summary.get("current_memory_mb") or "-")),
-        ("Desired Memory (MiB)", str(summary.get("desired_memory_mb") or "-")),
-        ("Current Proc Units", str(summary.get("current_proc_units") or "-")),
-        ("Desired Proc Units", str(summary.get("desired_proc_units") or "-")),
-        ("Desired vCPUs", str(summary.get("desired_vcpus") or "-")),
-        ("Dedicated Procs", str(summary.get("dedicated_procs") or "-")),
+        ("Partition ID", value_or_missing("partition_id")),
+        ("Current Memory (MiB)", value_or_missing("current_memory_mb")),
+        ("Desired Memory (MiB)", value_or_missing("desired_memory_mb")),
+        ("Current Proc Units", value_or_missing("current_proc_units")),
+        ("Desired Proc Units", value_or_missing("desired_proc_units")),
+        ("Desired vCPUs", value_or_missing("desired_vcpus")),
+        ("Dedicated Procs", value_or_missing("dedicated_procs")),
         ("OS Version", summary.get("os_version") or "-"),
         ("OS Type", summary.get("os_type") or "-"),
         ("Client Network Adapters", str(summary.get("client_network_adapter_count", 0))),

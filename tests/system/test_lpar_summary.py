@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from hmc_mcp.server import hmc_lpar_summary
+from hmc_mcp.operations_composite import _lpar_summary
 
 LPAR_UUID = "aabbccdd-1234-5678-abcd-000000000001"
 ADAPTER1_UUID = "aabbccdd-1234-5678-abcd-000000000002"
@@ -69,6 +70,40 @@ EMPTY_FEED = """\
 """
 
 EMPTY_ADAPTER_FEED = EMPTY_FEED
+
+
+@pytest.mark.parametrize(
+    ("resource", "expected_memory", "expected_processors"),
+    [
+        (
+            {
+                "CurrentMemory": 0,
+                "DesiredMemory": 1024,
+                "CurrentProcessingUnits": 0.0,
+                "DesiredProcessingUnits": 1.0,
+            },
+            0,
+            0.0,
+        ),
+        (
+            {"DesiredMemory": 0, "DesiredProcessingUnits": 0.0},
+            0,
+            0.0,
+        ),
+        (
+            {"DesiredMemory": 1024, "DesiredProcessingUnits": 1.0},
+            1024,
+            1.0,
+        ),
+        ({}, None, None),
+    ],
+)
+def test_lpar_summary_preserves_zero_and_falls_back_only_when_missing(
+    resource, expected_memory, expected_processors
+):
+    summary = _lpar_summary({"Resource": resource}, [])
+    assert summary["current_memory_mb"] == expected_memory
+    assert summary["current_proc_units"] == expected_processors
 
 
 # ---------------------------------------------------------------------- #
