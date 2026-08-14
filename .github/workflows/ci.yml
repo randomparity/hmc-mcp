@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 9 * * 1'
 
 permissions:
   contents: read
@@ -16,6 +18,9 @@ jobs:
   ci:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -25,7 +30,7 @@ jobs:
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           enable-cache: true
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           version: "0.12.3"
       - name: Install just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4
@@ -37,3 +42,21 @@ jobs:
         run: just verify
       - name: Validate hooks
         run: uv run prek run --all-files
+
+  python-support-drift:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.11"
+          version: "0.12.3"
+      - name: Check Python lifecycle policy
+        run: uv run python scripts/check_python_support.py 3.11 3.12 3.13 3.14

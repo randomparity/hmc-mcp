@@ -6,7 +6,8 @@ Power systems, inspect LPARs/VIOS, and submit jobs such as power on/off.
 
 ## Stack
 
-- **Python ≥3.12**, managed with [uv](https://docs.astral.sh/uv/)
+- **Python ≥3.11**, managed with [uv](https://docs.astral.sh/uv/). The project supports every
+  stable, non-EOL CPython release at or above that floor.
 - **MCP server**: [FastMCP](https://gofastmcp.com/) (stdio or streamable HTTP)
 - **CLI**: [Typer](https://typer.tiangolo.com/) + Rich tables
 - **REST transport**: httpx (async), XML parsed with defusedxml

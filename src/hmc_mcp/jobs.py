@@ -9,8 +9,10 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
+from typing import Any, Literal, NotRequired, Protocol, get_args
 from urllib.parse import urlparse
+
+from typing_extensions import TypedDict
 
 from .errors import HMCError
 from .xmlutil import WEB_NS
