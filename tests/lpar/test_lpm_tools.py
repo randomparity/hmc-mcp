@@ -240,6 +240,49 @@ async def test_lpm_recovery_operations_wait_for_terminal_outcome(
         ),
     ],
 )
+async def test_lpm_recovery_operations_surface_terminal_failure(
+    operation, submit_method, args
+):
+    submitted = {"UUID": "job-1", "link": "/jobs/job-1"}
+    failed = {
+        "Resource": {
+            "JobID": "job-1",
+            "Status": "FAILED",
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "ErrorData",
+                    "ParameterValue": "Migration recovery failed",
+                }
+            },
+        }
+    }
+    hmc = AsyncMock()
+    setattr(hmc, submit_method, AsyncMock(return_value=submitted))
+    hmc.wait_for_job.return_value = failed
+
+    result = await operation(hmc, *args, wait=True)
+
+    assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
+    assert result.job.job_id == "job-1"
+    assert result.job.status == "FAILED"
+    assert result.job.timed_out is False
+    assert result.job.error == "Migration recovery failed"
+    assert result.job.job is failed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "submit_method", "args"),
+    [
+        (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
+        (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
+        (
+            remote_restart_lpar,
+            "lpar_remote_restart",
+            (LPAR_UUID, "target-system"),
+        ),
+    ],
+)
 async def test_lpm_recovery_operations_reject_invalid_active_timing_before_work(
     operation, submit_method, args
 ):
