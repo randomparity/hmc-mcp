@@ -84,11 +84,13 @@ This change adds no network listener, credential handling, or authorization deci
 The operation accepts no estate selector, path, query, or command input beyond the existing
 profile selector. Concurrency is capped at eight system inspections. The trusted side also rejects
 estates above 256 systems before child fan-out, either child category above 10,000 resources per
-system, aggregate results above 10,000 exceptions, and scalar fields above 500 characters. Every
-limit fails closed rather than truncating into a false healthy result. Curators select named scalar
-fields only; raw entries and response bodies are not returned. Existing HMC error translation
-controls failure disclosure. The known unsupported-feed match checks status and the specific HMC
-error identifiers rather than suppressing arbitrary HTTP 400 responses.
+system, aggregate results above 10,000 exceptions across all four categories, nested JobParameter
+collections above 10,000 entries, and scalar fields (including system UUIDs used in child request
+paths) above 500 characters. Every limit fails closed rather than truncating into a false healthy
+result. Curators select named scalar fields only; raw entries and response bodies are not returned.
+Existing HMC error translation controls failure disclosure. The known unsupported-feed match
+checks status and the specific HMC error identifiers rather than suppressing arbitrary HTTP 400
+responses.
 
 ### Out of scope
 
@@ -101,7 +103,9 @@ does not attempt retry, caching, or historical monitoring.
 Pure curator tests cover case normalization, missing states, stable keys, deterministic sorting,
 every canonical `FAILED_JOB_STATUSES` value, representative successful/running/warning/unknown
 states, Job-feed limit boundaries, missing/blank/non-string names and child/job UUIDs, and missing,
-blank, non-string, and oversized job errors. Async
+blank, non-string, and oversized job errors. Budget tests cover oversized system UUIDs, nested
+JobParameter collections, and aggregate exception results combining inventory with failed jobs.
+Async
 operation tests cover a healthy estate, all four degraded categories,
 unsupported global Job listing, and near misses that independently change the HTTP 400 status,
 omit `REST000E`, or omit `Unrecognized root REST type of Job`, with each near miss propagating.

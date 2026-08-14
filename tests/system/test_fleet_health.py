@@ -343,6 +343,26 @@ async def test_aggregate_exception_budget_fails_closed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_aggregate_exception_budget_includes_failed_jobs(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_EXCEPTIONS", 1)
+    client = _healthy_client()
+    client.list_logical_partitions.return_value = [
+        _entry(
+            "lpar-1",
+            PartitionName="aix-a",
+            PartitionState="running",
+            ResourceMonitoringControlState="inactive",
+        )
+    ]
+    client.list_uom.return_value = [
+        _entry("job-1", JobName="failed", Status="FAILED")
+    ]
+
+    with pytest.raises(ValueError, match="safe limit of 1 exceptions"):
+        await fleet_health(client)
+
+
+@pytest.mark.asyncio
 async def test_oversized_scalar_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(operations_health, "_MAX_SCALAR_LENGTH", 5)
     client = _healthy_client()
@@ -351,6 +371,43 @@ async def test_oversized_scalar_fails_closed(monkeypatch) -> None:
     ]
 
     with pytest.raises(ValueError, match="safe limit of 5 characters"):
+        await fleet_health(client)
+
+
+@pytest.mark.asyncio
+async def test_oversized_system_uuid_fails_before_child_reads(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_SCALAR_LENGTH", 5)
+    client = _healthy_client()
+    client.list_managed_systems.return_value = [
+        _entry("uuid-too-long", SystemName="sys", State="operating")
+    ]
+
+    with pytest.raises(ValueError, match="safe limit of 5 characters"):
+        await fleet_health(client)
+
+    client.list_logical_partitions.assert_not_awaited()
+    client.list_vios.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_job_parameter_collection_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_JOB_PARAMETERS", 1)
+    client = _healthy_client()
+    client.list_uom.return_value = [
+        _entry(
+            "job-1",
+            JobName="failed",
+            Status="FAILED",
+            Results={
+                "JobParameter": [
+                    {"ParameterName": "ignored", "ParameterValue": "one"},
+                    {"ParameterName": "ErrorData", "ParameterValue": "two"},
+                ]
+            },
+        )
+    ]
+
+    with pytest.raises(ValueError, match="safe limit of 1 entries"):
         await fleet_health(client)
 
 

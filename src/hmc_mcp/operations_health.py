@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,7 @@ _MAX_SYSTEMS = 256
 _MAX_RESOURCES_PER_SYSTEM = 10_000
 _MAX_EXCEPTIONS = 10_000
 _MAX_SCALAR_LENGTH = 500
+_MAX_JOB_PARAMETERS = 10_000
 _RECENT_JOB_LIMIT = 20
 _MAX_ERROR_LENGTH = 500
 _UNSUPPORTED_JOB_WARNING = "Recent job health is unavailable because this HMC does not support global Job listing."
@@ -53,10 +55,22 @@ def _sort(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
     return tuple(records)
 
 
-def _check_exception_budget(*categories: list[dict[str, Any]]) -> None:
+def _check_exception_budget(*categories: Collection[object]) -> None:
     if sum(map(len, categories)) > _MAX_EXCEPTIONS:
         raise ValueError(
             f"Fleet health result exceeds the safe limit of {_MAX_EXCEPTIONS} exceptions"
+        )
+
+
+def _check_job_parameter_budget(resource: dict[str, Any]) -> None:
+    results = resource.get("Results")
+    if not isinstance(results, dict):
+        return
+    parameters = results.get("JobParameter")
+    if isinstance(parameters, list) and len(parameters) > _MAX_JOB_PARAMETERS:
+        raise ValueError(
+            "Fleet health job parameters exceed the safe limit of "
+            f"{_MAX_JOB_PARAMETERS} entries"
         )
 
 
@@ -109,6 +123,7 @@ def _lpar_exception(
 
 def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     resource = _resource(job)
+    _check_job_parameter_budget(resource)
     status = _text(resource.get("Status")).upper()
     if status not in FAILED_JOB_STATUSES:
         return None
@@ -194,7 +209,7 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
         uuid_value = system.get("UUID")
         if not isinstance(uuid_value, str) or not uuid_value.strip():
             raise ValueError("Managed system entry must contain a valid UUID")
-        system_uuid = uuid_value.strip()
+        system_uuid = _text(uuid_value)
         system_name = _text(_resource(system).get("SystemName"))
         queue.put_nowait((system, system_uuid, system_name))
         exception = _system_exception(system)
@@ -243,6 +258,9 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
     failed_jobs, warnings = job_task.result()
+    _check_exception_budget(
+        system_exceptions, vios_exceptions, lpar_exceptions, failed_jobs
+    )
     return FleetHealthResult(
         _sort(system_exceptions),
         _sort(vios_exceptions),
