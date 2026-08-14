@@ -549,6 +549,30 @@ async def test_fetch_json(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_fetch_json_invalid_body_raises_contextual_hmc_error(
+    mock_hmc, monkeypatch
+):
+    path = "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+    mock_hmc.get(path).mock(return_value=httpx.Response(200, text="not json"))
+    parse_error = ValueError("x" * 500 + "excluded detail")
+
+    def raise_parse_error(_response):
+        raise parse_error
+
+    monkeypatch.setattr(httpx.Response, "json", raise_parse_error)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await hmc.fetch_json(path)
+
+    message = str(exc_info.value)
+    assert f"GET {BASE}{path} returned invalid JSON" in message
+    assert "x" * 500 in message
+    assert "excluded detail" not in message
+    assert exc_info.value.__cause__ is parse_error
+
+
+@pytest.mark.asyncio
 async def test_fetch_json_404_raises(mock_hmc):
     """fetch_json raises HMCError on 404 like every other client method."""
     mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(

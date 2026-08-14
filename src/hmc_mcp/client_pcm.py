@@ -112,4 +112,9 @@ class PcmMixin:
         resp = await self._http.get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise HMCError(
+                f"GET {url} returned invalid JSON: {str(exc)[:500]}"
+            ) from exc
