@@ -121,6 +121,7 @@ def test_lpm_recovery_tools_wait_for_terminal_outcome(
     monkeypatch, mock_hmc, tool_fn, operation, args
 ):
     _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
     poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
@@ -148,6 +149,7 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     monkeypatch, mock_hmc, tool_fn, operation, args
 ):
     _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
