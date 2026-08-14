@@ -1,5 +1,4 @@
-"""CLI commands for the partition template library.
-"""
+"""CLI commands for the partition template library."""
 
 from __future__ import annotations
 
@@ -13,11 +12,9 @@ from .cli_app import (
     _print_json,
     _with_client,
     console,
-    err_console,
     templates_app,
 )
 from .error_translation import run_with_error_translation, translate_template_error
-
 
 
 @templates_app.command("list")
@@ -36,7 +33,9 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
         for col in ("Name", "UUID"):
             table.add_column(col)
         for t in templates:
-            table.add_row(_first_field(t, "templateName", "TemplateName"), t.get("UUID") or "-")
+            table.add_row(
+                _first_field(t, "templateName", "TemplateName"), t.get("UUID") or "-"
+            )
     _output(templates, as_json, table, "No partition templates found")
 
 
@@ -50,9 +49,6 @@ def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> Non
         )
     )
 
-    if t is None:
-        err_console.print(f"[yellow]Template {uuid} not found[/yellow]")
-        raise typer.Exit(code=1)
     _print_json(t)
 
 
@@ -63,7 +59,9 @@ def templates_deploy(
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Deploy a partition from a draft template (submits a job)."""
-    if not yes and not typer.confirm(f"Deploy draft template {draft_uuid} to system {system}?"):
+    if not yes and not typer.confirm(
+        f"Deploy draft template {draft_uuid} to system {system}?"
+    ):
         raise typer.Abort()
 
     job = _with_client(
@@ -75,4 +73,3 @@ def templates_deploy(
 
     console.print(f"[green]Submitted deploy job for template {draft_uuid}[/green]")
     _print_json(job)
-

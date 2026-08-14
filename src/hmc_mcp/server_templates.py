@@ -40,7 +40,11 @@ def hmc_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
 def hmc_get_partition_template(
     template_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
-    """Get one partition template by UUID, or None when it is not found."""
+    """Get one partition template by UUID.
+
+    Returns None only for an empty successful response. HTTP 404 and other
+    REST failures raise HMCError.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
