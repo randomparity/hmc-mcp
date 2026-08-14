@@ -38,7 +38,11 @@ def hmc_recent_jobs(
     limit: int = 20,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List recent jobs, or an error sentinel when root Job listing is unsupported."""
+    """List recent jobs.
+
+    Raises HMCError when this HMC does not support global Job listing; use
+    hmc_get_job with a UUID and submission link on those firmware versions.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:
@@ -49,17 +53,12 @@ def hmc_recent_jobs(
     except HMCError as exc:
         if not _is_unsupported_job_listing(exc):
             raise
-        return [
-            {
-                "type": "error",
-                "error": (
-                    "This HMC version does not support the global Job listing "
-                    "endpoint. Use hmc_get_job(job_uuid, job_href=<submission link>)."
-                ),
-                "status_code": 400,
-                "detail": str(exc),
-            }
-        ]
+        raise HMCError(
+            "This HMC version does not support global Job listing. Use "
+            "hmc_get_job(job_uuid, job_href=<submission link>) instead.",
+            status_code=400,
+            body=exc.body,
+        ) from exc
     return jobs[:limit]
 
 

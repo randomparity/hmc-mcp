@@ -241,6 +241,21 @@ async def test_managed_system_fallback_does_not_catch_runtime_errors(mock_hmc):
             await hmc.list_managed_systems()
 
 
+@pytest.mark.asyncio
+async def test_managed_system_serialization_failure_is_not_empty_inventory(mock_hmc):
+    firmware_error = HMCError(
+        "GET failed: Nested path contains null property",
+        status_code=500,
+        body="Nested path contains null property",
+    )
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=firmware_error)
+        with pytest.raises(HMCError, match="firmware could not serialize") as exc_info:
+            await hmc.list_managed_systems()
+
+    assert exc_info.value.__cause__ is firmware_error
+
+
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:new-lpar-uuid</id>
@@ -645,6 +660,7 @@ async def test_fetch_json_rejects_non_object_document(mock_hmc):
         with pytest.raises(HMCError, match="JSON list; expected an object"):
             await hmc.fetch_json(path)
 
+
 @pytest.mark.asyncio
 async def test_fetch_json_404_raises(mock_hmc):
     """fetch_json raises HMCError on 404 like every other client method."""
@@ -932,6 +948,25 @@ async def test_wait_for_job_timeout_zero_still_polls_once(monkeypatch, mock_hmc)
 
     get_job.assert_awaited_once_with("job-1", job_href=None)
     sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("timeout_seconds", "poll_interval", "message"),
+    [(-1, 5, "timeout_seconds"), (5, -1, "poll_interval")],
+)
+async def test_wait_for_job_rejects_negative_timing_values(
+    mock_hmc, timeout_seconds, poll_interval, message
+):
+    async with HMCClient(make_config()) as hmc:
+        hmc.get_job = AsyncMock()
+        with pytest.raises(ValueError, match=message):
+            await hmc.wait_for_job(
+                "job-1",
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+        hmc.get_job.assert_not_awaited()
 
 
 # web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR

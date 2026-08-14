@@ -642,20 +642,18 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED"
 
 
-def test_recent_jobs_400_returns_graceful_error(monkeypatch, mock_hmc):
-    """hmc_recent_jobs returns a diagnostic error list when the HMC returns 400."""
+def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
+    monkeypatch, mock_hmc
+):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job").mock(
         return_value=httpx.Response(
             400, text="REST000E Unrecognized root REST type of Job"
         )
     )
-    result = hmc_recent_jobs()
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert result[0].get("type") == "error"
-    assert result[0].get("error") is not None
-    assert result[0].get("status_code") == 400
+    with pytest.raises(HMCError, match="hmc_get_job") as exc_info:
+        hmc_recent_jobs()
+    assert exc_info.value.status_code == 400
 
 
 def test_recent_jobs_unrelated_400_propagates(monkeypatch, mock_hmc):
