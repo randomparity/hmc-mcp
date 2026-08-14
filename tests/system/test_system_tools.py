@@ -164,6 +164,27 @@ def test_find_system_gets_one_by_name(monkeypatch, mock_hmc):
     assert result["Resource"]["State"] == "operating"
 
 
+def test_get_system_gets_one_by_uuid(monkeypatch, mock_hmc):
+    """hmc_get_system resolves a UUID through the direct resource endpoint."""
+    _hmc_env(monkeypatch)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                SYSTEM_UUID,
+                "ManagedSystem",
+                SystemName="p10-e1080",
+                State="operating",
+            ),
+        )
+    )
+
+    result = hmc_get_system(SYSTEM_UUID)
+
+    assert result is not None
+    assert result["UUID"] == SYSTEM_UUID
+
+
 def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
     """An inventory error during a system lookup preserves its status code."""
     _hmc_env(monkeypatch)

@@ -174,7 +174,7 @@ Exposed tools:
 | `hmc_console_info`            | HMC version/network info; cheap connectivity check |
 | `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
 | `hmc_list_systems`            | All managed systems, optionally filtered by state |
-| `hmc_get_system`              | One managed system by exact SystemName |
+| `hmc_get_system`              | One managed system by exact SystemName or UUID |
 | `hmc_list_lpars`              | All LPARs, optionally filtered by system or state |
 | `hmc_get_lpar`                | One LPAR by name or UUID |
 | `hmc_get_lpar_state`          | Quick state lookup for one LPAR by name or UUID |

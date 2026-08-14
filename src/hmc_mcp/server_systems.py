@@ -252,8 +252,10 @@ def hmc_list_resources(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_system(name: str, profile: str | None = None) -> dict[str, Any] | None:
-    """Find a managed system by its SystemName (exact match).
+def hmc_get_system(
+    system_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get a managed system by exact SystemName or UUID.
 
     Returns the full system dict if found, or None if no system with that
     name is known to the HMC.
@@ -261,7 +263,9 @@ def hmc_get_system(name: str, profile: str | None = None) -> dict[str, Any] | No
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.find_system_by_name(name)
+            if is_uuid(system_name_or_uuid):
+                return await hmc.get_managed_system(system_name_or_uuid)
+            return await hmc.find_system_by_name(system_name_or_uuid)
 
     return _run(_go)
 

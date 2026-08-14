@@ -393,7 +393,7 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
                 context.system_uuid = first[0].get("UUID")
 
     st, data = await call(
-        client, "hmc_get_system", name=context.system_name
+        client, "hmc_get_system", system_name_or_uuid=context.system_name
     )
     record(state, 1, "hmc_get_system (single)", st, data)
     # Fall back: extract system UUID from the single-system lookup if the list
@@ -429,7 +429,9 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     st, data = await call(client, "hmc_find_placement", desired_memory_mb=1024)
     record(state, 1, "hmc_find_placement", st, data)
 
-    st, data = await call(client, "hmc_get_system", name=context.system_name)
+    st, data = await call(
+        client, "hmc_get_system", system_name_or_uuid=context.system_name
+    )
     record(state, 1, "hmc_get_system", st, data)
 
     st, data = await call(
@@ -791,7 +793,7 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
 
     if not context.system_uuid:
         st2, d2 = await call(
-            client, "hmc_get_system", name=context.system_name
+            client, "hmc_get_system", system_name_or_uuid=context.system_name
         )
         if st2 == "PASS" and isinstance(d2, dict):
             context.system_uuid = d2.get("UUID") or d2.get("uuid")
