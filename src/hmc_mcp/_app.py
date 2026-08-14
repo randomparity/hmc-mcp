@@ -14,8 +14,8 @@ cycles).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any, TypeVar
 
 import httpx
 from fastmcp import FastMCP
@@ -24,6 +24,8 @@ from mcp.types import ToolAnnotations
 from .common import client_from_env, is_uuid
 from .config import HMCConfig
 from .ssh import _ssh_lpar_name, _ssh_system_name
+
+_T = TypeVar("_T")
 
 mcp = FastMCP(
     name="hmc-mcp",
@@ -170,7 +172,7 @@ DESTRUCTIVE_TOOLS = frozenset({
 })
 
 
-def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
+def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
 
@@ -310,12 +312,12 @@ async def _resolve_vios_uuid(hmc, vios_name_or_uuid: str) -> str:
 
 
 def _ssh_with_client(
-    fn,
+    fn: Callable[[HMCConfig, str | None, str | None], Awaitable[_T]],
     *,
-    system_name_or_uuid=None,
-    lpar_name_or_uuid=None,
+    system_name_or_uuid: str | None = None,
+    lpar_name_or_uuid: str | None = None,
     profile: str | None = None,
-):
+) -> _T:
     """Resolve name-or-uuid args to CLI names, then run an SSH tool body.
 
     Collapses the pervasive ``async def _go`` + name resolution + ``_run``
@@ -334,7 +336,7 @@ def _ssh_with_client(
     REST name-resolution leg so that both operations target the same HMC.
     Selection is local to this call with no cross-call shared state.
     """
-    async def _go():
+    async def _go() -> _T:
         config = client_from_env(profile).config
         system_name = await _resolve_system_name(config, system_name_or_uuid, profile)
         lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name, profile)

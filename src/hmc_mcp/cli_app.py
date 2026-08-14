@@ -20,14 +20,18 @@ import asyncio
 import json
 import socket
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, NoReturn
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any, NoReturn, TypeVar
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from .common import client_from_env, is_uuid, run_with_client
+from .client import HMCClient
 from .config import HMCConfig
+
+_T = TypeVar("_T")
 
 app = typer.Typer(
     name="hmc-mcp",
@@ -143,15 +147,21 @@ def _ssh_config() -> HMCConfig:
                 if overrides:
                     merged = {k: getattr(base, k) for k in base.model_fields}
                     merged.update(overrides)
-                    return HMCConfig(_env_file=None, **merged)  # type: ignore[call-arg]
+                    return HMCConfig(
+                        _env_file=None,  # ty: ignore[unknown-argument]
+                        **merged,
+                    )
                 return base
             except ConfigError:
                 pass
 
-    return HMCConfig(_env_file=None, **overrides)  # type: ignore[call-arg]
+    return HMCConfig(
+        _env_file=None,  # ty: ignore[unknown-argument]
+        **overrides,  # ty: ignore[invalid-argument-type]
+    )
 
 
-def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
+def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure, routing failures to the CLI error path.
 
     typer.Abort propagates so typer renders its own "Aborted." message;
@@ -165,7 +175,7 @@ def _run(fn: Callable[[], Awaitable[Any]]) -> Any:
         _fail(exc)
 
 
-def _with_client(fn: Callable[[Any], Awaitable[Any]]) -> Any:
+def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
     """Run an async client call against the global connection options.
 
     Collapses the pervasive ``async def _go`` + ``X = _run(_go)`` idiom into
@@ -272,7 +282,7 @@ def _is_loopback(host: str) -> bool:
         return False
     return any(
         addr[0] in (socket.AF_INET, socket.AF_INET6)
-        and (addr[4][0].startswith("127.") or addr[4][0] == "::1")
+        and (str(addr[4][0]).startswith("127.") or addr[4][0] == "::1")
         for addr in infos
     )
 
@@ -292,4 +302,3 @@ async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
     if not found or not found.get("UUID"):
         return None
     return str(found["UUID"])
-

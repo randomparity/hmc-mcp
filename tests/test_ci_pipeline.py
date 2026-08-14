@@ -15,6 +15,9 @@ TOOL_PINS = {
     "zizmor==1.29.0",
 }
 TY_INCLUDE = [
+    "src/hmc_mcp/_app.py",
+    "src/hmc_mcp/cli_app.py",
+    "src/hmc_mcp/common.py",
     "src/hmc_mcp/config.py",
     "src/hmc_mcp/documents.py",
     "src/hmc_mcp/errors.py",

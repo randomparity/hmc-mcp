@@ -6,10 +6,12 @@ import asyncio
 import os
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TypeVar
 
 from .client import HMCClient
 from .config import ConfigError, HMCConfig, load_profile, resolve_config_path
+
+_T = TypeVar("_T")
 
 # Canonical UUID shape: 8-4-4-4-12 hex groups. Any 36-char dash-containing
 # string is NOT a UUID (system/partition names can collide with that shape), so
@@ -53,7 +55,10 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                     # Merge overrides on top of the loaded profile values
                     merged = {k: getattr(base, k) for k in base.model_fields}
                     merged.update(filtered)
-                    base = HMCConfig(_env_file=None, **merged)  # type: ignore[call-arg]
+                    base = HMCConfig(
+                        _env_file=None,  # ty: ignore[unknown-argument]
+                        **merged,
+                    )
                 return HMCClient(base)
             except ConfigError:
                 if profile:
@@ -63,21 +68,24 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                     raise
                 pass  # No profile specified; fall through to env-var-only construction
 
-    config = HMCConfig(_env_file=None, **filtered)  # type: ignore[call-arg]
+    config = HMCConfig(
+        _env_file=None,  # ty: ignore[unknown-argument]
+        **filtered,
+    )
     return HMCClient(config)
 
 
 def run_with_client(
     client_factory: Callable[[], HMCClient],
-    fn: Callable[[HMCClient], Awaitable[Any]],
-) -> Any:
+    fn: Callable[[HMCClient], Awaitable[_T]],
+) -> _T:
     """Open an HMC client from *client_factory*, run async *fn*, return the result.
 
     Shared by CLI commands (:func:`hmc_mcp.cli_app._with_client`).
     *client_factory* is what varies — env-only config for the server,
     env-plus-CLI-flag overrides for the CLI.
     """
-    async def _go() -> Any:
+    async def _go() -> _T:
         async with client_factory() as hmc:
             return await fn(hmc)
     return asyncio.run(_go())
