@@ -6,12 +6,11 @@ from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
-    _resolve_lpar_uuid,
     _run,
     mcp,
 )
 
-from .common import client_from_env
+from .common import client_from_env, resolve_lpar_uuid
 from .jobs import wait_for_submitted_job
 
 
@@ -53,7 +52,7 @@ def hmc_migrate_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await _job_op(
                 hmc,
                 lambda hmc2: hmc2.lpar_migrate(
@@ -87,7 +86,7 @@ def hmc_migrate_validate_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await _job_op(
                 hmc,
                 lambda hmc2: hmc2.lpar_migrate_validate(
@@ -113,7 +112,7 @@ def hmc_migrate_abort_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_migrate_abort(lpar_uuid)
 
     return _run(_go)
@@ -131,7 +130,7 @@ def hmc_migrate_recover_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_migrate_recover(lpar_uuid)
 
     return _run(_go)
@@ -149,7 +148,7 @@ def hmc_remote_restart_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.lpar_remote_restart(lpar_uuid, target_system)
 
     return _run(_go)

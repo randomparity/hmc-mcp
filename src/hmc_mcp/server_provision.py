@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._app import _run, mcp
+from .common import client_from_env
 from .documents import PartitionType, StorageKind
 from .operations_provision import provision_lpar
 
@@ -31,25 +32,28 @@ def hmc_provision_lpar(
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Provision an LPAR with network, vSCSI storage, and optional power-on."""
-    return _run(
-        lambda: provision_lpar(
-            system_name_or_uuid=system_name_or_uuid,
-            name=name,
-            port_vlan_id=port_vlan_id,
-            vios_uuid=vios_uuid,
-            vios_partition_id=vios_partition_id,
-            vios_slot=vios_slot,
-            storage_name=storage_name,
-            partition_type=partition_type,
-            min_memory=min_memory,
-            desired_memory=desired_memory,
-            max_memory=max_memory,
-            desired_vcpus=desired_vcpus,
-            max_vcpus=max_vcpus,
-            storage_kind=storage_kind,
-            vg_uuid=vg_uuid,
-            power_on=power_on,
-            dry_run=dry_run,
-            profile=profile,
-        )
-    )
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await provision_lpar(
+                hmc,
+                system_name_or_uuid=system_name_or_uuid,
+                name=name,
+                port_vlan_id=port_vlan_id,
+                vios_uuid=vios_uuid,
+                vios_partition_id=vios_partition_id,
+                vios_slot=vios_slot,
+                storage_name=storage_name,
+                partition_type=partition_type,
+                min_memory=min_memory,
+                desired_memory=desired_memory,
+                max_memory=max_memory,
+                desired_vcpus=desired_vcpus,
+                max_vcpus=max_vcpus,
+                storage_kind=storage_kind,
+                vg_uuid=vg_uuid,
+                power_on=power_on,
+                dry_run=dry_run,
+            )
+
+    return _run(_go)

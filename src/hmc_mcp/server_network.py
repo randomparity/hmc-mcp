@@ -7,14 +7,13 @@ from typing import Any
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _resolve_system_uuid,
     _run,
     _ssh_with_client,
     mcp,
 )
 
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, resolve_system_uuid
 from .ssh_commands import (
     SriovMode,
     add_vnic,
@@ -53,7 +52,7 @@ def hmc_list_virtual_switches(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_virtual_switches(system_uuid)
 
     return _run(_go)
@@ -71,7 +70,7 @@ def hmc_list_virtual_networks(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_virtual_networks(system_uuid)
 
     return _run(_go)
@@ -97,7 +96,7 @@ def hmc_create_virtual_network(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             try:
                 return await hmc.create_virtual_network(
                     system_uuid, name, vlan_id, vswitch_id, tagged=tagged
@@ -124,7 +123,7 @@ def hmc_delete_virtual_network(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             await hmc.delete_virtual_network(system_uuid, network_uuid)
         return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
 
@@ -143,7 +142,7 @@ def hmc_list_network_bridges(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.list_network_bridges(system_uuid)
 
     return _run(_go)

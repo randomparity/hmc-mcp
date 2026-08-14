@@ -5,13 +5,19 @@ from __future__ import annotations
 from typing import Any
 
 from ._app import _READ_ONLY, _run, mcp
+from .common import client_from_env
 from .operations_capacity import capacity_report, find_placement
 
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     """Report assigned and available memory and processors by system."""
-    return _run(lambda: capacity_report(profile))
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await capacity_report(hmc)
+
+    return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -21,4 +27,9 @@ def hmc_find_placement(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Rank systems able to host an LPAR with the requested capacity."""
-    return _run(lambda: find_placement(desired_memory_mb, desired_proc_units, profile))
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await find_placement(hmc, desired_memory_mb, desired_proc_units)
+
+    return _run(_go)

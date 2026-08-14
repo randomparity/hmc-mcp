@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from ._app import _resolve_system_uuid
-from .common import client_from_env
+from .client import HMCClient
+from .common import resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
 from .operations_lpar import LparCreation, create_and_stamp_lpar
@@ -99,6 +99,7 @@ async def _run_steps(
 
 
 async def provision_lpar(
+    hmc: HMCClient,
     system_name_or_uuid: str,
     name: str,
     port_vlan_id: int,
@@ -116,7 +117,6 @@ async def provision_lpar(
     vg_uuid: str | None = None,
     power_on: bool = True,
     dry_run: bool = False,
-    profile: str | None = None,
 ) -> dict[str, Any]:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -180,105 +180,104 @@ async def provision_lpar(
       ``None`` when the stamp was not attempted.
     """
 
-    async with client_from_env(profile) as hmc:
-        # ----------------------------------------------------------------
-        # 1. Resolve system UUID
-        # ----------------------------------------------------------------
-        system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+    # ----------------------------------------------------------------
+    # 1. Resolve system UUID
+    # ----------------------------------------------------------------
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
 
-        # ----------------------------------------------------------------
-        # 2. Preconditions (always, including dry-run)
-        # ----------------------------------------------------------------
-        await _check_name_unique(hmc, name)
-        await _check_vlan_exists(hmc, system_uuid, port_vlan_id)
-        if vg_uuid is not None:
-            await _check_vg_exists(hmc, vios_uuid, vg_uuid)
+    # ----------------------------------------------------------------
+    # 2. Preconditions (always, including dry-run)
+    # ----------------------------------------------------------------
+    await _check_name_unique(hmc, name)
+    await _check_vlan_exists(hmc, system_uuid, port_vlan_id)
+    if vg_uuid is not None:
+        await _check_vg_exists(hmc, vios_uuid, vg_uuid)
 
-        # ----------------------------------------------------------------
-        # 3. Dry-run exit
-        # ----------------------------------------------------------------
-        step_names = ["create", "network", "vscsi", "storage"]
-        if power_on:
-            step_names.append("power_on")
+    # ----------------------------------------------------------------
+    # 3. Dry-run exit
+    # ----------------------------------------------------------------
+    step_names = ["create", "network", "vscsi", "storage"]
+    if power_on:
+        step_names.append("power_on")
 
-        if dry_run:
-            return {
-                "created": False,
-                "dry_run": True,
-                "ownership_stamped": None,
-                "steps": [_step(n, "dry_run") for n in step_names],
-                "warnings": [],
-            }
-
-        # ----------------------------------------------------------------
-        # 4. Build LPAR XML
-        # ----------------------------------------------------------------
-        resources = LparResources(
-            min_memory=min_memory,
-            desired_memory=desired_memory,
-            max_memory=max_memory,
-            desired_vcpus=desired_vcpus,
-            max_vcpus=max_vcpus,
-        )
-        lpar_xml = build_lpar_document(
-            name=name,
-            partition_type=partition_type,
-            resources=resources,
-        )
-
-        creation_result: dict[str, Any] = {}
-        lpar_uuid: str | None = None
-
-        async def create() -> Any:
-            nonlocal creation_result, lpar_uuid
-            creation_result = await create_and_stamp_lpar(
-                hmc,
-                system_uuid,
-                system_name_or_uuid,
-                LparCreation(name, partition_type, resources),
-                lpar_xml,
-            )
-            created_lpar = creation_result["lpar"]
-            lpar_uuid = (created_lpar or {}).get("UUID")
-            if not lpar_uuid:
-                raise ValueError("LPAR creation returned no UUID")
-            return created_lpar
-
-        async def network() -> Any:
-            assert lpar_uuid is not None
-            return await hmc.add_network_adapter(lpar_uuid, port_vlan_id)
-
-        async def vscsi() -> Any:
-            assert lpar_uuid is not None
-            return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot)
-
-        async def storage() -> Any:
-            assert lpar_uuid is not None
-            return await hmc.map_storage_to_lpar(
-                vios_uuid, storage_kind, storage_name, lpar_uuid
-            )
-
-        async def start() -> Any:
-            assert lpar_uuid is not None
-            return await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-                power_on_lpar_job(),
-            )
-
-        operations = [
-            ("create", create),
-            ("network", network),
-            ("vscsi", vscsi),
-            ("storage", storage),
-        ]
-        if power_on:
-            operations.append(("power_on", start))
-        created, steps = await _run_steps(operations)
-
+    if dry_run:
         return {
-            "created": created,
-            "dry_run": False,
-            "ownership_stamped": creation_result.get("ownership_stamped"),
-            "steps": steps,
-            "warnings": creation_result.get("warnings", []),
+            "created": False,
+            "dry_run": True,
+            "ownership_stamped": None,
+            "steps": [_step(n, "dry_run") for n in step_names],
+            "warnings": [],
         }
+
+    # ----------------------------------------------------------------
+    # 4. Build LPAR XML
+    # ----------------------------------------------------------------
+    resources = LparResources(
+        min_memory=min_memory,
+        desired_memory=desired_memory,
+        max_memory=max_memory,
+        desired_vcpus=desired_vcpus,
+        max_vcpus=max_vcpus,
+    )
+    lpar_xml = build_lpar_document(
+        name=name,
+        partition_type=partition_type,
+        resources=resources,
+    )
+
+    creation_result: dict[str, Any] = {}
+    lpar_uuid: str | None = None
+
+    async def create() -> Any:
+        nonlocal creation_result, lpar_uuid
+        creation_result = await create_and_stamp_lpar(
+            hmc,
+            system_uuid,
+            system_name_or_uuid,
+            LparCreation(name, partition_type, resources),
+            lpar_xml,
+        )
+        created_lpar = creation_result["lpar"]
+        lpar_uuid = (created_lpar or {}).get("UUID")
+        if not lpar_uuid:
+            raise ValueError("LPAR creation returned no UUID")
+        return created_lpar
+
+    async def network() -> Any:
+        assert lpar_uuid is not None
+        return await hmc.add_network_adapter(lpar_uuid, port_vlan_id)
+
+    async def vscsi() -> Any:
+        assert lpar_uuid is not None
+        return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot)
+
+    async def storage() -> Any:
+        assert lpar_uuid is not None
+        return await hmc.map_storage_to_lpar(
+            vios_uuid, storage_kind, storage_name, lpar_uuid
+        )
+
+    async def start() -> Any:
+        assert lpar_uuid is not None
+        return await hmc.submit_job(
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+            power_on_lpar_job(),
+        )
+
+    operations = [
+        ("create", create),
+        ("network", network),
+        ("vscsi", vscsi),
+        ("storage", storage),
+    ]
+    if power_on:
+        operations.append(("power_on", start))
+    created, steps = await _run_steps(operations)
+
+    return {
+        "created": created,
+        "dry_run": False,
+        "ownership_stamped": creation_result.get("ownership_stamped"),
+        "steps": steps,
+        "warnings": creation_result.get("warnings", []),
+    }

@@ -53,7 +53,11 @@ def lpars_summary(
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
     from .operations_composite import lpar_summary
 
-    summary = _run(lambda: lpar_summary(name_or_uuid))
+    async def _go():
+        async with _client() as hmc:
+            return await lpar_summary(hmc, name_or_uuid)
+
+    summary = _run(_go)
 
     if as_json:
         _print_json(summary)
@@ -634,25 +638,30 @@ def lpars_provision(
             abort=True,
         )
 
-    result = _run(lambda: provision_lpar(
-        system_name_or_uuid=system,
-        name=name,
-        port_vlan_id=port_vlan_id,
-        vios_uuid=vios_uuid,
-        vios_partition_id=vios_partition_id,
-        vios_slot=vios_slot,
-        storage_name=storage_name,
-        partition_type=cast(PartitionType, partition_type),
-        min_memory=min_memory,
-        desired_memory=memory,
-        max_memory=max_memory,
-        desired_vcpus=vcpus,
-        max_vcpus=max_vcpus,
-        storage_kind=cast(StorageKind, storage_kind),
-        vg_uuid=vg_uuid,
-        power_on=power_on,
-        dry_run=dry_run,
-    ))
+    async def _go():
+        async with _client() as hmc:
+            return await provision_lpar(
+                hmc,
+                system_name_or_uuid=system,
+                name=name,
+                port_vlan_id=port_vlan_id,
+                vios_uuid=vios_uuid,
+                vios_partition_id=vios_partition_id,
+                vios_slot=vios_slot,
+                storage_name=storage_name,
+                partition_type=cast(PartitionType, partition_type),
+                min_memory=min_memory,
+                desired_memory=memory,
+                max_memory=max_memory,
+                desired_vcpus=vcpus,
+                max_vcpus=max_vcpus,
+                storage_kind=cast(StorageKind, storage_kind),
+                vg_uuid=vg_uuid,
+                power_on=power_on,
+                dry_run=dry_run,
+            )
+
+    result = _run(_go)
 
     if as_json:
         _print_json(result)

@@ -6,14 +6,16 @@ from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
-    _resolve_lpar_uuid,
-    _resolve_system_uuid,
-    _resolve_vios_uuid,
     _run,
     mcp,
 )
 from .client import HMCError
-from .common import client_from_env
+from .common import (
+    client_from_env,
+    resolve_lpar_uuid,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from .documents import (
     Keylock,
     LparResources,
@@ -131,7 +133,7 @@ def hmc_create_lpar(
                     "or delete the existing partition first."
                 )
 
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             try:
                 return await create_and_stamp_lpar(
                     hmc,
@@ -199,7 +201,7 @@ def hmc_modify_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -249,7 +251,7 @@ def hmc_dlpar_proc(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -296,7 +298,7 @@ def hmc_modify_system(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.modify_managed_system(system_uuid, xml)
 
     return _run(_go)
@@ -329,7 +331,7 @@ def hmc_dlpar_mem(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -365,7 +367,7 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             state = await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )
@@ -417,7 +419,7 @@ def hmc_power_on_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             if not force:
                 state = await hmc.get_quick_property(
                     "LogicalPartition", lpar_uuid, "PartitionState"
@@ -464,7 +466,7 @@ def hmc_power_off_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await _power_op(
                 hmc,
                 lambda client: client.submit_job(
@@ -496,7 +498,7 @@ def hmc_power_on_system(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await _power_op(
                 hmc,
                 lambda client: client.power_on_system(system_uuid),
@@ -525,7 +527,7 @@ def hmc_power_off_system(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await _power_op(
                 hmc,
                 lambda client: client.power_off_system(system_uuid, immediate),
@@ -554,7 +556,7 @@ def hmc_power_on_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await _power_op(
                 hmc,
                 lambda client: client.power_on_vios(vios_uuid),
@@ -583,7 +585,7 @@ def hmc_power_off_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await _power_op(
                 hmc,
                 lambda client: client.power_off_vios(vios_uuid, immediate),

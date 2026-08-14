@@ -79,6 +79,45 @@ def client_from_env(profile: str | None = None, **overrides: Any) -> HMCClient:
     return HMCClient(build_config(profile=profile, **overrides))
 
 
+async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
+    """Resolve a managed-system name or pass through its UUID."""
+    if is_uuid(value):
+        return value
+    entry = await hmc.find_system_by_name(value)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No managed system named {value!r} found. "
+            "Use hmc_systems to list available systems."
+        )
+    return str(entry["UUID"])
+
+
+async def resolve_lpar_uuid(hmc: HMCClient, value: str) -> str:
+    """Resolve an LPAR name or pass through its UUID."""
+    if is_uuid(value):
+        return value
+    entry = await hmc.find_partition_by_name(value)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No LPAR named {value!r} found. "
+            "Use hmc_lpars to list available partitions."
+        )
+    return str(entry["UUID"])
+
+
+async def resolve_vios_uuid(hmc: HMCClient, value: str) -> str:
+    """Resolve a VIOS name or pass through its UUID."""
+    if is_uuid(value):
+        return value
+    entry = await hmc.find_vios_by_name(value)
+    if not entry or not entry.get("UUID"):
+        raise ValueError(
+            f"No VIOS named {value!r} found. "
+            "Use hmc_vios to list available Virtual I/O Servers."
+        )
+    return str(entry["UUID"])
+
+
 def run_with_client(
     client_factory: Callable[[], HMCClient],
     fn: Callable[[HMCClient], Awaitable[_T]],
@@ -89,7 +128,9 @@ def run_with_client(
     *client_factory* is what varies — env-only config for the server,
     env-plus-CLI-flag overrides for the CLI.
     """
+
     async def _go() -> _T:
         async with client_factory() as hmc:
             return await fn(hmc)
+
     return asyncio.run(_go())

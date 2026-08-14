@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import client_from_env
+from .client import HMCClient
 
 
 def system_capacity(
@@ -42,25 +42,24 @@ def system_capacity(
     }
 
 
-async def capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
+async def capacity_report(hmc: HMCClient) -> list[dict[str, Any]]:
     """Return capacity statistics for every managed system."""
-    async with client_from_env(profile) as hmc:
-        systems = await hmc.list_managed_systems()
-        result = []
-        for system in systems:
-            uuid = system.get("UUID")
-            lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-            result.append(system_capacity(system, lpars))
-        return result
+    systems = await hmc.list_managed_systems()
+    result = []
+    for system in systems:
+        uuid = system.get("UUID")
+        lpars = await hmc.list_logical_partitions(uuid) if uuid else []
+        result.append(system_capacity(system, lpars))
+    return result
 
 
 async def find_placement(
+    hmc: HMCClient,
     desired_memory_mb: int,
     desired_proc_units: float = 0.5,
-    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return systems with sufficient free resources, best fit first."""
-    report = await capacity_report(profile)
+    report = await capacity_report(hmc)
     candidates = [
         capacity
         for capacity in report

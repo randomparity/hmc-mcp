@@ -194,7 +194,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     resolver = AsyncMock(return_value="00000000-0000-0000-0000-000000000003")
 
-    with patch("hmc_mcp.server_vios._resolve_vios_uuid", resolver):
+    with patch("hmc_mcp.server_vios.resolve_vios_uuid", resolver):
         hmc_install_vios(
             "vios1",
             nim_ip="192.168.1.10",

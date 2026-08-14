@@ -7,13 +7,16 @@ from typing import Any
 
 from ._app import (
     _READ_ONLY,
-    _resolve_lpar_uuid,
-    _resolve_system_uuid,
-    _resolve_vios_uuid,
     _run,
     mcp,
 )
-from .common import client_from_env, is_uuid
+from .common import (
+    client_from_env,
+    is_uuid,
+    resolve_lpar_uuid,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from .config import HMCConfig, resolve_config_path
 
 
@@ -120,7 +123,7 @@ def hmc_systems(
                 if state is not None:
                     return await hmc.search_uom("ManagedSystem", "State", state)
                 return await hmc.list_managed_systems()
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.get_managed_system(system_uuid)
 
     return _run(_go)
@@ -153,7 +156,7 @@ def hmc_lpars(
                     return await hmc.get_logical_partition(lpar_name_or_uuid)
                 return await hmc.find_partition_by_name(lpar_name_or_uuid)
             if system_name_or_uuid is not None:
-                system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
             if state is not None:
                 return await hmc.search_uom("LogicalPartition", "PartitionState", state)
@@ -171,7 +174,7 @@ def hmc_get_lpar_state(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )
@@ -205,10 +208,10 @@ def hmc_vios(
     async def _go():
         async with client_from_env(profile) as hmc:
             if vios_name_or_uuid is not None:
-                vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+                vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
                 return await hmc.get_vios_storage_detail(vios_uuid)
             if system_name_or_uuid is not None:
-                system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_vios(system_uuid)
             if state is not None:
                 return await hmc.search_uom("VirtualIOServer", "PartitionState", state)

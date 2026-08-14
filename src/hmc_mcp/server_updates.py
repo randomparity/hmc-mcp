@@ -6,13 +6,11 @@ from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
-    _resolve_system_uuid,
-    _resolve_vios_uuid,
     _run,
     mcp,
 )
 
-from .common import client_from_env
+from .common import client_from_env, resolve_system_uuid, resolve_vios_uuid
 from .errors import HMCError
 from .jobs import (
     RepositorySource,
@@ -159,7 +157,7 @@ def hmc_vios_update(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             return await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
@@ -196,7 +194,7 @@ def hmc_update_firmware(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(

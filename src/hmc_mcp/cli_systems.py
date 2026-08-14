@@ -131,7 +131,11 @@ def systems_summary(
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
     from .operations_composite import system_summary
 
-    result = _run(lambda: system_summary(name_or_uuid))
+    async def _go():
+        async with _client() as hmc:
+            return await system_summary(hmc, name_or_uuid)
+
+    result = _run(_go)
     if as_json:
         _print_json(result)
         return
@@ -161,7 +165,11 @@ def systems_capacity(
     """Capacity report: memory/CPU totals and free resources per managed system."""
     from .operations_capacity import capacity_report
 
-    report = _run(capacity_report)
+    async def _go():
+        async with _client() as hmc:
+            return await capacity_report(hmc)
+
+    report = _run(_go)
     if as_json:
         _print_json(report)
         return
@@ -199,7 +207,11 @@ def systems_find_placement(
     """Find managed systems with enough free resources for a new LPAR."""
     from .operations_capacity import find_placement
 
-    candidates = _run(lambda: find_placement(memory, procs))
+    async def _go():
+        async with _client() as hmc:
+            return await find_placement(hmc, memory, procs)
+
+    candidates = _run(_go)
     if as_json:
         _print_json(candidates)
         return

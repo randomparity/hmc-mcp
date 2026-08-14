@@ -9,14 +9,17 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
-    _resolve_system_uuid,
-    _resolve_vios_uuid,
     _run,
     mcp,
 )
 
 from .client import HMCError
-from .common import build_config, client_from_env
+from .common import (
+    build_config,
+    client_from_env,
+    resolve_system_uuid,
+    resolve_vios_uuid,
+)
 from .jobs import install_lpar_job, install_vios_job, wait_for_submitted_job
 from .ssh import run_hmc_cli
 from .documents import build_vios_document
@@ -60,7 +63,7 @@ def hmc_create_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.create_logical_partition(system_uuid, xml)
 
     return _run(_go)
@@ -84,7 +87,7 @@ def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             state = await hmc.get_quick_property(
                 "LogicalPartition", vios_uuid, "PartitionState"
             )
@@ -134,7 +137,7 @@ def hmc_install_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             job = await hmc.submit_job(
                 f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
                 job_xml,

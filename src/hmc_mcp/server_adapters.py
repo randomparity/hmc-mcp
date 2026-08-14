@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._app import _DESTRUCTIVE, _READ_ONLY, _resolve_lpar_uuid, _run, mcp
+from ._app import _DESTRUCTIVE, _READ_ONLY, _run, mcp
 from .client_adapters import AdapterType, validate_adapter_type
-from .common import client_from_env
+from .common import client_from_env, resolve_lpar_uuid
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -20,7 +20,7 @@ def hmc_list_adapters(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.list_adapters(lpar_uuid, adapter_type)
 
     return _run(operation)
@@ -40,7 +40,7 @@ def hmc_add_network_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_network_adapter(
                 lpar_uuid,
                 port_vlan_id,
@@ -65,7 +65,7 @@ def hmc_add_vscsi_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_vscsi_adapter(
                 lpar_uuid, vios_partition_id, vios_slot, slot_number
             )
@@ -85,7 +85,7 @@ def hmc_add_vfc_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             return await hmc.add_vfc_adapter(
                 lpar_uuid, vios_partition_id, vios_slot, slot_number
             )
@@ -105,7 +105,7 @@ def hmc_delete_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 

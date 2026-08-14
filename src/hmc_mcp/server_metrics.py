@@ -6,14 +6,12 @@ from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
-    _resolve_lpar_uuid,
-    _resolve_system_uuid,
     _run,
     mcp,
 )
 
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, resolve_lpar_uuid, resolve_system_uuid
 from .pcm import newest_metric_link
 
 
@@ -38,14 +36,14 @@ async def _resolve_resource_uuid(
 ) -> str:
     """Resolve a PCM resource name-or-UUID based on its category.
 
-    For 'ManagedSystem' uses _resolve_system_uuid; for 'LogicalPartition'
-    uses _resolve_lpar_uuid. Other categories pass through untouched (only
+    For 'ManagedSystem' uses resolve_system_uuid; for 'LogicalPartition'
+    uses resolve_lpar_uuid. Other categories pass through untouched (only
     UUIDs are valid for other PCM resource types).
     """
     if category == "ManagedSystem":
-        return await _resolve_system_uuid(hmc, resource_name_or_uuid)
+        return await resolve_system_uuid(hmc, resource_name_or_uuid)
     if category == "LogicalPartition":
-        return await _resolve_lpar_uuid(hmc, resource_name_or_uuid)
+        return await resolve_lpar_uuid(hmc, resource_name_or_uuid)
     return resource_name_or_uuid
 
 
