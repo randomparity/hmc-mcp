@@ -7,7 +7,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 EXACT_REQUIREMENT = re.compile(
-    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)=="
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9._,-]+\])?=="
     r"(?P<version>[A-Za-z0-9][A-Za-z0-9.!+_-]*)$"
 )
 DEPENDABOT_CONFIG = """\
