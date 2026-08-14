@@ -10,6 +10,13 @@ owned by #161–#163 and remain outside this change.
 
 The governing decision is [ADR 0020](../../adr/0020-rolling-cpython-support-policy.md).
 
+The first Python 3.11 guardrail run exposed one source compatibility defect: Pydantic 2.13
+requires `typing_extensions.TypedDict` on Python versions below 3.12. With explicit operator
+authorization, `RepositorySource` in `src/hmc_mcp/jobs.py` uses that compatibility import while
+all other typing imports remain in the standard library. A focused Pydantic schema-construction
+test proves the failure path that triggered the scope amendment without changing the public job
+schema.
+
 ## Policy and workflow
 
 `pyproject.toml` is the installation authority and declares `requires-python = ">=3.11"`.
@@ -74,4 +81,6 @@ scheduled failure.
   passed to the drift job, fixed least privilege, immutable action pins, bounded jobs, and
   delegation to `just verify`.
 - Metadata tests prove the package floor, developer default, README policy, and lockfile floor.
+- A focused job-lifecycle test constructs Pydantic's adapter for `RepositorySource`, proving the
+  typed dictionary remains usable on Python 3.11 without changing its fields.
 - `just verify` remains the full local guardrail.
