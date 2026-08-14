@@ -162,6 +162,32 @@ class FakeHMC:
     async def delete_logical_partition(self, lpar_uuid):
         self._record("delete_logical_partition", lpar_uuid)
 
+    async def lpar_migrate(
+        self, lpar_uuid, target, profile=None, *, wait_time=None
+    ):
+        self._record("lpar_migrate", lpar_uuid, target, profile, wait_time=wait_time)
+        return self.job
+
+    async def lpar_migrate_validate(
+        self, lpar_uuid, target, profile=None, *, wait_time=None
+    ):
+        self._record(
+            "lpar_migrate_validate", lpar_uuid, target, profile, wait_time=wait_time
+        )
+        return self.job
+
+    async def lpar_migrate_abort(self, lpar_uuid):
+        self._record("lpar_migrate_abort", lpar_uuid)
+        return self.job
+
+    async def lpar_migrate_recover(self, lpar_uuid):
+        self._record("lpar_migrate_recover", lpar_uuid)
+        return self.job
+
+    async def lpar_remote_restart(self, lpar_uuid, target):
+        self._record("lpar_remote_restart", lpar_uuid, target)
+        return self.job
+
     async def create_volume_group(self, vios_uuid, name, physical_volumes):
         self._record("create_volume_group", vios_uuid, name, physical_volumes)
         return self.vg
@@ -1130,6 +1156,115 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "enabled"
+
+
+@pytest.mark.parametrize(
+    ("args", "expected_call"),
+    [
+        (
+            [
+                "lpars",
+                "migrate",
+                LPAR_NAME,
+                "--target",
+                "sys1",
+                "--profile",
+                "target-profile",
+                "--wait-time",
+                "60",
+                "--yes",
+            ],
+            (
+                "lpar_migrate",
+                (LPAR_UUID, "sys1", "target-profile"),
+                {"wait_time": 60},
+            ),
+        ),
+        (
+            ["lpars", "migrate-validate", LPAR_NAME, "--target", "sys1", "--yes"],
+            ("lpar_migrate_validate", (LPAR_UUID, "sys1", None), {"wait_time": None}),
+        ),
+        (
+            ["lpars", "migrate-abort", LPAR_NAME, "--yes"],
+            ("lpar_migrate_abort", (LPAR_UUID,), {}),
+        ),
+        (
+            ["lpars", "migrate-recover", LPAR_NAME, "--yes"],
+            ("lpar_migrate_recover", (LPAR_UUID,), {}),
+        ),
+        (
+            ["lpars", "remote-restart", LPAR_NAME, "--target", "sys1", "--yes"],
+            ("lpar_remote_restart", (LPAR_UUID, "sys1"), {}),
+        ),
+    ],
+)
+def test_lpm_commands_delegate_resolved_arguments(fake_hmc, args, expected_call):
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert expected_call in fake_hmc.calls
+    assert "Submitted" in result.stdout
+    assert LPAR_UUID in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("args", "command_fragments"),
+    [
+        (
+            ["lpars", "set-description", "lpar1", "sys1", "new text", "--yes"],
+            ("chsyscfg", "name=lpar1", "description=new text"),
+        ),
+        (
+            ["lpars", "set-msp", "lpar1", "sys1", "true", "--yes"],
+            ("chsyscfg", "name=lpar1", "msp=1"),
+        ),
+        (
+            ["lpars", "set-proc-compat", "lpar1", "sys1", "POWER10", "--yes"],
+            ("chsyscfg", "name=lpar1", "lpar_proc_compat_mode=POWER10"),
+        ),
+        (
+            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov", "--yes"],
+            ("chhwres", "P1-C1", "sriov"),
+        ),
+        (
+            [
+                "network",
+                "add-vnic",
+                "sys1",
+                "lpar1",
+                "--capacity",
+                "20",
+                "--vswitch",
+                "ETHERNET0",
+                "--vlan",
+                "100",
+                "--yes",
+            ],
+            ("chhwres", "lpar1", "20", "ETHERNET0", "100"),
+        ),
+        (
+            ["network", "remove-vnic", "sys1", "lpar1", "4", "--yes"],
+            ("chhwres", "lpar1", "4"),
+        ),
+    ],
+)
+def test_destructive_ssh_commands_delegate_valid_arguments(
+    monkeypatch, fake_hmc, args, command_fragments
+):
+    commands: list[str] = []
+
+    async def fake(_config, command):
+        commands.append(command)
+        if command.startswith("lssyscfg"):
+            return "vioserver\n"
+        return "updated\n"
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert all(fragment in commands[-1] for fragment in command_fragments)
 
 
 # --------------------------------------------------------------------------- #
