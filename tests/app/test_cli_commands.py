@@ -1554,9 +1554,60 @@ def test_templates_deploy(fake_hmc):
     )
 
     assert result.exit_code == 0
-    assert "Submitted deploy job" in result.stdout
+    assert "Deploy job" in result.stdout
+    assert "ownership stamp not attempted" in result.stdout
     assert fake_hmc.calls == [
         ("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {})
+    ]
+
+
+def test_templates_deploy_rejects_invalid_wait_timing_before_client_use(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "templates",
+            "deploy",
+            TEMPLATE_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--wait",
+            "--poll-interval",
+            "0",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "poll_interval must be greater than 0" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_templates_deploy_waits_through_shared_workflow(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "templates",
+            "deploy",
+            TEMPLATE_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--wait",
+            "--timeout",
+            "60",
+            "--poll-interval",
+            "1",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_hmc.calls == [
+        ("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {}),
+        (
+            "wait_for_job",
+            (JOB_UUID, 60, 1),
+            {"job_href": f"/jobs/{JOB_UUID}"},
+        ),
     ]
 
 

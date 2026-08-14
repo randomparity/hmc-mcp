@@ -13,12 +13,7 @@ from ._app import (
 from .errors import HMCError
 from .error_translation import translate_template_error
 from .common import client_from_env
-from .jobs import validate_wait_timing, wait_for_submitted_job
-
-_MANUAL_STAMP_WARNING = (
-    "ownership stamp not attempted: template deployment does not identify and stamp "
-    "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
-)
+from .operations_templates import deploy_partition_template
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -79,23 +74,15 @@ def hmc_deploy_partition_template(
     the new partition manually.
     """
 
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                job = await hmc.deploy_partition_template(
-                    draft_template_uuid, target_system_uuid
-                )
-            except HMCError as exc:
-                translate_template_error(exc)
-                raise
-            selected_job = await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+            return await deploy_partition_template(
+                hmc,
+                draft_template_uuid,
+                target_system_uuid,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
-            return {
-                "job": selected_job,
-                "warnings": [_MANUAL_STAMP_WARNING],
-            }
 
     return _run(_go)

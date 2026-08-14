@@ -10,11 +10,14 @@ from .cli_app import (
     _first_field,
     _output,
     _print_json,
+    _usage_error,
     _with_client,
     console,
     templates_app,
 )
 from .error_translation import run_with_error_translation, translate_template_error
+from .jobs import validate_wait_timing
+from .operations_templates import deploy_partition_template
 
 
 @templates_app.command("list")
@@ -56,20 +59,31 @@ def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> Non
 def templates_deploy(
     draft_uuid: str = typer.Argument(..., help="Draft (transformed) template UUID"),
     system: str = typer.Option(..., "--system", help="Target managed system UUID"),
+    wait: bool = typer.Option(False, "--wait", help="Wait for the deploy job"),
+    timeout_seconds: int = typer.Option(300, "--timeout"),
+    poll_interval: int = typer.Option(5, "--poll-interval"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Deploy a partition from a draft template (submits a job)."""
+    try:
+        validate_wait_timing(wait, timeout_seconds, poll_interval)
+    except ValueError as exc:
+        _usage_error(str(exc))
     if not yes and not typer.confirm(
         f"Deploy draft template {draft_uuid} to system {system}?"
     ):
         raise typer.Abort()
 
-    job = _with_client(
-        lambda hmc: run_with_error_translation(
-            lambda: hmc.deploy_partition_template(draft_uuid, system),
-            translate_template_error,
+    result = _with_client(
+        lambda hmc: deploy_partition_template(
+            hmc,
+            draft_uuid,
+            system,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
         )
     )
 
-    console.print(f"[green]Submitted deploy job for template {draft_uuid}[/green]")
-    _print_json(job)
+    console.print(f"[green]Deploy job for template {draft_uuid}[/green]")
+    _print_json(result)
