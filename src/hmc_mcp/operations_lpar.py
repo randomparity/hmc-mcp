@@ -141,8 +141,11 @@ async def _system_name(hmc, system_uuid: str, fallback: str) -> str:
         return fallback
 
 
-async def _stamp_ownership(
-    hmc, system_uuid: str, system_fallback: str, created_lpar: dict[str, Any]
+async def stamp_created_lpar_ownership(
+    hmc: HMCClient,
+    system_uuid: str,
+    system_fallback: str,
+    created_lpar: dict[str, Any],
 ) -> tuple[bool | None, list[str]]:
     confirmed_name = (created_lpar.get("Resource") or {}).get("PartitionName")
     if not confirmed_name:
@@ -220,7 +223,7 @@ async def create_and_stamp_lpar(
                 "create returned no LPAR body",
             ),
         )
-    ownership_stamped, warnings = await _stamp_ownership(
+    ownership_stamped, warnings = await stamp_created_lpar_ownership(
         hmc, system_uuid, system_name or system_name_or_uuid, created_lpar
     )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
