@@ -6,7 +6,13 @@ from typing import Any
 
 from ._app import _DESTRUCTIVE, _READ_ONLY, _run, mcp
 from .client_adapters import AdapterType, validate_adapter_type
-from .common import client_from_env, resolve_lpar_uuid
+from .common import client_from_env
+from .operations_adapters import (
+    add_network_adapter,
+    add_vios_adapter,
+    delete_adapter,
+    list_adapters,
+)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -17,11 +23,10 @@ def hmc_list_adapters(
 ) -> list[dict[str, Any]]:
     """List one LPAR's virtual adapters of the selected adapter type."""
     validate_adapter_type(adapter_type)
-
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.list_adapters(lpar_uuid, adapter_type)
+            _, adapters = await list_adapters(hmc, lpar_name_or_uuid, adapter_type)
+            return adapters
 
     return _run(operation)
 
@@ -40,15 +45,17 @@ def hmc_add_network_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.add_network_adapter(
-                lpar_uuid,
+            return (
+                await add_network_adapter(
+                hmc,
+                lpar_name_or_uuid,
                 port_vlan_id,
                 slot_number,
                 virtual_switch_id,
                 tagged,
                 mac_address,
-            )
+                )
+            ).resource
 
     return _run(operation)
 
@@ -65,10 +72,12 @@ def hmc_add_vscsi_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.add_vscsi_adapter(
-                lpar_uuid, vios_partition_id, vios_slot, slot_number
-            )
+            return (
+                await add_vios_adapter(
+                    hmc, lpar_name_or_uuid, vios_partition_id, vios_slot, slot_number,
+                    fibre_channel=False,
+                )
+            ).resource
 
     return _run(operation)
 
@@ -85,10 +94,12 @@ def hmc_add_vfc_adapter(
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.add_vfc_adapter(
-                lpar_uuid, vios_partition_id, vios_slot, slot_number
-            )
+            return (
+                await add_vios_adapter(
+                    hmc, lpar_name_or_uuid, vios_partition_id, vios_slot, slot_number,
+                    fibre_channel=True,
+                )
+            ).resource
 
     return _run(operation)
 
@@ -102,11 +113,9 @@ def hmc_delete_adapter(
 ) -> str:
     """Remove an adapter by UUID, detaching its network or storage path."""
     validate_adapter_type(adapter_type)
-
     async def operation():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)
+            await delete_adapter(hmc, lpar_name_or_uuid, adapter_type, adapter_uuid)
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 
     return _run(operation)
