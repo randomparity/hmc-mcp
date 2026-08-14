@@ -4,7 +4,7 @@ import httpx
 import pytest
 from defusedxml import ElementTree as ET
 
-from hmc_mcp.client import HMCError
+from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.jobs import (
     DEVICE_TYPES,
     LU_TYPES,
@@ -23,6 +23,8 @@ from hmc_mcp.server import (
     hmc_processed_metrics,
     hmc_set_pcm_preferences,
 )
+
+from conftest import make_config
 
 PCM_PREFS_XML = """<?xml version="1.0"?>
 <ManagementConsolePcmPreference xmlns="http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/">
@@ -137,6 +139,27 @@ def test_pcm_preferences_document():
     assert "LongTermMonitorEnabled" in xml and ">true<" in xml
     assert "AggregationEnabled" in xml and ">false<" in xml
     assert "ShortTermMonitorEnabled" not in xml  # only specified flags
+
+
+def test_pcm_preferences_document_rejects_unsupported_fields_in_sorted_order():
+    with pytest.raises(
+        ValueError,
+        match="Unsupported PCM preference fields: AlphaFlag, ZetaFlag",
+    ):
+        build_pcm_preferences_document(ZetaFlag=True, AlphaFlag=False)
+
+
+@pytest.mark.asyncio
+async def test_pcm_client_rejects_unsupported_field_before_post(mock_hmc):
+    post_route = mock_hmc.post(
+        "/rest/api/pcm/ManagedSystem/system-1/preferences"
+    ).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="Unsupported PCM preference fields: TypoFlag"):
+            await hmc.set_pcm_preferences("ManagedSystem", "system-1", TypoFlag=True)
+
+    assert not post_route.called
 
 
 def test_pcm_preferences_parse():

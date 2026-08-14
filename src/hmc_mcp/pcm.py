@@ -41,6 +41,10 @@ def build_pcm_preferences_document(**flags: bool) -> str:
     the HMC (it merges). Flags use the exact HMC field names, e.g.
     LongTermMonitorEnabled=True, AggregationEnabled=True.
     """
+    unsupported = sorted(set(flags) - set(PREFERENCE_FIELDS))
+    if unsupported:
+        raise ValueError(f"Unsupported PCM preference fields: {', '.join(unsupported)}")
+
     lines = []
     for name in PREFERENCE_FIELDS:
         if name in flags:
