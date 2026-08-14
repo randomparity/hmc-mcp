@@ -36,8 +36,27 @@ ACTION_PINS = {
         "53165ef7e734c5c07cb06b3c8e7b647c5aa16db3",  # pragma: allowlist secret
         "v4",
     ),
+    "docker/setup-qemu-action": (
+        "96fe6ef7f33517b61c61be40b68a1882f3264fb8",  # pragma: allowlist secret
+        "v4.2.0",
+    ),
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
+NATIVE_MATRIX = [
+    ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
+] + [("arm64", "ubuntu-24.04-arm", "3.11")]
+QEMU_IMAGE = (
+    "docker.io/tonistiigi/binfmt@"
+    "sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
+)
+PPC64LE_BASE = (
+    "ubuntu:24.04@"
+    "sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea"
+)
+UV_PPC64LE_SHA256 = (
+    "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
+    "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
+)
 SCORECARD_ACTION_PINS = {
     "actions/checkout": (
         "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
@@ -149,6 +168,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
     assert workflow.count("runs-on: ubuntu-24.04") == 2
+    assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
     expected_actions = {f"{action}@{sha}" for action, (sha, _) in ACTION_PINS.items()}
@@ -162,14 +182,47 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
         assert f"run: {command}" in workflow
 
 
-def test_github_ci_uses_an_explicit_supported_python_matrix() -> None:
+def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
-    matrix = re.search(r"matrix:\n\s+python-version: \[(?P<versions>[^]]+)\]", workflow)
-    assert matrix
-    assert re.findall(r'"(\d+\.\d+)"', matrix["versions"]) == SUPPORTED_PYTHONS
+    entries = re.findall(
+        r"- architecture: (\w+)\n\s+runner: ([\w.-]+)\n\s+python-version: \"([\d.]+)\"",
+        workflow,
+    )
+    assert entries == NATIVE_MATRIX
     assert "python-version: ${{ matrix.python-version }}" in workflow
     assert workflow.count("run: just verify") == 1
+    assert "architecture: [amd64, arm64]" not in workflow
+
+
+def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    dockerfile = (ROOT / ".github" / "containers" / "ppc64le.Dockerfile").read_text()
+
+    job = re.search(
+        r"^  ppc64le:\n(?P<body>.*?)(?=^  [\w-]+:|\Z)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert job
+    body = job["body"]
+    assert "runs-on: ubuntu-24.04" in body
+    assert "timeout-minutes: 30" in body
+    assert "platforms: ppc64le" in body
+    assert f"image: {QEMU_IMAGE}" in body
+    assert "cache-image: false" in body
+    assert body.count("--platform linux/ppc64le") == 2
+    assert "--mount type=bind,source=\"$GITHUB_WORKSPACE\",target=/workspace" in body
+    assert "-e " not in body
+    assert "/var/run/docker.sock" not in body
+
+    assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
+    assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
+    assert UV_PPC64LE_SHA256 in dockerfile
+    assert r'test \"$(uname -m)\" = \"ppc64le\"' in dockerfile
+    assert dockerfile.count("just setup") == 1
+    assert dockerfile.count("just verify") == 1
+    assert "COPY" not in dockerfile
 
 
 def test_scheduled_job_checks_the_same_explicit_versions() -> None:

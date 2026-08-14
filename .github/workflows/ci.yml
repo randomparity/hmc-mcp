@@ -16,11 +16,27 @@ concurrency:
 
 jobs:
   ci:
-    runs-on: ubuntu-24.04
+    name: ${{ matrix.architecture }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.11"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.12"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.13"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.14"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.11"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -42,6 +58,33 @@ jobs:
         run: just verify
       - name: Validate hooks
         run: uv run prek run --all-files
+
+  ppc64le:
+    name: ppc64le / Python 3.11 (QEMU)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Register the ppc64le emulator
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: ppc64le
+          cache-image: false
+      - name: Build the ppc64le verification environment
+        run: >-
+          docker build --platform linux/ppc64le
+          --file .github/containers/ppc64le.Dockerfile
+          --tag hmc-mcp-verify-ppc64le
+          .github/containers
+      - name: Run the verification suite under ppc64le emulation
+        run: >-
+          docker run --rm --platform linux/ppc64le
+          --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace
+          hmc-mcp-verify-ppc64le
 
   python-support-drift:
     if: github.event_name == 'schedule'
