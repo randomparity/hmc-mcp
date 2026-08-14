@@ -161,15 +161,34 @@ async def test_lpar_finder_scoped_zero_one_many(count):
     client.list_logical_partitions = AsyncMock(
         return_value=[*matches, _entry("other", "other", "LogicalPartition")]
     )
+    client.get_managed_system.return_value = _entry(
+        "sys-a", "system-a", "ManagedSystem"
+    )
 
     if count == 2:
-        with pytest.raises(ValueError, match="lpar-0.*lpar-1"):
+        with pytest.raises(ValueError, match="lpar-0.*system-a.*lpar-1"):
             await client.find_partition_by_name("shared", system_uuid="sys-a")
     else:
         expected = matches[0] if matches else None
         assert await client.find_partition_by_name(
             "shared", system_uuid="sys-a"
         ) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("parent", [None, {"UUID": "sys-a", "Resource": {}}])
+async def test_lpar_scoped_ambiguity_requires_parent_name(parent):
+    client = LparsHarness()
+    client.list_logical_partitions = AsyncMock(
+        return_value=[
+            _entry("lpar-a", "shared", "LogicalPartition"),
+            _entry("lpar-b", "shared", "LogicalPartition"),
+        ]
+    )
+    client.get_managed_system.return_value = parent
+
+    with pytest.raises(ValueError, match="cannot identify managed system sys-a"):
+        await client.find_partition_by_name("shared", system_uuid="sys-a")
 
 
 @pytest.mark.asyncio
@@ -362,12 +381,31 @@ async def test_vios_finder_scoped_zero_one_many(count):
     client.list_vios = AsyncMock(
         return_value=[*matches, _entry("other", "other", "VirtualIOServer")]
     )
+    client.get_managed_system = AsyncMock(
+        return_value=_entry("sys-a", "system-a", "ManagedSystem")
+    )
 
     if count == 2:
-        with pytest.raises(ValueError, match="vios-0.*vios-1"):
+        with pytest.raises(ValueError, match="vios-0.*system-a.*vios-1"):
             await client.find_vios_by_name("shared", system_uuid="sys-a")
     else:
         expected = matches[0] if matches else None
         assert await client.find_vios_by_name(
             "shared", system_uuid="sys-a"
         ) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("parent", [None, {"UUID": "sys-a", "Resource": {}}])
+async def test_vios_scoped_ambiguity_requires_parent_name(parent):
+    client = SystemsHarness()
+    client.list_vios = AsyncMock(
+        return_value=[
+            _entry("vios-a", "shared", "VirtualIOServer"),
+            _entry("vios-b", "shared", "VirtualIOServer"),
+        ]
+    )
+    client.get_managed_system = AsyncMock(return_value=parent)
+
+    with pytest.raises(ValueError, match="cannot identify managed system sys-a"):
+        await client.find_vios_by_name("shared", system_uuid="sys-a")

@@ -40,6 +40,11 @@ class LparsMixin:
             if len(results) > 1:
                 system = await self.get_managed_system(system_uuid)
                 system_name = (system or {}).get("Resource", {}).get("SystemName")
+                if not isinstance(system_name, str) or not system_name:
+                    raise ValueError(
+                        f"Cannot resolve ambiguous LPAR name {name!r}: cannot "
+                        f"identify managed system {system_uuid}"
+                    )
                 details = ", ".join(
                     f"{entry.get('UUID')} on {system_name!r} ({system_uuid})"
                     for entry in sorted(results, key=lambda item: str(item.get("UUID")))
