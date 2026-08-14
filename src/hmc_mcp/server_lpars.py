@@ -28,11 +28,10 @@ from .jobs import validate_wait_timing
 from .operations_lpar import (
     LparCreation,
     LparCreationResult,
-    authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
-    resolve_lpar_ownership_names,
+    rename_lpar,
 )
 
 
@@ -171,26 +170,21 @@ def hmc_rename_lpar(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Rename one LPAR after enforcing its ownership token."""
-    xml = build_lpar_document(name=new_name)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            system_name, lpar_name = await resolve_lpar_ownership_names(
-                hmc, system_uuid, system_name_or_uuid, lpar_uuid
-            )
-            await authorize_lpar_mutation(
-                hmc,
-                system_name,
-                lpar_name,
-                ownership_override=ownership_override,
-            )
             try:
-                return await hmc.modify_logical_partition(lpar_uuid, xml)
+                _, updated = await rename_lpar(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    new_name,
+                    ownership_override=ownership_override,
+                )
             except HMCError as exc:
                 _check_lpar_write_error(exc)
                 raise
+            return updated
 
     return _run(_go)
 

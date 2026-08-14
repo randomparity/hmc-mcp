@@ -9,7 +9,7 @@ from typing import Any
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
-from .documents import LparResources, PartitionType
+from .documents import LparResources, PartitionType, build_lpar_document
 from .errors import HMCError
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .ssh import HMCCLIError
@@ -261,3 +261,29 @@ async def power_lpar(
         f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document
     )
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
+
+
+async def rename_lpar(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    new_name: str,
+    *,
+    ownership_override: bool = False,
+) -> tuple[str, dict[str, Any] | None]:
+    """Resolve, authorize, and rename one LPAR."""
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+    updated = await hmc.modify_logical_partition(
+        lpar_uuid, build_lpar_document(name=new_name)
+    )
+    return lpar_uuid, updated

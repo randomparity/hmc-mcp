@@ -32,7 +32,7 @@ from .operations_lpar import (
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
-    resolve_lpar_ownership_names,
+    rename_lpar,
 )
 from .documents import (
     LparResources,
@@ -549,45 +549,58 @@ def lpars_modify(
         _usage_error("Nothing to change — pass at least one option")
     if new_name is not None and system is None:
         _usage_error("--system is required when renaming an LPAR")
-    rename_system = cast(str, system)
+    resources = LparResources(
+        min_memory=min_memory,
+        desired_memory=memory,
+        max_memory=max_memory,
+        dedicated=dedicated,
+        min_procs=min_procs,
+        desired_procs=procs,
+        max_procs=max_procs,
+        min_vcpus=min_vcpus,
+        desired_vcpus=vcpus,
+        max_vcpus=max_vcpus,
+        uncapped=None if capped is None else not capped,
+    )
+    has_resource_changes = any(
+        value is not None
+        for value in (
+            min_memory,
+            memory,
+            max_memory,
+            min_procs,
+            procs,
+            max_procs,
+            min_vcpus,
+            vcpus,
+            max_vcpus,
+            dedicated,
+            capped,
+        )
+    )
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None, None
             if not yes:
-                if not typer.confirm(
-                    f"Apply resource changes to '{name_or_uuid}' ({uuid})?"
-                ):
+                if not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
                     raise typer.Abort()
             if new_name is not None:
-                system_uuid = await resolve_system_uuid(hmc, rename_system)
-                system_name, lpar_name = await resolve_lpar_ownership_names(
-                    hmc, system_uuid, rename_system, uuid
-                )
-                await authorize_lpar_mutation(
+                uuid, updated = await rename_lpar(
                     hmc,
-                    system_name,
-                    lpar_name,
+                    cast(str, system),
+                    name_or_uuid,
+                    new_name,
                     ownership_override=ownership_override,
                 )
-            xml = build_lpar_document(
-                name=new_name,
-                resources=LparResources(
-                    min_memory=min_memory,
-                    desired_memory=memory,
-                    max_memory=max_memory,
-                    dedicated=dedicated,
-                    min_procs=min_procs,
-                    desired_procs=procs,
-                    max_procs=max_procs,
-                    min_vcpus=min_vcpus,
-                    desired_vcpus=vcpus,
-                    max_vcpus=max_vcpus,
-                    uncapped=None if capped is None else not capped,
-                ),
-            )
+                if not has_resource_changes:
+                    return uuid, updated
+                selector = uuid
+            else:
+                selector = name_or_uuid
+            uuid = await _resolve_partition_uuid(hmc, selector)
+            if uuid is None:
+                return None, None
+            xml = build_lpar_document(name=None, resources=resources)
             return uuid, await hmc.modify_logical_partition(uuid, xml)
 
     uuid, updated = _run(_go)
