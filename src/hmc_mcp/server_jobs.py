@@ -9,6 +9,15 @@ from .common import client_from_env
 from .errors import HMCError
 
 
+def _is_unsupported_job_listing(exc: HMCError) -> bool:
+    body = exc.body or ""
+    return (
+        exc.status_code == 400
+        and "REST000E" in body
+        and "Unrecognized root REST type of Job" in body
+    )
+
+
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_get_job(
     job_uuid: str,
@@ -38,7 +47,7 @@ def hmc_recent_jobs(
     try:
         jobs = _run(operation)
     except HMCError as exc:
-        if exc.status_code != 400:
+        if not _is_unsupported_job_listing(exc):
             raise
         return [
             {

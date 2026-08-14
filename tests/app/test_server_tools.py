@@ -263,9 +263,7 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
         hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="ded",
-            resources=LparResources(
-                dedicated=True, desired_procs=2.0, max_procs=4.0
-            ),
+            resources=LparResources(dedicated=True, desired_procs=2.0, max_procs=4.0),
         )
     body = route.calls.last.request.content.decode()
     assert "<DedicatedProcessorConfiguration" in body
@@ -600,6 +598,16 @@ def test_recent_jobs_400_returns_graceful_error(monkeypatch, mock_hmc):
     assert result[0].get("type") == "error"
     assert result[0].get("error") is not None
     assert result[0].get("status_code") == 400
+
+
+def test_recent_jobs_unrelated_400_propagates(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(400, text="REST0123E Invalid filter expression")
+    )
+
+    with pytest.raises(HMCError, match="Invalid filter expression"):
+        hmc_recent_jobs()
 
 
 _JOB_SELF_LINK = f"https://hmc.test:12443{_JOB_OP_HREF}"
