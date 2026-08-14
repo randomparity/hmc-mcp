@@ -515,6 +515,20 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert result.lpar_uuid == LPAR_UUID
 
 
+def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc):
+    """Programming defects are not disguised as ordinary partial results."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+
+    with patch(
+        "hmc_mcp.client.HMCClient.add_vscsi_adapter",
+        new=AsyncMock(side_effect=TypeError("adapter defect")),
+    ):
+        with pytest.raises(TypeError, match="adapter defect"):
+            hmc_provision_lpar(**_provision_args())
+
+
 def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_hmc):
     """A successful create with no response body is not reported as no creation."""
     _hmc_env(monkeypatch)

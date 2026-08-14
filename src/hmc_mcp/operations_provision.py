@@ -7,13 +7,14 @@ result and an optional dry-run that validates preconditions only.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any
 
 from .client import HMCClient
 from .common import resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
+from .errors import HMCError
 from .jobs import power_on_lpar_job
 from .operations_lpar import (
     LparCreation,
@@ -39,20 +40,6 @@ class ProvisionStorage:
     storage_name: str
     kind: StorageKind = "VirtualDisk"
     vg_uuid: str | None = None
-
-
-@dataclass
-class _ProvisionState:
-    """Validated output from the create step for later ordered steps."""
-
-    creation: LparCreationResult | None = None
-    resource_created: bool = False
-    created_uuid: str | None = None
-
-    def require_created_uuid(self) -> str:
-        if self.created_uuid is None:
-            raise RuntimeError("LPAR UUID is unavailable before the create step")
-        return self.created_uuid
 
 
 @dataclass(frozen=True)
@@ -137,22 +124,38 @@ def _step(name: str, status: str, result: Any = None) -> dict[str, Any]:
     return entry
 
 
-async def _run_steps(
-    operations: Sequence[tuple[str, Callable[[], Awaitable[Any]]]],
-) -> tuple[bool, list[dict[str, Any]]]:
-    """Run operations in order and skip every step after the first failure."""
-    steps: list[dict[str, Any]] = []
-    failed = False
-    for name, operation in operations:
-        if failed:
-            steps.append(_step(name, "skipped"))
-            continue
-        try:
-            steps.append(_step(name, "ok", await operation()))
-        except Exception as exc:
-            steps.append(_step(name, "error", str(exc)))
-            failed = True
-    return not failed, steps
+async def _record_hmc_step(
+    steps: list[dict[str, Any]], name: str, operation: Awaitable[Any]
+) -> bool:
+    """Record an expected HMC operation failure and propagate code defects."""
+    try:
+        result = await operation
+    except HMCError as exc:
+        steps.append(_step(name, "error", str(exc)))
+        return False
+    steps.append(_step(name, "ok", result))
+    return True
+
+
+def _skip_steps(steps: list[dict[str, Any]], names: list[str]) -> None:
+    steps.extend(_step(name, "skipped") for name in names)
+
+
+def _provision_result(
+    creation: LparCreationResult | None,
+    created_uuid: str | None,
+    steps: list[dict[str, Any]],
+    workflow_completed: bool,
+) -> ProvisionResult:
+    return ProvisionResult(
+        resource_created=creation.resource_created if creation else False,
+        workflow_completed=workflow_completed,
+        lpar_uuid=created_uuid,
+        dry_run=False,
+        ownership_stamped=creation.ownership_stamped if creation else None,
+        steps=tuple(steps),
+        warnings=creation.warnings if creation else (),
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -261,69 +264,68 @@ async def provision_lpar(
         resources=resources,
     )
 
-    state = _ProvisionState()
-
-    async def create() -> Any:
-        creation_result = await create_and_stamp_lpar(
+    steps: list[dict[str, Any]] = []
+    try:
+        creation = await create_and_stamp_lpar(
             hmc,
             system_uuid,
             system_name_or_uuid,
             LparCreation(name, partition_type, resources),
             lpar_xml,
         )
-        state.creation = creation_result
-        state.resource_created = creation_result.resource_created
-        created_lpar = creation_result.lpar
-        uuid = (created_lpar or {}).get("UUID")
-        if not isinstance(uuid, str) or not uuid:
-            raise ValueError("LPAR creation returned no UUID")
-        state.created_uuid = uuid
-        return created_lpar
+    except HMCError as exc:
+        steps.append(_step("create", "error", str(exc)))
+        _skip_steps(steps, step_names[1:])
+        return _provision_result(None, None, steps, False)
 
-    async def attach_network() -> Any:
-        return await hmc.add_network_adapter(
-            state.require_created_uuid(), network.port_vlan_id
-        )
+    created_lpar = creation.lpar
+    created_uuid = (created_lpar or {}).get("UUID")
+    if not isinstance(created_uuid, str) or not created_uuid:
+        steps.append(_step("create", "error", "LPAR creation returned no UUID"))
+        _skip_steps(steps, step_names[1:])
+        return _provision_result(creation, None, steps, False)
+    steps.append(_step("create", "ok", created_lpar))
 
-    async def vscsi() -> Any:
-        return await hmc.add_vscsi_adapter(
-            state.require_created_uuid(), network.vios_partition_id, network.vios_slot
-        )
+    if not await _record_hmc_step(
+        steps,
+        "network",
+        hmc.add_network_adapter(created_uuid, network.port_vlan_id),
+    ):
+        _skip_steps(steps, step_names[2:])
+        return _provision_result(creation, created_uuid, steps, False)
 
-    async def map_storage() -> Any:
-        return await hmc.map_storage_to_lpar(
+    if not await _record_hmc_step(
+        steps,
+        "vscsi",
+        hmc.add_vscsi_adapter(
+            created_uuid, network.vios_partition_id, network.vios_slot
+        ),
+    ):
+        _skip_steps(steps, step_names[3:])
+        return _provision_result(creation, created_uuid, steps, False)
+
+    if not await _record_hmc_step(
+        steps,
+        "storage",
+        hmc.map_storage_to_lpar(
             storage.vios_uuid,
             storage.kind,
             storage.storage_name,
-            state.require_created_uuid(),
-        )
+            created_uuid,
+        ),
+    ):
+        _skip_steps(steps, step_names[4:])
+        return _provision_result(creation, created_uuid, steps, False)
 
-    async def start() -> Any:
-        uuid = state.require_created_uuid()
-        return await hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn",
-            power_on_lpar_job(),
-        )
-
-    operations = [
-        ("create", create),
-        ("network", attach_network),
-        ("vscsi", vscsi),
-        ("storage", map_storage),
-    ]
     if power_on:
-        operations.append(("power_on", start))
-    workflow_completed, steps = await _run_steps(operations)
+        if not await _record_hmc_step(
+            steps,
+            "power_on",
+            hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{created_uuid}/do/PowerOn",
+                power_on_lpar_job(),
+            ),
+        ):
+            return _provision_result(creation, created_uuid, steps, False)
 
-    creation_result = state.creation
-    return ProvisionResult(
-        resource_created=state.resource_created,
-        workflow_completed=workflow_completed,
-        lpar_uuid=state.created_uuid,
-        dry_run=False,
-        ownership_stamped=creation_result.ownership_stamped
-        if creation_result
-        else None,
-        steps=tuple(steps),
-        warnings=creation_result.warnings if creation_result else (),
-    )
+    return _provision_result(creation, created_uuid, steps, True)
