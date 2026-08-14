@@ -15,8 +15,8 @@ from .client import HMCError
 from .common import client_from_env, is_uuid
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
-from .ssh import (
-    HMCCLIError,
+from .ssh import HMCCLIError
+from .ssh_commands import (
     _ssh_system_name,
     create_lpar_via_cli,
     stamp_lpar_ownership,

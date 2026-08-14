@@ -2,7 +2,7 @@
 
 The REST-backed commands all funnel through ``cli_app._client`` →
 ``cli_app.client_from_env`` (imported at ``cli_app.py``), and the SSH-backed
-commands through ``ssh.run_hmc_command``.  These tests monkeypatch those
+commands through ``ssh_commands.run_hmc_command``. These tests monkeypatch those
 two factories so every command runs against a scripted fake — no HTTP, no SSH.
 
 This closes the CLI blind spot where only the helpers (``_ssh_config``,
@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, cli_app, ssh
+from hmc_mcp import cli, cli_app, ssh_commands
 from hmc_mcp.errors import HMCError
 
 LPAR_NAME = "lpar1"
@@ -592,7 +592,7 @@ def test_lpars_get_description_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "my lpar description\n"
 
-    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-description", "lpar1", "sys1"])
 
     assert result.exit_code == 0
@@ -603,7 +603,7 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "1\n"
 
-    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["lpars", "get-msp", "lpar1", "sys1"])
 
     assert result.exit_code == 0
@@ -619,7 +619,7 @@ def test_network_list_io_slots_via_ssh(monkeypatch):
     async def fake(cfg, cmd):
         return "drc_name=U78DA.ND1.ABC1234-P1-C1,pci_class=0200,lpar_name=lpar1\n"
 
-    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1"])
 
     assert result.exit_code == 0
@@ -631,7 +631,7 @@ def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
     async def fake(cfg, cmd):
         return ""
 
-    monkeypatch.setattr(ssh, "run_hmc_command", fake)
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"])
 
     assert result.exit_code == 2

@@ -105,7 +105,7 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             from hmc_mcp._app import _ssh_with_client
-            from hmc_mcp.ssh import list_memory_pools
+            from hmc_mcp.ssh_commands import list_memory_pools
 
             _ssh_with_client(
                 lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -126,7 +126,7 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
     conn = _make_ssh_mock("")
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
         from hmc_mcp._app import _ssh_with_client
-        from hmc_mcp.ssh import list_memory_pools
+        from hmc_mcp.ssh_commands import list_memory_pools
 
         _ssh_with_client(
             lambda config, system_name, _: list_memory_pools(config, system_name),
@@ -255,7 +255,7 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     from hmc_mcp.server import hmc_run_command
 
     with patch(
-        "hmc_mcp.server_system.build_config", return_value=DEV_CONFIG
+        "hmc_mcp.server_command.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("output")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
@@ -312,9 +312,12 @@ def test_different_profiles_produce_independent_configs():
         with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
             try:
                 from hmc_mcp._app import _ssh_with_client
-                from hmc_mcp.ssh import list_memory_pools
+                from hmc_mcp.ssh_commands import list_memory_pools
+
                 _ssh_with_client(
-                    lambda config, system_name, _: list_memory_pools(config, system_name),
+                    lambda config, system_name, _: list_memory_pools(
+                        config, system_name
+                    ),
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="dev",
                 )
@@ -326,7 +329,9 @@ def test_different_profiles_produce_independent_configs():
         with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
             try:
                 _ssh_with_client(
-                    lambda config, system_name, _: list_memory_pools(config, system_name),
+                    lambda config, system_name, _: list_memory_pools(
+                        config, system_name
+                    ),
                     system_name_or_uuid=SYSTEM_NAME,
                     profile="prod",
                 )

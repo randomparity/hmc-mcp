@@ -9,7 +9,7 @@ from ._app import (
     mcp,
 )
 
-from .ssh import (
+from .ssh_commands import (
     assign_profile_io_slot,
     backup_lpar_profiles,
     restore_lpar_profiles,

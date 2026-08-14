@@ -24,7 +24,7 @@ from mcp.types import ToolAnnotations
 from .client import HMCClient
 from .common import build_config, client_from_env, is_uuid
 from .config import HMCConfig
-from .ssh import _ssh_lpar_name, _ssh_system_name
+from .ssh_commands import _ssh_lpar_name, _ssh_system_name
 
 _T = TypeVar("_T")
 

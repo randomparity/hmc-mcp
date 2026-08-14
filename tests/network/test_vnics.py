@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hmc_mcp.server import hmc_add_vnic, hmc_list_vnics, hmc_remove_vnic
-from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh_commands import HMCCLIError
 
 from conftest import mock_uuid_resolution
 

@@ -1,4 +1,4 @@
-"""MCP tools for read-only inventory and job status, plus the HMC CLI escape hatch."""
+"""MCP tools for read-only HMC inventory."""
 
 from __future__ import annotations
 
@@ -7,44 +7,14 @@ from typing import Any
 
 from ._app import (
     _READ_ONLY,
-    _STATE_CHANGING,
     _resolve_lpar_uuid,
     _resolve_system_uuid,
     _resolve_vios_uuid,
     _run,
     mcp,
 )
-from .common import build_config, client_from_env, is_uuid
+from .common import client_from_env, is_uuid
 from .config import HMCConfig, resolve_config_path
-from .operations_capacity import capacity_report, find_placement
-
-from .ssh import run_hmc_cli
-
-
-def hmc_run_command(cmd: str, profile: str | None = None) -> str:
-    """Execute an arbitrary HMC CLI command over SSH and return its output.
-
-    WARNING: This tool executes arbitrary commands on the HMC with the
-    credentials configured in HMC_USER / HMC_PASSWORD (or HMC_SSH_KEY_FILE).
-    It is an operator escape-hatch equivalent to Ansible ``hmc_command``.
-    Use only for HMC CLI operations that have no dedicated MCP tool.
-
-    Authentication follows the same env-var configuration as all other tools:
-    set HMC_SSH_KEY_FILE to use key-based auth, otherwise password auth is used.
-
-    profile: optional TOML profile name; when omitted the env-default HMC is used.
-
-    Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
-    """
-    config = build_config(profile=profile)
-    return _run(lambda: run_hmc_cli(cmd, config))
-
-
-async def register_arbitrary_command_tool() -> None:
-    """Register the arbitrary-command escape hatch once for an opted-in server."""
-    if await mcp.local_provider.get_tool("hmc_run_command") is not None:
-        return
-    mcp.tool(hmc_run_command, annotations=_STATE_CHANGING)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -266,98 +236,6 @@ def hmc_list_resources(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_job(
-    job_uuid: str,
-    job_href: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Get the status/result of an HMC job by UUID.
-
-    *job_href* is the SELF link returned by the job-submission tool (e.g.
-    hmc_power_on_lpar).  When supplied, it is used directly for the GET so
-    the call works on HMC versions that do not expose Job as a root UOM
-    resource type (returns HTTP 400 on those versions without this hint).
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.get_job(job_uuid, job_href=job_href)
-
-    return _run(_go)
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_recent_jobs(
-    limit: int = 20, profile: str | None = None
-) -> list[dict[str, Any]]:
-    """List recent HMC jobs (most recent first, up to *limit* entries).
-
-    Returns a list of parsed job dicts with at minimum JobID and Status.
-    Useful for auditing recent HMC activity — power operations, firmware
-    updates, migrations, etc.
-
-    On HMC versions that do not expose Job as a root UOM resource type
-    (HTTP 400), returns a single-element list containing an error sentinel
-    dict (identified by ``"type": "error"``) rather than raising an
-    exception.  Normal job dicts never carry a ``"type"`` key at the top
-    level, so callers can reliably distinguish the two cases.
-    """
-    from .errors import HMCError
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_uom("Job")
-
-    try:
-        jobs = _run(_go)
-    except HMCError as exc:
-        if exc.status_code == 400:
-            return [
-                {
-                    "type": "error",
-                    "error": (
-                        "This HMC version does not support the global Job "
-                        "listing endpoint (GET /rest/api/uom/Job). "
-                        "Use hmc_get_job(job_uuid, job_href=<link from "
-                        "submission>) to query individual jobs."
-                    ),
-                    "status_code": 400,
-                    "detail": str(exc),
-                }
-            ]
-        raise
-    return jobs[:limit]
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
-    """Capacity report: for each managed system, total/assigned/free memory (MiB)
-    and processor units, plus running and total LPAR counts.
-
-    Derived by listing all managed systems then fetching the LPAR list for each
-    system to compute assigned resources. Free = total − assigned.
-    """
-
-    return _run(lambda: capacity_report(profile))
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_find_placement(
-    desired_memory_mb: int,
-    desired_proc_units: float = 0.5,
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """Find managed systems that can host a new LPAR of the given size.
-
-    Returns systems with at least *desired_memory_mb* MiB free and at least
-    *desired_proc_units* free processor units, sorted by free memory descending.
-    Each result has the same fields as :func:`hmc_capacity_report`.
-    """
-
-    return _run(lambda: find_placement(desired_memory_mb, desired_proc_units, profile))
-
-
-@mcp.tool(annotations=_READ_ONLY)
 def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | None:
     """Find a managed system by its SystemName (exact match).
 
@@ -368,33 +246,5 @@ def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | N
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.find_system_by_name(name)
-
-    return _run(_go)
-
-
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_wait_for_job(
-    job_uuid: str,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-    job_href: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION.
-
-    Returns the final job entry. If *timeout_seconds* elapses before a
-    terminal state is reached, returns the last-seen entry regardless of
-    status — check the Status field to distinguish timeout from completion.
-
-    *job_href* is the SELF link returned by the job-submission tool.
-    When supplied, polling uses that path directly so the call works on
-    HMC versions that return HTTP 400 for the global Job endpoint.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job_href
-            )
 
     return _run(_go)

@@ -30,7 +30,7 @@ from typing import Any
 from fastmcp import Client
 
 from hmc_mcp.server import mcp
-from hmc_mcp.server_system import register_arbitrary_command_tool
+from hmc_mcp.server_command import register_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path

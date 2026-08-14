@@ -29,8 +29,8 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import (
-    HMCCLIError,
+from .ssh import HMCCLIError
+from .ssh_commands import (
     _ssh_system_name,
     create_lpar_via_cli,
     stamp_lpar_ownership,

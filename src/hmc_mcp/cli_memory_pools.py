@@ -16,7 +16,7 @@ from .cli_app import (
     memory_pools_app,
 )
 
-from .ssh import list_memory_pools, remove_memory_pool
+from .ssh_commands import list_memory_pools, remove_memory_pool
 
 
 @memory_pools_app.command("list")

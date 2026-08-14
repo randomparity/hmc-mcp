@@ -27,7 +27,7 @@ from hmc_mcp.server import (
     hmc_restore_vios,
     hmc_set_lpar_description,
 )
-from hmc_mcp.ssh import list_io_slots
+from hmc_mcp.ssh_commands import list_io_slots
 
 from conftest import mock_uuid_resolution
 

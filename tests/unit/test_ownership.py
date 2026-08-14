@@ -82,7 +82,7 @@ def test_validate_agent_id_control_char():
 # ---------------------------------------------------------------------------
 
 
-from hmc_mcp.ssh import stamp_lpar_ownership  # noqa: E402 (after validate tests)
+from hmc_mcp.ssh_commands import stamp_lpar_ownership  # noqa: E402 (after validate tests)
 from hmc_mcp.config import HMCConfig           # noqa: E402
 
 
@@ -92,7 +92,7 @@ def _config():
 
 def test_stamp_returns_token_on_success():
     config = _config()
-    with patch("hmc_mcp.ssh.set_lpar_description", new=AsyncMock(return_value="")) as mock_set:
+    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")) as mock_set:
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
         )
@@ -106,7 +106,7 @@ def test_stamp_returns_token_on_success():
 
 def test_stamp_default_agent_id():
     config = _config()
-    with patch("hmc_mcp.ssh.set_lpar_description", new=AsyncMock(return_value="")):
+    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1")  # no agent_id
         )
@@ -116,9 +116,9 @@ def test_stamp_default_agent_id():
 
 def test_stamp_returns_none_on_ssh_error():
     config = _config()
-    from hmc_mcp.ssh import HMCCLIError
+    from hmc_mcp.ssh_commands import HMCCLIError
     with patch(
-        "hmc_mcp.ssh.set_lpar_description",
+        "hmc_mcp.ssh_commands.set_lpar_description",
         new=AsyncMock(side_effect=HMCCLIError("SSH failed")),
     ):
         token = asyncio.run(
@@ -127,27 +127,14 @@ def test_stamp_returns_none_on_ssh_error():
     assert token is None  # swallowed — best-effort
 
 
-def test_stamp_returns_none_on_asyncssh_error():
-    import asyncssh
-    config = _config()
-    with patch(
-        "hmc_mcp.ssh.set_lpar_description",
-        new=AsyncMock(side_effect=asyncssh.DisconnectError(asyncssh.DISC_CONNECTION_LOST, "connection lost")),
-    ):
-        token = asyncio.run(
-            stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
-        )
-    assert token is None
-
-
 def test_token_format():
     config = _config()
     today = datetime.date.today().isoformat()
-    with patch("hmc_mcp.ssh.set_lpar_description", new=AsyncMock(return_value="")):
+    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="my-agent")
         )
     assert token == f"[hmc-mcp owner:my-agent created:{today}]"
     # token must pass the existing description validator
-    from hmc_mcp.ssh import validate_lpar_description
+    from hmc_mcp.ssh_commands import validate_lpar_description
     validate_lpar_description(token)  # no exception

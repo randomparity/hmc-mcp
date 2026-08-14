@@ -17,7 +17,7 @@ from .cli_app import (
     network_app,
 )
 
-from .ssh import (
+from .ssh_commands import (
     PciClass,
     SriovMode,
     add_vnic,

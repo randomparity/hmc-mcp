@@ -71,11 +71,11 @@ def test_arbitrary_command_tool_is_disabled_by_default():
 
 
 def test_arbitrary_command_tool_opt_in_is_idempotent():
-    from hmc_mcp import server_system
+    from hmc_mcp import server_command
 
     try:
-        asyncio.run(server_system.register_arbitrary_command_tool())
-        asyncio.run(server_system.register_arbitrary_command_tool())
+        asyncio.run(server_command.register_arbitrary_command_tool())
+        asyncio.run(server_command.register_arbitrary_command_tool())
 
         tools = [
             tool
@@ -106,7 +106,7 @@ def test_closed_vocab_enum_matches_runtime_constant():
     from hmc_mcp.documents import PARTITION_TYPES, STORAGE_KINDS, TASK_ROLES
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
-    from hmc_mcp.ssh import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
+    from hmc_mcp.ssh_commands import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 

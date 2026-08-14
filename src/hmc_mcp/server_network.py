@@ -16,7 +16,7 @@ from ._app import (
 
 from .client import HMCError
 from .common import client_from_env
-from .ssh import (
+from .ssh_commands import (
     SriovMode,
     add_vnic,
     list_fc_ports,

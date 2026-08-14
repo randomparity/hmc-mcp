@@ -33,7 +33,7 @@ from .documents import (
     StorageKind,
     build_lpar_document,
 )
-from .ssh import (
+from .ssh_commands import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,

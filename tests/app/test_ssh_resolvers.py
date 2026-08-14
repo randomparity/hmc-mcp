@@ -21,7 +21,7 @@ import pytest
 
 from hmc_mcp._app import _resolve_lpar_name, _resolve_system_name
 from hmc_mcp.errors import HMCError
-from hmc_mcp.ssh import HMCCLIError, _ssh_lpar_name, _ssh_system_name
+from hmc_mcp.ssh_commands import HMCCLIError, _ssh_lpar_name, _ssh_system_name
 
 from conftest import make_config
 
