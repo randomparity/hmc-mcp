@@ -232,6 +232,18 @@ def _fail(exc: Exception) -> NoReturn:
     raise typer.Exit(code=1)
 
 
+def _usage_error(message: str) -> NoReturn:
+    """Report invalid command arguments using Typer's usage-error exit code."""
+    err_console.print(f"[red]Error:[/red] {message}")
+    raise typer.Exit(code=2)
+
+
+def _partition_not_found(value: str) -> NoReturn:
+    """Report a failed partition lookup consistently across CLI domains."""
+    err_console.print(f"[yellow]Partition '{value}' not found[/yellow]")
+    raise typer.Exit(code=1)
+
+
 
 
 

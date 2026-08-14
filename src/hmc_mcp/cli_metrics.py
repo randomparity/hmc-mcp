@@ -11,9 +11,9 @@ from .cli_app import (
     _client,
     _print_json,
     _run,
+    _usage_error,
     _with_client,
     console,
-    err_console,
     metrics_app,
 )
 from .pcm import newest_metric_link
@@ -57,8 +57,7 @@ def metrics_set_prefs(
     if energy is not None:
         flags["EnergyMonitorEnabled"] = energy
     if not flags:
-        err_console.print("[yellow]No flags supplied; nothing to change.[/yellow]")
-        raise typer.Exit(code=2)
+        _usage_error("No flags supplied; nothing to change.")
 
     if not yes and not typer.confirm(
         f"Enable/disable PCM monitoring on {category} {resource_uuid}?"
@@ -100,5 +99,4 @@ def metrics_show(
     result = _run(_go)
 
     _print_json(result)
-
 

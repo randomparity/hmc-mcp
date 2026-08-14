@@ -12,11 +12,13 @@ from .cli_app import (
     _client,
     _first_field,
     _output,
+    _partition_not_found,
     _print_json,
     _resolve_partition_uuid,
     _run,
     _ssh_config,
     _with_client,
+    _usage_error,
     console,
     err_console,
     lpars_app,
@@ -121,8 +123,7 @@ def lpars_show(
     )
 
     if lpar is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     _print_json(lpar)
 
 
@@ -140,8 +141,7 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
     state = _run(_go)
 
     if state is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     console.print(state)
 
 
@@ -189,8 +189,7 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
     uuid, job = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     console.print(f"[green]Submitted {action} for {uuid}[/green]")
     _print_json(job)
 
@@ -310,8 +309,7 @@ def _power_lpar(
     uuid, job = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     console.print(f"[green]Job submitted[/green] for {uuid}")
     _print_json(job)
 
@@ -402,8 +400,7 @@ def lpars_modify(
     if all(v is None for v in (new_name, min_memory, memory, max_memory,
                                min_procs, procs, max_procs, min_vcpus, vcpus, max_vcpus,
                                dedicated, capped)):
-        err_console.print("[yellow]Nothing to change — pass at least one option[/yellow]")
-        raise typer.Exit(code=2)
+        _usage_error("Nothing to change — pass at least one option")
 
     async def _go():
         async with _client() as hmc:
@@ -434,8 +431,7 @@ def lpars_modify(
     uuid, updated = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     console.print(f"[green]Modified LPAR {uuid}[/green]")
     _print_json(updated)
 
@@ -463,8 +459,7 @@ def lpars_delete(
     uuid = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{name_or_uuid}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(name_or_uuid)
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 
@@ -675,4 +670,3 @@ def lpars_provision(
     if result.get("warnings"):
         for w in result["warnings"]:
             console.print(f"[yellow]Warning: {w}[/yellow]")
-

@@ -438,6 +438,7 @@ def test_lpars_modify_with_no_options_exits_2(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "modify", LPAR_UUID])
 
     assert result.exit_code == 2
+    assert "Error:" in result.stderr
     assert "Nothing to change" in result.stderr
     assert fake_hmc.calls == []
 
@@ -509,6 +510,7 @@ def test_storage_create_vg_requires_pvs(fake_hmc):
     )
 
     assert result.exit_code == 2
+    assert "Error:" in result.stderr
     assert "Provide at least one physical volume" in result.stderr
     assert fake_hmc.calls == []
 
@@ -1061,7 +1063,20 @@ def test_metrics_set_prefs_no_flags_exits_2(fake_hmc):
     result = RUNNER.invoke(cli.app, ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID])
 
     assert result.exit_code == 2
+    assert "Error:" in result.stderr
     assert "No flags supplied" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_network_set_sriov_mode_rejects_invalid_mode(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["network", "set-sriov-mode", "system-1", "adapter-1", "invalid", "--yes"],
+    )
+
+    assert result.exit_code == 2
+    assert "Error:" in result.stderr
+    assert "Must be one of: dedicated, sriov" in result.stderr
     assert fake_hmc.calls == []
 
 

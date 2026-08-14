@@ -11,12 +11,13 @@ from .cli_app import (
     _client,
     _first_field,
     _output,
+    _partition_not_found,
     _print_json,
     _resolve_partition_uuid,
     _run,
     _with_client,
+    _usage_error,
     console,
-    err_console,
     storage_app,
 )
 
@@ -56,8 +57,7 @@ def storage_create_vg(
     """Create a Volume Group on a VIOS from physical volumes."""
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
     if not pv_list:
-        err_console.print("[red]Provide at least one physical volume via --pvs[/red]")
-        raise typer.Exit(code=2)
+        _usage_error("Provide at least one physical volume via --pvs")
     if not yes and not typer.confirm(f"Create VG '{name}' from {pv_list} on VIOS {vios}?"):
         raise typer.Abort()
 
@@ -110,8 +110,7 @@ def storage_map(
     lpar_uuid, result = _run(_go)
 
     if lpar_uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(lpar)
     console.print(f"[green]Mapped '{disk}'[/green] to {lpar_uuid}")
     _print_json(result)
 
@@ -166,5 +165,4 @@ def storage_delete_media_repo(
     _with_client(lambda hmc: hmc.delete_media_repository(vios, vg))
 
     console.print(f"[green]Deleted media repository on {vg}[/green]")
-
 

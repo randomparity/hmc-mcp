@@ -12,9 +12,9 @@ from .cli_app import (
     _print_json,
     _run,
     _ssh_config,
+    _usage_error,
     _with_client,
     console,
-    err_console,
     network_app,
 )
 
@@ -180,8 +180,7 @@ def network_set_sriov_mode(
     try:
         validate_sriov_mode(mode)
     except ValueError as exc:
-        err_console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=2)
+        _usage_error(str(exc))
     if not yes and not typer.confirm(
         f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
     ):
@@ -254,5 +253,4 @@ def network_remove_vnic(
     console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
     if result.strip():
         console.print(result.strip())
-
 

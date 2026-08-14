@@ -9,12 +9,12 @@ import typer
 from .cli_app import (
     _client,
     _output,
+    _partition_not_found,
     _print_json,
     _resolve_partition_uuid,
     _run,
     adapters_app,
     console,
-    err_console,
 )
 
 
@@ -39,8 +39,7 @@ def adapters_list(
     uuid, adapters = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(lpar)
     _output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
 
@@ -134,8 +133,7 @@ def adapters_delete(
     uuid = _run(_go)
 
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(lpar)
     console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {uuid}")
 
 
@@ -143,9 +141,7 @@ def adapters_delete(
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
     uuid, result = _run(go_coro)
     if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
+        _partition_not_found(lpar)
     console.print(f"[green]Added {kind} adapter[/green] to {uuid}")
     _print_json(result)
-
 
