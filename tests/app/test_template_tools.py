@@ -132,7 +132,7 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["warnings"] == [
         "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
+        "the new LPAR; list partitions to identify it, then set its description"
     ]
 
 
@@ -206,5 +206,5 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
     assert set(result) == {"job", "warnings"}
     assert result["warnings"] == [
         "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
+        "the new LPAR; list partitions to identify it, then set its description"
     ]

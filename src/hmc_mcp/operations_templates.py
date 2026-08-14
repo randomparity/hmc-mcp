@@ -12,7 +12,7 @@ from .jobs import validate_wait_timing, wait_for_submitted_job
 
 MANUAL_TEMPLATE_STAMP_WARNING = (
     "ownership stamp not attempted: template deployment does not identify and stamp "
-    "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
+    "the new LPAR; list partitions to identify it, then set its description"
 )
 
 

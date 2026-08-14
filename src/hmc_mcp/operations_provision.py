@@ -97,7 +97,7 @@ async def _check_vlan_exists(hmc, system_uuid: str, port_vlan_id: int) -> None:
     )
     raise ValueError(
         f"No VirtualNetwork with VLAN ID {port_vlan_id} found on system "
-        f"{system_uuid!r}. Use hmc_list_virtual_networks to list available VLANs."
+        f"{system_uuid!r}. List virtual networks to inspect available VLANs."
         f"{malformed_note}"
     )
 
@@ -109,7 +109,7 @@ async def _check_vg_exists(hmc, vios_uuid: str, vg_uuid: str) -> None:
     if not found:
         raise ValueError(
             f"VolumeGroup {vg_uuid!r} not found on VIOS {vios_uuid!r}. "
-            "Use hmc_list_volume_groups to list available volume groups."
+            "List volume groups to inspect the available groups."
         )
 
 
@@ -232,7 +232,7 @@ async def provision_lpar(
     On partial failure the completed steps are reported as ``"ok"``, the
     failed step as ``"error"``, and remaining steps as ``"skipped"``.
     No automatic rollback is performed — clean up manually with
-    ``hmc_delete_lpar`` / ``hmc_delete_adapter`` as appropriate.
+    Delete the partition or its adapters manually as appropriate.
 
     Parameters
     ----------

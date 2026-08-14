@@ -251,8 +251,8 @@ async def delete_lpar(
     if state != "not activated":
         raise HMCError(
             f"Cannot delete LPAR {lpar_uuid} — current state is {state!r}; "
-            "it must be 'not activated' to delete. Power it off "
-            "(hmc_power_off_lpar) and confirm with hmc_get_lpar_state before retrying.",
+            "it must be 'not activated' to delete. Power off the partition "
+            "and verify its state before retrying.",
             status_code=409,
         )
     await hmc.delete_logical_partition(lpar_uuid)
