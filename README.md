@@ -474,6 +474,7 @@ src/hmc_mcp/
   client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   common.py      # shared HMCClient/config helpers for tool definitions
+  operations_*.py# workflows and policies shared by MCP and CLI presentations
   ssh.py         # transport-only asyncssh session and command execution
   ssh_commands.py# resource operations implemented with the HMC CLI
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
