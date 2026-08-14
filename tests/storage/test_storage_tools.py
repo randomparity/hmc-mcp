@@ -477,7 +477,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_create_logical_unit(
-        CLUSTER_UUID, "lu_data", 100, wait=True, timeout_seconds=60, poll_interval=0
+        CLUSTER_UUID, "lu_data", 100, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -494,7 +494,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_delete_logical_unit(
-        CLUSTER_UUID, "udid-1234", wait=True, timeout_seconds=60, poll_interval=0
+        CLUSTER_UUID, "udid-1234", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called

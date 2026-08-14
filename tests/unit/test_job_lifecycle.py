@@ -28,9 +28,13 @@ def test_job_identifier_accepts_only_nonempty_strings(job, expected) -> None:
 
 @pytest.mark.parametrize(
     ("timeout_seconds", "poll_interval", "message"),
-    [(-1, 5, "timeout_seconds"), (300, -1, "poll_interval")],
+    [
+        (-1, 5, "timeout_seconds"),
+        (300, -1, "poll_interval"),
+        (300, 0, "poll_interval"),
+    ],
 )
-def test_validate_wait_timing_rejects_negative_values(
+def test_validate_wait_timing_rejects_invalid_values(
     timeout_seconds, poll_interval, message
 ) -> None:
     with pytest.raises(ValueError, match=message):

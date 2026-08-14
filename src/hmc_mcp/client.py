@@ -516,8 +516,8 @@ class HMCClient(
 
         if timeout_seconds < 0:
             raise ValueError("timeout_seconds must be greater than or equal to 0")
-        if poll_interval < 0:
-            raise ValueError("poll_interval must be greater than or equal to 0")
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be greater than 0")
 
         # UOM Job shape:     COMPLETED, FAILED, EXCEPTION
         # web+xml JobResponse shape: COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED

@@ -39,7 +39,9 @@ def test_migrate_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_migrate_lpar PUTs a Migrate job with the target system."""
     _hmc_env(monkeypatch)
     route = _job_route(mock_hmc, "Migrate")
-    result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", target_profile_name="prof1", wait_time=60)
+    result = hmc_migrate_lpar(
+        LPAR_UUID, "vrml12-fsp", target_profile_name="prof1", wait_time=60
+    )
     body = route.calls.last.request.content.decode()
     assert "Migrate</OperationName>" in body
     assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
@@ -87,9 +89,9 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
 def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
     """A non-2xx job submission surfaces as HMCError naming the failing PUT."""
     _hmc_env(monkeypatch)
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate"
-    ).mock(return_value=httpx.Response(500, text="<error>boom</error>"))
+    mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate").mock(
+        return_value=httpx.Response(500, text="<error>boom</error>")
+    )
     with pytest.raises(HMCError) as exc_info:
         hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp")
     assert exc_info.value.status_code == 500
@@ -122,7 +124,7 @@ def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(
-        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=0
+        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -150,7 +152,7 @@ def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     )
 
     result = hmc_migrate_validate_lpar(
-        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=0
+        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=1
     )
 
     assert submit_route.called

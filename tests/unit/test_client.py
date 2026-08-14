@@ -916,7 +916,7 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job(
-            "job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_HREF
+            "job-uuid-999", timeout_seconds=5, poll_interval=1, job_href=_JOB_HREF
         )
     assert href_route.called
     assert not global_route.called
@@ -969,9 +969,13 @@ async def test_wait_for_job_timeout_zero_still_polls_once(monkeypatch, mock_hmc)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("timeout_seconds", "poll_interval", "message"),
-    [(-1, 5, "timeout_seconds"), (5, -1, "poll_interval")],
+    [
+        (-1, 5, "timeout_seconds"),
+        (5, -1, "poll_interval"),
+        (5, 0, "poll_interval"),
+    ],
 )
-async def test_wait_for_job_rejects_negative_timing_values(
+async def test_wait_for_job_rejects_invalid_timing_values(
     mock_hmc, timeout_seconds, poll_interval, message
 ):
     async with HMCClient(make_config()) as hmc:
@@ -1028,7 +1032,7 @@ async def test_wait_for_job_recognises_completed_ok(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         result = await hmc.wait_for_job(
-            "1778083847656", timeout_seconds=5, poll_interval=0, job_href=_JOB_WEB_HREF
+            "1778083847656", timeout_seconds=5, poll_interval=1, job_href=_JOB_WEB_HREF
         )
     assert result is not None
     assert result["Resource"]["Status"] == "COMPLETED_OK"

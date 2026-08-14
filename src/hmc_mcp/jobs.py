@@ -39,8 +39,8 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         return
     if timeout_seconds < 0:
         raise ValueError("timeout_seconds must be greater than or equal to 0")
-    if poll_interval < 0:
-        raise ValueError("poll_interval must be greater than or equal to 0")
+    if poll_interval <= 0:
+        raise ValueError("poll_interval must be greater than 0")
 
 
 def job_identifier(job: dict[str, Any]) -> str | None:

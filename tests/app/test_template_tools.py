@@ -162,7 +162,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
+        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -186,7 +186,7 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
+        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert set(result) == {"job", "warnings"}
     assert result["warnings"] == [

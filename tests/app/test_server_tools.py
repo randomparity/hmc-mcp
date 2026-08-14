@@ -470,7 +470,7 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_update_console_software(
-        MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=0
+        MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -615,7 +615,7 @@ def test_wait_for_job_timeout_returns_last_entry(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
     )
     # timeout=0 means the deadline is already past after the first poll
-    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=0)
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
     assert result["Resource"]["Status"] == "RUNNING"
 
 
@@ -651,7 +651,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     result = hmc_wait_for_job(
-        "job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_OP_HREF
+        "job-uuid-999", timeout_seconds=5, poll_interval=1, job_href=_JOB_OP_HREF
     )
     assert href_route.called
     assert not global_route.called
@@ -730,7 +730,7 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
     global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
-    result = hmc_power_on_lpar(LPAR_UUID, wait=True, poll_interval=0)
+    result = hmc_power_on_lpar(LPAR_UUID, wait=True, poll_interval=1)
     assert poll_route.called
     assert not global_route.called
     assert result["Resource"]["Status"] == "COMPLETED"

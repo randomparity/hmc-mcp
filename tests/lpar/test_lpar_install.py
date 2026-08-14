@@ -204,7 +204,7 @@ def test_install_lpar_os_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         lpar_ip="192.168.1.30",
         wait=True,
         timeout_seconds=60,
-        poll_interval=0,
+        poll_interval=1,
     )
     assert submit_route.called
     assert poll_route.called
