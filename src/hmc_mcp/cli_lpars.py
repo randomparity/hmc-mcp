@@ -541,6 +541,7 @@ def lpars_modify(
         _usage_error("Nothing to change — pass at least one option")
     if new_name is not None and system is None:
         _usage_error("--system is required when renaming an LPAR")
+    rename_system = cast(str, system)
 
     async def _go():
         async with _client() as hmc:
@@ -553,11 +554,9 @@ def lpars_modify(
                 ):
                     raise typer.Abort()
             if new_name is not None:
-                if system is None:
-                    raise RuntimeError("rename system validation was bypassed")
-                system_uuid = await resolve_system_uuid(hmc, system)
+                system_uuid = await resolve_system_uuid(hmc, rename_system)
                 system_name, lpar_name = await resolve_lpar_ownership_names(
-                    hmc, system_uuid, system, uuid
+                    hmc, system_uuid, rename_system, uuid
                 )
                 await authorize_lpar_mutation(
                     hmc,

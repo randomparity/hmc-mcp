@@ -855,6 +855,17 @@ def test_lpars_modify_renames(fake_hmc):
     assert "renamed" in args[1]
 
 
+def test_lpars_modify_rename_requires_system_before_client_use(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "modify", LPAR_UUID, "--name", "renamed", "--yes"],
+    )
+
+    assert result.exit_code == 2
+    assert "--system is required when renaming an LPAR" in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_lpars_modify_with_no_options_exits_2(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "modify", LPAR_UUID])
 
