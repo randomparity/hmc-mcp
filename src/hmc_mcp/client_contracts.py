@@ -37,6 +37,10 @@ class LparsClient(Protocol):
 
     async def _delete(self, path: str) -> None: ...
 
+    async def list_logical_partitions(
+        self, system_uuid: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
     async def list_uom(
         self, resource_type: str, group: str | None = None
     ) -> list[dict[str, Any]]: ...
@@ -48,6 +52,10 @@ class LparsClient(Protocol):
     async def search_uom(
         self, resource_type: str, property_name: str, property_value: str
     ) -> list[dict[str, Any]]: ...
+
+    async def list_managed_systems(self) -> list[dict[str, Any]]: ...
+
+    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
 
 
 class PcmClient(Protocol):

@@ -106,11 +106,22 @@ async def resolve_system_name(hmc: HMCClient, value: str) -> str:
     return str(name)
 
 
-async def resolve_lpar_uuid(hmc: HMCClient, value: str) -> str:
+async def resolve_lpar_uuid(
+    hmc: HMCClient, value: str, *, system_name_or_uuid: str | None = None
+) -> str:
     """Resolve an LPAR name or pass through its UUID."""
     if is_uuid(value):
         return value
-    entry = await hmc.find_partition_by_name(value)
+    system_uuid = (
+        await resolve_system_uuid(hmc, system_name_or_uuid)
+        if system_name_or_uuid is not None
+        else None
+    )
+    entry = (
+        await hmc.find_partition_by_name(value, system_uuid=system_uuid)
+        if system_uuid is not None
+        else await hmc.find_partition_by_name(value)
+    )
     if not entry or not entry.get("UUID"):
         raise ValueError(
             f"No LPAR named {value!r} found. "
@@ -119,11 +130,22 @@ async def resolve_lpar_uuid(hmc: HMCClient, value: str) -> str:
     return str(entry["UUID"])
 
 
-async def resolve_vios_uuid(hmc: HMCClient, value: str) -> str:
+async def resolve_vios_uuid(
+    hmc: HMCClient, value: str, *, system_name_or_uuid: str | None = None
+) -> str:
     """Resolve a VIOS name or pass through its UUID."""
     if is_uuid(value):
         return value
-    entry = await hmc.find_vios_by_name(value)
+    system_uuid = (
+        await resolve_system_uuid(hmc, system_name_or_uuid)
+        if system_name_or_uuid is not None
+        else None
+    )
+    entry = (
+        await hmc.find_vios_by_name(value, system_uuid=system_uuid)
+        if system_uuid is not None
+        else await hmc.find_vios_by_name(value)
+    )
     if not entry or not entry.get("UUID"):
         raise ValueError(
             f"No VIOS named {value!r} found. "

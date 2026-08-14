@@ -142,6 +142,19 @@ def test_closed_vocab_enum_matches_runtime_constant():
         assert set(parameter["enum"]) == set(values)
 
 
+def test_destructive_partition_tools_expose_system_scope():
+    by_name = _tools_by_name()
+
+    for tool_name in (
+        "hmc_power_off_lpar",
+        "hmc_delete_vios",
+        "hmc_restore_vios",
+        "hmc_power_off_vios",
+    ):
+        properties = by_name[tool_name].parameters["properties"]
+        assert "system_name_or_uuid" in properties
+
+
 def test_partition_creation_tools_share_resource_object_schema():
     by_name = _tools_by_name()
     lpar_properties = by_name["hmc_create_lpar"].parameters["properties"]

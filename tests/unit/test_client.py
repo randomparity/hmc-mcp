@@ -194,13 +194,21 @@ async def test_quick_property(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_find_partition_by_name(mock_hmc):
+    single = """<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
+      <content type="application/vnd.ibm.powervm.uom+xml">
+        <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+          <PartitionName>lpar2</PartitionName>
+        </LogicalPartition>
+      </content>
+    </entry></feed>"""
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==lpar2)").mock(
-        return_value=httpx.Response(200, text=LPAR_FEED)
+        return_value=httpx.Response(200, text=single)
     )
     async with HMCClient(make_config()) as hmc:
         found = await hmc.find_partition_by_name("lpar2")
     assert found is not None
-    assert found["Resource"]["PartitionName"] == "lpar1"  # mock returns full feed
+    assert found["Resource"]["PartitionName"] == "lpar2"
 
 
 @pytest.mark.asyncio

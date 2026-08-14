@@ -6,10 +6,16 @@ domain mixin; this module only defines methods for systems.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .client_parse import _parse_feed
+from .client_resolution import (
+    PARENT_DISCOVERY_TIMEOUT_SECONDS,
+    ambiguity_candidate_ids,
+    bounded_parent_systems,
+)
 from .errors import HMCError
 from .jobs import (
     power_off_system_job,
@@ -75,6 +81,13 @@ class SystemsMixin:
     async def find_system_by_name(self, name: str) -> dict[str, Any] | None:
         """Find a managed system by its SystemName (exact match)."""
         results = await self.search_uom("ManagedSystem", "SystemName", name)
+        if len(results) > 1:
+            ambiguity_candidate_ids(results, "managed-system", name)
+            details = ", ".join(
+                f"{(entry.get('Resource') or {}).get('SystemName')!r} ({entry.get('UUID')})"
+                for entry in sorted(results, key=lambda item: str(item.get("UUID")))
+            )
+            raise ValueError(f"Ambiguous managed-system name {name!r}: {details}")
         return results[0] if results else None
 
     async def modify_managed_system(
@@ -112,10 +125,81 @@ class SystemsMixin:
             power_off_system_job(immediate),
         )
 
-    async def find_vios_by_name(self, name: str) -> dict[str, Any] | None:
+    async def find_vios_by_name(
+        self, name: str, system_uuid: str | None = None
+    ) -> dict[str, Any] | None:
         """Find a Virtual I/O Server by its PartitionName (exact match)."""
+        if system_uuid:
+            entries = await self.list_vios(system_uuid)
+            results = [
+                entry
+                for entry in entries
+                if (entry.get("Resource") or {}).get("PartitionName") == name
+            ]
+            if len(results) > 1:
+                ambiguity_candidate_ids(results, "VIOS", name)
+                system = await self.get_managed_system(system_uuid)
+                system_name = (system or {}).get("Resource", {}).get("SystemName")
+                if not isinstance(system_name, str) or not system_name:
+                    raise ValueError(
+                        f"Cannot resolve ambiguous VIOS name {name!r}: cannot "
+                        f"identify managed system {system_uuid}"
+                    )
+                details = ", ".join(
+                    f"{entry.get('UUID')} on {system_name!r} ({system_uuid})"
+                    for entry in sorted(results, key=lambda item: str(item.get("UUID")))
+                )
+                raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
+            return results[0] if results else None
+
         results = await self.search_uom("VirtualIOServer", "PartitionName", name)
-        return results[0] if results else None
+        if len(results) <= 1:
+            return results[0] if results else None
+
+        candidate_ids = ambiguity_candidate_ids(results, "VIOS", name)
+        parents: dict[str, list[tuple[str, str]]] = {uuid: [] for uuid in candidate_ids}
+        systems = bounded_parent_systems(
+            await self.list_managed_systems(), "VIOS", name
+        )
+        try:
+            async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
+                for system in systems:
+                    parent_uuid = system.get("UUID")
+                    parent_name = (system.get("Resource") or {}).get("SystemName")
+                    if (
+                        not isinstance(parent_uuid, str)
+                        or not parent_uuid
+                        or not isinstance(parent_name, str)
+                        or not parent_name
+                    ):
+                        raise ValueError(
+                            f"Cannot resolve ambiguous VIOS name {name!r}: cannot "
+                            "identify managed system from incomplete inventory metadata"
+                        )
+                    for entry in await self.list_vios(parent_uuid):
+                        entry_uuid = str(entry.get("UUID"))
+                        if entry_uuid in parents:
+                            parents[entry_uuid].append((parent_name, parent_uuid))
+        except TimeoutError as exc:
+            raise ValueError(
+                f"Cannot resolve ambiguous VIOS name {name!r}: parent discovery "
+                "timed out; supply managed-system scope"
+            ) from exc
+        invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
+        if invalid:
+            raise ValueError(
+                "Cannot resolve ambiguous VIOS name "
+                f"{name!r}: candidates {', '.join(invalid)} must each belong to "
+                "exactly one managed system"
+            )
+        details = ", ".join(
+            f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
+            for uuid in sorted(
+                candidate_ids,
+                key=lambda value: (parents[value][0][0], parents[value][0][1], value),
+            )
+        )
+        raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
 
     async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""
