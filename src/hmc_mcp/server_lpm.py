@@ -8,8 +8,13 @@ from ._app import (
     mcp,
 )
 
-from .common import client_from_env, resolve_lpar_uuid, resolve_system_name
-from .jobs import validate_wait_timing, wait_for_submitted_job
+from .common import client_from_env
+from .operations_lpm import (
+    abort_lpar_migration,
+    migrate_lpar,
+    recover_lpar_migration,
+    remote_restart_lpar,
+)
 
 from typing import Any
 
@@ -37,18 +42,19 @@ def hmc_migrate_lpar(
     (or until timeout_seconds elapses).
     """
 
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-            job = await hmc.lpar_migrate(
-                lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+            result = await migrate_lpar(
+                hmc,
+                lpar_name_or_uuid,
+                target_system_name_or_uuid,
+                target_profile_name,
+                wait_time,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
-            )
+            return result.job
 
     return _run(_go)
 
@@ -71,18 +77,20 @@ def hmc_migrate_validate_lpar(
     Set wait=True to block until the validation job reaches a terminal state.
     """
 
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-            job = await hmc.lpar_migrate_validate(
-                lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+            result = await migrate_lpar(
+                hmc,
+                lpar_name_or_uuid,
+                target_system_name_or_uuid,
+                target_profile_name,
+                wait_time,
+                validate=True,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
-            )
+            return result.job
 
     return _run(_go)
 
@@ -99,8 +107,7 @@ def hmc_migrate_abort_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.lpar_migrate_abort(lpar_uuid)
+            return (await abort_lpar_migration(hmc, lpar_name_or_uuid)).job
 
     return _run(_go)
 
@@ -117,8 +124,7 @@ def hmc_migrate_recover_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.lpar_migrate_recover(lpar_uuid)
+            return (await recover_lpar_migration(hmc, lpar_name_or_uuid)).job
 
     return _run(_go)
 
@@ -137,8 +143,10 @@ def hmc_remote_restart_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-            return await hmc.lpar_remote_restart(lpar_uuid, target_system)
+            return (
+                await remote_restart_lpar(
+                    hmc, lpar_name_or_uuid, target_system_name_or_uuid
+                )
+            ).job
 
     return _run(_go)

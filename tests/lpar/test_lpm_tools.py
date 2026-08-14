@@ -57,7 +57,7 @@ def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
     route = _job_route(mock_hmc, "Migrate")
     resolver = AsyncMock(return_value="vrml12-fsp")
 
-    with patch("hmc_mcp.server_lpm.resolve_system_name", new=resolver):
+    with patch("hmc_mcp.operations_lpm.resolve_system_name", new=resolver):
         hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID)
 
     resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)

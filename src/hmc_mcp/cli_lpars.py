@@ -32,6 +32,12 @@ from .operations_lpar import (
     power_lpar,
     rename_lpar,
 )
+from .operations_lpm import (
+    abort_lpar_migration,
+    migrate_lpar,
+    recover_lpar_migration,
+    remote_restart_lpar,
+)
 from .documents import (
     LparResources,
     PARTITION_TYPES,
@@ -234,27 +240,21 @@ def lpars_power_off(
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
-    """Shared resolve -> confirm -> run helper for LPM operations."""
+    """Confirm and present the result of a shared LPM operation."""
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None, None
             if not yes:
                 dest = f" to '{target}'" if target else ""
                 if not typer.confirm(
-                    f"Really {action} partition '{name_or_uuid}' ({uuid}){dest}?"
+                    f"Really {action} partition '{name_or_uuid}'{dest}?"
                 ):
                     raise typer.Abort()
-            return uuid, await fn(hmc, uuid)
+            return await fn(hmc)
 
-    uuid, job = _run(_go)
-
-    if uuid is None:
-        _partition_not_found(name_or_uuid)
-    console.print(f"[green]Submitted {action} for {uuid}[/green]")
-    _print_json(job)
+    result = _run(_go)
+    console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
+    _print_json(result.job)
 
 
 @lpars_app.command("migrate")
@@ -269,8 +269,8 @@ def lpars_migrate(
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
 
-    async def _fn(hmc, uuid):
-        return await hmc.lpar_migrate(uuid, target, profile, wait_time=wait_time)
+    async def _fn(hmc):
+        return await migrate_lpar(hmc, name_or_uuid, target, profile, wait_time)
 
     _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
 
@@ -285,9 +285,9 @@ def lpars_migrate_validate(
 ) -> None:
     """Validate whether an LPM migration would succeed."""
 
-    async def _fn(hmc, uuid):
-        return await hmc.lpar_migrate_validate(
-            uuid, target, profile, wait_time=wait_time
+    async def _fn(hmc):
+        return await migrate_lpar(
+            hmc, name_or_uuid, target, profile, wait_time, validate=True
         )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
@@ -300,8 +300,8 @@ def lpars_migrate_abort(
 ) -> None:
     """Abort an in-progress LPM migration."""
 
-    async def _fn(hmc, uuid):
-        return await hmc.lpar_migrate_abort(uuid)
+    async def _fn(hmc):
+        return await abort_lpar_migration(hmc, name_or_uuid)
 
     _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
 
@@ -313,8 +313,8 @@ def lpars_migrate_recover(
 ) -> None:
     """Recover an LPAR after a failed LPM migration."""
 
-    async def _fn(hmc, uuid):
-        return await hmc.lpar_migrate_recover(uuid)
+    async def _fn(hmc):
+        return await recover_lpar_migration(hmc, name_or_uuid)
 
     _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
 
@@ -327,8 +327,8 @@ def lpars_remote_restart(
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
 
-    async def _fn(hmc, uuid):
-        return await hmc.lpar_remote_restart(uuid, target)
+    async def _fn(hmc):
+        return await remote_restart_lpar(hmc, name_or_uuid, target)
 
     _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
 
