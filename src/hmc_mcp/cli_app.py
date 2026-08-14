@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, NoReturn, TypeVar
 
 import typer
+from typer._click.core import ParameterSource
 from rich.console import Console
 from rich.table import Table
 
@@ -88,6 +89,7 @@ class GlobalOpts:
     password: str | None = None
     verify_ssl: bool | None = None
     profile: str | None = None
+    command_line_options: frozenset[str] = frozenset()
 
 
 GLOBALS = GlobalOpts()
@@ -95,6 +97,7 @@ GLOBALS = GlobalOpts()
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     host: str | None = typer.Option(None, "--host", envvar="HMC_HOST", help="HMC hostname or IP"),
     user: str | None = typer.Option(None, "--user", "-u", envvar="HMC_USER", help="HMC user"),
     password: str | None = typer.Option(
@@ -109,7 +112,20 @@ def main(
     ),
 ) -> None:
     global GLOBALS
-    GLOBALS = GlobalOpts(host=host, user=user, password=password, verify_ssl=verify_ssl, profile=profile)
+    option_names = ("host", "user", "password", "verify_ssl", "profile")
+    command_line_options = frozenset(
+        name
+        for name in option_names
+        if ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+    )
+    GLOBALS = GlobalOpts(
+        host=host,
+        user=user,
+        password=password,
+        verify_ssl=verify_ssl,
+        profile=profile,
+        command_line_options=command_line_options,
+    )
 
 
 def _client():
@@ -228,7 +244,9 @@ def _partition_not_found(value: str) -> NoReturn:
 @app.command()
 def serve(
     http: bool = typer.Option(False, "--http", help="Serve over streamable HTTP instead of stdio"),
-    host: str = typer.Option("127.0.0.1", "--host", help="HTTP listen host (with --http)"),
+    listen_host: str = typer.Option(
+        "127.0.0.1", "--listen-host", help="HTTP listen host (with --http)"
+    ),
     port: int = typer.Option(8000, "--port", help="HTTP listen port (with --http)"),
     allow_remote: bool = typer.Option(
         False,
@@ -247,16 +265,23 @@ def serve(
     """
     from . import server
 
+    if GLOBALS.command_line_options:
+        options = ", ".join(f"--{name.replace('_', '-')}" for name in sorted(GLOBALS.command_line_options))
+        raise typer.BadParameter(
+            f"serve does not accept HMC connection options ({options}); "
+            "configure the server with HMC_* environment variables or a configured HMC_PROFILE"
+        )
+
     if http:
-        if not _is_loopback(host) and not allow_remote:
+        if not _is_loopback(listen_host) and not allow_remote:
             raise typer.BadParameter(
-                f"--host {host!r} binds beyond loopback, but the streamable HTTP "
+                f"--listen-host {listen_host!r} binds beyond loopback, but the streamable HTTP "
                 "server has no authentication and exposes the full tool surface "
                 "(incl. arbitrary HMC CLI exec and user admin). Refusing to start. "
                 "If you understand the risk, re-run with --allow-remote and put an "
                 "authenticated reverse proxy in front."
             )
-        server.main_http(host=host, port=port)
+        server.main_http(host=listen_host, port=port)
     else:
         server.main_stdio()
 
