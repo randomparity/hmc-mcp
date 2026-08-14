@@ -21,6 +21,7 @@ import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from .client import HMCClient
 from .common import client_from_env, is_uuid
 from .config import HMCConfig
 from .ssh import _ssh_lpar_name, _ssh_system_name
@@ -183,7 +184,7 @@ def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
 # ---------------------------------------------------------------------- #
 
 
-async def _system_name_from_rest(hmc, system_uuid: str) -> str:
+async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
     """Resolve a managed-system UUID to its CLI SystemName via REST."""
     entry = await hmc.get_managed_system(system_uuid)
     if not entry or "SystemName" not in entry.get("Resource", {}):
@@ -194,7 +195,7 @@ async def _system_name_from_rest(hmc, system_uuid: str) -> str:
     return entry["Resource"]["SystemName"]
 
 
-async def _lpar_name_from_rest(hmc, lpar_uuid: str) -> str:
+async def _lpar_name_from_rest(hmc: HMCClient, lpar_uuid: str) -> str:
     """Resolve an LPAR UUID to its CLI PartitionName via REST."""
     entry = await hmc.get_logical_partition(lpar_uuid)
     if not entry or "PartitionName" not in entry.get("Resource", {}):
@@ -257,7 +258,7 @@ async def _resolve_lpar_name(
 # ---------------------------------------------------------------------- #
 
 
-async def _resolve_system_uuid(hmc, system_name_or_uuid: str) -> str:
+async def _resolve_system_uuid(hmc: HMCClient, system_name_or_uuid: str) -> str:
     """Resolve a system name-or-UUID to a UUID for REST calls.
 
     If the value is already a UUID it is returned as-is. Otherwise it is
@@ -275,7 +276,7 @@ async def _resolve_system_uuid(hmc, system_name_or_uuid: str) -> str:
     return str(entry["UUID"])
 
 
-async def _resolve_lpar_uuid(hmc, lpar_name_or_uuid: str) -> str:
+async def _resolve_lpar_uuid(hmc: HMCClient, lpar_name_or_uuid: str) -> str:
     """Resolve an LPAR name-or-UUID to a UUID for REST calls.
 
     If the value is already a UUID it is returned as-is. Otherwise it is
@@ -293,7 +294,7 @@ async def _resolve_lpar_uuid(hmc, lpar_name_or_uuid: str) -> str:
     return str(entry["UUID"])
 
 
-async def _resolve_vios_uuid(hmc, vios_name_or_uuid: str) -> str:
+async def _resolve_vios_uuid(hmc: HMCClient, vios_name_or_uuid: str) -> str:
     """Resolve a VIOS name-or-UUID to a UUID for REST calls.
 
     If the value is already a UUID it is returned as-is. Otherwise it is
