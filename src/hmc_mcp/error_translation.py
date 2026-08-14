@@ -27,12 +27,14 @@ def translate_pcm_error(exc: HMCError) -> None:
             "PCM is not licensed or not enabled on this HMC. "
             "Enable PCM in the HMC settings or use an HMC that has the PCM feature licensed.",
             exc.status_code,
+            body=exc.body,
         ) from exc
     if exc.status_code == 403:
         raise HMCError(
             "The connecting user does not have PCM authority on this HMC. "
             "Grant the user PCM authority in HMC user management and retry.",
             exc.status_code,
+            body=exc.body,
         ) from exc
 
 
@@ -42,6 +44,7 @@ def translate_template_error(exc: HMCError) -> None:
             "Partition templates are not licensed or not supported on this HMC. "
             "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
             exc.status_code,
+            body=exc.body,
         ) from exc
 
 
@@ -54,4 +57,5 @@ def translate_virtual_network_create_error(exc: HMCError) -> None:
             "(2) XML schema version mismatch — try setting "
             "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
             exc.status_code,
+            body=exc.body,
         ) from exc

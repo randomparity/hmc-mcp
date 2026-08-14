@@ -186,6 +186,12 @@ class HMCClient(
         """Send one REST request and normalize transport-layer failures."""
         try:
             return await self._http.request(method, path, **kwargs)
+        except httpx.TimeoutException as exc:
+            timeout = f"{self.config.timeout:g}"
+            raise HMCTransportError(
+                f"{method.upper()} {path} timed out after the configured {timeout}s. "
+                f"Increase HMC_TIMEOUT above {timeout} for a slower HMC or network."
+            ) from exc
         except httpx.TransportError as exc:
             raise HMCTransportError(
                 f"{method.upper()} {path} failed before the HMC returned a response: {exc}"

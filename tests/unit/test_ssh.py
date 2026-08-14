@@ -142,6 +142,34 @@ async def test_run_hmc_command_nonzero_exit_raises_hmcclierror():
 
     # HMCCLIError subclasses HMCError so REST and CLI failures share one type.
     assert isinstance(exc_info.value, HMCError)
+    assert "lssyscfg -r sys" in str(exc_info.value)
+    assert "exit status 1" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_run_hmc_command_signal_failure_names_signal_and_command():
+    conn_mock = _make_ssh_mock()
+    conn_mock.run = AsyncMock(
+        side_effect=asyncssh.ProcessError(
+            env={},
+            command="lssyscfg -r sys",
+            subsystem=None,
+            exit_status=None,
+            exit_signal="TERM",
+            returncode=-15,
+            stdout="",
+            stderr="terminated",
+        )
+    )
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        with pytest.raises(HMCCLIError) as exc_info:
+            await run_hmc_command(make_config(), "lssyscfg -r sys")
+
+    message = str(exc_info.value)
+    assert "lssyscfg -r sys" in message
+    assert "signal TERM" in message
+    assert "exit status None" not in message
 
 
 @pytest.mark.asyncio
