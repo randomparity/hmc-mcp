@@ -22,7 +22,7 @@ where process-level isolation is not meaningful and hard HMC-user enforcement
 ### Phase 0 — per-agent attribution
 
 Add an optional `HMC_AGENT_ID` environment variable to `HMCConfig`. When set,
-the config property `effective_audit_memento` returns `hmc-mcp/<agent_id>`;
+the config property `effective_audit_memento` returns `hmc-mcp:<agent_id>`;
 when unset it returns the existing default `"hmc-mcp"`. `effective_audit_memento`
 replaces the direct `audit_memento` field as the value sent in `X-Audit-Memento`,
 so every REST mutation carries per-agent attribution without changing the rest
@@ -76,7 +76,7 @@ per-HMC-user isolation) are explicit future work and require a separate ADR.
   versions.  Full implementation (diff the LPAR list before/after the job) is
   tracked in issue #135.
 - Attribution in the HMC REST audit log improves: `X-Audit-Memento` is now
-  `hmc-mcp/<agent_id>` rather than the generic `hmc-mcp` when `HMC_AGENT_ID` is
+  `hmc-mcp:<agent_id>` rather than the generic `hmc-mcp` when `HMC_AGENT_ID` is
   set.
 - Stamping adds one SSH round trip after create. This is a best-effort call with
   no impact on the create result.

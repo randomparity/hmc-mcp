@@ -361,16 +361,16 @@ def test_agent_id_unset_uses_audit_memento_default():
 
 def test_agent_id_set_prefixes_audit_memento():
     cfg = HMCConfig(agent_id="alice", _env_file=None)
-    assert cfg.effective_audit_memento == "hmc-mcp/alice"
+    assert cfg.effective_audit_memento == "hmc-mcp:alice"
 
 
 def test_agent_id_overrides_audit_memento_field():
-    # When agent_id is set, effective_audit_memento uses hmc-mcp/<agent_id>
+    # When agent_id is set, effective_audit_memento uses hmc-mcp:<agent_id>
     # regardless of the audit_memento field.
     # Setting both also emits a UserWarning at construction time.
     with pytest.warns(UserWarning, match="HMC_AGENT_ID is set"):
         cfg = HMCConfig(agent_id="bob", audit_memento="custom", _env_file=None)
-    assert cfg.effective_audit_memento == "hmc-mcp/bob"
+    assert cfg.effective_audit_memento == "hmc-mcp:bob"
 
 
 def test_agent_id_no_warning_when_audit_memento_is_default():
@@ -380,7 +380,7 @@ def test_agent_id_no_warning_when_audit_memento_is_default():
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         cfg = HMCConfig(agent_id="alice", _env_file=None)
-    assert cfg.effective_audit_memento == "hmc-mcp/alice"
+    assert cfg.effective_audit_memento == "hmc-mcp:alice"
 
 
 def test_audit_memento_without_agent_id():
@@ -397,4 +397,4 @@ def test_agent_id_from_env(monkeypatch):
     monkeypatch.setenv("HMC_AGENT_ID", "env-agent")
     cfg = HMCConfig(_env_file=None)
     assert cfg.agent_id == "env-agent"
-    assert cfg.effective_audit_memento == "hmc-mcp/env-agent"
+    assert cfg.effective_audit_memento == "hmc-mcp:env-agent"

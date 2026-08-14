@@ -59,10 +59,12 @@ def validate_agent_id(agent_id: str) -> None:
     - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
       is embedded in the ownership token written via ``chsyscfg``.
     - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
-    - No forward slashes — the audit memento is formatted as ``hmc-mcp/<agent_id>``;
-      a slash in the agent_id would produce an ambiguous multi-segment path.
-    - No colons — the ownership token format is ``[hmc-mcp owner:<agent_id> …]``;
-      a colon in the agent_id would produce an ambiguous ``owner:a:b`` value.
+    - No forward slashes — the HMC REST API rejects ``X-Audit-Memento`` values
+      containing ``/`` (allowed pattern: ``[ a-zA-Z0-9_\\-+().,@:]{1,128}``); a
+      slash in the agent_id would produce a header value the HMC silently rejects.
+    - No colons — the audit memento is formatted as ``hmc-mcp:<agent_id>``; a colon
+      in the agent_id would produce an ambiguous ``hmc-mcp:a:b`` value, and colons
+      also break the ``[hmc-mcp owner:<agent_id> …]`` ownership token format.
     - No spaces — a space in the agent_id would be embedded in the description token
       and may corrupt the HMC CLI ``-i`` parser (same concern as for lpar_name).
 
@@ -100,12 +102,13 @@ def validate_agent_id(agent_id: str) -> None:
         )
     if "/" in agent_id:
         raise ValueError(
-            "agent_id contains '/'; slashes make the audit memento path "
-            "(hmc-mcp/<agent_id>) ambiguous"
+            "agent_id contains '/'; the HMC REST API rejects X-Audit-Memento values "
+            "containing '/' (allowed: [ a-zA-Z0-9_\\-+().,@:]{1,128})"
         )
     if ":" in agent_id:
         raise ValueError(
-            "agent_id contains ':'; colons break the 'owner:<agent_id>' token format"
+            "agent_id contains ':'; colons break the 'hmc-mcp:<agent_id>' audit "
+            "memento format and the 'owner:<agent_id>' ownership token format"
         )
     if " " in agent_id:
         raise ValueError(

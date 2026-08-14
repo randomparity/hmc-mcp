@@ -319,7 +319,7 @@ def test_agent_id_set_prefixes_audit_memento():
 def test_agent_id_overrides_audit_memento_field():
     # When agent_id is set, effective_audit_memento ignores audit_memento.
     cfg = HMCConfig(agent_id="bob", audit_memento="custom", _env_file=None)
-    assert cfg.effective_audit_memento == "hmc-mcp/bob"
+    assert cfg.effective_audit_memento == "hmc-mcp:bob"
 
 
 def test_audit_memento_without_agent_id():

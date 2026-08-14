@@ -77,7 +77,7 @@ audit log. This spec covers Phase 0 (per-agent attribution) and Phase 1
      (valid IDs, rejected commas/`=`/brackets, length overflow).
    - `tests/unit/test_config.py` or new: verifies `HMC_AGENT_ID` round-trips
      through `HMCConfig` and that `effective_audit_memento` returns the right
-     values (unset → `"hmc-mcp"`, set → `"hmc-mcp/alice"`).
+     values (unset → `"hmc-mcp"`, set → `"hmc-mcp:alice"`).
    - `tests/app/test_server_tools.py` or a new test: verifies
      `hmc_create_lpar` result dict contains `"ownership_stamped"` and `"lpar"` keys.
 

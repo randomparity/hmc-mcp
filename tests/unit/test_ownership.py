@@ -53,7 +53,7 @@ def test_validate_agent_id_bracket():
 
 
 def test_validate_agent_id_slash():
-    with pytest.raises(ValueError, match="slash"):
+    with pytest.raises(ValueError, match="HMC REST API"):
         validate_agent_id("team/agent")
 
 

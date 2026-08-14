@@ -63,7 +63,7 @@ class HMCConfig(BaseSettings):
         default=None,
         description=(
             "Per-agent identifier folded into the X-Audit-Memento header as "
-            "hmc-mcp/<agent_id>. Used for multi-agent LPAR ownership attribution. "
+            "hmc-mcp:<agent_id>. Used for multi-agent LPAR ownership attribution. "
             "Must be 1–64 printable ASCII characters with no commas, = signs, or "
             "square brackets. (HMC_AGENT_ID)"
         ),
@@ -81,7 +81,7 @@ class HMCConfig(BaseSettings):
     def _warn_audit_memento_override(self) -> "HMCConfig":
         """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
 
-        When both are set, effective_audit_memento returns ``hmc-mcp/<agent_id>``
+        When both are set, effective_audit_memento returns ``hmc-mcp:<agent_id>``
         and ignores the custom audit_memento.  Emitting a warning at construction
         time prevents silent surprises in HMC audit logs.
         """
@@ -90,7 +90,7 @@ class HMCConfig(BaseSettings):
                 f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
                 f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
                 "ignored — X-Audit-Memento is always sent as "
-                f"hmc-mcp/{self.agent_id}"
+                f"hmc-mcp:{self.agent_id}"
             )
             warnings.warn(msg, UserWarning, stacklevel=2)
             _logger.warning(msg)
@@ -100,7 +100,7 @@ class HMCConfig(BaseSettings):
     def effective_audit_memento(self) -> str:
         """Audit memento value sent in the X-Audit-Memento header.
 
-        Returns ``hmc-mcp/<agent_id>`` when ``agent_id`` is set and non-empty;
+        Returns ``hmc-mcp:<agent_id>`` when ``agent_id`` is set and non-empty;
         otherwise returns ``audit_memento`` (default ``"hmc-mcp"``).
 
         Note: when ``agent_id`` is set, ``audit_memento`` is ignored — the prefix
@@ -109,7 +109,7 @@ class HMCConfig(BaseSettings):
         ``hmc-mcp``.
         """
         if self.agent_id:
-            return f"hmc-mcp/{self.agent_id}"
+            return f"hmc-mcp:{self.agent_id}"
         return self.audit_memento
 
     @property

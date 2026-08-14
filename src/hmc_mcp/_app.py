@@ -90,7 +90,7 @@ mcp = FastMCP(
         "or through a path that does not stamp. Treat it as unowned and proceed "
         "with caution — ask the operator if in doubt.\n\n"
         "**Set HMC_AGENT_ID** in the environment for per-agent attribution in "
-        "HMC audit logs (X-Audit-Memento: hmc-mcp/<agent_id>)."
+        "HMC audit logs (X-Audit-Memento: hmc-mcp:<agent_id>)."
     ),
 )
 
