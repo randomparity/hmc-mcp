@@ -80,6 +80,21 @@ LPARS = b"""<?xml version="1.0"?>
   </entry>
 </feed>"""
 
+JOB_FEED = b"""<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:job-uuid-999</id>
+    <title>Job:PowerOn</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <JobID>job-uuid-999</JobID>
+        <Status>RUNNING</Status>
+        <RequestedOperation>PowerOn</RequestedOperation>
+      </Job>
+    </content>
+  </entry>
+</feed>"""
+
 
 class _MockHMC(BaseHTTPRequestHandler):
     """Minimal HMC REST stand-in: logon, the two list feeds, logoff.
@@ -98,13 +113,27 @@ class _MockHMC(BaseHTTPRequestHandler):
 
     def _drain_body(self):
         length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
+        return self.rfile.read(length) if length else b""
 
     def do_PUT(self):
-        self._drain_body()
+        body = self._drain_body()
+        request_log = getattr(self.server, "request_log")
+        request_log.append(
+            {
+                "path": self.path,
+                "session": self.headers.get("X-API-Session"),
+                "content_type": self.headers.get("Content-Type"),
+                "accept": self.headers.get("Accept"),
+                "body": body,
+            }
+        )
         if self.path == "/rest/api/web/Logon":
             self._send(LOGON)
+        elif self.path == (
+            "/rest/api/uom/LogicalPartition/"
+            "11111111-1111-1111-1111-111111111111/do/PowerOn"
+        ):
+            self._send(JOB_FEED, 202)
         else:
             self._send(b"", 404)
 
@@ -169,16 +198,17 @@ def _self_signed_cert(tmp_path: Path) -> tuple[str, str]:
 
 @pytest.fixture
 def mock_hmc(tmp_path):
-    """A threaded HTTPS mock HMC on an ephemeral port; yields the port."""
+    """A threaded HTTPS mock HMC on an ephemeral port; yields the server."""
     certfile, keyfile = _self_signed_cert(tmp_path)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _MockHMC)
+    httpd.request_log = []
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        yield httpd.server_address[1]
+        yield httpd
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -195,7 +225,9 @@ def _env(port: int) -> dict[str, str]:
 
 
 def test_systems_list_e2e(mock_hmc):
-    result = RUNNER.invoke(cli.app, ["systems", "list"], env=_env(mock_hmc))
+    result = RUNNER.invoke(
+        cli.app, ["systems", "list"], env=_env(mock_hmc.server_address[1])
+    )
 
     assert result.exit_code == 0
     assert "server1" in result.stdout
@@ -205,7 +237,9 @@ def test_systems_list_e2e(mock_hmc):
 
 
 def test_lpars_list_e2e(mock_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "list"], env=_env(mock_hmc))
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "list"], env=_env(mock_hmc.server_address[1])
+    )
 
     assert result.exit_code == 0
     assert "aixprod" in result.stdout
@@ -214,8 +248,40 @@ def test_lpars_list_e2e(mock_hmc):
 
 
 def test_lpars_list_json_e2e(mock_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "list", "--json"], env=_env(mock_hmc))
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "list", "--json"],
+        env=_env(mock_hmc.server_address[1]),
+    )
 
     assert result.exit_code == 0
     assert "11111111-1111-1111-1111-111111111111" in result.stdout
     assert "22222222-2222-2222-2222-222222222222" in result.stdout
+
+
+def test_lpar_power_on_e2e(mock_hmc):
+    lpar_uuid = "11111111-1111-1111-1111-111111111111"
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "power-on", lpar_uuid, "--yes"],
+        env=_env(mock_hmc.server_address[1]),
+    )
+
+    assert result.exit_code == 0
+    assert lpar_uuid in result.stdout
+    power_on_request = next(
+        request
+        for request in mock_hmc.request_log
+        if request["path"].endswith("/do/PowerOn")
+    )
+    assert power_on_request["path"] == (
+        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn"
+    )
+    assert power_on_request["session"] == "tok"
+    assert power_on_request["content_type"] == (
+        "application/vnd.ibm.powervm.web+xml; type=JobRequest"
+    )
+    assert power_on_request["accept"] == "application/atom+xml"
+    body = power_on_request["body"].decode()
+    assert "<OperationName" in body and ">PowerOn<" in body
+    assert "<GroupName" in body and ">LogicalPartition<" in body
