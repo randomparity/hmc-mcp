@@ -165,9 +165,7 @@ class FakeHMC:
     async def delete_logical_partition(self, lpar_uuid):
         self._record("delete_logical_partition", lpar_uuid)
 
-    async def lpar_migrate(
-        self, lpar_uuid, target, profile=None, *, wait_time=None
-    ):
+    async def lpar_migrate(self, lpar_uuid, target, profile=None, *, wait_time=None):
         self._record("lpar_migrate", lpar_uuid, target, profile, wait_time=wait_time)
         return self.job
 
@@ -206,6 +204,18 @@ class FakeHMC:
     async def add_network_adapter(self, lpar_uuid, vlan, slot, vswitch, tagged, mac):
         self._record("add_network_adapter", lpar_uuid, vlan, slot, vswitch, tagged, mac)
         return {"UUID": "adapter-1"}
+
+    async def add_vscsi_adapter(
+        self, lpar_uuid, vios_partition_id, vios_slot, slot_number=None
+    ):
+        self._record(
+            "add_vscsi_adapter",
+            lpar_uuid,
+            vios_partition_id,
+            vios_slot,
+            slot_number,
+        )
+        return {"UUID": "vscsi-adapter-1"}
 
     async def delete_adapter(self, lpar_uuid, adapter_type, adapter_uuid):
         self._record("delete_adapter", lpar_uuid, adapter_type, adapter_uuid)
@@ -1127,6 +1137,106 @@ def test_storage_create_disk(fake_hmc):
     assert name == "create_virtual_disk"
     assert args[1] == VG_UUID
     assert args[3] == 1024
+
+
+def test_storage_attach_disk_runs_workflow(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_NAME,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--size",
+            "1024",
+            "--vios-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Attached virtual disk 'bootvol'" in result.stdout
+    mutations = [
+        name
+        for name, _, _ in fake_hmc.calls
+        if name in {"create_virtual_disk", "add_vscsi_adapter", "map_storage_to_lpar"}
+    ]
+    assert mutations == [
+        "create_virtual_disk",
+        "add_vscsi_adapter",
+        "map_storage_to_lpar",
+    ]
+
+
+def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--size",
+            "1024",
+            "--vios-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.stdout
+    mutations = {"create_virtual_disk", "add_vscsi_adapter", "map_storage_to_lpar"}
+    assert not any(name in mutations for name, _, _ in fake_hmc.calls)
+
+
+def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
+    fake_hmc.fail_on = "add_vscsi_adapter"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--size",
+            "1024",
+            "--vios-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "create_disk" in result.stdout
+    assert "vscsi" in result.stdout
+    assert "error" in result.stdout
+    assert "simulated add_vscsi_adapter failure" in result.stdout
+    assert "storage" in result.stdout
+    assert "skipped" in result.stdout
 
 
 # --------------------------------------------------------------------------- #

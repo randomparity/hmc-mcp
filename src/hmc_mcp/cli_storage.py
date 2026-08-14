@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 import typer
+from dataclasses import asdict
 from rich.table import Table
 
 from .documents import StorageKind
@@ -28,6 +29,7 @@ from .operations_storage import (
     list_volume_groups,
     map_storage,
 )
+from .operations_provision import ProvisionStorage, attach_disk_to_lpar
 
 
 @storage_app.command("list-vgs")
@@ -96,6 +98,67 @@ def storage_create_disk(
 
     console.print(f"[green]Created virtual disk '{name}' ({size} MiB)[/green]")
     _print_json(disk)
+
+
+@storage_app.command("attach-disk")
+def storage_attach_disk(
+    lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
+    vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
+    name: str = typer.Option(..., "--name", "-n", help="New virtual disk name"),
+    size: int = typer.Option(..., "--size", help="Disk size in MiB"),
+    vios_id: int = typer.Option(..., "--vios-id", help="VIOS partition ID"),
+    vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server slot"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without mutation"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+) -> None:
+    """Create a virtual disk and attach it to an existing LPAR."""
+    if (
+        not dry_run
+        and not yes
+        and not typer.confirm(
+            f"Create {size} MiB disk '{name}' and attach it to LPAR '{lpar}'?"
+        )
+    ):
+        raise typer.Abort()
+
+    result = _with_client(
+        lambda hmc: attach_disk_to_lpar(
+            hmc,
+            lpar,
+            ProvisionStorage(vios, name, vg_uuid=vg),
+            capacity_mb=size,
+            vios_partition_id=vios_id,
+            vios_slot=vios_slot,
+            dry_run=dry_run,
+        )
+    )
+    if as_json:
+        _print_json(asdict(result))
+        if not dry_run and not result.workflow_completed:
+            raise typer.Exit(1)
+        return
+    if dry_run:
+        console.print("[yellow]DRY RUN — preconditions validated[/yellow]")
+        return
+    if result.workflow_completed:
+        console.print(f"[green]Attached virtual disk '{name}' to {lpar}[/green]")
+        return
+
+    console.print("[yellow]Disk attachment incomplete[/yellow]")
+    table = Table(title=f"Attach-disk steps: {name}")
+    table.add_column("Step")
+    table.add_column("Status")
+    table.add_column("Detail")
+    for step in result.steps:
+        table.add_row(
+            str(step.get("step", "-")),
+            str(step.get("status", "-")),
+            str(step.get("result", "")),
+        )
+    console.print(table)
+    raise typer.Exit(1)
 
 
 @storage_app.command("map")

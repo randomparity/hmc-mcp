@@ -71,6 +71,15 @@ def test_arbitrary_command_tool_is_disabled_by_default():
     assert "hmc_run_command" not in _tools_by_name()
 
 
+def test_attach_disk_is_state_changing_not_destructive():
+    assert "hmc_attach_disk_to_lpar" not in READ_ONLY_TOOLS
+    assert "hmc_attach_disk_to_lpar" not in DESTRUCTIVE_TOOLS
+    annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
+    assert annotations is None or (
+        annotations.readOnlyHint is not True and annotations.destructiveHint is not True
+    )
+
+
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 

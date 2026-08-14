@@ -7,12 +7,12 @@ result and an optional dry-run that validates preconditions only.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_system_uuid
+from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind
 from .errors import HMCError
 from .operations_adapters import add_network_adapter, add_vios_adapter
@@ -22,7 +22,7 @@ from .operations_lpar import (
     create_and_stamp_lpar,
     power_lpar,
 )
-from .operations_storage import map_storage
+from .operations_storage import create_virtual_disk, map_storage
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,17 @@ class ProvisionResult:
     lpar_uuid: str | None
     dry_run: bool
     ownership_stamped: bool | None
+    steps: tuple[dict[str, Any], ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AttachDiskResult:
+    """Truthful outcome of attaching a new disk to an existing LPAR."""
+
+    workflow_completed: bool
+    lpar_uuid: str
+    dry_run: bool
     steps: tuple[dict[str, Any], ...]
     warnings: tuple[str, ...]
 
@@ -153,8 +164,8 @@ async def _add_vscsi(
     lpar_uuid: str,
     vios_partition_id: int,
     vios_slot: int,
-) -> dict[str, Any] | None:
-    result = await add_vios_adapter(
+) -> dict[str, Any]:
+    await add_vios_adapter(
         hmc,
         lpar_uuid,
         vios_partition_id,
@@ -162,13 +173,17 @@ async def _add_vscsi(
         None,
         fibre_channel=False,
     )
-    return result.resource
+    return {
+        "lpar_uuid": lpar_uuid,
+        "vios_partition_id": vios_partition_id,
+        "vios_slot": vios_slot,
+    }
 
 
 async def _map_storage(
     hmc: HMCClient, storage: ProvisionStorage, lpar_uuid: str
-) -> dict[str, Any] | None:
-    _, resource = await map_storage(
+) -> dict[str, Any]:
+    await map_storage(
         hmc,
         storage.vios_uuid,
         storage.kind,
@@ -176,7 +191,25 @@ async def _map_storage(
         lpar_uuid,
         None,
     )
-    return resource
+    return {
+        "lpar_uuid": lpar_uuid,
+        "vios_uuid": storage.vios_uuid,
+        "storage_name": storage.storage_name,
+    }
+
+
+async def _create_disk(
+    hmc: HMCClient, storage: ProvisionStorage, capacity_mb: int
+) -> dict[str, Any]:
+    assert storage.vg_uuid is not None
+    await create_virtual_disk(
+        hmc,
+        storage.vios_uuid,
+        storage.vg_uuid,
+        storage.storage_name,
+        capacity_mb,
+    )
+    return {"disk_name": storage.storage_name, "capacity_mb": capacity_mb}
 
 
 async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:
@@ -186,6 +219,77 @@ async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:
 
 def _skip_steps(steps: list[dict[str, Any]], names: list[str]) -> None:
     steps.extend(_step(name, "skipped") for name in names)
+
+
+async def _run_storage_leg(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    storage: ProvisionStorage,
+    *,
+    vios_partition_id: int,
+    vios_slot: int,
+    disk_capacity_mb: int | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Run the shared ordered vSCSI storage workflow."""
+    steps: list[dict[str, Any]] = []
+    operations: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
+    if disk_capacity_mb is not None:
+        operations.append(
+            ("create_disk", lambda: _create_disk(hmc, storage, disk_capacity_mb))
+        )
+    operations.extend(
+        (
+            (
+                "vscsi",
+                lambda: _add_vscsi(hmc, lpar_uuid, vios_partition_id, vios_slot),
+            ),
+            ("storage", lambda: _map_storage(hmc, storage, lpar_uuid)),
+        )
+    )
+    for index, (name, operation) in enumerate(operations):
+        if not await _record_hmc_step(steps, name, operation()):
+            _skip_steps(steps, [step_name for step_name, _ in operations[index + 1 :]])
+            return steps, False
+    return steps, True
+
+
+async def attach_disk_to_lpar(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    storage: ProvisionStorage,
+    *,
+    capacity_mb: int,
+    vios_partition_id: int,
+    vios_slot: int,
+    dry_run: bool = False,
+) -> AttachDiskResult:
+    """Create and attach a virtual disk to an existing LPAR."""
+    if capacity_mb <= 0:
+        raise ValueError("capacity_mb must be greater than zero")
+    if storage.kind != "VirtualDisk" or storage.vg_uuid is None:
+        raise ValueError("disk attachment requires a VirtualDisk with vg_uuid")
+
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
+    step_names = ["create_disk", "vscsi", "storage"]
+    if dry_run:
+        return AttachDiskResult(
+            False,
+            lpar_uuid,
+            True,
+            tuple(_step(name, "dry_run") for name in step_names),
+            (),
+        )
+
+    steps, completed = await _run_storage_leg(
+        hmc,
+        lpar_uuid,
+        storage,
+        vios_partition_id=vios_partition_id,
+        vios_slot=vios_slot,
+        disk_capacity_mb=capacity_mb,
+    )
+    return AttachDiskResult(completed, lpar_uuid, False, tuple(steps), ())
 
 
 def _provision_result(
@@ -331,20 +435,17 @@ async def provision_lpar(
         _skip_steps(steps, step_names[2:])
         return _provision_result(creation, created_uuid, steps, False)
 
-    if not await _record_hmc_step(
-        steps,
-        "vscsi",
-        _add_vscsi(hmc, created_uuid, network.vios_partition_id, network.vios_slot),
-    ):
-        _skip_steps(steps, step_names[3:])
-        return _provision_result(creation, created_uuid, steps, False)
-
-    if not await _record_hmc_step(
-        steps,
-        "storage",
-        _map_storage(hmc, storage, created_uuid),
-    ):
-        _skip_steps(steps, step_names[4:])
+    storage_steps, storage_completed = await _run_storage_leg(
+        hmc,
+        created_uuid,
+        storage,
+        vios_partition_id=network.vios_partition_id,
+        vios_slot=network.vios_slot,
+    )
+    steps.extend(storage_steps)
+    if not storage_completed:
+        if power_on:
+            _skip_steps(steps, ["power_on"])
         return _provision_result(creation, created_uuid, steps, False)
 
     if power_on:
