@@ -311,12 +311,14 @@ Exposed tools:
 |-----------------------------|-------------|
 | `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
 | `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
-| `hmc_processed_metrics`         | List (mode=links) or download (mode=fetch, default) processed metrics (30s, ~2h retention) |
-| `hmc_aggregated_metrics`        | List (mode=links) or download (mode=fetch, default) aggregated metrics (trend rollup) |
+| `hmc_processed_metric_links`    | List processed metric documents (30s, ~2h retention) |
+| `hmc_processed_metrics`         | Download the newest processed metric document |
+| `hmc_aggregated_metric_links`   | List aggregated metric documents (trend rollup) |
+| `hmc_aggregated_metrics`        | Download the newest aggregated metric document |
 
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
-> links. Pass `mode="links"` to get the link list; `mode="fetch"` (default)
-> downloads the most recent document (or `{}` when none are in range). The CLI
+> links. The `*_metric_links` tools return the link list, while the `*_metrics`
+> tools download the most recent document (or `{}` when none are in range). The CLI
 > `metrics show` accepts `--fetch` to do both in one step. Long-term
 > monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
 > before processed/aggregated metrics accumulate. Categories include

@@ -132,43 +132,49 @@ def hmc_processed_metrics(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    mode: Literal["links", "fetch"] = "fetch",
     profile: str | None = None,
-) -> list[dict[str, str]] | dict[str, Any]:
-    """List or download processed PCM metrics JSON documents.
+) -> dict[str, Any]:
+    """Download the newest processed PCM metrics JSON document.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_name_or_uuid is the name or UUID of that resource. Processed
     metrics have 30s granularity and ~2h retention. Timestamps are ISO-8601
     UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
 
-    mode='links' returns the Atom feed link list (list of dicts with 'link',
-    'updated', 'title' keys). mode='fetch' (default) downloads and returns the
-    parsed JSON of the most recent document, or ``{}`` when no metrics are
-    available in the requested range.
+    Returns the parsed JSON object of the most recent document, or ``{}`` when
+    no metrics are available in the requested range. Use
+    hmc_processed_metric_links to inspect the Atom feed.
     """
-    if mode == "links":
-        return _metrics_links(
-            category,
-            resource_name_or_uuid,
-            "processed",
-            start_ts,
-            end_ts,
-            no_of_samples,
-            profile,
-        )
-    elif mode == "fetch":
-        return _metrics_fetch(
-            category,
-            resource_name_or_uuid,
-            "processed",
-            start_ts,
-            end_ts,
-            no_of_samples,
-            profile,
-        )
-    else:
-        raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
+    return _metrics_fetch(
+        category,
+        resource_name_or_uuid,
+        "processed",
+        start_ts,
+        end_ts,
+        no_of_samples,
+        profile,
+    )
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_processed_metric_links(
+    category: str,
+    resource_name_or_uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+    profile: str | None = None,
+) -> list[dict[str, str]]:
+    """List processed PCM metric documents available in the requested range."""
+    return _metrics_links(
+        category,
+        resource_name_or_uuid,
+        "processed",
+        start_ts,
+        end_ts,
+        no_of_samples,
+        profile,
+    )
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -178,43 +184,50 @@ def hmc_aggregated_metrics(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    mode: Literal["links", "fetch"] = "fetch",
     profile: str | None = None,
-) -> list[dict[str, str]] | dict[str, Any]:
-    """List or download aggregated PCM metrics JSON documents.
+) -> dict[str, Any]:
+    """Download the newest aggregated PCM metrics JSON document.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_name_or_uuid is the name or UUID of that resource. Aggregated
     metrics are the long-term rollup used for trend analysis. Timestamps are
     ISO-8601 UTC (yyyy-MM-ddTHH:mm:ssZ); start_ts is required.
 
-    mode='links' returns the Atom feed link list. mode='fetch' (default)
-    downloads and returns the parsed JSON of the most recent document, or
-    ``{}`` when no metrics are available in the requested range. Requires
-    aggregation to be enabled in PCM preferences.
+    Returns the parsed JSON object of the most recent document, or ``{}`` when
+    no metrics are available in the requested range. Requires aggregation to
+    be enabled in PCM preferences. Use hmc_aggregated_metric_links to inspect
+    the Atom feed.
     """
-    if mode == "links":
-        return _metrics_links(
-            category,
-            resource_name_or_uuid,
-            "aggregated",
-            start_ts,
-            end_ts,
-            no_of_samples,
-            profile,
-        )
-    elif mode == "fetch":
-        return _metrics_fetch(
-            category,
-            resource_name_or_uuid,
-            "aggregated",
-            start_ts,
-            end_ts,
-            no_of_samples,
-            profile,
-        )
-    else:
-        raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
+    return _metrics_fetch(
+        category,
+        resource_name_or_uuid,
+        "aggregated",
+        start_ts,
+        end_ts,
+        no_of_samples,
+        profile,
+    )
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_aggregated_metric_links(
+    category: str,
+    resource_name_or_uuid: str,
+    start_ts: str,
+    end_ts: str | None = None,
+    no_of_samples: int | None = None,
+    profile: str | None = None,
+) -> list[dict[str, str]]:
+    """List aggregated PCM metric documents available in the requested range."""
+    return _metrics_links(
+        category,
+        resource_name_or_uuid,
+        "aggregated",
+        start_ts,
+        end_ts,
+        no_of_samples,
+        profile,
+    )
 
 
 async def _fetch_metric_links(

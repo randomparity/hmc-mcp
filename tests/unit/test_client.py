@@ -636,6 +636,16 @@ async def test_fetch_json_invalid_body_raises_contextual_hmc_error(
 
 
 @pytest.mark.asyncio
+async def test_fetch_json_rejects_non_object_document(mock_hmc):
+    """PCM documents must be JSON objects, not arbitrary JSON values."""
+    path = "/rest/api/pcm/ProcessedMetrics/system.json"
+    mock_hmc.get(path).mock(return_value=httpx.Response(200, json=[{"metric": 1}]))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="JSON list; expected an object"):
+            await hmc.fetch_json(path)
+
+@pytest.mark.asyncio
 async def test_fetch_json_404_raises(mock_hmc):
     """fetch_json raises HMCError on 404 like every other client method."""
     mock_hmc.get("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json").mock(

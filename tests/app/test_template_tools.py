@@ -12,6 +12,7 @@ import pytest
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_deploy_partition_template,
+    hmc_get_partition_template,
     hmc_partition_templates,
 )
 
@@ -51,12 +52,12 @@ def test_partition_templates_lists_all(monkeypatch, mock_hmc):
 
 
 def test_partition_templates_with_uuid_gets_one(monkeypatch, mock_hmc):
-    """hmc_partition_templates(template_uuid=...) GETs one template by UUID."""
+    """hmc_get_partition_template GETs one template by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_partition_templates(TEMPLATE_UUID)
+    result = hmc_get_partition_template(TEMPLATE_UUID)
     assert result["Resource"]["templateName"] == "aix-gold"
 
 
@@ -67,7 +68,7 @@ def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates(TEMPLATE_UUID)
+        hmc_get_partition_template(TEMPLATE_UUID)
     assert exc_info.value.status_code == 404
 
 
@@ -87,13 +88,13 @@ def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
 
 
 def test_partition_templates_get_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_partition_templates(template_uuid=...) returns clear message when templates not licensed (HTTP 406)."""
+    """A single template lookup explains when templates are not licensed."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates(TEMPLATE_UUID)
+        hmc_get_partition_template(TEMPLATE_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     assert "not licensed" in error_msg.lower()

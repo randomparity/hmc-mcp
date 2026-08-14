@@ -679,11 +679,10 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
 
     st, data = await call(
         client,
-        "hmc_processed_metrics",
+        "hmc_processed_metric_links",
         category="ManagedSystem",
         resource_name_or_uuid=context.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
-        mode="links",
     )
     _record_expected_or_real(
         state,
@@ -697,11 +696,10 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
 
     st, data = await call(
         client,
-        "hmc_aggregated_metrics",
+        "hmc_aggregated_metric_links",
         category="ManagedSystem",
         resource_name_or_uuid=context.system_name,
         start_ts="2026-01-01T00:00:00.000Z",
-        mode="links",
     )
     _record_expected_or_real(
         state,

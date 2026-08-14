@@ -240,7 +240,7 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     than 'not activated', matching the precondition check pattern used by
     hmc_remove_memory_pool. This permanently removes the partition and its
     profiles from the HMC — it is irreversible. Confirm the target with
-    hmc_lpars(lpar_name_or_uuid=...) before calling. Returns a confirmation string
+    hmc_get_lpar(lpar_name_or_uuid=...) before calling. Returns a confirmation string
     (immediate delete — no job to poll).
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
@@ -296,7 +296,7 @@ def hmc_power_on_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_lpars). Returns the submitted job (check hmc_get_job
     for status). This changes the state of a real partition — confirm the
-    target with hmc_lpars(lpar_name_or_uuid=...) before calling.
+    target with hmc_get_lpar(lpar_name_or_uuid=...) before calling.
 
     If the partition is already in the 'running' state, the tool returns
     ``{"already_running": True, "message": "..."}`` without submitting a job.

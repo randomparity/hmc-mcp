@@ -107,34 +107,24 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_systems(
-    system_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List all managed systems or get one by name or UUID.
+) -> list[dict[str, Any]]:
+    """List managed systems, optionally filtered by state.
 
     When system_name_or_uuid is omitted, returns a list of all managed systems
     known to the HMC — each entry has UUID, SystemName, State, MTMS (machine
     type/model/serial), IPAddress, etc.
 
-    When system_name_or_uuid is provided, accepts either a SystemName or a UUID
-    and returns the full details dict for that one system, or None if not found.
-
-    When state is provided and system_name_or_uuid is omitted, returns only
-    systems whose State property matches the given value, using the HMC
-    server-side search endpoint.
+    When state is provided, returns only systems whose State property matches
+    the given value, using the HMC server-side search endpoint. Use
+    hmc_find_system for a single system lookup by name.
     """
-    if system_name_or_uuid is not None and state is not None:
-        raise ValueError("Provide at most one of system_name_or_uuid or state")
-
     async def _go():
         async with client_from_env(profile) as hmc:
-            if system_name_or_uuid is None:
-                if state is not None:
-                    return await hmc.search_uom("ManagedSystem", "State", state)
-                return await hmc.list_managed_systems()
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.get_managed_system(system_uuid)
+            if state is not None:
+                return await hmc.search_uom("ManagedSystem", "State", state)
+            return await hmc.list_managed_systems()
 
     return _run(_go)
 
@@ -142,35 +132,40 @@ def hmc_systems(
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_lpars(
     system_name_or_uuid: str | None = None,
-    lpar_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List LPARs, get one by name or UUID, or filter by one selector.
+) -> list[dict[str, Any]]:
+    """List LPARs, optionally filtered by system or state.
 
-    Supply at most one of system_name_or_uuid, lpar_name_or_uuid, and state.
-    A system selector lists its LPARs, an LPAR selector returns that partition,
-    and state filters the global list by PartitionState. With no selector, all
-    LPARs are returned. Use hmc_get_lpar_state for a lightweight state lookup.
+    Supply at most one of system_name_or_uuid and state. Use hmc_get_lpar for a
+    single partition or hmc_get_lpar_state for a lightweight state lookup.
     """
-    selectors = (system_name_or_uuid, lpar_name_or_uuid, state)
-    if sum(value is not None for value in selectors) > 1:
-        raise ValueError(
-            "Provide at most one of system_name_or_uuid, lpar_name_or_uuid, or state"
-        )
+    if system_name_or_uuid is not None and state is not None:
+        raise ValueError("Provide at most one of system_name_or_uuid or state")
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if lpar_name_or_uuid is not None:
-                if is_uuid(lpar_name_or_uuid):
-                    return await hmc.get_logical_partition(lpar_name_or_uuid)
-                return await hmc.find_partition_by_name(lpar_name_or_uuid)
             if system_name_or_uuid is not None:
                 system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
             if state is not None:
                 return await hmc.search_uom("LogicalPartition", "PartitionState", state)
             return await hmc.list_logical_partitions(None)
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_lpar(
+    lpar_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get one logical partition by partition name or UUID."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            if is_uuid(lpar_name_or_uuid):
+                return await hmc.get_logical_partition(lpar_name_or_uuid)
+            return await hmc.find_partition_by_name(lpar_name_or_uuid)
 
     return _run(_go)
 
@@ -195,41 +190,44 @@ def hmc_get_lpar_state(
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_vios(
     system_name_or_uuid: str | None = None,
-    vios_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List Virtual I/O Servers or get storage-detail mappings for one.
+) -> list[dict[str, Any]]:
+    """List Virtual I/O Servers, optionally filtered by system or state.
 
-    When vios_name_or_uuid is provided, accepts either a PartitionName or a
-    UUID and returns the VIOS device mapping facts (vSCSI, NPIV, virtual
-    optical) for that VIOS.
-
-    When vios_name_or_uuid is omitted, returns a list of all VIOS entries,
-    optionally restricted to one managed system via system_name_or_uuid
+    Results may be restricted to one managed system via system_name_or_uuid
     (accepts either a SystemName or a UUID).
 
     When state is provided, returns only
     VIOS entries whose PartitionState matches the given value, using the HMC
-    server-side search endpoint. Supply at most one selector.
+    server-side search endpoint. Supply at most one selector. Use hmc_get_vios
+    for the storage-detail mappings of one VIOS.
     """
-    selectors = (system_name_or_uuid, vios_name_or_uuid, state)
-    if sum(value is not None for value in selectors) > 1:
-        raise ValueError(
-            "Provide at most one of system_name_or_uuid, vios_name_or_uuid, or state"
-        )
+    if system_name_or_uuid is not None and state is not None:
+        raise ValueError("Provide at most one of system_name_or_uuid or state")
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if vios_name_or_uuid is not None:
-                vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-                return await hmc.get_vios_storage_detail(vios_uuid)
             if system_name_or_uuid is not None:
                 system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_vios(system_uuid)
             if state is not None:
                 return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
             return await hmc.list_vios(None)
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_vios(
+    vios_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get storage-detail mappings for one VIOS by partition name or UUID."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            return await hmc.get_vios_storage_detail(vios_uuid)
 
     return _run(_go)
 

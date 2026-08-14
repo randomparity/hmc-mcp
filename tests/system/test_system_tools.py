@@ -16,7 +16,9 @@ from hmc_mcp.server import (
     hmc_console_info,
     hmc_find_placement,
     hmc_find_system,
+    hmc_get_lpar,
     hmc_get_lpar_state,
+    hmc_get_vios,
     hmc_lpars,
     hmc_list_resources,
     hmc_systems,
@@ -142,26 +144,36 @@ def test_systems_no_arg_lists_all(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["SystemName"] == "s824-01"
 
 
-def test_systems_with_uuid_gets_one(monkeypatch, mock_hmc):
-    """hmc_systems(system_uuid=UUID) returns one system dict."""
+def test_find_system_gets_one_by_name(monkeypatch, mock_hmc):
+    """hmc_find_system returns one system dict by exact name."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+    mock_hmc.get(
+        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
+    ).mock(
         return_value=httpx.Response(
-            200, text=_feed(SYSTEM_UUID, "ManagedSystem", State="operating")
+            200,
+            text=_feed(
+                SYSTEM_UUID,
+                "ManagedSystem",
+                SystemName="p10-e1080",
+                State="operating",
+            ),
         )
     )
-    result = hmc_systems(SYSTEM_UUID)
+    result = hmc_find_system("p10-e1080")
     assert result["Resource"]["State"] == "operating"
 
 
-def test_systems_with_uuid_404_propagates(monkeypatch, mock_hmc):
-    """A 404 on hmc_systems(uuid) surfaces as HMCError with the status code."""
+def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
+    """An inventory error during a system lookup preserves its status code."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+    mock_hmc.get(
+        "/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)"
+    ).mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_systems(SYSTEM_UUID)
+        hmc_find_system("p10-e1080")
     assert exc_info.value.status_code == 404
 
 
@@ -204,7 +216,7 @@ def test_lpars_lpar_uuid_gets_one(monkeypatch, mock_hmc):
             200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running")
         )
     )
-    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID)
+    result = hmc_get_lpar(LPAR_UUID)
     assert result["Resource"]["PartitionState"] == "running"
 
 
@@ -216,7 +228,7 @@ def test_lpars_name_finds_by_name(monkeypatch, mock_hmc):
             200, text=LPAR_SEARCH_FEED.format(uuid=LPAR_UUID, name="aixprod")
         )
     )
-    result = hmc_lpars(lpar_name_or_uuid="aixprod")
+    result = hmc_get_lpar("aixprod")
     assert result["UUID"] == LPAR_UUID
     assert result["Resource"]["PartitionName"] == "aixprod"
 
@@ -227,7 +239,7 @@ def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    assert hmc_lpars(lpar_name_or_uuid="ghost") is None
+    assert hmc_get_lpar("ghost") is None
 
 
 def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
@@ -241,22 +253,14 @@ def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
     assert result == "running"
 
 
-@pytest.mark.parametrize(
-    "selectors",
-    [
-        {"system_name_or_uuid": SYSTEM_UUID, "lpar_name_or_uuid": LPAR_UUID},
-        {"system_name_or_uuid": SYSTEM_UUID, "state": "running"},
-        {"lpar_name_or_uuid": LPAR_UUID, "state": "running"},
-    ],
-)
-def test_lpars_rejects_conflicting_selectors(selectors):
+def test_lpars_rejects_conflicting_selectors():
     with pytest.raises(ValueError, match="at most one"):
-        hmc_lpars(**selectors)
+        hmc_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 def test_systems_rejects_conflicting_selectors():
     with pytest.raises(ValueError, match="at most one"):
-        hmc_systems(system_name_or_uuid=SYSTEM_UUID, state="running")
+        hmc_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 # ---------------------------------------------------------------------- #
@@ -286,14 +290,14 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
             200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
         )
     )
-    result = hmc_vios(vios_name_or_uuid=VIOS_UUID)
+    result = hmc_get_vios(VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
 
 
 def test_vios_rejects_vios_and_system_selectors():
     with pytest.raises(ValueError, match="at most one"):
-        hmc_vios(vios_name_or_uuid=VIOS_UUID, system_name_or_uuid=SYSTEM_UUID)
+        hmc_vios(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 # ---------------------------------------------------------------------- #
@@ -592,7 +596,7 @@ def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
 
 def test_lpars_rejects_state_with_lpar_selector():
     with pytest.raises(ValueError, match="at most one"):
-        hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state="running")
+        hmc_lpars(system_name_or_uuid=SYSTEM_UUID, state="running")
 
 
 def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
@@ -627,14 +631,6 @@ def test_vios_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-@pytest.mark.parametrize(
-    "selectors",
-    [
-        {"system_name_or_uuid": SYSTEM_UUID, "vios_name_or_uuid": VIOS_UUID},
-        {"system_name_or_uuid": SYSTEM_UUID, "state": "running"},
-        {"vios_name_or_uuid": VIOS_UUID, "state": "running"},
-    ],
-)
-def test_vios_rejects_conflicting_selectors(selectors):
+def test_vios_rejects_conflicting_selectors():
     with pytest.raises(ValueError, match="at most one"):
-        hmc_vios(**selectors)
+        hmc_vios(system_name_or_uuid=SYSTEM_UUID, state="running")

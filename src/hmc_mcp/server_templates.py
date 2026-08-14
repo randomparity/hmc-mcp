@@ -31,24 +31,30 @@ def _check_templates_error(exc: HMCError) -> None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_partition_templates(
-    template_uuid: str | None = None, profile: str | None = None
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List partition templates or get one by UUID.
-
-    When template_uuid is omitted, returns a list of all partition templates
-    in the HMC template library.
-
-    When template_uuid is provided, returns the full config dict for that one
-    template, or None if not found.
-    """
+def hmc_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
+    """List all partition templates in the HMC template library."""
 
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
-                if template_uuid is not None:
-                    return await hmc.get_partition_template(template_uuid)
                 return await hmc.list_partition_templates()
+            except HMCError as exc:
+                _check_templates_error(exc)
+                raise
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_partition_template(
+    template_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get one partition template by UUID, or None when it is not found."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            try:
+                return await hmc.get_partition_template(template_uuid)
             except HMCError as exc:
                 _check_templates_error(exc)
                 raise

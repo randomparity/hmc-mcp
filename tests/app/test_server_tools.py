@@ -19,10 +19,10 @@ from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
+    hmc_get_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
     hmc_update_console_software,
-    hmc_lpars,
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
@@ -131,7 +131,7 @@ def test_lpars_by_name(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="aixprod"))
     )
-    result = hmc_lpars(lpar_name_or_uuid="aixprod")
+    result = hmc_get_lpar("aixprod")
     assert result["UUID"] == LPAR_UUID
     assert result["Resource"]["PartitionName"] == "aixprod"
 
@@ -142,7 +142,7 @@ def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    assert hmc_lpars(lpar_name_or_uuid="ghost") is None
+    assert hmc_get_lpar("ghost") is None
 
 
 # ---------------------------------------------------------------------- #

@@ -46,7 +46,9 @@ from ._app import (
 from .server_system import (
     hmc_console_info as hmc_console_info,
     hmc_find_system as hmc_find_system,
+    hmc_get_lpar as hmc_get_lpar,
     hmc_get_lpar_state as hmc_get_lpar_state,
+    hmc_get_vios as hmc_get_vios,
     hmc_list_configured_hosts as hmc_list_configured_hosts,
     hmc_list_resources as hmc_list_resources,
     hmc_lpars as hmc_lpars,
@@ -132,11 +134,14 @@ from .server_lpm import (
 )
 from .server_templates import (
     hmc_deploy_partition_template as hmc_deploy_partition_template,
+    hmc_get_partition_template as hmc_get_partition_template,
     hmc_partition_templates as hmc_partition_templates,
 )
 from .server_metrics import (
+    hmc_aggregated_metric_links as hmc_aggregated_metric_links,
     hmc_aggregated_metrics as hmc_aggregated_metrics,
     hmc_get_pcm_preferences as hmc_get_pcm_preferences,
+    hmc_processed_metric_links as hmc_processed_metric_links,
     hmc_processed_metrics as hmc_processed_metrics,
     hmc_set_pcm_preferences as hmc_set_pcm_preferences,
 )

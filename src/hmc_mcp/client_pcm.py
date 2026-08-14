@@ -111,7 +111,7 @@ class PcmMixin:
         path = f"/rest/api/pcm/{category}/{resource_uuid}/{kind}?{urlencode(query)}"
         return await self.get_metrics_feed(path)
 
-    async def fetch_json(self: PcmClient, link: str) -> Any:
+    async def fetch_json(self: PcmClient, link: str) -> dict[str, Any]:
         """Fetch a PCM metrics JSON document from an Atom link href.
 
         Raises HMCError for any non-200 response, including 404. A 404 means
@@ -124,8 +124,13 @@ class PcmMixin:
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
         try:
-            return resp.json()
+            document = resp.json()
         except ValueError as exc:
             raise HMCError(
                 f"GET {url} returned invalid JSON: {str(exc)[:500]}"
             ) from exc
+        if not isinstance(document, dict):
+            raise HMCError(
+                f"GET {url} returned a JSON {type(document).__name__}; expected an object"
+            )
+        return document
