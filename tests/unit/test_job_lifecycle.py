@@ -5,14 +5,22 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import TypeAdapter
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
+    RepositorySource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
     wait_for_submitted_job,
 )
+
+
+def test_repository_source_builds_a_pydantic_type_adapter() -> None:
+    schema = TypeAdapter(RepositorySource).json_schema()
+
+    assert set(schema["properties"]) == set(RepositorySource.__annotations__)
 
 
 @pytest.mark.parametrize(
