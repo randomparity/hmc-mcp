@@ -1588,6 +1588,14 @@ def test_jobs_show_forwards_self_link(fake_hmc):
     assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": href})]
 
 
+def test_jobs_list_rejects_negative_limit_before_client_call(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["jobs", "list", "--limit", "-1"])
+
+    assert result.exit_code == 2
+    assert "--limit must be greater than or equal to 0" in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_jobs_wait(fake_hmc):
     result = RUNNER.invoke(cli.app, ["jobs", "wait", JOB_UUID])
 

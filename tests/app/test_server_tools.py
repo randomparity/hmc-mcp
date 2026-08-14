@@ -554,6 +554,16 @@ def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["JobID"] == "job-uuid-001"
 
 
+def test_recent_jobs_rejects_negative_limit_before_request(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/Job")
+
+    with pytest.raises(ValueError, match="limit must be greater"):
+        hmc_recent_jobs(limit=-1)
+
+    assert not route.called
+
+
 def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
     """hmc_recent_jobs returns an empty list when the HMC has no jobs."""
     _hmc_env(monkeypatch)

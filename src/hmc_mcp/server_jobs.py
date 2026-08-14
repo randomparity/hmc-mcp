@@ -43,6 +43,8 @@ def hmc_recent_jobs(
     Raises HMCError when this HMC does not support global Job listing; use
     hmc_get_job with a UUID and submission link on those firmware versions.
     """
+    if limit < 0:
+        raise ValueError("limit must be greater than or equal to 0")
 
     async def operation():
         async with client_from_env(profile) as hmc:
