@@ -1,4 +1,4 @@
-"""MCP tools for LPAR/VIOS lifecycle and power control."""
+"""MCP tools for LPAR creation, mutation, deletion, and power control."""
 
 from __future__ import annotations
 

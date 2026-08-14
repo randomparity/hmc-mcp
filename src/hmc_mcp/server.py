@@ -27,7 +27,7 @@ Addressing:
     HMC command.
 
 This module is a thin aggregator: the tool handlers live in domain
-submodules (``server_power``, ``server_storage``, ...) that register
+submodules (``server_lpars``, ``server_storage``, ...) that register
 themselves on the shared FastMCP instance in ``._app`` when imported here.
 """
 
@@ -43,7 +43,7 @@ from ._app import (
     mcp as mcp,
 )
 
-from .server_system import (
+from .server_systems import (
     hmc_console_info as hmc_console_info,
     hmc_find_system as hmc_find_system,
     hmc_get_lpar as hmc_get_lpar,
@@ -72,7 +72,7 @@ from .server_jobs import (
     hmc_wait_for_job as hmc_wait_for_job,
 )
 
-from .server_power import (
+from .server_lpars import (
     hmc_create_lpar as hmc_create_lpar,
     hmc_delete_lpar as hmc_delete_lpar,
     hmc_dlpar_mem as hmc_dlpar_mem,
@@ -170,17 +170,19 @@ from .server_profiles import (
     hmc_restore_lpar_profiles as hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile as hmc_sync_lpar_profile,
 )
-from .server_cli import (
+from .server_lpar_config import (
     hmc_get_lpar_description as hmc_get_lpar_description,
     hmc_get_lpar_msp as hmc_get_lpar_msp,
     hmc_get_lpar_proc_compat as hmc_get_lpar_proc_compat,
+    hmc_set_lpar_description as hmc_set_lpar_description,
+    hmc_set_lpar_msp as hmc_set_lpar_msp,
+    hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
+)
+from .server_system_resources import (
     hmc_get_proc_compat_modes as hmc_get_proc_compat_modes,
     hmc_list_io_slots as hmc_list_io_slots,
     hmc_list_memory_pools as hmc_list_memory_pools,
     hmc_remove_memory_pool as hmc_remove_memory_pool,
-    hmc_set_lpar_description as hmc_set_lpar_description,
-    hmc_set_lpar_msp as hmc_set_lpar_msp,
-    hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
 )
 from .server_composite import (
     hmc_lpar_summary as hmc_lpar_summary,

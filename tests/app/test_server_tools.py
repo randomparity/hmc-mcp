@@ -305,11 +305,11 @@ def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.server_power.resolve_lpar_ownership_names",
+            "hmc_mcp.server_lpars.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "owned-lpar")),
         ),
         patch(
-            "hmc_mcp.server_power.authorize_lpar_mutation",
+            "hmc_mcp.server_lpars.authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),
@@ -326,11 +326,11 @@ def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
     write = mock_hmc.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
     with (
         patch(
-            "hmc_mcp.server_power.resolve_lpar_ownership_names",
+            "hmc_mcp.server_lpars.resolve_lpar_ownership_names",
             new=AsyncMock(return_value=("system-1", "owned-lpar")),
         ),
         patch(
-            "hmc_mcp.server_power.authorize_lpar_mutation",
+            "hmc_mcp.server_lpars.authorize_lpar_mutation",
             new=AsyncMock(side_effect=PermissionError("foreign owner")),
         ),
         pytest.raises(PermissionError, match="foreign owner"),

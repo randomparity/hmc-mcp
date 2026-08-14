@@ -2,7 +2,7 @@
 
 The document builders and client methods are covered in test_dlpar.py and
 test_power.py; these tests call the actual ``@mcp.tool`` functions in
-``server_power`` against the respx ``mock_hmc`` router so the
+``server_lpars`` against the respx ``mock_hmc`` router so the
 argument->URL and argument->XML mapping in the tool bodies is exercised.
 LPAR create/modify and LPAR power-on/off are covered in
 ``tests/app/test_server_tools.py``; the delete-LPAR precondition guard is

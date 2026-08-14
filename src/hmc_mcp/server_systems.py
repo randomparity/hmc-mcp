@@ -1,4 +1,4 @@
-"""MCP tools for read-only HMC inventory."""
+"""MCP tools for managed-system inventory and lifecycle operations."""
 
 from __future__ import annotations
 

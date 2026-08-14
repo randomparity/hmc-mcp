@@ -1,7 +1,7 @@
 """Tool-layer tests for the consolidated read-only inventory MCP tools.
 
 The client methods are covered in the domain test dirs; these tests call the
-actual ``@mcp.tool`` functions in ``server_system`` against the respx
+actual ``@mcp.tool`` functions in ``server_systems`` against the respx
 ``mock_hmc`` router so the argument->URL mapping in the tool bodies is
 exercised. hmc_get_job is covered in ``tests/app/test_server_tools.py``;
 hmc_run_command (SSH) is covered there too.

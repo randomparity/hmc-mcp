@@ -151,7 +151,7 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 # hmc_set_lpar_description — ASCII validation
 # ---------------------------------------------------------------------- #
-# The guard fires in hmc_set_lpar_description (server_cli.py) *before*
+# The guard fires in hmc_set_lpar_description (server_lpar_config.py) *before*
 # UUID resolution and before the SSH command is built.  Rejection tests
 # therefore need no UUID mocks and no SSH mock.
 
@@ -210,7 +210,7 @@ def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch):
                 return_value="[hmc-mcp owner:other created:2026-08-14]"
             ),
         ),
-        patch("hmc_mcp.server_cli.set_lpar_description", new=write),
+        patch("hmc_mcp.server_lpar_config.set_lpar_description", new=write),
         pytest.raises(PermissionError, match="owned by 'other'"),
     ):
         hmc_set_lpar_description(SYSTEM_NAME, LPAR_NAME, "replacement")

@@ -467,13 +467,16 @@ src/hmc_mcp/
   client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   common.py      # shared HMCClient/config helpers for tool definitions
-  ssh.py         # asyncssh helpers running HMC CLI commands over SSH
+  ssh.py         # transport-only asyncssh session and command execution
+  ssh_commands.py# resource operations implemented with the HMC CLI
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
   _app.py        # shared FastMCP instance, READ_ONLY/DESTRUCTIVE_TOOLS sets, entry points
   server.py      # thin aggregator importing every server_*.py tool module
-  server_*.py    # per-domain @mcp.tool definitions (power, storage, network, ...)
+  server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
+  server_lpar_config.py      # SSH-only LPAR configuration handlers
+  server_system_resources.py # SSH-only managed-system resource handlers
   cli.py         # thin aggregator importing every cli_*.py command module
   cli_app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
   cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)
