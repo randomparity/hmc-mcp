@@ -130,33 +130,33 @@ def network_list_bridges(
 
 @network_app.command("list-fc-ports")
 def network_list_fc_ports(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
 
-    ports = _run(lambda: list_fc_ports(_ssh_config(), system, lpar_name))
+    ports = _run(lambda: list_fc_ports(_ssh_config(), system_name, lpar_name))
 
     _output(ports, as_json, None, "No FC ports found")
 
 
 @network_app.command("list-sea-adapters")
 def network_list_sea_adapters(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
 
-    adapters = _run(lambda: list_sea_adapters(_ssh_config(), system, lpar_name))
+    adapters = _run(lambda: list_sea_adapters(_ssh_config(), system_name, lpar_name))
 
     _output(adapters, as_json, None, "No SEA adapters found")
 
 
 @network_app.command("list-io-slots")
 def network_list_io_slots(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     pci_class: str = typer.Option(
         "all", "--pci-class", help="Filter by PCI class: all, eth, sas, san, nvme"
     ),
@@ -164,7 +164,7 @@ def network_list_io_slots(
 ) -> None:
     """List physical I/O slots on a managed system (HMC CLI via SSH)."""
 
-    slots = _run(lambda: list_io_slots(_ssh_config(), system, pci_class))
+    slots = _run(lambda: list_io_slots(_ssh_config(), system_name, pci_class))
 
     _output(slots, as_json, None, "No I/O slots found")
 
@@ -196,19 +196,19 @@ def network_set_sriov_mode(
 
 @network_app.command("list-vnics")
 def network_list_vnics(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     lpar: str = typer.Argument(..., help="LPAR name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
     config = _ssh_config()
-    vnics = _run(lambda: list_vnics(config, system, lpar))
+    vnics = _run(lambda: list_vnics(config, system_name, lpar))
     _output(vnics, as_json, None, "No vNICs found")
 
 
 @network_app.command("add-vnic")
 def network_add_vnic(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     lpar: str = typer.Argument(..., help="LPAR name"),
     capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
     vswitch: str = typer.Option(..., "--vswitch", help="Virtual switch name"),
@@ -218,39 +218,38 @@ def network_add_vnic(
 ) -> None:
     """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
     if not yes and not typer.confirm(
-        f"Add vNIC (capacity={capacity}, vswitch={vswitch}, vlan={vlan}) to '{lpar}' on '{system}'?"
+        f"Add vNIC (capacity={capacity}, vswitch={vswitch}, vlan={vlan}) to '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
     result = _run(
         lambda: add_vnic(
-            _ssh_config(), system, lpar, capacity, vswitch, vlan, backing_devices
+            _ssh_config(), system_name, lpar, capacity, vswitch, vlan, backing_devices
         )
     )
 
-    console.print(f"[green]vNIC added to '{lpar}' on '{system}'[/green]")
+    console.print(f"[green]vNIC added to '{lpar}' on '{system_name}'[/green]")
     if result.strip():
         console.print(result.strip())
 
 
 @network_app.command("remove-vnic")
 def network_remove_vnic(
-    system: str = typer.Argument(..., help="Managed system name"),
+    system_name: str = typer.Argument(..., help="Managed system name"),
     lpar: str = typer.Argument(..., help="LPAR name"),
     vnic_id: str = typer.Argument(..., help="vNIC ID (from list-vnics)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
     if not yes and not typer.confirm(
-        f"Remove vNIC {vnic_id} from '{lpar}' on '{system}'?"
+        f"Remove vNIC {vnic_id} from '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
     result = _run(
-        lambda: remove_vnic(_ssh_config(), system, lpar, vnic_id)
+        lambda: remove_vnic(_ssh_config(), system_name, lpar, vnic_id)
     )
 
-    console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system}'[/green]")
+    console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system_name}'[/green]")
     if result.strip():
         console.print(result.strip())
-
