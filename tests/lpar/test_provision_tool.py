@@ -481,6 +481,9 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
     )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"

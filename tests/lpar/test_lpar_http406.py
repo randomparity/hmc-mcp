@@ -14,6 +14,8 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.documents import LparResources
+from hmc_mcp.operations_lpar import _system_name
+from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_dlpar_mem,
@@ -23,6 +25,28 @@ from hmc_mcp.server import (
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+
+
+@pytest.mark.asyncio
+async def test_system_name_propagates_unexpected_rest_failure():
+    hmc = AsyncMock()
+    hmc.get_managed_system.side_effect = TypeError("programming defect")
+
+    with pytest.raises(TypeError, match="programming defect"):
+        await _system_name(hmc, SYSTEM_UUID, "fallback")
+
+
+@pytest.mark.asyncio
+async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
+    hmc = AsyncMock()
+    hmc.get_managed_system.side_effect = HMCError("REST unavailable")
+
+    with patch(
+        "hmc_mcp.operations_lpar._ssh_system_name",
+        new=AsyncMock(side_effect=HMCCLIError("SSH unavailable")),
+    ):
+        assert await _system_name(hmc, SYSTEM_UUID, "fallback") == "fallback"
+
 
 EMPTY_FEED = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
 

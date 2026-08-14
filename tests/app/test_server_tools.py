@@ -257,9 +257,15 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
-    with patch(
-        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
-        new=AsyncMock(return_value="tok"),
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            new=AsyncMock(return_value="tok"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar._system_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
     ):
         hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,

@@ -97,11 +97,23 @@ async def _system_name(hmc, system_uuid: str, fallback: str) -> str:
         name = ((system or {}).get("Resource") or {}).get("SystemName")
         if name:
             return name
-    except Exception as exc:
-        _logger.debug("REST system-name lookup failed for %s: %s", system_uuid, exc)
+    except HMCError as exc:
+        _logger.debug(
+            "REST system-name lookup failed for %s: %s",
+            system_uuid,
+            exc,
+            exc_info=exc,
+        )
     try:
         return await _ssh_system_name(hmc.config, system_uuid)
-    except Exception:
+    except HMCCLIError as exc:
+        _logger.warning(
+            "SSH system-name lookup failed for %s; using fallback %r: %s",
+            system_uuid,
+            fallback,
+            exc,
+            exc_info=exc,
+        )
         return fallback
 
 

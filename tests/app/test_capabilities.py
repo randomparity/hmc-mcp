@@ -420,9 +420,15 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
 
-    with patch(
-        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
-        new=AsyncMock(return_value="tok"),
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            new=AsyncMock(return_value="tok"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar._system_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
     ):
         result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
 
