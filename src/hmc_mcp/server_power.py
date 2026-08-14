@@ -14,20 +14,15 @@ from .common import (
     client_from_env,
     resolve_lpar_uuid,
     resolve_system_uuid,
-    resolve_vios_uuid,
 )
 from .documents import (
     Keylock,
     LparResources,
-    MemoryMirroringMode,
     OsType,
     PartitionType,
-    PowerOffPolicy,
-    PowerOnLparStartPolicy,
     build_dlpar_mem_document,
     build_dlpar_proc_document,
     build_lpar_document,
-    build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .operations_lpar import LparCreation, create_and_stamp_lpar
@@ -262,49 +257,6 @@ def hmc_dlpar_proc(
 
 
 @mcp.tool
-def hmc_modify_system(
-    system_name_or_uuid: str,
-    new_name: str | None = None,
-    power_off_policy: PowerOffPolicy | None = None,
-    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
-    pend_mem_region_size: int | None = None,
-    requested_num_sys_huge_pages: int | None = None,
-    mem_mirroring_mode: MemoryMirroringMode | None = None,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Modify a managed system's configuration.
-
-    Only the fields you pass are changed; omitted fields are left as-is.
-
-    system_name_or_uuid: the managed system — accepts either a SystemName or
-        a UUID (from hmc_systems).
-    new_name: rename the managed system.
-    power_off_policy: power-off policy — 1 powers the system off after all
-        partitions shut down, 0 leaves it powered on.
-    power_on_lpar_start_policy: LPAR auto-start policy on system power-on —
-        'autostart', 'userinit', or 'autorecovery'.
-    pend_mem_region_size: pending memory region size (MiB).
-    requested_num_sys_huge_pages: number of huge memory pages to allocate.
-    mem_mirroring_mode: memory mirroring mode — 'none' or 'sys_firmware_only'.
-    """
-    xml = build_managed_system_document(
-        new_name=new_name,
-        power_off_policy=power_off_policy,
-        power_on_lpar_start_policy=power_on_lpar_start_policy,
-        pend_mem_region_size=pend_mem_region_size,
-        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
-        mem_mirroring_mode=mem_mirroring_mode,
-    )
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.modify_managed_system(system_uuid, xml)
-
-    return _run(_go)
-
-
-@mcp.tool
 def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
     desired_memory: int | None = None,
@@ -473,122 +425,6 @@ def hmc_power_off_lpar(
                     f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
                     power_off_lpar_job(immediate=immediate),
                 ),
-                wait,
-                timeout_seconds,
-                poll_interval,
-            )
-
-    return _run(_go)
-
-
-@mcp.tool
-def hmc_power_on_system(
-    system_name_or_uuid: str,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Power on a managed system (PowerOn job).
-
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
-    Set wait=True to block until the job reaches a terminal state.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await _power_op(
-                hmc,
-                lambda client: client.power_on_system(system_uuid),
-                wait,
-                timeout_seconds,
-                poll_interval,
-            )
-
-    return _run(_go)
-
-
-@mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_system(
-    system_name_or_uuid: str,
-    immediate: bool = False,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Power off a managed system (PowerOff job). immediate skips graceful shutdown.
-
-    system_name_or_uuid: accepts either a SystemName or a UUID.
-    Set wait=True to block until the job reaches a terminal state.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await _power_op(
-                hmc,
-                lambda client: client.power_off_system(system_uuid, immediate),
-                wait,
-                timeout_seconds,
-                poll_interval,
-            )
-
-    return _run(_go)
-
-
-@mcp.tool
-def hmc_power_on_vios(
-    vios_name_or_uuid: str,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Power on a VIOS (PowerOn job).
-
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
-    Set wait=True to block until the job reaches a terminal state.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await _power_op(
-                hmc,
-                lambda client: client.power_on_vios(vios_uuid),
-                wait,
-                timeout_seconds,
-                poll_interval,
-            )
-
-    return _run(_go)
-
-
-@mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_power_off_vios(
-    vios_name_or_uuid: str,
-    immediate: bool = False,
-    wait: bool = False,
-    timeout_seconds: int = 300,
-    poll_interval: int = 5,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Power off a VIOS (PowerOff job). immediate skips graceful shutdown.
-
-    vios_name_or_uuid: accepts either a PartitionName or a UUID.
-    Set wait=True to block until the job reaches a terminal state.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await _power_op(
-                hmc,
-                lambda client: client.power_off_vios(vios_uuid, immediate),
                 wait,
                 timeout_seconds,
                 poll_interval,

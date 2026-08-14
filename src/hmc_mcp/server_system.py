@@ -6,6 +6,7 @@ import tomllib
 from typing import Any
 
 from ._app import (
+    _DESTRUCTIVE,
     _READ_ONLY,
     _run,
     mcp,
@@ -18,6 +19,13 @@ from .common import (
     resolve_vios_uuid,
 )
 from .config import HMCConfig, resolve_config_path
+from .documents import (
+    MemoryMirroringMode,
+    PowerOffPolicy,
+    PowerOnLparStartPolicy,
+    build_managed_system_document,
+)
+from .jobs import wait_for_submitted_job
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -249,5 +257,77 @@ def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | N
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.find_system_by_name(name)
+
+    return _run(_go)
+
+
+@mcp.tool
+def hmc_modify_system(
+    system_name_or_uuid: str,
+    new_name: str | None = None,
+    power_off_policy: PowerOffPolicy | None = None,
+    power_on_lpar_start_policy: PowerOnLparStartPolicy | None = None,
+    pend_mem_region_size: int | None = None,
+    requested_num_sys_huge_pages: int | None = None,
+    mem_mirroring_mode: MemoryMirroringMode | None = None,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Modify a managed system's configuration, leaving omitted fields unchanged."""
+    xml = build_managed_system_document(
+        new_name=new_name,
+        power_off_policy=power_off_policy,
+        power_on_lpar_start_policy=power_on_lpar_start_policy,
+        pend_mem_region_size=pend_mem_region_size,
+        requested_num_sys_huge_pages=requested_num_sys_huge_pages,
+        mem_mirroring_mode=mem_mirroring_mode,
+    )
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            return await hmc.modify_managed_system(system_uuid, xml)
+
+    return _run(_go)
+
+
+@mcp.tool
+def hmc_power_on_system(
+    system_name_or_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Power on a managed system, optionally waiting for a terminal job state."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            job = await hmc.power_on_system(system_uuid)
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
+            )
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_DESTRUCTIVE)
+def hmc_power_off_system(
+    system_name_or_uuid: str,
+    immediate: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Power off a managed system, optionally waiting for a terminal job state."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            job = await hmc.power_off_system(system_uuid, immediate)
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
+            )
 
     return _run(_go)

@@ -48,6 +48,9 @@ from .server_system import (
     hmc_list_configured_hosts as hmc_list_configured_hosts,
     hmc_list_resources as hmc_list_resources,
     hmc_lpars as hmc_lpars,
+    hmc_modify_system as hmc_modify_system,
+    hmc_power_off_system as hmc_power_off_system,
+    hmc_power_on_system as hmc_power_on_system,
     hmc_systems as hmc_systems,
     hmc_vios as hmc_vios,
 )
@@ -71,13 +74,8 @@ from .server_power import (
     hmc_dlpar_mem as hmc_dlpar_mem,
     hmc_dlpar_proc as hmc_dlpar_proc,
     hmc_modify_lpar as hmc_modify_lpar,
-    hmc_modify_system as hmc_modify_system,
     hmc_power_off_lpar as hmc_power_off_lpar,
-    hmc_power_off_system as hmc_power_off_system,
-    hmc_power_off_vios as hmc_power_off_vios,
     hmc_power_on_lpar as hmc_power_on_lpar,
-    hmc_power_on_system as hmc_power_on_system,
-    hmc_power_on_vios as hmc_power_on_vios,
 )
 from .server_vios import (
     hmc_backup_vios as hmc_backup_vios,
@@ -86,6 +84,8 @@ from .server_vios import (
     hmc_install_lpar_os as hmc_install_lpar_os,
     hmc_install_vios as hmc_install_vios,
     hmc_list_vios_backups as hmc_list_vios_backups,
+    hmc_power_off_vios as hmc_power_off_vios,
+    hmc_power_on_vios as hmc_power_on_vios,
     hmc_restore_vios as hmc_restore_vios,
 )
 from .server_adapters import (

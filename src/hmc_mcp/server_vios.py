@@ -285,3 +285,46 @@ def hmc_restore_vios(
     config = build_config(profile=profile)
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
     return _run(lambda: run_hmc_cli(cmd, config))
+
+
+@mcp.tool
+def hmc_power_on_vios(
+    vios_name_or_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Power on a VIOS, optionally waiting for a terminal job state."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            job = await hmc.power_on_vios(vios_uuid)
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
+            )
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_DESTRUCTIVE)
+def hmc_power_off_vios(
+    vios_name_or_uuid: str,
+    immediate: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Power off a VIOS, optionally waiting for a terminal job state."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            job = await hmc.power_off_vios(vios_uuid, immediate)
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
+            )
+
+    return _run(_go)
