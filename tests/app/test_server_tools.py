@@ -25,6 +25,7 @@ from hmc_mcp.server import (
     hmc_get_available_hmc_ptfs,
     hmc_update_console_software,
     hmc_modify_lpar,
+    hmc_rename_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
     hmc_list_recent_jobs,
@@ -281,8 +282,26 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     )
 
 
-def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
+def test_modify_lpar_builds_resource_xml(monkeypatch, mock_hmc):
     """hmc_modify_lpar emits only the fields passed; unchanged fields are omitted."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
+    )
+    result = hmc_modify_lpar(
+        LPAR_UUID,
+        resources=LparResources(desired_memory=8192),
+    )
+    body = route.calls.last.request.content.decode()
+    assert "PartitionName" not in body
+    assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
+    # A modify document carries only what changed.
+    assert "MaximumMemory" not in body
+    assert "ProcessingUnits" not in body
+    assert result["Resource"]["PartitionName"] == "owned-lpar"
+
+
+def test_rename_lpar_authorizes_and_writes_name(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
@@ -295,23 +314,19 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
         ),
         patch("hmc_mcp.server_lpars.authorize_lpar_mutation", new=guard),
     ):
-        result = hmc_modify_lpar(
+        result = hmc_rename_lpar(
             SYSTEM_UUID,
             LPAR_UUID,
-            name="renamed",
-            resources=LparResources(desired_memory=8192),
+            "renamed",
             ownership_override=True,
         )
+
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
-    assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
-    # A modify document carries only what changed.
-    assert "MaximumMemory" not in body
-    assert "ProcessingUnits" not in body
-    assert result["Resource"]["PartitionName"] == "renamed"
     guard.assert_awaited_once_with(
         ANY, "system-1", "owned-lpar", ownership_override=True
     )
+    assert result["Resource"]["PartitionName"] == "renamed"
 
 
 def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
@@ -331,7 +346,7 @@ def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
         ),
         pytest.raises(PermissionError, match="foreign owner"),
     ):
-        hmc_modify_lpar(SYSTEM_UUID, LPAR_UUID, name="renamed")
+        hmc_rename_lpar(SYSTEM_UUID, LPAR_UUID, "renamed")
     assert not write.called
 
 

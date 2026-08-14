@@ -135,14 +135,11 @@ def hmc_create_lpar(
 
 @mcp.tool
 def hmc_modify_lpar(
-    system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    name: str | None = None,
     resources: LparResources = LparResources(),
-    ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Modify an LPAR's name and/or resource assignment (memory / CPU).
+    """Modify an LPAR's memory or CPU resource assignment.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars). Only the fields you pass are changed.
@@ -152,29 +149,47 @@ def hmc_modify_lpar(
     CPUs, False for shared processing units + virtual processors; omit it
     to leave the sharing mode unchanged.
 
-    Renaming enforces the description-field ownership token. Foreign-owned or
-    malformed tokens are rejected before the REST write. Set
-    ownership_override=True only after explicit operator approval.
+    Use hmc_rename_lpar for a name change, which requires a managed-system
+    selector for ownership authorization.
     """
-    xml = build_lpar_document(
-        name=name,
-        resources=resources,
-    )
+    xml = build_lpar_document(name=None, resources=resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            if name is not None:
-                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-                system_name, lpar_name = await resolve_lpar_ownership_names(
-                    hmc, system_uuid, system_name_or_uuid, lpar_uuid
-                )
-                await authorize_lpar_mutation(
-                    hmc,
-                    system_name,
-                    lpar_name,
-                    ownership_override=ownership_override,
-                )
+            try:
+                return await hmc.modify_logical_partition(lpar_uuid, xml)
+            except HMCError as exc:
+                _check_lpar_write_error(exc)
+                raise
+
+    return _run(_go)
+
+
+@mcp.tool
+def hmc_rename_lpar(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    new_name: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Rename one LPAR after enforcing its ownership token."""
+    xml = build_lpar_document(name=new_name)
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            system_name, lpar_name = await resolve_lpar_ownership_names(
+                hmc, system_uuid, system_name_or_uuid, lpar_uuid
+            )
+            await authorize_lpar_mutation(
+                hmc,
+                system_name,
+                lpar_name,
+                ownership_override=ownership_override,
+            )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:

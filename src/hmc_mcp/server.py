@@ -78,6 +78,7 @@ from .server_lpars import (
     hmc_dlpar_mem as hmc_dlpar_mem,
     hmc_dlpar_proc as hmc_dlpar_proc,
     hmc_modify_lpar as hmc_modify_lpar,
+    hmc_rename_lpar as hmc_rename_lpar,
     hmc_power_off_lpar as hmc_power_off_lpar,
     hmc_power_on_lpar as hmc_power_on_lpar,
 )
