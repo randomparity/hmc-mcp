@@ -8,6 +8,7 @@ the tool bodies is exercised — the layer the client tests skip.
 
 import httpx
 import pytest
+from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
@@ -21,6 +22,7 @@ from hmc_mcp.server import (
 from conftest import JOB_ENTRY
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -48,6 +50,19 @@ def test_migrate_lpar_submits_job(monkeypatch, mock_hmc):
     assert "TargetProfileName" in body and "prof1" in body
     assert "WaitTime" in body and "60" in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "Migrate")
+    resolver = AsyncMock(return_value="vrml12-fsp")
+
+    with patch("hmc_mcp.server_lpm.resolve_system_name", new=resolver):
+        hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID)
+
+    resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)
+    body = route.calls.last.request.content.decode()
+    assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
 
 
 def test_migrate_validate_lpar_submits_job(monkeypatch, mock_hmc):

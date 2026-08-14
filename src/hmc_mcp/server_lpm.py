@@ -8,7 +8,7 @@ from ._app import (
     mcp,
 )
 
-from .common import client_from_env, resolve_lpar_uuid
+from .common import client_from_env, resolve_lpar_uuid, resolve_system_name
 from .jobs import validate_wait_timing, wait_for_submitted_job
 
 from typing import Any
@@ -17,7 +17,7 @@ from typing import Any
 @mcp.tool
 def hmc_migrate_lpar(
     lpar_name_or_uuid: str,
-    target_system: str,
+    target_system_name_or_uuid: str,
     target_profile_name: str | None = None,
     wait_time: int | None = None,
     wait: bool = False,
@@ -29,7 +29,7 @@ def hmc_migrate_lpar(
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
-    Submits a Migrate job. target_system is the target managed-system name.
+    Submits a Migrate job. The target accepts a managed-system name or UUID.
     Optionally pin the target profile / wait time. Poll hmc_get_job for status.
     Run hmc_migrate_validate_lpar first to pre-check.
 
@@ -42,6 +42,7 @@ def hmc_migrate_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
             job = await hmc.lpar_migrate(
                 lpar_uuid, target_system, target_profile_name, wait_time=wait_time
             )
@@ -55,7 +56,7 @@ def hmc_migrate_lpar(
 @mcp.tool
 def hmc_migrate_validate_lpar(
     lpar_name_or_uuid: str,
-    target_system: str,
+    target_system_name_or_uuid: str,
     target_profile_name: str | None = None,
     wait_time: int | None = None,
     wait: bool = False,
@@ -75,6 +76,7 @@ def hmc_migrate_validate_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
             job = await hmc.lpar_migrate_validate(
                 lpar_uuid, target_system, target_profile_name, wait_time=wait_time
             )
@@ -123,7 +125,9 @@ def hmc_migrate_recover_lpar(
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_remote_restart_lpar(
-    lpar_name_or_uuid: str, target_system: str, profile: str | None = None
+    lpar_name_or_uuid: str,
+    target_system_name_or_uuid: str,
+    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Remote-restart a failed LPAR on another managed system.
 
@@ -134,6 +138,7 @@ def hmc_remote_restart_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
             return await hmc.lpar_remote_restart(lpar_uuid, target_system)
 
     return _run(_go)

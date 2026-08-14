@@ -92,6 +92,20 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
     return str(entry["UUID"])
 
 
+async def resolve_system_name(hmc: HMCClient, value: str) -> str:
+    """Pass through a system name or resolve a UUID to its SystemName."""
+    if not is_uuid(value):
+        return value
+    entry = await hmc.get_managed_system(value)
+    name = ((entry or {}).get("Resource") or {}).get("SystemName")
+    if not name:
+        raise ValueError(
+            f"Managed system {value!r} has no SystemName. "
+            "Use hmc_list_systems to inspect available systems."
+        )
+    return str(name)
+
+
 async def resolve_lpar_uuid(hmc: HMCClient, value: str) -> str:
     """Resolve an LPAR name or pass through its UUID."""
     if is_uuid(value):

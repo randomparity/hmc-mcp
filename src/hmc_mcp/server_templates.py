@@ -12,7 +12,7 @@ from ._app import (
 
 from .errors import HMCError
 from .error_translation import translate_template_error
-from .common import client_from_env
+from .common import client_from_env, resolve_system_uuid
 from .operations_templates import deploy_partition_template
 
 
@@ -55,7 +55,7 @@ def hmc_get_partition_template(
 @mcp.tool
 def hmc_deploy_partition_template(
     draft_template_uuid: str,
-    target_system_uuid: str,
+    target_system_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -64,8 +64,8 @@ def hmc_deploy_partition_template(
     """Deploy a partition from a *draft* partition template.
 
     draft_template_uuid is the transformed/replica template UUID (produced by
-    capture/transform), target_system_uuid is the managed system to create the
-    partition on. Submits a Deploy job; poll hmc_get_job for status.
+    capture/transform). The target managed system accepts a name or UUID.
+    Submits a Deploy job; poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
 
@@ -76,6 +76,9 @@ def hmc_deploy_partition_template(
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            target_system_uuid = await resolve_system_uuid(
+                hmc, target_system_name_or_uuid
+            )
             return await deploy_partition_template(
                 hmc,
                 draft_template_uuid,

@@ -8,6 +8,7 @@ tool bodies is exercised.
 
 import httpx
 import pytest
+from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
@@ -19,6 +20,7 @@ from hmc_mcp.server import (
 from conftest import JOB_ENTRY
 
 TEMPLATE_UUID = "tmpl-uuid-1"
+TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 TEMPLATE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -108,7 +110,7 @@ def test_deploy_partition_template_http_406_not_licensed(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_deploy_partition_template("draft-uuid", "sys-uuid")
+        hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     assert "not licensed" in error_msg.lower()
@@ -121,10 +123,10 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    result = hmc_deploy_partition_template("draft-uuid", "sys-uuid")
+    result = hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
-    assert "TargetUuid" in body and "sys-uuid" in body
+    assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
@@ -132,6 +134,19 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
         "ownership stamp not attempted: template deployment does not identify and stamp "
         "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
     ]
+
+
+def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+    resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
+
+    with patch("hmc_mcp.server_templates.resolve_system_uuid", new=resolver):
+        hmc_deploy_partition_template("draft-uuid", "system-prod")
+
+    resolver.assert_awaited_once_with(ANY, "system-prod")
 
 
 # ---------------------------------------------------------------------- #
@@ -162,7 +177,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=1
+        "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -186,7 +201,7 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=1
+        "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert set(result) == {"job", "warnings"}
     assert result["warnings"] == [
