@@ -136,6 +136,7 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
 
     with pytest.raises(HMCError) as exc_info:
         hmc_modify_lpar(
+            system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             resources=LparResources(desired_memory=8192),
         )

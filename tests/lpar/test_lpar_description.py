@@ -101,7 +101,7 @@ def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_set_lpar_description(
-            SYSTEM_UUID, LPAR_UUID, "new description"
+            SYSTEM_UUID, LPAR_UUID, "new description", ownership_override=True
         )
 
     expected_cmd = (
@@ -120,7 +120,9 @@ def test_set_lpar_description_returns_cli_output(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock(RAW_OUTPUT)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, "some desc")
+        result = hmc_set_lpar_description(
+            SYSTEM_UUID, LPAR_UUID, "some desc", ownership_override=True
+        )
 
     assert result == RAW_OUTPUT
 
@@ -135,7 +137,7 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_set_lpar_description(
-            "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner=alice env=prod"
+            "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner=alice env=prod", ownership_override=True
         )
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -190,10 +192,29 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
     conn_mock = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, "")
+        result = hmc_set_lpar_description(
+            SYSTEM_UUID, LPAR_UUID, "", ownership_override=True
+        )
 
     conn_mock.run.assert_called_once()
     assert result == ""
+
+
+def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch):
+    _hmc_env(monkeypatch)
+    write = AsyncMock()
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(
+                return_value="[hmc-mcp owner:other created:2026-08-14]"
+            ),
+        ),
+        patch("hmc_mcp.server_cli.set_lpar_description", new=write),
+        pytest.raises(PermissionError, match="owned by 'other'"),
+    ):
+        hmc_set_lpar_description(SYSTEM_NAME, LPAR_NAME, "replacement")
+    write.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------- #

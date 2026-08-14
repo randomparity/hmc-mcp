@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,8 +12,12 @@ from .documents import LparResources, PartitionType
 from .errors import HMCError
 from .ssh import HMCCLIError
 from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh_commands import get_lpar_description
 
 _logger = logging.getLogger(__name__)
+_OWNERSHIP_TOKEN = re.compile(
+    r"\[hmc-mcp owner:(?P<owner>[^\s\[\]:]+) created:\d{4}-\d{2}-\d{2}\]"
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,49 @@ class LparCreationResult:
     lpar: dict[str, Any] | None
     ownership_stamped: bool | None
     warnings: tuple[str, ...]
+
+
+async def authorize_lpar_mutation(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    *,
+    ownership_override: bool = False,
+) -> None:
+    """Reject mutations of foreign-owned or malformed ownership-stamped LPARs."""
+    if ownership_override:
+        return
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    match = _OWNERSHIP_TOKEN.search(description)
+    if match is None:
+        if "[hmc-mcp" in description:
+            raise PermissionError(
+                f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
+                "retry only with ownership_override=true after operator approval"
+            )
+        return
+    owner = match.group("owner")
+    current_owner = hmc.config.agent_id or "hmc-mcp"
+    if owner != current_owner:
+        raise PermissionError(
+            f"LPAR {lpar_name!r} is owned by {owner!r}, not {current_owner!r}; "
+            "retry only with ownership_override=true after operator approval"
+        )
+
+
+async def resolve_lpar_ownership_names(
+    hmc: HMCClient,
+    system_uuid: str,
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+) -> tuple[str, str]:
+    """Resolve the CLI names required to read an LPAR ownership token."""
+    system_name = await _system_name(hmc, system_uuid, system_name_or_uuid)
+    lpar = await hmc.get_logical_partition(lpar_uuid)
+    lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
+    if not lpar_name:
+        raise ValueError(f"LPAR {lpar_uuid!r} has no partition name")
+    return system_name, lpar_name
 
 
 async def _system_name(hmc, system_uuid: str, fallback: str) -> str:

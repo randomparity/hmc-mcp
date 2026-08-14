@@ -214,7 +214,7 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
     delete_route = _mock_state_and_delete(mock_hmc, "running")
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_delete_lpar(LPAR_UUID)
+        hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert exc_info.value.status_code == 409
     assert "not activated" in str(exc_info.value)
@@ -225,7 +225,7 @@ def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_state_and_delete(mock_hmc, "not activated")
 
-    result = hmc_delete_lpar(LPAR_UUID)
+    result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert result == f"Deleted LPAR {LPAR_UUID}"
 

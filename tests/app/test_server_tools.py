@@ -19,6 +19,7 @@ from hmc_mcp.errors import HMCError
 from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
+    hmc_delete_lpar,
     hmc_get_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
@@ -281,7 +282,11 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
     result = hmc_modify_lpar(
-        LPAR_UUID, name="renamed", resources=LparResources(desired_memory=8192)
+        SYSTEM_UUID,
+        LPAR_UUID,
+        name="renamed",
+        resources=LparResources(desired_memory=8192),
+        ownership_override=True,
     )
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
@@ -290,6 +295,48 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
     assert "MaximumMemory" not in body
     assert "ProcessingUnits" not in body
     assert result["Resource"]["PartitionName"] == "renamed"
+
+
+def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
+    )
+    write = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
+    with (
+        patch(
+            "hmc_mcp.server_power.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "owned-lpar")),
+        ),
+        patch(
+            "hmc_mcp.server_power.authorize_lpar_mutation",
+            new=AsyncMock(side_effect=PermissionError("foreign owner")),
+        ),
+        pytest.raises(PermissionError, match="foreign owner"),
+    ):
+        hmc_modify_lpar(SYSTEM_UUID, LPAR_UUID, name="renamed")
+    assert not write.called
+
+
+def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED.format(name="owned-lpar"))
+    )
+    write = mock_hmc.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}")
+    with (
+        patch(
+            "hmc_mcp.server_power.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "owned-lpar")),
+        ),
+        patch(
+            "hmc_mcp.server_power.authorize_lpar_mutation",
+            new=AsyncMock(side_effect=PermissionError("foreign owner")),
+        ),
+        pytest.raises(PermissionError, match="foreign owner"),
+    ):
+        hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID)
+    assert not write.called
 
 
 # ---------------------------------------------------------------------- #

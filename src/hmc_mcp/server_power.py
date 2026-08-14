@@ -25,7 +25,13 @@ from .documents import (
     build_lpar_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
-from .operations_lpar import LparCreation, LparCreationResult, create_and_stamp_lpar
+from .operations_lpar import (
+    LparCreation,
+    LparCreationResult,
+    authorize_lpar_mutation,
+    create_and_stamp_lpar,
+    resolve_lpar_ownership_names,
+)
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -131,9 +137,11 @@ def hmc_create_lpar(
 
 @mcp.tool
 def hmc_modify_lpar(
+    system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     name: str | None = None,
     resources: LparResources = LparResources(),
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
@@ -146,11 +154,9 @@ def hmc_modify_lpar(
     CPUs, False for shared processing units + virtual processors; omit it
     to leave the sharing mode unchanged.
 
-    **Multi-agent ownership:** When renaming an LPAR (``name`` parameter), first
-    read its description with ``hmc_get_lpar_description``. If it contains
-    ``[hmc-mcp owner:<id> ...]`` and the owner differs from ``HMC_AGENT_ID``,
-    stop and ask the operator before renaming. Renaming an LPAR owned by another
-    agent breaks that agent's ability to locate its partition by name.
+    Renaming enforces the description-field ownership token. Foreign-owned or
+    malformed tokens are rejected before the REST write. Set
+    ownership_override=True only after explicit operator approval.
     """
     xml = build_lpar_document(
         name=name,
@@ -160,6 +166,17 @@ def hmc_modify_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            if name is not None and not ownership_override:
+                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+                system_name, lpar_name = await resolve_lpar_ownership_names(
+                    hmc, system_uuid, system_name_or_uuid, lpar_uuid
+                )
+                await authorize_lpar_mutation(
+                    hmc,
+                    system_name,
+                    lpar_name,
+                    ownership_override=ownership_override,
+                )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -231,7 +248,12 @@ def hmc_dlpar_mem(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
+def hmc_delete_lpar(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> str:
     """Delete (destroy) an LPAR by name or UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
@@ -245,10 +267,9 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
 
-    **Multi-agent ownership:** Before deleting, read the LPAR description with
-    ``hmc_get_lpar_description``. If it contains ``[hmc-mcp owner:<id> ...]``,
-    verify the owner matches the current agent (``HMC_AGENT_ID``) before
-    proceeding. If owned by a different agent, stop and ask the operator.
+    Deletion enforces the description-field ownership token. Foreign-owned or
+    malformed tokens are rejected before state checks or deletion. Set
+    ownership_override=True only after explicit operator approval.
 
     Raises:
         HMCError: If the partition state is not 'not activated' (HTTP 409).
@@ -257,6 +278,12 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            if not ownership_override:
+                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+                system_name, lpar_name = await resolve_lpar_ownership_names(
+                    hmc, system_uuid, system_name_or_uuid, lpar_uuid
+                )
+                await authorize_lpar_mutation(hmc, system_name, lpar_name)
             state = await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )

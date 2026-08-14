@@ -25,6 +25,8 @@ from .ssh_commands import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
+from .operations_lpar import authorize_lpar_mutation
+from .client import HMCClient
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -47,22 +49,30 @@ def hmc_set_lpar_description(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     description: str,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> str:
     """Set an LPAR's CLI-only description after validating printable ASCII.
 
-    **Multi-agent ownership:** If the current description contains
-    ``[hmc-mcp owner:<id> ...]``, compare the owner to ``HMC_AGENT_ID``. If
-    they differ, stop and ask the operator before overwriting — the token
-    records which agent created this LPAR.
+    The current description's ownership token is enforced before overwrite.
+    Foreign-owned or malformed tokens are rejected. Set ownership_override=True
+    only after explicit operator approval.
 
     WARNING: This changes LPAR configuration on the selected HMC.
     """
     validate_lpar_description(description)
+    async def _set(config, system_name, lpar_name):
+        hmc = HMCClient(config)
+        await authorize_lpar_mutation(
+            hmc,
+            system_name,
+            lpar_name,
+            ownership_override=ownership_override,
+        )
+        return await set_lpar_description(config, system_name, lpar_name, description)
+
     return _ssh_with_client(
-        lambda config, system_name, lpar_name: set_lpar_description(
-            config, system_name, lpar_name, description
-        ),
+        _set,
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,
         profile=profile,

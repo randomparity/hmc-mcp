@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hmc_mcp.config import validate_agent_id
+from hmc_mcp.operations_lpar import authorize_lpar_mutation
 
 
 # ---------------------------------------------------------------------------
@@ -138,3 +139,37 @@ def test_token_format():
     # token must pass the existing description validator
     from hmc_mcp.ssh_commands import validate_lpar_description
     validate_lpar_description(token)  # no exception
+
+
+@pytest.mark.parametrize(
+    ("description", "agent_id", "allowed"),
+    [
+        ("legacy partition", "alice", True),
+        ("[hmc-mcp owner:alice created:2026-08-14]", "alice", True),
+        ("[hmc-mcp owner:bob created:2026-08-14]", "alice", False),
+        ("[hmc-mcp owner:broken]", "alice", False),
+    ],
+)
+def test_authorize_lpar_mutation(description, agent_id, allowed):
+    hmc = type("StubHMC", (), {"config": _config().model_copy(update={"agent_id": agent_id})})()
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=description),
+    ):
+        if allowed:
+            asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+        else:
+            with pytest.raises(PermissionError, match="ownership_override=true"):
+                asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+
+
+def test_authorize_lpar_mutation_override_skips_description_read():
+    hmc = type("StubHMC", (), {"config": _config()})()
+    read = AsyncMock()
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        asyncio.run(
+            authorize_lpar_mutation(
+                hmc, "sys1", "lpar1", ownership_override=True
+            )
+        )
+    read.assert_not_awaited()
