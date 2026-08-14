@@ -200,7 +200,9 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def _mock_execution_steps(mock_hmc):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
-    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+    create_route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(
         return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
     )
     # get_managed_system for stamp system-name resolution (REST-first)
@@ -223,6 +225,7 @@ def _mock_execution_steps(mock_hmc):
     mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
+    return create_route
 
 
 # ---------------------------------------------------------------------- #
@@ -293,6 +296,43 @@ def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
     create_result = steps["create"]["result"]
     assert create_result is not None
     assert create_result.get("Resource", {}).get("PartitionName") == "web01"
+
+
+@pytest.mark.parametrize("dedicated", [False, True])
+def test_provision_lpar_preserves_complete_resource_input(
+    monkeypatch, mock_hmc, dedicated
+):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    create_route = _mock_execution_steps(mock_hmc)
+    resources = LparResources(
+        min_memory=512,
+        desired_memory=2048,
+        max_memory=4096,
+        dedicated=dedicated,
+        min_procs=0.5 if not dedicated else 1,
+        desired_procs=1.0 if not dedicated else 2,
+        max_procs=2.0 if not dedicated else 4,
+        min_vcpus=1,
+        desired_vcpus=2,
+        max_vcpus=4,
+        sharing_mode="uncapped" if not dedicated else None,
+        uncapped=not dedicated,
+    )
+
+    result = hmc_provision_lpar(**_provision_args(resources=resources))
+
+    assert result["created"] is True
+    body = create_route.calls.last.request.content.decode()
+    for value in (512, 2048, 4096, 1, 2, 4):
+        assert f">{value}<" in body
+    if dedicated:
+        assert "DedicatedProcessorConfiguration" in body
+        assert "<DesiredProcessors" in body
+    else:
+        assert "SharedProcessorConfiguration" in body
+        assert "<DesiredProcessingUnits" in body
+        assert "uncapped" in body
 
 
 # ---------------------------------------------------------------------- #

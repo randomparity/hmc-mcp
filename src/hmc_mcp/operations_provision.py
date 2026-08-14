@@ -191,19 +191,6 @@ async def provision_lpar(
       ``None`` when the stamp was not attempted.
     """
 
-    port_vlan_id = network.port_vlan_id
-    vios_partition_id = network.vios_partition_id
-    vios_slot = network.vios_slot
-    vios_uuid = storage.vios_uuid
-    storage_name = storage.storage_name
-    storage_kind = storage.kind
-    vg_uuid = storage.vg_uuid
-    min_memory = resources.min_memory
-    desired_memory = resources.desired_memory
-    max_memory = resources.max_memory
-    desired_vcpus = resources.desired_vcpus
-    max_vcpus = resources.max_vcpus
-
     # ----------------------------------------------------------------
     # 1. Resolve system UUID
     # ----------------------------------------------------------------
@@ -213,9 +200,9 @@ async def provision_lpar(
     # 2. Preconditions (always, including dry-run)
     # ----------------------------------------------------------------
     await _check_name_unique(hmc, name)
-    await _check_vlan_exists(hmc, system_uuid, port_vlan_id)
-    if vg_uuid is not None:
-        await _check_vg_exists(hmc, vios_uuid, vg_uuid)
+    await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
+    if storage.vg_uuid is not None:
+        await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
 
     # ----------------------------------------------------------------
     # 3. Dry-run exit
@@ -236,13 +223,6 @@ async def provision_lpar(
     # ----------------------------------------------------------------
     # 4. Build LPAR XML
     # ----------------------------------------------------------------
-    resources = LparResources(
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        desired_vcpus=desired_vcpus,
-        max_vcpus=max_vcpus,
-    )
     lpar_xml = build_lpar_document(
         name=name,
         partition_type=partition_type,
@@ -250,10 +230,9 @@ async def provision_lpar(
     )
 
     creation_result: dict[str, Any] = {}
-    lpar_uuid: str | None = None
 
     async def create() -> Any:
-        nonlocal creation_result, lpar_uuid
+        nonlocal creation_result
         creation_result = await create_and_stamp_lpar(
             hmc,
             system_uuid,
@@ -262,27 +241,31 @@ async def provision_lpar(
             lpar_xml,
         )
         created_lpar = creation_result["lpar"]
-        lpar_uuid = (created_lpar or {}).get("UUID")
-        if not lpar_uuid:
+        if not (created_lpar or {}).get("UUID"):
             raise ValueError("LPAR creation returned no UUID")
         return created_lpar
 
     def created_uuid() -> str:
-        if lpar_uuid is None:
+        if "lpar" not in creation_result:
             raise RuntimeError("LPAR UUID is unavailable before the create step")
-        return lpar_uuid
+        uuid = (creation_result.get("lpar") or {}).get("UUID")
+        if not isinstance(uuid, str) or not uuid:
+            raise ValueError("LPAR creation returned no UUID")
+        return uuid
 
-    async def network() -> Any:
-        return await hmc.add_network_adapter(created_uuid(), port_vlan_id)
+    async def attach_network() -> Any:
+        return await hmc.add_network_adapter(
+            created_uuid(), network.port_vlan_id
+        )
 
     async def vscsi() -> Any:
         return await hmc.add_vscsi_adapter(
-            created_uuid(), vios_partition_id, vios_slot
+            created_uuid(), network.vios_partition_id, network.vios_slot
         )
 
-    async def storage() -> Any:
+    async def map_storage() -> Any:
         return await hmc.map_storage_to_lpar(
-            vios_uuid, storage_kind, storage_name, created_uuid()
+            storage.vios_uuid, storage.kind, storage.storage_name, created_uuid()
         )
 
     async def start() -> Any:
@@ -294,9 +277,9 @@ async def provision_lpar(
 
     operations = [
         ("create", create),
-        ("network", network),
+        ("network", attach_network),
         ("vscsi", vscsi),
-        ("storage", storage),
+        ("storage", map_storage),
     ]
     if power_on:
         operations.append(("power_on", start))
