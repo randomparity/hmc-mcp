@@ -27,7 +27,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .common import client_from_env, is_uuid, run_with_client
+from .common import build_config, client_from_env, is_uuid, run_with_client
 from .client import HMCClient
 from .config import HMCConfig
 
@@ -129,35 +129,12 @@ def _ssh_config() -> HMCConfig:
     When no explicit host is given, the TOML profile loader is tried first
     (same logic as ``client_from_env``).
     """
-    from .config import load_profile, ConfigError, resolve_config_path
-    import os
-
-    overrides = {k: v for k, v in {
-        "host": GLOBALS.host,
-        "user": GLOBALS.user,
-        "password": GLOBALS.password,
-        "verify_ssl": GLOBALS.verify_ssl,
-    }.items() if v is not None}
-
-    if not overrides.get("host") and not os.environ.get("HMC_HOST"):
-        config_path = resolve_config_path()
-        if config_path is not None or GLOBALS.profile or os.environ.get("HMC_PROFILE"):
-            try:
-                base = load_profile(profile=GLOBALS.profile)
-                if overrides:
-                    merged = {k: getattr(base, k) for k in base.model_fields}
-                    merged.update(overrides)
-                    return HMCConfig(
-                        _env_file=None,  # ty: ignore[unknown-argument]
-                        **merged,
-                    )
-                return base
-            except ConfigError:
-                pass
-
-    return HMCConfig(
-        _env_file=None,  # ty: ignore[unknown-argument]
-        **overrides,  # ty: ignore[invalid-argument-type]
+    return build_config(
+        profile=GLOBALS.profile,
+        host=GLOBALS.host,
+        user=GLOBALS.user,
+        password=GLOBALS.password,
+        verify_ssl=GLOBALS.verify_ssl,
     )
 
 

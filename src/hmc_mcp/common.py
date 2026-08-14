@@ -6,7 +6,7 @@ import asyncio
 import os
 import re
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from .client import HMCClient
 from .config import ConfigError, HMCConfig, load_profile, resolve_config_path
@@ -27,8 +27,8 @@ def is_uuid(value: str) -> bool:
     return _UUID_RE.fullmatch(value) is not None
 
 
-def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
-    """Create an HMCClient from environment variables, TOML profile, or explicit overrides.
+def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
+    """Build configuration from environment, a TOML profile, and overrides.
 
     Resolution order (highest to lowest priority):
       1. Explicit *overrides* kwargs (CLI flags)
@@ -59,7 +59,7 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                         _env_file=None,  # ty: ignore[unknown-argument]
                         **merged,
                     )
-                return HMCClient(base)
+                return base
             except ConfigError:
                 if profile:
                     # An explicit profile name was supplied but not found — raise
@@ -68,11 +68,15 @@ def client_from_env(profile: str | None = None, **overrides) -> HMCClient:
                     raise
                 pass  # No profile specified; fall through to env-var-only construction
 
-    config = HMCConfig(
+    return HMCConfig(
         _env_file=None,  # ty: ignore[unknown-argument]
         **filtered,
     )
-    return HMCClient(config)
+
+
+def client_from_env(profile: str | None = None, **overrides: Any) -> HMCClient:
+    """Create an HMCClient using :func:`build_config` resolution."""
+    return HMCClient(build_config(profile=profile, **overrides))
 
 
 def run_with_client(
