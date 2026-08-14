@@ -346,3 +346,55 @@ def test_list_profiles_with_default_absent(tmp_path):
     names, default = list_profiles_with_default(config_path=tmp_path / "nonexistent.toml")
     assert names == []
     assert default is None
+
+
+# ---------------------------------------------------------------------------
+# HMC_AGENT_ID and effective_audit_memento (issue #132)
+# ---------------------------------------------------------------------------
+
+
+def test_agent_id_unset_uses_audit_memento_default():
+    cfg = HMCConfig(_env_file=None)
+    assert cfg.agent_id is None
+    assert cfg.effective_audit_memento == "hmc-mcp"
+
+
+def test_agent_id_set_prefixes_audit_memento():
+    cfg = HMCConfig(agent_id="alice", _env_file=None)
+    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+
+
+def test_agent_id_overrides_audit_memento_field():
+    # When agent_id is set, effective_audit_memento uses hmc-mcp:<agent_id>
+    # regardless of the audit_memento field.
+    # Setting both also emits a UserWarning at construction time.
+    with pytest.warns(UserWarning, match="HMC_AGENT_ID is set"):
+        cfg = HMCConfig(agent_id="bob", audit_memento="custom", _env_file=None)
+    assert cfg.effective_audit_memento == "hmc-mcp:bob"
+
+
+def test_agent_id_no_warning_when_audit_memento_is_default():
+    # When audit_memento is default ('hmc-mcp'), no warning is emitted even
+    # when agent_id is set, because there is no custom value being silently discarded.
+    import warnings as _warnings
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", UserWarning)
+        cfg = HMCConfig(agent_id="alice", _env_file=None)
+    assert cfg.effective_audit_memento == "hmc-mcp:alice"
+
+
+def test_audit_memento_without_agent_id():
+    cfg = HMCConfig(audit_memento="my-tool", _env_file=None)
+    assert cfg.effective_audit_memento == "my-tool"
+
+
+def test_agent_id_invalid_raises_at_construction():
+    with pytest.raises(ValueError, match="comma"):
+        HMCConfig(agent_id="bad,id", _env_file=None)
+
+
+def test_agent_id_from_env(monkeypatch):
+    monkeypatch.setenv("HMC_AGENT_ID", "env-agent")
+    cfg = HMCConfig(_env_file=None)
+    assert cfg.agent_id == "env-agent"
+    assert cfg.effective_audit_memento == "hmc-mcp:env-agent"

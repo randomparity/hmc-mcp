@@ -318,6 +318,7 @@ def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
 
 def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     """hmc_create_lpar creates the partition when no LPAR with the same name exists."""
+    from unittest.mock import AsyncMock, patch
     from hmc_mcp.server import hmc_create_lpar
 
     _hmc_env(monkeypatch)
@@ -328,7 +329,9 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
 
-    result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
+    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
+        result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
 
     assert create_route.called
-    assert result["Resource"]["PartitionName"] == "new-lpar"
+    # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
+    assert result["lpar"]["Resource"]["PartitionName"] == "new-lpar"

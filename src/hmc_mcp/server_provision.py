@@ -7,6 +7,7 @@ result and an optional dry-run that validates preconditions only.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ._app import (
@@ -14,12 +15,13 @@ from ._app import (
     _run,
     mcp,
 )
-
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, is_uuid
 from .documents import LparResources, PartitionType, build_lpar_document
 from .jobs import power_on_lpar_job
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
+from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+
+_logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------- #
@@ -160,7 +162,11 @@ def hmc_provision_lpar(
     - ``dry_run`` (bool): mirrors the input flag.
     - ``steps`` (list): per-step result dicts ``{step, status, result?}``.
       status is ``"ok"``, ``"error"``, ``"skipped"``, or ``"dry_run"``.
-    - ``warnings`` (list): non-fatal notices (currently always empty).
+    - ``warnings`` (list): non-fatal notices; includes ownership stamp failures
+      or skips when the stamp could not be applied after creation.
+    - ``ownership_stamped`` (bool | None): ``True`` when the description-field
+      ownership token was written; ``False`` when the SSH stamp attempt failed;
+      ``None`` when the stamp was not attempted.
     """
 
     async def _go() -> dict[str, Any]:
@@ -189,6 +195,7 @@ def hmc_provision_lpar(
                 return {
                     "created": False,
                     "dry_run": True,
+                    "ownership_stamped": None,
                     "steps": [_step(n, "dry_run") for n in step_names],
                     "warnings": [],
                 }
@@ -209,6 +216,7 @@ def hmc_provision_lpar(
             )
 
             steps: list[dict[str, Any]] = []
+            warnings: list[str] = []
             lpar_uuid: str | None = None
             failed = False
 
@@ -248,6 +256,11 @@ def hmc_provision_lpar(
             except Exception as exc:
                 steps.append(_step("create", "error", str(exc)))
                 failed = True
+
+            # ----------------------------------------------------------------
+            # Steps: network adapter, vSCSI, storage, power on
+            # (Ownership stamp runs after all steps — see below)
+            # ----------------------------------------------------------------
 
             # ----------------------------------------------------------------
             # Step: network adapter
@@ -315,11 +328,74 @@ def hmc_provision_lpar(
                 else:
                     steps.append(_step("power_on", "skipped"))
 
+            # ----------------------------------------------------------------
+            # Ownership stamp (best-effort, after all provisioning steps)
+            # Stamp runs whenever the LPAR was created (lpar_uuid is not None),
+            # regardless of whether downstream steps (network, storage, power_on)
+            # succeeded. An LPAR that exists but is incompletely provisioned
+            # should still carry an ownership token so agents can identify it.
+            # ownership_stamped is orthogonal to created (per ADR 0011).
+            # ----------------------------------------------------------------
+            ownership_stamped: bool | None = None
+            if lpar_uuid:
+                cfg = hmc.config
+                # Try REST first (already authenticated), then SSH as fallback.
+                sys_name_for_stamp: str | None = None
+                try:
+                    sys_entry = await hmc.get_managed_system(system_uuid)
+                    sys_name_for_stamp = (
+                        (sys_entry.get("Resource") or {}).get("SystemName")
+                        if sys_entry
+                        else None
+                    ) or None
+                except Exception:
+                    sys_name_for_stamp = None
+                if not sys_name_for_stamp:
+                    try:
+                        sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                    except Exception:
+                        sys_name_for_stamp = system_name_or_uuid
+                # Use server-confirmed PartitionName if available.
+                confirmed_name = (
+                    ((created_lpar or {}).get("Resource") or {}).get("PartitionName")
+                    or name
+                )
+                if is_uuid(sys_name_for_stamp):
+                    # Both REST and SSH resolution failed; skip the stamp.
+                    warnings.append(
+                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
+                        "stamp manually via hmc_set_lpar_description"
+                    )
+                else:
+                    token = await stamp_lpar_ownership(
+                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
+                    )
+                    if token is not None:
+                        ownership_stamped = True
+                    else:
+                        ownership_stamped = False
+                        _logger.warning(
+                            "ownership stamp failed for LPAR %r on %r",
+                            confirmed_name,
+                            sys_name_for_stamp,
+                        )
+                        warnings.append(
+                            f"ownership stamp failed for LPAR {confirmed_name!r}"
+                        )
+            elif not failed:
+                # Create succeeded but returned no UUID — cannot locate the LPAR for stamp.
+                warnings.append(
+                    f"ownership stamp skipped for LPAR {name!r}: "
+                    "create returned no UUID; stamp manually via hmc_set_lpar_description"
+                )
+
             return {
                 "created": not failed,
                 "dry_run": False,
+                "ownership_stamped": ownership_stamped,
                 "steps": steps,
-                "warnings": [],
+                "warnings": warnings,
             }
 
     return _run(_go)

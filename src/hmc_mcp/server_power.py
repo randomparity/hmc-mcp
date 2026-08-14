@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ._app import (
@@ -13,9 +14,8 @@ from ._app import (
     _run,
     mcp,
 )
-
 from .client import HMCError
-from .common import client_from_env
+from .common import client_from_env, is_uuid
 from .documents import (
     Keylock,
     LparResources,
@@ -30,7 +30,9 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli
+from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+
+_logger = logging.getLogger(__name__)
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -81,7 +83,7 @@ def hmc_create_lpar(
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Create a new LPAR on a managed system.
 
     system_name_or_uuid: the target managed system — accepts either a
@@ -104,6 +106,15 @@ def hmc_create_lpar(
     os_type: target OS — ``aix``, ``linux``, or ``ibmi``.
     keylock: initial keylock position — ``normal``, ``manual``, or ``auto``.
     max_virtual_slots: maximum number of virtual I/O slots.
+
+    Returns a dict with the following keys:
+
+    - ``lpar`` — the created partition entry (dict), or ``None`` when the HMC
+      returned no body (HTTP 201 with empty body, seen on some firmware versions).
+    - ``ownership_stamped`` — ``True`` when the description-field ownership token
+      was written; ``False`` when the SSH stamp attempt failed; ``None`` when the
+      stamp was not attempted (no LPAR body available to confirm the partition name).
+    - ``warnings`` — list of human-readable warning strings (empty on clean success).
     """
     xml = build_lpar_document(
         name=name,
@@ -139,10 +150,12 @@ def hmc_create_lpar(
 
             # --- REST path (preferred) ---
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
+            cfg = hmc.config
+            sys_name_for_stamp: str | None = None  # resolved for SSH stamp
+            lpar_result = None
+
             try:
-                result = await hmc.create_logical_partition(system_uuid, xml)
-                if result is not None:
-                    return result
+                lpar_result = await hmc.create_logical_partition(system_uuid, xml)
             except HMCError as exc:
                 if exc.status_code != 406:
                     _check_lpar_write_error(exc)
@@ -151,33 +164,97 @@ def hmc_create_lpar(
                 # through to the CLI path used by ansible-power-hmc and IBM
                 # internal provisioning toolkits.
 
-            # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
-            # mksyscfg uses the managed system name, not UUID.
-            cfg = hmc.config
-            try:
-                sys_name = await _ssh_system_name(cfg, system_uuid)
-            except HMCCLIError:
-                # If SSH name lookup also fails, use the original arg as-is
-                sys_name = system_name_or_uuid
-            await create_lpar_via_cli(
-                cfg,
-                system_name=sys_name,
-                name=name,
-                partition_type=partition_type,
-                min_memory=min_memory,
-                desired_memory=desired_memory,
-                max_memory=max_memory,
-                desired_vcpus=desired_vcpus,
-                min_vcpus=min_vcpus,
-                max_vcpus=max_vcpus,
-                desired_procs=desired_procs,
-                min_procs=min_procs,
-                max_procs=max_procs,
-                max_virtual_slots=max_virtual_slots,
-            )
-            # Fetch and return the newly created LPAR entry
-            new_entry = await hmc.find_partition_by_name(name)
-            return new_entry
+                # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
+                try:
+                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                except HMCCLIError:
+                    sys_name_for_stamp = system_name_or_uuid
+                await create_lpar_via_cli(
+                    cfg,
+                    system_name=sys_name_for_stamp,
+                    name=name,
+                    partition_type=partition_type,
+                    min_memory=min_memory,
+                    desired_memory=desired_memory,
+                    max_memory=max_memory,
+                    desired_vcpus=desired_vcpus,
+                    min_vcpus=min_vcpus,
+                    max_vcpus=max_vcpus,
+                    desired_procs=desired_procs,
+                    min_procs=min_procs,
+                    max_procs=max_procs,
+                    max_virtual_slots=max_virtual_slots,
+                )
+                lpar_result = await hmc.find_partition_by_name(name)
+
+            # --- Ownership stamp (best-effort) ---
+            warnings: list[str] = []
+            ownership_stamped: bool | None = None
+            if lpar_result is None:
+                # Some HMC firmware returns HTTP 201 with no body. The LPAR was
+                # created but is not yet confirmed queryable — skip the stamp to
+                # avoid a timing-window HSCL3205 "Object not found" error from
+                # chsyscfg, and report that the stamp was skipped rather than failed.
+                # ownership_stamped stays None (skip), not False (attempt failed).
+                warnings.append(
+                    f"ownership stamp skipped for LPAR {name!r}: REST create "
+                    "returned no LPAR body; stamp manually via hmc_set_lpar_description"
+                )
+            else:
+                if sys_name_for_stamp is None:
+                    # REST path: resolve system name for the SSH stamp call.
+                    # Try REST first (already authenticated), then SSH as fallback.
+                    try:
+                        sys_entry = await hmc.get_managed_system(system_uuid)
+                        sys_name_for_stamp = (
+                            (sys_entry.get("Resource") or {}).get("SystemName")
+                            if sys_entry
+                            else None
+                        ) or None
+                    except Exception:
+                        sys_name_for_stamp = None
+                    if not sys_name_for_stamp:
+                        try:
+                            sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                        except Exception:
+                            sys_name_for_stamp = system_name_or_uuid
+                # Use the server-confirmed PartitionName if available; fall back to
+                # the constructor argument in case the HMC normalised the name.
+                confirmed_name = (
+                    (lpar_result.get("Resource") or {}).get("PartitionName")
+                    or name
+                )
+                if is_uuid(sys_name_for_stamp):
+                    # sys_name_for_stamp is still a UUID — both REST and SSH system-name
+                    # resolution failed and the HMC CLI will reject a UUID as a
+                    # managed-system name.  Skip and surface a clear advisory.
+                    warnings.append(
+                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
+                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
+                        "stamp manually via hmc_set_lpar_description"
+                    )
+                else:
+                    token = await stamp_lpar_ownership(
+                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
+                    )
+                    if token is not None:
+                        ownership_stamped = True
+                    else:
+                        ownership_stamped = False
+                        _logger.warning(
+                            "ownership stamp failed for LPAR %r on %r",
+                            confirmed_name,
+                            sys_name_for_stamp,
+                        )
+                        warnings.append(
+                            f"ownership stamp failed for LPAR {confirmed_name!r} on {sys_name_for_stamp!r}"
+                        )
+
+            return {
+                "lpar": lpar_result,
+                "ownership_stamped": ownership_stamped,
+                "warnings": warnings,
+            }
 
     return _run(_go)
 
@@ -208,6 +285,12 @@ def hmc_modify_lpar(
     change applies on next activation. Set dedicated=True to assign whole
     CPUs, False for shared processing units + virtual processors; omit it
     to leave the sharing mode unchanged.
+
+    **Multi-agent ownership:** When renaming an LPAR (``name`` parameter), first
+    read its description with ``hmc_get_lpar_description``. If it contains
+    ``[hmc-mcp owner:<id> ...]`` and the owner differs from ``HMC_AGENT_ID``,
+    stop and ask the operator before renaming. Renaming an LPAR owned by another
+    agent breaks that agent's ability to locate its partition by name.
     """
     xml = build_lpar_document(
         name=name,
@@ -385,6 +468,11 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     (immediate delete — no job to poll).
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
+
+    **Multi-agent ownership:** Before deleting, read the LPAR description with
+    ``hmc_get_lpar_description``. If it contains ``[hmc-mcp owner:<id> ...]``,
+    verify the owner matches the current agent (``HMC_AGENT_ID``) before
+    proceeding. If owned by a different agent, stop and ask the operator.
 
     Raises:
         HMCError: If the partition state is not 'not activated' (HTTP 409).

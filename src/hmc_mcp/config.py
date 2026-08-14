@@ -13,13 +13,17 @@ Use HMCConfig(...) directly for explicit construction (tests, programmatic use).
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tomllib
+import warnings
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_logger = logging.getLogger(__name__)
 
 
 class HMCConfig(BaseSettings):
@@ -55,6 +59,58 @@ class HMCConfig(BaseSettings):
             "schemaVersion=V1_0. Set it only to pin negotiation explicitly."
         ),
     )
+    agent_id: str | None = Field(
+        default=None,
+        description=(
+            "Per-agent identifier folded into the X-Audit-Memento header as "
+            "hmc-mcp:<agent_id>. Used for multi-agent LPAR ownership attribution. "
+            "Must be 1–64 printable ASCII characters with no commas, = signs, or "
+            "square brackets. (HMC_AGENT_ID)"
+        ),
+    )
+
+    @field_validator("agent_id")
+    @classmethod
+    def _validate_agent_id_field(cls, v: str | None) -> str | None:
+        if v is not None and v != "":
+            from .ssh import validate_agent_id  # deferred — ssh imports config; avoid circular
+            validate_agent_id(v)
+        return v
+
+    @model_validator(mode="after")
+    def _warn_audit_memento_override(self) -> "HMCConfig":
+        """Warn when HMC_AGENT_ID is set and HMC_AUDIT_MEMENTO has been customised.
+
+        When both are set, effective_audit_memento returns ``hmc-mcp:<agent_id>``
+        and ignores the custom audit_memento.  Emitting a warning at construction
+        time prevents silent surprises in HMC audit logs.
+        """
+        if self.agent_id and self.audit_memento != "hmc-mcp":
+            msg = (
+                f"HMC_AGENT_ID is set ({self.agent_id!r}); the custom "
+                f"HMC_AUDIT_MEMENTO value ({self.audit_memento!r}) will be "
+                "ignored — X-Audit-Memento is always sent as "
+                f"hmc-mcp:{self.agent_id}"
+            )
+            warnings.warn(msg, UserWarning, stacklevel=2)
+            _logger.warning(msg)
+        return self
+
+    @property
+    def effective_audit_memento(self) -> str:
+        """Audit memento value sent in the X-Audit-Memento header.
+
+        Returns ``hmc-mcp:<agent_id>`` when ``agent_id`` is set and non-empty;
+        otherwise returns ``audit_memento`` (default ``"hmc-mcp"``).
+
+        Note: when ``agent_id`` is set, ``audit_memento`` is ignored — the prefix
+        is always ``hmc-mcp``.  An operator who has customised ``HMC_AUDIT_MEMENTO``
+        and then sets ``HMC_AGENT_ID`` will see the audit prefix revert to
+        ``hmc-mcp``.
+        """
+        if self.agent_id:
+            return f"hmc-mcp:{self.agent_id}"
+        return self.audit_memento
 
     @property
     def base_url(self) -> str:

@@ -69,12 +69,17 @@ class HMCClient(
         config.validate_credentials()
         self.config = config
         self._session_token: str | None = None
+        # X-Audit-Memento is evaluated once at construction time — this is safe
+        # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
+        # If the transport ever moves to a persistent shared client, this header would
+        # stale when HMC_AGENT_ID changes; re-evaluate effective_audit_memento per-request
+        # in that case.
         self._http = httpx.AsyncClient(
             base_url=config.base_url,
             verify=config.verify_ssl,
             timeout=config.timeout,
             headers={
-                "X-Audit-Memento": config.audit_memento,
+                "X-Audit-Memento": config.effective_audit_memento,
                 # Most HMC builds ignore charset but honour JSON when asked;
                 # we stick to the canonical XML representation everywhere.
             },

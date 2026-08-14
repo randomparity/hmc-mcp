@@ -48,6 +48,114 @@ def validate_lpar_description(description: str) -> None:
         )
 
 
+def validate_agent_id(agent_id: str) -> None:
+    """Raise ``ValueError`` if *agent_id* is not a safe ownership token component.
+
+    Rules:
+    - Must be 1–64 printable ASCII characters (same base constraint as descriptions).
+    - Must not be the reserved value ``"hmc-mcp"`` — that is the default fallback used
+      when no agent_id is set.  An agent_id of ``"hmc-mcp"`` produces a token
+      indistinguishable from a pre-feature LPAR, defeating ownership attribution.
+    - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
+      is embedded in the ownership token written via ``chsyscfg``.
+    - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
+    - No forward slashes — the HMC REST API rejects ``X-Audit-Memento`` values
+      containing ``/`` (allowed pattern: ``[ a-zA-Z0-9_\\-+().,@:]{1,128}``); a
+      slash in the agent_id would produce a header value the HMC silently rejects.
+    - No colons — the audit memento is formatted as ``hmc-mcp:<agent_id>``; a colon
+      in the agent_id would produce an ambiguous ``hmc-mcp:a:b`` value, and colons
+      also break the ``[hmc-mcp owner:<agent_id> …]`` ownership token format.
+    - No spaces — a space in the agent_id would be embedded in the description token
+      and may corrupt the HMC CLI ``-i`` parser (same concern as for lpar_name).
+
+    Called from :class:`.config.HMCConfig` model validator so errors surface at
+    construction time, before any SSH call is made.
+    """
+    if not agent_id:
+        raise ValueError("agent_id must not be empty")
+    if agent_id == "hmc-mcp":
+        raise ValueError(
+            "agent_id 'hmc-mcp' is reserved — it is the default fallback used when no "
+            "agent_id is set and produces a token indistinguishable from a pre-feature LPAR; "
+            "choose a distinct identifier"
+        )
+    if len(agent_id) > 64:
+        raise ValueError(
+            f"agent_id is {len(agent_id)} characters; maximum is 64"
+        )
+    if not agent_id.isascii() or any(ord(c) < 0x20 or ord(c) == 0x7F for c in agent_id):
+        raise ValueError(
+            "agent_id contains non-ASCII or non-printable characters; "
+            "only printable ASCII is accepted"
+        )
+    if "," in agent_id:
+        raise ValueError(
+            "agent_id contains a comma; commas corrupt the HMC CLI -i parser"
+        )
+    if "=" in agent_id:
+        raise ValueError(
+            "agent_id contains '='; equals signs corrupt the HMC CLI -i parser"
+        )
+    if "[" in agent_id or "]" in agent_id:
+        raise ValueError(
+            "agent_id contains a square bracket; brackets break the ownership token format"
+        )
+    if "/" in agent_id:
+        raise ValueError(
+            "agent_id contains '/'; the HMC REST API rejects X-Audit-Memento values "
+            "containing '/' (allowed: [ a-zA-Z0-9_\\-+().,@:]{1,128})"
+        )
+    if ":" in agent_id:
+        raise ValueError(
+            "agent_id contains ':'; colons break the 'hmc-mcp:<agent_id>' audit "
+            "memento format and the 'owner:<agent_id>' ownership token format"
+        )
+    if " " in agent_id:
+        raise ValueError(
+            "agent_id contains a space; spaces would corrupt the ownership token "
+            "embedded in the chsyscfg -i parser"
+        )
+
+
+async def stamp_lpar_ownership(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    *,
+    agent_id: str | None = None,
+) -> str | None:
+    """Write an ownership token to *lpar_name*'s description field.
+
+    Builds the token ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and
+    calls :func:`set_lpar_description` to write it over SSH.
+
+    Returns the token string on success; returns ``None`` (without raising) on
+    any SSH or network failure — this is a best-effort post-create call that
+    must not fail the LPAR creation itself.
+
+    *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
+    """
+    import datetime
+
+    effective_id = agent_id if agent_id else "hmc-mcp"
+    today = datetime.date.today().isoformat()
+    token = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    try:
+        # Pre-validate the token before the SSH round-trip.  Kept inside the
+        # try block so that a ValueError (should not fire when agent_id was
+        # validated by HMCConfig, but may if called directly) is caught and
+        # treated as a best-effort failure rather than propagating to the caller.
+        validate_lpar_description(token)
+        await set_lpar_description(config, system_name, lpar_name, token)
+        return token
+    except (HMCCLIError, asyncssh.Error, OSError, ValueError):
+        # Catches SSH protocol errors (asyncssh.Error), pre-handshake network
+        # failures (OSError — DNS, TCP refused), HMC CLI errors (HMCCLIError),
+        # and description-validation errors (ValueError).
+        # Stamping is best-effort: none of these should fail the owning create call.
+        return None
+
+
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute an HMC CLI command over SSH and return its stdout.
 
@@ -546,7 +654,33 @@ async def set_lpar_description(
 
     Raises ``ValueError`` if *description* is not printable ASCII; see
     :func:`validate_lpar_description` for the constraint and error code.
+
+    Raises :class:`HMCCLIError` if *lpar_name* contains a character that would
+    corrupt the ``chsyscfg -i`` attribute string.  The HMC CLI ``-i`` parser
+    is comma-delimited and equals-delimited; a space in the name may cause the
+    HMC's internal parser to tokenise incorrectly even when the shell argument
+    is properly quoted.
     """
+    if "," in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains a comma; cannot safely write "
+            "description via chsyscfg -i (comma-delimited attribute parser)"
+        )
+    if "=" in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains '='; cannot safely write "
+            "description via chsyscfg -i (equals-delimited key/value parser)"
+        )
+    if " " in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains a space; cannot safely write "
+            "description via chsyscfg -i (space may corrupt the HMC CLI -i parser)"
+        )
+    if ";" in lpar_name:
+        raise HMCCLIError(
+            f"LPAR name {lpar_name!r} contains a semicolon; cannot safely write "
+            "description via chsyscfg -i (semicolon may corrupt the HMC CLI -i parser)"
+        )
     validate_lpar_description(description)
     cmd = (
         f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "

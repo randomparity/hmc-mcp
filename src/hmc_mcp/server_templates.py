@@ -66,7 +66,7 @@ def hmc_deploy_partition_template(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Deploy a partition from a *draft* partition template.
 
     draft_template_uuid is the transformed/replica template UUID (produced by
@@ -74,6 +74,22 @@ def hmc_deploy_partition_template(
     partition on. Submits a Deploy job; poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    The result always includes an ``ownership_stamped`` key:
+    - ``None`` — stamping was not attempted (``wait=False``, or the job did not
+      complete, or the LPAR name was not available from the job result). This is
+      the only value currently reachable; automatic stamping requires the deploy
+      job to reliably return the new LPAR name, which varies across HMC firmware.
+    - ``True`` — stamp succeeded (not yet reachable; will be set when LPAR name
+      resolution from the job result is implemented).
+    - ``False`` — stamp was attempted but failed.
+
+    **Multi-agent ownership:** When ``wait=True`` and the job completes, the
+    new LPAR's description should be stamped with an ownership token. Because
+    the LPAR name is not reliably returned by the deploy job on all HMC firmware
+    versions, automatic stamping is not yet implemented. After the deploy completes,
+    identify the new LPAR (via ``hmc_lpars``) and call ``hmc_set_lpar_description``
+    to stamp ``[hmc-mcp owner:<HMC_AGENT_ID> created:<date>]`` manually.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -83,12 +99,39 @@ def hmc_deploy_partition_template(
                 _check_templates_error(exc)
                 raise
             if not wait or job is None:
-                return job
+                return {
+                    "job": job,
+                    "ownership_stamped": None,
+                    "warnings": [
+                        "ownership stamp not attempted: set wait=True and identify "
+                        "the new LPAR after deployment to stamp the description manually"
+                    ],
+                }
             job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
             if not job_uuid:
-                return job
-            return await hmc.wait_for_job(
+                return {
+                    "job": job,
+                    "ownership_stamped": None,
+                    "warnings": ["ownership stamp not attempted: no job UUID in response"],
+                }
+            final_job = await hmc.wait_for_job(
                 job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
             )
+            job_status = (final_job or {}).get("Status") or (
+                ((final_job or {}).get("Resource") or {}).get("Status")
+            )
+            # TODO (#135): Automatic stamping deferred — deploy job does not
+            # reliably return the new LPAR name across HMC firmware versions.
+            # Full implementation: diff the LPAR list before/after the deploy job
+            # to identify the new partition and stamp it. See ADR 0011 and issue #135.
+            return {
+                "job": final_job,
+                "ownership_stamped": None,
+                "warnings": [
+                    f"ownership stamp not attempted: LPAR name not available from "
+                    f"deploy job result (job status: {job_status!r}); "
+                    "identify the new LPAR with hmc_lpars and stamp manually"
+                ],
+            }
 
     return _run(_go)
