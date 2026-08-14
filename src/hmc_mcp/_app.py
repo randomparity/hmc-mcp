@@ -106,6 +106,7 @@ mcp = FastMCP(
 # a new tool must be placed in exactly one category there and tagged here.
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 _DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
+_STATE_CHANGING = ToolAnnotations(readOnlyHint=False)
 
 READ_ONLY_TOOLS = frozenset({
     "hmc_console_info",
@@ -347,9 +348,21 @@ def _ssh_with_client(
 
 
 
-def main_stdio() -> None:
+def main_stdio(enable_arbitrary_command: bool = False) -> None:
+    if enable_arbitrary_command:
+        from .server_system import register_arbitrary_command_tool
+
+        register_arbitrary_command_tool()
     mcp.run()
 
 
-def main_http(host: str = "127.0.0.1", port: int = 8000) -> None:
+def main_http(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    enable_arbitrary_command: bool = False,
+) -> None:
+    if enable_arbitrary_command:
+        from .server_system import register_arbitrary_command_tool
+
+        register_arbitrary_command_tool()
     mcp.run(transport="streamable-http", host=host, port=port)

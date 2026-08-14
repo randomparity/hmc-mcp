@@ -11,6 +11,7 @@ import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
+from hmc_mcp import _app as server_app
 from hmc_mcp.cli import _is_loopback, app
 
 
@@ -31,7 +32,9 @@ def test_serve_http_loopback_bind_is_allowed():
     with patch("hmc_mcp.server.main_http") as main_http:
         result = CliRunner().invoke(app, ["serve", "--http"])
     assert result.exit_code == 0
-    main_http.assert_called_once_with(host="127.0.0.1", port=8000)
+    main_http.assert_called_once_with(
+        host="127.0.0.1", port=8000, enable_arbitrary_command=False
+    )
 
 
 def test_serve_http_non_loopback_refuses_without_allow_remote():
@@ -54,7 +57,9 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
             ["serve", "--http", "--listen-host", "0.0.0.0", "--allow-remote"],
         )
     assert result.exit_code == 0
-    main_http.assert_called_once_with(host="0.0.0.0", port=8000)
+    main_http.assert_called_once_with(
+        host="0.0.0.0", port=8000, enable_arbitrary_command=False
+    )
 
 
 @pytest.mark.parametrize(
@@ -82,4 +87,49 @@ def test_serve_allows_environment_hmc_options(monkeypatch):
         result = CliRunner().invoke(app, ["serve"])
 
     assert result.exit_code == 0
-    main_stdio.assert_called_once_with()
+    main_stdio.assert_called_once_with(enable_arbitrary_command=False)
+
+
+@pytest.mark.parametrize("http", [False, True])
+def test_serve_passes_arbitrary_command_opt_in(http):
+    args = ["serve", "--enable-arbitrary-command"]
+    target = "hmc_mcp.server.main_http" if http else "hmc_mcp.server.main_stdio"
+    if http:
+        args.append("--http")
+
+    with patch(target) as entrypoint:
+        result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0
+    if http:
+        entrypoint.assert_called_once_with(
+            host="127.0.0.1", port=8000, enable_arbitrary_command=True
+        )
+    else:
+        entrypoint.assert_called_once_with(enable_arbitrary_command=True)
+
+
+def test_stdio_entrypoint_registers_arbitrary_command_when_enabled():
+    with (
+        patch("hmc_mcp.server_system.register_arbitrary_command_tool") as register,
+        patch.object(server_app.mcp, "run") as run,
+    ):
+        server_app.main_stdio(enable_arbitrary_command=True)
+
+    register.assert_called_once_with()
+    run.assert_called_once_with()
+
+
+def test_http_entrypoint_registers_arbitrary_command_when_enabled():
+    with (
+        patch("hmc_mcp.server_system.register_arbitrary_command_tool") as register,
+        patch.object(server_app.mcp, "run") as run,
+    ):
+        server_app.main_http(
+            host="127.0.0.1", port=9000, enable_arbitrary_command=True
+        )
+
+    register.assert_called_once_with()
+    run.assert_called_once_with(
+        transport="streamable-http", host="127.0.0.1", port=9000
+    )

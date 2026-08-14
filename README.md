@@ -106,8 +106,8 @@ without the schema-version header — for child-resource endpoints such as
   must be set for SSH auth; the fallback is transparent to the caller.
 - **Virtual adapter attachment** (`hmc_add_network_adapter`,
   `hmc_add_vscsi_adapter`): no automatic fallback. Configure adapter profiles
-  via the HMC GUI, the HMC CLI (`chhwres`), or the `hmc_run_command` escape
-  hatch if this affects your firmware.
+  via the HMC GUI, the HMC CLI (`chhwres`), or the opt-in `hmc_run_command`
+  escape hatch if this affects your firmware.
 - **Virtual disk creation** (`hmc_create_virtual_disk`): no automatic fallback.
   The disk can be created directly on the VIOS with `mkbdsp` and then mapped
   with `hmc_map_storage_to_lpar`.
@@ -151,16 +151,19 @@ attributes removed).
 
 ```bash
 hmc-mcp serve            # stdio — what MCP clients/agents expect
-hmc-mcp serve --http --host 127.0.0.1 --port 8000
+hmc-mcp serve --http --listen-host 127.0.0.1 --port 8000
+# Explicitly enable the arbitrary-command MCP escape hatch when required:
+hmc-mcp serve --enable-arbitrary-command
 ```
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
-> exposes the full tool surface — including arbitrary HMC CLI execution
-> (`hmc_run_command`) and user administration — to anyone who can reach the
+> exposes enabled tools — including user administration — to anyone who can reach the
 > port. Keep the default loopback bind. `serve --http` refuses a
-> non-loopback `--host` unless `--allow-remote` is passed; if you need remote
+> non-loopback `--listen-host` unless `--allow-remote` is passed; if you need remote
 > access, put an authenticated reverse proxy (MCP gateway or HTTPS proxy with
-> bearer-token auth) in front and never expose the port directly.
+> bearer-token auth) in front and never expose the port directly. The arbitrary
+> `hmc_run_command` escape hatch is disabled unless the server starts with
+> `--enable-arbitrary-command`.
 
 Exposed tools:
 
@@ -240,8 +243,8 @@ Exposed tools:
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
 > lookup over SSH when the REST API is unreachable. Resolution happens before
 > the command runs, so a UUID that cannot be resolved surfaces as an error
-> rather than being passed through to the CLI. `hmc_run_command` is the
-> exception — it runs whatever command you give it verbatim.
+> rather than being passed through to the CLI. The opt-in `hmc_run_command`
+> tool is the exception — it runs whatever command you give it verbatim.
 
 **VIOS administration**
 
@@ -372,7 +375,7 @@ Exposed tools:
 
 | Tool                | Description |
 |---------------------|-------------|
-| `hmc_run_command`   | Run an arbitrary HMC CLI command (documented escape hatch) |
+| `hmc_run_command`   | Run any HMC CLI command; available only with `serve --enable-arbitrary-command` |
 
 ### End-to-end: give an LPAR a bootable disk
 

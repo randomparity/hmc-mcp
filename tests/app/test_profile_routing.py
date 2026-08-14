@@ -27,7 +27,6 @@ from hmc_mcp.server import mcp
 # These tools use _ssh_with_client / run_hmc_cli and are scoped to #127.
 # They are listed explicitly so the registry test can skip them.
 _SSH_ONLY_TOOLS = frozenset({
-    "hmc_run_command",
     "hmc_get_lpar_description",
     "hmc_set_lpar_description",
     "hmc_get_lpar_msp",

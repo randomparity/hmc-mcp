@@ -8,6 +8,7 @@ from typing import Any
 
 from ._app import (
     _READ_ONLY,
+    _STATE_CHANGING,
     _resolve_lpar_uuid,
     _resolve_system_uuid,
     _resolve_vios_uuid,
@@ -21,7 +22,6 @@ from .ssh import run_hmc_cli
 
 
 
-@mcp.tool
 def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     """Execute an arbitrary HMC CLI command over SSH and return its output.
 
@@ -39,6 +39,18 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     """
     config = client_from_env(profile).config
     return _run(lambda: run_hmc_cli(cmd, config))
+
+
+_arbitrary_command_registered = False
+
+
+def register_arbitrary_command_tool() -> None:
+    """Register the arbitrary-command escape hatch once for an opted-in server."""
+    global _arbitrary_command_registered
+    if _arbitrary_command_registered:
+        return
+    mcp.tool(hmc_run_command, annotations=_STATE_CHANGING)
+    _arbitrary_command_registered = True
 
 
 

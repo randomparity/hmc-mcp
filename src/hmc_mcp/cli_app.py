@@ -254,12 +254,17 @@ def serve(
         help="Bind beyond loopback (with --http). UNSAFE: the HTTP server has no "
         "authentication; you must gate it with an authenticated reverse proxy.",
     ),
+    enable_arbitrary_command: bool = typer.Option(
+        False,
+        "--enable-arbitrary-command",
+        help="Expose hmc_run_command, which can execute any HMC CLI command.",
+    ),
 ) -> None:
     """Run the MCP server (stdio by default — what agents expect).
 
-    The HTTP transport is UNAUTHENTICATED and exposes the full tool surface,
-    including arbitrary HMC CLI execution (``hmc_run_command``) and user
-    administration. Bind only to loopback (the default). To reach the server
+    The HTTP transport is UNAUTHENTICATED and exposes every enabled tool,
+    including user administration and, with ``--enable-arbitrary-command``,
+    arbitrary HMC CLI execution. Bind only to loopback (the default). To reach the server
     beyond localhost you must pass ``--allow-remote`` AND put an authenticated
     reverse proxy (MCP gateway or HTTPS proxy with bearer-token auth) in front.
     """
@@ -276,14 +281,18 @@ def serve(
         if not _is_loopback(listen_host) and not allow_remote:
             raise typer.BadParameter(
                 f"--listen-host {listen_host!r} binds beyond loopback, but the streamable HTTP "
-                "server has no authentication and exposes the full tool surface "
-                "(incl. arbitrary HMC CLI exec and user admin). Refusing to start. "
+                "server has no authentication and exposes every enabled tool "
+                "(including user administration). Refusing to start. "
                 "If you understand the risk, re-run with --allow-remote and put an "
                 "authenticated reverse proxy in front."
             )
-        server.main_http(host=listen_host, port=port)
+        server.main_http(
+            host=listen_host,
+            port=port,
+            enable_arbitrary_command=enable_arbitrary_command,
+        )
     else:
-        server.main_stdio()
+        server.main_stdio(enable_arbitrary_command=enable_arbitrary_command)
 
 
 def _is_loopback(host: str) -> bool:

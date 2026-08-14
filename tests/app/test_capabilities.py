@@ -65,14 +65,24 @@ def test_every_registered_tool_matches_its_category():
             ), name
 
 
-def test_arbitrary_command_tool_is_neither_readonly_nor_destructive():
-    """hmc_run_command executes arbitrary HMC CLI — it must not be gated as
-    uniformly read-only or destructive, since either depends on the command."""
-    tool = _tools_by_name()["hmc_run_command"]
-    ann = tool.annotations
-    assert ann is None or (
-        ann.readOnlyHint is not True and ann.destructiveHint is not True
-    )
+def test_arbitrary_command_tool_is_disabled_by_default():
+    assert "hmc_run_command" not in _tools_by_name()
+
+
+def test_arbitrary_command_tool_opt_in_is_idempotent():
+    from hmc_mcp import server_system
+
+    try:
+        server_system.register_arbitrary_command_tool()
+        server_system.register_arbitrary_command_tool()
+
+        tools = [tool for tool in asyncio.run(mcp.list_tools()) if tool.name == "hmc_run_command"]
+        assert len(tools) == 1
+        assert tools[0].annotations is not None
+        assert tools[0].annotations.readOnlyHint is False
+    finally:
+        mcp.local_provider.remove_tool("hmc_run_command")
+        server_system._arbitrary_command_registered = False
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
