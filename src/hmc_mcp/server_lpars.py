@@ -24,18 +24,14 @@ from .documents import (
     build_dlpar_proc_document,
     build_lpar_document,
 )
-from .jobs import (
-    power_off_lpar_job,
-    power_on_lpar_job,
-    validate_wait_timing,
-    wait_for_submitted_job,
-)
+from .jobs import validate_wait_timing
 from .operations_lpar import (
     LparCreation,
     LparCreationResult,
     authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
+    power_lpar,
     resolve_lpar_ownership_names,
 )
 
@@ -301,14 +297,6 @@ def hmc_delete_lpar(
     return _run(_go)
 
 
-async def _power_op(
-    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
-) -> dict[str, Any] | None:
-    """Submit a power job on an already-open *hmc* client; optionally wait for terminal state."""
-    job = await submit_fn(hmc)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
 @mcp.tool
 def hmc_power_on_lpar(
     lpar_name_or_uuid: str,
@@ -338,27 +326,14 @@ def hmc_power_on_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            if not force:
-                state = await hmc.get_quick_property(
-                    "LogicalPartition", lpar_uuid, "PartitionState"
-                )
-                if state == "running":
-                    return {
-                        "already_running": True,
-                        "message": (
-                            f"LPAR {lpar_uuid} is already running. "
-                            "Use force=True to submit PowerOn anyway."
-                        ),
-                    }
-            return await _power_op(
+            return await power_lpar(
                 hmc,
-                lambda client: client.submit_job(
-                    f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-                    power_on_lpar_job(),
-                ),
-                wait,
-                timeout_seconds,
-                poll_interval,
+                lpar_uuid,
+                power_on=True,
+                force=force,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
@@ -387,15 +362,14 @@ def hmc_power_off_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await _power_op(
+            return await power_lpar(
                 hmc,
-                lambda client: client.submit_job(
-                    f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
-                    power_off_lpar_job(immediate=immediate),
-                ),
-                wait,
-                timeout_seconds,
-                poll_interval,
+                lpar_uuid,
+                power_on=False,
+                immediate=immediate,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)

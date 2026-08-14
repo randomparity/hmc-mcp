@@ -25,17 +25,13 @@ from .cli_app import (
     lpars_app,
 )
 
-from .jobs import (
-    power_off_lpar_job,
-    power_on_lpar_job,
-    validate_wait_timing,
-    wait_for_submitted_job,
-)
+from .jobs import validate_wait_timing
 from .operations_lpar import (
     LparCreation,
     authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
+    power_lpar,
     resolve_lpar_ownership_names,
 )
 from .documents import (
@@ -197,11 +193,18 @@ def lpars_power_on(
     interval: int = typer.Option(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
+    force: bool = typer.Option(False, "--force", help="Submit even if already running"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
     _power_lpar(
-        name_or_uuid, on=True, yes=yes, wait=wait, timeout=timeout, interval=interval
+        name_or_uuid,
+        on=True,
+        force=force,
+        yes=yes,
+        wait=wait,
+        timeout=timeout,
+        interval=interval,
     )
 
 
@@ -336,6 +339,7 @@ def _power_lpar(
     name_or_uuid: str,
     on: bool,
     immediate: bool = False,
+    force: bool = False,
     yes: bool = False,
     wait: bool = False,
     timeout: int = 300,
@@ -366,23 +370,26 @@ def _power_lpar(
                 ):
                     err_console.print("Aborted.")
                     raise typer.Abort()
-            if on:
-                job = await hmc.submit_job(
-                    f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn",
-                    power_on_lpar_job(),
-                )
-            else:
-                job = await hmc.submit_job(
-                    f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOff",
-                    power_off_lpar_job(immediate=immediate),
-                )
-            job = await wait_for_submitted_job(hmc, job, wait, timeout, interval)
+            job = await power_lpar(
+                hmc,
+                uuid,
+                power_on=on,
+                immediate=immediate,
+                force=force,
+                wait=wait,
+                timeout_seconds=timeout,
+                poll_interval=interval,
+            )
             return uuid, job
 
     uuid, job = _run(_go)
 
     if uuid is None:
         _partition_not_found(name_or_uuid)
+    if job and job.get("already_running"):
+        console.print(f"[yellow]{job['message']}[/yellow]")
+        _print_json(job)
+        return
     console.print(f"[green]Job submitted[/green] for {uuid}")
     _print_json(job)
 

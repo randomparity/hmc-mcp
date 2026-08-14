@@ -263,7 +263,7 @@ def test_lpar_power_on_e2e(mock_hmc):
     lpar_uuid = "11111111-1111-1111-1111-111111111111"
     result = RUNNER.invoke(
         cli.app,
-        ["lpars", "power-on", lpar_uuid, "--yes"],
+        ["lpars", "power-on", lpar_uuid, "--force", "--yes"],
         env=_env(mock_hmc.server_address[1]),
     )
 

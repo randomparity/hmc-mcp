@@ -11,6 +11,7 @@ from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import LparResources, PartitionType
 from .errors import HMCError
+from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .ssh import HMCCLIError
 from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
 from .ssh_commands import get_lpar_description
@@ -226,3 +227,37 @@ async def delete_lpar(
         )
     await hmc.delete_logical_partition(lpar_uuid)
     return lpar_uuid
+
+
+async def power_lpar(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    *,
+    power_on: bool,
+    immediate: bool = False,
+    force: bool = False,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> dict[str, Any] | None:
+    """Apply shared LPAR power policy, submit the job, and optionally wait."""
+    if power_on and not force:
+        state = await hmc.get_quick_property(
+            "LogicalPartition", lpar_uuid, "PartitionState"
+        )
+        if state == "running":
+            return {
+                "already_running": True,
+                "message": (
+                    f"LPAR {lpar_uuid} is already running. "
+                    "Use force=True to submit PowerOn anyway."
+                ),
+            }
+    operation = "PowerOn" if power_on else "PowerOff"
+    document = (
+        power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
+    )
+    job = await hmc.submit_job(
+        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document
+    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)

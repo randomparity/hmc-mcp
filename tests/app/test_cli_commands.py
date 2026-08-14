@@ -664,7 +664,9 @@ def test_lpars_state(fake_hmc):
 
 
 def test_lpars_power_on_submits_power_on_job(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "power-on", LPAR_UUID, "--yes"])
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "power-on", LPAR_UUID, "--force", "--yes"]
+    )
 
     assert result.exit_code == 0
     assert "Job submitted" in result.stdout
@@ -672,6 +674,14 @@ def test_lpars_power_on_submits_power_on_job(fake_hmc):
     path, job_xml = fake_hmc.calls[0][1]
     assert path == f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
     assert "PowerOn</OperationName>" in job_xml
+
+
+def test_lpars_power_on_skips_running_partition_without_force(fake_hmc):
+    result = RUNNER.invoke(cli.app, ["lpars", "power-on", LPAR_UUID, "--yes"])
+
+    assert result.exit_code == 0
+    assert "already running" in result.stdout
+    assert [call[0] for call in fake_hmc.calls] == ["get_quick_property"]
 
 
 def test_lpars_power_off_resolves_name_then_submits(fake_hmc):
@@ -699,7 +709,7 @@ def test_lpars_power_off_declined_confirm_aborts(fake_hmc):
 @pytest.mark.parametrize(
     "command",
     [
-        ["lpars", "power-on", LPAR_UUID],
+        ["lpars", "power-on", LPAR_UUID, "--force"],
         ["systems", "power-on", SYSTEM_UUID],
         ["systems", "power-off", SYSTEM_UUID],
         ["vios", "power-on", VIOS_UUID],
