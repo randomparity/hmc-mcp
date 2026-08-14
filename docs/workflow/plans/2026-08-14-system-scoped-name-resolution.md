@@ -77,12 +77,12 @@ no-match guidance is unchanged.
 `tests/app/test_capabilities.py`, `tests/lpar/test_power_tools.py`,
 `tests/vios/test_vios_lifecycle.py`, and `tests/vios/test_vios_backup.py`.
 
-**Interfaces:** `delete_lpar` uses its existing `system_name_or_uuid` during
-LPAR resolution; `power_lpar` and `power_vios` accept keyword-only optional
+**Interfaces:** `delete_lpar` and `rename_lpar` use their existing
+`system_name_or_uuid` during LPAR resolution; `power_lpar` and `power_vios` accept keyword-only optional
 system scope. Destructive public tools forward an optional
 `system_name_or_uuid`; VIOS restore's private helper accepts the same selector.
 
-1. Add tests for LPAR delete and power-off plus VIOS delete, restore, and
+1. Add tests for LPAR delete, rename, and power-off plus VIOS delete, restore, and
    power-off, asserting scope reaches the resolver before mutation. Run
    `uv run pytest -q tests/app/test_server_tools.py tests/app/test_capabilities.py tests/lpar/test_power_tools.py tests/vios/test_vios_lifecycle.py tests/vios/test_vios_backup.py`;
    expect failures from unsupported parameters or unscoped calls.

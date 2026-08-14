@@ -22,7 +22,7 @@ LPAR and VIOS finders accept an optional managed-system UUID. A scoped lookup
 uses the managed system's child-resource collection and exact name matching.
 The shared UUID resolvers accept an optional system name or UUID, resolve it
 first, and pass its UUID to the finder. Destructive LPAR and VIOS tools expose
-that optional selector. UUID resource selectors remain pass-through values:
+or reuse that selector, including LPAR delete and rename. UUID resource selectors remain pass-through values:
 the system selector is ignored for UUID resources and is not a parent-system
 validation or authorization boundary.
 

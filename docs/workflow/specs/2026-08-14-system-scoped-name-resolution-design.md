@@ -1,6 +1,6 @@
 # System-scoped name resolution design
 
-Issue: #140  
+Issue: #140
 Decision: [ADR 0015](../../adr/0015-system-scoped-name-resolution.md)
 
 ## Goal and scope
@@ -37,8 +37,8 @@ the parent or authorize the UUID. Existing no-match messages remain byte-for-byt
 unchanged.
 
 The destructive tool surface gains optional system scope wherever a destructive
-LPAR/VIOS operation resolves a name: LPAR delete uses its existing required
-system selector for resolution; LPAR power-off gains an optional selector;
+LPAR/VIOS operation resolves a name: LPAR delete and rename use their existing
+required system selectors for resolution; LPAR power-off gains an optional selector;
 VIOS delete, restore, and power-off gain optional selectors. Presentation-neutral
 operations and the SSH restore helper receive the resolved scope without
 changing unrelated read or provisioning tools.

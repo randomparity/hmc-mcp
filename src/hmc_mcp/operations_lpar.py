@@ -318,8 +318,10 @@ async def rename_lpar(
     ownership_override: bool = False,
 ) -> tuple[str, dict[str, Any] | None]:
     """Resolve, authorize, and rename one LPAR."""
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )

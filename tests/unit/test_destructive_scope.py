@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmc_mcp.operations_lpar import delete_lpar, power_lpar
+from hmc_mcp.operations_lpar import delete_lpar, power_lpar, rename_lpar
 from hmc_mcp.operations_vios import power_vios
 from hmc_mcp import operations_vios, server_lpars, server_vios
 
@@ -30,6 +30,31 @@ async def test_delete_lpar_uses_required_system_to_scope_name_resolution():
     hmc.get_quick_property.return_value = "not activated"
 
     assert await delete_lpar(hmc, "system-name", "aix1", ownership_override=True) == "lpar-uuid"
+
+    hmc.find_partition_by_name.assert_awaited_once_with(
+        "aix1", system_uuid="system-uuid"
+    )
+
+
+@pytest.mark.asyncio
+async def test_rename_lpar_uses_required_system_to_scope_name_resolution():
+    hmc = AsyncMock()
+    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
+    hmc.get_logical_partition.return_value = {
+        "Resource": {"PartitionName": "aix1", "Description": ""}
+    }
+    hmc.get_managed_system.return_value = {
+        "Resource": {"SystemName": "system-name"}
+    }
+
+    await rename_lpar(
+        hmc,
+        "system-name",
+        "aix1",
+        "renamed",
+        ownership_override=True,
+    )
 
     hmc.find_partition_by_name.assert_awaited_once_with(
         "aix1", system_uuid="system-uuid"
