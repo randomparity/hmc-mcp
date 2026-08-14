@@ -29,8 +29,31 @@ class _FakeClient:
         return None
 
 
+class _ToolResult:
+    def __init__(self, *, data=None, content=None):
+        self.data = data
+        self.content = content or []
+
+
+class _TextBlock:
+    def __init__(self, text):
+        self.text = text
+
+
+class _ScriptedClient:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+
+    async def call_tool(self, _tool, _kwargs):
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
+
     async def register() -> None:
         return None
 
@@ -46,6 +69,96 @@ def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):
 
     assert exc_info.value.code == 1
     assert "Add 'HMC_SCHEMA_VERSION=V1_0'" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (_ToolResult(data={"UUID": "one"}), {"UUID": "one"}),
+        (_ToolResult(content=[_TextBlock('[{"UUID": "two"}]')]), [{"UUID": "two"}]),
+        (_ToolResult(content=[_TextBlock("plain text")]), "plain text"),
+    ],
+)
+async def test_call_normalizes_fastmcp_result_shapes(result, expected):
+    assert await runner.call(_ScriptedClient(result=result), "tool") == (
+        "PASS",
+        expected,
+    )
+
+
+@pytest.mark.asyncio
+async def test_call_returns_traceable_failure():
+    status, data = await runner.call(
+        _ScriptedClient(error=RuntimeError("transport failed")), "tool"
+    )
+
+    assert status == "FAIL"
+    assert "RuntimeError: transport failed" in data
+    assert "Traceback" in data
+
+
+def test_expected_hmc_limitation_is_classified_as_skip():
+    state = runner.RunState()
+
+    runner._record_expected_or_real(
+        state,
+        5,
+        "optional_tool",
+        "FAIL",
+        "HTTP 406 Not Acceptable",
+        ["406"],
+        "feature unavailable",
+    )
+
+    assert state.results[0]["status"] == "SKIP"
+    assert state.results[0]["note"] == "feature unavailable"
+
+
+def test_result_helpers_preserve_resource_shapes():
+    entries = [{"Resource": {"UUID": "nested"}}]
+
+    assert runner._entries(entries) is entries
+    assert runner._entries({"entries": entries}) is entries
+    assert runner._entries("invalid") == []
+    assert runner._resource(entries[0]) == {"UUID": "nested"}
+    assert runner._resource({"UUID": "flat"}) == {"UUID": "flat"}
+
+
+def test_restore_context_restores_identifiers_and_baseline(tmp_path):
+    results_path = tmp_path / "previous.json"
+    results_path.write_text(
+        json.dumps(
+            {
+                "context": {
+                    "system_uuid": "system-1",
+                    "vios_uuid": "vios-1",
+                    "lp3_baseline": {"description": "original"},
+                }
+            }
+        )
+    )
+    state = runner.RunState()
+
+    runner._restore_ctx_from_results(state, str(results_path))
+
+    assert state.context.system_uuid == "system-1"
+    assert state.context.vios_uuid == "vios-1"
+    assert state.context.lp3_baseline == {"description": "original"}
+
+
+def test_live_context_has_no_mapping_facade():
+    context = runner.LiveTestContext()
+
+    assert not hasattr(context, "__getitem__")
+    assert not hasattr(context, "get")
+
+
+def test_numeric_dispatch_uses_intent_revealing_workflow_names():
+    assert runner.SUBTASKS[0] is runner.capture_lpar_baseline
+    assert runner.SUBTASKS[2] is runner.inventory_network
+    assert runner.SUBTASKS[9] is runner.mutate_virtual_networking
+    assert runner.SUBTASKS[15] is runner.restore_lpar_baseline
 
 
 @pytest.mark.asyncio
@@ -71,7 +184,10 @@ async def test_main_uses_fresh_state_for_repeated_runs(monkeypatch, tmp_path):
     assert seen_states[0] is not seen_states[1]
     assert initial_system_uuids == [None, None]
     assert len(seen_states[1].results) == 1
-    assert json.loads(second_path.read_text())["context"]["system_uuid"] == "first-run-only"
+    assert (
+        json.loads(second_path.read_text())["context"]["system_uuid"]
+        == "first-run-only"
+    )
 
 
 @pytest.mark.asyncio
@@ -87,3 +203,42 @@ async def test_main_returns_failure_and_persists_results(monkeypatch, tmp_path):
     assert await runner.main(results_path=str(results_path)) == 1
     saved = json.loads(results_path.read_text())
     assert saved["results"][0]["status"] == "FAIL"
+
+
+@pytest.mark.asyncio
+async def test_main_rejects_unknown_numeric_workflow(monkeypatch, tmp_path):
+    _isolate_runner(monkeypatch)
+    results_path = tmp_path / "unknown.json"
+
+    assert await runner.main(999, str(results_path)) == 1
+
+    saved = json.loads(results_path.read_text())
+    assert saved["results"][0]["tool"] == "runner"
+    assert saved["results"][0]["data"] == "Unknown sub-task 999"
+
+
+@pytest.mark.asyncio
+async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_list_virtual_switches":
+            return "PASS", [{"Resource": {"SwitchID": "7"}}]
+        if tool == "hmc_list_virtual_networks" and len(calls) < 7:
+            return "PASS", [{"Resource": {"NetworkVLANID": "3000"}}]
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+
+    await runner.inventory_network(None, state)
+    await runner.mutate_virtual_networking(None, state)
+
+    create_call = next(
+        item for item in calls if item[0] == "hmc_create_virtual_network"
+    )
+    assert state.context.test_vswitch_id == 7
+    assert state.context.test_vlan_id == 3001
+    assert create_call[1]["vlan_id"] == 3001
+    assert create_call[1]["vswitch_id"] == 7
