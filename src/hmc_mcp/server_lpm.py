@@ -10,6 +10,7 @@ from ._app import (
 )
 
 from .common import client_from_env
+from .jobs import JobOutcome
 from .operations_lpm import (
     abort_lpar_migration,
     migrate_lpar,
@@ -17,7 +18,7 @@ from .operations_lpm import (
     remote_restart_lpar,
 )
 
-from typing import Any
+from typing import Any, cast
 
 
 tool, register_tools = tool_module()
@@ -101,34 +102,60 @@ def hmc_migrate_validate_lpar(
 
 @tool(annotations=_DESTRUCTIVE)
 def hmc_migrate_abort_lpar(
-    lpar_name_or_uuid: str, profile: str | None = None
-) -> dict[str, Any] | None:
+    lpar_name_or_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> JobOutcome:
     """Abort an in-progress LPM migration of an LPAR.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
+    Returns a normalized job outcome. With wait=False, returns after submission;
+    with wait=True, blocks until a terminal state or timeout.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return (await abort_lpar_migration(hmc, lpar_name_or_uuid)).job
+            result = await abort_lpar_migration(
+                hmc,
+                lpar_name_or_uuid,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+            return cast(JobOutcome, result.job)
 
     return _run(_go)
 
 
 @tool
 def hmc_migrate_recover_lpar(
-    lpar_name_or_uuid: str, profile: str | None = None
-) -> dict[str, Any] | None:
+    lpar_name_or_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> JobOutcome:
     """Recover an LPAR after a failed LPM migration.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
+    Returns a normalized job outcome. With wait=False, returns after submission;
+    with wait=True, blocks until a terminal state or timeout.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return (await recover_lpar_migration(hmc, lpar_name_or_uuid)).job
+            result = await recover_lpar_migration(
+                hmc,
+                lpar_name_or_uuid,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+            return cast(JobOutcome, result.job)
 
     return _run(_go)
 
@@ -137,20 +164,29 @@ def hmc_migrate_recover_lpar(
 def hmc_remote_restart_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> JobOutcome:
     """Remote-restart a failed LPAR on another managed system.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
+    Returns a normalized job outcome. With wait=False, returns after submission;
+    with wait=True, blocks until a terminal state or timeout.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return (
-                await remote_restart_lpar(
-                    hmc, lpar_name_or_uuid, target_system_name_or_uuid
-                )
-            ).job
+            result = await remote_restart_lpar(
+                hmc,
+                lpar_name_or_uuid,
+                target_system_name_or_uuid,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+            return cast(JobOutcome, result.job)
 
     return _run(_go)

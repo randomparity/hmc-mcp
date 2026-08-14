@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_name
-from .jobs import validate_wait_timing, wait_for_submitted_job
+from .jobs import (
+    JobOutcome,
+    job_identifier,
+    job_outcome,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 
 
 @dataclass(frozen=True)
@@ -15,7 +21,24 @@ class LpmResult:
     """An LPM submission paired with its resolved partition identity."""
 
     lpar_uuid: str
-    job: dict[str, Any] | None
+    job: dict[str, Any] | JobOutcome | None
+
+
+async def _finish_job(
+    hmc: HMCClient,
+    job: dict[str, Any] | None,
+    wait: bool,
+    timeout_seconds: int,
+    poll_interval: int,
+) -> JobOutcome:
+    """Normalize an immediate submission or its final waited state."""
+    submitted_id = job_identifier(job) if job is not None else None
+    if not wait:
+        return replace(job_outcome(submitted_id or "", job), timed_out=False)
+    completed_job = await wait_for_submitted_job(
+        hmc, job, True, timeout_seconds, poll_interval
+    )
+    return job_outcome(submitted_id or "", completed_job)
 
 
 async def migrate_lpar(
@@ -44,25 +67,57 @@ async def migrate_lpar(
     return LpmResult(lpar_uuid, completed_job)
 
 
-async def abort_lpar_migration(hmc: HMCClient, lpar_name_or_uuid: str) -> LpmResult:
+async def abort_lpar_migration(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> LpmResult:
     """Resolve and abort an in-progress migration."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-    return LpmResult(lpar_uuid, await hmc.lpar_migrate_abort(lpar_uuid))
+    job = await hmc.lpar_migrate_abort(lpar_uuid)
+    return LpmResult(
+        lpar_uuid,
+        await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
+    )
 
 
-async def recover_lpar_migration(hmc: HMCClient, lpar_name_or_uuid: str) -> LpmResult:
+async def recover_lpar_migration(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+) -> LpmResult:
     """Resolve and recover a failed migration."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-    return LpmResult(lpar_uuid, await hmc.lpar_migrate_recover(lpar_uuid))
+    job = await hmc.lpar_migrate_recover(lpar_uuid)
+    return LpmResult(
+        lpar_uuid,
+        await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
+    )
 
 
 async def remote_restart_lpar(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> LpmResult:
     """Resolve both selectors and remotely restart a failed partition."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
     target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
     job = await hmc.lpar_remote_restart(lpar_uuid, target_system)
-    return LpmResult(lpar_uuid, job)
+    return LpmResult(
+        lpar_uuid,
+        await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
+    )

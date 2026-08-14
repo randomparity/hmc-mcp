@@ -6,11 +6,18 @@ respx ``mock_hmc`` router so the argument->URL and argument->XML mapping in
 the tool bodies is exercised — the layer the client tests skip.
 """
 
+from dataclasses import asdict
+
 import httpx
 import pytest
 from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
+from hmc_mcp.operations_lpm import (
+    abort_lpar_migration,
+    recover_lpar_migration,
+    remote_restart_lpar,
+)
 from hmc_mcp.server import (
     hmc_migrate_abort_lpar,
     hmc_migrate_lpar,
@@ -23,6 +30,21 @@ from conftest import JOB_ENTRY
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
+JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+LPM_RECOVERY_TOOL_CASES = [
+    (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
+    (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
+    (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+]
+LPM_RECOVERY_OPERATION_CASES = [
+    (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
+    (recover_lpar_migration, "lpar_migrate_recover", (LPAR_UUID,)),
+    (
+        remote_restart_lpar,
+        "lpar_remote_restart",
+        (LPAR_UUID, "target-system"),
+    ),
+]
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -99,6 +121,151 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "RemoteRestart</OperationName>" in body
     assert "vrml12-fsp" in body
+
+
+@pytest.mark.parametrize(
+    ("tool_fn", "operation", "args"),
+    LPM_RECOVERY_TOOL_CASES,
+)
+def test_lpm_recovery_tools_wait_for_terminal_outcome(
+    monkeypatch, mock_hmc, tool_fn, operation, args
+):
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    _job_route(mock_hmc, operation)
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+
+    result = tool_fn(*args, wait=True, timeout_seconds=60, poll_interval=1)
+
+    assert poll_route.called
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "COMPLETED"
+    assert result.timed_out is False
+    assert result.error is None
+
+
+@pytest.mark.parametrize(
+    ("tool_fn", "operation", "args"),
+    LPM_RECOVERY_TOOL_CASES,
+)
+def test_lpm_recovery_tools_return_explicit_timeout(
+    monkeypatch, mock_hmc, tool_fn, operation, args
+):
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    _job_route(mock_hmc, operation)
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    result = tool_fn(*args, wait=True, timeout_seconds=0, poll_interval=1)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "RUNNING"
+    assert result.timed_out is True
+    assert result.error is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "submit_method", "args"),
+    LPM_RECOVERY_OPERATION_CASES,
+)
+async def test_lpm_recovery_operations_return_stable_submission_outcome(
+    operation, submit_method, args
+):
+    hmc = AsyncMock()
+    setattr(hmc, submit_method, AsyncMock(return_value={"UUID": "job-1"}))
+
+    result = await operation(hmc, *args)
+
+    assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
+    assert result.job.job_id == "job-1"
+    assert result.job.status is None
+    assert result.job.timed_out is False
+    assert result.job.error is None
+    hmc.wait_for_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "submit_method", "args"),
+    LPM_RECOVERY_OPERATION_CASES,
+)
+async def test_lpm_recovery_operations_wait_for_terminal_outcome(
+    operation, submit_method, args
+):
+    submitted = {"UUID": "job-1", "link": "/jobs/job-1"}
+    completed = {"Resource": {"JobID": "job-1", "Status": "COMPLETED"}}
+    hmc = AsyncMock()
+    setattr(hmc, submit_method, AsyncMock(return_value=submitted))
+    hmc.wait_for_job.return_value = completed
+
+    result = await operation(
+        hmc, *args, wait=True, timeout_seconds=60, poll_interval=2
+    )
+
+    assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
+    assert result.job.status == "COMPLETED"
+    assert result.job.timed_out is False
+    hmc.wait_for_job.assert_awaited_once_with(
+        "job-1", 60, 2, job_href="/jobs/job-1"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "submit_method", "args"),
+    LPM_RECOVERY_OPERATION_CASES,
+)
+async def test_lpm_recovery_operations_surface_terminal_failure(
+    operation, submit_method, args
+):
+    submitted = {"UUID": "job-1", "link": "/jobs/job-1"}
+    failed = {
+        "Resource": {
+            "JobID": "job-1",
+            "Status": "FAILED",
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "ErrorData",
+                    "ParameterValue": "Migration recovery failed",
+                }
+            },
+        }
+    }
+    hmc = AsyncMock()
+    setattr(hmc, submit_method, AsyncMock(return_value=submitted))
+    hmc.wait_for_job.return_value = failed
+
+    result = await operation(hmc, *args, wait=True)
+
+    assert set(asdict(result.job)) == JOB_OUTCOME_KEYS
+    assert result.job.job_id == "job-1"
+    assert result.job.status == "FAILED"
+    assert result.job.timed_out is False
+    assert result.job.error == "Migration recovery failed"
+    assert result.job.job is failed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "submit_method", "args"),
+    LPM_RECOVERY_OPERATION_CASES,
+)
+async def test_lpm_recovery_operations_reject_invalid_active_timing_before_work(
+    operation, submit_method, args
+):
+    hmc = AsyncMock()
+
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        await operation(hmc, *args, wait=True, timeout_seconds=-1)
+
+    getattr(hmc, submit_method).assert_not_awaited()
 
 
 def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):

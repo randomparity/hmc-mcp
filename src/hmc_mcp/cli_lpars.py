@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import typer
 from rich.table import Table
 from typing import cast
@@ -23,7 +25,7 @@ from .cli_app import (
     lpars_app,
 )
 
-from .jobs import validate_wait_timing
+from .jobs import JobOutcome, validate_wait_timing
 from .operations_lpar import (
     LparCreation,
     authorize_lpar_mutation,
@@ -254,7 +256,8 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
 
     result = _run(_go)
     console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
-    _print_json(result.job)
+    job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
+    _print_json(job)
 
 
 @lpars_app.command("migrate")
@@ -296,12 +299,26 @@ def lpars_migrate_validate(
 @lpars_app.command("migrate-abort")
 def lpars_migrate_abort(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
+    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Abort an in-progress LPM migration."""
+    validate_wait_timing(wait, timeout, interval)
 
     async def _fn(hmc):
-        return await abort_lpar_migration(hmc, name_or_uuid)
+        return await abort_lpar_migration(
+            hmc,
+            name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
 
     _lpm_run(name_or_uuid, _fn, "MigrateAbort", None, yes)
 
@@ -309,12 +326,26 @@ def lpars_migrate_abort(
 @lpars_app.command("migrate-recover")
 def lpars_migrate_recover(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
+    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Recover an LPAR after a failed LPM migration."""
+    validate_wait_timing(wait, timeout, interval)
 
     async def _fn(hmc):
-        return await recover_lpar_migration(hmc, name_or_uuid)
+        return await recover_lpar_migration(
+            hmc,
+            name_or_uuid,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
 
     _lpm_run(name_or_uuid, _fn, "MigrateRecover", None, yes)
 
@@ -323,12 +354,27 @@ def lpars_migrate_recover(
 def lpars_remote_restart(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
+    timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
+    validate_wait_timing(wait, timeout, interval)
 
     async def _fn(hmc):
-        return await remote_restart_lpar(hmc, name_or_uuid, target)
+        return await remote_restart_lpar(
+            hmc,
+            name_or_uuid,
+            target,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
 
     _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
 

@@ -279,6 +279,31 @@ def test_wait_for_job_has_one_stable_output_schema():
     }
 
 
+def test_lpm_recovery_tools_have_standard_wait_contract():
+    by_name = _tools_by_name()
+
+    for tool_name in (
+        "hmc_migrate_abort_lpar",
+        "hmc_migrate_recover_lpar",
+        "hmc_remote_restart_lpar",
+    ):
+        tool = by_name[tool_name]
+        properties = tool.parameters["properties"]
+        assert properties["wait"]["default"] is False
+        assert properties["timeout_seconds"]["default"] == 300
+        assert properties["poll_interval"]["default"] == 5
+        assert set(tool.output_schema["properties"]) == {
+            "job_id",
+            "status",
+            "timed_out",
+            "error",
+            "job",
+        }
+        assert set(tool.output_schema["required"]) == set(
+            tool.output_schema["properties"]
+        )
+
+
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #
