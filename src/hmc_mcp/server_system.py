@@ -1,5 +1,4 @@
-"""MCP tools for read-only inventory and job status, plus the HMC CLI escape hatch.
-"""
+"""MCP tools for read-only inventory and job status, plus the HMC CLI escape hatch."""
 
 from __future__ import annotations
 
@@ -15,11 +14,10 @@ from ._app import (
     _run,
     mcp,
 )
-from .common import client_from_env
+from .common import client_from_env, is_uuid
 from .config import HMCConfig, resolve_config_path
 
 from .ssh import run_hmc_cli
-
 
 
 def hmc_run_command(cmd: str, profile: str | None = None) -> str:
@@ -53,17 +51,17 @@ def register_arbitrary_command_tool() -> None:
     _arbitrary_command_registered = True
 
 
-
-
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
     Useful as a connectivity check — this is the cheapest HMC call.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.get_console_info()
+
     return _run(_go)
 
 
@@ -114,16 +112,18 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
         # Use key-presence ('in') for credential booleans — truthiness would give
         # False for password = "" which is present-but-empty, diverging from
         # load_profile()'s "key" in entry check.
-        profiles.append({
-            "name": name,
-            "host": entry.get("host", ""),
-            "user": entry.get("user", ""),
-            "port": int(entry.get("port", _default_port)),
-            "verify_ssl": bool(entry.get("verify_ssl", _default_verify_ssl)),
-            "is_default": (name == default_profile),
-            "has_password": ("password" in entry or "password_env" in entry),
-            "has_ssh_key": ("ssh_key_file" in entry),
-        })
+        profiles.append(
+            {
+                "name": name,
+                "host": entry.get("host", ""),
+                "user": entry.get("user", ""),
+                "port": int(entry.get("port", _default_port)),
+                "verify_ssl": bool(entry.get("verify_ssl", _default_verify_ssl)),
+                "is_default": (name == default_profile),
+                "has_password": ("password" in entry or "password_env" in entry),
+                "has_ssh_key": ("ssh_key_file" in entry),
+            }
+        )
 
     return {"profiles": profiles, "config_file": str(config_path)}
 
@@ -147,6 +147,7 @@ def hmc_systems(
     systems whose State property matches the given value, using the HMC
     server-side search endpoint.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             if system_name_or_uuid is None:
@@ -163,54 +164,52 @@ def hmc_systems(
 def hmc_lpars(
     system_name_or_uuid: str | None = None,
     lpar_name_or_uuid: str | None = None,
-    name: str | None = None,
-    state_only: bool = False,
     state: str | None = None,
     profile: str | None = None,
-) -> list[dict[str, Any]] | dict[str, Any] | str | None:
-    """List logical partitions (LPARs) or get/find one.
+) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """List LPARs, get one by name or UUID, or filter by one selector.
 
-    Resolution priority (first match wins):
-
-    1. lpar_name_or_uuid + state_only=True  →  str | None  — current LPAR state
-       only (uses the cheap quick-property endpoint instead of a full fetch).
-    2. lpar_name_or_uuid                    →  dict | None  — full LPAR details.
-       Accepts either a PartitionName or a UUID. When both lpar_name_or_uuid
-       and name are supplied, lpar_name_or_uuid takes priority and name is
-       ignored.
-    3. name                                 →  dict | None  — find by
-       PartitionName (exact match).
-    4. system_name_or_uuid                  →  list[dict]   — all LPARs on that
-       system. Accepts either a SystemName or a UUID.
-    5. state                                →  list[dict]   — all LPARs whose
-       PartitionState matches the given value (server-side /search/ endpoint).
-    6. (no arguments)                       →  list[dict]   — all LPARs known
-       to the HMC.
-
-    Raises ValueError if state_only=True is supplied without lpar_name_or_uuid.
-    The state filter is ignored when lpar_name_or_uuid or system_name_or_uuid
-    is supplied.
+    Supply at most one of system_name_or_uuid, lpar_name_or_uuid, and state.
+    A system selector lists its LPARs, an LPAR selector returns that partition,
+    and state filters the global list by PartitionState. With no selector, all
+    LPARs are returned. Use hmc_get_lpar_state for a lightweight state lookup.
     """
-    # Guard before opening a client: state_only requires a target partition.
-    if state_only and lpar_name_or_uuid is None:
-        raise ValueError("state_only=True requires lpar_name_or_uuid to be provided")
+    selectors = (system_name_or_uuid, lpar_name_or_uuid, state)
+    if sum(value is not None for value in selectors) > 1:
+        raise ValueError(
+            "Provide at most one of system_name_or_uuid, lpar_name_or_uuid, or state"
+        )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if lpar_name_or_uuid is not None and state_only:
-                lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-                return await hmc.get_quick_property("LogicalPartition", lpar_uuid, "PartitionState")
             if lpar_name_or_uuid is not None:
-                lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-                return await hmc.get_logical_partition(lpar_uuid)
-            if name is not None:
-                return await hmc.find_partition_by_name(name)
+                if is_uuid(lpar_name_or_uuid):
+                    return await hmc.get_logical_partition(lpar_name_or_uuid)
+                return await hmc.find_partition_by_name(lpar_name_or_uuid)
             if system_name_or_uuid is not None:
                 system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
                 return await hmc.list_logical_partitions(system_uuid)
             if state is not None:
                 return await hmc.search_uom("LogicalPartition", "PartitionState", state)
             return await hmc.list_logical_partitions(None)
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_lpar_state(
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+) -> str | None:
+    """Return the current state of one LPAR by partition name or UUID."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            return await hmc.get_quick_property(
+                "LogicalPartition", lpar_uuid, "PartitionState"
+            )
+
     return _run(_go)
 
 
@@ -236,6 +235,7 @@ def hmc_vios(
     server-side search endpoint. The state filter is ignored when
     vios_name_or_uuid or system_name_or_uuid is supplied.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             if vios_name_or_uuid is not None:
@@ -247,23 +247,26 @@ def hmc_vios(
             if state is not None:
                 return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
             return await hmc.list_vios(None)
+
     return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_resources(resource_type: str, profile: str | None = None) -> list[dict[str, Any]]:
+def hmc_list_resources(
+    resource_type: str, profile: str | None = None
+) -> list[dict[str, Any]]:
     """List any uom resource type exposed by the HMC.
 
     Examples: ManagedSystem, LogicalPartition, VirtualIOServer,
     LogicalPartitionProfile, VirtualSwitch, VirtualNetwork, SharedMemoryPool,
     SharedProcessorPool, HostEthernetAdapter, SRIOVAdapter, Cluster.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom(resource_type)
+
     return _run(_go)
-
-
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -279,14 +282,18 @@ def hmc_get_job(
     the call works on HMC versions that do not expose Job as a root UOM
     resource type (returns HTTP 400 on those versions without this hint).
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.get_job(job_uuid, job_href=job_href)
+
     return _run(_go)
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_recent_jobs(limit: int = 20, profile: str | None = None) -> list[dict[str, Any]]:
+def hmc_recent_jobs(
+    limit: int = 20, profile: str | None = None
+) -> list[dict[str, Any]]:
     """List recent HMC jobs (most recent first, up to *limit* entries).
 
     Returns a list of parsed job dicts with at minimum JobID and Status.
@@ -326,7 +333,9 @@ def hmc_recent_jobs(limit: int = 20, profile: str | None = None) -> list[dict[st
     return jobs[:limit]
 
 
-def _system_capacity(system: dict[str, Any], lpars: list[dict[str, Any]]) -> dict[str, Any]:
+def _system_capacity(
+    system: dict[str, Any], lpars: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Compute capacity stats for one managed system from its entry + LPAR list."""
     res = system.get("Resource") or {}
     total_mem = int(res.get("AssignableSystemMemory") or 0)
@@ -367,6 +376,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     Derived by listing all managed systems then fetching the LPAR list for each
     system to compute assigned resources. Free = total − assigned.
     """
+
     async def _go() -> list[dict[str, Any]]:
         async with client_from_env(profile) as hmc:
             systems = await hmc.list_managed_systems()
@@ -392,6 +402,7 @@ def hmc_find_placement(
     *desired_proc_units* free processor units, sorted by free memory descending.
     Each result has the same fields as :func:`hmc_capacity_report`.
     """
+
     async def _go() -> list[dict[str, Any]]:
         async with client_from_env(profile) as hmc:
             systems = await hmc.list_managed_systems()
@@ -418,9 +429,11 @@ def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | N
     Returns the full system dict if found, or None if no system with that
     name is known to the HMC.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.find_system_by_name(name)
+
     return _run(_go)
 
 
@@ -432,7 +445,7 @@ def hmc_wait_for_job(
     job_href: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Poll an HMC job until it reaches a terminal state (COMPLETED / FAILED / EXCEPTION).
+    """Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION.
 
     Returns the final job entry. If *timeout_seconds* elapses before a
     terminal state is reached, returns the last-seen entry regardless of
@@ -442,9 +455,11 @@ def hmc_wait_for_job(
     When supplied, polling uses that path directly so the call works on
     HMC versions that return HTTP 400 for the global Job endpoint.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.wait_for_job(
                 job_uuid, timeout_seconds, poll_interval, job_href=job_href
             )
+
     return _run(_go)

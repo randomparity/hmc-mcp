@@ -20,7 +20,7 @@ from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_get_job,
     hmc_get_available_hmc_ptfs,
-    hmc_hmc_update,
+    hmc_update_console_software,
     hmc_lpars,
     hmc_modify_lpar,
     hmc_power_off_lpar,
@@ -125,23 +125,23 @@ def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
 
 
 def test_lpars_by_name(monkeypatch, mock_hmc):
-    """hmc_lpars(name=...) searches by PartitionName and returns the entry."""
+    """hmc_lpars resolves a non-UUID selector as a PartitionName."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="aixprod"))
     )
-    result = hmc_lpars(name="aixprod")
+    result = hmc_lpars(lpar_name_or_uuid="aixprod")
     assert result["UUID"] == LPAR_UUID
     assert result["Resource"]["PartitionName"] == "aixprod"
 
 
 def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_lpars(name=...) returns None when the search matches nothing."""
+    """hmc_lpars returns None when a partition name matches nothing."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    assert hmc_lpars(name="ghost") is None
+    assert hmc_lpars(lpar_name_or_uuid="ghost") is None
 
 
 # ---------------------------------------------------------------------- #
@@ -153,9 +153,9 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_power_on_lpar PUTs a PowerOn job to the do/ path."""
     _hmc_env(monkeypatch)
     # Mock the precondition state check (not activated → proceed with PowerOn).
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
-        return_value=httpx.Response(200, text="not activated")
-    )
+    mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
+    ).mock(return_value=httpx.Response(200, text="not activated"))
     route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
@@ -169,9 +169,9 @@ def test_power_on_lpar_submits_job(monkeypatch, mock_hmc):
 def test_power_off_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_power_off_lpar PUTs a PowerOff job with the immediate flag."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOff"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_power_off_lpar(LPAR_UUID, immediate=True)
     body = route.calls.last.request.content.decode()
     assert "PowerOff</OperationName>" in body
@@ -191,9 +191,9 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==newlpar)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar"))
-    )
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="newlpar")))
     # system name resolution for stamp (REST-first: get_managed_system)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
@@ -211,7 +211,10 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     )
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
-    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]")):
+    with patch(
+        "hmc_mcp.server_power.stamp_lpar_ownership",
+        new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
+    ):
         result = hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="newlpar",
@@ -226,8 +229,14 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     assert "newlpar</PartitionName>" in body
     assert '<DesiredMemory kb="CUD" kxe="false">2048</DesiredMemory>' in body
     assert '<MinimumMemory kb="CUD" kxe="false">512</MinimumMemory>' in body
-    assert '<DesiredProcessingUnits kb="CUD" kxe="false">0.5</DesiredProcessingUnits>' in body
-    assert '<DesiredVirtualProcessors kb="CUD" kxe="false">2</DesiredVirtualProcessors>' in body
+    assert (
+        '<DesiredProcessingUnits kb="CUD" kxe="false">0.5</DesiredProcessingUnits>'
+        in body
+    )
+    assert (
+        '<DesiredVirtualProcessors kb="CUD" kxe="false">2</DesiredVirtualProcessors>'
+        in body
+    )
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
     assert result["lpar"]["Resource"]["PartitionName"] == "newlpar"
     assert result["ownership_stamped"] is True
@@ -241,10 +250,12 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ded)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded"))
-    )
-    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
+    with patch(
+        "hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")
+    ):
         hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="ded",
@@ -255,7 +266,10 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "<DedicatedProcessorConfiguration" in body
     assert '<DesiredProcessors kb="CUD" kxe="false">2</DesiredProcessors>' in body
-    assert '<HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>' in body
+    assert (
+        '<HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>'
+        in body
+    )
 
 
 def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
@@ -280,12 +294,12 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_kind_update(monkeypatch, mock_hmc):
-    """hmc_hmc_update with kind='update' PUTs an Update job to ManagementConsole."""
+    """hmc_update_console_software with kind='update' PUTs an Update job to ManagementConsole."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_hmc_update(MC_UUID, REPO, kind="update")
+    hmc_update_console_software(MC_UUID, REPO, kind="update")
     body = route.calls.last.request.content.decode()
     assert "Update</OperationName>" in body
     assert "repo.example.com" in body
@@ -293,24 +307,24 @@ def test_hmc_update_kind_update(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_kind_upgrade(monkeypatch, mock_hmc):
-    """hmc_hmc_update with kind='upgrade' PUTs an Upgrade job to ManagementConsole."""
+    """hmc_update_console_software with kind='upgrade' PUTs an Upgrade job to ManagementConsole."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_hmc_update(MC_UUID, REPO, kind="upgrade")
+    hmc_update_console_software(MC_UUID, REPO, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "Upgrade</OperationName>" in body
     assert "repo.example.com" in body
 
 
 def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
-    """hmc_hmc_update defaults to kind='update' when kind is omitted."""
+    """hmc_update_console_software defaults to kind='update' when kind is omitted."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_hmc_update(MC_UUID, REPO)
+    hmc_update_console_software(MC_UUID, REPO)
     assert route.calls.last.request.url.path.endswith("/do/Update")
 
 
@@ -349,11 +363,11 @@ def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):
-    """hmc_hmc_update raises ValueError for an unknown kind, never reaching the HMC."""
+    """hmc_update_console_software raises ValueError for an unknown kind, never reaching the HMC."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Invalid")
     with pytest.raises(ValueError, match="Unknown kind"):
-        hmc_hmc_update(MC_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
+        hmc_update_console_software(MC_UUID, REPO, kind="invalid")  # type: ignore[arg-type]
     assert not route.called
 
 
@@ -369,9 +383,9 @@ def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):
 def test_update_firmware_submits_job(monkeypatch, mock_hmc):
     """hmc_update_firmware PUTs an UpdateFirmware job to the ManagedSystem."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/UpdateFirmware").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/UpdateFirmware"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_update_firmware(SYSTEM_UUID, REPO)
     body = route.calls.last.request.content.decode()
     assert "UpdateFirmware</OperationName>" in body
@@ -379,7 +393,7 @@ def test_update_firmware_submits_job(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
-    """hmc_hmc_update(wait=True) submits the job then polls until COMPLETED."""
+    """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update"
@@ -387,7 +401,9 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    result = hmc_hmc_update(MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=0)
+    result = hmc_update_console_software(
+        MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=0
+    )
     assert submit_route.called
     assert poll_route.called
     assert result["Resource"]["Status"] == "COMPLETED"
@@ -396,9 +412,9 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
 def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
     """hmc_get_available_hmc_ptfs GETs the SoftwareUpdate group."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get(f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY)
-    )
+    route = mock_hmc.get(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate"
+    ).mock(return_value=httpx.Response(200, text=JOB_ENTRY))
     result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
@@ -409,13 +425,16 @@ def test_list_available_hmc_ptfs_unsupported(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     error_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        '<HttpErrorResponseResult><Message>REST0026 Unknown extended attribute group SoftwareUpdate</Message>'
-        '</HttpErrorResponseResult>'
+        "<HttpErrorResponseResult><Message>REST0026 Unknown extended attribute group SoftwareUpdate</Message>"
+        "</HttpErrorResponseResult>"
     )
-    mock_hmc.get(f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate").mock(
-        return_value=httpx.Response(400, text=error_xml)
-    )
-    with pytest.raises(HMCError, match="SoftwareUpdate attribute group not supported on this HMC version"):
+    mock_hmc.get(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate"
+    ).mock(return_value=httpx.Response(400, text=error_xml))
+    with pytest.raises(
+        HMCError,
+        match="SoftwareUpdate attribute group not supported on this HMC version",
+    ):
         hmc_get_available_hmc_ptfs(MC_UUID)
 
 
@@ -481,6 +500,8 @@ def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
     )
     result = hmc_recent_jobs()
     assert result == []
+
+
 # hmc_wait_for_job
 # ---------------------------------------------------------------------- #
 
@@ -551,7 +572,9 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
-    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_OP_HREF)
+    result = hmc_wait_for_job(
+        "job-uuid-999", timeout_seconds=5, poll_interval=0, job_href=_JOB_OP_HREF
+    )
     assert href_route.called
     assert not global_route.called
     assert result["Resource"]["Status"] == "COMPLETED"
@@ -611,9 +634,9 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(return_value=httpx.Response(200, text="not activated"))
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY_WITH_LINK))
+    mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY_WITH_LINK)
+    )
     # The SELF link path should be polled, not the global /uom/Job/ path.
     poll_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED_WITH_LINK)

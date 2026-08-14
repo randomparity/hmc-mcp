@@ -21,10 +21,10 @@ Authentication:
     HMC_PASSWORD is used.
 
 Addressing:
-    All tools address managed systems and logical partitions by UUID
-    (``system_uuid`` / ``lpar_uuid``). SSH-passthrough tools resolve a UUID
-    to its CLI name with a REST lookup (via ``client_from_env``) before
-    running the HMC command.
+    Public tools generally accept a resource name or UUID where their parameter
+    is named ``*_name_or_uuid``. Parameters explicitly named ``*_uuid`` require
+    a UUID. SSH-passthrough tools resolve UUIDs to CLI names before running the
+    HMC command.
 
 This module is a thin aggregator: the tool handlers live in domain
 submodules (``server_power``, ``server_storage``, ...) that register
@@ -47,6 +47,7 @@ from .server_system import (
     hmc_find_placement as hmc_find_placement,
     hmc_find_system as hmc_find_system,
     hmc_get_job as hmc_get_job,
+    hmc_get_lpar_state as hmc_get_lpar_state,
     hmc_list_configured_hosts as hmc_list_configured_hosts,
     hmc_list_resources as hmc_list_resources,
     hmc_lpars as hmc_lpars,
@@ -142,7 +143,7 @@ from .server_users import (
 )
 from .server_updates import (
     hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,
-    hmc_hmc_update as hmc_hmc_update,
+    hmc_update_console_software as hmc_update_console_software,
     hmc_update_firmware as hmc_update_firmware,
     hmc_vios_update as hmc_vios_update,
 )

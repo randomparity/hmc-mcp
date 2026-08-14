@@ -174,7 +174,8 @@ Exposed tools:
 | `hmc_console_info`            | HMC version/network info; cheap connectivity check |
 | `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
 | `hmc_systems`                 | All managed systems, or one by UUID |
-| `hmc_lpars`                   | All LPARs, one by UUID, find by name, or quick state |
+| `hmc_lpars`                   | All LPARs, one by name or UUID, by system, or filtered by state |
+| `hmc_get_lpar_state`          | Quick state lookup for one LPAR by name or UUID |
 | `hmc_lpar_summary`            | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
 | `hmc_system_summary`          | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
 | `hmc_vios`                    | Virtual I/O Servers, or storage-detail mappings for one |
@@ -184,7 +185,7 @@ Exposed tools:
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_find_system`             | Find a managed system by SystemName (exact match) |
-| `hmc_wait_for_job`            | Poll a job until COMPLETED / FAILED / EXCEPTION (or timeout) |
+| `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
 
 **Mutating / lifecycle**
 
@@ -342,7 +343,7 @@ Exposed tools:
 
 | Tool                         | Description |
 |------------------------------|-------------|
-| `hmc_hmc_update`             | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
+| `hmc_update_console_software` | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |

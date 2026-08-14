@@ -1,5 +1,4 @@
-"""MCP tools for LPAR/VIOS lifecycle and power control.
-"""
+"""MCP tools for LPAR/VIOS lifecycle and power control."""
 
 from __future__ import annotations
 
@@ -30,7 +29,12 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh import (
+    HMCCLIError,
+    _ssh_system_name,
+    create_lpar_via_cli,
+    stamp_lpar_ownership,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -215,15 +219,16 @@ def hmc_create_lpar(
                         sys_name_for_stamp = None
                     if not sys_name_for_stamp:
                         try:
-                            sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
+                            sys_name_for_stamp = await _ssh_system_name(
+                                cfg, system_uuid
+                            )
                         except Exception:
                             sys_name_for_stamp = system_name_or_uuid
                 # Use the server-confirmed PartitionName if available; fall back to
                 # the constructor argument in case the HMC normalised the name.
-                confirmed_name = (
-                    (lpar_result.get("Resource") or {}).get("PartitionName")
-                    or name
-                )
+                confirmed_name = (lpar_result.get("Resource") or {}).get(
+                    "PartitionName"
+                ) or name
                 if is_uuid(sys_name_for_stamp):
                     # sys_name_for_stamp is still a UUID — both REST and SSH system-name
                     # resolution failed and the HMC CLI will reject a UUID as a
@@ -459,12 +464,12 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     """Delete (destroy) an LPAR by name or UUID.
 
     The partition must be powered off first (use hmc_power_off_lpar and
-    confirm with hmc_lpars(lpar_name_or_uuid=..., state_only=True)). This
+    confirm with hmc_get_lpar_state). This
     tool refuses to delete a partition whose current state is anything other
     than 'not activated', matching the precondition check pattern used by
     hmc_remove_memory_pool. This permanently removes the partition and its
     profiles from the HMC — it is irreversible. Confirm the target with
-    hmc_lpars(name=...) before calling. Returns a confirmation string
+    hmc_lpars(lpar_name_or_uuid=...) before calling. Returns a confirmation string
     (immediate delete — no job to poll).
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
@@ -489,7 +494,7 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
                     f"Cannot delete LPAR {lpar_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
                     "off (hmc_power_off_lpar) and confirm with "
-                    "hmc_lpars(lpar_name_or_uuid=..., state_only=True) before retrying.",
+                    "hmc_get_lpar_state before retrying.",
                     status_code=409,
                 )
             await hmc.delete_logical_partition(lpar_uuid)
@@ -498,14 +503,14 @@ def hmc_delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
     return _run(_go)
 
 
-
-
 def _extract_job_id(job: dict[str, Any]) -> str | None:
     """Extract the job UUID from a submitted job dict."""
     return job.get("UUID") or (job.get("Resource") or {}).get("JobID")
 
 
-async def _power_op(hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int) -> dict[str, Any] | None:
+async def _power_op(
+    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
+) -> dict[str, Any] | None:
     """Submit a power job on an already-open *hmc* client; optionally wait for terminal state."""
     job = await submit_fn(hmc)
     if not wait or job is None:
@@ -532,7 +537,7 @@ def hmc_power_on_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_lpars). Returns the submitted job (check hmc_get_job
     for status). This changes the state of a real partition — confirm the
-    target with hmc_lpars(name=...) before calling.
+    target with hmc_lpars(lpar_name_or_uuid=...) before calling.
 
     If the partition is already in the 'running' state, the tool returns
     ``{"already_running": True, "message": "..."}`` without submitting a job.
@@ -541,6 +546,7 @@ def hmc_power_on_lpar(
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
@@ -563,7 +569,13 @@ def hmc_power_on_lpar(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
 
@@ -585,6 +597,7 @@ def hmc_power_off_lpar(
 
     Set wait=True to block until the job reaches a terminal state.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
@@ -595,7 +608,13 @@ def hmc_power_off_lpar(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
 
@@ -614,6 +633,7 @@ def hmc_power_on_system(
     (find it with hmc_systems).
     Set wait=True to block until the job reaches a terminal state.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
@@ -621,7 +641,13 @@ def hmc_power_on_system(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
 
@@ -640,6 +666,7 @@ def hmc_power_off_system(
     system_name_or_uuid: accepts either a SystemName or a UUID.
     Set wait=True to block until the job reaches a terminal state.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
@@ -647,7 +674,13 @@ def hmc_power_off_system(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
 
@@ -666,6 +699,7 @@ def hmc_power_on_vios(
     (find it with hmc_vios).
     Set wait=True to block until the job reaches a terminal state.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
@@ -673,7 +707,13 @@ def hmc_power_on_vios(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
 
@@ -692,6 +732,7 @@ def hmc_power_off_vios(
     vios_name_or_uuid: accepts either a PartitionName or a UUID.
     Set wait=True to block until the job reaches a terminal state.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
@@ -699,8 +740,12 @@ def hmc_power_off_vios(
             if not wait or job is None:
                 return job
             job_uuid = _extract_job_id(job)
-            return await hmc.wait_for_job(job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")) if job_uuid else job
+            return (
+                await hmc.wait_for_job(
+                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+                )
+                if job_uuid
+                else job
+            )
 
     return _run(_go)
-
-

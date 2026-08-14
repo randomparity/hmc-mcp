@@ -59,7 +59,7 @@ mcp = FastMCP(
         "- **hmc_provision_lpar(...)** — end-to-end LPAR creation: creates the "
         "partition, attaches a virtual network adapter, and optionally attaches "
         "a vSCSI disk. Supports dry_run=True to validate inputs without making "
-        "changes. This is the only tool that creates a new LPAR.\n\n"
+        "changes. For lower-level creation without adapters, use hmc_create_lpar.\n\n"
         "## Recommended workflows\n\n"
         "**Check LPAR status:** hmc_lpar_summary → inspect state/rmc_state/os_version.\n\n"
         "**Survey a server:** hmc_system_summary → inspect system state, LPAR "
@@ -108,76 +108,80 @@ _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 _DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
 _STATE_CHANGING = ToolAnnotations(readOnlyHint=False)
 
-READ_ONLY_TOOLS = frozenset({
-    "hmc_console_info",
-    "hmc_systems",
-    "hmc_system_summary",
-    "hmc_lpars",
-    "hmc_lpar_summary",
-    "hmc_vios",
-    "hmc_list_resources",
-    "hmc_get_job",
-    "hmc_recent_jobs",
-    "hmc_capacity_report",
-    "hmc_find_placement",
-    "hmc_find_system",
-    "hmc_wait_for_job",
-    "hmc_list_adapters",
-    "hmc_list_configured_hosts",
-    "hmc_list_volume_groups",
-    "hmc_list_virtual_switches",
-    "hmc_list_virtual_networks",
-    "hmc_list_network_bridges",
-    "hmc_list_fc_ports",
-    "hmc_list_sea_adapters",
-    "hmc_partition_templates",
-    "hmc_list_clusters",
-    "hmc_shared_storage_pools",
-    "hmc_get_pcm_preferences",
-    "hmc_processed_metrics",
-    "hmc_aggregated_metrics",
-    "hmc_users",
-    "hmc_list_password_policies",
-    "hmc_get_ldap_config",
-    "hmc_get_available_hmc_ptfs",
-    "hmc_list_vios_backups",
-    "hmc_get_lpar_description",
-    "hmc_get_lpar_msp",
-    "hmc_get_proc_compat_modes",
-    "hmc_get_lpar_proc_compat",
-    "hmc_list_io_slots",
-    "hmc_list_memory_pools",
-    "hmc_list_vnics",
-})
+READ_ONLY_TOOLS = frozenset(
+    {
+        "hmc_console_info",
+        "hmc_systems",
+        "hmc_system_summary",
+        "hmc_lpars",
+        "hmc_get_lpar_state",
+        "hmc_lpar_summary",
+        "hmc_vios",
+        "hmc_list_resources",
+        "hmc_get_job",
+        "hmc_recent_jobs",
+        "hmc_capacity_report",
+        "hmc_find_placement",
+        "hmc_find_system",
+        "hmc_wait_for_job",
+        "hmc_list_adapters",
+        "hmc_list_configured_hosts",
+        "hmc_list_volume_groups",
+        "hmc_list_virtual_switches",
+        "hmc_list_virtual_networks",
+        "hmc_list_network_bridges",
+        "hmc_list_fc_ports",
+        "hmc_list_sea_adapters",
+        "hmc_partition_templates",
+        "hmc_list_clusters",
+        "hmc_shared_storage_pools",
+        "hmc_get_pcm_preferences",
+        "hmc_processed_metrics",
+        "hmc_aggregated_metrics",
+        "hmc_users",
+        "hmc_list_password_policies",
+        "hmc_get_ldap_config",
+        "hmc_get_available_hmc_ptfs",
+        "hmc_list_vios_backups",
+        "hmc_get_lpar_description",
+        "hmc_get_lpar_msp",
+        "hmc_get_proc_compat_modes",
+        "hmc_get_lpar_proc_compat",
+        "hmc_list_io_slots",
+        "hmc_list_memory_pools",
+        "hmc_list_vnics",
+    }
+)
 
-DESTRUCTIVE_TOOLS = frozenset({
-    "hmc_power_off_lpar",
-    "hmc_delete_lpar",
-    "hmc_delete_vios",
-    "hmc_delete_adapter",
-    "hmc_delete_virtual_network",
-    "hmc_delete_media_repository",
-    "hmc_delete_logical_unit",
-    "hmc_delete_user",
-    "hmc_delete_password_policy",
-    "hmc_remove_ldap_config",
-    "hmc_remove_memory_pool",
-    "hmc_remove_vnic",
-    "hmc_power_off_system",
-    "hmc_power_off_vios",
-    "hmc_migrate_abort_lpar",
-    "hmc_remote_restart_lpar",
-    "hmc_restore_vios",
-    "hmc_restore_lpar_profiles",
-    "hmc_sync_lpar_profile",
-    "hmc_backup_lpar_profiles",
-})
+DESTRUCTIVE_TOOLS = frozenset(
+    {
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_delete_vios",
+        "hmc_delete_adapter",
+        "hmc_delete_virtual_network",
+        "hmc_delete_media_repository",
+        "hmc_delete_logical_unit",
+        "hmc_delete_user",
+        "hmc_delete_password_policy",
+        "hmc_remove_ldap_config",
+        "hmc_remove_memory_pool",
+        "hmc_remove_vnic",
+        "hmc_power_off_system",
+        "hmc_power_off_vios",
+        "hmc_migrate_abort_lpar",
+        "hmc_remote_restart_lpar",
+        "hmc_restore_vios",
+        "hmc_restore_lpar_profiles",
+        "hmc_sync_lpar_profile",
+        "hmc_backup_lpar_profiles",
+    }
+)
 
 
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure from a sync tool function."""
     return asyncio.run(fn())
-
 
 
 # ---------------------------------------------------------------------- #
@@ -378,14 +382,16 @@ def _ssh_with_client(
     REST name-resolution leg so that both operations target the same HMC.
     Selection is local to this call with no cross-call shared state.
     """
+
     async def _go() -> _T:
         config = client_from_env(profile).config
         system_name = await _resolve_system_name(config, system_name_or_uuid, profile)
-        lpar_name = await _resolve_lpar_name(config, lpar_name_or_uuid, system_name, profile)
+        lpar_name = await _resolve_lpar_name(
+            config, lpar_name_or_uuid, system_name, profile
+        )
         return await fn(config, system_name, lpar_name)
 
     return _run(_go)
-
 
 
 def main_stdio(enable_arbitrary_command: bool = False) -> None:

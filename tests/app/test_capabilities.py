@@ -38,6 +38,7 @@ def _hmc_env(monkeypatch) -> None:
 # Tool capability classification
 # ------------------------------------------------------------------ #
 
+
 def _tools_by_name():
     return {t.name: t for t in asyncio.run(mcp.list_tools())}
 
@@ -76,7 +77,11 @@ def test_arbitrary_command_tool_opt_in_is_idempotent():
         server_system.register_arbitrary_command_tool()
         server_system.register_arbitrary_command_tool()
 
-        tools = [tool for tool in asyncio.run(mcp.list_tools()) if tool.name == "hmc_run_command"]
+        tools = [
+            tool
+            for tool in asyncio.run(mcp.list_tools())
+            if tool.name == "hmc_run_command"
+        ]
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
@@ -106,7 +111,9 @@ def test_closed_vocab_enum_matches_runtime_constant():
 
     by_name = _tools_by_name()
 
-    partition_type = by_name["hmc_create_lpar"].parameters["properties"]["partition_type"]
+    partition_type = by_name["hmc_create_lpar"].parameters["properties"][
+        "partition_type"
+    ]
     assert set(partition_type["enum"]) == set(PARTITION_TYPES)
     assert partition_type["default"] in PARTITION_TYPES
 
@@ -145,9 +152,9 @@ def test_repository_type_enum_matches_runtime_constant():
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_hmc_update"].parameters["properties"]["repository"][
-        "properties"
-    ]["type"]
+    repo_type = by_name["hmc_update_console_software"].parameters["properties"][
+        "repository"
+    ]["properties"]["type"]
     assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
 
 
@@ -158,9 +165,13 @@ def test_merged_metrics_tools_have_valid_output_schema():
     for tool_name in ("hmc_processed_metrics", "hmc_aggregated_metrics"):
         tool = by_name[tool_name]
         # The tool must be registered and annotated as read-only
-        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, tool_name
+        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, (
+            tool_name
+        )
         # The input schema must include the 'mode' parameter
-        assert "mode" in tool.parameters.get("properties", {}), f"{tool_name} missing 'mode' param"
+        assert "mode" in tool.parameters.get("properties", {}), (
+            f"{tool_name} missing 'mode' param"
+        )
         mode_schema = tool.parameters["properties"]["mode"]
         assert set(mode_schema.get("enum", [])) == {"links", "fetch"}, (
             f"{tool_name} mode enum incorrect: {mode_schema}"
@@ -171,13 +182,14 @@ def test_merged_metrics_tools_have_valid_output_schema():
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #
 
+
 def _mock_state_and_delete(router, state: str, status: int = 200):
-    router.get(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(status, text=state))
-    return router.delete(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
-    ).mock(return_value=httpx.Response(204))
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
+        return_value=httpx.Response(status, text=state)
+    )
+    return router.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(204)
+    )
 
 
 def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
@@ -241,12 +253,12 @@ POWER_ON_JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def _mock_power_on_guard(router, state: str):
-    router.get(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text=state))
-    return router.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY))
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
+        return_value=httpx.Response(200, text=state)
+    )
+    return router.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY)
+    )
 
 
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
@@ -364,7 +376,9 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
 
-    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
+    with patch(
+        "hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")
+    ):
         result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
 
     assert create_route.called

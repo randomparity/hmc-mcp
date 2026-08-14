@@ -121,11 +121,11 @@ CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 @pytest.mark.asyncio
-async def test_hmc_hmc_update_update(mock_hmc):
+async def test_hmc_update_console_software_update(mock_hmc):
     """Client layer: Update job reaches ManagementConsole/do/Update."""
-    route = mock_hmc.put(
-        f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
@@ -138,11 +138,11 @@ async def test_hmc_hmc_update_update(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_hmc_hmc_update_upgrade(mock_hmc):
+async def test_hmc_update_console_software_upgrade(mock_hmc):
     """Client layer: Upgrade job reaches ManagementConsole/do/Upgrade."""
-    route = mock_hmc.put(
-        f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
@@ -162,7 +162,9 @@ async def test_hmc_get_available_hmc_ptfs(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=CONSOLE_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_uom("ManagementConsole", HMC_UUID, group="SoftwareUpdate")
+        result = await hmc.get_uom(
+            "ManagementConsole", HMC_UUID, group="SoftwareUpdate"
+        )
 
     assert result is not None
 
@@ -170,9 +172,9 @@ async def test_hmc_get_available_hmc_ptfs(mock_hmc):
 @pytest.mark.asyncio
 async def test_hmc_vios_update_update(mock_hmc):
     """Client layer: Update job reaches VirtualIOServer/do/Update."""
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
@@ -190,14 +192,16 @@ async def test_hmc_vios_update_update(mock_hmc):
 @pytest.mark.asyncio
 async def test_hmc_vios_update_upgrade(mock_hmc):
     """Client layer: Upgrade job reaches VirtualIOServer/do/Upgrade."""
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade",
-            upgrade_vios_job({"type": "sftp", "host": "sftp.example.com", "path": "/vios"}),
+            upgrade_vios_job(
+                {"type": "sftp", "host": "sftp.example.com", "path": "/vios"}
+            ),
         )
 
     assert route.called

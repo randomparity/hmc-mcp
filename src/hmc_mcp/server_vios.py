@@ -1,5 +1,4 @@
-"""MCP tools for VIOS lifecycle, NIM install, and backup/restore.
-"""
+"""MCP tools for VIOS lifecycle, NIM install, and backup/restore."""
 
 from __future__ import annotations
 
@@ -10,6 +9,8 @@ from typing import Any, Literal
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
+    _resolve_system_uuid,
+    _resolve_vios_uuid,
     _run,
     mcp,
 )
@@ -21,10 +22,9 @@ from .ssh import run_hmc_cli
 from .documents import build_vios_document
 
 
-
 @mcp.tool
 def hmc_create_vios(
-    system_uuid: str,
+    system_name_or_uuid: str,
     name: str,
     min_memory: int = 512,
     desired_memory: int = 4096,
@@ -39,11 +39,11 @@ def hmc_create_vios(
 ) -> dict[str, Any] | None:
     """Create a new Virtual IO Server (VIOS) partition on a managed system.
 
-    system_uuid is the target managed system (find it with hmc_systems).
+    system_name_or_uuid is the target managed system name or UUID.
     Memory values are in MiB; procs are shared processing units (fractional
     ok). The VIOS is created powered off with default settings — install the
     OS with hmc_install_vios before using it as a storage/network server.
-    This creates a real partition — confirm name/system_uuid before calling.
+    This creates a real partition — confirm its name and system before calling.
     """
     xml = build_vios_document(
         name=name,
@@ -60,20 +60,22 @@ def hmc_create_vios(
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             return await hmc.create_logical_partition(system_uuid, xml)
+
     return _run(_go)
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_vios(vios_uuid: str, profile: str | None = None) -> str:
-    """Delete (destroy) a VIOS partition by UUID.
+def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
+    """Delete (destroy) a VIOS partition by name or UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
-    with hmc_lpars(vios_uuid=..., state_only=True)). This tool refuses to
+    with hmc_get_lpar_state). This tool refuses to
     delete a VIOS whose current state is anything other than 'not activated',
     matching the precondition check pattern used by hmc_remove_memory_pool.
     This permanently removes the VIOS and its profiles from the HMC — it is
-    irreversible. Confirm the UUID with hmc_vios before calling. Returns a
+    irreversible. Confirm the target with hmc_vios before calling. Returns a
     confirmation string (immediate delete — no job to poll).
 
     Raises:
@@ -82,6 +84,7 @@ def hmc_delete_vios(vios_uuid: str, profile: str | None = None) -> str:
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             state = await hmc.get_quick_property(
                 "LogicalPartition", vios_uuid, "PartitionState"
             )
@@ -90,7 +93,7 @@ def hmc_delete_vios(vios_uuid: str, profile: str | None = None) -> str:
                     f"Cannot delete VIOS {vios_uuid} — current state is "
                     f"{state!r}; it must be 'not activated' to delete. Power it "
                     "off (hmc_power_off_vios) and confirm with "
-                    "hmc_lpars(lpar_uuid=..., state_only=True) before retrying.",
+                    "hmc_get_lpar_state before retrying.",
                     status_code=409,
                 )
             await hmc.delete_logical_partition(vios_uuid)
@@ -101,7 +104,7 @@ def hmc_delete_vios(vios_uuid: str, profile: str | None = None) -> str:
 
 @mcp.tool
 def hmc_install_vios(
-    vios_uuid: str,
+    vios_name_or_uuid: str,
     nim_ip: str,
     nim_gateway: str,
     nim_subnetmask: str,
@@ -115,7 +118,7 @@ def hmc_install_vios(
 ) -> dict[str, Any] | None:
     """Submit a NIM-based VIOS installation job.
 
-    vios_uuid is the UUID of an existing (powered-off) VIOS partition. The
+    vios_name_or_uuid identifies an existing powered-off VIOS partition. The
     VIOS will PXE-boot from the NIM server at nim_ip to install its OS.
     nim_gateway and nim_subnetmask define the network for the NIM install
     boot; vios_ip is the IP address the VIOS uses during the NIM install;
@@ -125,10 +128,13 @@ def hmc_install_vios(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    job_xml = install_vios_job(nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout)
+    job_xml = install_vios_job(
+        nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
             job = await hmc.submit_job(
                 f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
                 job_xml,
@@ -171,7 +177,9 @@ def hmc_install_lpar_os(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    job_xml = install_lpar_job(nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout)
+    job_xml = install_lpar_job(
+        nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -189,7 +197,6 @@ def hmc_install_lpar_os(
             )
 
     return _run(_go)
-
 
 
 BackupType = Literal["vios", "viosioconfig", "ssp"]
@@ -212,23 +219,27 @@ def _parse_lsviosbackup_output(text: str) -> list[dict[str, str]]:
     for line in lines[1:]:
         values = [v for v in re.split(r"\s{2,}", line) if v]
         row = dict(zip(headers, values))
-        for header in headers[len(values):]:
+        for header in headers[len(values) :]:
             row[header] = ""
         results.append(row)
     return results
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_vios_backups(vios_uuid: str, profile: str | None = None) -> list[dict[str, str]]:
+def hmc_list_vios_backups(
+    vios_uuid: str, profile: str | None = None
+) -> list[dict[str, str]]:
     """List existing VIOS backups for a given VIOS UUID.
 
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
     fixed-width table into a list of dicts keyed by the output header
     (BackupName, Date, Type). Find vios_uuid with hmc_vios.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used.    """
+    profile: optional TOML profile name; when omitted the env-default HMC is used."""
     config = client_from_env(profile).config
-    output = _run(lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}", config))
+    output = _run(
+        lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}", config)
+    )
     return _parse_lsviosbackup_output(output)
 
 
@@ -262,7 +273,9 @@ def hmc_backup_vios(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_restore_vios(vios_uuid: str, backup_name: str, profile: str | None = None) -> str:
+def hmc_restore_vios(
+    vios_uuid: str, backup_name: str, profile: str | None = None
+) -> str:
     """Restore a VIOS from a named backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation restore -file <backup_name>``
@@ -279,5 +292,3 @@ def hmc_restore_vios(vios_uuid: str, backup_name: str, profile: str | None = Non
     config = client_from_env(profile).config
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
     return _run(lambda: run_hmc_cli(cmd, config))
-
-

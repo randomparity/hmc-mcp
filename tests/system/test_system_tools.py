@@ -16,6 +16,7 @@ from hmc_mcp.server import (
     hmc_console_info,
     hmc_find_placement,
     hmc_find_system,
+    hmc_get_lpar_state,
     hmc_lpars,
     hmc_list_resources,
     hmc_systems,
@@ -36,7 +37,7 @@ def _hmc_env(monkeypatch) -> None:
 def _feed(uuid: str, rtype: str, **fields: str) -> str:
     """A single-resource Atom feed; {fields} render as resource elements."""
     body = "\n".join(
-        f"        <{name} xmlns=\"http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/\">{value}</{name}>"
+        f'        <{name} xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{value}</{name}>'
         for name, value in fields.items()
     )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -53,6 +54,7 @@ def _feed(uuid: str, rtype: str, **fields: str) -> str:
   </entry>
 </feed>
 """
+
 
 LPAR_SEARCH_FEED = """\
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -103,7 +105,9 @@ def test_systems_no_arg_lists_all(monkeypatch, mock_hmc):
     """hmc_systems() lists all managed systems."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01"))
+        return_value=httpx.Response(
+            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01")
+        )
     )
     result = hmc_systems()
     assert result[0]["UUID"] == SYSTEM_UUID
@@ -114,7 +118,9 @@ def test_systems_with_uuid_gets_one(monkeypatch, mock_hmc):
     """hmc_systems(system_uuid=UUID) returns one system dict."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", State="operating"))
+        return_value=httpx.Response(
+            200, text=_feed(SYSTEM_UUID, "ManagedSystem", State="operating")
+        )
     )
     result = hmc_systems(SYSTEM_UUID)
     assert result["Resource"]["State"] == "operating"
@@ -140,7 +146,9 @@ def test_lpars_no_arg_lists_all(monkeypatch, mock_hmc):
     """hmc_lpars() GETs the global LogicalPartition feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1")
+        )
     )
     result = hmc_lpars()
     assert result[0]["Resource"]["PartitionName"] == "aix1"
@@ -149,8 +157,12 @@ def test_lpars_no_arg_lists_all(monkeypatch, mock_hmc):
 def test_lpars_system_uuid_scopes(monkeypatch, mock_hmc):
     """hmc_lpars(system_uuid=...) uses the system-scoped child feed URL."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
+    route = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1")
+        )
     )
     hmc_lpars(system_name_or_uuid=SYSTEM_UUID)
     assert route.called
@@ -160,57 +172,58 @@ def test_lpars_lpar_uuid_gets_one(monkeypatch, mock_hmc):
     """hmc_lpars(lpar_uuid=...) GETs one LPAR by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running"))
+        return_value=httpx.Response(
+            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running")
+        )
     )
     result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID)
     assert result["Resource"]["PartitionState"] == "running"
 
 
 def test_lpars_name_finds_by_name(monkeypatch, mock_hmc):
-    """hmc_lpars(name=...) searches by PartitionName and returns the entry."""
+    """hmc_lpars resolves a non-UUID selector as a PartitionName."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)").mock(
-        return_value=httpx.Response(200, text=LPAR_SEARCH_FEED.format(uuid=LPAR_UUID, name="aixprod"))
+        return_value=httpx.Response(
+            200, text=LPAR_SEARCH_FEED.format(uuid=LPAR_UUID, name="aixprod")
+        )
     )
-    result = hmc_lpars(name="aixprod")
+    result = hmc_lpars(lpar_name_or_uuid="aixprod")
     assert result["UUID"] == LPAR_UUID
     assert result["Resource"]["PartitionName"] == "aixprod"
 
 
 def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_lpars(name=...) returns None when the search matches nothing."""
+    """hmc_lpars returns None when a partition name matches nothing."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    assert hmc_lpars(name="ghost") is None
+    assert hmc_lpars(lpar_name_or_uuid="ghost") is None
 
 
-def test_lpars_state_only_returns_string(monkeypatch, mock_hmc):
-    """hmc_lpars(lpar_uuid=..., state_only=True) uses the cheap quick-property endpoint."""
+def test_get_lpar_state_returns_string(monkeypatch, mock_hmc):
+    """hmc_get_lpar_state uses the cheap quick-property endpoint."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
     ).mock(return_value=httpx.Response(200, text="running"))
-    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state_only=True)
+    result = hmc_get_lpar_state(LPAR_UUID)
     assert route.called
     assert result == "running"
 
 
-def test_lpars_state_only_without_lpar_uuid_raises():
-    """hmc_lpars(state_only=True) without lpar_uuid raises ValueError."""
-    with pytest.raises(ValueError, match="state_only"):
-        hmc_lpars(state_only=True)
-
-
-def test_lpars_lpar_uuid_takes_priority_over_name(monkeypatch, mock_hmc):
-    """hmc_lpars(lpar_uuid=..., name=...) resolves lpar_uuid, ignores name."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1"))
-    )
-    hmc_lpars(lpar_name_or_uuid=LPAR_UUID, name="should-be-ignored")
-    assert route.called
+@pytest.mark.parametrize(
+    "selectors",
+    [
+        {"system_name_or_uuid": SYSTEM_UUID, "lpar_name_or_uuid": LPAR_UUID},
+        {"system_name_or_uuid": SYSTEM_UUID, "state": "running"},
+        {"lpar_name_or_uuid": LPAR_UUID, "state": "running"},
+    ],
+)
+def test_lpars_rejects_conflicting_selectors(selectors):
+    with pytest.raises(ValueError, match="at most one"):
+        hmc_lpars(**selectors)
 
 
 # ---------------------------------------------------------------------- #
@@ -222,7 +235,9 @@ def test_vios_no_arg_lists_all(monkeypatch, mock_hmc):
     """hmc_vios() GETs the VirtualIOServer feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/VirtualIOServer").mock(
-        return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1"))
+        return_value=httpx.Response(
+            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
+        )
     )
     result = hmc_vios()
     assert result[0]["Resource"]["PartitionName"] == "vios1"
@@ -233,7 +248,11 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
-    ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")))
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
+        )
+    )
     result = hmc_vios(vios_name_or_uuid=VIOS_UUID)
     assert route.called
     assert result["UUID"] == VIOS_UUID
@@ -258,7 +277,9 @@ def test_find_system_found(monkeypatch, mock_hmc):
     """hmc_find_system returns the matching system entry when found."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p9-01)").mock(
-        return_value=httpx.Response(200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="p9-01"))
+        return_value=httpx.Response(
+            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="p9-01")
+        )
     )
     result = hmc_find_system("p9-01")
     assert result is not None
@@ -322,7 +343,9 @@ def _sys_entry(uuid: str, name: str, total_mem: int, total_procs: float) -> str:
   </entry>"""
 
 
-def _lpar_entry(uuid: str, name: str, mem: int, procs: float, state: str = "running") -> str:
+def _lpar_entry(
+    uuid: str, name: str, mem: int, procs: float, state: str = "running"
+) -> str:
     return f"""  <entry>
     <id>urn:uuid:{uuid}</id>
     <content type="application/vnd.ibm.powervm.uom+xml">
@@ -341,23 +364,34 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     # Two managed systems
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _sys_entry(SYS_UUID_A, "p9-01", total_mem=131072, total_procs=16.0),
-            _sys_entry(SYS_UUID_B, "p9-02", total_mem=65536, total_procs=8.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _sys_entry(SYS_UUID_A, "p9-01", total_mem=131072, total_procs=16.0),
+                _sys_entry(SYS_UUID_B, "p9-02", total_mem=65536, total_procs=8.0),
+            ),
+        )
     )
     # LPARs for system A: 2 LPARs using 16384 MiB + 2.0 procs total
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
-            _lpar_entry("lp-a2", "aix2", mem=8192, procs=1.0, state="not activated"),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
+                _lpar_entry(
+                    "lp-a2", "aix2", mem=8192, procs=1.0, state="not activated"
+                ),
+            ),
+        )
     )
     # LPARs for system B: 1 LPAR using 4096 MiB + 0.5 procs
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _lpar_entry("lp-b1", "linux1", mem=4096, procs=0.5),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _lpar_entry("lp-b1", "linux1", mem=4096, procs=0.5),
+            ),
+        )
     )
 
     result = hmc_capacity_report()
@@ -384,9 +418,12 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     """hmc_capacity_report handles a system with no LPARs (free == total)."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _sys_entry(SYS_UUID_A, "empty-sys", total_mem=65536, total_procs=8.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _sys_entry(SYS_UUID_A, "empty-sys", total_mem=65536, total_procs=8.0),
+            ),
+        )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
@@ -403,22 +440,31 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
     """hmc_find_placement returns systems that can host the requested LPAR."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _sys_entry(SYS_UUID_A, "big-sys", total_mem=131072, total_procs=16.0),
-            _sys_entry(SYS_UUID_B, "small-sys", total_mem=8192, total_procs=2.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _sys_entry(SYS_UUID_A, "big-sys", total_mem=131072, total_procs=16.0),
+                _sys_entry(SYS_UUID_B, "small-sys", total_mem=8192, total_procs=2.0),
+            ),
+        )
     )
     # big-sys: 1 LPAR using 8192 MiB / 1.0 proc → free = 122880 MiB / 15.0 procs
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _lpar_entry("lp-a1", "aix1", mem=8192, procs=1.0),
+            ),
+        )
     )
     # small-sys: 1 LPAR using 6144 MiB / 1.5 procs → free = 2048 MiB / 0.5 procs
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_B}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _lpar_entry("lp-b1", "linux1", mem=6144, procs=1.5),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _lpar_entry("lp-b1", "linux1", mem=6144, procs=1.5),
+            ),
+        )
     )
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
@@ -432,14 +478,20 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
     """hmc_find_placement returns empty list when no system has enough free resources."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _sys_entry(SYS_UUID_A, "full-sys", total_mem=8192, total_procs=2.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _sys_entry(SYS_UUID_A, "full-sys", total_mem=8192, total_procs=2.0),
+            ),
+        )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
-        return_value=httpx.Response(200, text=_sys_feed(
-            _lpar_entry("lp-a1", "aix1", mem=8192, procs=2.0),
-        ))
+        return_value=httpx.Response(
+            200,
+            text=_sys_feed(
+                _lpar_entry("lp-a1", "aix1", mem=8192, procs=2.0),
+            ),
+        )
     )
 
     result = hmc_find_placement(desired_memory_mb=512)
@@ -456,7 +508,10 @@ def test_systems_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
         return_value=httpx.Response(
-            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01", State="operating")
+            200,
+            text=_feed(
+                SYSTEM_UUID, "ManagedSystem", SystemName="s824-01", State="operating"
+            ),
         )
     )
     result = hmc_systems(state="operating")
@@ -482,7 +537,13 @@ def test_lpars_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
         "/rest/api/uom/LogicalPartition/search/(PartitionState==running)"
     ).mock(
         return_value=httpx.Response(
-            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionName="aix1", PartitionState="running")
+            200,
+            text=_feed(
+                LPAR_UUID,
+                "LogicalPartition",
+                PartitionName="aix1",
+                PartitionState="running",
+            ),
         )
     )
     result = hmc_lpars(state="running")
@@ -501,17 +562,9 @@ def test_lpars_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-def test_lpars_state_filter_ignored_when_lpar_name_or_uuid_given(monkeypatch, mock_hmc):
-    """hmc_lpars(lpar_name_or_uuid=..., state=...) resolves the UUID, ignores state."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
-        return_value=httpx.Response(
-            200, text=_feed(LPAR_UUID, "LogicalPartition", PartitionState="running")
-        )
-    )
-    result = hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state="running")
-    assert route.called
-    assert result["UUID"] == LPAR_UUID
+def test_lpars_rejects_state_with_lpar_selector():
+    with pytest.raises(ValueError, match="at most one"):
+        hmc_lpars(lpar_name_or_uuid=LPAR_UUID, state="running")
 
 
 def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
@@ -521,7 +574,13 @@ def test_vios_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
         "/rest/api/uom/VirtualIOServer/search/(PartitionState==running)"
     ).mock(
         return_value=httpx.Response(
-            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1", PartitionState="running")
+            200,
+            text=_feed(
+                VIOS_UUID,
+                "VirtualIOServer",
+                PartitionName="vios1",
+                PartitionState="running",
+            ),
         )
     )
     result = hmc_vios(state="running")
@@ -552,4 +611,3 @@ def test_vios_state_filter_ignored_when_vios_name_or_uuid_given(monkeypatch, moc
     )
     hmc_vios(vios_name_or_uuid=VIOS_UUID, state="running")
     assert route.called
-
