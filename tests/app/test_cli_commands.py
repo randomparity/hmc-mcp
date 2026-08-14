@@ -16,7 +16,8 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, cli_app, ssh_commands
+from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 
 LPAR_NAME = "lpar1"
@@ -42,6 +43,7 @@ class FakeHMC:
 
     def __init__(self):
         self.calls: list[tuple[str, tuple, dict]] = []
+        self.config = HMCConfig(host="hmc.test", user="user", _env_file=None)
         self.fail_on: str | None = None
         self.fail_status = 500
         self.lpar = {
@@ -366,6 +368,15 @@ def fake_hmc(monkeypatch):
     """Wire the CLI's client factory to a scripted FakeHMC for every command."""
     hmc = FakeHMC()
     monkeypatch.setattr(cli_app, "client_from_env", lambda **kwargs: hmc)
+
+    async def legacy_description(*_args):
+        return "legacy partition"
+
+    async def stamped(*_args, **_kwargs):
+        return "[hmc-mcp owner:hmc-mcp created:2026-08-14]"
+
+    monkeypatch.setattr(operations_lpar, "get_lpar_description", legacy_description)
+    monkeypatch.setattr(operations_lpar, "stamp_lpar_ownership", stamped)
     return hmc
 
 
@@ -822,12 +833,21 @@ def test_lpars_provision_rejects_invalid_vocabulary_before_client_call(
 def test_lpars_modify_renames(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["lpars", "modify", LPAR_UUID, "--name", "renamed", "--yes"],
+        [
+            "lpars",
+            "modify",
+            LPAR_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "renamed",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
     assert "Modified LPAR" in result.stdout
-    name, args, _ = fake_hmc.calls[0]
+    name, args, _ = fake_hmc.calls[-1]
     assert name == "modify_logical_partition"
     assert args[0] == LPAR_UUID
     assert "renamed" in args[1]
@@ -869,18 +889,42 @@ def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
 
 
 def test_lpars_delete(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "delete", LPAR_UUID, "--yes"])
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "delete", LPAR_UUID, "--system", SYSTEM_UUID, "--yes"],
+    )
 
     assert result.exit_code == 0
     assert "Deleted LPAR" in result.stdout
-    assert fake_hmc.calls == [("delete_logical_partition", (LPAR_UUID,), {})]
+    assert fake_hmc.calls[-1] == ("delete_logical_partition", (LPAR_UUID,), {})
 
 
 def test_lpars_delete_not_found_exits_1(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "delete", "ghost", "--yes"])
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "delete", "ghost", "--system", SYSTEM_UUID, "--yes"],
+    )
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
+
+
+def test_lpars_delete_denies_foreign_owned_partition_without_transport(
+    fake_hmc, monkeypatch
+):
+    async def foreign_description(*_args):
+        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+
+    monkeypatch.setattr(operations_lpar, "get_lpar_description", foreign_description)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "delete", LPAR_UUID, "--system", SYSTEM_UUID, "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert "owned by" in result.stderr
+    assert all(call[0] != "delete_logical_partition" for call in fake_hmc.calls)
 
 
 # --------------------------------------------------------------------------- #
@@ -1571,9 +1615,7 @@ def test_metrics_cli_translates_authority_error(fake_hmc):
     fake_hmc.fail_on = "get_pcm_preferences"
     fake_hmc.fail_status = 403
 
-    result = RUNNER.invoke(
-        cli.app, ["metrics", "prefs", "ManagedSystem", SYSTEM_UUID]
-    )
+    result = RUNNER.invoke(cli.app, ["metrics", "prefs", "ManagedSystem", SYSTEM_UUID])
 
     assert result.exit_code == 1
     assert "does not have PCM authority" in result.stderr

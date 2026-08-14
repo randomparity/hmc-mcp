@@ -49,6 +49,14 @@ async def authorize_lpar_mutation(
 ) -> None:
     """Reject mutations of foreign-owned or malformed ownership-stamped LPARs."""
     if ownership_override:
+        _logger.warning(
+            "LPAR ownership override approved",
+            extra={
+                "hmc_system": system_name,
+                "hmc_lpar": lpar_name,
+                "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
+            },
+        )
         return
     description = await get_lpar_description(hmc.config, system_name, lpar_name)
     match = _OWNERSHIP_TOKEN.search(description)

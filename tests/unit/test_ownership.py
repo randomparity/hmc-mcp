@@ -1,8 +1,10 @@
 """Tests for multi-agent LPAR ownership helpers (issue #132)."""
+
 from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,10 +19,10 @@ from hmc_mcp.operations_lpar import authorize_lpar_mutation
 
 
 def test_validate_agent_id_valid():
-    validate_agent_id("alice")           # plain name
-    validate_agent_id("agent-1")         # hyphens ok
-    validate_agent_id("agent.1")         # dots ok
-    validate_agent_id("a" * 64)          # max length
+    validate_agent_id("alice")  # plain name
+    validate_agent_id("agent-1")  # hyphens ok
+    validate_agent_id("agent.1")  # dots ok
+    validate_agent_id("a" * 64)  # max length
 
 
 def test_validate_agent_id_reserved():
@@ -84,7 +86,7 @@ def test_validate_agent_id_control_char():
 
 
 from hmc_mcp.ssh_commands import stamp_lpar_ownership  # noqa: E402 (after validate tests)
-from hmc_mcp.config import HMCConfig           # noqa: E402
+from hmc_mcp.config import HMCConfig  # noqa: E402
 
 
 def _config():
@@ -93,7 +95,9 @@ def _config():
 
 def test_stamp_returns_token_on_success():
     config = _config()
-    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")) as mock_set:
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ) as mock_set:
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="alice")
         )
@@ -107,7 +111,9 @@ def test_stamp_returns_token_on_success():
 
 def test_stamp_default_agent_id():
     config = _config()
-    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")):
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1")  # no agent_id
         )
@@ -118,6 +124,7 @@ def test_stamp_default_agent_id():
 def test_stamp_returns_none_on_ssh_error():
     config = _config()
     from hmc_mcp.ssh_commands import HMCCLIError
+
     with patch(
         "hmc_mcp.ssh_commands.set_lpar_description",
         new=AsyncMock(side_effect=HMCCLIError("SSH failed")),
@@ -131,13 +138,16 @@ def test_stamp_returns_none_on_ssh_error():
 def test_token_format():
     config = _config()
     today = datetime.date.today().isoformat()
-    with patch("hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")):
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ):
         token = asyncio.run(
             stamp_lpar_ownership(config, "sys1", "lpar1", agent_id="my-agent")
         )
     assert token == f"[hmc-mcp owner:my-agent created:{today}]"
     # token must pass the existing description validator
     from hmc_mcp.ssh_commands import validate_lpar_description
+
     validate_lpar_description(token)  # no exception
 
 
@@ -151,7 +161,9 @@ def test_token_format():
     ],
 )
 def test_authorize_lpar_mutation(description, agent_id, allowed):
-    hmc = type("StubHMC", (), {"config": _config().model_copy(update={"agent_id": agent_id})})()
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": agent_id})}
+    )()
     with patch(
         "hmc_mcp.operations_lpar.get_lpar_description",
         new=AsyncMock(return_value=description),
@@ -163,13 +175,33 @@ def test_authorize_lpar_mutation(description, agent_id, allowed):
                 asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
 
-def test_authorize_lpar_mutation_override_skips_description_read():
+def test_authorize_lpar_mutation_override_is_audited(caplog):
     hmc = type("StubHMC", (), {"config": _config()})()
     read = AsyncMock()
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+    with (
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_lpar"),
+    ):
         asyncio.run(
-            authorize_lpar_mutation(
-                hmc, "sys1", "lpar1", ownership_override=True
-            )
+            authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
         )
     read.assert_not_awaited()
+    record = caplog.records[-1]
+    assert record.getMessage() == "LPAR ownership override approved"
+    assert record.hmc_system == "sys1"
+    assert record.hmc_lpar == "lpar1"
+    assert record.hmc_agent_id == "hmc-mcp"
+
+
+def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
+    hmc = type("StubHMC", (), {"config": _config()})()
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value="legacy partition"),
+        ),
+        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_lpar"),
+    ):
+        asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
+
+    assert caplog.records == []

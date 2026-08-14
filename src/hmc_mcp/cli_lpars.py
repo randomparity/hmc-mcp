@@ -1,5 +1,4 @@
-"""CLI commands for LPARs: list/show/state, power, LPM, lifecycle, description, MSP, and processor compatibility.
-"""
+"""CLI commands for LPARs: list/show/state, power, LPM, lifecycle, description, MSP, and processor compatibility."""
 
 from __future__ import annotations
 
@@ -8,6 +7,7 @@ from rich.table import Table
 from typing import cast
 
 from .common import is_uuid
+from .common import resolve_system_uuid
 
 from .cli_app import (
     _client,
@@ -26,6 +26,12 @@ from .cli_app import (
 )
 
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
+from .operations_lpar import (
+    LparCreation,
+    authorize_lpar_mutation,
+    create_and_stamp_lpar,
+    resolve_lpar_ownership_names,
+)
 from .documents import (
     LparResources,
     PARTITION_TYPES,
@@ -42,7 +48,6 @@ from .ssh_commands import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-
 
 
 @lpars_app.command("summary")
@@ -66,6 +71,7 @@ def lpars_summary(
     table = Table(title=f"LPAR Summary: {summary.get('name') or name_or_uuid}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
+
     def value_or_missing(key: str) -> str:
         value = summary.get(key)
         return "-" if value is None else str(value)
@@ -85,7 +91,10 @@ def lpars_summary(
         ("Dedicated Procs", value_or_missing("dedicated_procs")),
         ("OS Version", summary.get("os_version") or "-"),
         ("OS Type", summary.get("os_type") or "-"),
-        ("Client Network Adapters", str(summary.get("client_network_adapter_count", 0))),
+        (
+            "Client Network Adapters",
+            str(summary.get("client_network_adapter_count", 0)),
+        ),
         ("Description", summary.get("description") or "-"),
     ]
     for prop, val in rows:
@@ -95,14 +104,20 @@ def lpars_summary(
 
 @lpars_app.command("list")
 def lpars_list(
-    system: str | None = typer.Option(None, "--system", "-s", help="Restrict to this managed system UUID"),
-    state: str | None = typer.Option(None, "--state", help="Filter by PartitionState (server-side search)"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Restrict to this managed system UUID"
+    ),
+    state: str | None = typer.Option(
+        None, "--state", help="Filter by PartitionState (server-side search)"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List logical partitions."""
 
     if state is not None:
-        lpars = _with_client(lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state))
+        lpars = _with_client(
+            lambda hmc: hmc.search_uom("LogicalPartition", "PartitionState", state)
+        )
     else:
         lpars = _with_client(lambda hmc: hmc.list_logical_partitions(system))
 
@@ -132,9 +147,11 @@ def lpars_show(
     """Show one LPAR, looked up by name (exact) or by UUID."""
 
     lpar = _with_client(
-        lambda hmc: hmc.get_logical_partition(name_or_uuid)
-        if is_uuid(name_or_uuid)
-        else hmc.find_partition_by_name(name_or_uuid)
+        lambda hmc: (
+            hmc.get_logical_partition(name_or_uuid)
+            if is_uuid(name_or_uuid)
+            else hmc.find_partition_by_name(name_or_uuid)
+        )
     )
 
     if lpar is None:
@@ -143,7 +160,9 @@ def lpars_show(
 
 
 @lpars_app.command("state")
-def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or UUID")) -> None:
+def lpars_state(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+) -> None:
     """Print just the current state of an LPAR."""
 
     async def _go():
@@ -151,7 +170,9 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
             uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
             if uuid is None:
                 return None
-            return await hmc.get_quick_property("LogicalPartition", uuid, "PartitionState")
+            return await hmc.get_quick_property(
+                "LogicalPartition", uuid, "PartitionState"
+            )
 
     state = _run(_go)
 
@@ -163,28 +184,46 @@ def lpars_state(name_or_uuid: str = typer.Argument(..., help="Partition name or 
 @lpars_app.command("power-on")
 def lpars_power_on(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for job completion"),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
     timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(5, "--interval", help="Poll interval seconds (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
-    _power_lpar(name_or_uuid, on=True, yes=yes, wait=wait, timeout=timeout, interval=interval)
+    _power_lpar(
+        name_or_uuid, on=True, yes=yes, wait=wait, timeout=timeout, interval=interval
+    )
 
 
 @lpars_app.command("power-off")
 def lpars_power_off(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    immediate: bool = typer.Option(False, "--immediate", help="Immediate power off (no graceful shutdown)"),
-    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for job completion"),
+    immediate: bool = typer.Option(
+        False, "--immediate", help="Immediate power off (no graceful shutdown)"
+    ),
+    wait: bool = typer.Option(
+        False, "--wait/--no-wait", help="Wait for job completion"
+    ),
     timeout: int = typer.Option(300, "--timeout", help="Seconds to wait (with --wait)"),
-    interval: int = typer.Option(5, "--interval", help="Poll interval seconds (with --wait)"),
+    interval: int = typer.Option(
+        5, "--interval", help="Poll interval seconds (with --wait)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Power off an LPAR (submits a PowerOff job)."""
-    _power_lpar(name_or_uuid, on=False, immediate=immediate, yes=yes, wait=wait, timeout=timeout, interval=interval)
-
-
+    _power_lpar(
+        name_or_uuid,
+        on=False,
+        immediate=immediate,
+        yes=yes,
+        wait=wait,
+        timeout=timeout,
+        interval=interval,
+    )
 
 
 def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) -> None:
@@ -197,7 +236,9 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
                 return None, None
             if not yes:
                 dest = f" to '{target}'" if target else ""
-                if not typer.confirm(f"Really {action} partition '{name_or_uuid}' ({uuid}){dest}?"):
+                if not typer.confirm(
+                    f"Really {action} partition '{name_or_uuid}' ({uuid}){dest}?"
+                ):
                     raise typer.Abort()
             return uuid, await fn(hmc, uuid)
 
@@ -214,7 +255,9 @@ def lpars_migrate(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     target: str = typer.Option(..., "--target", help="Target managed system name"),
     profile: str | None = typer.Option(None, "--profile", help="Target profile name"),
-    wait_time: int | None = typer.Option(None, "--wait-time", help="Override operation wait time"),
+    wait_time: int | None = typer.Option(
+        None, "--wait-time", help="Override operation wait time"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
@@ -236,7 +279,9 @@ def lpars_migrate_validate(
     """Validate whether an LPM migration would succeed."""
 
     async def _fn(hmc, uuid):
-        return await hmc.lpar_migrate_validate(uuid, target, profile, wait_time=wait_time)
+        return await hmc.lpar_migrate_validate(
+            uuid, target, profile, wait_time=wait_time
+        )
 
     _lpm_run(name_or_uuid, _fn, "MigrateValidate", target, yes)
 
@@ -281,7 +326,6 @@ def lpars_remote_restart(
     _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
 
 
-
 def _power_lpar(
     name_or_uuid: str,
     on: bool,
@@ -297,18 +341,27 @@ def _power_lpar(
             if uuid is None:
                 return None, None
             if not yes:
-                op = "PowerOn" if on else ("Immediate PowerOff" if immediate else "PowerOff")
+                op = (
+                    "PowerOn"
+                    if on
+                    else ("Immediate PowerOff" if immediate else "PowerOff")
+                )
                 name = name_or_uuid
                 if not is_uuid(name_or_uuid):
                     found = await hmc.get_logical_partition(uuid)
                     if found:
-                        name = _first_field(found, "PartitionName", default=name_or_uuid)
-                if not typer.confirm(f"Really submit {op} for partition '{name}' ({uuid})?"):
+                        name = _first_field(
+                            found, "PartitionName", default=name_or_uuid
+                        )
+                if not typer.confirm(
+                    f"Really submit {op} for partition '{name}' ({uuid})?"
+                ):
                     err_console.print("Aborted.")
                     raise typer.Abort()
             if on:
                 job = await hmc.submit_job(
-                    f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn", power_on_lpar_job()
+                    f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn",
+                    power_on_lpar_job(),
                 )
             else:
                 job = await hmc.submit_job(
@@ -326,25 +379,45 @@ def _power_lpar(
     _print_json(job)
 
 
-
-
 @lpars_app.command("create")
 def lpars_create(
     name: str = typer.Argument(..., help="Name for the new partition"),
-    system: str = typer.Option(..., "--system", "-s", help="Target managed system UUID"),
-    partition_type: str = typer.Option("AIX/Linux", "--type", help=f"One of: {', '.join(PARTITION_TYPES)}"),
-    partition_id: int | None = typer.Option(None, "--id", help="Partition ID (auto-assigned if omitted)"),
+    system: str = typer.Option(
+        ..., "--system", "-s", help="Target managed system UUID"
+    ),
+    partition_type: str = typer.Option(
+        "AIX/Linux", "--type", help=f"One of: {', '.join(PARTITION_TYPES)}"
+    ),
+    partition_id: int | None = typer.Option(
+        None, "--id", help="Partition ID (auto-assigned if omitted)"
+    ),
     min_memory: int = typer.Option(256, "--min-mem", help="Minimum memory (MiB)"),
     memory: int = typer.Option(4096, "--mem", help="Desired memory (MiB)"),
     max_memory: int = typer.Option(8192, "--max-mem", help="Maximum memory (MiB)"),
-    dedicated: bool = typer.Option(False, "--dedicated", help="Dedicated CPUs instead of shared"),
-    min_procs: float | None = typer.Option(None, "--min-procs", help="Min processing units / dedicated CPUs"),
-    procs: float | None = typer.Option(None, "--procs", help="Desired processing units / dedicated CPUs"),
-    max_procs: float | None = typer.Option(None, "--max-procs", help="Max processing units / dedicated CPUs"),
-    min_vcpus: int | None = typer.Option(None, "--min-vcpus", help="Min virtual processors (shared)"),
-    vcpus: int | None = typer.Option(1, "--vcpus", help="Desired virtual processors (shared)"),
-    max_vcpus: int | None = typer.Option(2, "--max-vcpus", help="Max virtual processors (shared)"),
-    capped: bool = typer.Option(False, "--capped", help="Cap shared CPU (default uncapped)"),
+    dedicated: bool = typer.Option(
+        False, "--dedicated", help="Dedicated CPUs instead of shared"
+    ),
+    min_procs: float | None = typer.Option(
+        None, "--min-procs", help="Min processing units / dedicated CPUs"
+    ),
+    procs: float | None = typer.Option(
+        None, "--procs", help="Desired processing units / dedicated CPUs"
+    ),
+    max_procs: float | None = typer.Option(
+        None, "--max-procs", help="Max processing units / dedicated CPUs"
+    ),
+    min_vcpus: int | None = typer.Option(
+        None, "--min-vcpus", help="Min virtual processors (shared)"
+    ),
+    vcpus: int | None = typer.Option(
+        1, "--vcpus", help="Desired virtual processors (shared)"
+    ),
+    max_vcpus: int | None = typer.Option(
+        2, "--max-vcpus", help="Max virtual processors (shared)"
+    ),
+    capped: bool = typer.Option(
+        False, "--capped", help="Cap shared CPU (default uncapped)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Create a new LPAR on a managed system.
@@ -361,40 +434,63 @@ def lpars_create(
             f"Create LPAR '{name}' ({partition_type}, {memory} MiB) on system {system}?",
             abort=True,
         )
+    resources = LparResources(
+        min_memory=min_memory,
+        desired_memory=memory,
+        max_memory=max_memory,
+        dedicated=dedicated,
+        min_procs=min_procs,
+        desired_procs=procs,
+        max_procs=max_procs,
+        min_vcpus=min_vcpus,
+        desired_vcpus=vcpus,
+        max_vcpus=max_vcpus,
+        uncapped=not capped,
+    )
     xml = build_lpar_document(
         name=name,
         partition_type=partition_type,
         partition_id=partition_id,
-        resources=LparResources(
-            min_memory=min_memory,
-            desired_memory=memory,
-            max_memory=max_memory,
-            dedicated=dedicated,
-            min_procs=min_procs,
-            desired_procs=procs,
-            max_procs=max_procs,
-            min_vcpus=min_vcpus,
-            desired_vcpus=vcpus,
-            max_vcpus=max_vcpus,
-            uncapped=not capped,
-        ),
+        resources=resources,
     )
 
-    created = _with_client(lambda hmc: hmc.create_logical_partition(system, xml))
+    async def _go():
+        async with _client() as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system)
+            return await create_and_stamp_lpar(
+                hmc,
+                system_uuid,
+                system,
+                LparCreation(name, partition_type, resources),
+                xml,
+            )
+
+    result = _run(_go)
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
-    _print_json(created)
+    _print_json(result.lpar)
+    for warning in result.warnings:
+        err_console.print(f"[yellow]Warning: {warning}[/yellow]")
 
 
 @lpars_app.command("modify")
 def lpars_modify(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Managed system name or UUID (required for rename)"
+    ),
     new_name: str | None = typer.Option(None, "--name", help="Rename the partition"),
-    min_memory: int | None = typer.Option(None, "--min-mem", help="Minimum memory (MiB)"),
+    min_memory: int | None = typer.Option(
+        None, "--min-mem", help="Minimum memory (MiB)"
+    ),
     memory: int | None = typer.Option(None, "--mem", help="Desired memory (MiB)"),
-    max_memory: int | None = typer.Option(None, "--max-mem", help="Maximum memory (MiB)"),
+    max_memory: int | None = typer.Option(
+        None, "--max-mem", help="Maximum memory (MiB)"
+    ),
     dedicated: bool | None = typer.Option(
-        None, "--dedicated/--no-dedicated", help="Assign dedicated CPUs (default: leave unchanged)"
+        None,
+        "--dedicated/--no-dedicated",
+        help="Assign dedicated CPUs (default: leave unchanged)",
     ),
     min_procs: float | None = typer.Option(None, "--min-procs"),
     procs: float | None = typer.Option(None, "--procs"),
@@ -406,6 +502,11 @@ def lpars_modify(
         None, "--capped/--uncapped", help="Cap shared CPU (default: leave unchanged)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass ownership protection after operator approval",
+    ),
 ) -> None:
     """Change an LPAR's name and/or resource assignment (memory / CPU).
 
@@ -413,10 +514,26 @@ def lpars_modify(
     dynamic (DLPAR) operations and need RMC up; otherwise they apply on next
     activation.
     """
-    if all(v is None for v in (new_name, min_memory, memory, max_memory,
-                               min_procs, procs, max_procs, min_vcpus, vcpus, max_vcpus,
-                               dedicated, capped)):
+    if all(
+        v is None
+        for v in (
+            new_name,
+            min_memory,
+            memory,
+            max_memory,
+            min_procs,
+            procs,
+            max_procs,
+            min_vcpus,
+            vcpus,
+            max_vcpus,
+            dedicated,
+            capped,
+        )
+    ):
         _usage_error("Nothing to change — pass at least one option")
+    if new_name is not None and system is None:
+        _usage_error("--system is required when renaming an LPAR")
 
     async def _go():
         async with _client() as hmc:
@@ -424,8 +541,22 @@ def lpars_modify(
             if uuid is None:
                 return None, None
             if not yes:
-                if not typer.confirm(f"Apply resource changes to '{name_or_uuid}' ({uuid})?"):
+                if not typer.confirm(
+                    f"Apply resource changes to '{name_or_uuid}' ({uuid})?"
+                ):
                     raise typer.Abort()
+            if new_name is not None:
+                assert system is not None
+                system_uuid = await resolve_system_uuid(hmc, system)
+                system_name, lpar_name = await resolve_lpar_ownership_names(
+                    hmc, system_uuid, system, uuid
+                )
+                await authorize_lpar_mutation(
+                    hmc,
+                    system_name,
+                    lpar_name,
+                    ownership_override=ownership_override,
+                )
             xml = build_lpar_document(
                 name=new_name,
                 resources=LparResources(
@@ -455,7 +586,15 @@ def lpars_modify(
 @lpars_app.command("delete")
 def lpars_delete(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    system: str = typer.Option(
+        ..., "--system", "-s", help="Managed system name or UUID"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass ownership protection after operator approval",
+    ),
 ) -> None:
     """Delete (destroy) an LPAR. It must be powered off first."""
 
@@ -469,6 +608,16 @@ def lpars_delete(
                     f"Permanently DELETE partition '{name_or_uuid}' ({uuid})? This cannot be undone."
                 ):
                     raise typer.Abort()
+            system_uuid = await resolve_system_uuid(hmc, system)
+            system_name, lpar_name = await resolve_lpar_ownership_names(
+                hmc, system_uuid, system, uuid
+            )
+            await authorize_lpar_mutation(
+                hmc,
+                system_name,
+                lpar_name,
+                ownership_override=ownership_override,
+            )
             await hmc.delete_logical_partition(uuid)
             return uuid
 
@@ -479,17 +628,13 @@ def lpars_delete(
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 
-
-
 @lpars_app.command("get-description")
 def lpars_get_description(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
 ) -> None:
     """Get the description field of an LPAR (HMC CLI via SSH)."""
-    result = _run(
-        lambda: get_lpar_description(_ssh_config(), system_name, lpar_name)
-    )
+    result = _run(lambda: get_lpar_description(_ssh_config(), system_name, lpar_name))
 
     console.print(result.strip() or "(no description set)")
 
@@ -500,15 +645,31 @@ def lpars_set_description(
     system_name: str = typer.Argument(..., help="Managed system name"),
     description: str = typer.Argument(..., help="New description text"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass ownership protection after operator approval",
+    ),
 ) -> None:
     """Set the description field of an LPAR (HMC CLI via SSH)."""
     if not yes and not typer.confirm(
         f"Set description on '{lpar_name}' (system {system_name})?"
     ):
         raise typer.Abort()
-    result = _run(
-        lambda: set_lpar_description(_ssh_config(), system_name, lpar_name, description)
-    )
+
+    async def _go():
+        async with _client() as hmc:
+            await authorize_lpar_mutation(
+                hmc,
+                system_name,
+                lpar_name,
+                ownership_override=ownership_override,
+            )
+            return await set_lpar_description(
+                hmc.config, system_name, lpar_name, description
+            )
+
+    result = _run(_go)
 
     console.print(f"[green]Description updated for '{lpar_name}'[/green]")
     if result.strip():
@@ -545,8 +706,6 @@ def lpars_set_msp(
         console.print(result.strip())
 
 
-
-
 @lpars_app.command("get-proc-compat-modes")
 def lpars_get_proc_compat_modes(
     system_name: str = typer.Argument(..., help="Managed system name"),
@@ -564,9 +723,7 @@ def lpars_get_proc_compat(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Get the current and pending processor compatibility modes for an LPAR (HMC CLI via SSH)."""
-    info = _run(
-        lambda: get_lpar_proc_compat(_ssh_config(), system_name, lpar_name)
-    )
+    info = _run(lambda: get_lpar_proc_compat(_ssh_config(), system_name, lpar_name))
 
     desired = info["desired"]
     curr = info["curr"]
@@ -598,32 +755,54 @@ def lpars_set_proc_compat(
         lambda: set_lpar_proc_compat(_ssh_config(), system_name, lpar_name, mode)
     )
 
-    console.print(f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]")
+    console.print(
+        f"[green]Processor compatibility mode updated for '{lpar_name}'[/green]"
+    )
     if result.strip():
         console.print(result.strip())
 
 
-
-
 @lpars_app.command("provision")
 def lpars_provision(
-    system: str = typer.Option(..., "--system", "-s", help="Target managed system name or UUID"),
+    system: str = typer.Option(
+        ..., "--system", "-s", help="Target managed system name or UUID"
+    ),
     name: str = typer.Option(..., "--name", "-n", help="Name for the new LPAR"),
-    port_vlan_id: int = typer.Option(..., "--vlan", help="Port VLAN ID for the network adapter"),
-    vios_uuid: str = typer.Option(..., "--vios-uuid", help="UUID of the VIOS for vSCSI / storage"),
-    vios_partition_id: int = typer.Option(..., "--vios-partition-id", help="Numeric partition ID of the VIOS"),
-    vios_slot: int = typer.Option(..., "--vios-slot", help="Virtual slot number of the VIOS server adapter"),
-    storage_name: str = typer.Option(..., "--storage-name", help="VirtualDisk or PhysicalVolume name to map"),
-    partition_type: str = typer.Option("AIX/Linux", "--type", help=f"Partition type: {', '.join(PARTITION_TYPES)}"),
+    port_vlan_id: int = typer.Option(
+        ..., "--vlan", help="Port VLAN ID for the network adapter"
+    ),
+    vios_uuid: str = typer.Option(
+        ..., "--vios-uuid", help="UUID of the VIOS for vSCSI / storage"
+    ),
+    vios_partition_id: int = typer.Option(
+        ..., "--vios-partition-id", help="Numeric partition ID of the VIOS"
+    ),
+    vios_slot: int = typer.Option(
+        ..., "--vios-slot", help="Virtual slot number of the VIOS server adapter"
+    ),
+    storage_name: str = typer.Option(
+        ..., "--storage-name", help="VirtualDisk or PhysicalVolume name to map"
+    ),
+    partition_type: str = typer.Option(
+        "AIX/Linux", "--type", help=f"Partition type: {', '.join(PARTITION_TYPES)}"
+    ),
     min_memory: int = typer.Option(256, "--min-mem", help="Minimum memory (MiB)"),
     memory: int = typer.Option(4096, "--mem", help="Desired memory (MiB)"),
     max_memory: int = typer.Option(8192, "--max-mem", help="Maximum memory (MiB)"),
     vcpus: int = typer.Option(1, "--vcpus", help="Desired virtual CPUs"),
     max_vcpus: int = typer.Option(2, "--max-vcpus", help="Maximum virtual CPUs"),
-    storage_kind: str = typer.Option("VirtualDisk", "--storage-kind", help='"VirtualDisk" or "PhysicalVolume"'),
-    vg_uuid: str | None = typer.Option(None, "--vg-uuid", help="Volume group UUID to validate (optional)"),
-    power_on: bool = typer.Option(True, "--power-on/--no-power-on", help="Power on after provisioning"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate preconditions only; do not create"),
+    storage_kind: str = typer.Option(
+        "VirtualDisk", "--storage-kind", help='"VirtualDisk" or "PhysicalVolume"'
+    ),
+    vg_uuid: str | None = typer.Option(
+        None, "--vg-uuid", help="Volume group UUID to validate (optional)"
+    ),
+    power_on: bool = typer.Option(
+        True, "--power-on/--no-power-on", help="Power on after provisioning"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate preconditions only; do not create"
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -686,7 +865,9 @@ def lpars_provision(
         return
 
     if dry_run:
-        console.print("[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]")
+        console.print(
+            "[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]"
+        )
     elif result.workflow_completed:
         console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
     elif result.resource_created:
@@ -705,7 +886,11 @@ def lpars_provision(
     table.add_column("Status", style="green")
     for step in result.steps:
         status = step.get("status", "-")
-        style = "green" if status == "ok" else ("yellow" if status in ("dry_run", "skipped") else "red")
+        style = (
+            "green"
+            if status == "ok"
+            else ("yellow" if status in ("dry_run", "skipped") else "red")
+        )
         table.add_row(step.get("step", "-"), f"[{style}]{status}[/{style}]")
     console.print(table)
 
