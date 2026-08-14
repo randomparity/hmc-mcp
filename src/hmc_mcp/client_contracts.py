@@ -76,3 +76,38 @@ class PcmClient(Protocol):
     ) -> list[dict[str, str]]: ...
 
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]: ...
+
+
+class StorageClient(Protocol):
+    """Host state and operations required by :class:`client_storage.StorageMixin`."""
+
+    config: HMCConfig
+
+    async def _get(
+        self,
+        path: str,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _post(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    async def _put(
+        self,
+        path: str,
+        body: str | bytes,
+        resource_type: str | None = None,
+        include_schema_version: bool = True,
+    ) -> str: ...
+
+    def get_lpar_link(self, lpar_uuid: str) -> str: ...
+
+    async def _post_volume_group_op(
+        self, vios_uuid: str, vg_uuid: str, xml: str
+    ) -> dict[str, Any] | None: ...

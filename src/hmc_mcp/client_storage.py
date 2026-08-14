@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .client_contracts import StorageClient
 from .client_parse import _parse_feed
 from .documents import (
     StorageKind,
@@ -24,11 +25,13 @@ class StorageMixin:
     # ------------------------------------------------------------------ #
     # Virtual storage (children of VirtualIOServer)
     # ------------------------------------------------------------------ #
-    def get_lpar_link(self, lpar_uuid: str) -> str:
+    def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
         return f"{self.config.base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
 
-    async def list_volume_groups(self, vios_uuid: str) -> list[dict[str, Any]]:
+    async def list_volume_groups(
+        self: StorageClient, vios_uuid: str
+    ) -> list[dict[str, Any]]:
         """List Volume Groups on a VIOS (free space, PVs, virtual disks).
 
         The VolumeGroup endpoint returns HTTP 204 when X-HMC-Schema-Version is
@@ -38,7 +41,9 @@ class StorageMixin:
         xml = await self._get(path, "VolumeGroup", include_schema_version=False)
         return _parse_feed(xml, path) if xml else []
 
-    async def get_volume_group(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
+    async def get_volume_group(
+        self: StorageClient, vios_uuid: str, vg_uuid: str
+    ) -> dict[str, Any] | None:
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         xml = await self._get(path, "VolumeGroup", include_schema_version=False)
         if not xml:
@@ -47,7 +52,10 @@ class StorageMixin:
         return entries[0] if entries else None
 
     async def create_volume_group(
-        self, vios_uuid: str, name: str, physical_volumes: list[str]
+        self: StorageClient,
+        vios_uuid: str,
+        name: str,
+        physical_volumes: list[str],
     ) -> dict[str, Any] | None:
         """Create a Volume Group on a VIOS from physical volumes (e.g. ['hdisk10'])."""
 
@@ -58,7 +66,11 @@ class StorageMixin:
         return entries[0] if entries else None
 
     async def create_virtual_disk(
-        self, vios_uuid: str, vg_uuid: str, disk_name: str, capacity_mb: int
+        self: StorageClient,
+        vios_uuid: str,
+        vg_uuid: str,
+        disk_name: str,
+        capacity_mb: int,
     ) -> dict[str, Any] | None:
         """Create a Virtual Disk (logical volume) in a Volume Group.
 
@@ -75,7 +87,7 @@ class StorageMixin:
         return entries[0] if entries else None
 
     async def map_storage_to_lpar(
-        self,
+        self: StorageClient,
         vios_uuid: str,
         storage_kind: StorageKind,
         storage_name: str,
@@ -106,7 +118,7 @@ class StorageMixin:
     # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
     # ------------------------------------------------------------------ #
     async def _post_volume_group_op(
-        self, vios_uuid: str, vg_uuid: str, xml: str
+        self: StorageClient, vios_uuid: str, vg_uuid: str, xml: str
     ) -> dict[str, Any] | None:
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         resp = await self._post(path, xml, resource_type="VolumeGroup")
@@ -114,7 +126,7 @@ class StorageMixin:
         return entries[0] if entries else None
 
     async def create_media_repository(
-        self, vios_uuid: str, vg_uuid: str, size_mb: int
+        self: StorageClient, vios_uuid: str, vg_uuid: str, size_mb: int
     ) -> dict[str, Any] | None:
         """Create the Virtual Media Repository (named VMLibrary) on a Volume Group."""
 
@@ -123,7 +135,11 @@ class StorageMixin:
         )
 
     async def create_optical_media(
-        self, vios_uuid: str, vg_uuid: str, media_name: str, size_mb: int
+        self: StorageClient,
+        vios_uuid: str,
+        vg_uuid: str,
+        media_name: str,
+        size_mb: int,
     ) -> dict[str, Any] | None:
         """Create a blank VirtualOpticalMedia (ISO container) in the repository."""
 
@@ -131,7 +147,9 @@ class StorageMixin:
             vios_uuid, vg_uuid, build_virtual_optical_media_document(media_name, size_mb)
         )
 
-    async def delete_media_repository(self, vios_uuid: str, vg_uuid: str) -> dict[str, Any] | None:
+    async def delete_media_repository(
+        self: StorageClient, vios_uuid: str, vg_uuid: str
+    ) -> dict[str, Any] | None:
         """Delete the Virtual Media Repository from a Volume Group."""
 
         return await self._post_volume_group_op(
