@@ -20,9 +20,13 @@ to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. The container 
 repository permissions and an explicit timeout.
 
 The repository maintainers own workflow and pin updates. GitHub owns native hosted-runner
-isolation and availability; Docker and Ubuntu own the pinned QEMU and container artifacts. No
-repository credential is passed into the ppc64le container. Public pull-request code executes in
-an ephemeral GitHub-hosted VM and disposable container.
+isolation and availability; Docker and Ubuntu own the pinned QEMU and container artifacts.
+Checkout disables credential persistence, the mounted checkout contains no persisted repository
+credential, and the workflow passes no GitHub token or other secret into the ppc64le container.
+
+QEMU setup performs privileged, VM-scoped binfmt registration before public pull-request code runs
+in the emulated container. The ephemeral GitHub-hosted VM, not the disposable container, is the
+security boundary. This job must not run on a self-hosted or persistent runner.
 
 ## Consequences
 
