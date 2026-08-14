@@ -156,7 +156,9 @@ def _memory_config(resources: LparResources) -> str:
 
 
 def _validate_sharing_mode(sharing_mode: SharingMode | None) -> None:
-    if sharing_mode is not None and sharing_mode not in SHARING_MODES:
+    if sharing_mode is not None and (
+        not isinstance(sharing_mode, str) or sharing_mode not in SHARING_MODES
+    ):
         legal_values = ", ".join(sorted(SHARING_MODES))
         raise ValueError(f"sharing_mode must be one of: {legal_values}")
 
