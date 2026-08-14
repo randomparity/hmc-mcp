@@ -16,18 +16,19 @@ from .documents import StorageKind
 from .jobs import (
     DeviceType,
     LuType,
-    validate_logical_unit_types,
-    validate_wait_timing,
-    wait_for_submitted_job,
 )
 from .operations_storage import (
+    create_logical_unit,
     create_media_repository,
     create_optical_media,
     create_virtual_disk,
     create_volume_group,
+    delete_logical_unit,
     delete_media_repository,
     list_volume_groups,
     map_storage,
+    validate_logical_unit_create,
+    validate_logical_unit_wait,
 )
 
 
@@ -241,14 +242,6 @@ def hmc_get_shared_storage_pool(
     return _run(_go)
 
 
-async def _lu_op(
-    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
-) -> dict[str, Any] | None:
-    """Submit a logical-unit job on an already-open *hmc* client; optionally wait for terminal state."""
-    job = await submit_fn(hmc)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
-
-
 @mcp.tool
 def hmc_create_logical_unit(
     cluster_uuid: str,
@@ -272,16 +265,20 @@ def hmc_create_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-    validate_logical_unit_types(lu_type, device_type)
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    validate_logical_unit_create(
+        lu_type, device_type, wait, timeout_seconds, poll_interval
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _lu_op(
+            return await create_logical_unit(
                 hmc,
-                lambda hmc2: hmc2.create_logical_unit(
-                    cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
-                ),
+                cluster_uuid,
+                lu_name,
+                lu_size_gb,
+                lu_type,
+                device_type,
+                cloned_from,
                 wait,
                 timeout_seconds,
                 poll_interval,
@@ -306,14 +303,14 @@ def hmc_delete_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
-
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    validate_logical_unit_wait(wait, timeout_seconds, poll_interval)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await _lu_op(
+            return await delete_logical_unit(
                 hmc,
-                lambda hmc2: hmc2.delete_logical_unit(cluster_uuid, lu_udid),
+                cluster_uuid,
+                lu_udid,
                 wait,
                 timeout_seconds,
                 poll_interval,

@@ -1,5 +1,4 @@
-"""CLI commands for clusters / Shared Storage Pools (logical units).
-"""
+"""CLI commands for clusters / Shared Storage Pools (logical units)."""
 
 from __future__ import annotations
 
@@ -16,7 +15,12 @@ from .cli_app import (
     console,
 )
 from .jobs import DeviceType, LuType
-
+from .operations_storage import (
+    create_logical_unit,
+    delete_logical_unit,
+    validate_logical_unit_create,
+    validate_logical_unit_wait,
+)
 
 
 @cluster_app.command("list")
@@ -69,15 +73,40 @@ def cluster_create_lu(
     device_type: DeviceType = typer.Option(
         "VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"
     ),
-    cloned_from: str | None = typer.Option(None, "--cloned-from", help="Source LU UDID to clone"),
+    cloned_from: str | None = typer.Option(
+        None, "--cloned-from", help="Source LU UDID to clone"
+    ),
+    wait: bool = typer.Option(False, "--wait", help="Wait for the job to finish"),
+    timeout_seconds: int = typer.Option(
+        300, "--timeout", help="Wait timeout in seconds"
+    ),
+    poll_interval: int = typer.Option(
+        5, "--poll-interval", help="Polling interval in seconds"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Logical Unit in a Cluster/SSP (submits a job)."""
-    if not yes and not typer.confirm(f"Create {size} GB {lu_type} LU '{name}' in cluster {cluster}?"):
+    validate_logical_unit_create(
+        lu_type, device_type, wait, timeout_seconds, poll_interval
+    )
+    if not yes and not typer.confirm(
+        f"Create {size} GB {lu_type} LU '{name}' in cluster {cluster}?"
+    ):
         raise typer.Abort()
 
     job = _with_client(
-        lambda hmc: hmc.create_logical_unit(cluster, name, size, lu_type, device_type, cloned_from)
+        lambda hmc: create_logical_unit(
+            hmc,
+            cluster,
+            name,
+            size,
+            lu_type,
+            device_type,
+            cloned_from,
+            wait,
+            timeout_seconds,
+            poll_interval,
+        )
     )
 
     console.print(f"[green]Submitted CreateLogicalUnit job for '{name}'[/green]")
@@ -88,14 +117,27 @@ def cluster_create_lu(
 def cluster_delete_lu(
     cluster: str = typer.Argument(..., help="Cluster UUID"),
     udid: str = typer.Option(..., "--udid", help="Logical unit UDID to delete"),
+    wait: bool = typer.Option(False, "--wait", help="Wait for the job to finish"),
+    timeout_seconds: int = typer.Option(
+        300, "--timeout", help="Wait timeout in seconds"
+    ),
+    poll_interval: int = typer.Option(
+        5, "--poll-interval", help="Polling interval in seconds"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a Logical Unit from a Cluster/SSP (submits a job)."""
-    if not yes and not typer.confirm(f"Delete LU {udid} from cluster {cluster}? This is irreversible."):
+    validate_logical_unit_wait(wait, timeout_seconds, poll_interval)
+    if not yes and not typer.confirm(
+        f"Delete LU {udid} from cluster {cluster}? This is irreversible."
+    ):
         raise typer.Abort()
 
-    job = _with_client(lambda hmc: hmc.delete_logical_unit(cluster, udid))
+    job = _with_client(
+        lambda hmc: delete_logical_unit(
+            hmc, cluster, udid, wait, timeout_seconds, poll_interval
+        )
+    )
 
     console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
     _print_json(job)
-
