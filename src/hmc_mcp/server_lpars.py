@@ -24,10 +24,12 @@ from .documents import (
 from .jobs import validate_wait_timing
 from .operations_lpar import (
     LparCreation,
+    LparPowerOnOutcome,
     LparCreationResult,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
+    power_on_outcome,
     rename_lpar,
 )
 
@@ -296,17 +298,18 @@ def hmc_power_on_lpar(
     poll_interval: int = 5,
     force: bool = False,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_lpars). Returns the submitted job (check hmc_get_job
-    for status). This changes the state of a real partition — confirm the
+    (find it with hmc_list_lpars). Returns ``already_running``, nullable ``job``,
+    and nullable ``message`` fields. A submitted job is in ``job``; check it
+    with hmc_get_job. This changes the state of a real partition — confirm the
     target with hmc_get_lpar(lpar_name_or_uuid=...) before calling.
 
-    If the partition is already in the 'running' state, the tool returns
-    ``{"already_running": True, "message": "..."}`` without submitting a job.
-    Pass force=True to skip this check and submit the PowerOn unconditionally.
+    If the partition is already in the 'running' state, ``already_running`` is
+    true, ``job`` is null, and ``message`` explains that no job was submitted.
+    Pass force=True to skip this check and submit PowerOn unconditionally.
 
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
@@ -325,7 +328,7 @@ def hmc_power_on_lpar(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
-            return result.job
+            return power_on_outcome(result)
 
     return _run(_go)
 

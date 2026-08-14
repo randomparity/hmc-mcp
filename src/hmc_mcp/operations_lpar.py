@@ -64,6 +64,28 @@ class LparPowerResult:
     job: dict[str, Any] | None
 
 
+@dataclass(frozen=True)
+class LparPowerOnOutcome:
+    """Stable public result for an LPAR PowerOn request."""
+
+    already_running: bool
+    job: dict[str, Any] | None
+    message: str | None
+
+
+def power_on_outcome(result: LparPowerResult) -> LparPowerOnOutcome:
+    """Normalize submitted and already-running PowerOn results."""
+    job = result.job
+    if job is not None and job.get("already_running") is True:
+        message = job.get("message")
+        return LparPowerOnOutcome(
+            already_running=True,
+            job=None,
+            message=message if isinstance(message, str) else None,
+        )
+    return LparPowerOnOutcome(already_running=False, job=job, message=None)
+
+
 async def authorize_lpar_mutation(
     hmc: HMCClient,
     system_name: str,
