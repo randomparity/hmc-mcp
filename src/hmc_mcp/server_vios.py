@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
 from typing import Any, Literal
 
 from ._app import (
@@ -17,6 +18,7 @@ from .errors import HMCError
 from .common import (
     build_config,
     client_from_env,
+    is_uuid,
     resolve_lpar_uuid,
     resolve_system_uuid,
     resolve_vios_uuid,
@@ -208,32 +210,51 @@ def _parse_lsviosbackup_output(text: str) -> list[dict[str, str]]:
     return results
 
 
+async def _run_vios_backup_command(
+    vios_name_or_uuid: str,
+    build_command: Callable[[str], str],
+    profile: str | None,
+) -> str:
+    if is_uuid(vios_name_or_uuid):
+        vios_uuid = vios_name_or_uuid
+    else:
+        async with client_from_env(profile) as hmc:
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    return await run_hmc_cli(build_command(vios_uuid), build_config(profile=profile))
+
+
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_vios_backups(
-    vios_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, str]]:
-    """List existing VIOS backups for a given VIOS UUID.
+    """List existing VIOS backups for a VIOS name or UUID.
 
-    Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
+    Resolves a VIOS name when needed, runs ``lsviosbackup -id <vios_uuid>``
+    on the HMC via SSH, and parses the
     fixed-width table into a list of dicts keyed by the output header
-    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.
+    (BackupName, Date, Type).
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    config = build_config(profile=profile)
     output = _run(
-        lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}", config)
+        lambda: _run_vios_backup_command(
+            vios_name_or_uuid,
+            lambda uuid: f"lsviosbackup -id {shlex.quote(uuid)}",
+            profile,
+        )
     )
     return _parse_lsviosbackup_output(output)
 
 
 @mcp.tool
 def hmc_backup_vios(
-    vios_uuid: str, backup_type: BackupType = "vios", profile: str | None = None
+    vios_name_or_uuid: str,
+    backup_type: BackupType = "vios",
+    profile: str | None = None,
 ) -> str:
     """Create a VIOS backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation backup -type <backup_type>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios).
+    on the HMC via SSH. The VIOS selector accepts a partition name or UUID.
 
     backup_type must be one of:
       - ``vios``       — full VIOS configuration backup (default)
@@ -250,31 +271,45 @@ def hmc_backup_vios(
             f"Invalid backup_type {backup_type!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
-    config = build_config(profile=profile)
-    cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation backup -type {shlex.quote(backup_type)}"
-    return _run(lambda: run_hmc_cli(cmd, config))
+    return _run(
+        lambda: _run_vios_backup_command(
+            vios_name_or_uuid,
+            lambda uuid: (
+                f"chviosbackup -id {shlex.quote(uuid)} -operation backup "
+                f"-type {shlex.quote(backup_type)}"
+            ),
+            profile,
+        )
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
 def hmc_restore_vios(
-    vios_uuid: str, backup_name: str, profile: str | None = None
+    vios_name_or_uuid: str, backup_name: str, profile: str | None = None
 ) -> str:
     """Restore a VIOS from a named backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation restore -file <backup_name>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios);
+    on the HMC via SSH. The VIOS selector accepts a partition name or UUID;
     backup_name is the backup file name as listed by hmc_list_vios_backups.
 
     WARNING: Restoring overwrites the current VIOS configuration. Confirm
-    the vios_uuid and backup_name before calling.
+    the VIOS and backup_name before calling.
 
     Returns the raw HMC CLI output.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
-    config = build_config(profile=profile)
-    cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
-    return _run(lambda: run_hmc_cli(cmd, config))
+    return _run(
+        lambda: _run_vios_backup_command(
+            vios_name_or_uuid,
+            lambda uuid: (
+                f"chviosbackup -id {shlex.quote(uuid)} -operation restore "
+                f"-file {shlex.quote(backup_name)}"
+            ),
+            profile,
+        )
+    )
 
 
 @mcp.tool
