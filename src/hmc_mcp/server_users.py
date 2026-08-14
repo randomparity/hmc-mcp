@@ -14,7 +14,6 @@ from ._app import (
 from .common import client_from_env
 from .client_users import (
     LdapRemovalResource,
-    PolicyType,
     UserType,
     validate_ldap_removal_resource,
 )
@@ -141,19 +140,26 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(
-    policy_type: PolicyType = "policies",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List HMC password policies.
-
-    policy_type selects what to return: 'policies' (default) returns the list
-    of defined password policies, 'status' returns activation status.
-    Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
-    """
+    """List defined HMC password-policy resources."""
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.list_password_policies(policy_type)
+            return await hmc.list_password_policies()
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_password_policy_status(
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get activation-status resources for HMC password policies."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_password_policy_status()
 
     return _run(_go)
 

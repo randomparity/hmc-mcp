@@ -7,6 +7,7 @@ from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.server import (
     hmc_create_password_policy,
     hmc_delete_password_policy,
+    hmc_get_password_policy_status,
     hmc_list_password_policies,
     hmc_modify_password_policy,
 )
@@ -73,6 +74,7 @@ CREATED_POLICY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 # XML builder unit tests
 # ------------------------------------------------------------------ #
 
+
 def test_build_password_policy_document_create():
     xml = build_password_policy_document(
         policy_name="StrongPolicy",
@@ -116,6 +118,7 @@ def test_build_password_policy_document_minimal():
 # Client-level tests (respx-mocked HTTP)
 # ------------------------------------------------------------------ #
 
+
 @pytest.mark.asyncio
 async def test_list_password_policies_default(mock_hmc):
     mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
@@ -130,22 +133,14 @@ async def test_list_password_policies_default(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_list_password_policies_status_filter(mock_hmc):
+async def test_get_password_policy_status(mock_hmc):
     route = mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
         return_value=httpx.Response(200, text=STATUS_FEED)
     )
     async with HMCClient(make_config()) as hmc:
-        entries = await hmc.list_password_policies("status")
+        entries = await hmc.get_password_policy_status()
     assert "PolicyType=status" in str(route.calls.last.request.url)
     assert entries[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"
-
-
-@pytest.mark.asyncio
-async def test_list_password_policies_invalid_type_raises(mock_hmc):
-    """list_password_policies rejects an unknown policy_type."""
-    async with HMCClient(make_config()) as hmc:
-        with pytest.raises(ValueError, match="Invalid policy_type"):
-            await hmc.list_password_policies("bogus")
 
 
 @pytest.mark.asyncio
@@ -203,6 +198,7 @@ async def test_list_password_policies_error_raises(mock_hmc):
 # Server-tool tests (parsed dict returns, not raw XML)
 # ------------------------------------------------------------------ #
 
+
 def _hmc_env(monkeypatch) -> None:
     """Set env vars so HMCConfig() succeeds inside the tool."""
     monkeypatch.setenv("HMC_HOST", "hmc.test")
@@ -222,13 +218,12 @@ def test_hmc_list_password_policies_parses_feed(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["PolicyName"] == "StrongPolicy"
 
 
-def test_hmc_list_password_policies_status_parses(monkeypatch, mock_hmc):
-    """hmc_list_password_policies('status') parses the status feed."""
+def test_hmc_get_password_policy_status_parses(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcPasswordPolicy").mock(
         return_value=httpx.Response(200, text=STATUS_FEED)
     )
-    result = hmc_list_password_policies("status")
+    result = hmc_get_password_policy_status()
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]["Resource"]["ActivePolicyName"] == "StrongPolicy"

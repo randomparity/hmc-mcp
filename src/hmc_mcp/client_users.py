@@ -12,14 +12,17 @@ from typing import Any, Literal, get_args
 from .client_parse import _parse_feed
 
 UserType = Literal["local", "kerberos", "all"]
-PolicyType = Literal["policies", "status"]
 LdapRemovalResource = Literal[
-    "backup", "ldap", "binddn", "bindpw", "searchfilter", "hmcgroups",
+    "backup",
+    "ldap",
+    "binddn",
+    "bindpw",
+    "searchfilter",
+    "hmcgroups",
     "groupmemberattributes",
 ]
 
 _VALID_USER_TYPES = frozenset(get_args(UserType))
-_VALID_POLICY_TYPES = frozenset(get_args(PolicyType))
 LDAP_REMOVAL_RESOURCES = frozenset(get_args(LdapRemovalResource))
 
 
@@ -141,26 +144,14 @@ class UsersMixin:
     # ------------------------------------------------------------------ #
     # HMC password policy management (/rest/api/web/HmcPasswordPolicy)
     # ------------------------------------------------------------------ #
-    async def list_password_policies(
-        self, policy_type: PolicyType = "policies"
-    ) -> list[dict[str, Any]]:
-        """GET /rest/api/web/HmcPasswordPolicy, optionally filtered by PolicyType.
-
-        policy_type is one of 'policies' (default, returns policy list) or
-        'status' (returns activation status).
-        Returns one parsed entry dict per policy (or per status entry).
-
-        Raises:
-            ValueError: If *policy_type* is not one of the recognised values.
-        """
-        if policy_type not in _VALID_POLICY_TYPES:
-            raise ValueError(
-                f"Invalid policy_type {policy_type!r}. "
-                f"Must be one of: {', '.join(sorted(_VALID_POLICY_TYPES))}"
-            )
+    async def list_password_policies(self) -> list[dict[str, Any]]:
+        """Return defined policies from GET /rest/api/web/HmcPasswordPolicy."""
         path = "/rest/api/web/HmcPasswordPolicy"
-        if policy_type != "policies":
-            path += f"?PolicyType={policy_type}"
+        return self._web_entries(await self._web_get(path), path)
+
+    async def get_password_policy_status(self) -> list[dict[str, Any]]:
+        """Return activation status entries for HMC password policies."""
+        path = "/rest/api/web/HmcPasswordPolicy?PolicyType=status"
         return self._web_entries(await self._web_get(path), path)
 
     async def create_password_policy(self, policy_xml: str) -> dict[str, Any] | None:
@@ -173,7 +164,9 @@ class UsersMixin:
             "/rest/api/web/HmcPasswordPolicy",
         )
 
-    async def modify_password_policy(self, name: str, policy_xml: str) -> dict[str, Any] | None:
+    async def modify_password_policy(
+        self, name: str, policy_xml: str
+    ) -> dict[str, Any] | None:
         """POST a partial HmcPasswordPolicy document to /rest/api/web/HmcPasswordPolicy/{name}.
 
         Returns the updated policy dict, or None on an empty response.

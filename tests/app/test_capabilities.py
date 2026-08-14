@@ -106,7 +106,6 @@ def test_closed_vocab_enum_matches_runtime_constant():
     from hmc_mcp.client_adapters import ADAPTER_TYPES
     from hmc_mcp.client_users import (
         LDAP_REMOVAL_RESOURCES,
-        _VALID_POLICY_TYPES,
         _VALID_USER_TYPES,
     )
     from hmc_mcp.documents import PARTITION_TYPES, STORAGE_KINDS, TASK_ROLES
@@ -135,7 +134,6 @@ def test_closed_vocab_enum_matches_runtime_constant():
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
         ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
         ("hmc_users", "user_type"): _VALID_USER_TYPES,
-        ("hmc_list_password_policies", "policy_type"): _VALID_POLICY_TYPES,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }

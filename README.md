@@ -335,6 +335,7 @@ Exposed tools:
 | `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
 | `hmc_delete_user`             | Delete an HMC user account (irreversible) |
 | `hmc_list_password_policies`  | List HMC password policies |
+| `hmc_get_password_policy_status` | Get password-policy activation status |
 | `hmc_create_password_policy`  | Create a password policy (max age, rules) |
 | `hmc_modify_password_policy`  | Modify a password policy (only supplied fields) |
 | `hmc_delete_password_policy`  | Delete a password policy (irreversible) |
