@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .config import HMCConfig
 from .ssh_commands import SriovMode
@@ -21,8 +21,7 @@ async def list_fc_ports(
     lpar: str | None = None,
 ) -> list[dict[str, str]]:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    assert system_name is not None
-    return await _list_fc_ports(config, system_name, lpar_name)
+    return await _list_fc_ports(config, cast(str, system_name), lpar_name)
 
 
 async def list_sea_adapters(
@@ -31,8 +30,7 @@ async def list_sea_adapters(
     lpar: str | None = None,
 ) -> list[dict[str, str]]:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    assert system_name is not None
-    return await _list_sea_adapters(config, system_name, lpar_name)
+    return await _list_sea_adapters(config, cast(str, system_name), lpar_name)
 
 
 async def set_sriov_adapter_mode(
@@ -42,8 +40,9 @@ async def set_sriov_adapter_mode(
     mode: SriovMode,
 ) -> str:
     system_name, _ = await resolve_ssh_names(config, system, None)
-    assert system_name is not None
-    return await _set_sriov_adapter_mode(config, system_name, adapter_id, mode)
+    return await _set_sriov_adapter_mode(
+        config, cast(str, system_name), adapter_id, mode
+    )
 
 
 async def list_vnics(
@@ -52,8 +51,7 @@ async def list_vnics(
     lpar: str,
 ) -> list[dict[str, Any]]:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    assert system_name is not None and lpar_name is not None
-    return await _list_vnics(config, system_name, lpar_name)
+    return await _list_vnics(config, cast(str, system_name), cast(str, lpar_name))
 
 
 async def add_vnic(
@@ -66,11 +64,10 @@ async def add_vnic(
     backing_devices: str | None = None,
 ) -> str:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    assert system_name is not None and lpar_name is not None
     return await _add_vnic(
         config,
-        system_name,
-        lpar_name,
+        cast(str, system_name),
+        cast(str, lpar_name),
         capacity,
         vswitch_name,
         port_vlan_id,
@@ -85,5 +82,6 @@ async def remove_vnic(
     vnic_id: str,
 ) -> str:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
-    assert system_name is not None and lpar_name is not None
-    return await _remove_vnic(config, system_name, lpar_name, vnic_id)
+    return await _remove_vnic(
+        config, cast(str, system_name), cast(str, lpar_name), vnic_id
+    )
