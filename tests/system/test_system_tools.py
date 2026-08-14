@@ -114,6 +114,16 @@ def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
     assert exc_info.value.status_code == 403
 
 
+def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(500, text="database unavailable")
+    )
+    with pytest.raises(HMCError, match="database unavailable") as exc_info:
+        hmc_console_info()
+    assert exc_info.value.status_code == 500
+
+
 # ---------------------------------------------------------------------- #
 # hmc_systems
 # ---------------------------------------------------------------------- #

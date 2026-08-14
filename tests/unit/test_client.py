@@ -234,6 +234,14 @@ async def test_http_error_raises(mock_hmc):
     assert "boom" in str(exc_info.value)
 
 
+@pytest.mark.asyncio
+async def test_managed_system_fallback_does_not_catch_runtime_errors(mock_hmc):
+    async with HMCClient(make_config()) as hmc:
+        hmc.list_uom = AsyncMock(side_effect=RuntimeError("parser invariant failed"))
+        with pytest.raises(RuntimeError, match="parser invariant failed"):
+            await hmc.list_managed_systems()
+
+
 CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:new-lpar-uuid</id>

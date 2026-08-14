@@ -38,7 +38,11 @@ class SystemsMixin:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
         except HMCError as exc:
-            if exc.status_code == 500:
+            if (
+                exc.status_code == 500
+                and exc.body is not None
+                and "null SessionId" in exc.body
+            ):
                 return None
             raise
 
@@ -53,10 +57,9 @@ class SystemsMixin:
         # else (auth errors, parse errors, non-500 HMC errors, etc.).
         try:
             return await self.list_uom("ManagedSystem")
-        except Exception as exc:
+        except HMCError as exc:
             if (
-                isinstance(exc, HMCError)
-                and exc.status_code == 500
+                exc.status_code == 500
                 and "Nested path contains null property" in str(exc)
             ):
                 return []
