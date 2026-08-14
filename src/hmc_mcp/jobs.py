@@ -1,8 +1,9 @@
 """XML templates for HMC job requests (do/* operations).
 
 Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
-type=JobRequest via PUT and run asynchronously; poll /rest/api/uom/Job/{uuid}
-for status.
+type=JobRequest via PUT and run asynchronously. Poll the submission's SELF link
+for portable status handling; ``/rest/api/uom/Job/{uuid}`` remains a legacy
+fallback for responses that omit that link.
 """
 
 from __future__ import annotations
