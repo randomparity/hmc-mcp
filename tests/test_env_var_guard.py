@@ -14,8 +14,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
-from hmc_mcp.config import HMCConfig  # noqa: E402
+from hmc_mcp.config import HMCConfig
 
 
 ROOT = Path(__file__).parents[1]
@@ -46,18 +45,28 @@ def test_env_var_doc_lists_all_expected_vars() -> None:
     doc_text = DOC.read_text()
     ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
     assert ref_match, "docs/environment-variables.md must have a ## Reference section"
-    next_section = _re.search(r"^## ", doc_text[ref_match.end():], _re.MULTILINE)
-    section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
-    ref_section = doc_text[ref_match.start():section_end]
-    table_text = "\n".join(ln for ln in ref_section.splitlines() if ln.strip().startswith("|"))
-    missing = [var for var in EXPECTED_ENV_VARS if not _re.search(rf"\b{_re.escape(var)}\b", table_text)]
+    next_section = _re.search(r"^## ", doc_text[ref_match.end() :], _re.MULTILINE)
+    section_end = (
+        ref_match.end() + next_section.start() if next_section else len(doc_text)
+    )
+    ref_section = doc_text[ref_match.start() : section_end]
+    table_text = "\n".join(
+        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
+    )
+    missing = [
+        var
+        for var in EXPECTED_ENV_VARS
+        if not _re.search(rf"\b{_re.escape(var)}\b", table_text)
+    ]
     assert not missing, f"Doc Reference table is missing env vars: {missing}"
 
 
 def _make_doc(vars_to_include: set[str]) -> str:
     """Build a minimal env-var doc with a ## Reference section."""
     rows = "\n".join(f"| `{v}` | string | - | desc |" for v in vars_to_include)
-    return f"# Environment Variables\n\n## Reference\n\n{rows}\n\n## Notes\n\nsome prose\n"
+    return (
+        f"# Environment Variables\n\n## Reference\n\n{rows}\n\n## Notes\n\nsome prose\n"
+    )
 
 
 def test_guard_passes_on_complete_doc(tmp_path: Path) -> None:
@@ -149,7 +158,9 @@ def test_guard_fails_when_reference_section_missing(tmp_path: Path) -> None:
     assert "Reference" in result.stdout + result.stderr
 
 
-def test_guard_uses_default_doc_path_when_no_arg(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_guard_uses_default_doc_path_when_no_arg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Guard with no --doc argument reads docs/environment-variables.md."""
     monkeypatch.chdir(ROOT)
     result = subprocess.run(

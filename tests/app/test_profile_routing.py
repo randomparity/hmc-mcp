@@ -1,7 +1,7 @@
-"""Tests proving every REST-backed MCP tool accepts and propagates `profile`.
+"""Tests proving every network-backed MCP tool accepts and propagates `profile`.
 
 Covers:
-  - Registry-driven exhaustive check: every non-SSH tool has `profile` in schema
+  - Registry-driven exhaustive check: every network tool has `profile` in schema
   - Sequential routing: two consecutive calls with different profiles hit the
     correct HMC host each time
   - Concurrent routing: two simultaneous calls with different profiles show no
@@ -20,43 +20,13 @@ import respx
 from hmc_mcp.server import mcp
 
 
-# ---------------------------------------------------------------------- #
-# SSH-only tools that correctly have no `profile` parameter
-# ---------------------------------------------------------------------- #
-
-# These tools use _ssh_with_client / run_hmc_cli and are scoped to #127.
-# They are listed explicitly so the registry test can skip them.
-_SSH_ONLY_TOOLS = frozenset({
-    "hmc_get_lpar_description",
-    "hmc_set_lpar_description",
-    "hmc_get_lpar_msp",
-    "hmc_set_lpar_msp",
-    "hmc_get_proc_compat_modes",
-    "hmc_get_lpar_proc_compat",
-    "hmc_set_lpar_proc_compat",
-    "hmc_list_io_slots",
-    "hmc_list_memory_pools",
-    "hmc_remove_memory_pool",
-    "hmc_list_vnics",
-    "hmc_add_vnic",
-    "hmc_remove_vnic",
-    "hmc_set_sriov_adapter_mode",
-    "hmc_backup_lpar_profiles",
-    "hmc_restore_lpar_profiles",
-    "hmc_sync_lpar_profile",
-    "hmc_assign_profile_io_slot",
-    "hmc_backup_vios",
-    "hmc_restore_vios",
-    "hmc_list_vios_backups",
-    "hmc_list_fc_ports",
-    "hmc_list_sea_adapters",
-})
-
 # These tools make no network calls and therefore have no profile= parameter.
 # They are excluded from the profile-routing registry check.
-_NO_NETWORK_TOOLS = frozenset({
-    "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
-})
+_NO_NETWORK_TOOLS = frozenset(
+    {
+        "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
+    }
+)
 
 
 def _tools_by_name():
@@ -67,26 +37,21 @@ def _tools_by_name():
 # T-1: Exhaustive registry test
 # ---------------------------------------------------------------------- #
 
-def test_every_rest_tool_has_profile_param():
-    """Every REST-backed MCP tool must expose 'profile' in its JSON schema.
 
-    SSH-only tools and no-network tools are explicitly excluded; all others
-    must have the param.
+def test_every_network_tool_has_profile_param():
+    """Every network-backed MCP tool must expose 'profile' in its JSON schema.
+
+    Only no-network tools are explicitly excluded; REST and SSH tools must
+    expose the same routing contract.
     """
     by_name = _tools_by_name()
-    # Guard: every name in _SSH_ONLY_TOOLS must actually exist in the registry.
-    # If a tool is renamed or removed the exclusion set must be updated too.
-    orphaned = _SSH_ONLY_TOOLS - set(by_name)
-    assert not orphaned, (
-        f"_SSH_ONLY_TOOLS has stale entries not in the live registry: {sorted(orphaned)}"
-    )
     orphaned_no_network = _NO_NETWORK_TOOLS - set(by_name)
     assert not orphaned_no_network, (
         f"_NO_NETWORK_TOOLS has stale entries not in the live registry: {sorted(orphaned_no_network)}"
     )
     missing = []
     for name, tool in by_name.items():
-        if name in _SSH_ONLY_TOOLS or name in _NO_NETWORK_TOOLS:
+        if name in _NO_NETWORK_TOOLS:
             continue
         props = tool.parameters.get("properties", {})
         if "profile" not in props:
@@ -101,11 +66,11 @@ def test_profile_param_is_optional_string():
     by_name = _tools_by_name()
     bad = []
     for name, tool in by_name.items():
-        if name in _SSH_ONLY_TOOLS or name in _NO_NETWORK_TOOLS:
+        if name in _NO_NETWORK_TOOLS:
             continue
         props = tool.parameters.get("properties", {})
         if "profile" not in props:
-            continue  # caught by test_every_rest_tool_has_profile_param
+            continue  # caught by test_every_network_tool_has_profile_param
         # Must allow string or null, and must NOT be required
         required = tool.parameters.get("required", [])
         if "profile" in required:
@@ -194,6 +159,7 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
 # T-3: Concurrent profile isolation
 # ---------------------------------------------------------------------- #
 
+
 def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
     """Two calls with different profile strings produce clients pointing at different hosts.
 
@@ -224,12 +190,15 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
         def patched_resolve():
             return cfg_path
 
-        with patch("hmc_mcp.common.resolve_config_path", side_effect=patched_resolve), \
-             patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve):
-            with patch.object(HMCClient, "__aenter__", fake_context_a), \
-                 patch.object(HMCClient, "__aexit__", fake_context_exit), \
-                 patch.object(HMCClient, "get_console_info", fake_get_console):
-
+        with (
+            patch("hmc_mcp.common.resolve_config_path", side_effect=patched_resolve),
+            patch("hmc_mcp.config.resolve_config_path", side_effect=patched_resolve),
+        ):
+            with (
+                patch.object(HMCClient, "__aenter__", fake_context_a),
+                patch.object(HMCClient, "__aexit__", fake_context_exit),
+                patch.object(HMCClient, "get_console_info", fake_get_console),
+            ):
                 from hmc_mcp.common import client_from_env
 
                 async def call_a():
