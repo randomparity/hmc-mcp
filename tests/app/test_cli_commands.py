@@ -56,9 +56,16 @@ class FakeHMC:
         }
         self.vg = {
             "UUID": VG_UUID,
-            "Resource": {"GroupName": "rootvg", "FreeSpaceInMBytes": "5120", "GroupCapacity": "102400"},
+            "Resource": {
+                "GroupName": "rootvg",
+                "FreeSpaceInMBytes": "5120",
+                "GroupCapacity": "102400",
+            },
         }
-        self.disk = {"UUID": "66666666-6666-4666-8666-666666666666", "Resource": {"DiskName": "bootvol"}}
+        self.disk = {
+            "UUID": "66666666-6666-4666-8666-666666666666",
+            "Resource": {"DiskName": "bootvol"},
+        }
         self.job = {
             "UUID": JOB_UUID,
             "link": f"/jobs/{JOB_UUID}",
@@ -89,12 +96,19 @@ class FakeHMC:
         self.cluster = {"UUID": CLUSTER_UUID, "Resource": {"ClusterName": "cl1"}}
         self.ssp = {
             "UUID": SSP_UUID,
-            "Resource": {"StoragePoolName": "pool1", "Capacity": "1024", "FreeSpace": "512"},
+            "Resource": {
+                "StoragePoolName": "pool1",
+                "Capacity": "1024",
+                "FreeSpace": "512",
+            },
         }
         self.template = {"UUID": TEMPLATE_UUID, "Resource": {"templateName": "tpl1"}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
-            {"link": "/rest/api/pcm/ManagedSystem/xxx/ProcessedMetrics/1", "title": "m1"}
+            {
+                "link": "/rest/api/pcm/ManagedSystem/xxx/ProcessedMetrics/1",
+                "title": "m1",
+            }
         ]
         self.metrics_json = {"data": [1, 2, 3]}
         self.fetch_json_404 = False
@@ -102,7 +116,9 @@ class FakeHMC:
     def _record(self, name: str, *args, **kwargs) -> None:
         self.calls.append((name, args, kwargs))
         if self.fail_on == name:
-            raise HMCError(f"simulated {name} failure", 500, "<xml><Message>boom</Message></xml>")
+            raise HMCError(
+                f"simulated {name} failure", 500, "<xml><Message>boom</Message></xml>"
+            )
 
     async def __aenter__(self) -> "FakeHMC":
         return self
@@ -149,6 +165,45 @@ class FakeHMC:
         self._record("create_virtual_disk", vios_uuid, vg_uuid, disk_name, capacity_mb)
         return self.disk
 
+    async def list_adapters(self, lpar_uuid, adapter_type):
+        self._record("list_adapters", lpar_uuid, adapter_type)
+        return [{"UUID": "adapter-1", "Resource": {"PortVLANID": "100"}}]
+
+    async def add_network_adapter(self, lpar_uuid, vlan, slot, vswitch, tagged, mac):
+        self._record("add_network_adapter", lpar_uuid, vlan, slot, vswitch, tagged, mac)
+        return {"UUID": "adapter-1"}
+
+    async def delete_adapter(self, lpar_uuid, adapter_type, adapter_uuid):
+        self._record("delete_adapter", lpar_uuid, adapter_type, adapter_uuid)
+
+    async def list_virtual_networks(self, system_uuid):
+        self._record("list_virtual_networks", system_uuid)
+        return [{"UUID": "network-1", "Resource": {"NetworkName": "prod"}}]
+
+    async def create_virtual_network(self, system_uuid, name, vlan, vswitch, *, tagged):
+        self._record(
+            "create_virtual_network", system_uuid, name, vlan, vswitch, tagged=tagged
+        )
+        return {"UUID": "network-1"}
+
+    async def delete_virtual_network(self, system_uuid, network_uuid):
+        self._record("delete_virtual_network", system_uuid, network_uuid)
+
+    async def list_volume_groups(self, vios_uuid):
+        self._record("list_volume_groups", vios_uuid)
+        return [self.vg]
+
+    async def map_storage_to_lpar(self, vios_uuid, kind, disk, lpar_uuid, target):
+        self._record("map_storage_to_lpar", vios_uuid, kind, disk, lpar_uuid, target)
+        return {"UUID": "mapping-1"}
+
+    async def create_media_repository(self, vios_uuid, vg_uuid, size_mb):
+        self._record("create_media_repository", vios_uuid, vg_uuid, size_mb)
+        return {"UUID": "repo-1"}
+
+    async def delete_media_repository(self, vios_uuid, vg_uuid):
+        self._record("delete_media_repository", vios_uuid, vg_uuid)
+
     async def raw_post(self, path, body, content_type="application/xml"):
         self._record("raw_post", path, body, content_type)
         return "<ok/>"
@@ -165,6 +220,7 @@ class FakeHMC:
     async def find_system_by_name(self, name):
         self._record("find_system_by_name", name)
         return self.system if name == "sys1" else None
+
     async def wait_for_job(
         self,
         job_uuid,
@@ -218,10 +274,23 @@ class FakeHMC:
         return [self.ssp]
 
     async def create_logical_unit(
-        self, cluster_uuid, lu_name, lu_size_gb, lu_type="THIN",
-        device_type="VirtualIO_Disk", cloned_from=None,
+        self,
+        cluster_uuid,
+        lu_name,
+        lu_size_gb,
+        lu_type="THIN",
+        device_type="VirtualIO_Disk",
+        cloned_from=None,
     ):
-        self._record("create_logical_unit", cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from)
+        self._record(
+            "create_logical_unit",
+            cluster_uuid,
+            lu_name,
+            lu_size_gb,
+            lu_type,
+            device_type,
+            cloned_from,
+        )
         return self.job
 
     async def delete_logical_unit(self, cluster_uuid, lu_udid):
@@ -238,7 +307,9 @@ class FakeHMC:
         return self.template if template_uuid == TEMPLATE_UUID else None
 
     async def deploy_partition_template(self, draft_template_uuid, target_system_uuid):
-        self._record("deploy_partition_template", draft_template_uuid, target_system_uuid)
+        self._record(
+            "deploy_partition_template", draft_template_uuid, target_system_uuid
+        )
         return self.job
 
     # -- jobs ------------------------------------------------------------ #
@@ -254,12 +325,30 @@ class FakeHMC:
     async def set_pcm_preferences(self, category, uuid, **flags):
         self._record("set_pcm_preferences", category, uuid, **flags)
 
-    async def get_processed_metric_links(self, category, uuid, start_ts, end_ts=None, no_of_samples=None):
-        self._record("get_processed_metric_links", category, uuid, start_ts, end_ts, no_of_samples)
+    async def get_processed_metric_links(
+        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+    ):
+        self._record(
+            "get_processed_metric_links",
+            category,
+            uuid,
+            start_ts,
+            end_ts,
+            no_of_samples,
+        )
         return self.metric_links
 
-    async def get_aggregated_metric_links(self, category, uuid, start_ts, end_ts=None, no_of_samples=None):
-        self._record("get_aggregated_metric_links", category, uuid, start_ts, end_ts, no_of_samples)
+    async def get_aggregated_metric_links(
+        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+    ):
+        self._record(
+            "get_aggregated_metric_links",
+            category,
+            uuid,
+            start_ts,
+            end_ts,
+            no_of_samples,
+        )
         return self.metric_links
 
     async def fetch_json(self, link):
@@ -275,6 +364,169 @@ def fake_hmc(monkeypatch):
     hmc = FakeHMC()
     monkeypatch.setattr(cli_app, "client_from_env", lambda **kwargs: hmc)
     return hmc
+
+
+def test_connection_options_do_not_leak_between_invocations(monkeypatch):
+    seen = []
+    hmc = FakeHMC()
+
+    def client_factory(**kwargs):
+        seen.append(kwargs)
+        return hmc
+
+    monkeypatch.setattr(cli_app, "client_from_env", client_factory)
+
+    first = RUNNER.invoke(
+        cli.app,
+        ["--host", "first-hmc", "--user", "first-user", "lpars", "list"],
+    )
+    second = RUNNER.invoke(cli.app, ["lpars", "list"])
+
+    assert first.exit_code == second.exit_code == 0
+    assert seen[0]["host"] == "first-hmc"
+    assert seen[0]["user"] == "first-user"
+    assert seen[1]["host"] is None
+    assert seen[1]["user"] is None
+
+
+@pytest.mark.parametrize(
+    ("args", "expected_call", "output"),
+    [
+        (
+            ["adapters", "list", LPAR_UUID, "--json"],
+            ("list_adapters", (LPAR_UUID, "ClientNetworkAdapter"), {}),
+            "adapter-1",
+        ),
+        (
+            [
+                "adapters",
+                "add-network",
+                LPAR_UUID,
+                "--vlan",
+                "100",
+                "--slot",
+                "4",
+                "--yes",
+            ],
+            ("add_network_adapter", (LPAR_UUID, 100, 4, None, False, None), {}),
+            "Added network adapter",
+        ),
+        (
+            [
+                "adapters",
+                "delete",
+                LPAR_UUID,
+                "--type",
+                "ClientNetworkAdapter",
+                "--uuid",
+                "adapter-1",
+                "--yes",
+            ],
+            ("delete_adapter", (LPAR_UUID, "ClientNetworkAdapter", "adapter-1"), {}),
+            "Deleted ClientNetworkAdapter",
+        ),
+        (
+            ["network", "list-networks", SYSTEM_UUID, "--json"],
+            ("list_virtual_networks", (SYSTEM_UUID,), {}),
+            "network-1",
+        ),
+        (
+            [
+                "network",
+                "create",
+                SYSTEM_UUID,
+                "--name",
+                "prod",
+                "--vlan",
+                "100",
+                "--vswitch",
+                "2",
+                "--tagged",
+                "--yes",
+            ],
+            ("create_virtual_network", (SYSTEM_UUID, "prod", 100, 2), {"tagged": True}),
+            "Created virtual network",
+        ),
+        (
+            ["network", "delete", SYSTEM_UUID, "--uuid", "network-1", "--yes"],
+            ("delete_virtual_network", (SYSTEM_UUID, "network-1"), {}),
+            "Deleted virtual network",
+        ),
+        (
+            ["storage", "list-vgs", VIOS_UUID, "--json"],
+            ("list_volume_groups", (VIOS_UUID,), {}),
+            VG_UUID,
+        ),
+        (
+            [
+                "storage",
+                "map",
+                VIOS_UUID,
+                "--lpar",
+                LPAR_UUID,
+                "--disk",
+                "bootvol",
+                "--target",
+                "vtscsi0",
+                "--yes",
+            ],
+            (
+                "map_storage_to_lpar",
+                (VIOS_UUID, "VirtualDisk", "bootvol", LPAR_UUID, "vtscsi0"),
+                {},
+            ),
+            "Mapped 'bootvol'",
+        ),
+        (
+            [
+                "storage",
+                "create-media-repo",
+                VIOS_UUID,
+                VG_UUID,
+                "--size-mb",
+                "2048",
+                "--yes",
+            ],
+            ("create_media_repository", (VIOS_UUID, VG_UUID, 2048), {}),
+            "Created media repository",
+        ),
+        (
+            ["storage", "delete-media-repo", VIOS_UUID, VG_UUID, "--yes"],
+            ("delete_media_repository", (VIOS_UUID, VG_UUID), {}),
+            "Deleted media repository",
+        ),
+    ],
+)
+def test_cli_command_wiring_matrix(fake_hmc, args, expected_call, output):
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert expected_call in fake_hmc.calls
+    assert output in result.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [
+            "adapters",
+            "delete",
+            LPAR_UUID,
+            "--type",
+            "ClientNetworkAdapter",
+            "--uuid",
+            "adapter-1",
+        ],
+        ["network", "delete", SYSTEM_UUID, "--uuid", "network-1"],
+        ["storage", "delete-media-repo", VIOS_UUID, VG_UUID],
+    ],
+)
+def test_destructive_cli_commands_abort_without_confirmation(fake_hmc, args):
+    result = RUNNER.invoke(cli.app, args, input="n\n")
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+    assert fake_hmc.calls == []
 
 
 # --------------------------------------------------------------------------- #
@@ -326,6 +578,7 @@ def test_lpars_show_not_found_exits_1(fake_hmc):
 def test_lpars_state_entry_without_uuid_reports_not_found(fake_hmc, monkeypatch):
     """A resolved entry that lacks a UUID is a miss (None), never an empty
     string — an empty UUID must not flow into the REST path."""
+
     async def found_no_uuid(name):
         fake_hmc._record("find_partition_by_name", name)
         return {"Resource": {"PartitionName": LPAR_NAME}}
@@ -414,6 +667,7 @@ def test_lpars_power_off_refetch_missing_still_submits(fake_hmc, monkeypatch):
     """If the display re-fetch misses (e.g. concurrent delete), power-off must
     fall back to the input name and submit against the resolved UUID instead
     of crashing on a None entry."""
+
     async def no_refetch(uuid):
         fake_hmc._record("get_logical_partition", uuid)
         return None
@@ -573,7 +827,16 @@ def test_storage_map_rejects_invalid_kind_before_client_call(fake_hmc):
 def test_storage_create_vg(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "create-vg", VIOS_UUID, "--name", "datavg", "--pvs", "hdisk1, hdisk2", "--yes"],
+        [
+            "storage",
+            "create-vg",
+            VIOS_UUID,
+            "--name",
+            "datavg",
+            "--pvs",
+            "hdisk1, hdisk2",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -587,7 +850,16 @@ def test_storage_create_vg(fake_hmc):
 def test_storage_create_vg_requires_pvs(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "create-vg", VIOS_UUID, "--name", "datavg", "--pvs", " , ", "--yes"],
+        [
+            "storage",
+            "create-vg",
+            VIOS_UUID,
+            "--name",
+            "datavg",
+            "--pvs",
+            " , ",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 2
@@ -599,7 +871,18 @@ def test_storage_create_vg_requires_pvs(fake_hmc):
 def test_storage_create_disk(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "create-disk", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol", "--size", "1024", "--yes"],
+        [
+            "storage",
+            "create-disk",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--size",
+            "1024",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -673,7 +956,9 @@ def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
         return ""
 
     monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
-    result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"])
+    result = RUNNER.invoke(
+        cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"]
+    )
 
     assert result.exit_code == 2
     assert "bogus" in result.stderr
@@ -715,7 +1000,13 @@ def test_raw_post_file_missing_errors(fake_hmc, tmp_path):
     """A @file body that cannot be read exits via the CLI Error path, no request sent."""
     result = RUNNER.invoke(
         cli.app,
-        ["raw", "post", "/rest/api/uom/LogicalPartition", f"@{tmp_path/'nope.xml'}", "--yes"],
+        [
+            "raw",
+            "post",
+            "/rest/api/uom/LogicalPartition",
+            f"@{tmp_path / 'nope.xml'}",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 1
@@ -812,7 +1103,9 @@ def test_systems_power_off(fake_hmc):
 
 
 def test_systems_power_off_immediate(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["systems", "power-off", SYSTEM_UUID, "--immediate", "--yes"])
+    result = RUNNER.invoke(
+        cli.app, ["systems", "power-off", SYSTEM_UUID, "--immediate", "--yes"]
+    )
 
     assert result.exit_code == 0
     assert "Immediate PowerOff" in result.stdout
@@ -881,7 +1174,9 @@ def test_vios_power_off(fake_hmc):
 
 
 def test_vios_power_off_immediate(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["vios", "power-off", VIOS_UUID, "--immediate", "--yes"])
+    result = RUNNER.invoke(
+        cli.app, ["vios", "power-off", VIOS_UUID, "--immediate", "--yes"]
+    )
 
     assert result.exit_code == 0
     assert "Immediate PowerOff" in result.stdout
@@ -959,7 +1254,16 @@ def test_cluster_list_ssps(fake_hmc):
 def test_cluster_create_lu(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["cluster", "create-lu", CLUSTER_UUID, "--name", "vol1", "--size", "50", "--yes"],
+        [
+            "cluster",
+            "create-lu",
+            CLUSTER_UUID,
+            "--name",
+            "vol1",
+            "--size",
+            "50",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1080,7 +1384,9 @@ def test_templates_deploy(fake_hmc):
 
     assert result.exit_code == 0
     assert "Submitted deploy job" in result.stdout
-    assert fake_hmc.calls == [("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {})]
+    assert fake_hmc.calls == [
+        ("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {})
+    ]
 
 
 def test_templates_deploy_declined_confirm_aborts(fake_hmc):
@@ -1118,9 +1424,7 @@ def test_jobs_show_not_found_exits_1(fake_hmc):
 
 def test_jobs_show_forwards_self_link(fake_hmc):
     href = f"/jobs/{JOB_UUID}"
-    result = RUNNER.invoke(
-        cli.app, ["jobs", "show", JOB_UUID, "--job-href", href]
-    )
+    result = RUNNER.invoke(cli.app, ["jobs", "show", JOB_UUID, "--job-href", href])
 
     assert result.exit_code == 0
     assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": href})]
@@ -1131,9 +1435,7 @@ def test_jobs_wait(fake_hmc):
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.stdout
-    assert fake_hmc.calls == [
-        ("wait_for_job", (JOB_UUID, 300, 5), {"job_href": None})
-    ]
+    assert fake_hmc.calls == [("wait_for_job", (JOB_UUID, 300, 5), {"job_href": None})]
 
 
 # --------------------------------------------------------------------------- #
@@ -1146,7 +1448,9 @@ def test_metrics_prefs(fake_hmc):
 
     assert result.exit_code == 0
     assert "LongTermMonitorEnabled" in result.stdout
-    assert fake_hmc.calls == [("get_pcm_preferences", ("ManagedSystem", SYSTEM_UUID), {})]
+    assert fake_hmc.calls == [
+        ("get_pcm_preferences", ("ManagedSystem", SYSTEM_UUID), {})
+    ]
 
 
 def test_metrics_set_prefs_requires_confirmation(fake_hmc):
@@ -1165,7 +1469,15 @@ def test_metrics_set_prefs_requires_confirmation(fake_hmc):
 def test_metrics_set_prefs_builds_flags(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID, "--ltm", "--no-aggregation", "--yes"],
+        [
+            "metrics",
+            "set-prefs",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--ltm",
+            "--no-aggregation",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1180,7 +1492,9 @@ def test_metrics_set_prefs_builds_flags(fake_hmc):
 
 
 def test_metrics_set_prefs_no_flags_exits_2(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID])
+    result = RUNNER.invoke(
+        cli.app, ["metrics", "set-prefs", "ManagedSystem", SYSTEM_UUID]
+    )
 
     assert result.exit_code == 2
     assert "Error:" in result.stderr
@@ -1204,31 +1518,62 @@ def test_network_set_sriov_mode_rejects_invalid_mode(fake_hmc):
 def test_metrics_show_processed(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "show", "ManagedSystem", SYSTEM_UUID, "--start", "2024-01-01T00:00:00Z"],
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
     )
 
     assert result.exit_code == 0
     assert fake_hmc.calls == [
-        ("get_processed_metric_links", ("ManagedSystem", SYSTEM_UUID, "2024-01-01T00:00:00Z", None, None), {})
+        (
+            "get_processed_metric_links",
+            ("ManagedSystem", SYSTEM_UUID, "2024-01-01T00:00:00Z", None, None),
+            {},
+        )
     ]
 
 
 def test_metrics_show_aggregated(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "show", "ManagedSystem", SYSTEM_UUID, "--start", "2024-01-01T00:00:00Z", "--aggregated"],
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+            "--aggregated",
+        ],
     )
 
     assert result.exit_code == 0
     assert fake_hmc.calls == [
-        ("get_aggregated_metric_links", ("ManagedSystem", SYSTEM_UUID, "2024-01-01T00:00:00Z", None, None), {})
+        (
+            "get_aggregated_metric_links",
+            ("ManagedSystem", SYSTEM_UUID, "2024-01-01T00:00:00Z", None, None),
+            {},
+        )
     ]
 
 
 def test_metrics_show_fetch_downloads_latest(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "show", "ManagedSystem", SYSTEM_UUID, "--start", "2024-01-01T00:00:00Z", "--fetch"],
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+            "--fetch",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1242,7 +1587,15 @@ def test_metrics_show_fetch_404_reports_empty(fake_hmc):
     fake_hmc.fetch_json_404 = True
     result = RUNNER.invoke(
         cli.app,
-        ["metrics", "show", "ManagedSystem", SYSTEM_UUID, "--start", "2024-01-01T00:00:00Z", "--fetch"],
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+            "--fetch",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1294,7 +1647,9 @@ def test_memory_pools_remove_with_yes(monkeypatch):
         return "pool removed\n"
 
     monkeypatch.setattr("hmc_mcp.cli_memory_pools.remove_memory_pool", fake_remove)
-    result = RUNNER.invoke(cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"])
+    result = RUNNER.invoke(
+        cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
+    )
 
     assert result.exit_code == 0
     assert "removed" in result.stdout
@@ -1302,7 +1657,9 @@ def test_memory_pools_remove_with_yes(monkeypatch):
 
 
 def test_memory_pools_remove_declined_confirm_aborts(monkeypatch):
-    result = RUNNER.invoke(cli.app, ["memory-pools", "remove", "sys1", "pool1"], input="n\n")
+    result = RUNNER.invoke(
+        cli.app, ["memory-pools", "remove", "sys1", "pool1"], input="n\n"
+    )
 
     assert result.exit_code == 1
     assert "Aborted" in result.stderr

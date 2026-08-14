@@ -4,7 +4,6 @@ import httpx
 import pytest
 import respx
 
-from hmc_mcp import cli_app
 from hmc_mcp.config import HMCConfig
 
 BASE = "https://hmc.test:12443"
@@ -103,19 +102,3 @@ def mock_hmc():
         )
         router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
         yield router
-
-
-@pytest.fixture(autouse=True)
-def _reset_cli_globals():
-    """Reset the CLI global-options snapshot between tests.
-
-    ``cli_app.GLOBALS`` is replaced (never mutated) by the typer callback and
-    read by ``_client`` / ``_ssh_config`` (which resolve the name in
-    ``cli_app``'s own namespace, so rebinding the ``cli`` re-export would not
-    reach the read site). Without this reset a test that sets it would leak
-    into later tests, silently ordering-dependent. Each test starts from a
-    clean default snapshot.
-    """
-    cli_app.GLOBALS = cli_app.GlobalOpts()
-    yield
-    cli_app.GLOBALS = cli_app.GlobalOpts()

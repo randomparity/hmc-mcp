@@ -116,11 +116,8 @@ def config_show(
     passwords or resolves password_env. Reports only whether a password or
     SSH key credential is configured.
     """
-    # Command --profile takes precedence over global --profile.
-    # Reference cli_app.GLOBALS dynamically — importing GLOBALS directly would
-    # capture the initial empty GlobalOpts instance; the root callback replaces
-    # cli_app.GLOBALS on each invocation.
-    effective_profile = profile or cli_app.GLOBALS.profile
+    # Command --profile takes precedence over the invocation's root option.
+    effective_profile = profile or cli_app._current_options().profile
 
     config_path = resolve_config_path()
     if config_path is None:
@@ -140,7 +137,9 @@ def config_show(
     # When effective_profile is None, load_profile() will use default_profile
     # from the TOML. We need to resolve that same name for the raw dict lookup.
     _resolved_profile = effective_profile or raw.get("default_profile")
-    profile_dict: dict[str, Any] = raw.get("profiles", {}).get(_resolved_profile or "", {})
+    profile_dict: dict[str, Any] = raw.get("profiles", {}).get(
+        _resolved_profile or "", {}
+    )
 
     # Gather credential presence booleans from raw dict — safe because we
     # never look at the password value, just whether the key is present.

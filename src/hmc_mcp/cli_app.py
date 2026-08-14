@@ -2,7 +2,7 @@
 
 Holds the root :class:`typer.Typer` (``app``), every sub-command group
 (``systems_app``, ``lpars_app``, ...), the global option state
-(``GlobalOpts`` / ``GLOBALS``), the shared output / run helpers used by the
+(``GlobalOpts``), the shared output / run helpers used by the
 command bodies, the ``serve`` command, and the cross-domain name-or-uuid
 resolver (``_resolve_partition_uuid``). The ``is_uuid`` predicate itself lives
 in :mod:`hmc_mcp.common` so the server (``_app``) and CLI share one
@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, NoReturn, TypeVar
 
 import typer
+from typer._click.globals import get_current_context
 from typer._click.core import ParameterSource
 from rich.console import Console
 from rich.table import Table
@@ -44,12 +45,24 @@ err_console = Console(stderr=True)
 
 systems_app = typer.Typer(help="Managed systems (Power servers).", no_args_is_help=True)
 lpars_app = typer.Typer(help="Logical partitions (LPARs).", no_args_is_help=True)
-adapters_app = typer.Typer(help="Virtual adapters (network/storage) on LPARs.", no_args_is_help=True)
-storage_app = typer.Typer(help="VIOS storage: volume groups, virtual disks, mappings.", no_args_is_help=True)
-cluster_app = typer.Typer(help="Clusters / Shared Storage Pools (logical units).", no_args_is_help=True)
-metrics_app = typer.Typer(help="PCM performance/capacity metrics.", no_args_is_help=True)
-network_app = typer.Typer(help="Virtual networks / switches / bridges.", no_args_is_help=True)
-templates_app = typer.Typer(help="Template library (partition templates).", no_args_is_help=True)
+adapters_app = typer.Typer(
+    help="Virtual adapters (network/storage) on LPARs.", no_args_is_help=True
+)
+storage_app = typer.Typer(
+    help="VIOS storage: volume groups, virtual disks, mappings.", no_args_is_help=True
+)
+cluster_app = typer.Typer(
+    help="Clusters / Shared Storage Pools (logical units).", no_args_is_help=True
+)
+metrics_app = typer.Typer(
+    help="PCM performance/capacity metrics.", no_args_is_help=True
+)
+network_app = typer.Typer(
+    help="Virtual networks / switches / bridges.", no_args_is_help=True
+)
+templates_app = typer.Typer(
+    help="Template library (partition templates).", no_args_is_help=True
+)
 vios_app = typer.Typer(help="Virtual I/O Servers.", no_args_is_help=True)
 console_app = typer.Typer(help="The HMC itself.", no_args_is_help=True)
 jobs_app = typer.Typer(help="HMC jobs.", no_args_is_help=True)
@@ -79,9 +92,8 @@ app.add_typer(config_app, name="config")
 class GlobalOpts:
     """Immutable snapshot of the CLI's global connection options.
 
-    The typer callback *replaces* ``GLOBALS`` with a fresh snapshot per
-    invocation; commands read it through ``_client`` / ``_ssh_config``. Frozen
-    so no command can mutate shared state.
+    The Typer callback stores a fresh snapshot on the root context for each
+    invocation. Frozen so no command can mutate shared state.
     """
 
     host: str | None = None
@@ -92,33 +104,43 @@ class GlobalOpts:
     command_line_options: frozenset[str] = frozenset()
 
 
-GLOBALS = GlobalOpts()
-
-
 @app.callback()
 def main(
     ctx: typer.Context,
-    host: str | None = typer.Option(None, "--host", envvar="HMC_HOST", help="HMC hostname or IP"),
-    user: str | None = typer.Option(None, "--user", "-u", envvar="HMC_USER", help="HMC user"),
+    host: str | None = typer.Option(
+        None, "--host", envvar="HMC_HOST", help="HMC hostname or IP"
+    ),
+    user: str | None = typer.Option(
+        None, "--user", "-u", envvar="HMC_USER", help="HMC user"
+    ),
     password: str | None = typer.Option(
-        None, "--password", "-p", envvar="HMC_PASSWORD", help="HMC password", hide_input=True
+        None,
+        "--password",
+        "-p",
+        envvar="HMC_PASSWORD",
+        help="HMC password",
+        hide_input=True,
     ),
     verify_ssl: bool | None = typer.Option(
-        None, "--verify-ssl/--no-verify-ssl", envvar="HMC_VERIFY_SSL", help="Verify the HMC TLS certificate"
+        None,
+        "--verify-ssl/--no-verify-ssl",
+        envvar="HMC_VERIFY_SSL",
+        help="Verify the HMC TLS certificate",
     ),
     profile: str | None = typer.Option(
-        None, "--profile", envvar="HMC_PROFILE",
+        None,
+        "--profile",
+        envvar="HMC_PROFILE",
         help="Named profile from ~/.config/hmc-mcp/config.toml (or platform equivalent)",
     ),
 ) -> None:
-    global GLOBALS
     option_names = ("host", "user", "password", "verify_ssl", "profile")
     command_line_options = frozenset(
         name
         for name in option_names
         if ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
     )
-    GLOBALS = GlobalOpts(
+    ctx.obj = GlobalOpts(
         host=host,
         user=user,
         password=password,
@@ -128,13 +150,24 @@ def main(
     )
 
 
+def _current_options() -> GlobalOpts:
+    """Return the connection options belonging to the active CLI invocation."""
+    ctx = get_current_context(silent=True)
+    if ctx is None or not isinstance(ctx.find_root().obj, GlobalOpts):
+        raise RuntimeError(
+            "CLI connection options are unavailable outside an invocation"
+        )
+    return ctx.find_root().obj
+
+
 def _client():
+    options = _current_options()
     return client_from_env(
-        profile=GLOBALS.profile,
-        host=GLOBALS.host,
-        user=GLOBALS.user,
-        password=GLOBALS.password,
-        verify_ssl=GLOBALS.verify_ssl,
+        profile=options.profile,
+        host=options.host,
+        user=options.user,
+        password=options.password,
+        verify_ssl=options.verify_ssl,
     )
 
 
@@ -145,12 +178,13 @@ def _ssh_config() -> HMCConfig:
     When no explicit host is given, the TOML profile loader is tried first
     (same logic as ``client_from_env``).
     """
+    options = _current_options()
     return build_config(
-        profile=GLOBALS.profile,
-        host=GLOBALS.host,
-        user=GLOBALS.user,
-        password=GLOBALS.password,
-        verify_ssl=GLOBALS.verify_ssl,
+        profile=options.profile,
+        host=options.host,
+        user=options.user,
+        password=options.password,
+        verify_ssl=options.verify_ssl,
     )
 
 
@@ -204,7 +238,12 @@ def _first_field(entry: dict[str, Any], *names: str, default: str = "-") -> str:
     return default
 
 
-def _output(entries: Any, as_json: bool, table: Table | None = None, empty_msg: str = "No results") -> None:
+def _output(
+    entries: Any,
+    as_json: bool,
+    table: Table | None = None,
+    empty_msg: str = "No results",
+) -> None:
     if as_json:
         _print_json(entries)
         return
@@ -237,13 +276,11 @@ def _partition_not_found(value: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
-
-
-
-
 @app.command()
 def serve(
-    http: bool = typer.Option(False, "--http", help="Serve over streamable HTTP instead of stdio"),
+    http: bool = typer.Option(
+        False, "--http", help="Serve over streamable HTTP instead of stdio"
+    ),
     listen_host: str = typer.Option(
         "127.0.0.1", "--listen-host", help="HTTP listen host (with --http)"
     ),
@@ -270,8 +307,11 @@ def serve(
     """
     from . import server
 
-    if GLOBALS.command_line_options:
-        options = ", ".join(f"--{name.replace('_', '-')}" for name in sorted(GLOBALS.command_line_options))
+    command_line_options = _current_options().command_line_options
+    if command_line_options:
+        options = ", ".join(
+            f"--{name.replace('_', '-')}" for name in sorted(command_line_options)
+        )
         raise typer.BadParameter(
             f"serve does not accept HMC connection options ({options}); "
             "configure the server with HMC_* environment variables or a configured HMC_PROFILE"
@@ -308,8 +348,6 @@ def _is_loopback(host: str) -> bool:
         and (str(addr[4][0]).startswith("127.") or addr[4][0] == "::1")
         for addr in infos
     )
-
-
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
