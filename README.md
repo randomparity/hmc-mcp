@@ -200,7 +200,7 @@ Exposed tools:
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
 | `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
 | `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
-| `hmc_power_on_lpar`   | Submit PowerOn job; returns `already_running` if partition is running (`force=True` to override) |
+| `hmc_power_on_lpar`   | Submit PowerOn job; returns stable `already_running`, nullable `job`, and nullable `message` fields (`force=True` overrides the running-state guard) |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
 | `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`) — job |
 

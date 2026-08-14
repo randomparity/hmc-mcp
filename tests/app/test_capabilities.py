@@ -11,6 +11,7 @@ hmc_remove_memory_pool.
 """
 
 import asyncio
+from dataclasses import asdict
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -408,7 +409,7 @@ def _mock_power_on_guard(router, state: str):
 
 
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
-    """hmc_power_on_lpar returns an already-running dict without submitting a job."""
+    """The already-running path returns the stable PowerOn outcome."""
     from hmc_mcp.server import hmc_power_on_lpar
 
     _hmc_env(monkeypatch)
@@ -417,9 +418,11 @@ def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert not power_on_route.called
-    assert result is not None
-    assert result.get("already_running") is True
-    assert LPAR_UUID in result.get("message", "")
+    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert result.already_running is True
+    assert result.job is None
+    assert isinstance(result.message, str)
+    assert LPAR_UUID in result.message
 
 
 def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
@@ -432,7 +435,26 @@ def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert power_on_route.called
-    assert result["Resource"]["JobID"] == "job-uuid-power-on"
+    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert result.already_running is False
+    assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
+    assert result.message is None
+
+
+def test_power_on_lpar_has_one_stable_output_schema():
+    schema = _tools_by_name()["hmc_power_on_lpar"].output_schema
+
+    assert schema["type"] == "object"
+    assert set(schema["properties"]) == {"already_running", "job", "message"}
+    assert set(schema["required"]) == set(schema["properties"])
+    assert schema["properties"]["already_running"] == {"type": "boolean"}
+    assert {variant["type"] for variant in schema["properties"]["job"]["anyOf"]} == {
+        "object",
+        "null",
+    }
+    assert {
+        variant["type"] for variant in schema["properties"]["message"]["anyOf"]
+    } == {"string", "null"}
 
 
 def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
@@ -448,7 +470,9 @@ def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID, force=True)
 
     assert power_on_route.called
-    assert result["Resource"]["JobID"] == "job-uuid-power-on"
+    assert result.already_running is False
+    assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
+    assert result.message is None
 
 
 # ------------------------------------------------------------------ #
