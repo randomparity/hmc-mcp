@@ -5,6 +5,7 @@ surface, so `hmc-mcp serve --http` must refuse non-loopback binds unless the
 operator explicitly opts in with --allow-remote.
 """
 
+import socket
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,16 +16,49 @@ from hmc_mcp import server as server_app
 from hmc_mcp.cli import _is_loopback, app
 
 
-def test_is_loopback_accepts_loopback_names():
-    assert _is_loopback("localhost")
-    assert _is_loopback("127.0.0.1")
-    assert _is_loopback("::1")
+def _address_info(address, family=socket.AF_INET):
+    return (family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, 0))
 
 
-def test_is_loopback_rejects_non_loopback():
-    assert not _is_loopback("0.0.0.0")
-    assert not _is_loopback("192.168.1.10")
-    assert not _is_loopback("hmc.example.com")
+def test_is_loopback_accepts_only_loopback_resolution():
+    addresses = [_address_info("127.0.0.2"), _address_info("::1", socket.AF_INET6)]
+    with patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses):
+        assert _is_loopback("localhost")
+
+
+@pytest.mark.parametrize(
+    "addresses",
+    [
+        [_address_info("127.0.0.1"), _address_info("192.168.1.10")],
+        [],
+        [_address_info("not-an-address")],
+    ],
+)
+def test_is_loopback_rejects_unsafe_resolution(addresses):
+    with patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses):
+        assert not _is_loopback("localhost")
+
+
+def test_is_loopback_rejects_resolution_failure():
+    with patch(
+        "hmc_mcp.cli_app.socket.getaddrinfo", side_effect=socket.gaierror("unknown")
+    ):
+        assert not _is_loopback("missing.example")
+
+
+def test_serve_http_mixed_address_refuses_without_allow_remote():
+    addresses = [_address_info("127.0.0.1"), _address_info("203.0.113.5")]
+    with (
+        patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses),
+        patch("hmc_mcp.server.main_http") as main_http,
+    ):
+        result = CliRunner().invoke(
+            app, ["serve", "--http", "--listen-host", "localhost"]
+        )
+
+    assert result.exit_code == 2
+    assert "binds beyond loopback" in unstyle(result.output)
+    main_http.assert_not_called()
 
 
 def test_serve_http_loopback_bind_is_allowed():
@@ -129,9 +163,7 @@ def test_http_entrypoint_registers_arbitrary_command_when_enabled():
         ) as register,
         patch.object(server_app.mcp, "run") as run,
     ):
-        server_app.main_http(
-            host="127.0.0.1", port=9000, enable_arbitrary_command=True
-        )
+        server_app.main_http(host="127.0.0.1", port=9000, enable_arbitrary_command=True)
 
     register.assert_called_once_with()
     run.assert_called_once_with(

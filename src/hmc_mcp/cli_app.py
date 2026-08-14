@@ -17,6 +17,7 @@ module so the command tree is fully built on import.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import socket
 from dataclasses import dataclass
@@ -336,18 +337,23 @@ def serve(
 
 
 def _is_loopback(host: str) -> bool:
-    """True if host resolves to a loopback address (127.0.0.0/8 or ::1)."""
-    if host in ("localhost", "127.0.0.1", "::1"):
-        return True
+    """True only when every resolved bind address is an IP loopback."""
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
         return False
-    return any(
-        addr[0] in (socket.AF_INET, socket.AF_INET6)
-        and (str(addr[4][0]).startswith("127.") or addr[4][0] == "::1")
-        for addr in infos
-    )
+    if not infos:
+        return False
+    for family, _, _, _, sockaddr in infos:
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            return False
+        try:
+            address = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if not address.is_loopback:
+            return False
+    return True
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
