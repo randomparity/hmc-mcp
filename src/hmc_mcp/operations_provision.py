@@ -15,12 +15,14 @@ from .client import HMCClient
 from .common import resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind
 from .errors import HMCError
-from .jobs import power_on_lpar_job
+from .operations_adapters import add_network_adapter, add_vios_adapter
 from .operations_lpar import (
     LparCreation,
     LparCreationResult,
     create_and_stamp_lpar,
+    power_lpar,
 )
+from .operations_storage import map_storage
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,51 @@ async def _record_hmc_step(
         return False
     steps.append(_step(name, "ok", result))
     return True
+
+
+async def _add_network(
+    hmc: HMCClient, lpar_uuid: str, port_vlan_id: int
+) -> dict[str, Any] | None:
+    result = await add_network_adapter(
+        hmc, lpar_uuid, port_vlan_id, None, None, False, None
+    )
+    return result.resource
+
+
+async def _add_vscsi(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    vios_partition_id: int,
+    vios_slot: int,
+) -> dict[str, Any] | None:
+    result = await add_vios_adapter(
+        hmc,
+        lpar_uuid,
+        vios_partition_id,
+        vios_slot,
+        None,
+        fibre_channel=False,
+    )
+    return result.resource
+
+
+async def _map_storage(
+    hmc: HMCClient, storage: ProvisionStorage, lpar_uuid: str
+) -> dict[str, Any] | None:
+    _, resource = await map_storage(
+        hmc,
+        storage.vios_uuid,
+        storage.kind,
+        storage.storage_name,
+        lpar_uuid,
+        None,
+    )
+    return resource
+
+
+async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:
+    result = await power_lpar(hmc, lpar_uuid, power_on=True, force=True)
+    return result.job
 
 
 def _skip_steps(steps: list[dict[str, Any]], names: list[str]) -> None:
@@ -279,7 +326,7 @@ async def provision_lpar(
     if not await _record_hmc_step(
         steps,
         "network",
-        hmc.add_network_adapter(created_uuid, network.port_vlan_id),
+        _add_network(hmc, created_uuid, network.port_vlan_id),
     ):
         _skip_steps(steps, step_names[2:])
         return _provision_result(creation, created_uuid, steps, False)
@@ -287,9 +334,7 @@ async def provision_lpar(
     if not await _record_hmc_step(
         steps,
         "vscsi",
-        hmc.add_vscsi_adapter(
-            created_uuid, network.vios_partition_id, network.vios_slot
-        ),
+        _add_vscsi(hmc, created_uuid, network.vios_partition_id, network.vios_slot),
     ):
         _skip_steps(steps, step_names[3:])
         return _provision_result(creation, created_uuid, steps, False)
@@ -297,12 +342,7 @@ async def provision_lpar(
     if not await _record_hmc_step(
         steps,
         "storage",
-        hmc.map_storage_to_lpar(
-            storage.vios_uuid,
-            storage.kind,
-            storage.storage_name,
-            created_uuid,
-        ),
+        _map_storage(hmc, storage, created_uuid),
     ):
         _skip_steps(steps, step_names[4:])
         return _provision_result(creation, created_uuid, steps, False)
@@ -311,10 +351,7 @@ async def provision_lpar(
         if not await _record_hmc_step(
             steps,
             "power_on",
-            hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{created_uuid}/do/PowerOn",
-                power_on_lpar_job(),
-            ),
+            _power_on(hmc, created_uuid),
         ):
             return _provision_result(creation, created_uuid, steps, False)
 
