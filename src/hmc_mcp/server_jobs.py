@@ -9,6 +9,7 @@ from typing import Any
 from ._app import _READ_ONLY, _run
 from .common import client_from_env
 from .errors import HMCError
+from .jobs import JobOutcome, job_outcome
 
 
 def _is_unsupported_job_listing(exc: HMCError) -> bool:
@@ -76,16 +77,17 @@ def hmc_wait_for_job(
     poll_interval: int = 5,
     job_href: str | None = None,
     profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Poll until a terminal job state or timeout, returning the last job entry."""
+) -> JobOutcome:
+    """Poll a job and return its normalized status, timeout, and error outcome."""
 
     async def operation():
         async with client_from_env(profile) as hmc:
-            return await hmc.wait_for_job(
+            job = await hmc.wait_for_job(
                 job_uuid,
                 timeout_seconds,
                 poll_interval,
                 job_href=job_href,
             )
+            return job_outcome(job_uuid, job)
 
     return _run(operation)

@@ -976,6 +976,49 @@ async def test_wait_for_job_timeout_zero_still_polls_once(monkeypatch, mock_hmc)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "status",
+    [
+        "COMPLETED_WITH_WARNINGS",
+        "FAILED_TO_START",
+        "FAILED_BEFORE_COMPLETION",
+        "FAILED_BEFORE_COMPLETION_RETRY",
+        "CANCELED_BEFORE_START",
+        "CANCELED_WHILE_RUNNING",
+    ],
+)
+async def test_wait_for_job_stops_at_documented_terminal_status(
+    monkeypatch, mock_hmc, status
+):
+    get_job = AsyncMock(return_value={"Resource": {"Status": status}})
+    sleep = AsyncMock(side_effect=AssertionError(f"{status} was not terminal"))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    async with HMCClient(make_config(verify_ssl=True)) as hmc:
+        hmc.get_job = get_job
+        result = await hmc.wait_for_job("job-1", timeout_seconds=30)
+
+    assert result == {"Resource": {"Status": status}}
+    get_job.assert_awaited_once_with("job-1", job_href=None)
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_tolerates_empty_resource(monkeypatch, mock_hmc):
+    get_job = AsyncMock(return_value={"Resource": ""})
+    sleep = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    async with HMCClient(make_config(verify_ssl=True)) as hmc:
+        hmc.get_job = get_job
+        result = await hmc.wait_for_job("job-1", timeout_seconds=0)
+
+    assert result == {"Resource": ""}
+    get_job.assert_awaited_once_with("job-1", job_href=None)
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("timeout_seconds", "poll_interval", "message"),
     [
         (-1, 5, "timeout_seconds"),

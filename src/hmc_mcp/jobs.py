@@ -8,6 +8,7 @@ fallback for responses that omit that link.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
 from urllib.parse import urlparse
 
@@ -18,6 +19,43 @@ LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+
+TERMINAL_JOB_STATUSES = frozenset(
+    {
+        "CANCELED_BEFORE_START",
+        "CANCELED_WHILE_RUNNING",
+        "COMPLETED",
+        "COMPLETED_OK",
+        "COMPLETED_WITH_ERROR",
+        "COMPLETED_WITH_WARNINGS",
+        "EXCEPTION",
+        "FAILED",
+        "FAILED_BEFORE_COMPLETION",
+        "FAILED_BEFORE_COMPLETION_RETRY",
+        "FAILED_TO_START",
+    }
+)
+FAILED_JOB_STATUSES = frozenset(
+    {
+        "COMPLETED_WITH_ERROR",
+        "EXCEPTION",
+        "FAILED",
+        "FAILED_BEFORE_COMPLETION",
+        "FAILED_BEFORE_COMPLETION_RETRY",
+        "FAILED_TO_START",
+    }
+)
+
+
+@dataclass(frozen=True)
+class JobOutcome:
+    """Stable public result for waiting on an HMC job."""
+
+    job_id: str
+    status: str | None
+    timed_out: bool
+    error: str | None
+    job: dict[str, Any] | None
 
 
 class JobWaitClient(Protocol):
@@ -45,7 +83,9 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
 
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
-    identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    resource = job.get("Resource")
+    resource_id = resource.get("JobID") if isinstance(resource, dict) else None
+    identifier = job.get("UUID") or resource_id
     if isinstance(identifier, str) and identifier.strip():
         return identifier.strip()
     link = job.get("link")
@@ -53,6 +93,68 @@ def job_identifier(job: dict[str, Any]) -> str | None:
         return None
     path = urlparse(link.strip()).path.rstrip("/")
     return path.rsplit("/", 1)[-1] if path else None
+
+
+def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
+    """Normalize the last polled entry into the public wait result."""
+    resource_value = (job or {}).get("Resource")
+    resource = resource_value if isinstance(resource_value, dict) else {}
+    status_value = resource.get("Status")
+    status = status_value.strip() if isinstance(status_value, str) else None
+    error = (
+        _job_error(resource, status)
+        if isinstance(status, str) and status in FAILED_JOB_STATUSES
+        else None
+    )
+    return JobOutcome(
+        job_id=(job_identifier(job) if job is not None else None)
+        or requested_id.strip(),
+        status=status,
+        timed_out=status not in TERMINAL_JOB_STATUSES,
+        error=error,
+        job=job,
+    )
+
+
+def _job_error(resource: dict[str, Any], status: str) -> str | None:
+    """Extract the HMC result or response-exception message from a job resource."""
+    exception = resource.get("ResponseException")
+    exception_message = (
+        exception.get("Message") if isinstance(exception, dict) else None
+    )
+    if (
+        status == "EXCEPTION"
+        and isinstance(exception_message, str)
+        and exception_message.strip()
+    ):
+        return exception_message.strip()
+
+    results = resource.get("Results")
+    if isinstance(results, dict):
+        parameters = results.get("JobParameter", [])
+        if isinstance(parameters, dict):
+            parameters = [parameters]
+        if isinstance(parameters, list):
+            messages: dict[str, str] = {}
+            for parameter in parameters:
+                if not isinstance(parameter, dict):
+                    continue
+                name = parameter.get("ParameterName")
+                value = parameter.get("ParameterValue")
+                if (
+                    name in {"result", "ErrorData"}
+                    and name not in messages
+                    and isinstance(value, str)
+                    and value.strip()
+                ):
+                    messages[name] = value.strip()
+            for name in ("ErrorData", "result"):
+                if name in messages:
+                    return messages[name]
+
+    if isinstance(exception_message, str) and exception_message.strip():
+        return exception_message.strip()
+    return None
 
 
 async def wait_for_submitted_job(

@@ -10,6 +10,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
@@ -611,6 +612,72 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+JOB_ENTRY_FAILED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>FAILED</Status>
+      <Results>
+        <JobParameter>
+          <ParameterName>result</ParameterName>
+          <ParameterValue>Power-on was rejected</ParameterValue>
+        </JobParameter>
+      </Results>
+    </Job>
+  </content>
+</entry>
+"""
+
+JOB_ENTRY_EXCEPTION = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>EXCEPTION</Status>
+      <ResponseException>
+        <Message>HMC job raised an exception</Message>
+      </ResponseException>
+    </Job>
+  </content>
+</entry>
+"""
+
+JOB_RESPONSE_ERROR_DATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>JobResponse</title>
+  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
+    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED_WITH_ERROR</Status>
+      <Results>
+        <JobParameter>
+          <ParameterName>ErrorData</ParameterName>
+          <ParameterValue>HSCL3205 The partition entered an error state</ParameterValue>
+        </JobParameter>
+      </Results>
+    </JobResponse>
+  </content>
+</entry>
+"""
+
+JOB_ENTRY_EMPTY_RESOURCE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>
+  </content>
+</entry>
+"""
+
+JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+
 
 def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
     """hmc_wait_for_job returns immediately when the first poll is COMPLETED."""
@@ -620,18 +687,75 @@ def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
     )
     result = hmc_wait_for_job("job-uuid-999")
     assert route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "COMPLETED"
+    assert result.timed_out is False
+    assert result.error is None
+    assert result.job["Resource"]["Status"] == "COMPLETED"
 
 
-def test_wait_for_job_timeout_returns_last_entry(monkeypatch, mock_hmc):
-    """hmc_wait_for_job returns the RUNNING entry when timeout=0 elapses immediately."""
+@pytest.mark.parametrize(
+    ("response", "status", "error"),
+    [
+        (JOB_ENTRY_FAILED, "FAILED", "Power-on was rejected"),
+        (JOB_ENTRY_EXCEPTION, "EXCEPTION", "HMC job raised an exception"),
+        (
+            JOB_RESPONSE_ERROR_DATA,
+            "COMPLETED_WITH_ERROR",
+            "HSCL3205 The partition entered an error state",
+        ),
+    ],
+)
+def test_wait_for_job_surfaces_terminal_failure(
+    monkeypatch, mock_hmc, response, status, error
+):
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=response)
+    )
+
+    result = hmc_wait_for_job("job-uuid-999")
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == status
+    assert result.timed_out is False
+    assert result.error == error
+    assert result.job["Resource"]["Status"] == status
+
+
+def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
     )
     # timeout=0 means the deadline is already past after the first poll
     result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
-    assert result["Resource"]["Status"] == "RUNNING"
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "RUNNING"
+    assert result.timed_out is True
+    assert result.error is None
+    assert result.job["Resource"]["Status"] == "RUNNING"
+
+
+def test_wait_for_job_empty_resource_returns_timed_out_shape(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_EMPTY_RESOURCE)
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status is None
+    assert result.timed_out is True
+    assert result.error is None
+    assert result.job["Resource"] == ""
 
 
 # ---------------------------------------------------------------------- #
@@ -670,7 +794,8 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     )
     assert href_route.called
     assert not global_route.called
-    assert result["Resource"]["Status"] == "COMPLETED"
+    assert result.status == "COMPLETED"
+    assert result.timed_out is False
 
 
 def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
