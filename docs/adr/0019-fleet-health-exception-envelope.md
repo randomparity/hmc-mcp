@@ -20,6 +20,22 @@ Add `hmc_fleet_health` as a read-only exception query. It returns a stable envel
 four collections contain only curated unhealthy records. Healthy estates return empty
 collections.
 
+The exception predicates and record fields are fixed:
+
+- `systems` contains `{uuid, name, state}` when normalized state is not `operating`;
+- `vios` contains `{uuid, name, state, system_uuid, system_name}` when normalized partition
+  state is not `running`;
+- `lpars` contains `{uuid, name, state, rmc_state, system_uuid, system_name}` when normalized
+  RMC state is neither `active` nor `busy`; and
+- `failed_jobs` contains `{uuid, name, status, error}` when case-normalized status belongs to
+  `jobs.FAILED_JOB_STATUSES` among the first 20 records in HMC Job-feed order.
+
+Normalization accepts string values only, strips surrounding whitespace, and compares them
+case-insensitively. Missing, blank, or non-string health states normalize to `unknown` and qualify
+as exceptions. Missing, blank, or non-string Job statuses normalize to `unknown` and do not match
+the canonical failure set. The collections are sorted by name and then UUID. `warnings` contains
+strings that describe tolerated optional-data gaps.
+
 Fetch managed systems once, then fetch each system's LPAR and VIOS collections concurrently.
 Limit the number of systems being inspected at once to eight. A core inventory error fails the
 whole operation so an incomplete estate is never reported as healthy. Only the known HMC error

@@ -28,11 +28,11 @@ five empty tuples, which FastMCP serializes as JSON arrays rather than nulls.
 ## Components and data flow
 
 `operations_health.py` owns pure record curation and the asynchronous fleet operation. It fetches
-the managed-system feed once. Up to eight system inspections run concurrently under an
-`asyncio.Semaphore`; each inspection fetches LPAR and VIOS collections concurrently. A separate
-global Job-feed request runs alongside core inventory. `server_health.py` adapts the operation to
-FastMCP with `_READ_ONLY`. `cli_systems.py` provides `systems health`, using the same operation and
-printing JSON or exception tables.
+the managed-system feed once. At most eight fixed workers consume a shared system queue, so both
+active inspections and scheduled system-worker tasks remain bounded; each inspection fetches LPAR
+and VIOS collections concurrently. A separate global Job-feed request runs alongside core
+inventory. `server_health.py` adapts the operation to FastMCP with `_READ_ONLY`. `cli_systems.py`
+provides `systems health`, using the same operation and printing JSON or exception tables.
 
 The operation calls `HMCClient.list_uom("Job")` directly so it can distinguish the exact known
 unsupported-root `HMCError`. The HMC controls Job-feed ordering and retention; matching
@@ -52,8 +52,10 @@ with unhealthy resources, not estate size, and healthy resources are absent.
 ## Error handling and observability
 
 Core inventory failures propagate with the existing HMC error translation. A managed-system entry
-with a missing or blank UUID fails the operation because its child inventory cannot be inspected;
-the operation never skips that system and returns a partial snapshot. Malformed scalar health
+with a missing, blank, or non-string UUID fails the operation because its child inventory cannot be
+inspected; the operation never skips that system and returns a partial snapshot. Missing, blank, or
+non-string names and child/job UUIDs are rendered as `unknown`, preserving string-valued records
+and deterministic name-then-UUID sorting without discarding an exception. Malformed scalar health
 fields on otherwise identifiable entries remain visible as curated `unknown` exceptions rather
 than being discarded. A failed job's missing, blank, or non-string error is rendered as `unknown`;
 accepted error text is limited to its first 500 characters before crossing the result boundary.
@@ -92,13 +94,17 @@ does not attempt retry, caching, or historical monitoring.
 
 Pure curator tests cover case normalization, missing states, stable keys, deterministic sorting,
 every canonical `FAILED_JOB_STATUSES` value, representative successful/running/warning/unknown
-states, Job-feed limit boundaries, and missing, blank, non-string, and oversized job errors. Async
+states, Job-feed limit boundaries, missing/blank/non-string names and child/job UUIDs, and missing,
+blank, non-string, and oversized job errors. Async
 operation tests cover a healthy estate, all four degraded categories,
-unsupported global Job listing, unrelated Job failure propagation, a missing or blank
-managed-system UUID failing without a partial result, other core inventory failures, and an
-observed maximum of eight concurrent system inspections. Server/capability tests pin read-only
-registration and schema. CLI tests pin JSON, warning, and degraded output. Run focused tests
-during TDD and `just verify` before every push.
+unsupported global Job listing, and near misses that independently change the HTTP 400 status,
+omit `REST000E`, or omit `Unrecognized root REST type of Job`, with each near miss propagating.
+They also cover a missing, blank, or non-string managed-system UUID failing without a partial
+result or child request for that entry, other core inventory failures, an observed maximum of eight
+concurrent system inspections, and at most eight scheduled system-worker tasks for an estate larger
+than the limit. Server/capability tests pin
+read-only registration and schema. CLI tests pin JSON, warning, and degraded output. Run focused
+tests during TDD and `just verify` before every push.
 
 ## Durable workflow context
 

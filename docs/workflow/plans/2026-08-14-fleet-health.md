@@ -37,24 +37,27 @@ Later tasks consume both names unchanged.
    records in HMC feed order, then matches every canonical `jobs.FAILED_JOB_STATUSES` value while
    excluding representative successful, running, warning, and unknown statuses; prove missing,
    blank, and non-string errors become `unknown`, and accepted error text is truncated to 500
-   characters. Run
+   characters. For each affected curator, prove missing, blank, and non-string names and child/job
+   UUIDs become `unknown` before sorting and record construction. Run
    `uv run pytest -q --no-cov tests/system/test_fleet_health.py`; expect import failure.
 2. Write async tests with an `AsyncMock` HMC client. Assert unsupported Job root returns one
    warning with empty failed jobs. Add parameterized near misses that independently change the HTTP
    400 status, omit `REST000E`, and omit `Unrecognized root REST type of Job`; assert each
    `HMCError` propagates. Assert a system inventory failure propagates, a managed-system entry with
-   a missing or blank UUID fails without returning partial child inventory, and an instrumented
-   client never observes more than eight active system inspections. Instrument task creation over
-   an estate larger than eight and assert the operation creates at most eight system-worker tasks,
-   rather than one waiting task per system. With a strict recording client double, assert the
-   complete operation ledger contains only managed-system, LPAR, VIOS, and Job list reads and no
-   mutating client call. Run the same command; expect failures for missing behavior.
+   a missing, blank, or non-string UUID fails without returning partial child inventory or issuing
+   child requests for that entry, and an instrumented client never observes more than eight active
+   system inspections. Instrument task creation over an estate larger than eight and assert the
+   operation creates at most eight system-worker tasks, rather than one waiting task per system.
+   With a strict recording client double, assert the complete operation ledger contains only
+   managed-system, LPAR, VIOS, and Job list reads and no mutating client call. Run the same command;
+   expect failures for missing behavior.
 3. Implement the dataclass, pure curator functions that import and reuse
    `jobs.FAILED_JOB_STATUSES`, exact unsupported-error predicate, bounded
    system inspection as at most eight fixed workers consuming a shared system queue, fail-closed
-   system identity validation, first-20 Job-feed slicing before failure classification, bounded
-   failed-job error normalization, deterministic sorting, and `fleet_health`. Do not eagerly create
-   one inspection task per managed system; the global Job read remains one separate task.
+   system identity validation, `unknown` normalization for malformed names and child/job UUIDs,
+   first-20 Job-feed slicing before failure classification, bounded failed-job error normalization,
+   deterministic sorting, and `fleet_health`. Do not eagerly create one inspection task per managed
+   system; the global Job read remains one separate task.
 4. Run `uv run pytest -q --no-cov tests/system/test_fleet_health.py`; expect all tests pass.
 5. Run `uv run ruff check src/hmc_mcp/operations_health.py tests/system/test_fleet_health.py`
    and `uv run ty check`; expect both pass. Commit with
