@@ -33,6 +33,7 @@ def test_supported_versions_selects_stable_non_eol_releases() -> None:
             "3.13": "security",
             "3.14": "bugfix",
             "3.15": "prerelease",
+            "3.16": "feature",
             "3.9": "end-of-life",
         }
     )

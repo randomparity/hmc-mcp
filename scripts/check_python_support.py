@@ -16,7 +16,7 @@ MINIMUM_VERSION = (3, 11)
 MAX_RESPONSE_BYTES = 256 * 1024
 SOCKET_TIMEOUT_SECONDS = 10
 SUPPORTED_STATUSES = frozenset({"bugfix", "security"})
-KNOWN_STATUSES = SUPPORTED_STATUSES | {"prerelease", "end-of-life"}
+KNOWN_STATUSES = SUPPORTED_STATUSES | {"feature", "prerelease", "end-of-life"}
 VERSION_PATTERN = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)$")
 
 
