@@ -143,7 +143,7 @@ def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock
     )
     resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
 
-    with patch("hmc_mcp.server_templates.resolve_system_uuid", new=resolver):
+    with patch("hmc_mcp.operations_templates.resolve_system_uuid", new=resolver):
         hmc_deploy_partition_template("draft-uuid", "system-prod")
 
     resolver.assert_awaited_once_with(ANY, "system-prod")

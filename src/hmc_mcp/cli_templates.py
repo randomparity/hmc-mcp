@@ -58,7 +58,9 @@ def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> Non
 @templates_app.command("deploy")
 def templates_deploy(
     draft_uuid: str = typer.Argument(..., help="Draft (transformed) template UUID"),
-    system: str = typer.Option(..., "--system", help="Target managed system UUID"),
+    system: str = typer.Option(
+        ..., "--system", help="Target managed system name or UUID"
+    ),
     wait: bool = typer.Option(False, "--wait", help="Wait for the deploy job"),
     timeout_seconds: int = typer.Option(300, "--timeout"),
     poll_interval: int = typer.Option(5, "--poll-interval"),

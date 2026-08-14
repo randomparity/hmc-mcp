@@ -12,7 +12,7 @@ from ._app import (
 
 from .errors import HMCError
 from .error_translation import translate_template_error
-from .common import client_from_env, resolve_system_uuid
+from .common import client_from_env
 from .operations_templates import deploy_partition_template
 
 
@@ -76,13 +76,10 @@ def hmc_deploy_partition_template(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            target_system_uuid = await resolve_system_uuid(
-                hmc, target_system_name_or_uuid
-            )
             return await deploy_partition_template(
                 hmc,
                 draft_template_uuid,
-                target_system_uuid,
+                target_system_name_or_uuid,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
