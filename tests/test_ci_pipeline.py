@@ -169,6 +169,7 @@ def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
     )
     assert job_permissions
     assert job_permissions["body"] == (
+        "      contents: read\n"
         "      security-events: write\n"
         "      id-token: write\n"
     )
