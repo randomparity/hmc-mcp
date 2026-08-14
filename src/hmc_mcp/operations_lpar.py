@@ -237,8 +237,10 @@ async def delete_lpar(
     ownership_override: bool = False,
 ) -> str:
     """Authorize and delete a powered-off LPAR, returning its UUID."""
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )
@@ -267,6 +269,7 @@ async def power_lpar(
     lpar_name_or_uuid: str,
     *,
     power_on: bool,
+    system_name_or_uuid: str | None = None,
     immediate: bool = False,
     force: bool = False,
     wait: bool = False,
@@ -275,7 +278,9 @@ async def power_lpar(
 ) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"

@@ -337,10 +337,13 @@ def hmc_power_off_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a PowerOff job for a logical partition.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
+    system_name_or_uuid disambiguates duplicate partition names; it is ignored
+    when lpar_name_or_uuid is already a UUID.
     immediate=True forces an immediate power off (no graceful OS shutdown).
     Returns the submitted job. This changes the state of a real partition.
 
@@ -355,6 +358,7 @@ def hmc_power_off_lpar(
                 hmc,
                 lpar_name_or_uuid,
                 power_on=False,
+                system_name_or_uuid=system_name_or_uuid,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,

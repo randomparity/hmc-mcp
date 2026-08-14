@@ -63,7 +63,11 @@ def hmc_create_vios(
 
 
 @tool(annotations=_DESTRUCTIVE)
-def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
+def hmc_delete_vios(
+    vios_name_or_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
+) -> str:
     """Delete (destroy) a VIOS partition by name or UUID.
 
     The VIOS must be powered off first (use hmc_power_off_vios and confirm
@@ -74,13 +78,20 @@ def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
     irreversible. Confirm the target with hmc_list_vios before calling. Returns a
     confirmation string (immediate delete — no job to poll).
 
+    system_name_or_uuid disambiguates duplicate VIOS names; it is ignored when
+    vios_name_or_uuid is already a UUID.
+
     Raises:
         HMCError: If the VIOS state is not 'not activated' (HTTP 409).
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(
+                hmc,
+                vios_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
+            )
             state = await hmc.get_quick_property(
                 "LogicalPartition", vios_uuid, "PartitionState"
             )
@@ -218,12 +229,17 @@ async def _run_vios_backup_command(
     vios_name_or_uuid: str,
     build_command: Callable[[str], str],
     profile: str | None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     if is_uuid(vios_name_or_uuid):
         vios_uuid = vios_name_or_uuid
     else:
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(
+                hmc,
+                vios_name_or_uuid,
+                system_name_or_uuid=system_name_or_uuid,
+            )
     return await run_hmc_cli(build_command(vios_uuid), build_config(profile=profile))
 
 
@@ -289,7 +305,10 @@ def hmc_backup_vios(
 
 @tool(annotations=_DESTRUCTIVE)
 def hmc_restore_vios(
-    vios_name_or_uuid: str, backup_name: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    backup_name: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
     """Restore a VIOS from a named backup via the HMC CLI.
 
@@ -299,6 +318,9 @@ def hmc_restore_vios(
 
     WARNING: Restoring overwrites the current VIOS configuration. Confirm
     the VIOS and backup_name before calling.
+
+    system_name_or_uuid disambiguates duplicate VIOS names; it is ignored when
+    vios_name_or_uuid is already a UUID.
 
     Returns the raw HMC CLI output.
 
@@ -312,6 +334,7 @@ def hmc_restore_vios(
                 f"-file {shlex.quote(backup_name)}"
             ),
             profile,
+            system_name_or_uuid,
         )
     )
 
@@ -352,8 +375,9 @@ def hmc_power_off_vios(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
-    """Power off a VIOS, optionally waiting for a terminal job state."""
+    """Power off a VIOS, optionally scoped by system and waiting for completion."""
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
@@ -365,6 +389,7 @@ def hmc_power_off_vios(
                 hmc,
                 vios_name_or_uuid,
                 on=False,
+                system_name_or_uuid=system_name_or_uuid,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,

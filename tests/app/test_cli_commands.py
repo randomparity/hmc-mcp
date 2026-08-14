@@ -139,8 +139,11 @@ class FakeHMC:
         self._record("get_logical_partition", uuid)
         return self.lpar
 
-    async def find_partition_by_name(self, name):
-        self._record("find_partition_by_name", name)
+    async def find_partition_by_name(self, name, system_uuid=None):
+        if system_uuid is None:
+            self._record("find_partition_by_name", name)
+        else:
+            self._record("find_partition_by_name", name, system_uuid=system_uuid)
         return self.lpar if name == LPAR_NAME else None
 
     async def get_quick_property(self, resource_type, uuid, property_name):
