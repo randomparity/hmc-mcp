@@ -97,11 +97,27 @@ class HMCClient(
             raise
         return self
 
-    async def __aexit__(self, *exc_info) -> None:
+    async def __aexit__(self, _exc_type, exc, _traceback) -> None:
+        cleanup_error: BaseException | None = None
         try:
             await self.logoff()
-        finally:
+        except BaseException as logoff_error:
+            cleanup_error = logoff_error
+
+        try:
             await self._http.aclose()
+        except BaseException as close_error:
+            if cleanup_error is None:
+                cleanup_error = close_error
+            else:
+                cleanup_error.add_note(f"HTTP client close also failed: {close_error!r}")
+
+        if cleanup_error is None:
+            return
+        if exc is not None:
+            exc.add_note(f"HMC session cleanup also failed: {cleanup_error!r}")
+            return
+        raise cleanup_error
 
     @property
     def is_logged_on(self) -> bool:

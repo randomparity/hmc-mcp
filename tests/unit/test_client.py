@@ -1,6 +1,7 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import warnings
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -63,6 +64,51 @@ async def test_logon_logoff(mock_hmc):
         assert hmc.is_logged_on
         assert hmc._session_token == "test-session-token-123"
     assert not hmc.is_logged_on
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body_error", "logoff_error", "close_error", "expected_error"),
+    [
+        (None, None, None, None),
+        (ValueError("operation failed"), None, None, ValueError),
+        (None, RuntimeError("logoff failed"), None, RuntimeError),
+        (None, None, OSError("close failed"), OSError),
+        (
+            ValueError("operation failed"),
+            RuntimeError("logoff failed"),
+            OSError("close failed"),
+            ValueError,
+        ),
+    ],
+)
+async def test_context_exit_preserves_primary_error_and_always_closes(
+    body_error, logoff_error, close_error, expected_error
+):
+    client = HMCClient(make_config())
+    client.logoff = AsyncMock(side_effect=logoff_error)
+    client._http.aclose = AsyncMock(side_effect=close_error)
+
+    async def exercise_context():
+        try:
+            if body_error is not None:
+                raise body_error
+        except BaseException as exc:
+            await client.__aexit__(type(exc), exc, exc.__traceback__)
+            raise
+        else:
+            await client.__aexit__(None, None, None)
+
+    if expected_error is None:
+        await exercise_context()
+    else:
+        with pytest.raises(expected_error) as raised:
+            await exercise_context()
+        if body_error is not None:
+            assert raised.value is body_error
+
+    client.logoff.assert_awaited_once()
+    client._http.aclose.assert_awaited_once()
 
 
 
