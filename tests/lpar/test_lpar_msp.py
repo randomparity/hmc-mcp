@@ -53,8 +53,7 @@ def test_get_lpar_msp_runs_correct_command(monkeypatch, mock_hmc):
         result = hmc_get_lpar_msp(SYSTEM_UUID, LPAR_UUID)
 
     expected_cmd = (
-        f"lssyscfg -r lpar -m {SYSTEM_NAME} "
-        f"--filter lpar_names={LPAR_NAME} -F msp"
+        f"lssyscfg -r lpar -m {SYSTEM_NAME} --filter lpar_names={LPAR_NAME} -F msp"
     )
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert result is True
@@ -82,6 +81,19 @@ def test_get_lpar_msp_returns_false_when_disabled(monkeypatch, mock_hmc):
         result = hmc_get_lpar_msp(SYSTEM_UUID, LPAR_UUID)
 
     assert result is False
+
+
+@pytest.mark.parametrize("raw", ["", "2\n", "enabled\n"])
+def test_get_lpar_msp_rejects_unexpected_output(monkeypatch, mock_hmc, raw):
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock(raw)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="expected '0' or '1'"),
+    ):
+        hmc_get_lpar_msp(SYSTEM_UUID, LPAR_UUID)
 
 
 # ---------------------------------------------------------------------- #
@@ -125,8 +137,7 @@ def test_set_lpar_msp_enabled_runs_correct_command(monkeypatch, mock_hmc):
 
     chsyscfg_cmd = conn_mock.run.call_args_list[1][0][0]
     assert chsyscfg_cmd == (
-        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
-        f"-i name={LPAR_NAME},msp=1"
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},msp=1"
     )
     assert result == ""
 
@@ -143,8 +154,7 @@ def test_set_lpar_msp_disabled_runs_correct_command(monkeypatch, mock_hmc):
     assert conn_mock.run.call_count == 2
     chsyscfg_cmd = conn_mock.run.call_args_list[1][0][0]
     assert chsyscfg_cmd == (
-        f"chsyscfg -r lpar -m {SYSTEM_NAME} "
-        f"-i name={LPAR_NAME},msp=0"
+        f"chsyscfg -r lpar -m {SYSTEM_NAME} -i name={LPAR_NAME},msp=0"
     )
     assert result == ""
 

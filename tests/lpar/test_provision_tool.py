@@ -438,11 +438,15 @@ def test_provision_lpar_vlan_not_found(monkeypatch, mock_hmc):
         hmc_provision_lpar(**_provision_args())
 
 
-def test_provision_lpar_reports_malformed_vlan_inventory(monkeypatch, mock_hmc):
+def test_provision_lpar_reports_missing_vlan_and_malformed_inventory(
+    monkeypatch, mock_hmc
+):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc, vlan_feed=MALFORMED_VLAN_FEED)
 
-    with pytest.raises(ValueError, match="broken-network.*not-a-vlan"):
+    with pytest.raises(
+        ValueError, match="No VirtualNetwork.*broken-network.*not-a-vlan"
+    ):
         hmc_provision_lpar(**_provision_args())
 
 
@@ -512,9 +516,9 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     """A successful create with no response body is not reported as no creation."""
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(201))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201)
+    )
 
     result = hmc_provision_lpar(**_provision_args())
 

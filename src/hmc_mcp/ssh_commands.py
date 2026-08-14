@@ -538,7 +538,15 @@ async def get_lpar_msp(
         f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
     )
     raw = await run_hmc_command(config, cmd)
-    return raw.strip() == "1"
+    value = raw.strip()
+    if value == "1":
+        return True
+    if value == "0":
+        return False
+    raise HMCCLIError(
+        f"Unexpected MSP value {value!r} for LPAR {lpar_name!r} "
+        f"on system {system_name!r}; expected '0' or '1'"
+    )
 
 
 async def set_lpar_msp(

@@ -112,14 +112,15 @@ def hmc_systems(
 ) -> list[dict[str, Any]]:
     """List managed systems, optionally filtered by state.
 
-    When system_name_or_uuid is omitted, returns a list of all managed systems
-    known to the HMC — each entry has UUID, SystemName, State, MTMS (machine
-    type/model/serial), IPAddress, etc.
+    When state is omitted, returns all managed systems known to the HMC. Each
+    entry has UUID, SystemName, State, MTMS (machine type/model/serial),
+    IPAddress, etc.
 
     When state is provided, returns only systems whose State property matches
     the given value, using the HMC server-side search endpoint. Use
     hmc_find_system for a single system lookup by name.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             if state is not None:
