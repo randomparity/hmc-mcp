@@ -119,6 +119,7 @@ hmc-mcp console info                 # connectivity check / HMC version
 hmc-mcp systems list                 # table of managed systems
 hmc-mcp systems show <uuid>
 hmc-mcp systems summary <uuid>       # one-call summary: state, MTMS, firmware, LPARs, free resources
+hmc-mcp systems health               # exception-only fleet health; add --json for automation
 hmc-mcp lpars list                   # all LPARs
 hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)
@@ -185,6 +186,7 @@ Exposed tools:
 | `hmc_list_resources`          | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`                 | Job status/result |
 | `hmc_list_recent_jobs`        | Recent HMC jobs list (limit=20) |
+| `hmc_fleet_health`            | Exception-only estate health: systems, VIOS, LPAR RMC, and recent failed jobs |
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
