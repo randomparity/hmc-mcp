@@ -69,7 +69,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
         raise ValueError(f"{config_path}: TOML parse error: {exc}") from exc
 
     default_profile = doc.get("default_profile")
-    profiles_raw: dict = doc.get("profiles", {})
+    profiles_raw: dict[str, Any] = doc.get("profiles", {})
 
     # Read the HMCConfig field defaults once — port and verify_ssl come from
     # the model, not hardcoded constants, so they stay in sync if the model changes.
@@ -124,6 +124,8 @@ def hmc_systems(
     systems whose State property matches the given value, using the HMC
     server-side search endpoint.
     """
+    if system_name_or_uuid is not None and state is not None:
+        raise ValueError("Provide at most one of system_name_or_uuid or state")
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -207,11 +209,15 @@ def hmc_vios(
     optionally restricted to one managed system via system_name_or_uuid
     (accepts either a SystemName or a UUID).
 
-    When state is provided and vios_name_or_uuid is omitted, returns only
+    When state is provided, returns only
     VIOS entries whose PartitionState matches the given value, using the HMC
-    server-side search endpoint. The state filter is ignored when
-    vios_name_or_uuid or system_name_or_uuid is supplied.
+    server-side search endpoint. Supply at most one selector.
     """
+    selectors = (system_name_or_uuid, vios_name_or_uuid, state)
+    if sum(value is not None for value in selectors) > 1:
+        raise ValueError(
+            "Provide at most one of system_name_or_uuid, vios_name_or_uuid, or state"
+        )
 
     async def _go():
         async with client_from_env(profile) as hmc:

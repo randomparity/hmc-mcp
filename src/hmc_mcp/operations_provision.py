@@ -8,6 +8,7 @@ result and an optional dry-run that validates preconditions only.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .client import HMCClient
@@ -15,6 +16,25 @@ from .common import resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
 from .operations_lpar import LparCreation, create_and_stamp_lpar
+
+
+@dataclass(frozen=True)
+class ProvisionNetwork:
+    """Virtual Ethernet and vSCSI attachment inputs."""
+
+    port_vlan_id: int
+    vios_partition_id: int
+    vios_slot: int
+
+
+@dataclass(frozen=True)
+class ProvisionStorage:
+    """VIOS-backed storage mapping inputs."""
+
+    vios_uuid: str
+    storage_name: str
+    kind: StorageKind = "VirtualDisk"
+    vg_uuid: str | None = None
 
 
 # ---------------------------------------------------------------------- #
@@ -102,19 +122,10 @@ async def provision_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
     name: str,
-    port_vlan_id: int,
-    vios_uuid: str,
-    vios_partition_id: int,
-    vios_slot: int,
-    storage_name: str,
+    network: ProvisionNetwork,
+    storage: ProvisionStorage,
+    resources: LparResources,
     partition_type: PartitionType = "AIX/Linux",
-    min_memory: int = 256,
-    desired_memory: int = 4096,
-    max_memory: int = 8192,
-    desired_vcpus: int = 1,
-    max_vcpus: int = 2,
-    storage_kind: StorageKind = "VirtualDisk",
-    vg_uuid: str | None = None,
     power_on: bool = True,
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -179,6 +190,19 @@ async def provision_lpar(
       ownership token was written; ``False`` when the SSH stamp attempt failed;
       ``None`` when the stamp was not attempted.
     """
+
+    port_vlan_id = network.port_vlan_id
+    vios_partition_id = network.vios_partition_id
+    vios_slot = network.vios_slot
+    vios_uuid = storage.vios_uuid
+    storage_name = storage.storage_name
+    storage_kind = storage.kind
+    vg_uuid = storage.vg_uuid
+    min_memory = resources.min_memory
+    desired_memory = resources.desired_memory
+    max_memory = resources.max_memory
+    desired_vcpus = resources.desired_vcpus
+    max_vcpus = resources.max_vcpus
 
     # ----------------------------------------------------------------
     # 1. Resolve system UUID

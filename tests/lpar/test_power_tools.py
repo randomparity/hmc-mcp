@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCError
+from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
@@ -60,7 +61,9 @@ def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_proc(LPAR_UUID, desired_procs=1.5, desired_vcpus=3)
+    result = hmc_dlpar_proc(
+        LPAR_UUID, LparResources(desired_procs=1.5, desired_vcpus=3)
+    )
     body = route.calls.last.request.content.decode()
     assert "PartitionProcessorConfiguration" in body
     assert "DesiredProcessingUnits" in body and ">1.5<" in body
@@ -75,7 +78,10 @@ def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_mem(LPAR_UUID, desired_memory=8192, min_memory=1024, max_memory=16384)
+    result = hmc_dlpar_mem(
+        LPAR_UUID,
+        LparResources(desired_memory=8192, min_memory=1024, max_memory=16384),
+    )
     body = route.calls.last.request.content.decode()
     assert "PartitionMemoryConfiguration" in body
     assert "DesiredMemory" in body and ">8192<" in body
@@ -92,7 +98,7 @@ def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="<error>boom</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_dlpar_proc(LPAR_UUID, desired_procs=1.0)
+        hmc_dlpar_proc(LPAR_UUID, LparResources(desired_procs=1.0))
     assert exc_info.value.status_code == 500
 
 

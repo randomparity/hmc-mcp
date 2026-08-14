@@ -629,7 +629,7 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    from .operations_provision import provision_lpar
+    from .operations_provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 
     if not dry_run and not yes:
         typer.confirm(
@@ -644,19 +644,21 @@ def lpars_provision(
                 hmc,
                 system_name_or_uuid=system,
                 name=name,
-                port_vlan_id=port_vlan_id,
-                vios_uuid=vios_uuid,
-                vios_partition_id=vios_partition_id,
-                vios_slot=vios_slot,
-                storage_name=storage_name,
+                network=ProvisionNetwork(port_vlan_id, vios_partition_id, vios_slot),
+                storage=ProvisionStorage(
+                    vios_uuid,
+                    storage_name,
+                    cast(StorageKind, storage_kind),
+                    vg_uuid,
+                ),
+                resources=LparResources(
+                    min_memory=min_memory,
+                    desired_memory=memory,
+                    max_memory=max_memory,
+                    desired_vcpus=vcpus,
+                    max_vcpus=max_vcpus,
+                ),
                 partition_type=cast(PartitionType, partition_type),
-                min_memory=min_memory,
-                desired_memory=memory,
-                max_memory=max_memory,
-                desired_vcpus=vcpus,
-                max_vcpus=max_vcpus,
-                storage_kind=cast(StorageKind, storage_kind),
-                vg_uuid=vg_uuid,
                 power_on=power_on,
                 dry_run=dry_run,
             )

@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from hmc_mcp.documents import LparResources
+from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import hmc_provision_lpar
 from conftest import JOB_ENTRY
 
@@ -232,12 +234,24 @@ def _provision_args(**overrides):
     args = dict(
         system_name_or_uuid=SYSTEM_UUID,
         name="web01",
-        port_vlan_id=VLAN_ID,
-        vios_uuid=VIOS_UUID,
-        vios_partition_id=7,
-        vios_slot=11,
-        storage_name="lv_boot",
+        network=ProvisionNetwork(
+            port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
+        ),
+        storage=ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
+        resources=LparResources(
+            min_memory=256,
+            desired_memory=4096,
+            max_memory=8192,
+            desired_vcpus=1,
+            max_vcpus=2,
+        ),
     )
+    if "vg_uuid" in overrides:
+        args["storage"] = ProvisionStorage(
+            vios_uuid=VIOS_UUID,
+            storage_name="lv_boot",
+            vg_uuid=overrides.pop("vg_uuid"),
+        )
     args.update(overrides)
     return args
 

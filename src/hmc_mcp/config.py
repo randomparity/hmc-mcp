@@ -19,6 +19,7 @@ import sys
 import tomllib
 import warnings
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -278,7 +279,7 @@ def load_profile(
 
     # Determine selected profile name
     name = profile or os.environ.get("HMC_PROFILE")
-    doc: dict = {}
+    doc: dict[str, Any] = {}
 
     if path is not None and path.exists():
         try:

@@ -45,19 +45,17 @@ def _check_lpar_write_error(exc: HMCError) -> None:
 def hmc_create_lpar(
     system_name_or_uuid: str,
     name: str,
+    resources: LparResources = LparResources(
+        min_memory=256,
+        desired_memory=4096,
+        max_memory=8192,
+        dedicated=False,
+        desired_vcpus=1,
+        max_vcpus=2,
+        uncapped=True,
+    ),
     partition_type: PartitionType = "AIX/Linux",
     partition_id: int | None = None,
-    min_memory: int = 256,
-    desired_memory: int = 4096,
-    max_memory: int = 8192,
-    dedicated: bool = False,
-    min_procs: float | None = None,
-    desired_procs: float | None = None,
-    max_procs: float | None = None,
-    min_vcpus: int | None = None,
-    desired_vcpus: int | None = 1,
-    max_vcpus: int | None = 2,
-    uncapped: bool = True,
     os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
@@ -95,19 +93,6 @@ def hmc_create_lpar(
       stamp was not attempted (no LPAR body available to confirm the partition name).
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
     """
-    resources = LparResources(
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        dedicated=dedicated,
-        min_procs=min_procs,
-        desired_procs=desired_procs,
-        max_procs=max_procs,
-        min_vcpus=min_vcpus,
-        desired_vcpus=desired_vcpus,
-        max_vcpus=max_vcpus,
-        uncapped=uncapped,
-    )
     xml = build_lpar_document(
         name=name,
         partition_type=partition_type,
@@ -148,17 +133,7 @@ def hmc_create_lpar(
 def hmc_modify_lpar(
     lpar_name_or_uuid: str,
     name: str | None = None,
-    min_memory: int | None = None,
-    desired_memory: int | None = None,
-    max_memory: int | None = None,
-    dedicated: bool | None = None,
-    min_procs: float | None = None,
-    desired_procs: float | None = None,
-    max_procs: float | None = None,
-    min_vcpus: int | None = None,
-    desired_vcpus: int | None = None,
-    max_vcpus: int | None = None,
-    uncapped: bool | None = None,
+    resources: LparResources = LparResources(),
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
@@ -179,19 +154,7 @@ def hmc_modify_lpar(
     """
     xml = build_lpar_document(
         name=name,
-        resources=LparResources(
-            min_memory=min_memory,
-            desired_memory=desired_memory,
-            max_memory=max_memory,
-            dedicated=dedicated,
-            min_procs=min_procs,
-            desired_procs=desired_procs,
-            max_procs=max_procs,
-            min_vcpus=min_vcpus,
-            desired_vcpus=desired_vcpus,
-            max_vcpus=max_vcpus,
-            uncapped=uncapped,
-        ),
+        resources=resources,
     )
 
     async def _go():
@@ -209,14 +172,7 @@ def hmc_modify_lpar(
 @mcp.tool
 def hmc_dlpar_proc(
     lpar_name_or_uuid: str,
-    desired_procs: float | None = None,
-    min_procs: float | None = None,
-    max_procs: float | None = None,
-    desired_vcpus: int | None = None,
-    min_vcpus: int | None = None,
-    max_vcpus: int | None = None,
-    dedicated: bool | None = None,
-    uncapped: bool | None = None,
+    resources: LparResources = LparResources(),
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
@@ -231,18 +187,7 @@ def hmc_dlpar_proc(
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).
     """
-    xml = build_dlpar_proc_document(
-        LparResources(
-            desired_procs=desired_procs,
-            min_procs=min_procs,
-            max_procs=max_procs,
-            desired_vcpus=desired_vcpus,
-            min_vcpus=min_vcpus,
-            max_vcpus=max_vcpus,
-            dedicated=dedicated,
-            uncapped=uncapped,
-        )
-    )
+    xml = build_dlpar_proc_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -259,9 +204,7 @@ def hmc_dlpar_proc(
 @mcp.tool
 def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
-    desired_memory: int | None = None,
-    min_memory: int | None = None,
-    max_memory: int | None = None,
+    resources: LparResources = LparResources(),
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
@@ -273,13 +216,7 @@ def hmc_dlpar_mem(
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).
     """
-    xml = build_dlpar_mem_document(
-        LparResources(
-            desired_memory=desired_memory,
-            min_memory=min_memory,
-            max_memory=max_memory,
-        )
-    )
+    xml = build_dlpar_mem_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:

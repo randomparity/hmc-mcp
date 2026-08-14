@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCError
+from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_dlpar_mem,
@@ -129,7 +130,10 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     )
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_modify_lpar(lpar_name_or_uuid=LPAR_UUID, desired_memory=8192)
+        hmc_modify_lpar(
+            lpar_name_or_uuid=LPAR_UUID,
+            resources=LparResources(desired_memory=8192),
+        )
 
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
@@ -155,7 +159,10 @@ def test_dlpar_proc_http_406_actionable(monkeypatch, mock_hmc):
     )
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_dlpar_proc(lpar_name_or_uuid=LPAR_UUID, desired_procs=0.5)
+        hmc_dlpar_proc(
+            lpar_name_or_uuid=LPAR_UUID,
+            resources=LparResources(desired_procs=0.5),
+        )
 
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)
@@ -181,7 +188,10 @@ def test_dlpar_mem_http_406_actionable(monkeypatch, mock_hmc):
     )
 
     with pytest.raises(HMCError) as exc_info:
-        hmc_dlpar_mem(lpar_name_or_uuid=LPAR_UUID, desired_memory=8192)
+        hmc_dlpar_mem(
+            lpar_name_or_uuid=LPAR_UUID,
+            resources=LparResources(desired_memory=8192),
+        )
 
     assert exc_info.value.status_code == 406
     msg = str(exc_info.value)

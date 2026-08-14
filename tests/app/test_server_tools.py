@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
+from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
     hmc_get_job,
@@ -218,11 +219,13 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
         result = hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="newlpar",
-            min_memory=512,
-            desired_memory=2048,
-            max_memory=4096,
-            desired_procs=0.5,
-            desired_vcpus=2,
+            resources=LparResources(
+                min_memory=512,
+                desired_memory=2048,
+                max_memory=4096,
+                desired_procs=0.5,
+                desired_vcpus=2,
+            ),
         )
     assert route.called
     body = route.calls.last.request.content.decode()
@@ -260,9 +263,9 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
         hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,
             name="ded",
-            dedicated=True,
-            desired_procs=2.0,
-            max_procs=4.0,
+            resources=LparResources(
+                dedicated=True, desired_procs=2.0, max_procs=4.0
+            ),
         )
     body = route.calls.last.request.content.decode()
     assert "<DedicatedProcessorConfiguration" in body
@@ -279,7 +282,9 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
-    result = hmc_modify_lpar(LPAR_UUID, name="renamed", desired_memory=8192)
+    result = hmc_modify_lpar(
+        LPAR_UUID, name="renamed", resources=LparResources(desired_memory=8192)
+    )
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
     assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body

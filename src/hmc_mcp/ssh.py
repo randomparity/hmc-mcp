@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import asyncssh
 
@@ -17,7 +18,7 @@ class HMCCLIError(HMCError):
 async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
     """Execute one HMC CLI command over SSH and return its stdout."""
     config.validate_credentials(require_password=not config.ssh_key_file)
-    connect_kwargs: dict = {
+    connect_kwargs: dict[str, Any] = {
         "host": config.host,
         "username": config.user,
         "known_hosts": None,

@@ -244,6 +244,11 @@ def test_lpars_rejects_conflicting_selectors(selectors):
         hmc_lpars(**selectors)
 
 
+def test_systems_rejects_conflicting_selectors():
+    with pytest.raises(ValueError, match="at most one"):
+        hmc_systems(system_name_or_uuid=SYSTEM_UUID, state="running")
+
+
 # ---------------------------------------------------------------------- #
 # hmc_vios
 # ---------------------------------------------------------------------- #
@@ -276,14 +281,9 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
     assert result["UUID"] == VIOS_UUID
 
 
-def test_vios_uuid_takes_priority_over_system_uuid(monkeypatch, mock_hmc):
-    """hmc_vios(vios_uuid=..., system_uuid=...) uses storage-detail path, ignores system_uuid."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
-    ).mock(return_value=httpx.Response(200, text=_feed(VIOS_UUID, "VirtualIOServer")))
-    hmc_vios(vios_name_or_uuid=VIOS_UUID, system_name_or_uuid=SYSTEM_UUID)
-    assert route.called
+def test_vios_rejects_vios_and_system_selectors():
+    with pytest.raises(ValueError, match="at most one"):
+        hmc_vios(vios_name_or_uuid=VIOS_UUID, system_name_or_uuid=SYSTEM_UUID)
 
 
 # ---------------------------------------------------------------------- #
@@ -617,15 +617,14 @@ def test_vios_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
     assert result == []
 
 
-def test_vios_state_filter_ignored_when_vios_name_or_uuid_given(monkeypatch, mock_hmc):
-    """hmc_vios(vios_name_or_uuid=..., state=...) returns storage detail, ignores state."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
-    ).mock(
-        return_value=httpx.Response(
-            200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")
-        )
-    )
-    hmc_vios(vios_name_or_uuid=VIOS_UUID, state="running")
-    assert route.called
+@pytest.mark.parametrize(
+    "selectors",
+    [
+        {"system_name_or_uuid": SYSTEM_UUID, "vios_name_or_uuid": VIOS_UUID},
+        {"system_name_or_uuid": SYSTEM_UUID, "state": "running"},
+        {"vios_name_or_uuid": VIOS_UUID, "state": "running"},
+    ],
+)
+def test_vios_rejects_conflicting_selectors(selectors):
+    with pytest.raises(ValueError, match="at most one"):
+        hmc_vios(**selectors)
