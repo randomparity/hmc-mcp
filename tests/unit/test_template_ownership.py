@@ -1,0 +1,244 @@
+"""Ownership inference for template-deployed LPARs."""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from hmc_mcp.errors import HMCError
+from hmc_mcp import operations_templates
+from hmc_mcp.operations_templates import (
+    _new_lpar_from_snapshots,
+    deploy_partition_template,
+)
+
+SYSTEM_UUID = "system-uuid"
+RUNNING_JOB = {"Resource": {"Status": "RUNNING"}}
+COMPLETED_JOB = {"Resource": {"Status": "COMPLETED"}}
+
+
+def _lpar(uuid: object, name: str) -> dict:
+    return {"UUID": uuid, "Resource": {"PartitionName": name}}
+
+
+def test_snapshot_diff_returns_the_only_new_lpar():
+    before = [_lpar("old-uuid", "old")]
+    created = _lpar("new-uuid", "new")
+
+    candidate, warning = _new_lpar_from_snapshots(before, [*before, created])
+
+    assert candidate == created
+    assert warning is None
+
+
+@pytest.mark.parametrize(
+    ("after", "warning_fragment"),
+    [
+        ([_lpar("old-uuid", "old")], "no new LPAR"),
+        (
+            [_lpar("old-uuid", "old"), _lpar("new-1", "one"), _lpar("new-2", "two")],
+            "2 new LPARs",
+        ),
+    ],
+)
+def test_snapshot_diff_rejects_non_unique_candidates(after, warning_fragment):
+    candidate, warning = _new_lpar_from_snapshots([_lpar("old-uuid", "old")], after)
+
+    assert candidate is None
+    assert warning is not None
+    assert warning_fragment in warning
+
+
+@pytest.mark.parametrize("bad_uuid", [None, "", "  ", 7])
+def test_snapshot_diff_rejects_malformed_uuid_in_either_snapshot(bad_uuid):
+    valid_old = _lpar("old-uuid", "old")
+    valid_new = _lpar("new-uuid", "new")
+
+    for before, after in (
+        ([_lpar(bad_uuid, "bad")], [valid_new]),
+        ([valid_old], [valid_old, valid_new, _lpar(bad_uuid, "bad")]),
+    ):
+        candidate, warning = _new_lpar_from_snapshots(before, after)
+
+        assert candidate is None
+        assert warning is not None
+        assert "missing a usable UUID" in warning
+
+
+def _client(*, snapshots=()):
+    return SimpleNamespace(
+        config=SimpleNamespace(agent_id="alice"),
+        list_logical_partitions=AsyncMock(side_effect=snapshots),
+        deploy_partition_template=AsyncMock(return_value=RUNNING_JOB),
+    )
+
+
+@pytest.mark.asyncio
+async def test_waited_deploy_stamps_after_ordered_snapshots(monkeypatch):
+    old = _lpar("old-uuid", "old")
+    created = _lpar("new-uuid", "new")
+    events: list[str] = []
+    hmc = _client()
+
+    async def list_lpars(_system_uuid):
+        events.append("baseline" if "submit" not in events else "post")
+        return [old] if events[-1] == "baseline" else [old, created]
+
+    async def submit(*_args):
+        events.append("submit")
+        return RUNNING_JOB
+
+    async def wait(*_args):
+        events.append("wait")
+        return COMPLETED_JOB
+
+    async def stamp(*args):
+        events.append("stamp")
+        assert args[1:] == (SYSTEM_UUID, "system-name", created)
+        return True, []
+
+    hmc.list_logical_partitions.side_effect = list_lpars
+    hmc.deploy_partition_template.side_effect = submit
+    monkeypatch.setattr(
+        operations_templates, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID)
+    )
+    monkeypatch.setattr(operations_templates, "wait_for_submitted_job", wait)
+    monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
+
+    result = await deploy_partition_template(
+        hmc,
+        "draft-uuid",
+        "system-name",
+        wait=True,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    assert events == ["baseline", "submit", "wait", "post", "stamp"]
+    assert result == {
+        "job": COMPLETED_JOB,
+        "ownership_stamped": True,
+        "warnings": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_waited_deploy_reports_stamp_failure(monkeypatch):
+    old = _lpar("old-uuid", "old")
+    created = _lpar("new-uuid", "new")
+    hmc = _client(snapshots=([old], [old, created]))
+    stamp = AsyncMock(return_value=(False, ["ownership stamp failed for LPAR 'new'"]))
+    monkeypatch.setattr(
+        operations_templates, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID)
+    )
+    monkeypatch.setattr(
+        operations_templates,
+        "wait_for_submitted_job",
+        AsyncMock(return_value=COMPLETED_JOB),
+    )
+    monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
+
+    result = await deploy_partition_template(
+        hmc,
+        "draft-uuid",
+        "system-name",
+        wait=True,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    assert result["ownership_stamped"] is False
+    assert result["warnings"] == ["ownership stamp failed for LPAR 'new'"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_snapshot", ["baseline", "post"])
+async def test_waited_deploy_keeps_success_when_snapshot_fails(
+    monkeypatch, caplog, failed_snapshot
+):
+    old = _lpar("old-uuid", "old")
+    sensitive_body = "SENSITIVE-HMC-RESPONSE-BODY"
+    snapshot_error = HMCError("snapshot unavailable", 500, sensitive_body)
+    snapshots = (
+        [snapshot_error]
+        if failed_snapshot == "baseline"
+        else [[old], snapshot_error]
+    )
+    hmc = _client(snapshots=snapshots)
+    stamp = AsyncMock()
+    monkeypatch.setattr(
+        operations_templates, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID)
+    )
+    monkeypatch.setattr(
+        operations_templates,
+        "wait_for_submitted_job",
+        AsyncMock(return_value=COMPLETED_JOB),
+    )
+    monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
+
+    result = await deploy_partition_template(
+        hmc,
+        "draft-uuid",
+        "system-name",
+        wait=True,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    assert result["job"] == COMPLETED_JOB
+    assert result["ownership_stamped"] is None
+    assert failed_snapshot in result["warnings"][0]
+    assert sensitive_body not in caplog.text
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_completed_waited_deploy_does_not_post_list_or_stamp(monkeypatch):
+    hmc = _client(snapshots=([_lpar("old-uuid", "old")],))
+    stamp = AsyncMock()
+    monkeypatch.setattr(
+        operations_templates, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID)
+    )
+    monkeypatch.setattr(
+        operations_templates,
+        "wait_for_submitted_job",
+        AsyncMock(return_value={"Resource": {"Status": "FAILED"}}),
+    )
+    monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
+
+    result = await deploy_partition_template(
+        hmc,
+        "draft-uuid",
+        "system-name",
+        wait=True,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    assert hmc.list_logical_partitions.await_count == 1
+    assert result["ownership_stamped"] is None
+    assert "FAILED" in result["warnings"][0]
+    stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_waited_deploy_does_not_list_or_stamp(monkeypatch):
+    hmc = _client()
+    stamp = AsyncMock()
+    monkeypatch.setattr(
+        operations_templates, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID)
+    )
+    monkeypatch.setattr(operations_templates, "stamp_created_lpar_ownership", stamp)
+
+    result = await deploy_partition_template(
+        hmc,
+        "draft-uuid",
+        "system-name",
+        wait=False,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    hmc.list_logical_partitions.assert_not_awaited()
+    assert result["ownership_stamped"] is None
+    stamp.assert_not_awaited()

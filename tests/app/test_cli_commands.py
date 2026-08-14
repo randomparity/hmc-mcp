@@ -1783,12 +1783,14 @@ def test_templates_deploy_waits_through_shared_workflow(fake_hmc):
 
     assert result.exit_code == 0
     assert fake_hmc.calls == [
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
         ("deploy_partition_template", (TEMPLATE_UUID, SYSTEM_UUID), {}),
         (
             "wait_for_job",
             (JOB_UUID, 60, 1),
             {"job_href": f"/jobs/{JOB_UUID}"},
         ),
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
     ]
 
 

@@ -67,9 +67,10 @@ def hmc_deploy_partition_template(
 
     Set wait=True to block until the job reaches a terminal state.
 
-    Template deployment cannot identify the new LPAR consistently across HMC
-    firmware, so it returns a warning directing callers to identify and stamp
-    the new partition manually.
+    With wait=True, a completed deployment compares the target system's LPARs
+    before and after the job and stamps the sole new partition automatically.
+    Check ownership_stamped and warnings: ambiguous or unavailable snapshots
+    require the caller to identify and stamp the partition manually.
     """
 
     async def _go():

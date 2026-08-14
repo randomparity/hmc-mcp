@@ -128,8 +128,9 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert "Deploy</OperationName>" in body
     assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
     assert "K_X_API_SESSION_MEMENTO" in body
-    assert set(result) == {"job", "warnings"}
+    assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
+    assert result["ownership_stamped"] is None
     assert result["warnings"] == [
         "ownership stamp not attempted: template deployment does not identify and stamp "
         "the new LPAR; list partitions to identify it, then set its description"
@@ -170,6 +171,9 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     """hmc_deploy_partition_template(wait=True) submits then polls until COMPLETED."""
     _hmc_env(monkeypatch)
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{TARGET_SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(200, text=_lpar_feed()))
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
@@ -181,30 +185,61 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     )
     assert submit_route.called
     assert poll_route.called
-    assert set(result) == {"job", "warnings"}
+    assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["Status"] == "COMPLETED"
+    assert result["ownership_stamped"] is None
 
 
-def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
-    monkeypatch, mock_hmc
-):
-    """wait=True COMPLETED result carries a manual-stamp advisory in warnings.
+def _lpar_feed(*entries: tuple[str, str]) -> str:
+    body = "".join(
+        f"""
+  <entry>
+    <id>urn:uuid:{uuid}</id>
+    <title>LogicalPartition:{name}</title>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <PartitionName>{name}</PartitionName>
+      </LogicalPartition>
+    </content>
+  </entry>"""
+        for uuid, name in entries
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">{body}
+</feed>
+"""
 
-    Automatic stamping is not implemented (LPAR name not reliably returned by
-    the deploy job); the warnings list must tell the operator how to stamp.
-    """
+
+def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mock_hmc):
+    """wait=True stamps the sole UUID added during a completed deployment."""
     _hmc_env(monkeypatch)
+    old = ("old-uuid", "old-lpar")
+    created = ("new-uuid", "new-lpar")
+    mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{TARGET_SYSTEM_UUID}/LogicalPartition"
+    ).mock(
+        side_effect=[
+            httpx.Response(200, text=_lpar_feed(old)),
+            httpx.Response(200, text=_lpar_feed(old, created)),
+        ]
+    )
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    result = hmc_deploy_partition_template(
-        "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
-    )
-    assert set(result) == {"job", "warnings"}
-    assert result["warnings"] == [
-        "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; list partitions to identify it, then set its description"
-    ]
+    stamp = AsyncMock(return_value=(True, []))
+    with patch("hmc_mcp.operations_templates.stamp_created_lpar_ownership", new=stamp):
+        result = hmc_deploy_partition_template(
+            "draft-uuid",
+            TARGET_SYSTEM_UUID,
+            wait=True,
+            timeout_seconds=60,
+            poll_interval=1,
+        )
+
+    assert set(result) == {"job", "ownership_stamped", "warnings"}
+    assert result["ownership_stamped"] is True
+    assert result["warnings"] == []
+    assert stamp.await_args.args[3]["Resource"]["PartitionName"] == "new-lpar"
