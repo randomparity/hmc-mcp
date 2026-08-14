@@ -677,6 +677,7 @@ def test_wait_for_job_surfaces_terminal_failure(
     monkeypatch, mock_hmc, response, status, error
 ):
     _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=response)
     )
