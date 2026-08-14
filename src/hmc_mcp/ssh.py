@@ -46,9 +46,14 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         ) from exc
     except asyncssh.ProcessError as exc:
         detail = exc.stderr or exc.stdout or str(exc)
+        if exc.exit_status is not None:
+            termination = f"exit status {exc.exit_status}"
+        elif exc.exit_signal:
+            termination = f"signal {exc.exit_signal}"
+        else:
+            termination = f"return code {exc.returncode}"
         raise HMCCLIError(
-            f"SSH command {cmd!r} failed with exit status {exc.exit_status}: "
-            f"{detail.strip()}"
+            f"SSH command {cmd!r} failed with {termination}: {detail.strip()}"
         ) from exc
     except asyncssh.Error as exc:
         detail = (
