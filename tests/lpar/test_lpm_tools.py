@@ -109,6 +109,59 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
     assert "vrml12-fsp" in body
 
 
+@pytest.mark.parametrize(
+    ("tool_fn", "operation", "args"),
+    [
+        (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
+        (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
+        (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+    ],
+)
+def test_lpm_recovery_tools_wait_for_terminal_outcome(
+    monkeypatch, mock_hmc, tool_fn, operation, args
+):
+    _hmc_env(monkeypatch)
+    _job_route(mock_hmc, operation)
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+
+    result = tool_fn(*args, wait=True, timeout_seconds=60, poll_interval=1)
+
+    assert poll_route.called
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "COMPLETED"
+    assert result.timed_out is False
+    assert result.error is None
+
+
+@pytest.mark.parametrize(
+    ("tool_fn", "operation", "args"),
+    [
+        (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
+        (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
+        (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+    ],
+)
+def test_lpm_recovery_tools_return_explicit_timeout(
+    monkeypatch, mock_hmc, tool_fn, operation, args
+):
+    _hmc_env(monkeypatch)
+    _job_route(mock_hmc, operation)
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY)
+    )
+
+    result = tool_fn(*args, wait=True, timeout_seconds=0, poll_interval=1)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status == "RUNNING"
+    assert result.timed_out is True
+    assert result.error is None
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "submit_method", "args"),
