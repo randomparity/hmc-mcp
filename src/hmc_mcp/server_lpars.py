@@ -10,10 +10,7 @@ from ._app import (
     mcp,
 )
 from .errors import HMCError
-from .common import (
-    client_from_env,
-    resolve_lpar_uuid,
-)
+from .common import client_from_env, resolve_lpar_uuid
 from .documents import (
     Keylock,
     LparResources,
@@ -314,16 +311,16 @@ def hmc_power_on_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await power_lpar(
+            result = await power_lpar(
                 hmc,
-                lpar_uuid,
+                lpar_name_or_uuid,
                 power_on=True,
                 force=force,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
+            return result.job
 
     return _run(_go)
 
@@ -350,15 +347,15 @@ def hmc_power_off_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await power_lpar(
+            result = await power_lpar(
                 hmc,
-                lpar_uuid,
+                lpar_name_or_uuid,
                 power_on=False,
                 immediate=immediate,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
+            return result.job
 
     return _run(_go)

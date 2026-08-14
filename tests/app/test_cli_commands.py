@@ -774,23 +774,14 @@ def test_power_commands_forward_submission_link_when_waiting(fake_hmc, command):
     )
 
 
-def test_lpars_power_off_refetch_missing_still_submits(fake_hmc, monkeypatch):
-    """If the display re-fetch misses (e.g. concurrent delete), power-off must
-    fall back to the input name and submit against the resolved UUID instead
-    of crashing on a None entry."""
-
-    async def no_refetch(uuid):
-        fake_hmc._record("get_logical_partition", uuid)
-        return None
-
-    monkeypatch.setattr(fake_hmc, "get_logical_partition", no_refetch)
+def test_lpars_power_off_confirms_public_selector_then_submits(fake_hmc):
     result = RUNNER.invoke(cli.app, ["lpars", "power-off", LPAR_NAME], input="y\n")
 
     assert result.exit_code == 0
     assert "Job submitted" in result.stdout
     names = [c[0] for c in fake_hmc.calls]
-    assert names == ["find_partition_by_name", "get_logical_partition", "submit_job"]
-    path = fake_hmc.calls[2][1][0]
+    assert names == ["find_partition_by_name", "submit_job"]
+    path = fake_hmc.calls[1][1][0]
     assert "/do/PowerOff" in path
     assert LPAR_UUID in path
 

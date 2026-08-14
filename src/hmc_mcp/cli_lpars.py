@@ -344,33 +344,17 @@ def _power_lpar(
     interval: int = 5,
 ) -> None:
     validate_wait_timing(wait, timeout, interval)
+    if not yes:
+        op = "PowerOn" if on else ("Immediate PowerOff" if immediate else "PowerOff")
+        if not typer.confirm(f"Really submit {op} for partition '{name_or_uuid}'?"):
+            err_console.print("Aborted.")
+            raise typer.Abort()
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None, None
-            if not yes:
-                op = (
-                    "PowerOn"
-                    if on
-                    else ("Immediate PowerOff" if immediate else "PowerOff")
-                )
-                name = name_or_uuid
-                if not is_uuid(name_or_uuid):
-                    found = await hmc.get_logical_partition(uuid)
-                    if found:
-                        name = _first_field(
-                            found, "PartitionName", default=name_or_uuid
-                        )
-                if not typer.confirm(
-                    f"Really submit {op} for partition '{name}' ({uuid})?"
-                ):
-                    err_console.print("Aborted.")
-                    raise typer.Abort()
-            job = await power_lpar(
+            return await power_lpar(
                 hmc,
-                uuid,
+                name_or_uuid,
                 power_on=on,
                 immediate=immediate,
                 force=force,
@@ -378,12 +362,9 @@ def _power_lpar(
                 timeout_seconds=timeout,
                 poll_interval=interval,
             )
-            return uuid, job
 
-    uuid, job = _run(_go)
-
-    if uuid is None:
-        _partition_not_found(name_or_uuid)
+    result = _run(_go)
+    uuid, job = result.lpar_uuid, result.job
     if job and job.get("already_running"):
         console.print(f"[yellow]{job['message']}[/yellow]")
         _print_json(job)

@@ -17,7 +17,12 @@ from .documents import (
     build_lpar_document,
 )
 from .errors import HMCError
-from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
+from .jobs import (
+    power_off_lpar_job,
+    power_on_lpar_job,
+    validate_wait_timing,
+    wait_for_submitted_job,
+)
 from .ssh import HMCCLIError
 from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
 from .ssh_commands import get_lpar_description
@@ -49,6 +54,14 @@ class LparCreationResult:
     lpar: dict[str, Any] | None
     ownership_stamped: bool | None
     warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LparPowerResult:
+    """An LPAR power outcome paired with its resolved identity."""
+
+    lpar_uuid: str
+    job: dict[str, Any] | None
 
 
 async def authorize_lpar_mutation(
@@ -248,7 +261,7 @@ async def delete_lpar(
 
 async def power_lpar(
     hmc: HMCClient,
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     *,
     power_on: bool,
     immediate: bool = False,
@@ -256,20 +269,25 @@ async def power_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
-) -> dict[str, Any] | None:
+) -> LparPowerResult:
     """Apply shared LPAR power policy, submit the job, and optionally wait."""
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"
         )
         if state == "running":
-            return {
-                "already_running": True,
-                "message": (
-                    f"LPAR {lpar_uuid} is already running. "
-                    "Use force=True to submit PowerOn anyway."
-                ),
-            }
+            return LparPowerResult(
+                lpar_uuid,
+                {
+                    "already_running": True,
+                    "message": (
+                        f"LPAR {lpar_uuid} is already running. "
+                        "Use force=True to submit PowerOn anyway."
+                    ),
+                },
+            )
     operation = "PowerOn" if power_on else "PowerOff"
     document = (
         power_on_lpar_job() if power_on else power_off_lpar_job(immediate=immediate)
@@ -277,7 +295,10 @@ async def power_lpar(
     job = await hmc.submit_job(
         f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", document
     )
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
+    selected_job = await wait_for_submitted_job(
+        hmc, job, wait, timeout_seconds, poll_interval
+    )
+    return LparPowerResult(lpar_uuid, selected_job)
 
 
 async def rename_lpar(
