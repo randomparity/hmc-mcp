@@ -15,8 +15,9 @@ so instruction-level emulation provides useful compatibility evidence at lower o
 
 Run amd64 on `ubuntu-24.04` and arm64 on `ubuntu-24.04-arm`. Run one separate ppc64le job on
 `ubuntu-24.04` using Docker's SHA-pinned QEMU setup action, a digest-pinned binfmt image restricted
-to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. The container verifies
-`uname -m` before invoking the canonical `just verify` recipe. Every job retains read-only
+to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. The container uses Ubuntu's
+Python 3.12 and a pinned Rust toolchain so locked development tools without ppc64le wheels can be
+built. It verifies `uname -m` before invoking the canonical `just verify` recipe. Every job retains read-only
 repository permissions and an explicit timeout.
 
 The repository maintainers own workflow and pin updates. GitHub owns native hosted-runner

@@ -17,9 +17,11 @@ that expansion.
 
 The ppc64le job runs on `ubuntu-24.04`, installs only the ppc64le binfmt handler through
 `docker/setup-qemu-action`, and builds a digest-pinned Ubuntu 24.04 ppc64le verification image.
-The action commit, binfmt image, base image, uv version, and uv archive checksum are immutable in
-the repository. The container asserts `uname -m` equals `ppc64le`, runs `just setup`, then runs
-`just verify`. Cross-compilation never counts as execution.
+The action commit, binfmt image, base image, uv version, uv archive checksum, and Rust toolchain
+version are immutable in the repository. Ubuntu's Python 3.12 executes the project. The Rust
+toolchain builds locked development tools that do not publish ppc64le wheels. The container
+asserts `uname -m` equals `ppc64le`, runs `just setup`, then runs `just verify`.
+Cross-compilation never counts as execution.
 
 All verification jobs have explicit timeouts. A missing runner, registry artifact, emulator,
 package, architecture assertion, dependency, or test fails its exact named arm. There is no skip,
@@ -67,5 +69,6 @@ and image pins, ppc64le-only QEMU registration, the runtime architecture asserti
 `just verify` delegation. Credential-boundary assertions require `persist-credentials: false`,
 exactly `contents: read` permissions, no `secrets.*` reference or token/credential environment or
 action input in the ppc64le job, and no GitHub token, SSH/cloud credential, Docker socket, or other
-host credential mount in its container invocation. Tests also require explicit emulation limits.
+host credential mount in its container invocation. Tests also require the ppc64le Python and Rust
+build prerequisites and explicit emulation limits.
 The repository guardrail remains `just verify`.

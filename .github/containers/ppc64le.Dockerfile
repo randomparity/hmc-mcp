@@ -6,8 +6,13 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         curl \
+        build-essential \
         git \
         just=1.21.0-1 \
+        libssl-dev \
+        pkg-config \
+        python3 \
+        python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 ARG UV_VERSION=0.12.3
@@ -21,6 +26,22 @@ RUN archive="uv-powerpc64le-unknown-linux-gnu.tar.gz" \
     && tar --extract --gzip --file "${archive}" \
     && install --mode 0755 uv-powerpc64le-unknown-linux-gnu/uv /usr/local/bin/uv \
     && rm --recursive "${archive}" uv-powerpc64le-unknown-linux-gnu
+
+ARG RUSTUP_VERSION=1.29.0
+ARG RUSTUP_SHA256=4bfff85bd3967d988e14567aa9cc6ab0ea386f0ffeff0f9f14d23f0103bf1f97
+ARG RUST_VERSION=1.97.1
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN rustup_init="rustup-init" \
+    && curl --fail --location --proto '=https' --tlsv1.2 \
+        --output "${rustup_init}" \
+        "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/powerpc64le-unknown-linux-gnu/rustup-init" \
+    && echo "${RUSTUP_SHA256}  ${rustup_init}" | sha256sum --check --strict \
+    && chmod 0755 "${rustup_init}" \
+    && ./"${rustup_init}" --no-modify-path --profile minimal \
+        --default-toolchain "${RUST_VERSION}" --default-host powerpc64le-unknown-linux-gnu -y \
+    && rm "${rustup_init}"
 
 WORKDIR /workspace
 

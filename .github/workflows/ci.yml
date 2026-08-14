@@ -60,7 +60,7 @@ jobs:
         run: uv run prek run --all-files
 
   ppc64le:
-    name: ppc64le / Python 3.11 (QEMU)
+    name: ppc64le / Python 3.12 (QEMU)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
