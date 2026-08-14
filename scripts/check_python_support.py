@@ -81,8 +81,10 @@ def compare_versions(expected: Sequence[str], actual: Sequence[str]) -> None:
     if below_floor:
         raise ValueError("expected versions must be Python 3.11 or newer")
 
-    missing = sorted(set(actual) - set(expected), key=_parse_version)
-    unexpected = sorted(set(expected) - set(actual), key=_parse_version)
+    expected_versions = set(expected)
+    actual_versions = set(actual)
+    missing = sorted(actual_versions - expected_versions, key=_parse_version)
+    unexpected = sorted(expected_versions - actual_versions, key=_parse_version)
     if missing or unexpected:
         details = []
         if missing:

@@ -22,8 +22,9 @@ list explicit in the workflow. A scheduled job compares that reviewed list with 
 dataset and fails when the sets differ, requiring a normal reviewed repository change.
 
 The lifecycle checker accepts the expected version list as arguments, fetches only the fixed
-HTTPS authority, rejects redirects, bounds response size and socket inactivity, validates the JSON shape and version
-syntax, and fails closed with an actionable message when the source is unavailable or malformed.
+HTTPS authority, rejects redirects, bounds response size and socket inactivity, validates the
+JSON shape and version syntax, and fails closed with an actionable message when the source is
+unavailable or malformed.
 Pull requests test the checker deterministically with local fixtures; only the scheduled job uses
 the network.
 
