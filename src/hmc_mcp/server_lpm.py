@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ._app import (
     _DESTRUCTIVE,
     _run,
@@ -13,18 +11,7 @@ from ._app import (
 from .common import client_from_env, resolve_lpar_uuid
 from .jobs import wait_for_submitted_job
 
-
-async def _job_op(
-    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
-) -> dict[str, Any] | None:
-    """Submit a job on an already-open *hmc* client; optionally wait for it to reach a terminal state.
-
-    *submit_fn* is ``async (hmc) -> job_entry``.  When *wait* is False the
-    submitted job entry is returned immediately.  When *wait* is True the job
-    UUID is extracted and ``wait_for_job`` is called before returning.
-    """
-    job = await submit_fn(hmc)
-    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
+from typing import Any
 
 
 @mcp.tool
@@ -53,14 +40,11 @@ def hmc_migrate_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await _job_op(
-                hmc,
-                lambda hmc2: hmc2.lpar_migrate(
-                    lpar_uuid, target_system, target_profile_name, wait_time=wait_time
-                ),
-                wait,
-                timeout_seconds,
-                poll_interval,
+            job = await hmc.lpar_migrate(
+                lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+            )
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
             )
 
     return _run(_go)
@@ -87,14 +71,11 @@ def hmc_migrate_validate_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await _job_op(
-                hmc,
-                lambda hmc2: hmc2.lpar_migrate_validate(
-                    lpar_uuid, target_system, target_profile_name, wait_time=wait_time
-                ),
-                wait,
-                timeout_seconds,
-                poll_interval,
+            job = await hmc.lpar_migrate_validate(
+                lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+            )
+            return await wait_for_submitted_job(
+                hmc, job, wait, timeout_seconds, poll_interval
             )
 
     return _run(_go)

@@ -25,7 +25,7 @@ from .cli_app import (
     lpars_app,
 )
 
-from .jobs import power_off_lpar_job, power_on_lpar_job
+from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .documents import (
     LparResources,
     PARTITION_TYPES,
@@ -311,10 +311,7 @@ def _power_lpar(
                     f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOff",
                     power_off_lpar_job(immediate=immediate),
                 )
-            if wait and job is not None:
-                job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-                if job_uuid:
-                    job = await hmc.wait_for_job(job_uuid, timeout, interval, job_href=job.get("link"))
+            job = await wait_for_submitted_job(hmc, job, wait, timeout, interval)
             return uuid, job
 
     uuid, job = _run(_go)

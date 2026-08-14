@@ -59,7 +59,11 @@ class FakeHMC:
             "Resource": {"GroupName": "rootvg", "FreeSpaceInMBytes": "5120", "GroupCapacity": "102400"},
         }
         self.disk = {"UUID": "66666666-6666-4666-8666-666666666666", "Resource": {"DiskName": "bootvol"}}
-        self.job = {"UUID": JOB_UUID, "Resource": {"JobName": "PowerOn", "Status": "running"}}
+        self.job = {
+            "UUID": JOB_UUID,
+            "link": f"/jobs/{JOB_UUID}",
+            "Resource": {"JobName": "PowerOn", "Status": "running"},
+        }
         self.system = {
             "UUID": SYSTEM_UUID,
             "Resource": {
@@ -161,8 +165,21 @@ class FakeHMC:
     async def find_system_by_name(self, name):
         self._record("find_system_by_name", name)
         return self.system if name == "sys1" else None
-    async def wait_for_job(self, job_uuid, timeout_seconds=300, poll_interval=5):
-        self._record("wait_for_job", job_uuid, timeout_seconds, poll_interval)
+    async def wait_for_job(
+        self,
+        job_uuid,
+        timeout_seconds=300,
+        poll_interval=5,
+        *,
+        job_href=None,
+    ):
+        self._record(
+            "wait_for_job",
+            job_uuid,
+            timeout_seconds,
+            poll_interval,
+            job_href=job_href,
+        )
         return {**self.job, "Resource": {**self.job["Resource"], "Status": "COMPLETED"}}
 
     async def power_on_system(self, system_uuid):
@@ -225,8 +242,8 @@ class FakeHMC:
         return self.job
 
     # -- jobs ------------------------------------------------------------ #
-    async def get_job(self, job_uuid):
-        self._record("get_job", job_uuid)
+    async def get_job(self, job_uuid, *, job_href=None):
+        self._record("get_job", job_uuid, job_href=job_href)
         return self.job if job_uuid == JOB_UUID else None
 
     # -- pcm metrics ----------------------------------------------------- #
@@ -367,6 +384,30 @@ def test_lpars_power_off_declined_confirm_aborts(fake_hmc):
     # No job submitted — the confirm gates the destructive call. A UUID needs
     # no resolution, so the fake client was never called.
     assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["lpars", "power-on", LPAR_UUID],
+        ["systems", "power-on", SYSTEM_UUID],
+        ["systems", "power-off", SYSTEM_UUID],
+        ["vios", "power-on", VIOS_UUID],
+        ["vios", "power-off", VIOS_UUID],
+    ],
+)
+def test_power_commands_forward_submission_link_when_waiting(fake_hmc, command):
+    result = RUNNER.invoke(
+        cli.app,
+        [*command, "--yes", "--wait", "--timeout", "90", "--interval", "3"],
+    )
+
+    assert result.exit_code == 0
+    assert fake_hmc.calls[-1] == (
+        "wait_for_job",
+        (JOB_UUID, 90, 3),
+        {"job_href": f"/jobs/{JOB_UUID}"},
+    )
 
 
 def test_lpars_power_off_refetch_missing_still_submits(fake_hmc, monkeypatch):
@@ -1064,7 +1105,7 @@ def test_jobs_show(fake_hmc):
 
     assert result.exit_code == 0
     assert "PowerOn" in result.stdout
-    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {})]
+    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": None})]
 
 
 def test_jobs_show_not_found_exits_1(fake_hmc):
@@ -1072,7 +1113,17 @@ def test_jobs_show_not_found_exits_1(fake_hmc):
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("get_job", ("ghost",), {})]
+    assert fake_hmc.calls == [("get_job", ("ghost",), {"job_href": None})]
+
+
+def test_jobs_show_forwards_self_link(fake_hmc):
+    href = f"/jobs/{JOB_UUID}"
+    result = RUNNER.invoke(
+        cli.app, ["jobs", "show", JOB_UUID, "--job-href", href]
+    )
+
+    assert result.exit_code == 0
+    assert fake_hmc.calls == [("get_job", (JOB_UUID,), {"job_href": href})]
 
 
 def test_jobs_wait(fake_hmc):
@@ -1080,7 +1131,9 @@ def test_jobs_wait(fake_hmc):
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.stdout
-    assert fake_hmc.calls == [("wait_for_job", (JOB_UUID, 300, 5), {})]
+    assert fake_hmc.calls == [
+        ("wait_for_job", (JOB_UUID, 300, 5), {"job_href": None})
+    ]
 
 
 # --------------------------------------------------------------------------- #

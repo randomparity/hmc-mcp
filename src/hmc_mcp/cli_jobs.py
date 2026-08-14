@@ -20,10 +20,15 @@ from .cli_app import (
 
 
 @jobs_app.command("show")
-def jobs_show(uuid: str = typer.Argument(..., help="Job UUID")) -> None:
+def jobs_show(
+    uuid: str = typer.Argument(..., help="Job UUID"),
+    job_href: str | None = typer.Option(
+        None, "--job-href", help="SELF link returned by job submission"
+    ),
+) -> None:
     """Show status/result of an HMC job."""
 
-    job = _with_client(lambda hmc: hmc.get_job(uuid))
+    job = _with_client(lambda hmc: hmc.get_job(uuid, job_href=job_href))
 
     if job is None:
         err_console.print(f"[yellow]Job {uuid} not found[/yellow]")
@@ -46,6 +51,9 @@ def jobs_wait(
     uuid: str = typer.Argument(..., help="Job UUID to wait on"),
     timeout: int = typer.Option(300, "--timeout", "-t", help="Maximum seconds to wait"),
     interval: int = typer.Option(5, "--interval", "-i", help="Poll interval in seconds"),
+    job_href: str | None = typer.Option(
+        None, "--job-href", help="SELF link returned by job submission"
+    ),
 ) -> None:
     """Wait for an HMC job to reach a terminal state (COMPLETED / FAILED / EXCEPTION).
 
@@ -54,7 +62,9 @@ def jobs_wait(
     """
     async def _go():
         async with _client() as hmc:
-            return await hmc.wait_for_job(uuid, timeout, interval)
+            return await hmc.wait_for_job(
+                uuid, timeout, interval, job_href=job_href
+            )
 
     job = _run(_go)
 
@@ -64,5 +74,4 @@ def jobs_wait(
     status = (job.get("Resource") or {}).get("Status", "unknown")
     console.print(f"[green]Job {uuid} status: {status}[/green]")
     _print_json(job)
-
 

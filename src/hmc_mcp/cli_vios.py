@@ -17,6 +17,7 @@ from .cli_app import (
     console,
     vios_app,
 )
+from .jobs import wait_for_submitted_job
 
 
 @vios_app.command("list")
@@ -63,11 +64,7 @@ def vios_power_on(
     async def _go():
         async with _client() as hmc:
             job = await hmc.power_on_vios(uuid)
-            if wait and job is not None:
-                job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-                if job_uuid:
-                    job = await hmc.wait_for_job(job_uuid, timeout, interval, job_href=job.get("link"))
-            return job
+            return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
     job = _run(_go)
 
     console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
@@ -91,14 +88,9 @@ def vios_power_off(
     async def _go():
         async with _client() as hmc:
             job = await hmc.power_off_vios(uuid, immediate=immediate)
-            if wait and job is not None:
-                job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-                if job_uuid:
-                    job = await hmc.wait_for_job(job_uuid, timeout, interval, job_href=job.get("link"))
-            return job
+            return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
     job = _run(_go)
 
     console.print(f"[green]Submitted {op} for {uuid}[/green]")
     _print_json(job)
-
 
