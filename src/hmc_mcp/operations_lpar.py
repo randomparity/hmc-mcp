@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .client import HMCClient
+from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import LparResources, PartitionType
 from .errors import HMCError
 from .ssh import HMCCLIError
@@ -149,7 +150,14 @@ async def create_and_stamp_lpar(
     creation: LparCreation,
     document: str,
 ) -> LparCreationResult:
-    """Create an LPAR with CLI fallback and best-effort ownership stamping."""
+    """Validate and create an LPAR with fallback and ownership stamping."""
+    existing = await hmc.find_partition_by_name(creation.name)
+    if existing:
+        raise ValueError(
+            f"An LPAR named {creation.name!r} already exists "
+            f"(UUID {existing.get('UUID')!r}). Choose a different name "
+            "or delete the existing partition first."
+        )
     system_name: str | None = None
     try:
         created_lpar = await hmc.create_logical_partition(system_uuid, document)
@@ -185,3 +193,36 @@ async def create_and_stamp_lpar(
         hmc, system_uuid, system_name or system_name_or_uuid, created_lpar
     )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
+
+
+async def delete_lpar(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    *,
+    ownership_override: bool = False,
+) -> str:
+    """Authorize and delete a powered-off LPAR, returning its UUID."""
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+    state = await hmc.get_quick_property(
+        "LogicalPartition", lpar_uuid, "PartitionState"
+    )
+    if state != "not activated":
+        raise HMCError(
+            f"Cannot delete LPAR {lpar_uuid} — current state is {state!r}; "
+            "it must be 'not activated' to delete. Power it off "
+            "(hmc_power_off_lpar) and confirm with hmc_get_lpar_state before retrying.",
+            status_code=409,
+        )
+    await hmc.delete_logical_partition(lpar_uuid)
+    return lpar_uuid

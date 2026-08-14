@@ -754,7 +754,8 @@ def test_lpars_create(fake_hmc):
 
     assert result.exit_code == 0
     assert "Created LPAR 'newlpar'" in result.stdout
-    name, args, _ = fake_hmc.calls[0]
+    assert fake_hmc.calls[0] == ("find_partition_by_name", ("newlpar",), {})
+    name, args, _ = fake_hmc.calls[1]
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
@@ -770,6 +771,17 @@ def test_lpars_create_declined_confirm_aborts(fake_hmc):
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
     assert fake_hmc.calls == []
+
+
+def test_lpars_create_rejects_duplicate_name(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "create", LPAR_NAME, "--system", SYSTEM_UUID, "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert "already exists" in result.stderr
+    assert fake_hmc.calls == [("find_partition_by_name", (LPAR_NAME,), {})]
 
 
 def test_lpars_create_rejects_invalid_partition_type_before_client_call(fake_hmc):
@@ -902,6 +914,10 @@ def test_lpars_modify_dedicated_flag_sets_mode(fake_hmc):
 
 
 def test_lpars_delete(fake_hmc):
+    async def powered_off(*_args):
+        return "not activated"
+
+    fake_hmc.get_quick_property = powered_off
     result = RUNNER.invoke(
         cli.app,
         ["lpars", "delete", LPAR_UUID, "--system", SYSTEM_UUID, "--yes"],
@@ -912,6 +928,17 @@ def test_lpars_delete(fake_hmc):
     assert fake_hmc.calls[-1] == ("delete_logical_partition", (LPAR_UUID,), {})
 
 
+def test_lpars_delete_rejects_running_partition(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "delete", LPAR_UUID, "--system", SYSTEM_UUID, "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert "must be 'not activated' to delete" in result.stderr
+    assert all(call[0] != "delete_logical_partition" for call in fake_hmc.calls)
+
+
 def test_lpars_delete_not_found_exits_1(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
@@ -919,7 +946,7 @@ def test_lpars_delete_not_found_exits_1(fake_hmc):
     )
 
     assert result.exit_code == 1
-    assert "not found" in result.stderr
+    assert "No LPAR named 'ghost' found" in result.stderr
 
 
 def test_lpars_delete_denies_foreign_owned_partition_without_transport(

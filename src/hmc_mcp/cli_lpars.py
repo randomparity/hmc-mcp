@@ -35,6 +35,7 @@ from .operations_lpar import (
     LparCreation,
     authorize_lpar_mutation,
     create_and_stamp_lpar,
+    delete_lpar,
     resolve_lpar_ownership_names,
 )
 from .documents import (
@@ -607,31 +608,19 @@ def lpars_delete(
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, name_or_uuid)
-            if uuid is None:
-                return None
             if not yes:
                 if not typer.confirm(
-                    f"Permanently DELETE partition '{name_or_uuid}' ({uuid})? This cannot be undone."
+                    f"Permanently DELETE partition '{name_or_uuid}'? This cannot be undone."
                 ):
                     raise typer.Abort()
-            system_uuid = await resolve_system_uuid(hmc, system)
-            system_name, lpar_name = await resolve_lpar_ownership_names(
-                hmc, system_uuid, system, uuid
-            )
-            await authorize_lpar_mutation(
+            return await delete_lpar(
                 hmc,
-                system_name,
-                lpar_name,
+                system,
+                name_or_uuid,
                 ownership_override=ownership_override,
             )
-            await hmc.delete_logical_partition(uuid)
-            return uuid
 
     uuid = _run(_go)
-
-    if uuid is None:
-        _partition_not_found(name_or_uuid)
     console.print(f"[green]Deleted LPAR {uuid}[/green]")
 
 
