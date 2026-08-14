@@ -376,7 +376,8 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
 
     with patch(
-        "hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")
+        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+        new=AsyncMock(return_value="tok"),
     ):
         result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
 

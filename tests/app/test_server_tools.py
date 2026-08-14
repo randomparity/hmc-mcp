@@ -212,7 +212,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(
-        "hmc_mcp.server_power.stamp_lpar_ownership",
+        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-01-01]"),
     ):
         result = hmc_create_lpar(
@@ -254,7 +254,8 @@ def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=LPAR_FEED.format(name="ded")))
     with patch(
-        "hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")
+        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+        new=AsyncMock(return_value="tok"),
     ):
         hmc_create_lpar(
             system_name_or_uuid=SYSTEM_UUID,

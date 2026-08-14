@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from ._app import (
@@ -14,7 +13,7 @@ from ._app import (
     mcp,
 )
 from .client import HMCError
-from .common import client_from_env, is_uuid
+from .common import client_from_env
 from .documents import (
     Keylock,
     LparResources,
@@ -29,14 +28,7 @@ from .documents import (
     build_managed_system_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .ssh import HMCCLIError
-from .ssh_commands import (
-    _ssh_system_name,
-    create_lpar_via_cli,
-    stamp_lpar_ownership,
-)
-
-_logger = logging.getLogger(__name__)
+from .operations_lpar import LparCreation, create_and_stamp_lpar
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -120,23 +112,24 @@ def hmc_create_lpar(
       stamp was not attempted (no LPAR body available to confirm the partition name).
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
     """
+    resources = LparResources(
+        min_memory=min_memory,
+        desired_memory=desired_memory,
+        max_memory=max_memory,
+        dedicated=dedicated,
+        min_procs=min_procs,
+        desired_procs=desired_procs,
+        max_procs=max_procs,
+        min_vcpus=min_vcpus,
+        desired_vcpus=desired_vcpus,
+        max_vcpus=max_vcpus,
+        uncapped=uncapped,
+    )
     xml = build_lpar_document(
         name=name,
         partition_type=partition_type,
         partition_id=partition_id,
-        resources=LparResources(
-            min_memory=min_memory,
-            desired_memory=desired_memory,
-            max_memory=max_memory,
-            dedicated=dedicated,
-            min_procs=min_procs,
-            desired_procs=desired_procs,
-            max_procs=max_procs,
-            min_vcpus=min_vcpus,
-            desired_vcpus=desired_vcpus,
-            max_vcpus=max_vcpus,
-            uncapped=uncapped,
-        ),
+        resources=resources,
         os_type=os_type,
         keylock=keylock,
         max_virtual_slots=max_virtual_slots,
@@ -152,114 +145,18 @@ def hmc_create_lpar(
                     "or delete the existing partition first."
                 )
 
-            # --- REST path (preferred) ---
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
-            cfg = hmc.config
-            sys_name_for_stamp: str | None = None  # resolved for SSH stamp
-            lpar_result = None
-
             try:
-                lpar_result = await hmc.create_logical_partition(system_uuid, xml)
+                return await create_and_stamp_lpar(
+                    hmc,
+                    system_uuid,
+                    system_name_or_uuid,
+                    LparCreation(name, partition_type, resources, max_virtual_slots),
+                    xml,
+                )
             except HMCError as exc:
-                if exc.status_code != 406:
-                    _check_lpar_write_error(exc)
-                    raise
-                # 406 → REST create not supported on this HMC firmware; fall
-                # through to the CLI path used by ansible-power-hmc and IBM
-                # internal provisioning toolkits.
-
-                # --- CLI fallback via mksyscfg (HMC firmware may reject REST PUT) ---
-                try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                except HMCCLIError:
-                    sys_name_for_stamp = system_name_or_uuid
-                await create_lpar_via_cli(
-                    cfg,
-                    system_name=sys_name_for_stamp,
-                    name=name,
-                    partition_type=partition_type,
-                    min_memory=min_memory,
-                    desired_memory=desired_memory,
-                    max_memory=max_memory,
-                    desired_vcpus=desired_vcpus,
-                    min_vcpus=min_vcpus,
-                    max_vcpus=max_vcpus,
-                    desired_procs=desired_procs,
-                    min_procs=min_procs,
-                    max_procs=max_procs,
-                    max_virtual_slots=max_virtual_slots,
-                )
-                lpar_result = await hmc.find_partition_by_name(name)
-
-            # --- Ownership stamp (best-effort) ---
-            warnings: list[str] = []
-            ownership_stamped: bool | None = None
-            if lpar_result is None:
-                # Some HMC firmware returns HTTP 201 with no body. The LPAR was
-                # created but is not yet confirmed queryable — skip the stamp to
-                # avoid a timing-window HSCL3205 "Object not found" error from
-                # chsyscfg, and report that the stamp was skipped rather than failed.
-                # ownership_stamped stays None (skip), not False (attempt failed).
-                warnings.append(
-                    f"ownership stamp skipped for LPAR {name!r}: REST create "
-                    "returned no LPAR body; stamp manually via hmc_set_lpar_description"
-                )
-            else:
-                if sys_name_for_stamp is None:
-                    # REST path: resolve system name for the SSH stamp call.
-                    # Try REST first (already authenticated), then SSH as fallback.
-                    try:
-                        sys_entry = await hmc.get_managed_system(system_uuid)
-                        sys_name_for_stamp = (
-                            (sys_entry.get("Resource") or {}).get("SystemName")
-                            if sys_entry
-                            else None
-                        ) or None
-                    except Exception:
-                        sys_name_for_stamp = None
-                    if not sys_name_for_stamp:
-                        try:
-                            sys_name_for_stamp = await _ssh_system_name(
-                                cfg, system_uuid
-                            )
-                        except Exception:
-                            sys_name_for_stamp = system_name_or_uuid
-                # Use the server-confirmed PartitionName if available; fall back to
-                # the constructor argument in case the HMC normalised the name.
-                confirmed_name = (lpar_result.get("Resource") or {}).get(
-                    "PartitionName"
-                ) or name
-                if is_uuid(sys_name_for_stamp):
-                    # sys_name_for_stamp is still a UUID — both REST and SSH system-name
-                    # resolution failed and the HMC CLI will reject a UUID as a
-                    # managed-system name.  Skip and surface a clear advisory.
-                    warnings.append(
-                        f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-                        f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
-                        "stamp manually via hmc_set_lpar_description"
-                    )
-                else:
-                    token = await stamp_lpar_ownership(
-                        cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
-                    )
-                    if token is not None:
-                        ownership_stamped = True
-                    else:
-                        ownership_stamped = False
-                        _logger.warning(
-                            "ownership stamp failed for LPAR %r on %r",
-                            confirmed_name,
-                            sys_name_for_stamp,
-                        )
-                        warnings.append(
-                            f"ownership stamp failed for LPAR {confirmed_name!r} on {sys_name_for_stamp!r}"
-                        )
-
-            return {
-                "lpar": lpar_result,
-                "ownership_stamped": ownership_stamped,
-                "warnings": warnings,
-            }
+                _check_lpar_write_error(exc)
+                raise
 
     return _run(_go)
 
@@ -562,19 +459,15 @@ def hmc_power_on_lpar(
                             "Use force=True to submit PowerOn anyway."
                         ),
                     }
-            job = await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-                power_on_lpar_job(),
-            )
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.submit_job(
+                    f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+                    power_on_lpar_job(),
+                ),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)
@@ -601,19 +494,15 @@ def hmc_power_off_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            job = await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
-                power_off_lpar_job(immediate=immediate),
-            )
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.submit_job(
+                    f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOff",
+                    power_off_lpar_job(immediate=immediate),
+                ),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)
@@ -637,16 +526,12 @@ def hmc_power_on_system(
     async def _go():
         async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
-            job = await hmc.power_on_system(system_uuid)
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.power_on_system(system_uuid),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)
@@ -670,16 +555,12 @@ def hmc_power_off_system(
     async def _go():
         async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
-            job = await hmc.power_off_system(system_uuid, immediate)
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.power_off_system(system_uuid, immediate),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)
@@ -703,16 +584,12 @@ def hmc_power_on_vios(
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
-            job = await hmc.power_on_vios(vios_uuid)
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.power_on_vios(vios_uuid),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)
@@ -736,16 +613,12 @@ def hmc_power_off_vios(
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await _resolve_vios_uuid(hmc, vios_name_or_uuid)
-            job = await hmc.power_off_vios(vios_uuid, immediate)
-            if not wait or job is None:
-                return job
-            job_uuid = _extract_job_id(job)
-            return (
-                await hmc.wait_for_job(
-                    job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
-                )
-                if job_uuid
-                else job
+            return await _power_op(
+                hmc,
+                lambda client: client.power_off_vios(vios_uuid, immediate),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
     return _run(_go)

@@ -13,7 +13,12 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCError
-from hmc_mcp.server import hmc_create_lpar, hmc_dlpar_mem, hmc_dlpar_proc, hmc_modify_lpar
+from hmc_mcp.server import (
+    hmc_create_lpar,
+    hmc_dlpar_mem,
+    hmc_dlpar_proc,
+    hmc_modify_lpar,
+)
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -80,15 +85,24 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     # create returns 406 → triggers CLI fallback
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
 
     # Patch CLI helpers and the stamp (stamp makes SSH call that would fail here).
     with (
-        patch("hmc_mcp.server_power._ssh_system_name", new=AsyncMock(return_value="sys1")),
-        patch("hmc_mcp.server_power.create_lpar_via_cli", new=AsyncMock(return_value="")),
-        patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")),
+        patch(
+            "hmc_mcp.operations_lpar._ssh_system_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.create_lpar_via_cli",
+            new=AsyncMock(return_value=""),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            new=AsyncMock(return_value="tok"),
+        ),
     ):
         result = hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="new-lpar")
 

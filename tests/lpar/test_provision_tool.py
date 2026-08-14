@@ -25,10 +25,11 @@ def _patch_stamp_ownership():
     only) and must not attempt real SSH connections to hmc.test.
     """
     with patch(
-        "hmc_mcp.operations_provision.stamp_lpar_ownership",
+        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
     ):
         yield
+
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -166,24 +167,20 @@ SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """.format(system_uuid=SYSTEM_UUID)
 
 
-def _mock_preconditions(mock_hmc, *, name="web01", has_lpar=False, has_vlan=True, has_vg=True):
+def _mock_preconditions(
+    mock_hmc, *, name="web01", has_lpar=False, has_vlan=True, has_vg=True
+):
     """Register the three precondition GET routes."""
     # Support both "web01" (default) and a custom name such as "existing-lpar"
     # by registering the search URL for whatever name was requested.
     lpar_feed_text = EXISTING_LPAR_FEED if has_lpar else EMPTY_FEED
-    mock_hmc.get(
-        f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})"
-    ).mock(
+    mock_hmc.get(f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})").mock(
         return_value=httpx.Response(200, text=lpar_feed_text)
     )
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
-    ).mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(200, text=VLAN_FEED if has_vlan else EMPTY_FEED)
     )
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
-    ).mock(
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED if has_vg else EMPTY_FEED)
     )
 
@@ -201,13 +198,13 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def _mock_execution_steps(mock_hmc):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
+    )
     # get_managed_system for stamp system-name resolution (REST-first)
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
-    ).mock(return_value=httpx.Response(200, text=SYSTEM_ENTRY))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
@@ -217,18 +214,19 @@ def _mock_execution_steps(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
     ).mock(return_value=httpx.Response(201, text=VSCSI_ADAPTER_FEED))
 
-    mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(201, text=VIOS_FEED))
+    mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(201, text=VIOS_FEED)
+    )
 
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
 
 
 # ---------------------------------------------------------------------- #
 # Helper: common provision arguments
 # ---------------------------------------------------------------------- #
+
 
 def _provision_args(**overrides):
     args = dict(
@@ -383,9 +381,9 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
 
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
+    )
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"

@@ -7,22 +7,14 @@ result and an optional dry-run that validates preconditions only.
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from ._app import _resolve_system_uuid
-from .client import HMCError
-from .common import client_from_env, is_uuid
+from .common import client_from_env
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
-from .ssh import HMCCLIError
-from .ssh_commands import (
-    _ssh_system_name,
-    create_lpar_via_cli,
-    stamp_lpar_ownership,
-)
-
-_logger = logging.getLogger(__name__)
+from .operations_lpar import LparCreation, create_and_stamp_lpar
 
 
 # ---------------------------------------------------------------------- #
@@ -81,6 +73,24 @@ def _step(name: str, status: str, result: Any = None) -> dict[str, Any]:
     if result is not None:
         entry["result"] = result
     return entry
+
+
+async def _run_steps(
+    operations: Sequence[tuple[str, Callable[[], Awaitable[Any]]]],
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Run operations in order and skip every step after the first failure."""
+    steps: list[dict[str, Any]] = []
+    failed = False
+    for name, operation in operations:
+        if failed:
+            steps.append(_step(name, "skipped"))
+            continue
+        try:
+            steps.append(_step(name, "ok", await operation()))
+        except Exception as exc:
+            steps.append(_step(name, "error", str(exc)))
+            failed = True
+    return not failed, steps
 
 
 # ---------------------------------------------------------------------- #
@@ -203,194 +213,72 @@ async def provision_lpar(
         # ----------------------------------------------------------------
         # 4. Build LPAR XML
         # ----------------------------------------------------------------
+        resources = LparResources(
+            min_memory=min_memory,
+            desired_memory=desired_memory,
+            max_memory=max_memory,
+            desired_vcpus=desired_vcpus,
+            max_vcpus=max_vcpus,
+        )
         lpar_xml = build_lpar_document(
             name=name,
             partition_type=partition_type,
-            resources=LparResources(
-                min_memory=min_memory,
-                desired_memory=desired_memory,
-                max_memory=max_memory,
-                desired_vcpus=desired_vcpus,
-                max_vcpus=max_vcpus,
-            ),
+            resources=resources,
         )
 
-        steps: list[dict[str, Any]] = []
-        warnings: list[str] = []
+        creation_result: dict[str, Any] = {}
         lpar_uuid: str | None = None
-        failed = False
 
-        # ----------------------------------------------------------------
-        # Step: create — REST first, CLI fallback on HTTP 406
-        # ----------------------------------------------------------------
-        try:
-            created_lpar = None
-            try:
-                created_lpar = await hmc.create_logical_partition(system_uuid, lpar_xml)
-            except HMCError as rest_exc:
-                if rest_exc.status_code != 406:
-                    raise
-                # 406 → REST LPAR create not supported on this firmware;
-                # fall back to mksyscfg CLI (same approach as hmc_create_lpar).
-                cfg = hmc.config
-                try:
-                    sys_name = await _ssh_system_name(cfg, system_uuid)
-                except HMCCLIError:
-                    sys_name = system_name_or_uuid
-                await create_lpar_via_cli(
-                    cfg,
-                    system_name=sys_name,
-                    name=name,
-                    partition_type=partition_type,
-                    min_memory=min_memory,
-                    desired_memory=desired_memory,
-                    max_memory=max_memory,
-                    desired_vcpus=desired_vcpus,
-                    max_vcpus=max_vcpus,
-                )
-                # Fetch the newly created entry
-                created_lpar = await hmc.find_partition_by_name(name)
-
+        async def create() -> Any:
+            nonlocal creation_result, lpar_uuid
+            creation_result = await create_and_stamp_lpar(
+                hmc,
+                system_uuid,
+                system_name_or_uuid,
+                LparCreation(name, partition_type, resources),
+                lpar_xml,
+            )
+            created_lpar = creation_result["lpar"]
             lpar_uuid = (created_lpar or {}).get("UUID")
-            steps.append(_step("create", "ok", created_lpar))
-        except Exception as exc:
-            steps.append(_step("create", "error", str(exc)))
-            failed = True
+            if not lpar_uuid:
+                raise ValueError("LPAR creation returned no UUID")
+            return created_lpar
 
-        # ----------------------------------------------------------------
-        # Steps: network adapter, vSCSI, storage, power on
-        # (Ownership stamp runs after all steps — see below)
-        # ----------------------------------------------------------------
+        async def network() -> Any:
+            assert lpar_uuid is not None
+            return await hmc.add_network_adapter(lpar_uuid, port_vlan_id)
 
-        # ----------------------------------------------------------------
-        # Step: network adapter
-        # ----------------------------------------------------------------
-        if not failed and lpar_uuid:
-            try:
-                net_result = await hmc.add_network_adapter(lpar_uuid, port_vlan_id)
-                steps.append(_step("network", "ok", net_result))
-            except Exception as exc:
-                steps.append(_step("network", "error", str(exc)))
-                failed = True
-        elif not failed:
-            steps.append(_step("network", "skipped"))
-            failed = True
+        async def vscsi() -> Any:
+            assert lpar_uuid is not None
+            return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot)
 
-        # ----------------------------------------------------------------
-        # Step: vSCSI adapter
-        # ----------------------------------------------------------------
-        if not failed and lpar_uuid:
-            try:
-                vscsi_result = await hmc.add_vscsi_adapter(
-                    lpar_uuid, vios_partition_id, vios_slot
-                )
-                steps.append(_step("vscsi", "ok", vscsi_result))
-            except Exception as exc:
-                steps.append(_step("vscsi", "error", str(exc)))
-                failed = True
-        elif not failed:
-            steps.append(_step("vscsi", "skipped"))
-            failed = True
-        else:
-            steps.append(_step("vscsi", "skipped"))
-
-        # ----------------------------------------------------------------
-        # Step: storage mapping
-        # ----------------------------------------------------------------
-        if not failed and lpar_uuid:
-            try:
-                storage_result = await hmc.map_storage_to_lpar(
-                    vios_uuid, storage_kind, storage_name, lpar_uuid
-                )
-                steps.append(_step("storage", "ok", storage_result))
-            except Exception as exc:
-                steps.append(_step("storage", "error", str(exc)))
-                failed = True
-        else:
-            steps.append(_step("storage", "skipped"))
-
-        # ----------------------------------------------------------------
-        # Step: power on
-        # ----------------------------------------------------------------
-        if power_on:
-            if not failed and lpar_uuid:
-                try:
-                    job = await hmc.submit_job(
-                        f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
-                        power_on_lpar_job(),
-                    )
-                    steps.append(_step("power_on", "ok", job))
-                except Exception as exc:
-                    steps.append(_step("power_on", "error", str(exc)))
-                    failed = True
-            else:
-                steps.append(_step("power_on", "skipped"))
-
-        # ----------------------------------------------------------------
-        # Ownership stamp (best-effort, after all provisioning steps)
-        # Stamp runs whenever the LPAR was created (lpar_uuid is not None),
-        # regardless of whether downstream steps (network, storage, power_on)
-        # succeeded. An LPAR that exists but is incompletely provisioned
-        # should still carry an ownership token so agents can identify it.
-        # ownership_stamped is orthogonal to created (per ADR 0011).
-        # ----------------------------------------------------------------
-        ownership_stamped: bool | None = None
-        if lpar_uuid:
-            cfg = hmc.config
-            # Try REST first (already authenticated), then SSH as fallback.
-            sys_name_for_stamp: str | None = None
-            try:
-                sys_entry = await hmc.get_managed_system(system_uuid)
-                sys_name_for_stamp = (
-                    (sys_entry.get("Resource") or {}).get("SystemName")
-                    if sys_entry
-                    else None
-                ) or None
-            except Exception:
-                sys_name_for_stamp = None
-            if not sys_name_for_stamp:
-                try:
-                    sys_name_for_stamp = await _ssh_system_name(cfg, system_uuid)
-                except Exception:
-                    sys_name_for_stamp = system_name_or_uuid
-            # Use server-confirmed PartitionName if available.
-            confirmed_name = ((created_lpar or {}).get("Resource") or {}).get(
-                "PartitionName"
-            ) or name
-            if is_uuid(sys_name_for_stamp):
-                # Both REST and SSH resolution failed; skip the stamp.
-                warnings.append(
-                    f"ownership stamp skipped for LPAR {confirmed_name!r}: "
-                    f"could not resolve system name for UUID {sys_name_for_stamp!r}; "
-                    "stamp manually via hmc_set_lpar_description"
-                )
-            else:
-                token = await stamp_lpar_ownership(
-                    cfg, sys_name_for_stamp, confirmed_name, agent_id=cfg.agent_id
-                )
-                if token is not None:
-                    ownership_stamped = True
-                else:
-                    ownership_stamped = False
-                    _logger.warning(
-                        "ownership stamp failed for LPAR %r on %r",
-                        confirmed_name,
-                        sys_name_for_stamp,
-                    )
-                    warnings.append(
-                        f"ownership stamp failed for LPAR {confirmed_name!r}"
-                    )
-        elif not failed:
-            # Create succeeded but returned no UUID — cannot locate the LPAR for stamp.
-            warnings.append(
-                f"ownership stamp skipped for LPAR {name!r}: "
-                "create returned no UUID; stamp manually via hmc_set_lpar_description"
+        async def storage() -> Any:
+            assert lpar_uuid is not None
+            return await hmc.map_storage_to_lpar(
+                vios_uuid, storage_kind, storage_name, lpar_uuid
             )
 
+        async def start() -> Any:
+            assert lpar_uuid is not None
+            return await hmc.submit_job(
+                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+                power_on_lpar_job(),
+            )
+
+        operations = [
+            ("create", create),
+            ("network", network),
+            ("vscsi", vscsi),
+            ("storage", storage),
+        ]
+        if power_on:
+            operations.append(("power_on", start))
+        created, steps = await _run_steps(operations)
+
         return {
-            "created": not failed,
+            "created": created,
             "dry_run": False,
-            "ownership_stamped": ownership_stamped,
+            "ownership_stamped": creation_result.get("ownership_stamped"),
             "steps": steps,
-            "warnings": warnings,
+            "warnings": creation_result.get("warnings", []),
         }
