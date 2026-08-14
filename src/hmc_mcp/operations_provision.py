@@ -13,7 +13,7 @@ from typing import Any
 
 from .client import HMCClient
 from .common import resolve_system_uuid
-from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
+from .documents import LparResources, PartitionType, StorageKind
 from .errors import HMCError
 from .jobs import power_on_lpar_job
 from .operations_lpar import (
@@ -255,15 +255,6 @@ async def provision_lpar(
             (),
         )
 
-    # ----------------------------------------------------------------
-    # 4. Build LPAR XML
-    # ----------------------------------------------------------------
-    lpar_xml = build_lpar_document(
-        name=name,
-        partition_type=partition_type,
-        resources=resources,
-    )
-
     steps: list[dict[str, Any]] = []
     try:
         creation = await create_and_stamp_lpar(
@@ -271,7 +262,6 @@ async def provision_lpar(
             system_uuid,
             system_name_or_uuid,
             LparCreation(name, partition_type, resources),
-            lpar_xml,
         )
     except HMCError as exc:
         steps.append(_step("create", "error", str(exc)))

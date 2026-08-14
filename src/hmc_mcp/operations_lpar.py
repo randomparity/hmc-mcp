@@ -9,7 +9,13 @@ from typing import Any
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
-from .documents import LparResources, PartitionType, build_lpar_document
+from .documents import (
+    Keylock,
+    LparResources,
+    OsType,
+    PartitionType,
+    build_lpar_document,
+)
 from .errors import HMCError
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .ssh import HMCCLIError
@@ -29,6 +35,9 @@ class LparCreation:
     name: str
     partition_type: PartitionType
     resources: LparResources
+    partition_id: int | None = None
+    os_type: OsType | None = None
+    keylock: Keylock | None = None
     max_virtual_slots: int | None = None
 
 
@@ -149,7 +158,6 @@ async def create_and_stamp_lpar(
     system_uuid: str,
     system_name_or_uuid: str,
     creation: LparCreation,
-    document: str,
 ) -> LparCreationResult:
     """Validate and create an LPAR with fallback and ownership stamping."""
     existing = await hmc.find_partition_by_name(creation.name)
@@ -160,6 +168,15 @@ async def create_and_stamp_lpar(
             "or delete the existing partition first."
         )
     system_name: str | None = None
+    document = build_lpar_document(
+        name=creation.name,
+        partition_type=creation.partition_type,
+        partition_id=creation.partition_id,
+        resources=creation.resources,
+        os_type=creation.os_type,
+        keylock=creation.keylock,
+        max_virtual_slots=creation.max_virtual_slots,
+    )
     try:
         created_lpar = await hmc.create_logical_partition(system_uuid, document)
     except HMCError as exc:

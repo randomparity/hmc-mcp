@@ -462,12 +462,6 @@ def lpars_create(
         max_vcpus=max_vcpus,
         uncapped=not capped,
     )
-    xml = build_lpar_document(
-        name=name,
-        partition_type=partition_type,
-        partition_id=partition_id,
-        resources=resources,
-    )
 
     async def _go():
         async with _client() as hmc:
@@ -476,8 +470,12 @@ def lpars_create(
                 hmc,
                 system_uuid,
                 system,
-                LparCreation(name, partition_type, resources),
-                xml,
+                LparCreation(
+                    name,
+                    partition_type,
+                    resources,
+                    partition_id=partition_id,
+                ),
             )
 
     result = _run(_go)

@@ -100,15 +100,6 @@ def hmc_create_lpar(
       stamp was not attempted (no LPAR body available to confirm the partition name).
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
     """
-    xml = build_lpar_document(
-        name=name,
-        partition_type=partition_type,
-        partition_id=partition_id,
-        resources=resources,
-        os_type=os_type,
-        keylock=keylock,
-        max_virtual_slots=max_virtual_slots,
-    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -118,8 +109,15 @@ def hmc_create_lpar(
                     hmc,
                     system_uuid,
                     system_name_or_uuid,
-                    LparCreation(name, partition_type, resources, max_virtual_slots),
-                    xml,
+                    LparCreation(
+                        name,
+                        partition_type,
+                        resources,
+                        partition_id,
+                        os_type,
+                        keylock,
+                        max_virtual_slots,
+                    ),
                 )
             except HMCError as exc:
                 _check_lpar_write_error(exc)
