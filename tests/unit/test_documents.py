@@ -79,15 +79,19 @@ def test_dedicated_processor_config():
     assert "true" in xml  # HasDedicatedProcessors
 
 
-@pytest.mark.parametrize("dedicated", [True, False])
-def test_invalid_sharing_mode_is_rejected_before_xml(dedicated):
+@pytest.mark.parametrize(
+    ("dedicated", "desired_procs"), [(True, 1), (False, 1), (None, None)]
+)
+def test_invalid_sharing_mode_is_rejected_before_xml(dedicated, desired_procs):
     illegal = "uncapped</SharingMode><Injected>true</Injected>"
 
     with pytest.raises(ValueError) as exc_info:
         build_lpar_document(
             name="bad",
             resources=LparResources(
-                dedicated=dedicated, desired_procs=1, sharing_mode=illegal
+                dedicated=dedicated,
+                desired_procs=desired_procs,
+                sharing_mode=illegal,
             ),
         )
 

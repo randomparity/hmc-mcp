@@ -162,7 +162,6 @@ def _validate_sharing_mode(sharing_mode: SharingMode | None) -> None:
 
 
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
-    _validate_sharing_mode(resources.sharing_mode)
     parts = [
         '    <DedicatedProcessorConfiguration kb="CUD" kxe="false">',
         "      <Metadata><Atom/></Metadata>",
@@ -191,7 +190,6 @@ def _dedicated_processor_body(resources: LparResources) -> list[str]:
 
 
 def _shared_processor_body(resources: LparResources) -> list[str]:
-    _validate_sharing_mode(resources.sharing_mode)
     parts: list[str] = []
     if resources.dedicated is False:
         parts.append(
@@ -246,6 +244,7 @@ def _processor_config(resources: LparResources) -> str:
     e.g. 0.5); vcpus are the virtual processor counts (ints). uncapped=None
     likewise leaves SharingMode / UncappedWeight unchanged.
     """
+    _validate_sharing_mode(resources.sharing_mode)
     have_procs = any(
         value is not None
         for value in (resources.min_procs, resources.desired_procs, resources.max_procs)
