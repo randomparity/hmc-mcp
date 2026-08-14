@@ -105,9 +105,10 @@ async def deploy_partition_template(
         except HMCError as exc:
             baseline_warning = BASELINE_SNAPSHOT_WARNING
             _logger.warning(
-                "Cannot capture template-deployment LPAR baseline for system %s: %s",
+                "Cannot capture template-deployment LPAR baseline for system %s "
+                "(HTTP status %s)",
                 target_system_uuid,
-                exc,
+                exc.status_code,
             )
     try:
         submitted_job = await hmc.deploy_partition_template(
@@ -147,9 +148,9 @@ async def deploy_partition_template(
         after = await hmc.list_logical_partitions(target_system_uuid)
     except HMCError as exc:
         _logger.warning(
-            "Cannot capture post-deployment LPAR snapshot for system %s: %s",
+            "Cannot capture post-deployment LPAR snapshot for system %s (HTTP status %s)",
             target_system_uuid,
-            exc,
+            exc.status_code,
         )
         return {
             "job": selected_job,

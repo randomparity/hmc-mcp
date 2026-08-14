@@ -154,13 +154,15 @@ async def test_waited_deploy_reports_stamp_failure(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failed_snapshot", ["baseline", "post"])
 async def test_waited_deploy_keeps_success_when_snapshot_fails(
-    monkeypatch, failed_snapshot
+    monkeypatch, caplog, failed_snapshot
 ):
     old = _lpar("old-uuid", "old")
+    sensitive_body = "SENSITIVE-HMC-RESPONSE-BODY"
+    snapshot_error = HMCError("snapshot unavailable", 500, sensitive_body)
     snapshots = (
-        [HMCError("baseline unavailable")]
+        [snapshot_error]
         if failed_snapshot == "baseline"
-        else [[old], HMCError("post unavailable")]
+        else [[old], snapshot_error]
     )
     hmc = _client(snapshots=snapshots)
     stamp = AsyncMock()
@@ -186,6 +188,7 @@ async def test_waited_deploy_keeps_success_when_snapshot_fails(
     assert result["job"] == COMPLETED_JOB
     assert result["ownership_stamped"] is None
     assert failed_snapshot in result["warnings"][0]
+    assert sensitive_body not in caplog.text
     stamp.assert_not_awaited()
 
 
