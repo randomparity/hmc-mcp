@@ -1,5 +1,6 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
+import asyncio
 import warnings
 from unittest.mock import AsyncMock
 
@@ -57,7 +58,6 @@ JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """
 
 
-
 @pytest.mark.asyncio
 async def test_logon_logoff(mock_hmc):
     async with HMCClient(make_config()) as hmc:
@@ -111,7 +111,6 @@ async def test_context_exit_preserves_primary_error_and_always_closes(
     client._http.aclose.assert_awaited_once()
 
 
-
 @pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
@@ -157,9 +156,9 @@ async def test_list_logical_partitions(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_lpars_for_system(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition"
-    ).mock(return_value=httpx.Response(200, text=LPAR_FEED))
+    mock_hmc.get("/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED)
+    )
     async with HMCClient(make_config()) as hmc:
         lpars = await hmc.list_logical_partitions("sys-uuid")
     assert len(lpars) == 2
@@ -167,9 +166,9 @@ async def test_list_lpars_for_system(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_quick_property(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text=QUICK_STATE))
+    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/quick/PartitionState").mock(
+        return_value=httpx.Response(200, text=QUICK_STATE)
+    )
     async with HMCClient(make_config()) as hmc:
         state = await hmc.get_quick_property(
             "LogicalPartition", "lpar-uuid", "PartitionState"
@@ -179,9 +178,9 @@ async def test_quick_property(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_find_partition_by_name(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==lpar2)"
-    ).mock(return_value=httpx.Response(200, text=LPAR_FEED))
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==lpar2)").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED)
+    )
     async with HMCClient(make_config()) as hmc:
         found = await hmc.find_partition_by_name("lpar2")
     assert found is not None
@@ -190,9 +189,9 @@ async def test_find_partition_by_name(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
-    route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    route = mock_hmc.put("/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
             "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn",
@@ -258,9 +257,9 @@ CREATED_LPAR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 @pytest.mark.asyncio
 async def test_create_logical_partition(mock_hmc):
-    route = mock_hmc.put(
-        "/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition"
-    ).mock(return_value=httpx.Response(201, text=CREATED_LPAR))
+    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR)
+    )
     from hmc_mcp.documents import LparResources, build_lpar_document
 
     xml = build_lpar_document(
@@ -327,7 +326,9 @@ async def test_add_network_adapter(mock_hmc):
         "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(201, text=ADAPTER_ENTRY))
     async with HMCClient(make_config()) as hmc:
-        adapter = await hmc.add_network_adapter("lpar-uuid", port_vlan_id=100, slot_number=9)
+        adapter = await hmc.add_network_adapter(
+            "lpar-uuid", port_vlan_id=100, slot_number=9
+        )
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "ClientNetworkAdapter" in body and ">100<" in body
@@ -361,11 +362,13 @@ async def test_add_vfc_adapter(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_list_adapters(mock_hmc):
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter"
-    ).mock(return_value=httpx.Response(200, text=ADAPTER_ENTRY))
+    mock_hmc.get("/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter").mock(
+        return_value=httpx.Response(200, text=ADAPTER_ENTRY)
+    )
     async with HMCClient(make_config()) as hmc:
-        adapters = await hmc.list_child("LogicalPartition", "lpar-uuid", "ClientNetworkAdapter")
+        adapters = await hmc.list_child(
+            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter"
+        )
     assert len(adapters) == 1
     assert adapters[0]["ResourceType"] == "ClientNetworkAdapter"
 
@@ -376,7 +379,9 @@ async def test_delete_adapter(mock_hmc):
         "/rest/api/uom/LogicalPartition/lpar-uuid/ClientNetworkAdapter/adapter-uuid-1"
     ).mock(return_value=httpx.Response(204))
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_child("LogicalPartition", "lpar-uuid", "ClientNetworkAdapter", "adapter-uuid-1")
+        await hmc.delete_child(
+            "LogicalPartition", "lpar-uuid", "ClientNetworkAdapter", "adapter-uuid-1"
+        )
     assert route.called
 
 
@@ -580,9 +585,9 @@ async def test_set_pcm_preferences(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_get_processed_metrics_links(mock_hmc):
-    route = mock_hmc.get(
-        "/rest/api/pcm/ManagedSystem/sys-uuid/ProcessedMetrics"
-    ).mock(return_value=httpx.Response(200, text=PCM_FEED))
+    route = mock_hmc.get("/rest/api/pcm/ManagedSystem/sys-uuid/ProcessedMetrics").mock(
+        return_value=httpx.Response(200, text=PCM_FEED)
+    )
     async with HMCClient(make_config()) as hmc:
         links = await hmc.get_processed_metric_links(
             "ManagedSystem", "sys-uuid", "2026-08-07T11:00:00Z", no_of_samples=5
@@ -600,7 +605,9 @@ async def test_fetch_json(mock_hmc):
         return_value=httpx.Response(200, json={"systemUtil": {"utilization": 0.5}})
     )
     async with HMCClient(make_config()) as hmc:
-        data = await hmc.fetch_json("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json")
+        data = await hmc.fetch_json(
+            "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+        )
     assert data["systemUtil"]["utilization"] == 0.5
 
 
@@ -636,7 +643,9 @@ async def test_fetch_json_404_raises(mock_hmc):
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
-            await hmc.fetch_json("/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json")
+            await hmc.fetch_json(
+                "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+            )
     assert exc_info.value.status_code == 404
 
 
@@ -746,7 +755,9 @@ async def test_uom_post_sends_schema_version_when_configured(mock_hmc):
 async def test_uom_put_sends_schema_version_when_configured(mock_hmc):
     """_put() includes X-HMC-Schema-Version when schema_version is set."""
     route = mock_hmc.put("/rest/api/uom/LogicalPartition/uuid1").mock(
-        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+        return_value=httpx.Response(
+            200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+        )
     )
     async with HMCClient(make_config(schema_version="V1_0")) as hmc:
         await hmc._put("/rest/api/uom/LogicalPartition/uuid1", b"<xml/>")
@@ -770,7 +781,9 @@ async def test_uom_delete_sends_schema_version_when_configured(mock_hmc):
 async def test_uom_post_omits_schema_version_when_not_configured(mock_hmc):
     """_post() does not include X-HMC-Schema-Version when schema_version is empty."""
     route = mock_hmc.post("/rest/api/uom/LogicalPartition").mock(
-        return_value=httpx.Response(201, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+        return_value=httpx.Response(
+            201, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+        )
     )
     async with HMCClient(make_config()) as hmc:
         await hmc._post("/rest/api/uom/LogicalPartition", b"<xml/>")
@@ -781,7 +794,9 @@ async def test_uom_post_omits_schema_version_when_not_configured(mock_hmc):
 async def test_uom_put_omits_schema_version_when_not_configured(mock_hmc):
     """_put() does not include X-HMC-Schema-Version when schema_version is empty."""
     route = mock_hmc.put("/rest/api/uom/LogicalPartition/uuid1").mock(
-        return_value=httpx.Response(200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>")
+        return_value=httpx.Response(
+            200, text="<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+        )
     )
     async with HMCClient(make_config()) as hmc:
         await hmc._put("/rest/api/uom/LogicalPartition/uuid1", b"<xml/>")
@@ -867,6 +882,48 @@ async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED"
 
 
+@pytest.mark.asyncio
+async def test_wait_for_job_caps_sleep_and_does_not_poll_after_deadline(
+    monkeypatch, mock_hmc
+):
+    now = 10.0
+    loop = AsyncMock()
+    loop.time = lambda: now
+    get_job = AsyncMock(return_value={"Resource": {"Status": "RUNNING"}})
+
+    async def advance(delay):
+        nonlocal now
+        now += delay
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    sleep = AsyncMock(side_effect=advance)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    async with HMCClient(make_config()) as hmc:
+        hmc.get_job = get_job
+        result = await hmc.wait_for_job(
+            "job-1", timeout_seconds=2, poll_interval=5, job_href="/jobs/job-1"
+        )
+
+    assert result == {"Resource": {"Status": "RUNNING"}}
+    sleep.assert_awaited_once_with(2.0)
+    get_job.assert_awaited_once_with("job-1", job_href="/jobs/job-1")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_timeout_zero_still_polls_once(monkeypatch, mock_hmc):
+    get_job = AsyncMock(return_value={"Resource": {"Status": "RUNNING"}})
+    sleep = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    async with HMCClient(make_config()) as hmc:
+        hmc.get_job = get_job
+        await hmc.wait_for_job("job-1", timeout_seconds=0)
+
+    get_job.assert_awaited_once_with("job-1", job_href=None)
+    sleep.assert_not_awaited()
+
+
 # web+xml JobResponse shape uses COMPLETED_OK / COMPLETED_WITH_ERROR
 _JOB_WEB_HREF = "/rest/api/uom/jobs/1778083847656"
 
@@ -895,7 +952,9 @@ async def test_get_job_with_href_uses_web_xml_accept(mock_hmc):
         result = await hmc.get_job("job-uuid-999", job_href=_JOB_WEB_HREF)
     assert route.called
     sent_accept = route.calls.last.request.headers.get("accept", "")
-    assert "powervm.web+xml" in sent_accept, f"Expected web+xml Accept, got: {sent_accept}"
+    assert "powervm.web+xml" in sent_accept, (
+        f"Expected web+xml Accept, got: {sent_accept}"
+    )
     assert result is not None
     assert result["Resource"]["Status"] == "COMPLETED_OK"
 

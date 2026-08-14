@@ -110,7 +110,9 @@ class HMCClient(
             if cleanup_error is None:
                 cleanup_error = close_error
             else:
-                cleanup_error.add_note(f"HTTP client close also failed: {close_error!r}")
+                cleanup_error.add_note(
+                    f"HTTP client close also failed: {close_error!r}"
+                )
 
         if cleanup_error is None:
             return
@@ -144,10 +146,12 @@ class HMCClient(
         resp = await self._http.put(
             "/rest/api/web/Logon",
             content=body,
-            headers=self._web_headers({
-                "Content-Type": f"{MEDIA_WEB}; type=LogonRequest",
-                "Accept": f"{MEDIA_WEB}; type=LogonResponse",
-            }),
+            headers=self._web_headers(
+                {
+                    "Content-Type": f"{MEDIA_WEB}; type=LogonRequest",
+                    "Accept": f"{MEDIA_WEB}; type=LogonResponse",
+                }
+            ),
         )
         if resp.status_code != 200:
             raise HMCError("HMC logon failed", resp.status_code, resp.text)
@@ -163,7 +167,9 @@ class HMCClient(
         if not self._session_token:
             return
         try:
-            await self._http.delete("/rest/api/web/Logon", headers=self._web_headers({"Accept": MEDIA_WEB}))
+            await self._http.delete(
+                "/rest/api/web/Logon", headers=self._web_headers({"Accept": MEDIA_WEB})
+            )
         finally:
             self._session_token = None
             self._http.headers.pop("X-API-Session", None)
@@ -282,7 +288,9 @@ class HMCClient(
             )
 
     async def _web_get(self, path: str) -> str:
-        resp = await self._http.get(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
+        resp = await self._http.get(
+            path, headers=self._web_headers({"Accept": MEDIA_WEB})
+        )
         if resp.status_code == 204:
             return ""
         if resp.status_code != 200:
@@ -302,7 +310,9 @@ class HMCClient(
         return resp.text
 
     async def _web_delete(self, path: str) -> None:
-        resp = await self._http.delete(path, headers=self._web_headers({"Accept": MEDIA_WEB}))
+        resp = await self._http.delete(
+            path, headers=self._web_headers({"Accept": MEDIA_WEB})
+        )
         if resp.status_code not in (200, 202, 204):
             self._check_web_rest000e(path, resp.status_code, resp.text)
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
@@ -311,7 +321,9 @@ class HMCClient(
     # uom resources
     # ------------------------------------------------------------------ #
 
-    async def list_uom(self, resource_type: str, group: str | None = None) -> list[dict[str, Any]]:
+    async def list_uom(
+        self, resource_type: str, group: str | None = None
+    ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType} and parse the Atom feed."""
         path = f"/rest/api/uom/{resource_type}"
         if group:
@@ -321,7 +333,9 @@ class HMCClient(
             return []
         return _parse_feed(xml, path)
 
-    async def get_uom(self, resource_type: str, uuid: str, group: str | None = None) -> dict[str, Any] | None:
+    async def get_uom(
+        self, resource_type: str, uuid: str, group: str | None = None
+    ) -> dict[str, Any] | None:
         """GET /rest/api/uom/{ResourceType}/{uuid} and parse the entry."""
         path = f"/rest/api/uom/{resource_type}/{uuid}"
         if group:
@@ -332,7 +346,9 @@ class HMCClient(
         entries = _parse_feed(xml, path)
         return entries[0] if entries else None
 
-    async def get_quick_property(self, resource_type: str, uuid: str, property_name: str) -> str | None:
+    async def get_quick_property(
+        self, resource_type: str, uuid: str, property_name: str
+    ) -> str | None:
         """GET a quick property, e.g. LogicalPartition/{uuid}/quick/PartitionState.
 
         quick/ endpoints return a plain-text value and require Accept: */* —
@@ -350,9 +366,13 @@ class HMCClient(
             value = value[1:-1]
         return value or None
 
-    async def search_uom(self, resource_type: str, property_name: str, property_value: str) -> list[dict[str, Any]]:
+    async def search_uom(
+        self, resource_type: str, property_name: str, property_value: str
+    ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
-        path = f"/rest/api/uom/{resource_type}/search/({property_name}=={property_value})"
+        path = (
+            f"/rest/api/uom/{resource_type}/search/({property_name}=={property_value})"
+        )
         xml = await self._get(path, resource_type)
         if not xml:
             return []
@@ -362,7 +382,9 @@ class HMCClient(
     # Virtual adapters (children of LogicalPartition)
     # ------------------------------------------------------------------ #
 
-    async def list_child(self, parent_type: str, parent_uuid: str, child_type: str) -> list[dict[str, Any]]:
+    async def list_child(
+        self, parent_type: str, parent_uuid: str, child_type: str
+    ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{parent}/{uuid}/{child} and parse the feed."""
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
         xml = await self._get(path, child_type)
@@ -377,8 +399,9 @@ class HMCClient(
         PUT endpoints when this header is present (same as VolumeGroup and LPAR).
         """
         path = f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}"
-        xml = await self._put(path, child_xml, resource_type=child_type,
-                              include_schema_version=False)
+        xml = await self._put(
+            path, child_xml, resource_type=child_type, include_schema_version=False
+        )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
@@ -386,9 +409,13 @@ class HMCClient(
         self, parent_type: str, parent_uuid: str, child_type: str, child_uuid: str
     ) -> None:
         """DELETE a child resource instance."""
-        await self._delete(f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}/{child_uuid}")
+        await self._delete(
+            f"/rest/api/uom/{parent_type}/{parent_uuid}/{child_type}/{child_uuid}"
+        )
 
-    async def get_uom_path(self, path: str, resource_type: str) -> dict[str, Any] | None:
+    async def get_uom_path(
+        self, path: str, resource_type: str
+    ) -> dict[str, Any] | None:
         xml = await self._get(path, resource_type)
         if not xml:
             return None
@@ -399,7 +426,9 @@ class HMCClient(
     # Jobs (long-running operations)
     # ------------------------------------------------------------------ #
 
-    async def submit_job(self, job_path: str, job_request_xml: str) -> dict[str, Any] | None:
+    async def submit_job(
+        self, job_path: str, job_request_xml: str
+    ) -> dict[str, Any] | None:
         """PUT a JobRequest to /rest/api/uom/.../do/{Operation} and return the job.
 
         `job_path` is the full do-path, e.g.
@@ -472,16 +501,27 @@ class HMCClient(
 
         # UOM Job shape:     COMPLETED, FAILED, EXCEPTION
         # web+xml JobResponse shape: COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED
-        _TERMINAL = {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"}
-        deadline = asyncio.get_event_loop().time() + timeout_seconds
+        _TERMINAL = {
+            "COMPLETED",
+            "COMPLETED_OK",
+            "COMPLETED_WITH_ERROR",
+            "FAILED",
+            "EXCEPTION",
+        }
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        entry = await self.get_job(job_uuid, job_href=job_href)
         while True:
-            entry = await self.get_job(job_uuid, job_href=job_href)
             status = (entry or {}).get("Resource", {}).get("Status", "")
             if status in _TERMINAL:
                 return entry
-            if asyncio.get_event_loop().time() >= deadline:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
                 return entry
-            await asyncio.sleep(poll_interval)
+            await asyncio.sleep(min(poll_interval, remaining))
+            if loop.time() >= deadline:
+                return entry
+            entry = await self.get_job(job_uuid, job_href=job_href)
 
     async def delete_job(self, job_uuid: str) -> None:
         await self._delete(f"/rest/api/uom/Job/{job_uuid}")
@@ -490,7 +530,9 @@ class HMCClient(
     # Raw escape hatch
     # ------------------------------------------------------------------ #
 
-    async def raw_get(self, path: str, accept: str = "*/*") -> tuple[str, dict[str, str]]:
+    async def raw_get(
+        self, path: str, accept: str = "*/*"
+    ) -> tuple[str, dict[str, str]]:
         """GET a raw path and return (body, response_headers).
 
         Returns a 2-tuple so callers can inspect response headers such as
@@ -503,8 +545,12 @@ class HMCClient(
             raise HMCError(f"GET {path} failed", resp.status_code, resp.text)
         return resp.text, dict(resp.headers)
 
-    async def raw_post(self, path: str, body: str, content_type: str = "application/xml") -> str:
-        resp = await self._http.post(path, content=body, headers={"Content-Type": content_type})
+    async def raw_post(
+        self, path: str, body: str, content_type: str = "application/xml"
+    ) -> str:
+        resp = await self._http.post(
+            path, content=body, headers={"Content-Type": content_type}
+        )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
