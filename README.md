@@ -221,6 +221,7 @@ Exposed tools:
 | `hmc_list_volume_groups`  | List VIOS Volume Groups (free space, PVs, virtual disks) |
 | `hmc_create_volume_group` | Create a Volume Group from physical volumes |
 | `hmc_create_virtual_disk` | Carve a Virtual Disk (logical volume) out of a VG |
+| `hmc_attach_disk_to_lpar` | Create a Virtual Disk, add its vSCSI adapter, and map it to an existing LPAR; supports `dry_run=True` and per-step failure reporting |
 | `hmc_map_storage_to_lpar` | Map a VirtualDisk/PhysicalVolume to an LPAR (vSCSI mapping) |
 
 **Virtual media (ISO library)**

@@ -31,6 +31,11 @@ from .operations_storage import (
     validate_logical_unit_create,
     validate_logical_unit_wait,
 )
+from .operations_provision import (
+    AttachDiskResult,
+    ProvisionStorage,
+    attach_disk_to_lpar,
+)
 
 
 tool, register_tools = tool_module()
@@ -75,6 +80,41 @@ def hmc_create_volume_group(
         async with client_from_env(profile) as hmc:
             return await create_volume_group(
                 hmc, vios_name_or_uuid, name, physical_volumes
+            )
+
+    return _run(_go)
+
+
+@tool
+def hmc_attach_disk_to_lpar(
+    lpar_name_or_uuid: str,
+    vios_uuid: str,
+    vg_uuid: str,
+    disk_name: str,
+    capacity_mb: int,
+    vios_partition_id: int,
+    vios_slot: int,
+    dry_run: bool = False,
+    profile: str | None = None,
+) -> AttachDiskResult:
+    """Create and attach a virtual disk to an existing LPAR.
+
+    Validates the LPAR and volume group before mutation. The execution order is
+    create disk, add the paired vSCSI client adapter, then map the disk. Set
+    dry_run=True to validate only. Expected HMC failures are returned per step;
+    completed steps are ``ok`` and unattempted steps are ``skipped``.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await attach_disk_to_lpar(
+                hmc,
+                lpar_name_or_uuid,
+                ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
+                capacity_mb=capacity_mb,
+                vios_partition_id=vios_partition_id,
+                vios_slot=vios_slot,
+                dry_run=dry_run,
             )
 
     return _run(_go)

@@ -123,6 +123,7 @@ from .server_adapters import (
     hmc_list_adapters as hmc_list_adapters,
 )
 from .server_storage import (
+    hmc_attach_disk_to_lpar as hmc_attach_disk_to_lpar,
     hmc_create_logical_unit as hmc_create_logical_unit,
     hmc_create_media_repository as hmc_create_media_repository,
     hmc_create_optical_media as hmc_create_optical_media,
