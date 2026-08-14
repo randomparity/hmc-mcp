@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from hmc_mcp.client_lpars import LparsMixin
 from hmc_mcp.client_lpm import LpmMixin
 from hmc_mcp.client_network import NetworkMixin
+from hmc_mcp.client_templates import TemplatesMixin
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.errors import HMCError
 
 
 class LparsHarness(LparsMixin):
@@ -34,6 +37,13 @@ class NetworkHarness(NetworkMixin):
         self._get = AsyncMock(return_value="")
         self._put = AsyncMock(return_value="")
         self._delete = AsyncMock(return_value=None)
+
+
+class TemplatesHarness(TemplatesMixin):
+    def __init__(self, response: httpx.Response) -> None:
+        self._request = AsyncMock(return_value=response)
+        self.submit_job = AsyncMock(return_value={"UUID": "job-1"})
+        self._session_token = "session-token"
 
 
 @pytest.mark.asyncio
@@ -127,3 +137,34 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
     client._delete.assert_awaited_once_with(
         "/rest/api/uom/ManagedSystem/system-1/VirtualNetwork/network-1"
     )
+
+
+@pytest.mark.asyncio
+async def test_templates_mixin_handles_http_response_contracts():
+    client = TemplatesHarness(httpx.Response(204))
+
+    assert await client.list_partition_templates() == []
+    client._request.assert_awaited_once_with(
+        "GET",
+        "/rest/api/templates/PartitionTemplate",
+        headers={
+            "Accept": f"{client.TEMPLATES_MEDIA}; type=PartitionTemplate",
+        },
+    )
+
+    client._request.return_value = httpx.Response(503, text="unavailable")
+    with pytest.raises(HMCError, match="GET /rest/api/templates/PartitionTemplate failed"):
+        await client.list_partition_templates()
+
+
+@pytest.mark.asyncio
+async def test_templates_mixin_routes_deployment_job():
+    client = TemplatesHarness(httpx.Response(200))
+
+    assert await client.deploy_partition_template("draft-1", "system-1") == {
+        "UUID": "job-1"
+    }
+    path, document = client.submit_job.await_args.args
+    assert path == "/rest/api/templates/PartitionTemplate/draft-1/do/deploy"
+    assert "system-1" in document
+    assert "session-token" in document
