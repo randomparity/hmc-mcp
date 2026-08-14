@@ -45,6 +45,9 @@ FAILED_JOB_STATUSES = frozenset(
         "FAILED_TO_START",
     }
 )
+SUCCESSFUL_JOB_STATUSES = frozenset(
+    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"}
+)
 
 
 @dataclass(frozen=True)

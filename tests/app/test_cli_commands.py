@@ -1333,6 +1333,47 @@ def test_lpm_commands_delegate_resolved_arguments(fake_hmc, args, expected_call)
     assert LPAR_UUID in result.stdout
 
 
+def test_migrate_cli_defaults_to_validation_first(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "migrate", LPAR_NAME, "--target", "sys1", "--yes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    names = [name for name, _args, _kwargs in fake_hmc.calls]
+    assert names.index("lpar_migrate_validate") < names.index("lpar_migrate")
+    assert "wait_for_job" in names
+
+
+def test_migrate_cli_can_bypass_validation(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "migrate",
+            LPAR_NAME,
+            "--target",
+            "sys1",
+            "--no-validate-first",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    names = [name for name, _args, _kwargs in fake_hmc.calls]
+    assert "lpar_migrate_validate" not in names
+    assert "lpar_migrate" in names
+
+
+def test_migrate_cli_rejects_effective_wait_timing_before_confirmation(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "migrate", LPAR_NAME, "--target", "sys1", "--interval", "0"],
+    )
+
+    assert result.exit_code == 1
+    assert fake_hmc.calls == []
+
+
 @pytest.mark.parametrize(
     "args",
     [

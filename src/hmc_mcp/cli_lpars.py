@@ -268,12 +268,32 @@ def lpars_migrate(
     wait_time: int | None = typer.Option(
         None, "--wait-time", help="Override operation wait time"
     ),
+    validate_first: bool = typer.Option(
+        True,
+        "--validate-first/--no-validate-first",
+        help="Require successful terminal validation before migration",
+    ),
+    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for migration"),
+    timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
+    interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Live-migrate (LPM) an LPAR to another managed system."""
 
+    validate_wait_timing(wait or validate_first, timeout, interval)
+
     async def _fn(hmc):
-        return await migrate_lpar(hmc, name_or_uuid, target, profile, wait_time)
+        return await migrate_lpar(
+            hmc,
+            name_or_uuid,
+            target,
+            profile,
+            wait_time,
+            validate_first=validate_first,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
 
     _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
 

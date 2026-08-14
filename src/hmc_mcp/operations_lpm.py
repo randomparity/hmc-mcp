@@ -9,11 +9,13 @@ from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_name
 from .jobs import (
     JobOutcome,
+    SUCCESSFUL_JOB_STATUSES,
     job_identifier,
     job_outcome,
     validate_wait_timing,
     wait_for_submitted_job,
 )
+from .errors import HMCError
 
 
 @dataclass(frozen=True)
@@ -49,22 +51,45 @@ async def migrate_lpar(
     wait_time: int | None = None,
     *,
     validate: bool = False,
+    validate_first: bool = True,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> LpmResult:
-    """Resolve selectors, submit migration or validation, and optionally wait."""
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    """Resolve selectors and submit standalone validation or validation-first migration."""
+    effective_wait = wait or (validate_first and not validate)
+    validate_wait_timing(effective_wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
     target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-    submit = hmc.lpar_migrate_validate if validate else hmc.lpar_migrate
-    job = await submit(
+    if validate:
+        job = await hmc.lpar_migrate_validate(
+            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        )
+        return LpmResult(
+            lpar_uuid,
+            await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
+        )
+    if validate_first:
+        validation_job = await hmc.lpar_migrate_validate(
+            lpar_uuid, target_system, target_profile_name, wait_time=wait_time
+        )
+        validation = await _finish_job(
+            hmc, validation_job, True, timeout_seconds, poll_interval
+        )
+        if validation.timed_out or validation.status not in SUCCESSFUL_JOB_STATUSES:
+            detail = validation.error or "no validation error detail returned"
+            raise HMCError(
+                "LPM validation did not succeed "
+                f"(status={validation.status or 'unknown'}, error={detail}); "
+                "migration was not submitted"
+            )
+    job = await hmc.lpar_migrate(
         lpar_uuid, target_system, target_profile_name, wait_time=wait_time
     )
-    completed_job = await wait_for_submitted_job(
-        hmc, job, wait, timeout_seconds, poll_interval
+    return LpmResult(
+        lpar_uuid,
+        await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),
     )
-    return LpmResult(lpar_uuid, completed_job)
 
 
 async def abort_lpar_migration(
