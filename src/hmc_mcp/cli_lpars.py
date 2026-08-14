@@ -7,8 +7,6 @@ from rich.table import Table
 from typing import cast
 
 from .common import is_uuid
-from .common import resolve_system_uuid
-
 from .cli_app import (
     _client,
     _first_field,
@@ -465,10 +463,8 @@ def lpars_create(
 
     async def _go():
         async with _client() as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system)
             return await create_and_stamp_lpar(
                 hmc,
-                system_uuid,
                 system,
                 LparCreation(
                     name,

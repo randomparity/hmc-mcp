@@ -259,7 +259,6 @@ async def provision_lpar(
     try:
         creation = await create_and_stamp_lpar(
             hmc,
-            system_uuid,
             system_name_or_uuid,
             LparCreation(name, partition_type, resources),
         )

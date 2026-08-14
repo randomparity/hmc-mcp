@@ -13,7 +13,6 @@ from .errors import HMCError
 from .common import (
     client_from_env,
     resolve_lpar_uuid,
-    resolve_system_uuid,
 )
 from .documents import (
     Keylock,
@@ -103,11 +102,9 @@ def hmc_create_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             try:
                 return await create_and_stamp_lpar(
                     hmc,
-                    system_uuid,
                     system_name_or_uuid,
                     LparCreation(
                         name,

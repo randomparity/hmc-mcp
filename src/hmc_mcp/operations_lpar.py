@@ -155,7 +155,6 @@ async def _stamp_ownership(
 
 async def create_and_stamp_lpar(
     hmc: HMCClient,
-    system_uuid: str,
     system_name_or_uuid: str,
     creation: LparCreation,
 ) -> LparCreationResult:
@@ -167,6 +166,7 @@ async def create_and_stamp_lpar(
             f"(UUID {existing.get('UUID')!r}). Choose a different name "
             "or delete the existing partition first."
         )
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name: str | None = None
     document = build_lpar_document(
         name=creation.name,
