@@ -30,13 +30,8 @@ of the stack.
 
 ### Phase 1 — ownership token (advisory)
 
-The three LPAR create paths — `hmc_create_lpar`, `hmc_provision_lpar`,
-`hmc_deploy_partition_template` — stamp the LPAR description field after
-successful creation using a best-effort SSH call. For
-`hmc_deploy_partition_template`, which submits an async job, stamping is only
-attempted when `wait=True`; `wait=False` (the default) produces an unstamped
-LPAR, since the job outcome is unknown at return time. Operators who require the
-ownership token should pass `wait=True`. The token format is:
+`hmc_create_lpar` and `hmc_provision_lpar` stamp the LPAR description field
+after successful creation using a best-effort SSH call. The token format is:
 
 ```
 [hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]
@@ -67,14 +62,14 @@ per-HMC-user isolation) are explicit future work and require a separate ADR.
 
 ## Consequences
 
-- Every LPAR created through the three create paths carries a machine-readable
-  ownership token visible in the HMC GUI Partitions tab and readable via
-  `hmc_get_lpar_description`.
-  **Known gap (issue #135):** `hmc_deploy_partition_template` currently stubs
-  ownership stamping with `ownership_stamped=None` for all outcomes because the
-  deploy job does not reliably return the new LPAR name across HMC firmware
-  versions.  Full implementation (diff the LPAR list before/after the job) is
-  tracked in issue #135.
+- LPARs created through `hmc_create_lpar` and `hmc_provision_lpar` carry a
+  machine-readable ownership token visible in the HMC GUI Partitions tab and
+  readable via `hmc_get_lpar_description`.
+- **Known gap (issue #135):** `hmc_deploy_partition_template` never stamps
+  ownership because the deploy job does not reliably return the new LPAR name
+  across HMC firmware versions. It returns a manual-stamping warning. Full
+  implementation (diff the LPAR list before/after the job) is tracked in issue
+  #135.
 - Attribution in the HMC REST audit log improves: `X-Audit-Memento` is now
   `hmc-mcp:<agent_id>` rather than the generic `hmc-mcp` when `HMC_AGENT_ID` is
   set.

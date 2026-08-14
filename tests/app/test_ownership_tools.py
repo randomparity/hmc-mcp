@@ -1,9 +1,4 @@
-"""Tests for ownership token stamping in LPAR create tools (issue #132).
-
-Verifies that hmc_create_lpar, hmc_provision_lpar (dry_run), and
-hmc_deploy_partition_template return the ownership_stamped key and that
-stamp failures produce warnings without affecting the primary result.
-"""
+"""Tests for ownership token stamping in direct LPAR creation (issue #132)."""
 
 from __future__ import annotations
 

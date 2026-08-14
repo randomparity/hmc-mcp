@@ -125,9 +125,12 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert "Deploy</OperationName>" in body
     assert "TargetUuid" in body and "sys-uuid" in body
     assert "K_X_API_SESSION_MEMENTO" in body
-    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert set(result) == {"job", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
-    assert result["ownership_stamped"] is None
+    assert result["warnings"] == [
+        "ownership stamp not attempted: template deployment does not identify and stamp "
+        "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
+    ]
 
 
 # ---------------------------------------------------------------------- #
@@ -162,9 +165,8 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     )
     assert submit_route.called
     assert poll_route.called
-    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert set(result) == {"job", "warnings"}
     assert result["job"]["Resource"]["Status"] == "COMPLETED"
-    assert result["ownership_stamped"] is None
 
 
 def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
@@ -176,17 +178,17 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
     the deploy job); the warnings list must tell the operator how to stamp.
     """
     _hmc_env(monkeypatch)
-    mock_hmc.put(
-        "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
         "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
     )
-    assert result["warnings"], "expected at least one advisory warning for manual stamp"
-    combined = " ".join(result["warnings"])
-    # The warning must tell the operator to identify the LPAR and stamp manually.
-    assert "stamp" in combined.lower()
-    assert "manually" in combined.lower() or "hmc_set_lpar_description" in combined
+    assert set(result) == {"job", "warnings"}
+    assert result["warnings"] == [
+        "ownership stamp not attempted: template deployment does not identify and stamp "
+        "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
+    ]
