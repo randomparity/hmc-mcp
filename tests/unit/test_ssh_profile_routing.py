@@ -3,8 +3,8 @@
 These tests verify that:
 1. `_ssh_with_client` threads a caller-supplied profile to the SSH config and
    both name resolvers.
-2. `_resolve_system_name` / `_resolve_lpar_name` call `client_from_env(profile)`
-   instead of `client_from_env()`.
+2. SSH selector resolution builds its REST client from the same profile-selected
+   config used for SSH.
 3. `run_hmc_cli` passes a pre-built HMCConfig to `run_hmc_command` when supplied.
 4. MCP tool `profile` parameter reaches the SSH connection.
 5. `profile=None` preserves existing env-default behavior.
@@ -139,73 +139,66 @@ def test_ssh_with_client_profile_none_uses_env(monkeypatch, mock_hmc):
 
 
 # ---------------------------------------------------------------------------
-# Task 1.2 — _resolve_system_name / _resolve_lpar_name with profile
+# Task 1.2 — REST and SSH selector resolution share one config
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_resolve_system_name_uses_profile(mock_hmc):
-    """_resolve_system_name calls client_from_env(profile) for the REST leg."""
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
-        # Make client_from_env("dev") return an async context manager that
-        # returns a client whose get_managed_system we can control.
+async def test_resolve_system_name_uses_supplied_config():
+    """System resolution builds its REST client from the supplied config."""
+    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get_managed_system = AsyncMock(
             return_value={"Resource": {"SystemName": SYSTEM_NAME}}
         )
-        mock_cfe.return_value = mock_client
+        mock_client_type.return_value = mock_client
 
-        from hmc_mcp._app import _resolve_system_name
+        from hmc_mcp.ssh_selectors import resolve_system_name
 
-        config = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
-        result = await _resolve_system_name(config, SYSTEM_UUID, "dev")
+        result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_client_type.assert_called_once_with(DEV_CONFIG)
     assert result == SYSTEM_NAME
 
 
 @pytest.mark.asyncio
-async def test_resolve_system_name_profile_none_uses_default():
-    """_resolve_system_name with profile=None passes None to client_from_env."""
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
+async def test_resolve_system_name_uses_one_rest_client():
+    """System resolution opens exactly one REST client."""
+    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get_managed_system = AsyncMock(
             return_value={"Resource": {"SystemName": SYSTEM_NAME}}
         )
-        mock_cfe.return_value = mock_client
+        mock_client_type.return_value = mock_client
 
-        from hmc_mcp._app import _resolve_system_name
+        from hmc_mcp.ssh_selectors import resolve_system_name
 
-        config = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
-        await _resolve_system_name(config, SYSTEM_UUID)  # no profile arg → None
+        await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
-    mock_cfe.assert_called_once_with(None)
+    mock_client_type.assert_called_once_with(DEV_CONFIG)
 
 
 @pytest.mark.asyncio
-async def test_resolve_lpar_name_uses_profile():
-    """_resolve_lpar_name calls client_from_env(profile) for the REST leg."""
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
+async def test_resolve_lpar_name_uses_supplied_config():
+    """LPAR resolution builds its REST client from the supplied config."""
+    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get_logical_partition = AsyncMock(
             return_value={"Resource": {"PartitionName": LPAR_NAME}}
         )
-        mock_cfe.return_value = mock_client
+        mock_client_type.return_value = mock_client
 
-        from hmc_mcp._app import _resolve_lpar_name
+        from hmc_mcp.ssh_selectors import resolve_lpar_name
 
-        config = HMCConfig(host=DEV_HOST, user=DEV_USER, password=DEV_PASSWORD)
-        result = await _resolve_lpar_name(config, LPAR_UUID, profile="dev")
+        result = await resolve_lpar_name(DEV_CONFIG, LPAR_UUID)
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_client_type.assert_called_once_with(DEV_CONFIG)
     assert result == LPAR_NAME
 
 
@@ -218,15 +211,14 @@ async def test_resolve_lpar_name_uses_profile():
 async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
     """When REST transport fails, the SSH fallback uses the supplied config.
 
-    The config passed to the fallback is the same one given to _resolve_system_name,
-    so a caller that built config from client_from_env(profile).config ensures the
-    fallback also uses the profile's credentials.
+    The config passed to the fallback is the same one given to the resolver, so
+    both transports use the same profile-selected credentials.
     """
-    from hmc_mcp._app import _resolve_system_name
+    from hmc_mcp.ssh_selectors import resolve_system_name
 
     fallback_output = f"{SYSTEM_UUID},{SYSTEM_NAME}\n"
 
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
+    with patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client_type:
         # REST leg raises a transport error → SSH fallback runs
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -234,11 +226,11 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
         mock_client.get_managed_system = AsyncMock(
             side_effect=HMCTransportError("GET managed system failed: unreachable")
         )
-        mock_cfe.return_value = mock_client
+        mock_client_type.return_value = mock_client
 
         conn = _make_ssh_mock(fallback_output)
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
-            result = await _resolve_system_name(DEV_CONFIG, SYSTEM_UUID, "dev")
+            result = await resolve_system_name(DEV_CONFIG, SYSTEM_UUID)
 
     # SSH fallback used the config we supplied (DEV_CONFIG)
     assert result == SYSTEM_NAME

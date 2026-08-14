@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from hmc_mcp._app import _resolve_lpar_name, _resolve_system_name
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh_commands import HMCCLIError, _ssh_lpar_name, _ssh_system_name
+from hmc_mcp.ssh_selectors import resolve_lpar_name, resolve_system_name
 
 from conftest import make_config
 
@@ -45,13 +45,6 @@ def _make_ssh_mock(stdout: str = "") -> MagicMock:
     conn.__aenter__ = AsyncMock(return_value=conn)
     conn.__aexit__ = AsyncMock(return_value=False)
     return conn
-
-
-def _hmc_env(monkeypatch) -> None:
-    """Set env vars so ``client_from_env()`` inside the resolvers succeeds."""
-    monkeypatch.setenv("HMC_HOST", "hmc.test")
-    monkeypatch.setenv("HMC_USER", "hscroot")
-    monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
 # ---------------------------------------------------------------------- #
@@ -111,17 +104,18 @@ async def test_ssh_lpar_name_unscoped_without_system():
 
 
 # ---------------------------------------------------------------------- #
-# _resolve_system_name / _resolve_lpar_name (REST-first, SSH fallback)
+# resolve_system_name / resolve_lpar_name (REST-first, SSH fallback)
 # ---------------------------------------------------------------------- #
 
 
 @pytest.mark.asyncio
 async def test_resolve_system_name_passes_names_through():
     """A plain name is returned untouched — no REST session, no SSH command."""
-    with patch("hmc_mcp._app.client_from_env") as mock_client, patch(
-        "hmc_mcp.ssh.asyncssh.connect"
-    ) as mock_connect:
-        name = await _resolve_system_name(make_config(), SYSTEM_NAME)
+    with (
+        patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client,
+        patch("hmc_mcp.ssh.asyncssh.connect") as mock_connect,
+    ):
+        name = await resolve_system_name(make_config(), SYSTEM_NAME)
 
     assert name == SYSTEM_NAME
     mock_client.assert_not_called()
@@ -131,10 +125,11 @@ async def test_resolve_system_name_passes_names_through():
 @pytest.mark.asyncio
 async def test_resolve_lpar_name_passes_names_through():
     """A plain LPAR name is returned untouched."""
-    with patch("hmc_mcp._app.client_from_env") as mock_client, patch(
-        "hmc_mcp.ssh.asyncssh.connect"
-    ) as mock_connect:
-        name = await _resolve_lpar_name(make_config(), LPAR_NAME, SYSTEM_NAME)
+    with (
+        patch("hmc_mcp.ssh_selectors.HMCClient") as mock_client,
+        patch("hmc_mcp.ssh.asyncssh.connect") as mock_connect,
+    ):
+        name = await resolve_lpar_name(make_config(), LPAR_NAME, SYSTEM_NAME)
 
     assert name == LPAR_NAME
     mock_client.assert_not_called()
@@ -142,9 +137,10 @@ async def test_resolve_lpar_name_passes_names_through():
 
 
 @pytest.mark.asyncio
-async def test_resolve_system_name_falls_back_to_ssh_when_rest_down(monkeypatch, mock_hmc):
+async def test_resolve_system_name_falls_back_to_ssh_when_rest_down(
+    mock_hmc,
+):
     """A REST transport failure triggers the SSH name lookup."""
-    _hmc_env(monkeypatch)
     # REST is unreachable: logon raises a transport error (not an HMCError).
     mock_hmc.put("/rest/api/web/Logon").mock(
         side_effect=httpx.ConnectError("connection refused")
@@ -152,22 +148,21 @@ async def test_resolve_system_name_falls_back_to_ssh_when_rest_down(monkeypatch,
     conn = _make_ssh_mock(_SYS_ROWS)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        name = await _resolve_system_name(make_config(), SYSTEM_UUID)
+        name = await resolve_system_name(make_config(), SYSTEM_UUID)
 
     assert name == SYSTEM_NAME
 
 
 @pytest.mark.asyncio
-async def test_resolve_lpar_name_falls_back_scoped_by_system(monkeypatch, mock_hmc):
+async def test_resolve_lpar_name_falls_back_scoped_by_system(mock_hmc):
     """The LPAR SSH fallback is scoped to the resolved system name."""
-    _hmc_env(monkeypatch)
     mock_hmc.put("/rest/api/web/Logon").mock(
         side_effect=httpx.ConnectError("connection refused")
     )
     conn = _make_ssh_mock(_LPAR_ROWS)
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        name = await _resolve_lpar_name(
+        name = await resolve_lpar_name(
             make_config(), LPAR_UUID, system_name=SYSTEM_NAME
         )
 
@@ -178,14 +173,13 @@ async def test_resolve_lpar_name_falls_back_scoped_by_system(monkeypatch, mock_h
 
 @pytest.mark.asyncio
 async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
-    monkeypatch, mock_hmc
+    mock_hmc,
 ):
     """A REST 4xx (HMCError) is a real answer — no SSH fallback.
 
     REST responded, so the unknown UUID should surface as an error rather
     than silently resolving via SSH.
     """
-    _hmc_env(monkeypatch)
     # logon succeeds (fixture default); the system GET returns 404.
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(404, text="not found")
@@ -193,6 +187,6 @@ async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
 
     with patch("hmc_mcp.ssh.asyncssh.connect") as mock_connect:
         with pytest.raises(HMCError):
-            await _resolve_system_name(make_config(), SYSTEM_UUID)
+            await resolve_system_name(make_config(), SYSTEM_UUID)
 
     mock_connect.assert_not_called()

@@ -8,11 +8,10 @@ from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
-    _ssh_with_client,
     mcp,
 )
 
-from .common import client_from_env
+from .common import build_config, client_from_env
 from .operations_network import (
     create_virtual_network,
     delete_virtual_network,
@@ -20,7 +19,7 @@ from .operations_network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-from .ssh_commands import (
+from .operations_ssh_network import (
     SriovMode,
     add_vnic,
     list_fc_ports,
@@ -152,13 +151,10 @@ def hmc_list_fc_ports(
     UUID and hmc_list_lpars to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: list_fc_ports(
-            config, system_name, lpar_name
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
+    return _run(
+        lambda: list_fc_ports(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
     )
 
 
@@ -182,13 +178,10 @@ def hmc_list_sea_adapters(
     UUID and hmc_list_lpars to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: list_sea_adapters(
-            config, system_name, lpar_name
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
+    return _run(
+        lambda: list_sea_adapters(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
     )
 
 
@@ -220,12 +213,10 @@ def hmc_set_sriov_adapter_mode(
     functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    return _ssh_with_client(
-        lambda config, system_name, _: set_sriov_adapter_mode(
-            config, system_name, adapter_id, mode
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        profile=profile,
+    return _run(
+        lambda: set_sriov_adapter_mode(
+            build_config(profile=profile), system_name_or_uuid, adapter_id, mode
+        )
     )
 
 
@@ -247,13 +238,10 @@ def hmc_list_vnics(
     ``hmc_list_lpars`` to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: list_vnics(
-            config, system_name, lpar_name
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
+    return _run(
+        lambda: list_vnics(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
     )
 
 
@@ -297,19 +285,16 @@ def hmc_add_vnic(
 
     profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: add_vnic(
-            config,
-            system_name,
-            lpar_name,
+    return _run(
+        lambda: add_vnic(
+            build_config(profile=profile),
+            system_name_or_uuid,
+            lpar_name_or_uuid,
             capacity,
             vswitch_name,
             port_vlan_id,
             backing_devices,
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
+        )
     )
 
 
@@ -338,11 +323,11 @@ def hmc_remove_vnic(
     output (immediate delete — no job to poll).
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: remove_vnic(
-            config, system_name, lpar_name, vnic_id
+    return _run(
+        lambda: remove_vnic(
+            build_config(profile=profile),
+            system_name_or_uuid,
+            lpar_name_or_uuid,
+            vnic_id,
         ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
     )

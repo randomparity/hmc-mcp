@@ -3,8 +3,7 @@
 Holds the single :class:`FastMCP` instance (``mcp``) that every domain
 tool module registers itself on via ``@mcp.tool``, the read-only /
 destructive capability annotations and the frozensets that document them,
-and the small sync-run / name-or-UUID-resolution (REST-first, SSH-fallback)
-/ SSH-passthrough helpers used by the tool bodies.
+and the small sync-run / SSH-passthrough helpers used by the tool bodies.
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
@@ -20,15 +19,9 @@ from typing import Any, Literal, TypeVar, overload
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .client import HMCClient
-from .common import (
-    build_config,
-    client_from_env,
-    is_uuid,
-)
+from .common import build_config
 from .config import HMCConfig
-from .errors import HMCTransportError
-from .ssh_commands import _ssh_lpar_name, _ssh_system_name
+from .ssh_selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
 
@@ -198,80 +191,6 @@ def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     return asyncio.run(fn())
 
 
-# ---------------------------------------------------------------------- #
-# Name-or-UUID resolution (REST-first, SSH fallback) for SSH tools
-# ---------------------------------------------------------------------- #
-
-
-async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
-    """Resolve a managed-system UUID to its CLI SystemName via REST."""
-    entry = await hmc.get_managed_system(system_uuid)
-    if not entry or "SystemName" not in entry.get("Resource", {}):
-        raise ValueError(
-            f"Could not resolve system UUID {system_uuid!r} to a system name. "
-            "Use hmc_list_systems to find the system_uuid."
-        )
-    return entry["Resource"]["SystemName"]
-
-
-async def _lpar_name_from_rest(hmc: HMCClient, lpar_uuid: str) -> str:
-    """Resolve an LPAR UUID to its CLI PartitionName via REST."""
-    entry = await hmc.get_logical_partition(lpar_uuid)
-    if not entry or "PartitionName" not in entry.get("Resource", {}):
-        raise ValueError(
-            f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
-            "Use hmc_list_lpars to find the lpar_uuid."
-        )
-    return entry["Resource"]["PartitionName"]
-
-
-async def _resolve_system_name(
-    config: HMCConfig,
-    system_name_or_uuid: str | None,
-    profile: str | None = None,
-) -> str | None:
-    """Resolve a system name-or-uuid to a CLI SystemName.
-
-    Names pass through untouched (no REST needed). UUIDs are resolved via
-    REST, falling back to an ``lssyscfg`` name lookup over SSH only when the
-    REST transport is unreachable (``HMCTransportError``). A REST 4xx/5xx
-    (``HMCError``) is *not* a transport failure — REST answered and the UUID
-    is unknown, so the error surfaces rather than falling back.
-
-    *profile* selects the HMC connection profile for the REST lookup; when
-    ``None`` the env-default resolution order is used (matching the behavior
-    of all pre-#127 calls).
-    """
-    if system_name_or_uuid is None or not is_uuid(system_name_or_uuid):
-        return system_name_or_uuid
-    try:
-        async with client_from_env(profile) as hmc:
-            return await _system_name_from_rest(hmc, system_name_or_uuid)
-    except HMCTransportError:
-        return await _ssh_system_name(config, system_name_or_uuid)
-
-
-async def _resolve_lpar_name(
-    config: HMCConfig,
-    lpar_name_or_uuid: str | None,
-    system_name: str | None = None,
-    profile: str | None = None,
-) -> str | None:
-    """Resolve an LPAR name-or-uuid to a CLI PartitionName.
-
-    Same REST-first / SSH-fallback contract as :func:`_resolve_system_name`;
-    *system_name* (when known) scopes the SSH name lookup to one system.
-    *profile* selects the HMC connection profile for the REST lookup.
-    """
-    if lpar_name_or_uuid is None or not is_uuid(lpar_name_or_uuid):
-        return lpar_name_or_uuid
-    try:
-        async with client_from_env(profile) as hmc:
-            return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
-    except HMCTransportError:
-        return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
-
-
 @overload
 def _ssh_with_client(
     fn: Callable[[HMCConfig, str, str], Awaitable[_T]],
@@ -340,9 +259,8 @@ def _ssh_with_client(
 
     async def _go() -> _T:
         config = build_config(profile=profile)
-        system_name = await _resolve_system_name(config, system_name_or_uuid, profile)
-        lpar_name = await _resolve_lpar_name(
-            config, lpar_name_or_uuid, system_name, profile
+        system_name, lpar_name = await resolve_ssh_names(
+            config, system_name_or_uuid, lpar_name_or_uuid
         )
         return await fn(config, system_name, lpar_name)
 

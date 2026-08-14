@@ -1,5 +1,4 @@
-"""CLI commands for virtual networks, switches, bridges, SR-IOV mode, and vNICs.
-"""
+"""CLI commands for virtual networks, switches, bridges, SR-IOV mode, and vNICs."""
 
 from __future__ import annotations
 
@@ -17,17 +16,6 @@ from .cli_app import (
     network_app,
 )
 
-from .ssh_commands import (
-    PciClass,
-    SriovMode,
-    add_vnic,
-    list_fc_ports,
-    list_io_slots,
-    list_sea_adapters,
-    list_vnics,
-    remove_vnic,
-    set_sriov_adapter_mode,
-)
 from .operations_network import (
     create_virtual_network,
     delete_virtual_network,
@@ -35,7 +23,16 @@ from .operations_network import (
     list_virtual_networks,
     list_virtual_switches,
 )
-
+from .operations_ssh_network import (
+    SriovMode,
+    add_vnic,
+    list_fc_ports,
+    list_sea_adapters,
+    list_vnics,
+    remove_vnic,
+    set_sriov_adapter_mode,
+)
+from .ssh_commands import PciClass, list_io_slots
 
 
 @network_app.command("list-switches")
@@ -92,12 +89,16 @@ def network_create(
     system: str = typer.Argument(..., help="Managed system UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Network name"),
     vlan: int = typer.Option(..., "--vlan", help="VLAN ID"),
-    vswitch: int = typer.Option(..., "--vswitch", help="Backing VirtualSwitch SwitchID"),
+    vswitch: int = typer.Option(
+        ..., "--vswitch", help="Backing VirtualSwitch SwitchID"
+    ),
     tagged: bool = typer.Option(False, "--tagged", help="Tagged (bridged) network"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Virtual Network (VLAN) on a managed system."""
-    if not yes and not typer.confirm(f"Create network '{name}' (VLAN {vlan}, vswitch {vswitch}) on {system}?"):
+    if not yes and not typer.confirm(
+        f"Create network '{name}' (VLAN {vlan}, vswitch {vswitch}) on {system}?"
+    ):
         raise typer.Abort()
 
     net = _with_client(
@@ -139,8 +140,10 @@ def network_list_bridges(
 
 @network_app.command("list-fc-ports")
 def network_list_fc_ports(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar_name: str | None = typer.Option(
+        None, "--lpar", help="Filter by LPAR name or UUID"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Virtual Fibre Channel (NPIV) adapters on a managed system."""
@@ -152,8 +155,10 @@ def network_list_fc_ports(
 
 @network_app.command("list-sea-adapters")
 def network_list_sea_adapters(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar_name: str | None = typer.Option(None, "--lpar", help="Filter by LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar_name: str | None = typer.Option(
+        None, "--lpar", help="Filter by LPAR name or UUID"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Shared Ethernet Adapter (SEA) virtual Ethernet ports on a managed system."""
@@ -180,8 +185,10 @@ def network_list_io_slots(
 
 @network_app.command("set-sriov-mode")
 def network_set_sriov_mode(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    adapter_id: str = typer.Argument(..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str = typer.Argument(
+        ..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"
+    ),
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -194,15 +201,17 @@ def network_set_sriov_mode(
         lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
     )
 
-    console.print(f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]")
+    console.print(
+        f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]"
+    )
     if result.strip():
         console.print(result.strip())
 
 
 @network_app.command("list-vnics")
 def network_list_vnics(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR (HMC CLI via SSH)."""
@@ -213,12 +222,14 @@ def network_list_vnics(
 
 @network_app.command("add-vnic")
 def network_add_vnic(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
     vswitch: str = typer.Option(..., "--vswitch", help="Virtual switch name"),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
-    backing_devices: str | None = typer.Option(None, "--backing-devices", help="Backing devices (opaque string, v1 only)"),
+    backing_devices: str | None = typer.Option(
+        None, "--backing-devices", help="Backing devices (opaque string, v1 only)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
@@ -240,8 +251,8 @@ def network_add_vnic(
 
 @network_app.command("remove-vnic")
 def network_remove_vnic(
-    system_name: str = typer.Argument(..., help="Managed system name"),
-    lpar: str = typer.Argument(..., help="LPAR name"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vnic_id: str = typer.Argument(..., help="vNIC ID (from list-vnics)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -251,10 +262,10 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    result = _run(
-        lambda: remove_vnic(_ssh_config(), system_name, lpar, vnic_id)
-    )
+    result = _run(lambda: remove_vnic(_ssh_config(), system_name, lpar, vnic_id))
 
-    console.print(f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system_name}'[/green]")
+    console.print(
+        f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system_name}'[/green]"
+    )
     if result.strip():
         console.print(result.strip())
