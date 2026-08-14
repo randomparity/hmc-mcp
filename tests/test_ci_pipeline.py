@@ -37,6 +37,24 @@ ACTION_PINS = {
         "v4",
     ),
 }
+SCORECARD_ACTION_PINS = {
+    "actions/checkout": (
+        "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
+        "v7.0.1",
+    ),
+    "actions/upload-artifact": (
+        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",  # pragma: allowlist secret
+        "v7.0.1",
+    ),
+    "github/codeql-action/upload-sarif": (
+        "f205ea1c3313d32999d8d6a48b4f6530d4437b38",  # pragma: allowlist secret
+        "v4.37.4",
+    ),
+    "ossf/scorecard-action": (
+        "2d1146689b8cda280b9bc96326124645441f03bc",  # pragma: allowlist secret
+        "v2.4.4",
+    ),
+}
 
 
 def test_quality_tools_are_pinned_with_a_strict_type_boundary() -> None:
@@ -136,3 +154,42 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert 'just-version: "1.58.0"' in workflow
     for command in ("just setup", "just verify", "uv run prek run --all-files"):
         assert f"run: {command}" in workflow
+
+
+def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "scorecard.yml").read_text()
+
+    assert re.search(r"push:\n\s+branches:\s+\[main\]", workflow)
+    assert re.search(r"schedule:\n\s+- cron: '[^']+'", workflow)
+    assert "pull_request:" not in workflow
+    assert "permissions: read-all" in workflow
+    assert workflow.count("permissions:") == 2
+    job_permissions = re.search(
+        r"^    permissions:\n(?P<body>(?:      .+\n)+)\n", workflow, re.MULTILINE
+    )
+    assert job_permissions
+    assert job_permissions["body"] == (
+        "      security-events: write\n"
+        "      id-token: write\n"
+    )
+    assert "runs-on: ubuntu-24.04" in workflow
+    assert "timeout-minutes: 10" in workflow
+
+
+def test_scorecard_workflow_pins_actions_and_retains_results() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "scorecard.yml").read_text()
+
+    expected_actions = {
+        f"{action}@{sha}" for action, (sha, _) in SCORECARD_ACTION_PINS.items()
+    }
+    assert set(re.findall(r"uses:\s+([^\s#]+)", workflow)) == expected_actions
+    for action, (sha, version) in SCORECARD_ACTION_PINS.items():
+        assert f"uses: {action}@{sha}  # {version}" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "results_file: results.sarif" in workflow
+    assert "results_format: sarif" in workflow
+    assert "publish_results: true" in workflow
+    assert "name: scorecard-results" in workflow
+    assert "path: results.sarif" in workflow
+    assert "retention-days: 5" in workflow
+    assert "sarif_file: results.sarif" in workflow
