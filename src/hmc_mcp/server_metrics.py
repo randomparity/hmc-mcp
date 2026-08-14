@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _READ_ONLY,
@@ -10,26 +10,15 @@ from ._app import (
     mcp,
 )
 
-from .errors import HMCError
-from .error_translation import translate_pcm_error
-from .common import client_from_env, resolve_lpar_uuid, resolve_system_uuid
-from .pcm import newest_metric_link
-
-
-async def _resolve_resource_uuid(
-    hmc: Any, category: str, resource_name_or_uuid: str
-) -> str:
-    """Resolve a PCM resource name-or-UUID based on its category.
-
-    For 'ManagedSystem' uses resolve_system_uuid; for 'LogicalPartition'
-    uses resolve_lpar_uuid. Other categories pass through untouched (only
-    UUIDs are valid for other PCM resource types).
-    """
-    if category == "ManagedSystem":
-        return await resolve_system_uuid(hmc, resource_name_or_uuid)
-    if category == "LogicalPartition":
-        return await resolve_lpar_uuid(hmc, resource_name_or_uuid)
-    return resource_name_or_uuid
+from .common import client_from_env
+from .operations_pcm import (
+    MetricKind,
+    get_pcm_preferences,
+    metric_data,
+    metric_links,
+    preference_flags,
+    set_pcm_preferences,
+)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -47,14 +36,7 @@ def hmc_get_pcm_preferences(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(
-                hmc, category, resource_name_or_uuid
-            )
-            try:
-                return await hmc.get_pcm_preferences(category, resource_uuid)
-            except HMCError as exc:
-                translate_pcm_error(exc)
-                raise
+            return await get_pcm_preferences(hmc, category, resource_name_or_uuid)
 
     return _run(_go)
 
@@ -82,30 +64,21 @@ def hmc_set_pcm_preferences(
     Raises:
         ValueError: if no preference flags are supplied.
     """
-    flags: dict[str, bool] = {}
-    if long_term_monitor is not None:
-        flags["LongTermMonitorEnabled"] = long_term_monitor
-    if aggregation is not None:
-        flags["AggregationEnabled"] = aggregation
-    if short_term_monitor is not None:
-        flags["ShortTermMonitorEnabled"] = short_term_monitor
-    if compute_ltm is not None:
-        flags["ComputeLTMEnabled"] = compute_ltm
-    if energy_monitor is not None:
-        flags["EnergyMonitorEnabled"] = energy_monitor
+    flags = preference_flags(
+        long_term_monitor,
+        aggregation,
+        short_term_monitor,
+        compute_ltm,
+        energy_monitor,
+    )
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(
-                hmc, category, resource_name_or_uuid
+            return await set_pcm_preferences(
+                hmc, category, resource_name_or_uuid, flags
             )
-            try:
-                return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
-            except HMCError as exc:
-                translate_pcm_error(exc)
-                raise
 
     return _run(_go)
 
@@ -215,28 +188,10 @@ def hmc_aggregated_metric_links(
     )
 
 
-async def _fetch_metric_links(
-    hmc: Any,
-    kind: Literal["processed", "aggregated"],
-    category: str,
-    resource_uuid: str,
-    start_ts: str,
-    end_ts: str | None,
-    no_of_samples: int | None,
-) -> list[dict[str, str]]:
-    """Fetch the PCM metric feed via the client method for *kind*."""
-    fn = (
-        hmc.get_processed_metric_links
-        if kind == "processed"
-        else hmc.get_aggregated_metric_links
-    )
-    return await fn(category, resource_uuid, start_ts, end_ts, no_of_samples)
-
-
 def _metrics_links(
     category: str,
     resource_name_or_uuid: str,
-    kind: Literal["processed", "aggregated"],
+    kind: MetricKind,
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
@@ -244,16 +199,15 @@ def _metrics_links(
 ) -> list[dict[str, str]]:
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(
-                hmc, category, resource_name_or_uuid
+            return await metric_links(
+                hmc,
+                category,
+                resource_name_or_uuid,
+                kind,
+                start_ts,
+                end_ts,
+                no_of_samples,
             )
-            try:
-                return await _fetch_metric_links(
-                    hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
-                )
-            except HMCError as exc:
-                translate_pcm_error(exc)
-                raise
 
     return _run(_go)
 
@@ -261,7 +215,7 @@ def _metrics_links(
 def _metrics_fetch(
     category: str,
     resource_name_or_uuid: str,
-    kind: Literal["processed", "aggregated"],
+    kind: MetricKind,
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
@@ -269,31 +223,14 @@ def _metrics_fetch(
 ) -> dict[str, Any]:
     async def _go():
         async with client_from_env(profile) as hmc:
-            # Note: 403/406 from _resolve_resource_uuid are intentionally not
-            # wrapped: those list/lookup endpoints are not PCM-specific, so a
-            # PCM authority / not-licensed message would be misleading.
-            resource_uuid = await _resolve_resource_uuid(
-                hmc, category, resource_name_or_uuid
+            return await metric_data(
+                hmc,
+                category,
+                resource_name_or_uuid,
+                kind,
+                start_ts,
+                end_ts,
+                no_of_samples,
             )
-            try:
-                links = await _fetch_metric_links(
-                    hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
-                )
-            except HMCError as exc:
-                translate_pcm_error(exc)
-                raise
-            if not links:
-                return {}
-            # Fetch the most recent metrics document. A 404 means the document
-            # has aged out of PCM retention; surface that as no-data, matching
-            # the tool contract (``{}`` when no metrics are available).
-            # 406/403 are translated to actionable messages; other non-404 codes propagate.
-            try:
-                return await hmc.fetch_json(newest_metric_link(links)["link"])
-            except HMCError as exc:
-                if exc.status_code == 404:
-                    return {}
-                translate_pcm_error(exc)
-                raise
 
     return _run(_go)

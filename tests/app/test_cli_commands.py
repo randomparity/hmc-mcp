@@ -1897,6 +1897,7 @@ def test_metrics_set_prefs_builds_flags(fake_hmc):
             SYSTEM_UUID,
             "--ltm",
             "--no-aggregation",
+            "--compute-ltm",
             "--yes",
         ],
     )
@@ -1907,7 +1908,11 @@ def test_metrics_set_prefs_builds_flags(fake_hmc):
         (
             "set_pcm_preferences",
             ("ManagedSystem", SYSTEM_UUID),
-            {"LongTermMonitorEnabled": True, "AggregationEnabled": False},
+            {
+                "LongTermMonitorEnabled": True,
+                "AggregationEnabled": False,
+                "ComputeLTMEnabled": True,
+            },
         )
     ]
 
