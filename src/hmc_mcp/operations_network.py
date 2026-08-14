@@ -48,7 +48,7 @@ async def delete_virtual_network(
 ) -> str:
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     await hmc.delete_virtual_network(system_uuid, network_uuid)
-    return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
+    return network_uuid
 
 
 async def list_network_bridges(

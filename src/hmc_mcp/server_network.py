@@ -109,9 +109,8 @@ def hmc_delete_virtual_network(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await delete_virtual_network(
-                hmc, system_name_or_uuid, network_uuid
-            )
+            await delete_virtual_network(hmc, system_name_or_uuid, network_uuid)
+        return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
 
     return _run(_go)
 
