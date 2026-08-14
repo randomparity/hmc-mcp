@@ -166,7 +166,7 @@ def hmc_modify_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            if name is not None and not ownership_override:
+            if name is not None:
                 system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
                 system_name, lpar_name = await resolve_lpar_ownership_names(
                     hmc, system_uuid, system_name_or_uuid, lpar_uuid
@@ -278,12 +278,16 @@ def hmc_delete_lpar(
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            if not ownership_override:
-                system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-                system_name, lpar_name = await resolve_lpar_ownership_names(
-                    hmc, system_uuid, system_name_or_uuid, lpar_uuid
-                )
-                await authorize_lpar_mutation(hmc, system_name, lpar_name)
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            system_name, lpar_name = await resolve_lpar_ownership_names(
+                hmc, system_uuid, system_name_or_uuid, lpar_uuid
+            )
+            await authorize_lpar_mutation(
+                hmc,
+                system_name,
+                lpar_name,
+                ownership_override=ownership_override,
+            )
             state = await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )

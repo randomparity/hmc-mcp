@@ -546,7 +546,8 @@ def lpars_modify(
                 ):
                     raise typer.Abort()
             if new_name is not None:
-                assert system is not None
+                if system is None:
+                    raise RuntimeError("rename system validation was bypassed")
                 system_uuid = await resolve_system_uuid(hmc, system)
                 system_name, lpar_name = await resolve_lpar_ownership_names(
                     hmc, system_uuid, system, uuid

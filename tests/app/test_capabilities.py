@@ -11,6 +11,7 @@ hmc_remove_memory_pool.
 """
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -218,21 +219,37 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     delete_route = _mock_state_and_delete(mock_hmc, "running")
 
-    with pytest.raises(HMCError) as exc_info:
+    with (
+        patch(
+            "hmc_mcp.server_lpars.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "lpar-1")),
+        ),
+        patch("hmc_mcp.server_lpars.authorize_lpar_mutation", new=AsyncMock()) as guard,
+        pytest.raises(HMCError) as exc_info,
+    ):
         hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert exc_info.value.status_code == 409
     assert "not activated" in str(exc_info.value)
     assert not delete_route.called
+    assert guard.await_args.kwargs == {"ownership_override": True}
 
 
 def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_state_and_delete(mock_hmc, "not activated")
 
-    result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
+    with (
+        patch(
+            "hmc_mcp.server_lpars.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "lpar-1")),
+        ),
+        patch("hmc_mcp.server_lpars.authorize_lpar_mutation", new=AsyncMock()) as guard,
+    ):
+        result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert result == f"Deleted LPAR {LPAR_UUID}"
+    assert guard.await_args.kwargs == {"ownership_override": True}
 
 
 def test_delete_vios_refuses_when_active(monkeypatch, mock_hmc):

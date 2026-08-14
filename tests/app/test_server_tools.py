@@ -10,7 +10,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -281,13 +281,21 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="renamed"))
     )
-    result = hmc_modify_lpar(
-        SYSTEM_UUID,
-        LPAR_UUID,
-        name="renamed",
-        resources=LparResources(desired_memory=8192),
-        ownership_override=True,
-    )
+    guard = AsyncMock()
+    with (
+        patch(
+            "hmc_mcp.server_lpars.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "owned-lpar")),
+        ),
+        patch("hmc_mcp.server_lpars.authorize_lpar_mutation", new=guard),
+    ):
+        result = hmc_modify_lpar(
+            SYSTEM_UUID,
+            LPAR_UUID,
+            name="renamed",
+            resources=LparResources(desired_memory=8192),
+            ownership_override=True,
+        )
     body = route.calls.last.request.content.decode()
     assert "renamed</PartitionName>" in body
     assert '<DesiredMemory kb="CUD" kxe="false">8192</DesiredMemory>' in body
@@ -295,6 +303,9 @@ def test_modify_lpar_builds_xml(monkeypatch, mock_hmc):
     assert "MaximumMemory" not in body
     assert "ProcessingUnits" not in body
     assert result["Resource"]["PartitionName"] == "renamed"
+    guard.assert_awaited_once_with(
+        ANY, "system-1", "owned-lpar", ownership_override=True
+    )
 
 
 def test_foreign_owned_rename_issues_no_write(monkeypatch, mock_hmc):
