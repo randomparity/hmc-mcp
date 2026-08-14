@@ -329,7 +329,8 @@ Exposed tools:
 
 | Tool                          | Description |
 |-------------------------------|-------------|
-| `hmc_users`                   | All HMC user accounts, or one by username |
+| `hmc_users`                   | List HMC user accounts |
+| `hmc_get_user`                | Get one HMC user account by username |
 | `hmc_create_user`             | Create a new HMC local user account |
 | `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
 | `hmc_delete_user`             | Delete an HMC user account (irreversible) |

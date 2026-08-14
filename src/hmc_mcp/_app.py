@@ -150,6 +150,7 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_aggregated_metrics",
         "hmc_aggregated_metric_links",
         "hmc_users",
+        "hmc_get_user",
         "hmc_list_password_policies",
         "hmc_get_ldap_config",
         "hmc_get_available_hmc_ptfs",

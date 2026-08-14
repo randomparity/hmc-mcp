@@ -28,16 +28,10 @@ from .documents import (
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_users(
-    name: str | None = None,
     user_type: UserType = "all",
     profile: str | None = None,
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List HMC user accounts or get one by username.
-
-    When name is provided, returns a single resource dict for that user,
-    or None if not found. user_type is ignored when name is supplied.
-
-    When name is omitted, returns a list of all user accounts filtered by
+) -> list[dict[str, Any]]:
+    """List HMC user accounts filtered by
     user_type: 'local' (local HMC accounts), 'kerberos'
     (Kerberos/LDAP-backed accounts), or 'all' (default).
     Returns one dict per user: {UUID, title, link, ResourceType, Resource}
@@ -46,9 +40,21 @@ def hmc_users(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if name is not None:
-                return await hmc.get_hmc_user(name)
             return await hmc.list_hmc_users(user_type)
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_user(
+    name: str,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Get one HMC user account by username, or None when it does not exist."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_hmc_user(name)
 
     return _run(_go)
 
@@ -98,7 +104,7 @@ def hmc_modify_user(
     """Modify an existing HMC user account.
 
     Only the fields you supply are changed. enable=True re-enables a
-    disabled account; enable=False disables it. Use hmc_users(name=...) to
+    disabled account; enable=False disables it. Use hmc_get_user(name) to
     confirm the current state before calling. Returns the updated user
     resource dict, or None when the HMC returns an empty successful response.
     """
@@ -121,7 +127,7 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     """Delete an HMC user account by username.
 
     This permanently removes the account — it is irreversible. Confirm
-    the username with hmc_users(name=...) before calling. Returns a confirmation
+    the username with hmc_get_user(name) before calling. Returns a confirmation
     string (immediate delete — no job to poll).
     """
 
