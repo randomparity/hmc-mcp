@@ -8,6 +8,7 @@ import hmc_mcp.ssh as ssh
 
 def test_domain_handlers_live_in_focused_modules() -> None:
     expected_modules = {
+        server.hmc_fleet_health: "hmc_mcp.server_health",
         server.hmc_attach_disk_to_lpar: "hmc_mcp.server_storage",
         server.hmc_list_adapters: "hmc_mcp.server_adapters",
         server.hmc_get_job: "hmc_mcp.server_jobs",

@@ -58,8 +58,8 @@ def test_create_mcp_returns_independent_complete_applications():
     second = create_mcp()
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 112
-    assert len(asyncio.run(second.list_tools())) == 112
+    assert len(asyncio.run(first.list_tools())) == 113
+    assert len(asyncio.run(second.list_tools())) == 113
 
 
 def test_operations_do_not_import_application_modules():
@@ -98,6 +98,21 @@ def test_system_summary_cli_delegates_to_neutral_operation():
         result = CliRunner().invoke(app, ["systems", "summary", "system1", "--json"])
     assert result.exit_code == 0
     summary.assert_awaited_once_with(client, "system1")
+
+
+def test_fleet_health_cli_delegates_to_neutral_operation():
+    from hmc_mcp.operations_health import FleetHealthResult
+
+    client = object()
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), ()))
+    with (
+        patch("hmc_mcp.cli_systems.fleet_health", health),
+        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+    ):
+        result = CliRunner().invoke(app, ["systems", "health", "--json"])
+    assert result.exit_code == 0
+    health.assert_awaited_once_with(client)
+    assert '"failed_jobs": []' in result.stdout
 
 
 def test_capacity_clis_delegate_to_neutral_operations():

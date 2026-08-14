@@ -48,6 +48,7 @@ from . import (
     server_adapters,
     server_capacity,
     server_composite,
+    server_health,
     server_jobs,
     server_lpar_config,
     server_lpars,
@@ -93,6 +94,7 @@ from .server_jobs import (
     hmc_list_recent_jobs as hmc_list_recent_jobs,
     hmc_wait_for_job as hmc_wait_for_job,
 )
+from .server_health import hmc_fleet_health as hmc_fleet_health
 
 from .server_lpars import (
     hmc_create_lpar as hmc_create_lpar,
@@ -223,6 +225,7 @@ TOOL_MODULES = (
     server_systems,
     server_capacity,
     server_jobs,
+    server_health,
     server_lpars,
     server_vios,
     server_adapters,

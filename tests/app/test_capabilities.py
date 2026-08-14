@@ -81,6 +81,12 @@ def test_attach_disk_is_state_changing_not_destructive():
     )
 
 
+def test_fleet_health_is_read_only():
+    assert "hmc_fleet_health" in READ_ONLY_TOOLS
+    annotations = _tools_by_name()["hmc_fleet_health"].annotations
+    assert annotations is not None and annotations.readOnlyHint is True
+
+
 def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 

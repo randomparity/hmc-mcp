@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 
 import typer
 from rich.table import Table
@@ -18,7 +19,39 @@ from .cli_app import (
     systems_app,
 )
 from .operations_systems import power_system
+from .operations_health import fleet_health
 from .jobs import validate_wait_timing
+
+
+@systems_app.command("health")
+def systems_health(
+    as_json: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Show exception-only health across the managed estate."""
+
+    async def _go():
+        async with _client() as hmc:
+            return await fleet_health(hmc)
+
+    result = asdict(_run(_go))
+    if as_json:
+        _print_json(result)
+        return
+    if not any(result[key] for key in ("systems", "vios", "lpars", "failed_jobs")):
+        console.print("[green]No fleet health exceptions found[/green]")
+    for category in ("systems", "vios", "lpars", "failed_jobs"):
+        entries = result[category]
+        if not entries:
+            continue
+        table = Table(title=category.replace("_", " ").title())
+        columns = sorted({key for entry in entries for key in entry})
+        for column in columns:
+            table.add_column(column.replace("_", " ").title())
+        for entry in entries:
+            table.add_row(*(str(entry.get(column, "-")) for column in columns))
+        console.print(table)
+    for warning in result["warnings"]:
+        err_console.print(f"[yellow]{warning}[/yellow]")
 
 
 @systems_app.command("list")
