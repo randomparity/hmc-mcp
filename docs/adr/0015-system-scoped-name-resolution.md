@@ -35,7 +35,8 @@ failure; it never emits a partial ambiguity diagnosis or returns the first match
 Unscoped duplicate-name calls fail before mutation and explain how to
 disambiguate. Scoped calls add a managed-system lookup and child-collection
 request. Diagnosing an unscoped ambiguity may query managed-system child
-collections to associate candidates with parents. Existing single-match and
+collections to associate candidates with parents, capped at 100 systems per
+request; larger inventories require explicit system scope. Existing single-match and
 no-match behavior remains unchanged. Operators must not treat the optional
 system selector as a guard for resource UUIDs; it disambiguates names only.
 

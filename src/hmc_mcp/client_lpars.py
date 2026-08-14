@@ -10,6 +10,7 @@ from typing import Any
 
 from .client_contracts import LparsClient
 from .client_parse import _parse_feed
+from .client_resolution import ambiguity_candidate_ids, bounded_parent_systems
 
 
 class LparsMixin:
@@ -38,6 +39,7 @@ class LparsMixin:
                 if (entry.get("Resource") or {}).get("PartitionName") == name
             ]
             if len(results) > 1:
+                ambiguity_candidate_ids(results, "LPAR", name)
                 system = await self.get_managed_system(system_uuid)
                 system_name = (system or {}).get("Resource", {}).get("SystemName")
                 if not isinstance(system_name, str) or not system_name:
@@ -56,11 +58,12 @@ class LparsMixin:
         if len(results) <= 1:
             return results[0] if results else None
 
-        candidate_ids = {str(entry.get("UUID")) for entry in results}
-        parents: dict[str, list[tuple[str, str]]] = {
-            uuid: [] for uuid in candidate_ids
-        }
-        for system in await self.list_managed_systems():
+        candidate_ids = ambiguity_candidate_ids(results, "LPAR", name)
+        parents: dict[str, list[tuple[str, str]]] = {uuid: [] for uuid in candidate_ids}
+        systems = bounded_parent_systems(
+            await self.list_managed_systems(), "LPAR", name
+        )
+        for system in systems:
             system_uuid = system.get("UUID")
             system_name = (system.get("Resource") or {}).get("SystemName")
             if (
@@ -106,8 +109,12 @@ class LparsMixin:
         HTTP 406 for this PUT when the schema-version header is present.
         """
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/LogicalPartition"
-        xml = await self._put(path, lpar_xml, resource_type="LogicalPartition",
-                              include_schema_version=False)
+        xml = await self._put(
+            path,
+            lpar_xml,
+            resource_type="LogicalPartition",
+            include_schema_version=False,
+        )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 

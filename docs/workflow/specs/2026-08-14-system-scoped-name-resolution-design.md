@@ -61,6 +61,10 @@ only inventory names and UUIDs already available through list tools to the same
 authenticated caller. Authorization policy and ownership override behavior are
 out of scope and unchanged.
 
+Unscoped parent discovery is bounded to 100 managed systems so one caller
+request cannot amplify into an arbitrary number of child-inventory requests.
+Larger inventories fail before fan-out with guidance to supply system scope.
+
 ## Tests
 
 Client tests cover duplicate managed systems and duplicate LPAR/VIOS names on
@@ -70,6 +74,8 @@ operation tests prove each destructive name path forwards scope before any
 mutation. Client tests also trigger a missing parent, a candidate associated
 with multiple parents, and a failed parent-discovery request; each must propagate
 an actionable lookup failure without returning a candidate or attempting a
+mutation. Malformed or repeated candidate UUIDs fail closed, and inventories
+over the parent-discovery budget direct the caller to provide system scope.
 mutation. Existing single-result tests remain as regression proof. The final
 gate is `just verify`.
 
