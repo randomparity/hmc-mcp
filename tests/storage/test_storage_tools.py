@@ -12,6 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from hmc_mcp.client_adapters import ADAPTER_TYPES
 from hmc_mcp.server import (
     hmc_add_network_adapter,
     hmc_add_vfc_adapter,
@@ -24,11 +25,12 @@ from hmc_mcp.server import (
     hmc_delete_adapter,
     hmc_delete_logical_unit,
     hmc_delete_media_repository,
+    hmc_get_shared_storage_pool,
     hmc_list_adapters,
     hmc_list_clusters,
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
-    hmc_shared_storage_pools,
+    hmc_list_shared_storage_pools,
 )
 
 from conftest import JOB_ENTRY
@@ -51,7 +53,7 @@ def _hmc_env(monkeypatch) -> None:
 def _feed(uuid: str, rtype: str, **fields: str) -> str:
     """A single-resource Atom feed; {fields} render as resource elements."""
     body = "\n".join(
-        f"        <{name} xmlns=\"http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/\">{value}</{name}>"
+        f'        <{name} xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">{value}</{name}>'
         for name, value in fields.items()
     )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -80,7 +82,14 @@ def test_list_adapters_defaults_to_network(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
-    ).mock(return_value=httpx.Response(200, text=_feed(ADAPTER_UUID, "ClientNetworkAdapter", MACAddress="00:11:22:33:44:55")))
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                ADAPTER_UUID, "ClientNetworkAdapter", MACAddress="00:11:22:33:44:55"
+            ),
+        )
+    )
     result = hmc_list_adapters(LPAR_UUID)
     assert result[0]["UUID"] == ADAPTER_UUID
     assert result[0]["Resource"]["MACAddress"] == "00:11:22:33:44:55"
@@ -91,9 +100,30 @@ def test_list_adapters_vscsi_type(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
-    ).mock(return_value=httpx.Response(200, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")))
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")
+        )
+    )
     hmc_list_adapters(LPAR_UUID, adapter_type="VirtualSCSIClientAdapter")
     assert route.called
+
+
+def test_all_adapter_types_reach_the_matching_resource(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    for adapter_type in ADAPTER_TYPES:
+        route = mock_hmc.get(
+            f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/{adapter_type}"
+        ).mock(return_value=httpx.Response(200, text=""))
+        hmc_list_adapters(LPAR_UUID, adapter_type=adapter_type)
+        assert route.called
+
+
+def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="adapter_type"):
+        hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
+    assert not mock_hmc.calls
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -101,7 +131,11 @@ def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
-    ).mock(return_value=httpx.Response(201, text=_feed(ADAPTER_UUID, "ClientNetworkAdapter")))
+    ).mock(
+        return_value=httpx.Response(
+            201, text=_feed(ADAPTER_UUID, "ClientNetworkAdapter")
+        )
+    )
     result = hmc_add_network_adapter(
         LPAR_UUID,
         port_vlan_id=42,
@@ -126,11 +160,18 @@ def test_add_vscsi_adapter_builds_xml(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
-    ).mock(return_value=httpx.Response(201, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")))
+    ).mock(
+        return_value=httpx.Response(
+            201, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")
+        )
+    )
     hmc_add_vscsi_adapter(LPAR_UUID, vios_partition_id=7, vios_slot=11, slot_number=4)
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIClientAdapter" in body
-    assert '<RemoteLogicalPartitionID kb="CUD" kxe="false">7</RemoteLogicalPartitionID>' in body
+    assert (
+        '<RemoteLogicalPartitionID kb="CUD" kxe="false">7</RemoteLogicalPartitionID>'
+        in body
+    )
     assert '<RemoteSlotNumber kb="CUD" kxe="false">11</RemoteSlotNumber>' in body
     assert '<VirtualSlotNumber kb="CUD" kxe="false">4</VirtualSlotNumber>' in body
 
@@ -140,12 +181,21 @@ def test_add_vfc_adapter_builds_xml(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualFibreChannelClientAdapter"
-    ).mock(return_value=httpx.Response(201, text=_feed(ADAPTER_UUID, "VirtualFibreChannelClientAdapter")))
+    ).mock(
+        return_value=httpx.Response(
+            201, text=_feed(ADAPTER_UUID, "VirtualFibreChannelClientAdapter")
+        )
+    )
     hmc_add_vfc_adapter(LPAR_UUID, vios_partition_id=7, vios_slot=11)
     body = route.calls.last.request.content.decode()
     assert "<VirtualFibreChannelClientAdapter" in body
-    assert '<ConnectingPartitionID kb="CUD" kxe="false">7</ConnectingPartitionID>' in body
-    assert '<ConnectingVirtualSlotNumber kb="CUD" kxe="false">11</ConnectingVirtualSlotNumber>' in body
+    assert (
+        '<ConnectingPartitionID kb="CUD" kxe="false">7</ConnectingPartitionID>' in body
+    )
+    assert (
+        '<ConnectingVirtualSlotNumber kb="CUD" kxe="false">11</ConnectingVirtualSlotNumber>'
+        in body
+    )
 
 
 def test_delete_adapter_returns_confirmation(monkeypatch, mock_hmc):
@@ -154,9 +204,7 @@ def test_delete_adapter_returns_confirmation(monkeypatch, mock_hmc):
     route = mock_hmc.delete(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter/{ADAPTER_UUID}"
     ).mock(return_value=httpx.Response(204))
-    result = hmc_delete_adapter(
-        LPAR_UUID, "VirtualSCSIClientAdapter", ADAPTER_UUID
-    )
+    result = hmc_delete_adapter(LPAR_UUID, "VirtualSCSIClientAdapter", ADAPTER_UUID)
     assert route.called
     assert result == f"Deleted VirtualSCSIClientAdapter {ADAPTER_UUID} from {LPAR_UUID}"
 
@@ -169,9 +217,11 @@ def test_delete_adapter_returns_confirmation(monkeypatch, mock_hmc):
 def test_list_volume_groups(monkeypatch, mock_hmc):
     """hmc_list_volume_groups GETs the VIOS VolumeGroup collection."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
-    ).mock(return_value=httpx.Response(200, text=_feed(VG_UUID, "VolumeGroup", GroupName="vg_rootvg")))
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
+        return_value=httpx.Response(
+            200, text=_feed(VG_UUID, "VolumeGroup", GroupName="vg_rootvg")
+        )
+    )
     result = hmc_list_volume_groups(VIOS_UUID)
     assert result[0]["UUID"] == VG_UUID
     assert result[0]["Resource"]["GroupName"] == "vg_rootvg"
@@ -180,9 +230,9 @@ def test_list_volume_groups(monkeypatch, mock_hmc):
 def test_create_volume_group_builds_xml(monkeypatch, mock_hmc):
     """hmc_create_volume_group PUTs a VolumeGroup doc with the PV list."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
+    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
     hmc_create_volume_group(VIOS_UUID, "vg_data", ["hdisk10", "hdisk11"])
     body = route.calls.last.request.content.decode()
     assert '<GroupName kb="CUD" kxe="false">vg_data</GroupName>' in body
@@ -206,9 +256,9 @@ def test_create_virtual_disk_builds_xml(monkeypatch, mock_hmc):
 def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
     """hmc_map_storage_to_lpar maps the default VirtualDisk storage_kind."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer")))
+    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
+    )
     hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID)
     body = route.calls.last.request.content.decode()
     assert "<VirtualSCSIMapping" in body
@@ -221,11 +271,15 @@ def test_map_storage_reorders_virtual_disk_default(monkeypatch, mock_hmc):
 def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
     """PhysicalVolume storage_kind uses VolumeName and emits TargetDevice."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer")))
+    route = mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(201, text=_feed(VIOS_UUID, "VirtualIOServer"))
+    )
     hmc_map_storage_to_lpar(
-        VIOS_UUID, "hdisk5", LPAR_UUID, storage_kind="PhysicalVolume", target_device="vtscsi0"
+        VIOS_UUID,
+        "hdisk5",
+        LPAR_UUID,
+        storage_kind="PhysicalVolume",
+        target_device="vtscsi0",
     )
     body = route.calls.last.request.content.decode()
     assert "<PhysicalVolume kb=" in body
@@ -237,7 +291,9 @@ def test_map_storage_physical_volume_with_target_device(monkeypatch, mock_hmc):
 def test_map_storage_invalid_kind_raises(monkeypatch, mock_hmc):
     """An invalid storage_kind is rejected before any request is sent."""
     _hmc_env(monkeypatch)
-    with pytest.raises(ValueError, match="storage_kind must be PhysicalVolume or VirtualDisk"):
+    with pytest.raises(
+        ValueError, match="storage_kind must be PhysicalVolume or VirtualDisk"
+    ):
         hmc_map_storage_to_lpar(VIOS_UUID, "lv_boot", LPAR_UUID, storage_kind="Bogus")
 
 
@@ -301,22 +357,22 @@ def test_list_clusters(monkeypatch, mock_hmc):
 
 
 def test_shared_storage_pools_lists_all(monkeypatch, mock_hmc):
-    """hmc_shared_storage_pools() GETs the SharedStoragePool collection."""
+    """hmc_list_shared_storage_pools() GETs the SharedStoragePool collection."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/SharedStoragePool").mock(
         return_value=httpx.Response(200, text=_feed(SSP_UUID, "SharedStoragePool"))
     )
-    result = hmc_shared_storage_pools()
+    result = hmc_list_shared_storage_pools()
     assert result[0]["UUID"] == SSP_UUID
 
 
-def test_shared_storage_pools_with_uuid_gets_one(monkeypatch, mock_hmc):
-    """hmc_shared_storage_pools(ssp_uuid=...) GETs one SSP by UUID."""
+def test_get_shared_storage_pool_gets_one(monkeypatch, mock_hmc):
+    """hmc_get_shared_storage_pool GETs one SSP by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/uom/SharedStoragePool/{SSP_UUID}").mock(
         return_value=httpx.Response(200, text=_feed(SSP_UUID, "SharedStoragePool"))
     )
-    result = hmc_shared_storage_pools(SSP_UUID)
+    result = hmc_get_shared_storage_pool(SSP_UUID)
     assert result["UUID"] == SSP_UUID
 
 
@@ -333,14 +389,38 @@ def test_create_logical_unit_submits_job(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "CreateLogicalUnit</OperationName>" in body
     # Params render as ParameterName/ParameterValue pairs.
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">LUName</ParameterName>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">lu_data</ParameterValue>" in body
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">LUSize</ParameterName>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">100</ParameterValue>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">THICK</ParameterValue>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">VirtualIO_Image</ParameterValue>" in body
+    assert '<ParameterName kb="ROR" kxe="false">LUName</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">lu_data</ParameterValue>' in body
+    assert '<ParameterName kb="ROR" kxe="false">LUSize</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">100</ParameterValue>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">THICK</ParameterValue>' in body
+    assert (
+        '<ParameterValue kb="CUR" kxe="false">VirtualIO_Image</ParameterValue>' in body
+    )
     assert "ClonedFrom" not in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+@pytest.mark.parametrize(
+    "lu_type,device_type,match",
+    [
+        ("SPARSE", "VirtualIO_Disk", "lu_type"),
+        ("THIN", "PhysicalDisk", "device_type"),
+    ],
+)
+def test_create_logical_unit_rejects_invalid_types_before_transport(
+    monkeypatch, mock_hmc, lu_type, device_type, match
+):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match=match):
+        hmc_create_logical_unit(
+            CLUSTER_UUID,
+            "lu_data",
+            100,
+            lu_type=lu_type,
+            device_type=device_type,
+        )
+    assert not mock_hmc.calls
 
 
 def test_create_logical_unit_with_clone(monkeypatch, mock_hmc):
@@ -351,8 +431,8 @@ def test_create_logical_unit_with_clone(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_create_logical_unit(CLUSTER_UUID, "lu_clone", 50, cloned_from="udid-1234")
     body = route.calls.last.request.content.decode()
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">ClonedFrom</ParameterName>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">udid-1234</ParameterValue>" in body
+    assert '<ParameterName kb="ROR" kxe="false">ClonedFrom</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">udid-1234</ParameterValue>' in body
 
 
 def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
@@ -364,8 +444,8 @@ def test_delete_logical_unit_submits_job(monkeypatch, mock_hmc):
     result = hmc_delete_logical_unit(CLUSTER_UUID, "udid-1234")
     body = route.calls.last.request.content.decode()
     assert "DeleteLogicalUnit</OperationName>" in body
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">LogicalUnitUDID</ParameterName>" in body
-    assert "<ParameterValue kb=\"CUR\" kxe=\"false\">udid-1234</ParameterValue>" in body
+    assert '<ParameterName kb="ROR" kxe="false">LogicalUnitUDID</ParameterName>' in body
+    assert '<ParameterValue kb="CUR" kxe="false">udid-1234</ParameterValue>' in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
 
 
@@ -397,7 +477,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_create_logical_unit(
-        CLUSTER_UUID, "lu_data", 100, wait=True, timeout_seconds=60, poll_interval=0
+        CLUSTER_UUID, "lu_data", 100, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -414,7 +494,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_delete_logical_unit(
-        CLUSTER_UUID, "udid-1234", wait=True, timeout_seconds=60, poll_interval=0
+        CLUSTER_UUID, "udid-1234", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called

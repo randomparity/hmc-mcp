@@ -1,67 +1,59 @@
-"""MCP tools for the partition template library.
-"""
+"""MCP tools for the partition template library."""
 
 from __future__ import annotations
+
+from .tool_registry import tool_module
 
 from typing import Any
 
 from ._app import (
     _READ_ONLY,
     _run,
-    mcp,
 )
 
-from .client import HMCError
 from .common import client_from_env
+from .operations_templates import (
+    deploy_partition_template,
+    get_partition_template,
+    list_partition_templates,
+)
 
 
-def _check_templates_error(exc: HMCError) -> None:
-    """Re-raise *exc* with an actionable message for known template HTTP errors.
-
-    HTTP 406 means partition templates are not licensed or not supported on this HMC.
-    All other errors are left unchanged.
-
-    The replacement HMCError intentionally does not forward ``body=exc.body``:
-    the constructor would append the parsed HMC body text after the actionable
-    message, degrading readability. ``from exc`` sets ``__cause__`` and, combined
-    with the implicit ``__context__`` set by the ``except`` block, makes the
-    original exception accessible in developer diagnostics.
-    """
-    if exc.status_code == 406:
-        raise HMCError(
-            "Partition templates are not licensed or not supported on this HMC. "
-            "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
-            exc.status_code,
-        ) from exc
+tool, register_tools = tool_module()
 
 
-@mcp.tool(annotations=_READ_ONLY)
-def hmc_partition_templates(template_uuid: str | None = None, profile: str | None = None) -> Any:
-    """List partition templates or get one by UUID.
+@tool(annotations=_READ_ONLY)
+def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
+    """List all partition templates in the HMC template library."""
 
-    When template_uuid is omitted, returns a list of all partition templates
-    in the HMC template library.
-
-    When template_uuid is provided, returns the full config dict for that one
-    template, or None if not found.
-    """
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                if template_uuid is not None:
-                    return await hmc.get_partition_template(template_uuid)
-                return await hmc.list_partition_templates()
-            except HMCError as exc:
-                _check_templates_error(exc)
-                raise
+            return await list_partition_templates(hmc)
 
     return _run(_go)
 
 
-@mcp.tool
+@tool(annotations=_READ_ONLY)
+def hmc_get_partition_template(
+    template_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get one partition template by UUID.
+
+    Returns None only for an empty successful response. HTTP 404 and other
+    REST failures raise HMCError.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await get_partition_template(hmc, template_uuid)
+
+    return _run(_go)
+
+
+@tool
 def hmc_deploy_partition_template(
     draft_template_uuid: str,
-    target_system_uuid: str,
+    target_system_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -70,68 +62,25 @@ def hmc_deploy_partition_template(
     """Deploy a partition from a *draft* partition template.
 
     draft_template_uuid is the transformed/replica template UUID (produced by
-    capture/transform), target_system_uuid is the managed system to create the
-    partition on. Submits a Deploy job; poll hmc_get_job for status.
+    capture/transform). The target managed system accepts a name or UUID.
+    Submits a Deploy job; poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
 
-    The result always includes an ``ownership_stamped`` key:
-    - ``None`` — stamping was not attempted (``wait=False``, or the job did not
-      complete, or the LPAR name was not available from the job result). This is
-      the only value currently reachable; automatic stamping requires the deploy
-      job to reliably return the new LPAR name, which varies across HMC firmware.
-    - ``True`` — stamp succeeded (not yet reachable; will be set when LPAR name
-      resolution from the job result is implemented).
-    - ``False`` — stamp was attempted but failed.
-
-    **Multi-agent ownership:** When ``wait=True`` and the job completes, the
-    new LPAR's description should be stamped with an ownership token. Because
-    the LPAR name is not reliably returned by the deploy job on all HMC firmware
-    versions, automatic stamping is not yet implemented. After the deploy completes,
-    identify the new LPAR (via ``hmc_lpars``) and call ``hmc_set_lpar_description``
-    to stamp ``[hmc-mcp owner:<HMC_AGENT_ID> created:<date>]`` manually.
+    Template deployment cannot identify the new LPAR consistently across HMC
+    firmware, so it returns a warning directing callers to identify and stamp
+    the new partition manually.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                job = await hmc.deploy_partition_template(draft_template_uuid, target_system_uuid)
-            except HMCError as exc:
-                _check_templates_error(exc)
-                raise
-            if not wait or job is None:
-                return {
-                    "job": job,
-                    "ownership_stamped": None,
-                    "warnings": [
-                        "ownership stamp not attempted: set wait=True and identify "
-                        "the new LPAR after deployment to stamp the description manually"
-                    ],
-                }
-            job_uuid = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
-            if not job_uuid:
-                return {
-                    "job": job,
-                    "ownership_stamped": None,
-                    "warnings": ["ownership stamp not attempted: no job UUID in response"],
-                }
-            final_job = await hmc.wait_for_job(
-                job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
+            return await deploy_partition_template(
+                hmc,
+                draft_template_uuid,
+                target_system_name_or_uuid,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
-            job_status = (final_job or {}).get("Status") or (
-                ((final_job or {}).get("Resource") or {}).get("Status")
-            )
-            # TODO (#135): Automatic stamping deferred — deploy job does not
-            # reliably return the new LPAR name across HMC firmware versions.
-            # Full implementation: diff the LPAR list before/after the deploy job
-            # to identify the new partition and stamp it. See ADR 0011 and issue #135.
-            return {
-                "job": final_job,
-                "ownership_stamped": None,
-                "warnings": [
-                    f"ownership stamp not attempted: LPAR name not available from "
-                    f"deploy job result (job status: {job_status!r}); "
-                    "identify the new LPAR with hmc_lpars and stamp manually"
-                ],
-            }
 
     return _run(_go)

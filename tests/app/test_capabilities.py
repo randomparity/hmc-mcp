@@ -11,6 +11,7 @@ hmc_remove_memory_pool.
 """
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -37,6 +38,7 @@ def _hmc_env(monkeypatch) -> None:
 # ------------------------------------------------------------------ #
 # Tool capability classification
 # ------------------------------------------------------------------ #
+
 
 def _tools_by_name():
     return {t.name: t for t in asyncio.run(mcp.list_tools())}
@@ -65,14 +67,32 @@ def test_every_registered_tool_matches_its_category():
             ), name
 
 
-def test_arbitrary_command_tool_is_neither_readonly_nor_destructive():
-    """hmc_run_command executes arbitrary HMC CLI — it must not be gated as
-    uniformly read-only or destructive, since either depends on the command."""
-    tool = _tools_by_name()["hmc_run_command"]
-    ann = tool.annotations
-    assert ann is None or (
-        ann.readOnlyHint is not True and ann.destructiveHint is not True
-    )
+def test_arbitrary_command_tool_is_disabled_by_default():
+    assert "hmc_run_command" not in _tools_by_name()
+
+
+def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
+    from hmc_mcp import server_command
+
+    try:
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
+
+        tools = [
+            tool
+            for tool in asyncio.run(mcp.list_tools())
+            if tool.name == "hmc_run_command"
+        ]
+        assert len(tools) == 1
+        assert tools[0].annotations is not None
+        assert tools[0].annotations.readOnlyHint is False
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        assert "hmc_run_command" not in _tools_by_name()
+    finally:
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
@@ -83,18 +103,72 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.documents import PARTITION_TYPES
+    from hmc_mcp.client_adapters import ADAPTER_TYPES
+    from hmc_mcp.client_users import (
+        LDAP_REMOVAL_RESOURCES,
+        _VALID_USER_TYPES,
+    )
+    from hmc_mcp.documents import PARTITION_TYPES, STORAGE_KINDS, TASK_ROLES
+    from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.ssh_commands import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
-    partition_type = by_name["hmc_create_lpar"].parameters["properties"]["partition_type"]
+    partition_type = by_name["hmc_create_lpar"].parameters["properties"][
+        "partition_type"
+    ]
     assert set(partition_type["enum"]) == set(PARTITION_TYPES)
     assert partition_type["default"] in PARTITION_TYPES
 
     backup_type = by_name["hmc_backup_vios"].parameters["properties"]["backup_type"]
     assert set(backup_type["enum"]) == set(_VALID_BACKUP_TYPES)
     assert backup_type["default"] in _VALID_BACKUP_TYPES
+
+    expected_enums = {
+        ("hmc_create_user", "taskrole"): TASK_ROLES,
+        ("hmc_list_adapters", "adapter_type"): ADAPTER_TYPES,
+        ("hmc_delete_adapter", "adapter_type"): ADAPTER_TYPES,
+        ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
+        ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
+        ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
+        ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
+        ("hmc_list_users", "user_type"): _VALID_USER_TYPES,
+        ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
+        ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
+    }
+    for (tool_name, parameter_name), values in expected_enums.items():
+        parameter = by_name[tool_name].parameters["properties"][parameter_name]
+        assert set(parameter["enum"]) == set(values)
+
+
+def test_partition_creation_tools_share_resource_object_schema():
+    by_name = _tools_by_name()
+    lpar_properties = by_name["hmc_create_lpar"].parameters["properties"]
+    vios_properties = by_name["hmc_create_vios"].parameters["properties"]
+
+    assert "resources" in lpar_properties
+    assert "resources" in vios_properties
+    for legacy_name in (
+        "min_memory",
+        "desired_memory",
+        "max_memory",
+        "min_vcpus",
+        "desired_vcpus",
+        "max_vcpus",
+        "min_procs",
+        "desired_procs",
+        "max_procs",
+    ):
+        assert legacy_name not in vios_properties
+
+
+def test_password_policy_mutations_use_settings_object_schema():
+    by_name = _tools_by_name()
+    for tool_name in ("hmc_create_password_policy", "hmc_modify_password_policy"):
+        properties = by_name[tool_name].parameters["properties"]
+        assert set(properties) == {"policy_name", "settings", "profile"}
+        assert properties["settings"]["type"] == "object"
 
 
 def test_repository_type_enum_matches_runtime_constant():
@@ -110,39 +184,40 @@ def test_repository_type_enum_matches_runtime_constant():
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_hmc_update"].parameters["properties"]["repository"][
-        "properties"
-    ]["type"]
+    repo_type = by_name["hmc_update_console_software"].parameters["properties"][
+        "repository"
+    ]["properties"]["type"]
     assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
 
 
-def test_merged_metrics_tools_have_valid_output_schema():
-    """hmc_processed_metrics and hmc_aggregated_metrics must expose a non-trivial
-    output schema so MCP clients can understand their polymorphic return type."""
+def test_metrics_tools_have_stable_output_schemas():
+    """Metric fetch and discovery tools expose distinct stable schemas."""
     by_name = _tools_by_name()
-    for tool_name in ("hmc_processed_metrics", "hmc_aggregated_metrics"):
+    for tool_name in (
+        "hmc_processed_metrics",
+        "hmc_aggregated_metrics",
+        "hmc_processed_metric_links",
+        "hmc_aggregated_metric_links",
+    ):
         tool = by_name[tool_name]
-        # The tool must be registered and annotated as read-only
-        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, tool_name
-        # The input schema must include the 'mode' parameter
-        assert "mode" in tool.parameters.get("properties", {}), f"{tool_name} missing 'mode' param"
-        mode_schema = tool.parameters["properties"]["mode"]
-        assert set(mode_schema.get("enum", [])) == {"links", "fetch"}, (
-            f"{tool_name} mode enum incorrect: {mode_schema}"
+        assert tool.annotations is not None and tool.annotations.readOnlyHint is True, (
+            tool_name
         )
+        assert "mode" not in tool.parameters.get("properties", {})
 
 
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #
 
+
 def _mock_state_and_delete(router, state: str, status: int = 200):
-    router.get(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(status, text=state))
-    return router.delete(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}"
-    ).mock(return_value=httpx.Response(204))
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
+        return_value=httpx.Response(status, text=state)
+    )
+    return router.delete(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(204)
+    )
 
 
 def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
@@ -150,21 +225,41 @@ def test_delete_lpar_refuses_when_active(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     delete_route = _mock_state_and_delete(mock_hmc, "running")
 
-    with pytest.raises(HMCError) as exc_info:
-        hmc_delete_lpar(LPAR_UUID)
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "lpar-1")),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
+        ) as guard,
+        pytest.raises(HMCError) as exc_info,
+    ):
+        hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert exc_info.value.status_code == 409
     assert "not activated" in str(exc_info.value)
     assert not delete_route.called
+    assert guard.await_args.kwargs == {"ownership_override": True}
 
 
 def test_delete_lpar_succeeds_when_powered_off(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_state_and_delete(mock_hmc, "not activated")
 
-    result = hmc_delete_lpar(LPAR_UUID)
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("system-1", "lpar-1")),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.authorize_lpar_mutation", new=AsyncMock()
+        ) as guard,
+    ):
+        result = hmc_delete_lpar(SYSTEM_UUID, LPAR_UUID, ownership_override=True)
 
     assert result == f"Deleted LPAR {LPAR_UUID}"
+    assert guard.await_args.kwargs == {"ownership_override": True}
 
 
 def test_delete_vios_refuses_when_active(monkeypatch, mock_hmc):
@@ -206,12 +301,12 @@ POWER_ON_JOB_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def _mock_power_on_guard(router, state: str):
-    router.get(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState"
-    ).mock(return_value=httpx.Response(200, text=state))
-    return router.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY))
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/quick/PartitionState").mock(
+        return_value=httpx.Response(200, text=state)
+    )
+    return router.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=POWER_ON_JOB_ENTRY)
+    )
 
 
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
@@ -329,9 +424,18 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))
 
-    with patch("hmc_mcp.server_power.stamp_lpar_ownership", new=AsyncMock(return_value="tok")):
+    with (
+        patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
+            new=AsyncMock(return_value="tok"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar._system_name",
+            new=AsyncMock(return_value="sys1"),
+        ),
+    ):
         result = hmc_create_lpar(SYSTEM_UUID, name="new-lpar")
 
     assert create_route.called
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
-    assert result["lpar"]["Resource"]["PartitionName"] == "new-lpar"
+    assert result.lpar["Resource"]["PartitionName"] == "new-lpar"

@@ -90,7 +90,6 @@ def config_list() -> None:
         names, default = list_profiles_with_default(config_path=config_path)
     except ConfigError as exc:
         _fail(exc)
-        return  # unreachable but satisfies type checker
 
     if not names:
         console.print("No profiles defined in config file.")
@@ -116,17 +115,13 @@ def config_show(
     passwords or resolves password_env. Reports only whether a password or
     SSH key credential is configured.
     """
-    # Command --profile takes precedence over global --profile.
-    # Reference cli_app.GLOBALS dynamically — importing GLOBALS directly would
-    # capture the initial empty GlobalOpts instance; the root callback replaces
-    # cli_app.GLOBALS on each invocation.
-    effective_profile = profile or cli_app.GLOBALS.profile
+    # Command --profile takes precedence over the invocation's root option.
+    effective_profile = profile or cli_app._current_options().profile
 
     config_path = resolve_config_path()
     if config_path is None:
         _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
-    assert config_path is not None  # _fail raises; narrowing for type checker
     # Read the raw TOML dict to determine credential presence WITHOUT
     # resolving password_env (load_profile() resolves it, which requires
     # the env var to be present — a production secret may not be set locally).
@@ -134,12 +129,13 @@ def config_show(
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         _fail(ConfigError(f"{config_path}: TOML parse error: {exc}"))
-        return  # unreachable but satisfies type checker
 
     # When effective_profile is None, load_profile() will use default_profile
     # from the TOML. We need to resolve that same name for the raw dict lookup.
     _resolved_profile = effective_profile or raw.get("default_profile")
-    profile_dict: dict[str, Any] = raw.get("profiles", {}).get(_resolved_profile or "", {})
+    profile_dict: dict[str, Any] = raw.get("profiles", {}).get(
+        _resolved_profile or "", {}
+    )
 
     # Gather credential presence booleans from raw dict — safe because we
     # never look at the password value, just whether the key is present.
@@ -155,7 +151,6 @@ def config_show(
         cfg = load_profile(profile=effective_profile, config_path=config_path)
     except ConfigError as exc:
         _fail(exc)
-        return  # unreachable but satisfies type checker
 
     # Gather all output fields before emitting anything (no partial output).
     data: dict[str, Any] = {

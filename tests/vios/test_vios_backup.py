@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from hmc_mcp.server import hmc_backup_vios, hmc_list_vios_backups, hmc_restore_vios
 
-VIOS_UUID = "vios-uuid-abc123"
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 
 
 def _make_ssh_mock(stdout: str = "") -> MagicMock:
@@ -53,7 +54,11 @@ def test_list_vios_backups_runs_correct_command(monkeypatch):
     )
     assert result == [
         {"BackupName": "vios1_backup_001", "Date": "2024-01-15", "Type": "vios"},
-        {"BackupName": "vios1_backup_002", "Date": "2024-01-20", "Type": "viosioconfig"},
+        {
+            "BackupName": "vios1_backup_002",
+            "Date": "2024-01-20",
+            "Type": "viosioconfig",
+        },
     ]
 
 
@@ -66,6 +71,29 @@ def test_list_vios_backups_returns_empty_list(monkeypatch):
         result = hmc_list_vios_backups(VIOS_UUID)
 
     assert result == []
+
+
+def test_list_vios_backups_resolves_vios_name(monkeypatch):
+    """Backup commands resolve VIOS names before invoking the HMC CLI."""
+    _hmc_env(monkeypatch)
+    hmc = AsyncMock()
+    hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
+
+    @asynccontextmanager
+    async def fake_client_from_env(profile):
+        assert profile is None
+        yield hmc
+
+    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", fake_client_from_env)
+    conn_mock = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        hmc_list_vios_backups("vios-prod")
+
+    hmc.find_vios_by_name.assert_awaited_once_with("vios-prod")
+    conn_mock.run.assert_awaited_once_with(
+        f"lsviosbackup -id {VIOS_UUID}", check=True, timeout=300.0
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -82,9 +110,7 @@ def test_backup_vios_valid_types(monkeypatch, backup_type):
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         result = hmc_backup_vios(VIOS_UUID, backup_type)
 
-    expected_cmd = (
-        f"chviosbackup -id {VIOS_UUID} -operation backup -type {backup_type}"
-    )
+    expected_cmd = f"chviosbackup -id {VIOS_UUID} -operation backup -type {backup_type}"
     conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert "Backup completed" in result
 

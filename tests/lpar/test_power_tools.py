@@ -2,7 +2,7 @@
 
 The document builders and client methods are covered in test_dlpar.py and
 test_power.py; these tests call the actual ``@mcp.tool`` functions in
-``server_power`` against the respx ``mock_hmc`` router so the
+``server_lpars`` against the respx ``mock_hmc`` router so the
 argument->URL and argument->XML mapping in the tool bodies is exercised.
 LPAR create/modify and LPAR power-on/off are covered in
 ``tests/app/test_server_tools.py``; the delete-LPAR precondition guard is
@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCError
+from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_dlpar_mem,
     hmc_dlpar_proc,
@@ -22,8 +23,22 @@ from hmc_mcp.server import (
     hmc_power_on_system,
     hmc_power_on_vios,
 )
-
 from conftest import JOB_ENTRY, SYSTEM_ENTRY
+
+
+def test_power_off_rejects_invalid_wait_timing_before_client_creation(monkeypatch):
+    called = False
+
+    def unexpected_client(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("client must not be created")
+
+    monkeypatch.setattr("hmc_mcp.server_systems.client_from_env", unexpected_client)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        hmc_power_off_system(SYSTEM_UUID, wait=True, timeout_seconds=-1)
+    assert called is False
+
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -60,7 +75,9 @@ def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_proc(LPAR_UUID, desired_procs=1.5, desired_vcpus=3)
+    result = hmc_dlpar_proc(
+        LPAR_UUID, LparResources(desired_procs=1.5, desired_vcpus=3)
+    )
     body = route.calls.last.request.content.decode()
     assert "PartitionProcessorConfiguration" in body
     assert "DesiredProcessingUnits" in body and ">1.5<" in body
@@ -75,7 +92,10 @@ def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_mem(LPAR_UUID, desired_memory=8192, min_memory=1024, max_memory=16384)
+    result = hmc_dlpar_mem(
+        LPAR_UUID,
+        LparResources(desired_memory=8192, min_memory=1024, max_memory=16384),
+    )
     body = route.calls.last.request.content.decode()
     assert "PartitionMemoryConfiguration" in body
     assert "DesiredMemory" in body and ">8192<" in body
@@ -92,7 +112,7 @@ def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
         return_value=httpx.Response(500, text="<error>boom</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_dlpar_proc(LPAR_UUID, desired_procs=1.0)
+        hmc_dlpar_proc(LPAR_UUID, LparResources(desired_procs=1.0))
     assert exc_info.value.status_code == 500
 
 

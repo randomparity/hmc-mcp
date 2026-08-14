@@ -106,8 +106,8 @@ without the schema-version header — for child-resource endpoints such as
   must be set for SSH auth; the fallback is transparent to the caller.
 - **Virtual adapter attachment** (`hmc_add_network_adapter`,
   `hmc_add_vscsi_adapter`): no automatic fallback. Configure adapter profiles
-  via the HMC GUI, the HMC CLI (`chhwres`), or the `hmc_run_command` escape
-  hatch if this affects your firmware.
+  via the HMC GUI, the HMC CLI (`chhwres`), or the opt-in `hmc_run_command`
+  escape hatch if this affects your firmware.
 - **Virtual disk creation** (`hmc_create_virtual_disk`): no automatic fallback.
   The disk can be created directly on the VIOS with `mkbdsp` and then mapped
   with `hmc_map_storage_to_lpar`.
@@ -151,16 +151,19 @@ attributes removed).
 
 ```bash
 hmc-mcp serve            # stdio — what MCP clients/agents expect
-hmc-mcp serve --http --host 127.0.0.1 --port 8000
+hmc-mcp serve --http --listen-host 127.0.0.1 --port 8000
+# Explicitly enable the arbitrary-command MCP escape hatch when required:
+hmc-mcp serve --enable-arbitrary-command
 ```
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
-> exposes the full tool surface — including arbitrary HMC CLI execution
-> (`hmc_run_command`) and user administration — to anyone who can reach the
+> exposes enabled tools — including user administration — to anyone who can reach the
 > port. Keep the default loopback bind. `serve --http` refuses a
-> non-loopback `--host` unless `--allow-remote` is passed; if you need remote
+> non-loopback `--listen-host` unless `--allow-remote` is passed; if you need remote
 > access, put an authenticated reverse proxy (MCP gateway or HTTPS proxy with
-> bearer-token auth) in front and never expose the port directly.
+> bearer-token auth) in front and never expose the port directly. The arbitrary
+> `hmc_run_command` escape hatch is disabled unless the server starts with
+> `--enable-arbitrary-command`.
 
 Exposed tools:
 
@@ -170,18 +173,21 @@ Exposed tools:
 |-------------------------------|-------------|
 | `hmc_console_info`            | HMC version/network info; cheap connectivity check |
 | `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
-| `hmc_systems`                 | All managed systems, or one by UUID |
-| `hmc_lpars`                   | All LPARs, one by UUID, find by name, or quick state |
+| `hmc_list_systems`            | All managed systems, optionally filtered by state |
+| `hmc_get_system`              | One managed system by exact SystemName or UUID |
+| `hmc_list_lpars`              | All LPARs, optionally filtered by system or state |
+| `hmc_get_lpar`                | One LPAR by name or UUID |
+| `hmc_get_lpar_state`          | Quick state lookup for one LPAR by name or UUID |
 | `hmc_lpar_summary`            | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
 | `hmc_system_summary`          | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
-| `hmc_vios`                    | Virtual I/O Servers, or storage-detail mappings for one |
+| `hmc_list_vios`               | Virtual I/O Servers, optionally filtered by system or state |
+| `hmc_get_vios`                | Storage-detail mappings for one VIOS by name or UUID |
 | `hmc_list_resources`          | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`                 | Job status/result |
-| `hmc_recent_jobs`             | Recent HMC jobs list (limit=20) |
+| `hmc_list_recent_jobs`        | Recent HMC jobs list (limit=20) |
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
-| `hmc_find_system`             | Find a managed system by SystemName (exact match) |
-| `hmc_wait_for_job`            | Poll a job until COMPLETED / FAILED / EXCEPTION (or timeout) |
+| `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
 
 **Mutating / lifecycle**
 
@@ -189,10 +195,11 @@ Exposed tools:
 |-----------------------|-------------|
 | `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
-| `hmc_modify_lpar`     | Change an LPAR's name / memory / CPU (DLPAR when running) |
+| `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources |
+| `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ownership |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
 | `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
-| `hmc_delete_lpar`     | Destroy an LPAR (must be powered off; irreversible) |
+| `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
 | `hmc_power_on_lpar`   | Submit PowerOn job; returns `already_running` if partition is running (`force=True` to override) |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
 | `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`) — job |
@@ -240,8 +247,8 @@ Exposed tools:
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
 > lookup over SSH when the REST API is unreachable. Resolution happens before
 > the command runs, so a UUID that cannot be resolved surfaces as an error
-> rather than being passed through to the CLI. `hmc_run_command` is the
-> exception — it runs whatever command you give it verbatim.
+> rather than being passed through to the CLI. The opt-in `hmc_run_command`
+> tool is the exception — it runs whatever command you give it verbatim.
 
 **VIOS administration**
 
@@ -269,7 +276,8 @@ Exposed tools:
 
 | Tool                              | Description |
 |-----------------------------------|-------------|
-| `hmc_partition_templates`         | All partition templates, or one by UUID |
+| `hmc_list_partition_templates`    | All partition templates |
+| `hmc_get_partition_template`      | One partition template by UUID |
 | `hmc_deploy_partition_template`   | Deploy a partition from a draft template — job |
 
 **Live Partition Mobility (LPM)**
@@ -297,7 +305,8 @@ Exposed tools:
 | Tool                            | Description |
 |---------------------------------|-------------|
 | `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
-| `hmc_shared_storage_pools`      | All SSPs, or one by UUID (capacity, free space, logical units) |
+| `hmc_list_shared_storage_pools` | All SSPs (capacity, free space, logical units) |
+| `hmc_get_shared_storage_pool`   | One SSP by UUID |
 | `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
 | `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
 
@@ -307,12 +316,14 @@ Exposed tools:
 |-----------------------------|-------------|
 | `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
 | `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
-| `hmc_processed_metrics`         | List (mode=links) or download (mode=fetch, default) processed metrics (30s, ~2h retention) |
-| `hmc_aggregated_metrics`        | List (mode=links) or download (mode=fetch, default) aggregated metrics (trend rollup) |
+| `hmc_processed_metric_links`    | List processed metric documents (30s, ~2h retention) |
+| `hmc_processed_metrics`         | Download the newest processed metric document |
+| `hmc_aggregated_metric_links`   | List aggregated metric documents (trend rollup) |
+| `hmc_aggregated_metrics`        | Download the newest aggregated metric document |
 
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
-> links. Pass `mode="links"` to get the link list; `mode="fetch"` (default)
-> downloads the most recent document (or `{}` when none are in range). The CLI
+> links. The `*_metric_links` tools return the link list, while the `*_metrics`
+> tools download the most recent document (or `{}` when none are in range). The CLI
 > `metrics show` accepts `--fetch` to do both in one step. Long-term
 > monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
 > before processed/aggregated metrics accumulate. Categories include
@@ -323,11 +334,13 @@ Exposed tools:
 
 | Tool                          | Description |
 |-------------------------------|-------------|
-| `hmc_users`                   | All HMC user accounts, or one by username |
+| `hmc_list_users`              | List HMC user accounts |
+| `hmc_get_user`                | Get one HMC user account by username |
 | `hmc_create_user`             | Create a new HMC local user account |
 | `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
 | `hmc_delete_user`             | Delete an HMC user account (irreversible) |
 | `hmc_list_password_policies`  | List HMC password policies |
+| `hmc_list_password_policy_status` | Get password-policy activation status |
 | `hmc_create_password_policy`  | Create a password policy (max age, rules) |
 | `hmc_modify_password_policy`  | Modify a password policy (only supplied fields) |
 | `hmc_delete_password_policy`  | Delete a password policy (irreversible) |
@@ -339,7 +352,7 @@ Exposed tools:
 
 | Tool                         | Description |
 |------------------------------|-------------|
-| `hmc_hmc_update`             | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
+| `hmc_update_console_software` | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |
@@ -372,7 +385,7 @@ Exposed tools:
 
 | Tool                | Description |
 |---------------------|-------------|
-| `hmc_run_command`   | Run an arbitrary HMC CLI command (documented escape hatch) |
+| `hmc_run_command`   | Run any HMC CLI command; available only with `serve --enable-arbitrary-command` |
 
 ### End-to-end: give an LPAR a bootable disk
 
@@ -433,7 +446,7 @@ connects with a real FastMCP client and prints the tools:
 uv run python scripts/smoke_mcp.py
 # Connected. <N> tools exposed:
 #   - hmc_console_info
-#   - hmc_systems
+#   - hmc_list_systems
 #   ...
 ```
 
@@ -461,13 +474,17 @@ src/hmc_mcp/
   client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   common.py      # shared HMCClient/config helpers for tool definitions
-  ssh.py         # asyncssh helpers running HMC CLI commands over SSH
+  operations_*.py# workflows and policies shared by MCP and CLI presentations
+  ssh.py         # transport-only asyncssh session and command execution
+  ssh_commands.py# resource operations implemented with the HMC CLI
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
   _app.py        # shared FastMCP instance, READ_ONLY/DESTRUCTIVE_TOOLS sets, entry points
   server.py      # thin aggregator importing every server_*.py tool module
-  server_*.py    # per-domain @mcp.tool definitions (power, storage, network, ...)
+  server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
+  server_lpar_config.py      # SSH-only LPAR configuration handlers
+  server_system_resources.py # SSH-only managed-system resource handlers
   cli.py         # thin aggregator importing every cli_*.py command module
   cli_app.py     # root Typer app, GlobalOpts/GLOBALS, shared CLI helpers
   cli_*.py       # per-domain CLI commands (systems, lpars, storage, ...)

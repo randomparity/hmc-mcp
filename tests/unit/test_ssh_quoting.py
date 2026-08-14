@@ -27,7 +27,7 @@ from hmc_mcp.server import (
     hmc_restore_vios,
     hmc_set_lpar_description,
 )
-from hmc_mcp.ssh import list_io_slots
+from hmc_mcp.ssh_commands import list_io_slots
 
 from conftest import mock_uuid_resolution
 
@@ -140,7 +140,9 @@ def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, HOSTILE)
+        hmc_set_lpar_description(
+            SYSTEM_UUID, LPAR_UUID, HOSTILE, ownership_override=True
+        )
 
     payload = f"name={LPAR_NAME},description={HOSTILE}"
     args = shlex.split(_captured_cmd(conn))

@@ -6,41 +6,43 @@ from __future__ import annotations
 
 import typer
 
+from .client_adapters import ADAPTER_TYPES, AdapterType
+
 from .cli_app import (
     _client,
     _output,
     _print_json,
-    _resolve_partition_uuid,
     _run,
     adapters_app,
     console,
-    err_console,
+)
+from .operations_adapters import (
+    add_network_adapter,
+    add_vios_adapter,
+    delete_adapter,
+    list_adapters,
 )
 
 
-_ADAPTER_TYPES = "ClientNetworkAdapter | VirtualSCSIClientAdapter | VirtualFibreChannelClientAdapter | VirtualNICDedicated"
+_ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 
 
 @adapters_app.command("list")
 def adapters_list(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    adapter_type: str = typer.Option("ClientNetworkAdapter", "--type", "-t", help=_ADAPTER_TYPES),
+    adapter_type: AdapterType = typer.Option(
+        "ClientNetworkAdapter", "--type", "-t", help=_ADAPTER_TYPES
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List an LPAR's virtual adapters of a given type."""
 
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, lpar)
-            if uuid is None:
-                return None, None
-            return uuid, await hmc.list_child("LogicalPartition", uuid, adapter_type)
+            return await list_adapters(hmc, lpar, adapter_type)
 
     uuid, adapters = _run(_go)
 
-    if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
     _output(adapters, as_json, None, f"No {adapter_type} adapters on {lpar}")
 
 
@@ -56,14 +58,12 @@ def adapters_add_network(
 ) -> None:
     """Add a Virtual Ethernet (network) adapter to an LPAR."""
 
+    if not yes and not typer.confirm(f"Add network adapter (VLAN {vlan}) to '{lpar}'?"):
+        raise typer.Abort()
+
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, lpar)
-            if uuid is None:
-                return None, None
-            if not yes and not typer.confirm(f"Add network adapter (VLAN {vlan}) to '{lpar}' ({uuid})?"):
-                raise typer.Abort()
-            return uuid, await hmc.add_network_adapter(uuid, vlan, slot, vswitch, tagged, mac)
+            return await add_network_adapter(hmc, lpar, vlan, slot, vswitch, tagged, mac)
 
     _adapter_mutation(_go, lpar, "network")
 
@@ -78,14 +78,14 @@ def adapters_add_vscsi(
 ) -> None:
     """Add a Virtual SCSI client adapter, paired to a VIOS."""
 
+    if not yes and not typer.confirm(f"Add vSCSI adapter to '{lpar}' via VIOS {vios_id}?"):
+        raise typer.Abort()
+
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, lpar)
-            if uuid is None:
-                return None, None
-            if not yes and not typer.confirm(f"Add vSCSI adapter to '{lpar}' ({uuid}) via VIOS {vios_id}?"):
-                raise typer.Abort()
-            return uuid, await hmc.add_vscsi_adapter(uuid, vios_id, vios_slot, slot)
+            return await add_vios_adapter(
+                hmc, lpar, vios_id, vios_slot, slot, fibre_channel=False
+            )
 
     _adapter_mutation(_go, lpar, "vSCSI")
 
@@ -100,14 +100,14 @@ def adapters_add_vfc(
 ) -> None:
     """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
 
+    if not yes and not typer.confirm(f"Add vFC adapter to '{lpar}' via VIOS {vios_id}?"):
+        raise typer.Abort()
+
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, lpar)
-            if uuid is None:
-                return None, None
-            if not yes and not typer.confirm(f"Add vFC adapter to '{lpar}' ({uuid}) via VIOS {vios_id}?"):
-                raise typer.Abort()
-            return uuid, await hmc.add_vfc_adapter(uuid, vios_id, vios_slot, slot)
+            return await add_vios_adapter(
+                hmc, lpar, vios_id, vios_slot, slot, fibre_channel=True
+            )
 
     _adapter_mutation(_go, lpar, "vFC")
 
@@ -115,37 +115,26 @@ def adapters_add_vfc(
 @adapters_app.command("delete")
 def adapters_delete(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    adapter_type: str = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
+    adapter_type: AdapterType = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
     adapter_uuid: str = typer.Option(..., "--uuid", help="Adapter UUID (from `adapters list`)"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Remove a virtual adapter from an LPAR."""
 
+    if not yes and not typer.confirm(f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"):
+        raise typer.Abort()
+
     async def _go():
         async with _client() as hmc:
-            uuid = await _resolve_partition_uuid(hmc, lpar)
-            if uuid is None:
-                return None
-            if not yes and not typer.confirm(f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"):
-                raise typer.Abort()
-            await hmc.delete_child("LogicalPartition", uuid, adapter_type, adapter_uuid)
-            return uuid
+            return await delete_adapter(hmc, lpar, adapter_type, adapter_uuid)
 
     uuid = _run(_go)
 
-    if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
     console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {uuid}")
 
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
-    uuid, result = _run(go_coro)
-    if uuid is None:
-        err_console.print(f"[yellow]Partition '{lpar}' not found[/yellow]")
-        raise typer.Exit(code=1)
-    console.print(f"[green]Added {kind} adapter[/green] to {uuid}")
-    _print_json(result)
-
-
+    result = _run(go_coro)
+    console.print(f"[green]Added {kind} adapter[/green] to {result.lpar_uuid}")
+    _print_json(result.resource)

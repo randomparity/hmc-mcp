@@ -19,11 +19,41 @@ import sys
 import tomllib
 import warnings
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _logger = logging.getLogger(__name__)
+
+
+def validate_agent_id(agent_id: str) -> None:
+    """Validate an agent identifier used in audit and ownership tokens."""
+    if not agent_id:
+        raise ValueError("agent_id must not be empty")
+    if agent_id == "hmc-mcp":
+        raise ValueError("agent_id 'hmc-mcp' is reserved; choose a distinct identifier")
+    if len(agent_id) > 64:
+        raise ValueError(f"agent_id is {len(agent_id)} characters; maximum is 64")
+    if not agent_id.isascii() or any(
+        ord(character) < 0x20 or ord(character) == 0x7F for character in agent_id
+    ):
+        raise ValueError(
+            "agent_id contains non-ASCII or non-printable characters; "
+            "only printable ASCII is accepted"
+        )
+    forbidden = {
+        ",": "commas corrupt the HMC CLI -i parser",
+        "=": "equals signs corrupt the HMC CLI -i parser",
+        "[": "brackets break the ownership token format",
+        "]": "brackets break the ownership token format",
+        "/": "the HMC REST API rejects '/' in X-Audit-Memento",
+        ":": "colons make audit and ownership token formats ambiguous",
+        " ": "spaces corrupt the ownership token in the CLI -i parser",
+    }
+    for character, reason in forbidden.items():
+        if character in agent_id:
+            raise ValueError(f"agent_id contains {character!r}; {reason}")
 
 
 class HMCConfig(BaseSettings):
@@ -73,7 +103,6 @@ class HMCConfig(BaseSettings):
     @classmethod
     def _validate_agent_id_field(cls, v: str | None) -> str | None:
         if v is not None and v != "":
-            from .ssh import validate_agent_id  # deferred — ssh imports config; avoid circular
             validate_agent_id(v)
         return v
 
@@ -250,7 +279,7 @@ def load_profile(
 
     # Determine selected profile name
     name = profile or os.environ.get("HMC_PROFILE")
-    doc: dict = {}
+    doc: dict[str, Any] = {}
 
     if path is not None and path.exists():
         try:

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hmc_mcp.ssh import list_io_slots
+from hmc_mcp.ssh_commands import list_io_slots
 
 from conftest import make_config
 

@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "asyncssh==2.24.0",
     "defusedxml==0.7.1",
-    "fastmcp==3.4.6",
+    "fastmcp-slim[server]==3.4.7",
     "httpx==0.28.1",
     "mcp==1.29.0",
     "pydantic==2.13.4",
@@ -27,6 +27,7 @@ build-backend = "uv_build"
 dev = [
     "cryptography==50.0.0",
     "detect-secrets==1.5.0",
+    "fastmcp-slim[client]==3.4.7",
     "prek==0.4.10",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
@@ -38,14 +39,10 @@ dev = [
 ]
 
 [tool.ty.src]
-include = [
-    "src/hmc_mcp/config.py",
-    "src/hmc_mcp/documents.py",
-    "src/hmc_mcp/errors.py",
-]
+include = ["src/hmc_mcp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
-# Coverage gate: the CLI command tests keep the package at ~77%; the floor
-# makes any regression visible. Run a subset with `--no-cov` to skip the gate.
-addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=75"
+# Keep the package-wide gate at the rounded full-suite baseline. Run a focused
+# subset with `--no-cov` when package-wide coverage is not meaningful.
+addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=90"

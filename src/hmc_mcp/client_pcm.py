@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlencode
 
+from .client_contracts import PcmClient
 from .client_parse import _metric_links, _pcm_preferences
 from .errors import HMCError
 from .pcm import build_pcm_preferences_document
@@ -18,14 +19,18 @@ class PcmMixin:
     # ------------------------------------------------------------------ #
     # Performance and Capacity Monitoring (PCM)
     # ------------------------------------------------------------------ #
-    async def get_pcm_preferences(self, category: str, resource_uuid: str) -> dict[str, Any]:
+    async def get_pcm_preferences(
+        self: PcmClient, category: str, resource_uuid: str
+    ) -> dict[str, Any]:
         """Get PCM preferences for a resource (e.g. ManagedSystem)."""
 
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
         xml = await self._get(path)
         return _pcm_preferences(xml, path) if xml else {}
 
-    async def set_pcm_preferences(self, category: str, resource_uuid: str, **flags: bool) -> dict[str, Any]:
+    async def set_pcm_preferences(
+        self: PcmClient, category: str, resource_uuid: str, **flags: bool
+    ) -> dict[str, Any]:
         """Set PCM preferences, e.g. LongTermMonitorEnabled=True.
 
         Only the flags you pass are changed; the HMC merges the rest. Returns
@@ -38,22 +43,22 @@ class PcmMixin:
         resp_xml = await self._post_pcm(path, xml)
         return _pcm_preferences(resp_xml, path) if resp_xml else {}
 
-    async def _post_pcm(self, path: str, body: str) -> str:
-        resp = await self._http.post(
-            path, content=body, headers={"Content-Type": "application/xml"}
+    async def _post_pcm(self: PcmClient, path: str, body: str) -> str:
+        resp = await self._request(
+            "POST", path, content=body, headers={"Content-Type": "application/xml"}
         )
         if resp.status_code not in (200, 201, 202, 204):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
 
-    async def get_metrics_feed(self, path: str) -> list[dict[str, str]]:
+    async def get_metrics_feed(self: PcmClient, path: str) -> list[dict[str, str]]:
         """GET a PCM metrics Atom feed and return its JSON links."""
 
         xml = await self._get(path)
         return _metric_links(xml, path) if xml else []
 
     async def get_processed_metric_links(
-        self,
+        self: PcmClient,
         category: str,
         resource_uuid: str,
         start_ts: str,
@@ -61,10 +66,12 @@ class PcmMixin:
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
-        return await self._metrics_links(category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(
+            category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples
+        )
 
     async def get_aggregated_metric_links(
-        self,
+        self: PcmClient,
         category: str,
         resource_uuid: str,
         start_ts: str,
@@ -72,18 +79,34 @@ class PcmMixin:
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to AggregatedMetrics JSON (long-term rollup)."""
-        return await self._metrics_links(category, resource_uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(
+            category,
+            resource_uuid,
+            "AggregatedMetrics",
+            start_ts,
+            end_ts,
+            no_of_samples,
+        )
 
     async def get_ltm_metric_links(
-        self, category: str, resource_uuid: str, start_ts: str, end_ts: str | None = None
+        self: PcmClient,
+        category: str,
+        resource_uuid: str,
+        start_ts: str,
+        end_ts: str | None = None,
     ) -> list[dict[str, str]]:
         """Links to raw Long Term Monitor metrics JSON."""
         return await self._metrics_links(
-            category, resource_uuid, "RawMetrics/LongTermMonitor", start_ts, end_ts, None
+            category,
+            resource_uuid,
+            "RawMetrics/LongTermMonitor",
+            start_ts,
+            end_ts,
+            None,
         )
 
     async def _metrics_links(
-        self,
+        self: PcmClient,
         category: str,
         resource_uuid: str,
         kind: str,
@@ -100,7 +123,7 @@ class PcmMixin:
         path = f"/rest/api/pcm/{category}/{resource_uuid}/{kind}?{urlencode(query)}"
         return await self.get_metrics_feed(path)
 
-    async def fetch_json(self, link: str) -> Any:
+    async def fetch_json(self: PcmClient, link: str) -> dict[str, Any]:
         """Fetch a PCM metrics JSON document from an Atom link href.
 
         Raises HMCError for any non-200 response, including 404. A 404 means
@@ -109,7 +132,17 @@ class PcmMixin:
         catch HMCError and translate it (see hmc_processed_metrics).
         """
         url = link if link.startswith("http") else f"{self.config.base_url}{link}"
-        resp = await self._http.get(url, headers={"Accept": "application/json"})
+        resp = await self._request("GET", url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
-        return resp.json()
+        try:
+            document = resp.json()
+        except ValueError as exc:
+            raise HMCError(
+                f"GET {url} returned invalid JSON: {str(exc)[:500]}"
+            ) from exc
+        if not isinstance(document, dict):
+            raise HMCError(
+                f"GET {url} returned a JSON {type(document).__name__}; expected an object"
+            )
+        return document

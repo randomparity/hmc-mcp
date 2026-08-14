@@ -4,8 +4,13 @@ import httpx
 import pytest
 from defusedxml import ElementTree as ET
 
-from hmc_mcp.client import HMCError
-from hmc_mcp.jobs import create_logical_unit_job, delete_logical_unit_job
+from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.jobs import (
+    DEVICE_TYPES,
+    LU_TYPES,
+    create_logical_unit_job,
+    delete_logical_unit_job,
+)
 from hmc_mcp.pcm import (
     build_pcm_preferences_document,
     metric_links,
@@ -13,11 +18,15 @@ from hmc_mcp.pcm import (
     pcm_preferences_to_dict,
 )
 from hmc_mcp.server import (
+    hmc_aggregated_metric_links,
     hmc_aggregated_metrics,
     hmc_get_pcm_preferences,
+    hmc_processed_metric_links,
     hmc_processed_metrics,
     hmc_set_pcm_preferences,
 )
+
+from conftest import make_config
 
 PCM_PREFS_XML = """<?xml version="1.0"?>
 <ManagementConsolePcmPreference xmlns="http://www.ibm.com/xmlns/systems/power/firmware/pcm/mc/2012_10/">
@@ -101,6 +110,26 @@ def test_create_logical_unit_job_clone():
     assert "ClonedFrom" in xml and "udid-src" in xml
 
 
+def test_all_logical_unit_types_serialize_unchanged():
+    for lu_type in LU_TYPES:
+        for device_type in DEVICE_TYPES:
+            xml = create_logical_unit_job("newLU", 18, lu_type, device_type)
+            assert f">{lu_type}</ParameterValue>" in xml
+            assert f">{device_type}</ParameterValue>" in xml
+
+
+@pytest.mark.parametrize(
+    "lu_type,device_type,match",
+    [
+        ("SPARSE", "VirtualIO_Disk", "lu_type"),
+        ("THIN", "PhysicalDisk", "device_type"),
+    ],
+)
+def test_invalid_logical_unit_types_are_rejected(lu_type, device_type, match):
+    with pytest.raises(ValueError, match=match):
+        create_logical_unit_job("newLU", 18, lu_type, device_type)
+
+
 def test_delete_logical_unit_job():
     xml = delete_logical_unit_job("udid-123")
     assert "DeleteLogicalUnit" in xml
@@ -112,6 +141,27 @@ def test_pcm_preferences_document():
     assert "LongTermMonitorEnabled" in xml and ">true<" in xml
     assert "AggregationEnabled" in xml and ">false<" in xml
     assert "ShortTermMonitorEnabled" not in xml  # only specified flags
+
+
+def test_pcm_preferences_document_rejects_unsupported_fields_in_sorted_order():
+    with pytest.raises(
+        ValueError,
+        match="Unsupported PCM preference fields: AlphaFlag, ZetaFlag",
+    ):
+        build_pcm_preferences_document(ZetaFlag=True, AlphaFlag=False)
+
+
+@pytest.mark.asyncio
+async def test_pcm_client_rejects_unsupported_field_before_post(mock_hmc):
+    post_route = mock_hmc.post(
+        "/rest/api/pcm/ManagedSystem/system-1/preferences"
+    ).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="Unsupported PCM preference fields: TypoFlag"):
+            await hmc.set_pcm_preferences("ManagedSystem", "system-1", TypoFlag=True)
+
+    assert not post_route.called
 
 
 def test_pcm_preferences_parse():
@@ -186,14 +236,13 @@ def test_newest_metric_link_unparseable_stamp_sorts_oldest():
 # ---------------------------------------------------------------------- #
 
 
-def test_processed_metrics_mode_links(monkeypatch, mock_hmc):
-    """hmc_processed_metrics with mode='links' returns the parsed link list."""
+def test_processed_metric_links(monkeypatch, mock_hmc):
+    """hmc_processed_metric_links returns the parsed link list."""
     _hmc_env(monkeypatch)
     _route_metrics_feed(mock_hmc, "ManagedSystem", "00000000-0000-0000-0000-000000000001", "ProcessedMetrics")
 
-    result = hmc_processed_metrics(
+    result = hmc_processed_metric_links(
         "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z", no_of_samples=5,
-        mode="links",
     )
 
     assert isinstance(result, list)
@@ -331,8 +380,8 @@ def test_processed_metrics_doc_fetch_403_actionable(monkeypatch, mock_hmc):
         )
 
 
-def test_aggregated_metrics_mode_links(monkeypatch, mock_hmc):
-    """hmc_aggregated_metrics with mode='links' uses the AggregatedMetrics endpoint.
+def test_aggregated_metric_links(monkeypatch, mock_hmc):
+    """hmc_aggregated_metric_links uses the AggregatedMetrics endpoint.
 
     Uses AGGREGATED_FEED so link hrefs carry AggregatedMetrics paths — the
     assertion confirms endpoint routing, not just that some href ends in _2.json.
@@ -343,8 +392,8 @@ def test_aggregated_metrics_mode_links(monkeypatch, mock_hmc):
         text=AGGREGATED_FEED,
     )
 
-    result = hmc_aggregated_metrics(
-        "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z", mode="links",
+    result = hmc_aggregated_metric_links(
+        "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z",
     )
 
     assert len(result) == 1
@@ -407,24 +456,6 @@ def test_set_pcm_preferences_no_flags_raises(monkeypatch, mock_hmc):
 
     with pytest.raises(ValueError, match="No preference flags"):
         hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
-
-def test_processed_metrics_invalid_mode_raises(monkeypatch, mock_hmc):
-    """hmc_processed_metrics raises ValueError for an unknown mode value."""
-    _hmc_env(monkeypatch)
-    with pytest.raises(ValueError, match="Unknown mode"):
-        hmc_processed_metrics(
-            "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z", mode="invalid",  # type: ignore[arg-type]
-        )
-
-
-def test_aggregated_metrics_invalid_mode_raises(monkeypatch, mock_hmc):
-    """hmc_aggregated_metrics raises ValueError for an unknown mode value."""
-    _hmc_env(monkeypatch)
-    with pytest.raises(ValueError, match="Unknown mode"):
-        hmc_aggregated_metrics(
-            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z", mode="invalid",  # type: ignore[arg-type]
-        )
-
 
 # ---------------------------------------------------------------------- #
 # PCM 406 / 403 actionable error messages (issue #98)
@@ -544,31 +575,29 @@ def test_check_pcm_error_body_is_none(monkeypatch, mock_hmc):
     assert exc_info.value.body is None
 
 
-def test_processed_metrics_links_mode_406_actionable(monkeypatch, mock_hmc):
-    """hmc_processed_metrics with mode='links' on HTTP 406 raises HMCError mentioning 'not licensed'."""
+def test_processed_metric_links_406_actionable(monkeypatch, mock_hmc):
+    """Metric discovery translates HTTP 406 to an actionable error."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
     with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
-        hmc_processed_metrics(
+        hmc_processed_metric_links(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
-            mode="links",
         )
 
 
-def test_processed_metrics_links_mode_403_actionable(monkeypatch, mock_hmc):
-    """hmc_processed_metrics with mode='links' on HTTP 403 raises HMCError mentioning PCM authority."""
+def test_processed_metric_links_403_actionable(monkeypatch, mock_hmc):
+    """Metric discovery translates HTTP 403 to an actionable error."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/ProcessedMetrics").mock(
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
     with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
-        hmc_processed_metrics(
+        hmc_processed_metric_links(
             "ManagedSystem", "00000000-0000-0000-0000-000000000001", "2026-08-07T11:00:00Z",
-            mode="links",
         )
 
 

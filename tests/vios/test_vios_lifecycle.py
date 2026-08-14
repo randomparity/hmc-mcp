@@ -2,20 +2,21 @@
 
 import httpx
 import pytest
+from unittest.mock import AsyncMock, patch
 
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import install_vios_job
-from hmc_mcp.documents import build_vios_document
+from hmc_mcp.documents import LparResources, build_vios_document
 
 BASE = "https://hmc.test:12443"
 
 VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:vios-uuid-001</id>
+  <id>urn:uuid:00000000-0000-0000-0000-000000000003</id>
   <title>LogicalPartition:vios1</title>
-  <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/vios-uuid-001"/>
+  <link rel="SELF" href="{base}/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"/>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <PartitionName>vios1</PartitionName>
@@ -44,15 +45,18 @@ def test_build_vios_document_minimal():
 def test_build_vios_document_custom_resources():
     xml = build_vios_document(
         name="vios2",
-        min_memory=1024,
-        desired_memory=8192,
-        max_memory=16384,
-        desired_vcpus=4,
-        min_vcpus=2,
-        max_vcpus=8,
-        desired_procs=1.0,
-        min_procs=0.5,
-        max_procs=2.0,
+        resources=LparResources(
+            min_memory=1024,
+            desired_memory=8192,
+            max_memory=16384,
+            desired_vcpus=4,
+            min_vcpus=2,
+            max_vcpus=8,
+            desired_procs=1.0,
+            min_procs=0.5,
+            max_procs=2.0,
+            uncapped=True,
+        ),
     )
     assert "vios2" in xml
     assert "Virtual IO Server" in xml
@@ -104,9 +108,9 @@ def test_install_vios_job_default_timeout():
 @pytest.mark.asyncio
 async def test_create_vios(mock_hmc):
     """hmc_create_vios: PUT to the LPAR endpoint with VIOS XML."""
-    route = mock_hmc.put(
-        "/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition"
-    ).mock(return_value=httpx.Response(201, text=VIOS_ENTRY))
+    route = mock_hmc.put("/rest/api/uom/ManagedSystem/sys-uuid/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=VIOS_ENTRY)
+    )
 
     async with HMCClient(make_config()) as hmc:
         xml = build_vios_document(name="vios1")
@@ -123,11 +127,11 @@ async def test_create_vios(mock_hmc):
 async def test_delete_vios(mock_hmc):
     """hmc_delete_vios: DELETE to the LogicalPartition endpoint."""
     route = mock_hmc.delete(
-        "/rest/api/uom/LogicalPartition/vios-uuid-001"
+        "/rest/api/uom/LogicalPartition/00000000-0000-0000-0000-000000000003"
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        await hmc.delete_logical_partition("vios-uuid-001")
+        await hmc.delete_logical_partition("00000000-0000-0000-0000-000000000003")
 
     assert route.called
 
@@ -136,7 +140,7 @@ async def test_delete_vios(mock_hmc):
 async def test_install_vios(mock_hmc):
     """hmc_install_vios: PUT a JobRequest to the InstallVIOS do/ endpoint."""
     route = mock_hmc.put(
-        "/rest/api/uom/VirtualIOServer/vios-uuid-001/do/InstallVIOS"
+        "/rest/api/uom/VirtualIOServer/00000000-0000-0000-0000-000000000003/do/InstallVIOS"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
@@ -148,7 +152,7 @@ async def test_install_vios(mock_hmc):
             vlan_id="100",
         )
         job = await hmc.submit_job(
-            "/rest/api/uom/VirtualIOServer/vios-uuid-001/do/InstallVIOS",
+            "/rest/api/uom/VirtualIOServer/00000000-0000-0000-0000-000000000003/do/InstallVIOS",
             job_xml,
         )
 
@@ -157,6 +161,7 @@ async def test_install_vios(mock_hmc):
     assert "InstallVIOS" in body
     assert "192.168.1.10" in body
     assert job is not None
+
 
 # ---------------------------------------------------------------------- #
 # Tool-layer tests for hmc_install_vios (wait=True/False)
@@ -179,6 +184,30 @@ JOB_ENTRY_COMPLETED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "test-password")
+
+
+def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
+    """The public VIOS target is resolved before the install request."""
+    from hmc_mcp.server import hmc_install_vios
+
+    _hmc_env(monkeypatch)
+    mock_hmc.put(
+        "/rest/api/uom/VirtualIOServer/00000000-0000-0000-0000-000000000003/do/InstallVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    resolver = AsyncMock(return_value="00000000-0000-0000-0000-000000000003")
+
+    with patch("hmc_mcp.server_vios.resolve_vios_uuid", resolver):
+        hmc_install_vios(
+            "vios1",
+            nim_ip="192.168.1.10",
+            nim_gateway="192.168.1.1",
+            nim_subnetmask="255.255.255.0",
+            vios_ip="192.168.1.20",
+        )
+
+    resolver.assert_awaited_once()
+    monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
@@ -188,10 +217,10 @@ def test_install_vios_tool_submits_job(monkeypatch, mock_hmc):
 
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
-        "/rest/api/uom/VirtualIOServer/vios-uuid-001/do/InstallVIOS"
+        "/rest/api/uom/VirtualIOServer/00000000-0000-0000-0000-000000000003/do/InstallVIOS"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     result = hmc_install_vios(
-        "vios-uuid-001",
+        "00000000-0000-0000-0000-000000000003",
         nim_ip="192.168.1.10",
         nim_gateway="192.168.1.1",
         nim_subnetmask="255.255.255.0",
@@ -211,22 +240,21 @@ def test_install_vios_tool_wait_true_polls_to_completion(monkeypatch, mock_hmc):
 
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
-        "/rest/api/uom/VirtualIOServer/vios-uuid-001/do/InstallVIOS"
+        "/rest/api/uom/VirtualIOServer/00000000-0000-0000-0000-000000000003/do/InstallVIOS"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_install_vios(
-        "vios-uuid-001",
+        "00000000-0000-0000-0000-000000000003",
         nim_ip="192.168.1.10",
         nim_gateway="192.168.1.1",
         nim_subnetmask="255.255.255.0",
         vios_ip="192.168.1.20",
         wait=True,
         timeout_seconds=60,
-        poll_interval=0,
+        poll_interval=1,
     )
     assert submit_route.called
     assert poll_route.called
     assert result["Resource"]["Status"] == "COMPLETED"
-

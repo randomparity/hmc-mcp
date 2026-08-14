@@ -1,9 +1,5 @@
-"""Tests for ownership token stamping in LPAR create tools (issue #132).
+"""Tests for ownership token stamping in direct LPAR creation (issue #132)."""
 
-Verifies that hmc_create_lpar, hmc_provision_lpar (dry_run), and
-hmc_deploy_partition_template return the ownership_stamped key and that
-stamp failures produce warnings without affecting the primary result.
-"""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -50,9 +46,7 @@ def _setup_mock(router):
     router.put("/rest/api/web/Logon").mock(
         return_value=httpx.Response(200, text=LOGON_XML)
     )
-    router.delete("/rest/api/web/Logon").mock(
-        return_value=httpx.Response(204)
-    )
+    router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
     # Name-uniqueness check — no existing LPAR
     router.get("/rest/api/uom/LogicalPartition/search/(PartitionName==test-lpar)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
@@ -92,7 +86,7 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.server_power.stamp_lpar_ownership",
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="[hmc-mcp owner:test-agent created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
@@ -100,12 +94,11 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
                 name="test-lpar",
             )
 
-    assert isinstance(result, dict)
-    assert "lpar" in result
-    assert result["ownership_stamped"] is True
-    assert result["warnings"] == []
+    assert result.resource_created is True
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
     # The lpar key carries the created partition entry
-    assert result["lpar"]["Resource"]["PartitionName"] == "test-lpar"
+    assert result.lpar["Resource"]["PartitionName"] == "test-lpar"
 
 
 # ---------------------------------------------------------------------- #
@@ -119,7 +112,7 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.server_power.stamp_lpar_ownership",
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value=None),
         ):
             result = hmc_create_lpar(
@@ -127,11 +120,11 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
                 name="test-lpar",
             )
 
-    assert result["ownership_stamped"] is False
-    assert len(result["warnings"]) == 1
-    assert "stamp" in result["warnings"][0].lower()
+    assert result.ownership_stamped is False
+    assert len(result.warnings) == 1
+    assert "stamp" in result.warnings[0].lower()
     # LPAR is still returned
-    assert result["lpar"] is not None
+    assert result.lpar is not None
 
 
 # ---------------------------------------------------------------------- #
@@ -145,7 +138,7 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         _setup_mock(router)
         with patch(
-            "hmc_mcp.server_power.stamp_lpar_ownership",
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
         ):
             result = hmc_create_lpar(
@@ -153,7 +146,6 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
                 name="test-lpar",
             )
 
-    assert "lpar" in result
-    assert "ownership_stamped" in result
-    assert "warnings" in result
-    assert result["ownership_stamped"] is True
+    assert result.lpar is not None
+    assert result.ownership_stamped is True
+    assert result.warnings == ()

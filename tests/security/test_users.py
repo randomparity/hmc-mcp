@@ -8,7 +8,8 @@ from hmc_mcp.server import (
     hmc_create_user,
     hmc_delete_user,
     hmc_modify_user,
-    hmc_users,
+    hmc_get_user,
+    hmc_list_users,
 )
 from hmc_mcp.documents import build_hmc_user_document
 
@@ -68,6 +69,7 @@ CREATED_USER = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 # XML builder unit tests
 # ------------------------------------------------------------------ #
 
+
 def test_build_hmc_user_document_create():
     xml = build_hmc_user_document(
         username="alice",
@@ -99,6 +101,7 @@ def test_build_hmc_user_document_minimal():
 # ------------------------------------------------------------------ #
 # Client-level tests (respx-mocked HTTP)
 # ------------------------------------------------------------------ #
+
 
 @pytest.mark.asyncio
 async def test_list_hmc_users_all(mock_hmc):
@@ -195,7 +198,9 @@ async def test_web_get_error_raises(mock_hmc):
 async def test_web_get_rest000e_raises_actionable_error(mock_hmc):
     """_web_get converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
     mock_hmc.get("/rest/api/web/HmcUser").mock(
-        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+        return_value=httpx.Response(
+            400, text="REST000E Unrecognized root REST type of HmcUser"
+        )
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
@@ -213,9 +218,13 @@ async def test_web_get_rest000e_raises_actionable_error(mock_hmc):
 async def test_web_post_rest000e_raises_actionable_error(mock_hmc):
     """_web_post converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
     mock_hmc.post("/rest/api/web/HmcUser").mock(
-        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+        return_value=httpx.Response(
+            400, text="REST000E Unrecognized root REST type of HmcUser"
+        )
     )
-    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    user_xml = build_hmc_user_document(
+        username="newop", taskrole="hmcoperator", password="P@ss1"
+    )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
             await hmc.create_hmc_user(user_xml)
@@ -232,7 +241,9 @@ async def test_web_post_rest000e_raises_actionable_error(mock_hmc):
 async def test_web_delete_rest000e_raises_actionable_error(mock_hmc):
     """_web_delete converts HTTP 400 REST000E into an actionable HMCError (issue #113)."""
     mock_hmc.delete("/rest/api/web/HmcUser/someuser").mock(
-        return_value=httpx.Response(400, text="REST000E Unrecognized root REST type of HmcUser")
+        return_value=httpx.Response(
+            400, text="REST000E Unrecognized root REST type of HmcUser"
+        )
     )
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as exc_info:
@@ -249,6 +260,7 @@ async def test_web_delete_rest000e_raises_actionable_error(mock_hmc):
 # ------------------------------------------------------------------ #
 # X-HMC-Schema-Version forwarding on web endpoints (issue #99)
 # ------------------------------------------------------------------ #
+
 
 @pytest.mark.asyncio
 async def test_web_get_sends_schema_version_when_configured(mock_hmc):
@@ -278,7 +290,9 @@ async def test_web_post_omits_schema_version_when_not_configured(mock_hmc):
     route = mock_hmc.post("/rest/api/web/HmcUser").mock(
         return_value=httpx.Response(201, text=CREATED_USER)
     )
-    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    user_xml = build_hmc_user_document(
+        username="newop", taskrole="hmcoperator", password="P@ss1"
+    )
     async with HMCClient(make_config()) as hmc:
         await hmc.create_hmc_user(user_xml)
     assert "x-hmc-schema-version" not in route.calls.last.request.headers
@@ -301,7 +315,9 @@ async def test_web_post_sends_schema_version_when_configured(mock_hmc):
     route = mock_hmc.post("/rest/api/web/HmcUser").mock(
         return_value=httpx.Response(201, text=CREATED_USER)
     )
-    user_xml = build_hmc_user_document(username="newop", taskrole="hmcoperator", password="P@ss1")
+    user_xml = build_hmc_user_document(
+        username="newop", taskrole="hmcoperator", password="P@ss1"
+    )
     async with HMCClient(make_config(schema_version="V1_0")) as hmc:
         await hmc.create_hmc_user(user_xml)
     assert route.calls.last.request.headers.get("x-hmc-schema-version") == "V1_0"
@@ -322,6 +338,7 @@ async def test_web_delete_sends_schema_version_when_configured(mock_hmc):
 # Server-tool tests (parsed dict returns, not raw XML)
 # ------------------------------------------------------------------ #
 
+
 def _hmc_env(monkeypatch) -> None:
     """Set env vars so HMCConfig() succeeds inside the tool."""
     monkeypatch.setenv("HMC_HOST", "hmc.test")
@@ -330,48 +347,33 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_hmc_users_lists_all(monkeypatch, mock_hmc):
-    """hmc_users() returns parsed dicts, one per account."""
+    """hmc_list_users() returns parsed dicts, one per account."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser").mock(
         return_value=httpx.Response(200, text=USER_FEED)
     )
-    result = hmc_users()
+    result = hmc_list_users()
     assert isinstance(result, list)
     assert len(result) == 2
     assert result[0]["Resource"]["UserID"] == "hscroot"
     assert result[1]["Resource"]["TaskRole"] == "hmcoperator"
 
 
-def test_hmc_users_with_name_gets_one(monkeypatch, mock_hmc):
-    """hmc_users(name=...) returns a single parsed resource dict."""
+def test_hmc_get_user_gets_one(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
         return_value=httpx.Response(200, text=USER_ENTRY)
     )
-    result = hmc_users(name="hscroot")
+    result = hmc_get_user("hscroot")
     assert isinstance(result, dict)
     assert result["ResourceType"] == "HmcUser"
     assert result["Resource"]["UserID"] == "hscroot"
 
 
-def test_hmc_users_with_name_empty_returns_none(monkeypatch, mock_hmc):
-    """hmc_users(name=...) returns None when the server returns no content."""
+def test_hmc_get_user_empty_returns_none(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/web/HmcUser/nobody").mock(
-        return_value=httpx.Response(204)
-    )
-    assert hmc_users(name="nobody") is None
-
-
-def test_hmc_users_name_ignores_user_type(monkeypatch, mock_hmc):
-    """hmc_users(name=..., user_type=...) uses the by-name path; user_type is silently ignored."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/web/HmcUser/hscroot").mock(
-        return_value=httpx.Response(200, text=USER_ENTRY)
-    )
-    result = hmc_users(name="hscroot", user_type="local")
-    assert route.called
-    assert result["Resource"]["UserID"] == "hscroot"
+    mock_hmc.get("/rest/api/web/HmcUser/nobody").mock(return_value=httpx.Response(204))
+    assert hmc_get_user("nobody") is None
 
 
 def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):
@@ -383,6 +385,15 @@ def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):
     result = hmc_create_user("newop", "hmcoperator", "P@ss1")
     assert isinstance(result, dict)
     assert result["Resource"]["UserID"] == "newop"
+
+
+def test_hmc_create_user_rejects_invalid_taskrole_before_transport(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="taskrole"):
+        hmc_create_user("newop", "administrator", "P@ss1")
+    assert not mock_hmc.calls
 
 
 def test_hmc_modify_user_returns_parsed_dict(monkeypatch, mock_hmc):

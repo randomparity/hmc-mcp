@@ -1,16 +1,101 @@
 """XML templates for HMC job requests (do/* operations).
 
 Jobs are submitted with Content-Type: application/vnd.ibm.powervm.web+xml;
-type=JobRequest via PUT and run asynchronously; poll /rest/api/uom/Job/{uuid}
-for status.
+type=JobRequest via PUT and run asynchronously. Poll the submission's SELF link
+for portable status handling; ``/rest/api/uom/Job/{uuid}`` remains a legacy
+fallback for responses that omit that link.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Literal, Required, TypedDict, get_args
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
+from urllib.parse import urlparse
 
+from .errors import HMCError
 from .xmlutil import WEB_NS
+
+LuType = Literal["THIN", "THICK"]
+DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
+LU_TYPES = frozenset(get_args(LuType))
+DEVICE_TYPES = frozenset(get_args(DeviceType))
+
+
+class JobWaitClient(Protocol):
+    """Client capability required to wait for a submitted HMC job."""
+
+    async def wait_for_job(
+        self,
+        job_uuid: str,
+        timeout_seconds: int,
+        poll_interval: int,
+        *,
+        job_href: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
+
+def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -> None:
+    """Reject invalid polling settings before a caller submits remote work."""
+    if not wait:
+        return
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be greater than or equal to 0")
+    if poll_interval <= 0:
+        raise ValueError("poll_interval must be greater than 0")
+
+
+def job_identifier(job: dict[str, Any]) -> str | None:
+    """Return a polling identifier from a UUID, JobID, or SELF link."""
+    identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    if isinstance(identifier, str) and identifier.strip():
+        return identifier.strip()
+    link = job.get("link")
+    if not isinstance(link, str) or not link.strip():
+        return None
+    path = urlparse(link.strip()).path.rstrip("/")
+    return path.rsplit("/", 1)[-1] if path else None
+
+
+async def wait_for_submitted_job(
+    client: JobWaitClient,
+    job: dict[str, Any] | None,
+    wait: bool,
+    timeout_seconds: int,
+    poll_interval: int,
+) -> dict[str, Any] | None:
+    """Return immediately or honor the caller's request to poll the job."""
+    if not wait:
+        return job
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    if job is None:
+        raise HMCError(
+            "Cannot wait for the submitted HMC job: the submission returned no job resource"
+        )
+    identifier = job_identifier(job)
+    if identifier is None:
+        raise HMCError(
+            "Cannot wait for the submitted HMC job: the response contained no usable "
+            "UUID, JobID, or polling link"
+        )
+    return await client.wait_for_job(
+        identifier, timeout_seconds, poll_interval, job_href=job.get("link")
+    )
+
+
+def validate_logical_unit_types(
+    lu_type: LuType, device_type: DeviceType
+) -> tuple[LuType, DeviceType]:
+    """Validate logical-unit serialization vocabularies for direct callers."""
+    if lu_type not in LU_TYPES:
+        raise ValueError(
+            f"Invalid lu_type {lu_type!r}. Must be one of: {', '.join(sorted(LU_TYPES))}"
+        )
+    if device_type not in DEVICE_TYPES:
+        raise ValueError(
+            f"Invalid device_type {device_type!r}. "
+            f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
+        )
+    return lu_type, device_type
+
 
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
@@ -61,19 +146,27 @@ def build_job_request(
 
 
 def power_on_lpar_job() -> str:
-    return build_job_request("PowerOn", "LogicalPartition", {
-        "force": "false",
-        "novsi": "true",
-        "bootmode": "norm",
-    })
+    return build_job_request(
+        "PowerOn",
+        "LogicalPartition",
+        {
+            "force": "false",
+            "novsi": "true",
+            "bootmode": "norm",
+        },
+    )
 
 
 def power_off_lpar_job(immediate: bool = False) -> str:
-    return build_job_request("PowerOff", "LogicalPartition", {
-        "immediate": "true" if immediate else "false",
-        "restart": "false",
-        "operation": "shutdown",
-    })
+    return build_job_request(
+        "PowerOff",
+        "LogicalPartition",
+        {
+            "immediate": "true" if immediate else "false",
+            "restart": "false",
+            "operation": "shutdown",
+        },
+    )
 
 
 def power_on_system_job() -> str:
@@ -101,8 +194,8 @@ def power_off_vios_job(immediate: bool = False) -> str:
 def create_logical_unit_job(
     lu_name: str,
     lu_size_gb: int,
-    lu_type: str = "THIN",
-    device_type: str = "VirtualIO_Disk",
+    lu_type: LuType = "THIN",
+    device_type: DeviceType = "VirtualIO_Disk",
     cloned_from: str | None = None,
 ) -> str:
     """CreateLogicalUnit job against a Cluster/SSP.
@@ -110,6 +203,7 @@ def create_logical_unit_job(
     lu_type is THICK or THIN; device_type is VirtualIO_Disk or VirtualIO_Image.
     cloned_from is the UDID of an LU to clone from (optional).
     """
+    validate_logical_unit_types(lu_type, device_type)
     params: dict[str, str] = {
         "TierUDID": "",
         "LUName": lu_name,
@@ -158,7 +252,9 @@ def _migrate_job(
         extra["SharedProcPoolID"] = shared_proc_pool_id
     if wait_time is not None:
         extra["WaitTime"] = str(wait_time)
-    return build_job_request(operation, "LogicalPartition", _lpm_params(target_system, extra))
+    return build_job_request(
+        operation, "LogicalPartition", _lpm_params(target_system, extra)
+    )
 
 
 def migrate_lpar_job(
@@ -170,7 +266,12 @@ def migrate_lpar_job(
 ) -> str:
     """Migrate job: move an LPAR to another managed system."""
     return _migrate_job(
-        "Migrate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+        "Migrate",
+        target_system,
+        target_profile_name,
+        destination_lpar_id,
+        shared_proc_pool_id,
+        wait_time,
     )
 
 
@@ -183,7 +284,12 @@ def migrate_validate_lpar_job(
 ) -> str:
     """MigrateValidate job: check whether a migration would succeed."""
     return _migrate_job(
-        "MigrateValidate", target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
+        "MigrateValidate",
+        target_system,
+        target_profile_name,
+        destination_lpar_id,
+        shared_proc_pool_id,
+        wait_time,
     )
 
 
@@ -249,7 +355,7 @@ class RepositorySource(TypedDict, total=False):
         ibm_token   – IBM FixCentral account token
     """
 
-    type: Required[RepositoryType]
+    type: NotRequired[RepositoryType]
     host: str
     path: str
     user: str
@@ -276,7 +382,7 @@ _REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
 }
 
 
-def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
+def _repository_params(repository: RepositorySource) -> dict[str, str]:
     """Convert a repository dict to JobParameter key/value pairs.
 
     Unknown keys are rejected, the repository type must be present, and
@@ -294,14 +400,12 @@ def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
     expected = ", ".join(sorted(_REPOSITORY_TYPES))
     if repo_type is None:
         raise ValueError(
-            "Repository dict is missing 'type'. Expected one of: "
-            f"{expected}."
+            f"Repository dict is missing 'type'. Expected one of: {expected}."
         )
     required = _REQUIRED_KEYS.get(repo_type)
     if required is None:
         raise ValueError(
-            f"Unknown repository type {repo_type!r}. Expected one of: "
-            f"{expected}."
+            f"Unknown repository type {repo_type!r}. Expected one of: {expected}."
         )
     missing = required - set(repository)
     if missing:
@@ -317,7 +421,9 @@ def update_hmc_job(repository: RepositorySource) -> str:
 
     target: ManagementConsole/{uuid}/do/Update
     """
-    return build_job_request("Update", "ManagementConsole", _repository_params(repository))
+    return build_job_request(
+        "Update", "ManagementConsole", _repository_params(repository)
+    )
 
 
 def upgrade_hmc_job(repository: RepositorySource) -> str:
@@ -325,7 +431,9 @@ def upgrade_hmc_job(repository: RepositorySource) -> str:
 
     target: ManagementConsole/{uuid}/do/Upgrade
     """
-    return build_job_request("Upgrade", "ManagementConsole", _repository_params(repository))
+    return build_job_request(
+        "Upgrade", "ManagementConsole", _repository_params(repository)
+    )
 
 
 def update_vios_job(repository: RepositorySource) -> str:
@@ -333,7 +441,9 @@ def update_vios_job(repository: RepositorySource) -> str:
 
     target: VirtualIOServer/{uuid}/do/Update
     """
-    return build_job_request("Update", "VirtualIOServer", _repository_params(repository))
+    return build_job_request(
+        "Update", "VirtualIOServer", _repository_params(repository)
+    )
 
 
 def upgrade_vios_job(repository: RepositorySource) -> str:
@@ -341,7 +451,9 @@ def upgrade_vios_job(repository: RepositorySource) -> str:
 
     target: VirtualIOServer/{uuid}/do/Upgrade
     """
-    return build_job_request("Upgrade", "VirtualIOServer", _repository_params(repository))
+    return build_job_request(
+        "Upgrade", "VirtualIOServer", _repository_params(repository)
+    )
 
 
 def update_firmware_job(repository: RepositorySource) -> str:
@@ -349,7 +461,9 @@ def update_firmware_job(repository: RepositorySource) -> str:
 
     target: ManagedSystem/{uuid}/do/UpdateFirmware
     """
-    return build_job_request("UpdateFirmware", "ManagedSystem", _repository_params(repository))
+    return build_job_request(
+        "UpdateFirmware", "ManagedSystem", _repository_params(repository)
+    )
 
 
 # ---------------------------------------------------------------------- #

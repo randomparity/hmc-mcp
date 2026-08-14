@@ -8,6 +8,7 @@ the tool bodies is exercised — the layer the client tests skip.
 
 import httpx
 import pytest
+from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
@@ -21,6 +22,7 @@ from hmc_mcp.server import (
 from conftest import JOB_ENTRY
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
+TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -39,13 +41,28 @@ def test_migrate_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_migrate_lpar PUTs a Migrate job with the target system."""
     _hmc_env(monkeypatch)
     route = _job_route(mock_hmc, "Migrate")
-    result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", target_profile_name="prof1", wait_time=60)
+    result = hmc_migrate_lpar(
+        LPAR_UUID, "vrml12-fsp", target_profile_name="prof1", wait_time=60
+    )
     body = route.calls.last.request.content.decode()
     assert "Migrate</OperationName>" in body
     assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
     assert "TargetProfileName" in body and "prof1" in body
     assert "WaitTime" in body and "60" in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_migrate_lpar_resolves_target_system_uuid(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = _job_route(mock_hmc, "Migrate")
+    resolver = AsyncMock(return_value="vrml12-fsp")
+
+    with patch("hmc_mcp.operations_lpm.resolve_system_name", new=resolver):
+        hmc_migrate_lpar(LPAR_UUID, TARGET_SYSTEM_UUID)
+
+    resolver.assert_awaited_once_with(ANY, TARGET_SYSTEM_UUID)
+    body = route.calls.last.request.content.decode()
+    assert "TargetManagedSystemName" in body and "vrml12-fsp" in body
 
 
 def test_migrate_validate_lpar_submits_job(monkeypatch, mock_hmc):
@@ -87,9 +104,9 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
 def test_migrate_lpar_error_propagates(monkeypatch, mock_hmc):
     """A non-2xx job submission surfaces as HMCError naming the failing PUT."""
     _hmc_env(monkeypatch)
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate"
-    ).mock(return_value=httpx.Response(500, text="<error>boom</error>"))
+    mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/Migrate").mock(
+        return_value=httpx.Response(500, text="<error>boom</error>")
+    )
     with pytest.raises(HMCError) as exc_info:
         hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp")
     assert exc_info.value.status_code == 500
@@ -122,7 +139,7 @@ def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(
-        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=0
+        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
@@ -140,3 +157,19 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
     assert submit_route.called
     assert not poll_route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    submit_route = _job_route(mock_hmc, "MigrateValidate")
+    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+
+    result = hmc_migrate_validate_lpar(
+        LPAR_UUID, "vrml12-fsp", wait=True, timeout_seconds=60, poll_interval=1
+    )
+
+    assert submit_route.called
+    assert poll_route.called
+    assert result["Resource"]["Status"] == "COMPLETED"

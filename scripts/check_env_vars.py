@@ -18,16 +18,13 @@ import re
 import sys
 from pathlib import Path
 
+from hmc_mcp.config import HMCConfig
+
 # Resolve the repo root relative to this script so the guard can be run from
 # any working directory.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent
 _DEFAULT_DOC = _REPO_ROOT / "docs" / "environment-variables.md"
-
-# Add src/ to the path so HMCConfig can be imported without installation.
-sys.path.insert(0, str(_REPO_ROOT / "src"))
-
-from hmc_mcp.config import HMCConfig  # noqa: E402  (after sys.path tweak)
 
 
 def _env_var_names() -> list[str]:
@@ -87,15 +84,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     # Slice from ## Reference to the next ## heading (or end of file).
     section_start = ref_match.start()
-    next_section = re.search(r"^## ", doc_text[ref_match.end():], re.MULTILINE)
-    section_end = ref_match.end() + next_section.start() if next_section else len(doc_text)
+    next_section = re.search(r"^## ", doc_text[ref_match.end() :], re.MULTILINE)
+    section_end = (
+        ref_match.end() + next_section.start() if next_section else len(doc_text)
+    )
     ref_section = doc_text[section_start:section_end]
     # Filter to Markdown table rows (lines starting with |) to exclude
     # prose, comments, or example blocks within the section.
-    table_text = "\n".join(ln for ln in ref_section.splitlines() if ln.strip().startswith("|"))
+    table_text = "\n".join(
+        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
+    )
     # Use word-boundary regex matching so that "HMC_SSH_TIME" is not falsely
     # satisfied by the presence of "HMC_SSH_TIMEOUT".
-    missing = [v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", table_text)]
+    missing = sorted(
+        v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", table_text)
+    )
 
     if missing:
         print(
@@ -115,4 +118,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

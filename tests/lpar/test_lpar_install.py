@@ -9,6 +9,18 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import install_lpar_job
 
 BASE = "https://hmc.test:12443"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
+
+
+def _lpar_feed(name: str, uuid: str = LPAR_UUID) -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><id>urn:uuid:{uuid}</id><content>
+    <LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <PartitionName>{name}</PartitionName>
+    </LogicalPartition>
+  </content></entry>
+</feed>"""
 
 
 # ---------------------------------------------------------------------- #
@@ -55,7 +67,7 @@ def test_install_lpar_job_default_timeout():
 async def test_install_lpar(mock_hmc):
     """hmc_install_lpar_os: PUT a JobRequest to the InstallLPAR do/ endpoint."""
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid-001/do/InstallLPAR"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
@@ -67,7 +79,7 @@ async def test_install_lpar(mock_hmc):
             vlan_id="100",
         )
         job = await hmc.submit_job(
-            "/rest/api/uom/LogicalPartition/lpar-uuid-001/do/InstallLPAR",
+            f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR",
             job_xml,
         )
 
@@ -108,10 +120,10 @@ def test_install_lpar_os_tool_submits_job(monkeypatch, mock_hmc):
 
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid-001/do/InstallLPAR"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     result = hmc_install_lpar_os(
-        "lpar-uuid-001",
+        LPAR_UUID,
         nim_ip="192.168.1.10",
         nim_gateway="192.168.1.1",
         nim_subnetmask="255.255.255.0",
@@ -125,26 +137,74 @@ def test_install_lpar_os_tool_submits_job(monkeypatch, mock_hmc):
     assert result["Resource"]["JobID"] == "job-uuid-999"
 
 
+def test_install_lpar_os_tool_resolves_partition_name(monkeypatch, mock_hmc):
+    from hmc_mcp.server import hmc_install_lpar_os
+
+    _hmc_env(monkeypatch)
+    search_route = mock_hmc.get(
+        "/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)"
+    ).mock(return_value=httpx.Response(200, text=_lpar_feed("aixprod")))
+    submit_route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_install_lpar_os(
+        "aixprod",
+        nim_ip="192.168.1.10",
+        nim_gateway="192.168.1.1",
+        nim_subnetmask="255.255.255.0",
+        lpar_ip="192.168.1.30",
+    )
+
+    assert search_route.called
+    assert submit_route.called
+
+
+def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_hmc):
+    from hmc_mcp.server import hmc_install_lpar_os
+
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==missing)").mock(
+        return_value=httpx.Response(
+            200, text='<feed xmlns="http://www.w3.org/2005/Atom"/>'
+        )
+    )
+    submit_route = mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    with pytest.raises(ValueError, match="No LPAR named 'missing'"):
+        hmc_install_lpar_os(
+            "missing",
+            nim_ip="192.168.1.10",
+            nim_gateway="192.168.1.1",
+            nim_subnetmask="255.255.255.0",
+            lpar_ip="192.168.1.30",
+        )
+
+    assert not submit_route.called
+
+
 def test_install_lpar_os_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     """hmc_install_lpar_os(wait=True) submits then polls until COMPLETED."""
     from hmc_mcp.server import hmc_install_lpar_os
 
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
-        "/rest/api/uom/LogicalPartition/lpar-uuid-001/do/InstallLPAR"
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/InstallLPAR"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_install_lpar_os(
-        "lpar-uuid-001",
+        LPAR_UUID,
         nim_ip="192.168.1.10",
         nim_gateway="192.168.1.1",
         nim_subnetmask="255.255.255.0",
         lpar_ip="192.168.1.30",
         wait=True,
         timeout_seconds=60,
-        poll_interval=0,
+        poll_interval=1,
     )
     assert submit_route.called
     assert poll_route.called

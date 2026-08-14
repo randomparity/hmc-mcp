@@ -28,7 +28,9 @@ def _tag_parse_errors(fn: Callable[..., _T]) -> Callable[..., _T]:
         try:
             return fn(xml_text, *args)
         except DET.ParseError as exc:
-            raise HMCError(f"Failed to parse {context} response") from exc
+            raise HMCError(
+                f"Failed to parse {context} response: {str(exc)[:500]}"
+            ) from exc
 
     return wrapper
 

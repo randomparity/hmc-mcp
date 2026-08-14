@@ -2,7 +2,13 @@
 
 import pytest
 
-from hmc_mcp.documents import LparResources, PARTITION_TYPES, build_lpar_document
+from hmc_mcp.documents import (
+    LparResources,
+    PARTITION_TYPES,
+    TASK_ROLES,
+    build_hmc_user_document,
+    build_lpar_document,
+)
 
 
 def test_minimal_create_document():
@@ -96,6 +102,17 @@ def test_invalid_keylock():
 def test_all_partition_types_accepted():
     for pt in PARTITION_TYPES:
         build_lpar_document(name="ok", partition_type=pt)
+
+
+def test_all_task_roles_serialize_unchanged():
+    for taskrole in TASK_ROLES:
+        xml = build_hmc_user_document(username="operator", taskrole=taskrole)
+        assert f">{taskrole}</TaskRole>" in xml
+
+
+def test_invalid_task_role_is_rejected():
+    with pytest.raises(ValueError, match="taskrole"):
+        build_hmc_user_document(username="operator", taskrole="administrator")
 
 
 def test_modify_document_omits_name_when_none():

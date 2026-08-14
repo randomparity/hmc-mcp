@@ -1,0 +1,40 @@
+"""MCP tools for capacity reporting and placement decisions."""
+
+from __future__ import annotations
+
+from .tool_registry import tool_module
+
+from typing import Any
+
+from ._app import _READ_ONLY, _run
+from .common import client_from_env
+from .operations_capacity import capacity_report, find_placement
+
+
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
+    """Report assigned and available memory and processors by system."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await capacity_report(hmc)
+
+    return _run(_go)
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_find_placement(
+    desired_memory_mb: int,
+    desired_proc_units: float = 0.5,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """Rank systems able to host an LPAR with the requested capacity."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await find_placement(hmc, desired_memory_mb, desired_proc_units)
+
+    return _run(_go)

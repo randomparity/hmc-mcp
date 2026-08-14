@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.client_users import LDAP_REMOVAL_RESOURCES
 from hmc_mcp.server import (
     hmc_configure_ldap,
     hmc_get_ldap_config,
@@ -150,6 +151,27 @@ async def test_remove_ldap_config_binddn(mock_hmc):
     assert route.called
     url_str = str(route.calls.last.request.url)
     assert "Remove=binddn" in url_str
+
+
+@pytest.mark.asyncio
+async def test_all_ldap_removal_resources_serialize_unchanged(mock_hmc):
+    for resource in LDAP_REMOVAL_RESOURCES:
+        route = mock_hmc.post("/rest/api/web/HmcLdapServer").mock(
+            return_value=httpx.Response(200, text="<ok/>")
+        )
+        async with HMCClient(make_config()) as hmc:
+            await hmc.remove_ldap_config(resource)
+        assert f"Remove={resource}" in str(route.calls.last.request.url)
+
+
+def test_invalid_ldap_removal_resource_fails_before_transport(monkeypatch, mock_hmc):
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+
+    with pytest.raises(ValueError, match="LDAP removal resource"):
+        hmc_remove_ldap_config("../../HmcUser")
+    assert not mock_hmc.calls
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for systems.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .client_parse import _parse_feed
@@ -19,18 +20,31 @@ from .jobs import (
 
 
 class SystemsMixin:
+    list_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
+    get_uom: Callable[..., Awaitable[dict[str, Any] | None]]
+    search_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
+    _get: Callable[..., Awaitable[str]]
+    _post: Callable[..., Awaitable[str]]
+    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
+
     # -- Convenience wrappers for the common resources ----------------- #
     async def get_console_info(self) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""
         # Some HMC firmware builds return HTTP 500 on the unfiltered
         # ManagementConsole feed due to a null SessionId in the response XML.
-        # Catch the error and return None instead of raising — the caller can
-        # treat None as "HMC is reachable but console info is unavailable".
+        # Only that known HTTP 500 means "reachable but unavailable". Auth,
+        # transport, parsing, and other HMC errors retain their normal contract.
         try:
             entries = await self.list_uom("ManagementConsole")
             return entries[0] if entries else None
-        except Exception:
-            return None
+        except HMCError as exc:
+            if (
+                exc.status_code == 500
+                and exc.body is not None
+                and "null SessionId" in exc.body
+            ):
+                return None
+            raise
 
     async def list_managed_systems(self) -> list[dict[str, Any]]:
         # Some HMC firmware builds return HTTP 500 on the unfiltered
@@ -38,18 +52,21 @@ class SystemsMixin:
         # sub-elements (e.g. VirtualPersistentMemoryVolume/Uuid,
         # PersistentMemoryDevice/DynamicReconfigurationConnectorIndex, …).
         # The HMC serialiser trips on null-valued sub-fields it cannot encode.
-        # Return an empty list for any such HMC firmware serialisation bug
-        # (HTTP 500 + "Nested path contains null property"); re-raise everything
-        # else (auth errors, parse errors, non-500 HMC errors, etc.).
+        # Translate that known response into an actionable error rather than
+        # making an unavailable inventory indistinguishable from an empty one.
         try:
             return await self.list_uom("ManagedSystem")
-        except Exception as exc:
-            if (
-                isinstance(exc, HMCError)
-                and exc.status_code == 500
-                and "Nested path contains null property" in str(exc)
+        except HMCError as exc:
+            if exc.status_code == 500 and "Nested path contains null property" in str(
+                exc
             ):
-                return []
+                raise HMCError(
+                    "Managed-system inventory is unavailable because this HMC "
+                    "firmware could not serialize a null hardware property; "
+                    "update the HMC firmware or query a managed system directly",
+                    status_code=500,
+                    body=exc.body,
+                ) from exc
             raise
 
     async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
@@ -81,14 +98,18 @@ class SystemsMixin:
         """Power on a managed system (PowerOn job)."""
 
         return await self.submit_job(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOn", power_on_system_job()
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOn",
+            power_on_system_job(),
         )
 
-    async def power_off_system(self, system_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+    async def power_off_system(
+        self, system_uuid: str, immediate: bool = False
+    ) -> dict[str, Any] | None:
         """Power off a managed system (PowerOff job; immediate skips graceful shutdown)."""
 
         return await self.submit_job(
-            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff", power_off_system_job(immediate)
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/do/PowerOff",
+            power_off_system_job(immediate),
         )
 
     async def find_vios_by_name(self, name: str) -> dict[str, Any] | None:
@@ -103,11 +124,14 @@ class SystemsMixin:
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOn", power_on_vios_job()
         )
 
-    async def power_off_vios(self, vios_uuid: str, immediate: bool = False) -> dict[str, Any] | None:
+    async def power_off_vios(
+        self, vios_uuid: str, immediate: bool = False
+    ) -> dict[str, Any] | None:
         """Power off a VIOS (PowerOff job; immediate skips graceful shutdown)."""
 
         return await self.submit_job(
-            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff", power_off_vios_job(immediate)
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/PowerOff",
+            power_off_vios_job(immediate),
         )
 
     async def list_vios(self, system_uuid: str | None = None) -> list[dict[str, Any]]:

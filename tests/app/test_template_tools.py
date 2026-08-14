@@ -8,16 +8,19 @@ tool bodies is exercised.
 
 import httpx
 import pytest
+from unittest.mock import ANY, AsyncMock, patch
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_deploy_partition_template,
-    hmc_partition_templates,
+    hmc_get_partition_template,
+    hmc_list_partition_templates,
 )
 
 from conftest import JOB_ENTRY
 
 TEMPLATE_UUID = "tmpl-uuid-1"
+TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 TEMPLATE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -40,23 +43,23 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_partition_templates_lists_all(monkeypatch, mock_hmc):
-    """hmc_partition_templates() GETs the template library feed."""
+    """hmc_list_partition_templates() GETs the template library feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_partition_templates()
+    result = hmc_list_partition_templates()
     assert result[0]["UUID"] == TEMPLATE_UUID
     assert result[0]["Resource"]["templateName"] == "aix-gold"
 
 
 def test_partition_templates_with_uuid_gets_one(monkeypatch, mock_hmc):
-    """hmc_partition_templates(template_uuid=...) GETs one template by UUID."""
+    """hmc_get_partition_template GETs one template by UUID."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_partition_templates(TEMPLATE_UUID)
+    result = hmc_get_partition_template(TEMPLATE_UUID)
     assert result["Resource"]["templateName"] == "aix-gold"
 
 
@@ -67,18 +70,18 @@ def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates(TEMPLATE_UUID)
+        hmc_get_partition_template(TEMPLATE_UUID)
     assert exc_info.value.status_code == 404
 
 
 def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
+    """hmc_list_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates()
+        hmc_list_partition_templates()
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     # The message should be actionable and mention templates specifically, not raw HTTP error
@@ -87,13 +90,13 @@ def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
 
 
 def test_partition_templates_get_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_partition_templates(template_uuid=...) returns clear message when templates not licensed (HTTP 406)."""
+    """A single template lookup explains when templates are not licensed."""
     _hmc_env(monkeypatch)
     mock_hmc.get(f"/rest/api/templates/PartitionTemplate/{TEMPLATE_UUID}").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates(TEMPLATE_UUID)
+        hmc_get_partition_template(TEMPLATE_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     assert "not licensed" in error_msg.lower()
@@ -107,7 +110,7 @@ def test_deploy_partition_template_http_406_not_licensed(monkeypatch, mock_hmc):
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_deploy_partition_template("draft-uuid", "sys-uuid")
+        hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     assert "not licensed" in error_msg.lower()
@@ -120,14 +123,30 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    result = hmc_deploy_partition_template("draft-uuid", "sys-uuid")
+    result = hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
-    assert "TargetUuid" in body and "sys-uuid" in body
+    assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
     assert "K_X_API_SESSION_MEMENTO" in body
-    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert set(result) == {"job", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
-    assert result["ownership_stamped"] is None
+    assert result["warnings"] == [
+        "ownership stamp not attempted: template deployment does not identify and stamp "
+        "the new LPAR; list partitions to identify it, then set its description"
+    ]
+
+
+def test_deploy_partition_template_resolves_target_system_name(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+    resolver = AsyncMock(return_value=TARGET_SYSTEM_UUID)
+
+    with patch("hmc_mcp.operations_templates.resolve_system_uuid", new=resolver):
+        hmc_deploy_partition_template("draft-uuid", "system-prod")
+
+    resolver.assert_awaited_once_with(ANY, "system-prod")
 
 
 # ---------------------------------------------------------------------- #
@@ -158,13 +177,12 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
+        "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called
-    # result is now wrapped: {"job": <job_entry>, "ownership_stamped": None, "warnings": [...]}
+    assert set(result) == {"job", "warnings"}
     assert result["job"]["Resource"]["Status"] == "COMPLETED"
-    assert result["ownership_stamped"] is None
 
 
 def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
@@ -176,17 +194,17 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
     the deploy job); the warnings list must tell the operator how to stamp.
     """
     _hmc_env(monkeypatch)
-    mock_hmc.put(
-        "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
     mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
-        "draft-uuid", "sys-uuid", wait=True, timeout_seconds=60, poll_interval=0
+        "draft-uuid", TARGET_SYSTEM_UUID, wait=True, timeout_seconds=60, poll_interval=1
     )
-    assert result["warnings"], "expected at least one advisory warning for manual stamp"
-    combined = " ".join(result["warnings"])
-    # The warning must tell the operator to identify the LPAR and stamp manually.
-    assert "stamp" in combined.lower()
-    assert "manually" in combined.lower() or "hmc_set_lpar_description" in combined
+    assert set(result) == {"job", "warnings"}
+    assert result["warnings"] == [
+        "ownership stamp not attempted: template deployment does not identify and stamp "
+        "the new LPAR; list partitions to identify it, then set its description"
+    ]

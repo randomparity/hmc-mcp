@@ -12,7 +12,9 @@ class HMCError(Exception):
     can handle both paths with a single ``except HMCError``.
     """
 
-    def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
+    def __init__(
+        self, message: str, status_code: int | None = None, body: str | None = None
+    ):
         self.status_code = status_code
         self.body = body
         detail = message
@@ -27,3 +29,7 @@ class HMCError(Exception):
                 msg = body[:500]
             detail = f"{detail}: {msg}"
         super().__init__(detail)
+
+
+class HMCTransportError(HMCError):
+    """REST request failed before the HMC returned an HTTP response."""

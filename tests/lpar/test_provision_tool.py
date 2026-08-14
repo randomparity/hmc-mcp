@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from hmc_mcp.documents import LparResources
+from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import hmc_provision_lpar
 from conftest import JOB_ENTRY
 
@@ -25,10 +27,11 @@ def _patch_stamp_ownership():
     only) and must not attempt real SSH connections to hmc.test.
     """
     with patch(
-        "hmc_mcp.server_provision.stamp_lpar_ownership",
+        "hmc_mcp.operations_lpar.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
     ):
         yield
+
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
@@ -151,6 +154,18 @@ VLAN_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """
 
+MALFORMED_VLAN_FEED = VLAN_FEED.replace(
+    "<NetworkVLANID>100</NetworkVLANID>",
+    "<NetworkVLANID>not-a-vlan</NetworkVLANID>",
+).replace("VLAN100", "broken-network")
+
+VALID_VLAN_ENTRY = (
+    "<entry>" + VLAN_FEED.split("<entry>", 1)[1].split("</entry>", 1)[0] + "</entry>"
+)
+MALFORMED_THEN_VALID_VLAN_FEED = MALFORMED_VLAN_FEED.replace(
+    "</feed>", f"{VALID_VLAN_ENTRY}\n</feed>"
+)
+
 SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -166,26 +181,31 @@ SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """.format(system_uuid=SYSTEM_UUID)
 
 
-def _mock_preconditions(mock_hmc, *, name="web01", has_lpar=False, has_vlan=True, has_vg=True):
+def _mock_preconditions(
+    mock_hmc,
+    *,
+    name="web01",
+    has_lpar=False,
+    has_vlan=True,
+    has_vg=True,
+    vlan_feed=None,
+):
     """Register the three precondition GET routes."""
     # Support both "web01" (default) and a custom name such as "existing-lpar"
     # by registering the search URL for whatever name was requested.
     lpar_feed_text = EXISTING_LPAR_FEED if has_lpar else EMPTY_FEED
-    mock_hmc.get(
+    name_lookup = mock_hmc.get(
         f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})"
-    ).mock(
-        return_value=httpx.Response(200, text=lpar_feed_text)
+    ).mock(return_value=httpx.Response(200, text=lpar_feed_text))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
+        return_value=httpx.Response(
+            200, text=vlan_feed or (VLAN_FEED if has_vlan else EMPTY_FEED)
+        )
     )
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
-    ).mock(
-        return_value=httpx.Response(200, text=VLAN_FEED if has_vlan else EMPTY_FEED)
-    )
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup"
-    ).mock(
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED if has_vg else EMPTY_FEED)
     )
+    return name_lookup
 
 
 SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -201,13 +221,13 @@ SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def _mock_execution_steps(mock_hmc):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
-    mock_hmc.put(
+    create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
     # get_managed_system for stamp system-name resolution (REST-first)
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
-    ).mock(return_value=httpx.Response(200, text=SYSTEM_ENTRY))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
@@ -217,29 +237,43 @@ def _mock_execution_steps(mock_hmc):
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/VirtualSCSIClientAdapter"
     ).mock(return_value=httpx.Response(201, text=VSCSI_ADAPTER_FEED))
 
-    mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
-    ).mock(return_value=httpx.Response(201, text=VIOS_FEED))
+    mock_hmc.post(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(201, text=VIOS_FEED)
+    )
 
-    mock_hmc.put(
-        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    mock_hmc.put(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/do/PowerOn").mock(
+        return_value=httpx.Response(202, text=JOB_ENTRY)
+    )
+    return create_route
 
 
 # ---------------------------------------------------------------------- #
 # Helper: common provision arguments
 # ---------------------------------------------------------------------- #
 
+
 def _provision_args(**overrides):
     args = dict(
         system_name_or_uuid=SYSTEM_UUID,
         name="web01",
-        port_vlan_id=VLAN_ID,
-        vios_uuid=VIOS_UUID,
-        vios_partition_id=7,
-        vios_slot=11,
-        storage_name="lv_boot",
+        network=ProvisionNetwork(
+            port_vlan_id=VLAN_ID, vios_partition_id=7, vios_slot=11
+        ),
+        storage=ProvisionStorage(vios_uuid=VIOS_UUID, storage_name="lv_boot"),
+        resources=LparResources(
+            min_memory=256,
+            desired_memory=4096,
+            max_memory=8192,
+            desired_vcpus=1,
+            max_vcpus=2,
+        ),
     )
+    if "vg_uuid" in overrides:
+        args["storage"] = ProvisionStorage(
+            vios_uuid=VIOS_UUID,
+            storage_name="lv_boot",
+            vg_uuid=overrides.pop("vg_uuid"),
+        )
     args.update(overrides)
     return args
 
@@ -252,20 +286,23 @@ def _provision_args(**overrides):
 def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     """hmc_provision_lpar executes all 5 steps and returns structured results."""
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc)
+    name_lookup = _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
 
     result = hmc_provision_lpar(**_provision_args())
 
-    assert result["created"] is True
-    assert result["dry_run"] is False
-    steps = {s["step"]: s for s in result["steps"]}
+    assert result.resource_created is True
+    assert result.workflow_completed is True
+    assert result.lpar_uuid == LPAR_UUID
+    assert result.dry_run is False
+    assert name_lookup.call_count == 1
+    steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"
     assert steps["vscsi"]["status"] == "ok"
     assert steps["storage"]["status"] == "ok"
     assert steps["power_on"]["status"] == "ok"
-    assert isinstance(result["warnings"], list)
+    assert isinstance(result.warnings, tuple)
 
 
 def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
@@ -276,11 +313,48 @@ def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result["steps"]}
+    steps = {s["step"]: s for s in result.steps}
     # create step should contain partition data
     create_result = steps["create"]["result"]
     assert create_result is not None
     assert create_result.get("Resource", {}).get("PartitionName") == "web01"
+
+
+@pytest.mark.parametrize("dedicated", [False, True])
+def test_provision_lpar_preserves_complete_resource_input(
+    monkeypatch, mock_hmc, dedicated
+):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    create_route = _mock_execution_steps(mock_hmc)
+    resources = LparResources(
+        min_memory=512,
+        desired_memory=2048,
+        max_memory=4096,
+        dedicated=dedicated,
+        min_procs=0.5 if not dedicated else 1,
+        desired_procs=1.0 if not dedicated else 2,
+        max_procs=2.0 if not dedicated else 4,
+        min_vcpus=1,
+        desired_vcpus=2,
+        max_vcpus=4,
+        sharing_mode="uncapped" if not dedicated else None,
+        uncapped=not dedicated,
+    )
+
+    result = hmc_provision_lpar(**_provision_args(resources=resources))
+
+    assert result.workflow_completed is True
+    body = create_route.calls.last.request.content.decode()
+    for value in (512, 2048, 4096, 1, 2, 4):
+        assert f">{value}<" in body
+    if dedicated:
+        assert "DedicatedProcessorConfiguration" in body
+        assert "<DesiredProcessors" in body
+    else:
+        assert "SharedProcessorConfiguration" in body
+        assert "<DesiredProcessingUnits" in body
+        assert "uncapped" in body
 
 
 # ---------------------------------------------------------------------- #
@@ -296,8 +370,8 @@ def test_provision_lpar_no_power_on(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args(power_on=False))
 
-    assert result["created"] is True
-    step_names = [s["step"] for s in result["steps"]]
+    assert result.workflow_completed is True
+    step_names = [s["step"] for s in result.steps]
     assert "power_on" not in step_names
 
 
@@ -318,11 +392,13 @@ def test_provision_lpar_dry_run_validates_only(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args(dry_run=True))
 
-    assert result["dry_run"] is True
-    assert result["created"] is False
+    assert result.dry_run is True
+    assert result.resource_created is False
+    assert result.workflow_completed is False
+    assert result.lpar_uuid is None
     assert not create_route.called
     # All steps report dry_run status
-    for step in result["steps"]:
+    for step in result.steps:
         assert step["status"] == "dry_run"
 
 
@@ -364,6 +440,27 @@ def test_provision_lpar_vlan_not_found(monkeypatch, mock_hmc):
         hmc_provision_lpar(**_provision_args())
 
 
+def test_provision_lpar_reports_missing_vlan_and_malformed_inventory(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc, vlan_feed=MALFORMED_VLAN_FEED)
+
+    with pytest.raises(
+        ValueError, match="No VirtualNetwork.*broken-network.*not-a-vlan"
+    ):
+        hmc_provision_lpar(**_provision_args())
+
+
+def test_provision_lpar_accepts_valid_vlan_after_malformed_entry(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc, vlan_feed=MALFORMED_THEN_VALID_VLAN_FEED)
+
+    result = hmc_provision_lpar(**_provision_args(dry_run=True))
+
+    assert result.dry_run is True
+
+
 def test_provision_lpar_vg_not_found(monkeypatch, mock_hmc):
     """When the volume group is not found, a ValueError is raised."""
     _hmc_env(monkeypatch)
@@ -383,9 +480,12 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
 
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
@@ -404,7 +504,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result["steps"]}
+    steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"
     assert steps["vscsi"]["status"] == "error"
@@ -412,5 +512,39 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert steps["power_on"]["status"] == "skipped"
     assert not storage_route.called
     assert not power_on_route.called
-    # created is False when the workflow did not complete successfully
-    assert result["created"] is False
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid == LPAR_UUID
+
+
+def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc):
+    """Programming defects are not disguised as ordinary partial results."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+
+    with patch(
+        "hmc_mcp.client.HMCClient.add_vscsi_adapter",
+        new=AsyncMock(side_effect=TypeError("adapter defect")),
+    ):
+        with pytest.raises(TypeError, match="adapter defect"):
+            hmc_provision_lpar(**_provision_args())
+
+
+def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_hmc):
+    """A successful create with no response body is not reported as no creation."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201)
+    )
+
+    result = hmc_provision_lpar(**_provision_args())
+
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid is None
+    assert result.steps[0]["status"] == "error"
+    assert "no UUID" in result.steps[0]["result"]
+    assert result.ownership_stamped is None
+    assert "no LPAR body" in result.warnings[0]

@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for lpm.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .jobs import (
@@ -18,6 +19,8 @@ from .jobs import (
 
 
 class LpmMixin:
+    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
+
     # ------------------------------------------------------------------ #
     # Live Partition Mobility (LPM)
     # ------------------------------------------------------------------ #

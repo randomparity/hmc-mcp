@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hmc_mcp.server_system import hmc_list_configured_hosts
+from hmc_mcp.server_systems import hmc_list_configured_hosts
 
 
 # ---------------------------------------------------------------------------
@@ -25,11 +25,11 @@ def _write_toml(path: Path, content: str) -> Path:
 
 
 def _patch_config_path(tmp_path, content: str | None):
-    """Return a context manager: patches resolve_config_path in server_system."""
+    """Return a context manager patching the systems handler config lookup."""
     if content is None:
-        return patch("hmc_mcp.server_system.resolve_config_path", return_value=None)
+        return patch("hmc_mcp.server_systems.resolve_config_path", return_value=None)
     cfg = _write_toml(tmp_path / "config.toml", content)
-    return patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg)
+    return patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ def _patch_config_path(tmp_path, content: str | None):
 
 def test_no_config_file(tmp_path):
     """Returns empty profiles list when no config file exists."""
-    with patch("hmc_mcp.server_system.resolve_config_path", return_value=None):
+    with patch("hmc_mcp.server_systems.resolve_config_path", return_value=None):
         result = hmc_list_configured_hosts()
     assert result == {"profiles": [], "config_file": None}
 
@@ -202,7 +202,7 @@ def test_toml_parse_error(tmp_path):
     """TOML parse error → ValueError whose message includes the config path."""
     cfg = tmp_path / "config.toml"
     cfg.write_text("this is [[not valid toml]]\n", encoding="utf-8")
-    with patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg):
+    with patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg):
         with pytest.raises(ValueError, match="TOML parse error"):
             hmc_list_configured_hosts()
 
@@ -215,7 +215,7 @@ def test_permission_error_reading_config(tmp_path):
     """PermissionError reading config file → ValueError with path and OS error."""
     cfg = tmp_path / "config.toml"
     cfg.write_text("[profiles.x]\nhost = 'h'\nuser = 'u'\n", encoding="utf-8")
-    with patch("hmc_mcp.server_system.resolve_config_path", return_value=cfg), \
+    with patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg), \
          patch.object(Path, "read_text", side_effect=PermissionError("Permission denied")):
         with pytest.raises(ValueError, match="cannot read config file"):
             hmc_list_configured_hosts()

@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Superseded by [0012](0012-stable-public-tool-contracts.md)** (2026-08-14)
+
 ## Context
 
 The MCP server exposes 101 tools after the ADR 0003 (issue #51) list/get
