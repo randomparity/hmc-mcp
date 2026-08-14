@@ -385,6 +385,15 @@ def test_hmc_create_user_returns_parsed_dict(monkeypatch, mock_hmc):
     assert result["Resource"]["UserID"] == "newop"
 
 
+def test_hmc_create_user_rejects_invalid_taskrole_before_transport(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="taskrole"):
+        hmc_create_user("newop", "administrator", "P@ss1")
+    assert not mock_hmc.calls
+
+
 def test_hmc_modify_user_returns_parsed_dict(monkeypatch, mock_hmc):
     """hmc_modify_user returns the updated resource dict."""
     _hmc_env(monkeypatch)

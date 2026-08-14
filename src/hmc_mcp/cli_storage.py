@@ -7,6 +7,8 @@ from __future__ import annotations
 import typer
 from rich.table import Table
 
+from .documents import StorageKind
+
 from .cli_app import (
     _client,
     _first_field,
@@ -90,7 +92,9 @@ def storage_map(
     vios: str = typer.Argument(..., help="VIOS UUID"),
     lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
     disk: str = typer.Option(..., "--disk", help="Storage name (DiskName or hdiskN)"),
-    kind: str = typer.Option("VirtualDisk", "--kind", help="VirtualDisk or PhysicalVolume"),
+    kind: StorageKind = typer.Option(
+        "VirtualDisk", "--kind", help="VirtualDisk or PhysicalVolume"
+    ),
     target: str | None = typer.Option(None, "--target", help="Pin the vtscsi device name"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
@@ -165,4 +169,3 @@ def storage_delete_media_repo(
     _with_client(lambda hmc: hmc.delete_media_repository(vios, vg))
 
     console.print(f"[green]Deleted media repository on {vg}[/green]")
-

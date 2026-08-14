@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
@@ -17,6 +17,7 @@ from ._app import (
 from .client import HMCError
 from .common import client_from_env
 from .ssh import (
+    SriovMode,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
@@ -208,7 +209,7 @@ def hmc_list_sea_adapters(system_name_or_uuid: str, lpar_name_or_uuid: str | Non
 def hmc_set_sriov_adapter_mode(
     system_name_or_uuid: str,
     adapter_id: str,
-    mode: Literal["sriov", "dedicated"],
+    mode: SriovMode,
     profile: str | None = None,
 ) -> str:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.

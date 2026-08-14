@@ -10,6 +10,7 @@ from typing import Any
 
 from .client_parse import _parse_feed
 from .documents import (
+    StorageKind,
     build_media_repository_delete_document,
     build_media_repository_document,
     build_virtual_disk_document,
@@ -76,7 +77,7 @@ class StorageMixin:
     async def map_storage_to_lpar(
         self,
         vios_uuid: str,
-        storage_kind: str,
+        storage_kind: StorageKind,
         storage_name: str,
         lpar_uuid: str,
         target_device: str | None = None,

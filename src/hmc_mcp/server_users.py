@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
@@ -13,7 +13,14 @@ from ._app import (
 )
 
 from .common import client_from_env
+from .client_users import (
+    LdapRemovalResource,
+    PolicyType,
+    UserType,
+    validate_ldap_removal_resource,
+)
 from .documents import (
+    TaskRole,
     build_hmc_user_document,
     build_ldap_config_document,
     build_password_policy_document,
@@ -23,7 +30,7 @@ from .documents import (
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_users(
     name: str | None = None,
-    user_type: Literal["local", "kerberos", "all"] = "all",
+    user_type: UserType = "all",
     profile: str | None = None,
 ) -> Any:
     """List HMC user accounts or get one by username.
@@ -48,7 +55,7 @@ def hmc_users(
 @mcp.tool
 def hmc_create_user(
     name: str,
-    taskrole: str,
+    taskrole: TaskRole,
     password: str,
     description: str = "",
     pwage: int = 0,
@@ -80,7 +87,7 @@ def hmc_create_user(
 @mcp.tool
 def hmc_modify_user(
     name: str,
-    taskrole: str | None = None,
+    taskrole: TaskRole | None = None,
     password: str | None = None,
     description: str | None = None,
     enable: bool | None = None,
@@ -123,7 +130,7 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(
-    policy_type: Literal["policies", "status"] = "policies",
+    policy_type: PolicyType = "policies",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List HMC password policies.
@@ -295,7 +302,9 @@ def hmc_configure_ldap(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_remove_ldap_config(resource: str, profile: str | None = None) -> str:
+def hmc_remove_ldap_config(
+    resource: LdapRemovalResource, profile: str | None = None
+) -> str:
     """Remove a component of the HMC LDAP server configuration.
 
     resource selects what to remove.  Valid values:
@@ -311,6 +320,7 @@ def hmc_remove_ldap_config(resource: str, profile: str | None = None) -> str:
     Use hmc_get_ldap_config to inspect the current state before calling.
     Returns a confirmation string (immediate delete — no job to poll).
     """
+    validate_ldap_removal_resource(resource)
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.remove_ldap_config(resource)

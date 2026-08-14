@@ -12,6 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from hmc_mcp.client_adapters import ADAPTER_TYPES
 from hmc_mcp.server import (
     hmc_add_network_adapter,
     hmc_add_vfc_adapter,
@@ -94,6 +95,23 @@ def test_list_adapters_vscsi_type(monkeypatch, mock_hmc):
     ).mock(return_value=httpx.Response(200, text=_feed(ADAPTER_UUID, "VirtualSCSIClientAdapter")))
     hmc_list_adapters(LPAR_UUID, adapter_type="VirtualSCSIClientAdapter")
     assert route.called
+
+
+def test_all_adapter_types_reach_the_matching_resource(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    for adapter_type in ADAPTER_TYPES:
+        route = mock_hmc.get(
+            f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/{adapter_type}"
+        ).mock(return_value=httpx.Response(200, text=""))
+        hmc_list_adapters(LPAR_UUID, adapter_type=adapter_type)
+        assert route.called
+
+
+def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="adapter_type"):
+        hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
+    assert not mock_hmc.calls
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -341,6 +359,28 @@ def test_create_logical_unit_submits_job(monkeypatch, mock_hmc):
     assert "<ParameterValue kb=\"CUR\" kxe=\"false\">VirtualIO_Image</ParameterValue>" in body
     assert "ClonedFrom" not in body
     assert result["Resource"]["JobID"] == "job-uuid-999"
+
+
+@pytest.mark.parametrize(
+    "lu_type,device_type,match",
+    [
+        ("SPARSE", "VirtualIO_Disk", "lu_type"),
+        ("THIN", "PhysicalDisk", "device_type"),
+    ],
+)
+def test_create_logical_unit_rejects_invalid_types_before_transport(
+    monkeypatch, mock_hmc, lu_type, device_type, match
+):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match=match):
+        hmc_create_logical_unit(
+            CLUSTER_UUID,
+            "lu_data",
+            100,
+            lu_type=lu_type,
+            device_type=device_type,
+        )
+    assert not mock_hmc.calls
 
 
 def test_create_logical_unit_with_clone(monkeypatch, mock_hmc):

@@ -6,12 +6,32 @@ domain mixin; this module only defines methods for users.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, get_args
 
 from .client_parse import _parse_feed
 
-_VALID_USER_TYPES = {"local", "kerberos", "all"}
-_VALID_POLICY_TYPES = {"policies", "status"}
+UserType = Literal["local", "kerberos", "all"]
+PolicyType = Literal["policies", "status"]
+LdapRemovalResource = Literal[
+    "backup", "ldap", "binddn", "bindpw", "searchfilter", "hmcgroups",
+    "groupmemberattributes",
+]
+
+_VALID_USER_TYPES = frozenset(get_args(UserType))
+_VALID_POLICY_TYPES = frozenset(get_args(PolicyType))
+LDAP_REMOVAL_RESOURCES = frozenset(get_args(LdapRemovalResource))
+
+
+def validate_ldap_removal_resource(
+    resource: LdapRemovalResource,
+) -> LdapRemovalResource:
+    """Validate the LDAP component used in the destructive removal URL."""
+    if resource not in LDAP_REMOVAL_RESOURCES:
+        raise ValueError(
+            f"Invalid LDAP removal resource {resource!r}. "
+            f"Must be one of: {', '.join(sorted(LDAP_REMOVAL_RESOURCES))}"
+        )
+    return resource
 
 
 class UsersMixin:
@@ -32,7 +52,7 @@ class UsersMixin:
     # ------------------------------------------------------------------ #
     # HMC user management (/rest/api/web/HmcUser)
     # ------------------------------------------------------------------ #
-    async def list_hmc_users(self, user_type: str = "all") -> list[dict[str, Any]]:
+    async def list_hmc_users(self, user_type: UserType = "all") -> list[dict[str, Any]]:
         """GET /rest/api/web/HmcUser, optionally filtered by UserType.
 
         user_type is one of 'local', 'kerberos', or 'all' (default).
@@ -104,18 +124,21 @@ class UsersMixin:
             "/rest/api/web/HmcLdapServer",
         )
 
-    async def remove_ldap_config(self, resource: str) -> None:
+    async def remove_ldap_config(self, resource: LdapRemovalResource) -> None:
         """POST to /rest/api/web/HmcLdapServer?Remove={resource}.
 
         resource is one of: 'backup', 'ldap', 'binddn', 'bindpw',
         'searchfilter', 'hmcgroups', 'groupmemberattributes'.
         """
+        validate_ldap_removal_resource(resource)
         await self._web_post(f"/rest/api/web/HmcLdapServer?Remove={resource}", "")
 
     # ------------------------------------------------------------------ #
     # HMC password policy management (/rest/api/web/HmcPasswordPolicy)
     # ------------------------------------------------------------------ #
-    async def list_password_policies(self, policy_type: str = "policies") -> list[dict[str, Any]]:
+    async def list_password_policies(
+        self, policy_type: PolicyType = "policies"
+    ) -> list[dict[str, Any]]:
         """GET /rest/api/web/HmcPasswordPolicy, optionally filtered by PolicyType.
 
         policy_type is one of 'policies' (default, returns policy list) or

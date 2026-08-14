@@ -93,8 +93,16 @@ def test_closed_vocab_enum_matches_runtime_constant():
     adding a value must be a single edit. This pins the rendered schema to the
     constant so either side changing alone is caught.
     """
-    from hmc_mcp.documents import PARTITION_TYPES
+    from hmc_mcp.client_adapters import ADAPTER_TYPES
+    from hmc_mcp.client_users import (
+        LDAP_REMOVAL_RESOURCES,
+        _VALID_POLICY_TYPES,
+        _VALID_USER_TYPES,
+    )
+    from hmc_mcp.documents import PARTITION_TYPES, STORAGE_KINDS, TASK_ROLES
+    from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
+    from hmc_mcp.ssh import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
 
     by_name = _tools_by_name()
 
@@ -105,6 +113,23 @@ def test_closed_vocab_enum_matches_runtime_constant():
     backup_type = by_name["hmc_backup_vios"].parameters["properties"]["backup_type"]
     assert set(backup_type["enum"]) == set(_VALID_BACKUP_TYPES)
     assert backup_type["default"] in _VALID_BACKUP_TYPES
+
+    expected_enums = {
+        ("hmc_create_user", "taskrole"): TASK_ROLES,
+        ("hmc_list_adapters", "adapter_type"): ADAPTER_TYPES,
+        ("hmc_delete_adapter", "adapter_type"): ADAPTER_TYPES,
+        ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
+        ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
+        ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
+        ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
+        ("hmc_users", "user_type"): _VALID_USER_TYPES,
+        ("hmc_list_password_policies", "policy_type"): _VALID_POLICY_TYPES,
+        ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
+        ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
+    }
+    for (tool_name, parameter_name), values in expected_enums.items():
+        parameter = by_name[tool_name].parameters["properties"][parameter_name]
+        assert set(parameter["enum"]) == set(values)
 
 
 def test_repository_type_enum_matches_runtime_constant():

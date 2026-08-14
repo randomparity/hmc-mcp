@@ -10,7 +10,7 @@ import asyncio
 import csv
 import io
 import shlex
-from typing import Any
+from typing import Any, Literal, get_args
 
 import asyncssh
 
@@ -437,12 +437,14 @@ _IO_SLOT_PCI_CLASS = {
     "san": "0C04",
     "nvme": "0108",
 }
+PciClass = Literal["all", "eth", "sas", "san", "nvme"]
+_VALID_PCI_CLASSES = frozenset(get_args(PciClass))
 
 
 async def list_io_slots(
     config: HMCConfig,
     system_name: str,
-    pci_class: str = "all",
+    pci_class: PciClass = "all",
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on *system_name* via SSH.
 
@@ -463,8 +465,8 @@ async def list_io_slots(
     Raises:
         ValueError: If *pci_class* is not one of the recognised values.
     """
-    if pci_class != "all" and pci_class not in _IO_SLOT_PCI_CLASS:
-        valid = ", ".join(["all"] + sorted(_IO_SLOT_PCI_CLASS))
+    if pci_class not in _VALID_PCI_CLASSES:
+        valid = ", ".join(sorted(_VALID_PCI_CLASSES))
         raise ValueError(
             f"Invalid pci_class {pci_class!r}. Must be one of: {valid}"
         )
@@ -829,10 +831,11 @@ async def set_lpar_proc_compat(
 # SR-IOV adapter mode and vNICs (chhwres)
 # ---------------------------------------------------------------------- #
 
-_VALID_SRIOV_MODES = frozenset({"sriov", "dedicated"})
+SriovMode = Literal["sriov", "dedicated"]
+_VALID_SRIOV_MODES = frozenset(get_args(SriovMode))
 
 
-def validate_sriov_mode(mode: str) -> str:
+def validate_sriov_mode(mode: SriovMode) -> SriovMode:
     """Return *mode* if it is a recognised SR-IOV adapter mode, else raise.
 
     Shared by :func:`set_sriov_adapter_mode` and the CLI pre-confirmation
@@ -853,7 +856,7 @@ async def set_sriov_adapter_mode(
     config: HMCConfig,
     system_name: str,
     adapter_id: str,
-    mode: str,
+    mode: SriovMode,
 ) -> str:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
 

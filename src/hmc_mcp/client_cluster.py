@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .jobs import create_logical_unit_job, delete_logical_unit_job
+from .jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_unit_job
 
 
 class ClusterMixin:
@@ -32,8 +32,8 @@ class ClusterMixin:
         cluster_uuid: str,
         lu_name: str,
         lu_size_gb: int,
-        lu_type: str = "THIN",
-        device_type: str = "VirtualIO_Disk",
+        lu_type: LuType = "THIN",
+        device_type: DeviceType = "VirtualIO_Disk",
         cloned_from: str | None = None,
     ) -> dict[str, Any] | None:
         """Submit a CreateLogicalUnit job against a Cluster/SSP.

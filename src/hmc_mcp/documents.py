@@ -25,7 +25,7 @@ defaults (profiles, virtual adapters, boot mode, etc.).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
 from .xmlutil import ATOM_NS, WEB_NS
 
@@ -55,6 +55,11 @@ Keylock = Literal["normal", "manual", "auto"]
 PowerOffPolicy = Literal[0, 1]
 PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
 MemoryMirroringMode = Literal["none", "sys_firmware_only"]
+StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
+TaskRole = Literal["hmcoperator", "hmcviewer", "hmcsuperadmin"]
+
+STORAGE_KINDS = frozenset(get_args(StorageKind))
+TASK_ROLES = frozenset(get_args(TaskRole))
 
 
 @dataclass(frozen=True)
@@ -610,7 +615,7 @@ def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
 
 
 def build_vscsi_mapping_document(
-    storage_kind: str,
+    storage_kind: StorageKind,
     storage_name: str,
     lpar_link: str,
     vios_lpar_link: str | None = None,
@@ -623,7 +628,7 @@ def build_vscsi_mapping_document(
     the DiskName). lpar_link is the Atom SELF href of the client LPAR the
     storage is mapped to. target_device optionally pins the vtscsi name.
     """
-    if storage_kind not in ("PhysicalVolume", "VirtualDisk"):
+    if storage_kind not in STORAGE_KINDS:
         raise ValueError(
             f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
         )
@@ -757,7 +762,7 @@ def build_media_repository_delete_document() -> str:
 
 def build_hmc_user_document(
     username: str | None = None,
-    taskrole: str | None = None,
+    taskrole: TaskRole | None = None,
     password: str | None = None,
     description: str | None = None,
     pwage: int | None = None,
@@ -773,6 +778,11 @@ def build_hmc_user_document(
     if username is not None:
         parts.append(f'  <UserID kb="CUR" kxe="false">{username}</UserID>')
     if taskrole is not None:
+        if taskrole not in TASK_ROLES:
+            raise ValueError(
+                f"Invalid taskrole {taskrole!r}. "
+                f"Must be one of: {', '.join(sorted(TASK_ROLES))}"
+            )
         parts.append(f'  <TaskRole kb="CUR" kxe="false">{taskrole}</TaskRole>')
     if password is not None:
         parts.append(f'  <Password kb="CUR" kxe="false">{password}</Password>')

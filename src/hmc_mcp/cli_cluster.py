@@ -15,6 +15,7 @@ from .cli_app import (
     cluster_app,
     console,
 )
+from .jobs import DeviceType, LuType
 
 
 
@@ -64,8 +65,10 @@ def cluster_create_lu(
     cluster: str = typer.Argument(..., help="Cluster UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Logical unit name"),
     size: int = typer.Option(..., "--size", help="Size in GB"),
-    lu_type: str = typer.Option("THIN", "--type", help="THIN or THICK"),
-    device_type: str = typer.Option("VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"),
+    lu_type: LuType = typer.Option("THIN", "--type", help="THIN or THICK"),
+    device_type: DeviceType = typer.Option(
+        "VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"
+    ),
     cloned_from: str | None = typer.Option(None, "--cloned-from", help="Source LU UDID to clone"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
@@ -95,5 +98,4 @@ def cluster_delete_lu(
 
     console.print(f"[green]Submitted DeleteLogicalUnit job for {udid}[/green]")
     _print_json(job)
-
 

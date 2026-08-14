@@ -6,7 +6,7 @@ domain mixin; this module only defines methods for adapters.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, get_args
 
 from .documents import (
     build_client_network_adapter_document,
@@ -14,8 +14,39 @@ from .documents import (
     build_vscsi_adapter_document,
 )
 
+AdapterType = Literal[
+    "ClientNetworkAdapter",
+    "VirtualSCSIClientAdapter",
+    "VirtualFibreChannelClientAdapter",
+    "VirtualNICDedicated",
+]
+ADAPTER_TYPES = frozenset(get_args(AdapterType))
+
+
+def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
+    if adapter_type not in ADAPTER_TYPES:
+        raise ValueError(
+            f"Invalid adapter_type {adapter_type!r}. "
+            f"Must be one of: {', '.join(sorted(ADAPTER_TYPES))}"
+        )
+    return adapter_type
+
 
 class AdaptersMixin:
+    async def list_adapters(
+        self, lpar_uuid: str, adapter_type: AdapterType
+    ) -> list[dict[str, Any]]:
+        validate_adapter_type(adapter_type)
+        return await self.list_child("LogicalPartition", lpar_uuid, adapter_type)
+
+    async def delete_adapter(
+        self, lpar_uuid: str, adapter_type: AdapterType, adapter_uuid: str
+    ) -> None:
+        validate_adapter_type(adapter_type)
+        await self.delete_child(
+            "LogicalPartition", lpar_uuid, adapter_type, adapter_uuid
+        )
+
     async def add_vscsi_adapter(
         self, lpar_uuid: str, vios_partition_id: int, vios_slot: int, slot_number: int | None = None
     ) -> dict[str, Any] | None:

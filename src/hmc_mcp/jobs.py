@@ -12,6 +12,27 @@ from typing import Literal, Required, TypedDict, get_args
 
 from .xmlutil import WEB_NS
 
+LuType = Literal["THIN", "THICK"]
+DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
+LU_TYPES = frozenset(get_args(LuType))
+DEVICE_TYPES = frozenset(get_args(DeviceType))
+
+
+def validate_logical_unit_types(
+    lu_type: LuType, device_type: DeviceType
+) -> tuple[LuType, DeviceType]:
+    """Validate logical-unit serialization vocabularies for direct callers."""
+    if lu_type not in LU_TYPES:
+        raise ValueError(
+            f"Invalid lu_type {lu_type!r}. Must be one of: {', '.join(sorted(LU_TYPES))}"
+        )
+    if device_type not in DEVICE_TYPES:
+        raise ValueError(
+            f"Invalid device_type {device_type!r}. "
+            f"Must be one of: {', '.join(sorted(DEVICE_TYPES))}"
+        )
+    return lu_type, device_type
+
 _JOB_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <JobRequest xmlns="{ns}" xmlns:JobRequest="{ns}" schemaVersion="V1_0">
   <Metadata>
@@ -101,8 +122,8 @@ def power_off_vios_job(immediate: bool = False) -> str:
 def create_logical_unit_job(
     lu_name: str,
     lu_size_gb: int,
-    lu_type: str = "THIN",
-    device_type: str = "VirtualIO_Disk",
+    lu_type: LuType = "THIN",
+    device_type: DeviceType = "VirtualIO_Disk",
     cloned_from: str | None = None,
 ) -> str:
     """CreateLogicalUnit job against a Cluster/SSP.
@@ -110,6 +131,7 @@ def create_logical_unit_job(
     lu_type is THICK or THIN; device_type is VirtualIO_Disk or VirtualIO_Image.
     cloned_from is the UDID of an LU to clone from (optional).
     """
+    validate_logical_unit_types(lu_type, device_type)
     params: dict[str, str] = {
         "TierUDID": "",
         "LUName": lu_name,

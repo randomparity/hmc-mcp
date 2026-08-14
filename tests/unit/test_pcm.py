@@ -5,7 +5,12 @@ import pytest
 from defusedxml import ElementTree as ET
 
 from hmc_mcp.client import HMCError
-from hmc_mcp.jobs import create_logical_unit_job, delete_logical_unit_job
+from hmc_mcp.jobs import (
+    DEVICE_TYPES,
+    LU_TYPES,
+    create_logical_unit_job,
+    delete_logical_unit_job,
+)
 from hmc_mcp.pcm import (
     build_pcm_preferences_document,
     metric_links,
@@ -99,6 +104,26 @@ def test_create_logical_unit_job():
 def test_create_logical_unit_job_clone():
     xml = create_logical_unit_job("cloneLU", 20, cloned_from="udid-src")
     assert "ClonedFrom" in xml and "udid-src" in xml
+
+
+def test_all_logical_unit_types_serialize_unchanged():
+    for lu_type in LU_TYPES:
+        for device_type in DEVICE_TYPES:
+            xml = create_logical_unit_job("newLU", 18, lu_type, device_type)
+            assert f">{lu_type}</ParameterValue>" in xml
+            assert f">{device_type}</ParameterValue>" in xml
+
+
+@pytest.mark.parametrize(
+    "lu_type,device_type,match",
+    [
+        ("SPARSE", "VirtualIO_Disk", "lu_type"),
+        ("THIN", "PhysicalDisk", "device_type"),
+    ],
+)
+def test_invalid_logical_unit_types_are_rejected(lu_type, device_type, match):
+    with pytest.raises(ValueError, match=match):
+        create_logical_unit_job("newLU", 18, lu_type, device_type)
 
 
 def test_delete_logical_unit_job():

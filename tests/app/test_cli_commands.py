@@ -485,6 +485,46 @@ def test_lpars_delete_not_found_exits_1(fake_hmc):
 
 
 # --------------------------------------------------------------------------- #
+# adapter and storage vocabularies
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("command", ["list", "delete"])
+def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
+    args = ["adapters", command, LPAR_UUID, "--type", "UnknownAdapter"]
+    if command == "delete":
+        args.extend(["--uuid", "adapter-1", "--yes"])
+
+    result = RUNNER.invoke(cli.app, args)
+
+    assert result.exit_code == 2
+    assert "UnknownAdapter" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_storage_map_rejects_invalid_kind_before_client_call(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "map",
+            VIOS_UUID,
+            "--lpar",
+            LPAR_UUID,
+            "--disk",
+            "disk1",
+            "--kind",
+            "UnknownStorage",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "UnknownStorage" in result.stderr
+    assert fake_hmc.calls == []
+
+
+# --------------------------------------------------------------------------- #
 # storage create
 # --------------------------------------------------------------------------- #
 
@@ -587,15 +627,16 @@ def test_network_list_io_slots_via_ssh(monkeypatch):
     assert "lpar1" in result.stdout
 
 
-def test_network_list_io_slots_invalid_pci_class_exits_1(monkeypatch):
+def test_network_list_io_slots_invalid_pci_class_exits_2(monkeypatch):
     async def fake(cfg, cmd):
         return ""
 
     monkeypatch.setattr(ssh, "run_hmc_command", fake)
     result = RUNNER.invoke(cli.app, ["network", "list-io-slots", "sys1", "--pci-class", "bogus"])
 
-    assert result.exit_code == 1
-    assert "pci_class" in result.stderr
+    assert result.exit_code == 2
+    assert "bogus" in result.stderr
+    assert "nvme" in result.stderr
 
 
 # --------------------------------------------------------------------------- #
@@ -904,6 +945,32 @@ def test_cluster_create_lu_declined_confirm_aborts(fake_hmc):
     assert fake_hmc.calls == []
 
 
+@pytest.mark.parametrize(
+    "option,value",
+    [("--type", "SPARSE"), ("--device-type", "PhysicalDisk")],
+)
+def test_cluster_create_lu_rejects_invalid_vocabulary(fake_hmc, option, value):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "cluster",
+            "create-lu",
+            CLUSTER_UUID,
+            "--name",
+            "vol1",
+            "--size",
+            "50",
+            option,
+            value,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert value in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_cluster_delete_lu(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
@@ -1075,8 +1142,9 @@ def test_network_set_sriov_mode_rejects_invalid_mode(fake_hmc):
     )
 
     assert result.exit_code == 2
-    assert "Error:" in result.stderr
-    assert "Must be one of: dedicated, sriov" in result.stderr
+    assert "invalid" in result.stderr
+    assert "sriov" in result.stderr
+    assert "dedicated" in result.stderr
     assert fake_hmc.calls == []
 
 

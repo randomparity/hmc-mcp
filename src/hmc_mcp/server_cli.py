@@ -13,6 +13,7 @@ from ._app import (
 )
 
 from .ssh import (
+    PciClass,
     validate_lpar_description,
     get_lpar_description,
     get_lpar_msp,
@@ -228,7 +229,7 @@ def hmc_set_lpar_proc_compat(system_name_or_uuid: str, lpar_name_or_uuid: str, m
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_list_io_slots(
     system_name_or_uuid: str,
-    pci_class: str = "all",
+    pci_class: PciClass = "all",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List physical I/O slots on a managed system via the HMC CLI.

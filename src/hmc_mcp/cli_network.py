@@ -12,13 +12,14 @@ from .cli_app import (
     _print_json,
     _run,
     _ssh_config,
-    _usage_error,
     _with_client,
     console,
     network_app,
 )
 
 from .ssh import (
+    PciClass,
+    SriovMode,
     add_vnic,
     list_fc_ports,
     list_io_slots,
@@ -26,7 +27,6 @@ from .ssh import (
     list_vnics,
     remove_vnic,
     set_sriov_adapter_mode,
-    validate_sriov_mode,
 )
 
 
@@ -157,7 +157,7 @@ def network_list_sea_adapters(
 @network_app.command("list-io-slots")
 def network_list_io_slots(
     system_name: str = typer.Argument(..., help="Managed system name"),
-    pci_class: str = typer.Option(
+    pci_class: PciClass = typer.Option(
         "all", "--pci-class", help="Filter by PCI class: all, eth, sas, san, nvme"
     ),
     as_json: bool = typer.Option(False, "--json"),
@@ -173,14 +173,10 @@ def network_list_io_slots(
 def network_set_sriov_mode(
     system_name: str = typer.Argument(..., help="Managed system name"),
     adapter_id: str = typer.Argument(..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"),
-    mode: str = typer.Argument(..., help="'sriov' or 'dedicated'"),
+    mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
-    try:
-        validate_sriov_mode(mode)
-    except ValueError as exc:
-        _usage_error(str(exc))
     if not yes and not typer.confirm(
         f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
     ):

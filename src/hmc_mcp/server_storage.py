@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
@@ -15,10 +15,17 @@ from ._app import (
 )
 
 from .common import client_from_env
+from .client_adapters import AdapterType, validate_adapter_type
+from .documents import StorageKind
+from .jobs import DeviceType, LuType, validate_logical_unit_types
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_adapters(lpar_name_or_uuid: str, adapter_type: str = "ClientNetworkAdapter", profile: str | None = None) -> list[dict[str, Any]]:
+def hmc_list_adapters(
+    lpar_name_or_uuid: str,
+    adapter_type: AdapterType = "ClientNetworkAdapter",
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
     """List an LPAR's virtual adapters of a given type.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -26,11 +33,12 @@ def hmc_list_adapters(lpar_name_or_uuid: str, adapter_type: str = "ClientNetwork
     adapter_type is one of: ClientNetworkAdapter, VirtualSCSIClientAdapter,
     VirtualFibreChannelClientAdapter, VirtualNICDedicated.
     """
+    validate_adapter_type(adapter_type)
 
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.list_child("LogicalPartition", lpar_uuid, adapter_type)
+            return await hmc.list_adapters(lpar_uuid, adapter_type)
 
     return _run(_go)
 
@@ -120,7 +128,12 @@ def hmc_add_vfc_adapter(
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: str, profile: str | None = None) -> str:
+def hmc_delete_adapter(
+    lpar_name_or_uuid: str,
+    adapter_type: AdapterType,
+    adapter_uuid: str,
+    profile: str | None = None,
+) -> str:
     """Remove a virtual adapter from an LPAR by its UUID.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -131,13 +144,12 @@ def hmc_delete_adapter(lpar_name_or_uuid: str, adapter_type: str, adapter_uuid: 
     from the partition. Returns a confirmation string (immediate delete — no
     job to poll).
     """
+    validate_adapter_type(adapter_type)
 
     async def _go():
         async with client_from_env(profile) as hmc:
             lpar_uuid = await _resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            await hmc.delete_child(
-                "LogicalPartition", lpar_uuid, adapter_type, adapter_uuid
-            )
+            await hmc.delete_adapter(lpar_uuid, adapter_type, adapter_uuid)
         return f"Deleted {adapter_type} {adapter_uuid} from {lpar_name_or_uuid}"
 
     return _run(_go)
@@ -210,7 +222,7 @@ def hmc_map_storage_to_lpar(
     vios_name_or_uuid: str,
     storage_name: str,
     lpar_name_or_uuid: str,
-    storage_kind: Literal["VirtualDisk", "PhysicalVolume"] = "VirtualDisk",
+    storage_kind: StorageKind = "VirtualDisk",
     target_device: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
@@ -350,8 +362,8 @@ def hmc_create_logical_unit(
     cluster_uuid: str,
     lu_name: str,
     lu_size_gb: int,
-    lu_type: str = "THIN",
-    device_type: str = "VirtualIO_Disk",
+    lu_type: LuType = "THIN",
+    device_type: DeviceType = "VirtualIO_Disk",
     cloned_from: str | None = None,
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -368,6 +380,7 @@ def hmc_create_logical_unit(
 
     Set wait=True to block until the job reaches a terminal state.
     """
+    validate_logical_unit_types(lu_type, device_type)
     async def _go():
         async with client_from_env(profile) as hmc:
             return await _lu_op(

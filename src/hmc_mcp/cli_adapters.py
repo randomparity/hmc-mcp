@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import typer
 
+from .client_adapters import ADAPTER_TYPES, AdapterType
+
 from .cli_app import (
     _client,
     _output,
@@ -18,13 +20,15 @@ from .cli_app import (
 )
 
 
-_ADAPTER_TYPES = "ClientNetworkAdapter | VirtualSCSIClientAdapter | VirtualFibreChannelClientAdapter | VirtualNICDedicated"
+_ADAPTER_TYPES = " | ".join(sorted(ADAPTER_TYPES))
 
 
 @adapters_app.command("list")
 def adapters_list(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    adapter_type: str = typer.Option("ClientNetworkAdapter", "--type", "-t", help=_ADAPTER_TYPES),
+    adapter_type: AdapterType = typer.Option(
+        "ClientNetworkAdapter", "--type", "-t", help=_ADAPTER_TYPES
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List an LPAR's virtual adapters of a given type."""
@@ -34,7 +38,7 @@ def adapters_list(
             uuid = await _resolve_partition_uuid(hmc, lpar)
             if uuid is None:
                 return None, None
-            return uuid, await hmc.list_child("LogicalPartition", uuid, adapter_type)
+            return uuid, await hmc.list_adapters(uuid, adapter_type)
 
     uuid, adapters = _run(_go)
 
@@ -114,7 +118,7 @@ def adapters_add_vfc(
 @adapters_app.command("delete")
 def adapters_delete(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    adapter_type: str = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
+    adapter_type: AdapterType = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
     adapter_uuid: str = typer.Option(..., "--uuid", help="Adapter UUID (from `adapters list`)"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
@@ -127,7 +131,7 @@ def adapters_delete(
                 return None
             if not yes and not typer.confirm(f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"):
                 raise typer.Abort()
-            await hmc.delete_child("LogicalPartition", uuid, adapter_type, adapter_uuid)
+            await hmc.delete_adapter(uuid, adapter_type, adapter_uuid)
             return uuid
 
     uuid = _run(_go)
@@ -144,4 +148,3 @@ def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:
         _partition_not_found(lpar)
     console.print(f"[green]Added {kind} adapter[/green] to {uuid}")
     _print_json(result)
-
