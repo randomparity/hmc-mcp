@@ -151,6 +151,26 @@ async def test_lpar_finder_propagates_parent_discovery_failure():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "parent",
+    [
+        {"Resource": {"SystemName": "system-a"}},
+        {"UUID": "sys-a", "Resource": {}},
+    ],
+)
+async def test_lpar_finder_rejects_incomplete_parent_metadata(parent):
+    client = LparsHarness()
+    client.search_uom.return_value = [
+        _entry("lpar-a", "shared", "LogicalPartition"),
+        _entry("lpar-b", "shared", "LogicalPartition"),
+    ]
+    client.list_managed_systems.return_value = [parent]
+
+    with pytest.raises(ValueError, match="cannot identify managed system"):
+        await client.find_partition_by_name("shared")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("count", [0, 1, 2])
 async def test_lpar_finder_scoped_zero_one_many(count):
     client = LparsHarness()
@@ -368,6 +388,26 @@ async def test_vios_finder_rejects_ambiguous_names_with_parent_systems():
     message = str(exc_info.value)
     assert message.index("system-a") < message.index("system-b")
     assert all(value in message for value in ("vios-a", "vios-b", "sys-a", "sys-b"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "parent",
+    [
+        {"Resource": {"SystemName": "system-a"}},
+        {"UUID": "sys-a", "Resource": {}},
+    ],
+)
+async def test_vios_finder_rejects_incomplete_parent_metadata(parent):
+    client = SystemsHarness()
+    client.search_uom.return_value = [
+        _entry("vios-a", "shared", "VirtualIOServer"),
+        _entry("vios-b", "shared", "VirtualIOServer"),
+    ]
+    client.list_managed_systems = AsyncMock(return_value=[parent])
+
+    with pytest.raises(ValueError, match="cannot identify managed system"):
+        await client.find_vios_by_name("shared")
 
 
 @pytest.mark.asyncio

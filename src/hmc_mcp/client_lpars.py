@@ -61,8 +61,18 @@ class LparsMixin:
             uuid: [] for uuid in candidate_ids
         }
         for system in await self.list_managed_systems():
-            system_uuid = str(system.get("UUID"))
-            system_name = str((system.get("Resource") or {}).get("SystemName"))
+            system_uuid = system.get("UUID")
+            system_name = (system.get("Resource") or {}).get("SystemName")
+            if (
+                not isinstance(system_uuid, str)
+                or not system_uuid
+                or not isinstance(system_name, str)
+                or not system_name
+            ):
+                raise ValueError(
+                    f"Cannot resolve ambiguous LPAR name {name!r}: cannot identify "
+                    "managed system from incomplete inventory metadata"
+                )
             for entry in await self.list_logical_partitions(system_uuid):
                 entry_uuid = str(entry.get("UUID"))
                 if entry_uuid in parents:

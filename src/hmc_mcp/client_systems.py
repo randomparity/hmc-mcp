@@ -153,8 +153,18 @@ class SystemsMixin:
             uuid: [] for uuid in candidate_ids
         }
         for system in await self.list_managed_systems():
-            parent_uuid = str(system.get("UUID"))
-            parent_name = str((system.get("Resource") or {}).get("SystemName"))
+            parent_uuid = system.get("UUID")
+            parent_name = (system.get("Resource") or {}).get("SystemName")
+            if (
+                not isinstance(parent_uuid, str)
+                or not parent_uuid
+                or not isinstance(parent_name, str)
+                or not parent_name
+            ):
+                raise ValueError(
+                    f"Cannot resolve ambiguous VIOS name {name!r}: cannot identify "
+                    "managed system from incomplete inventory metadata"
+                )
             for entry in await self.list_vios(parent_uuid):
                 entry_uuid = str(entry.get("UUID"))
                 if entry_uuid in parents:
