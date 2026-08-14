@@ -206,22 +206,26 @@ def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
 
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_shared_storage_pools(
-    ssp_uuid: str | None = None, profile: str | None = None
-) -> list[dict[str, Any]] | dict[str, Any] | None:
-    """List Shared Storage Pools or get one by UUID.
-
-    When ssp_uuid is omitted, returns a list of all Shared Storage Pools
-    (capacity, free space, logical units).
-
-    When ssp_uuid is provided, returns the full details dict for that one
-    pool (physical volumes, logical units), or None if not found.
-    """
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """List all Shared Storage Pools with capacity and logical-unit details."""
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            if ssp_uuid is not None:
-                return await hmc.get_shared_storage_pool(ssp_uuid)
             return await hmc.list_shared_storage_pools()
+
+    return _run(_go)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def hmc_get_shared_storage_pool(
+    ssp_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get one Shared Storage Pool by UUID, or None for an empty response."""
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_shared_storage_pool(ssp_uuid)
 
     return _run(_go)
 

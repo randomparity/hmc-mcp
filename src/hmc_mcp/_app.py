@@ -144,6 +144,7 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_get_partition_template",
         "hmc_list_clusters",
         "hmc_shared_storage_pools",
+        "hmc_get_shared_storage_pool",
         "hmc_get_pcm_preferences",
         "hmc_processed_metrics",
         "hmc_processed_metric_links",

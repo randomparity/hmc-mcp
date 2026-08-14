@@ -107,6 +107,7 @@ from .server_storage import (
     hmc_create_volume_group as hmc_create_volume_group,
     hmc_delete_logical_unit as hmc_delete_logical_unit,
     hmc_delete_media_repository as hmc_delete_media_repository,
+    hmc_get_shared_storage_pool as hmc_get_shared_storage_pool,
     hmc_list_clusters as hmc_list_clusters,
     hmc_list_volume_groups as hmc_list_volume_groups,
     hmc_map_storage_to_lpar as hmc_map_storage_to_lpar,

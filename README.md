@@ -301,7 +301,8 @@ Exposed tools:
 | Tool                            | Description |
 |---------------------------------|-------------|
 | `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
-| `hmc_shared_storage_pools`      | All SSPs, or one by UUID (capacity, free space, logical units) |
+| `hmc_shared_storage_pools`      | All SSPs (capacity, free space, logical units) |
+| `hmc_get_shared_storage_pool`   | One SSP by UUID |
 | `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
 | `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
 
