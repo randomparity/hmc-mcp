@@ -11,24 +11,9 @@ from ._app import (
 )
 
 from .errors import HMCError
+from .error_translation import translate_pcm_error
 from .common import client_from_env, resolve_lpar_uuid, resolve_system_uuid
 from .pcm import newest_metric_link
-
-
-def _check_pcm_error(exc: HMCError) -> None:
-    """Translate PCM authorization and feature errors without response bodies."""
-    if exc.status_code == 406:
-        raise HMCError(
-            "PCM is not licensed or not enabled on this HMC. "
-            "Enable PCM in the HMC settings or use an HMC that has the PCM feature licensed.",
-            exc.status_code,
-        ) from exc
-    if exc.status_code == 403:
-        raise HMCError(
-            "The connecting user does not have PCM authority on this HMC. "
-            "Grant the user PCM authority in HMC user management and retry.",
-            exc.status_code,
-        ) from exc
 
 
 async def _resolve_resource_uuid(
@@ -68,7 +53,7 @@ def hmc_get_pcm_preferences(
             try:
                 return await hmc.get_pcm_preferences(category, resource_uuid)
             except HMCError as exc:
-                _check_pcm_error(exc)
+                translate_pcm_error(exc)
                 raise
 
     return _run(_go)
@@ -119,7 +104,7 @@ def hmc_set_pcm_preferences(
             try:
                 return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
             except HMCError as exc:
-                _check_pcm_error(exc)
+                translate_pcm_error(exc)
                 raise
 
     return _run(_go)
@@ -267,7 +252,7 @@ def _metrics_links(
                     hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
                 )
             except HMCError as exc:
-                _check_pcm_error(exc)
+                translate_pcm_error(exc)
                 raise
 
     return _run(_go)
@@ -295,7 +280,7 @@ def _metrics_fetch(
                     hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
                 )
             except HMCError as exc:
-                _check_pcm_error(exc)
+                translate_pcm_error(exc)
                 raise
             if not links:
                 return {}
@@ -308,7 +293,7 @@ def _metrics_fetch(
             except HMCError as exc:
                 if exc.status_code == 404:
                     return {}
-                _check_pcm_error(exc)
+                translate_pcm_error(exc)
                 raise
 
     return _run(_go)

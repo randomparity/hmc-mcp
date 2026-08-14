@@ -17,6 +17,7 @@ from .cli_app import (
     metrics_app,
 )
 from .pcm import newest_metric_link
+from .error_translation import run_with_error_translation, translate_pcm_error
 
 
 
@@ -27,7 +28,12 @@ def metrics_prefs(
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
 
-    prefs = _with_client(lambda hmc: hmc.get_pcm_preferences(category, resource_uuid))
+    prefs = _with_client(
+        lambda hmc: run_with_error_translation(
+            lambda: hmc.get_pcm_preferences(category, resource_uuid),
+            translate_pcm_error,
+        )
+    )
 
     _print_json(prefs)
 
@@ -64,7 +70,12 @@ def metrics_set_prefs(
     ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: hmc.set_pcm_preferences(category, resource_uuid, **flags))
+    _with_client(
+        lambda hmc: run_with_error_translation(
+            lambda: hmc.set_pcm_preferences(category, resource_uuid, **flags),
+            translate_pcm_error,
+        )
+    )
 
     console.print(f"[green]Updated {category} {resource_uuid}: {flags}[/green]")
 
@@ -83,8 +94,15 @@ def metrics_show(
 
     async def _go():
         async with _client() as hmc:
-            fn = hmc.get_aggregated_metric_links if aggregated else hmc.get_processed_metric_links
-            links = await fn(category, resource_uuid, start, end, samples)
+            fn = (
+                hmc.get_aggregated_metric_links
+                if aggregated
+                else hmc.get_processed_metric_links
+            )
+            links = await run_with_error_translation(
+                lambda: fn(category, resource_uuid, start, end, samples),
+                translate_pcm_error,
+            )
             if not fetch or not links:
                 return links
             # A 404 means the newest document aged out of PCM retention;
@@ -94,6 +112,7 @@ def metrics_show(
             except HMCError as exc:
                 if exc.status_code == 404:
                     return {}
+                translate_pcm_error(exc)
                 raise
 
     result = _run(_go)

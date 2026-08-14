@@ -13,6 +13,7 @@ from ._app import (
 )
 
 from .errors import HMCError
+from .error_translation import translate_virtual_network_create_error
 from .common import client_from_env, resolve_system_uuid
 from .ssh_commands import (
     SriovMode,
@@ -23,19 +24,6 @@ from .ssh_commands import (
     remove_vnic,
     set_sriov_adapter_mode,
 )
-
-
-def _check_network_write_error(exc: HMCError) -> None:
-    """Translate virtual-network write rejection without its response body."""
-    if exc.status_code == 406:
-        raise HMCError(
-            "The HMC rejected the virtual network create request (Not Acceptable). "
-            "Likely causes: (1) Accept or Content-Type header mismatch — "
-            "the HMC may require a more specific media type; "
-            "(2) XML schema version mismatch — try setting "
-            "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
-            exc.status_code,
-        ) from exc
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -102,7 +90,7 @@ def hmc_create_virtual_network(
                     system_uuid, name, vlan_id, vswitch_id, tagged=tagged
                 )
             except HMCError as exc:
-                _check_network_write_error(exc)
+                translate_virtual_network_create_error(exc)
                 raise
 
     return _run(_go)

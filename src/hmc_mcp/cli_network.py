@@ -28,6 +28,10 @@ from .ssh_commands import (
     remove_vnic,
     set_sriov_adapter_mode,
 )
+from .error_translation import (
+    run_with_error_translation,
+    translate_virtual_network_create_error,
+)
 
 
 
@@ -94,7 +98,12 @@ def network_create(
         raise typer.Abort()
 
     net = _with_client(
-        lambda hmc: hmc.create_virtual_network(system, name, vlan, vswitch, tagged=tagged)
+        lambda hmc: run_with_error_translation(
+            lambda: hmc.create_virtual_network(
+                system, name, vlan, vswitch, tagged=tagged
+            ),
+            translate_virtual_network_create_error,
+        )
     )
 
     console.print(f"[green]Created virtual network '{name}'[/green]")

@@ -43,6 +43,7 @@ class FakeHMC:
     def __init__(self):
         self.calls: list[tuple[str, tuple, dict]] = []
         self.fail_on: str | None = None
+        self.fail_status = 500
         self.lpar = {
             "UUID": LPAR_UUID,
             "Resource": {
@@ -117,7 +118,9 @@ class FakeHMC:
         self.calls.append((name, args, kwargs))
         if self.fail_on == name:
             raise HMCError(
-                f"simulated {name} failure", 500, "<xml><Message>boom</Message></xml>"
+                f"simulated {name} failure",
+                self.fail_status,
+                "<xml><Message>boom</Message></xml>",
             )
 
     async def __aenter__(self) -> "FakeHMC":
@@ -503,6 +506,28 @@ def test_cli_command_wiring_matrix(fake_hmc, args, expected_call, output):
     assert result.exit_code == 0, result.output
     assert expected_call in fake_hmc.calls
     assert output in result.stdout
+
+
+def test_network_cli_translates_create_rejection(fake_hmc):
+    fake_hmc.fail_on = "create_virtual_network"
+    fake_hmc.fail_status = 406
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "network",
+            "create",
+            SYSTEM_UUID,
+            "--name",
+            "prod",
+            "--vlan",
+            "100",
+            "--vswitch",
+            "2",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "virtual network create request" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1439,6 +1464,16 @@ def test_templates_list_json(fake_hmc):
     assert fake_hmc.calls == [("list_partition_templates", (), {})]
 
 
+def test_templates_cli_translates_not_licensed_error(fake_hmc):
+    fake_hmc.fail_on = "list_partition_templates"
+    fake_hmc.fail_status = 406
+
+    result = RUNNER.invoke(cli.app, ["templates", "list"])
+
+    assert result.exit_code == 1
+    assert "not licensed or not supported" in result.stderr
+
+
 def test_templates_show(fake_hmc):
     result = RUNNER.invoke(cli.app, ["templates", "show", TEMPLATE_UUID])
 
@@ -1530,6 +1565,18 @@ def test_metrics_prefs(fake_hmc):
     assert fake_hmc.calls == [
         ("get_pcm_preferences", ("ManagedSystem", SYSTEM_UUID), {})
     ]
+
+
+def test_metrics_cli_translates_authority_error(fake_hmc):
+    fake_hmc.fail_on = "get_pcm_preferences"
+    fake_hmc.fail_status = 403
+
+    result = RUNNER.invoke(
+        cli.app, ["metrics", "prefs", "ManagedSystem", SYSTEM_UUID]
+    )
+
+    assert result.exit_code == 1
+    assert "does not have PCM authority" in result.stderr
 
 
 def test_metrics_set_prefs_requires_confirmation(fake_hmc):

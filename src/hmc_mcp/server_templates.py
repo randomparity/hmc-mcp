@@ -11,6 +11,7 @@ from ._app import (
 )
 
 from .errors import HMCError
+from .error_translation import translate_template_error
 from .common import client_from_env
 from .jobs import wait_for_submitted_job
 
@@ -18,16 +19,6 @@ _MANUAL_STAMP_WARNING = (
     "ownership stamp not attempted: template deployment does not identify and stamp "
     "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
 )
-
-
-def _check_templates_error(exc: HMCError) -> None:
-    """Translate unsupported partition-template errors without response bodies."""
-    if exc.status_code == 406:
-        raise HMCError(
-            "Partition templates are not licensed or not supported on this HMC. "
-            "Enable the partition template feature in HMC settings or use an HMC with the feature licensed.",
-            exc.status_code,
-        ) from exc
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -39,7 +30,7 @@ def hmc_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
             try:
                 return await hmc.list_partition_templates()
             except HMCError as exc:
-                _check_templates_error(exc)
+                translate_template_error(exc)
                 raise
 
     return _run(_go)
@@ -56,7 +47,7 @@ def hmc_get_partition_template(
             try:
                 return await hmc.get_partition_template(template_uuid)
             except HMCError as exc:
-                _check_templates_error(exc)
+                translate_template_error(exc)
                 raise
 
     return _run(_go)
@@ -91,7 +82,7 @@ def hmc_deploy_partition_template(
                     draft_template_uuid, target_system_uuid
                 )
             except HMCError as exc:
-                _check_templates_error(exc)
+                translate_template_error(exc)
                 raise
             selected_job = await wait_for_submitted_job(
                 hmc, job, wait, timeout_seconds, poll_interval
