@@ -117,7 +117,12 @@ def test_closed_vocab_enum_matches_runtime_constant():
         LDAP_REMOVAL_RESOURCES,
         _VALID_USER_TYPES,
     )
-    from hmc_mcp.documents import PARTITION_TYPES, STORAGE_KINDS, TASK_ROLES
+    from hmc_mcp.documents import (
+        PARTITION_TYPES,
+        SHARING_MODES,
+        STORAGE_KINDS,
+        TASK_ROLES,
+    )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
     from hmc_mcp.ssh_commands import _VALID_PCI_CLASSES, _VALID_SRIOV_MODES
@@ -129,6 +134,14 @@ def test_closed_vocab_enum_matches_runtime_constant():
     ]
     assert set(partition_type["enum"]) == set(PARTITION_TYPES)
     assert partition_type["default"] in PARTITION_TYPES
+
+    sharing_mode = by_name["hmc_create_lpar"].parameters["properties"]["resources"][
+        "properties"
+    ]["sharing_mode"]
+    sharing_mode_enum = next(
+        option["enum"] for option in sharing_mode["anyOf"] if "enum" in option
+    )
+    assert set(sharing_mode_enum) == set(SHARING_MODES)
 
     backup_type = by_name["hmc_backup_vios"].parameters["properties"]["backup_type"]
     assert set(backup_type["enum"]) == set(_VALID_BACKUP_TYPES)

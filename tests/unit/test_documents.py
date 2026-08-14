@@ -5,7 +5,9 @@ import pytest
 from hmc_mcp.documents import (
     LparResources,
     PARTITION_TYPES,
+    SHARING_MODES,
     TASK_ROLES,
+    build_dlpar_proc_document,
     build_hmc_user_document,
     build_lpar_document,
 )
@@ -76,6 +78,60 @@ def test_dedicated_processor_config():
     assert "<DesiredProcessors" in xml and "2" in xml
     assert "<MaximumProcessors" in xml and "4" in xml
     assert "true" in xml  # HasDedicatedProcessors
+
+
+@pytest.mark.parametrize(
+    ("dedicated", "desired_procs"), [(True, 1), (False, 1), (None, None)]
+)
+def test_invalid_sharing_mode_is_rejected_before_xml(dedicated, desired_procs):
+    illegal = "uncapped</SharingMode><Injected>true</Injected>"
+
+    with pytest.raises(ValueError) as exc_info:
+        build_lpar_document(
+            name="bad",
+            resources=LparResources(
+                dedicated=dedicated,
+                desired_procs=desired_procs,
+                sharing_mode=illegal,
+            ),
+        )
+
+    message = str(exc_info.value)
+    assert "sharing_mode" in message
+    assert all(value in message for value in SHARING_MODES)
+    assert illegal not in message
+
+
+@pytest.mark.parametrize("malformed", [["uncapped"], {"mode": "uncapped"}])
+@pytest.mark.parametrize(
+    "builder",
+    [
+        lambda resources: build_lpar_document(name="bad", resources=resources),
+        build_dlpar_proc_document,
+    ],
+)
+def test_malformed_sharing_mode_type_raises_actionable_value_error(
+    malformed, builder
+):
+    with pytest.raises(ValueError) as exc_info:
+        builder(LparResources(desired_procs=1, sharing_mode=malformed))
+
+    message = str(exc_info.value)
+    assert "sharing_mode" in message
+    assert all(value in message for value in SHARING_MODES)
+
+
+@pytest.mark.parametrize("sharing_mode", SHARING_MODES)
+def test_all_sharing_modes_serialize_unchanged(sharing_mode):
+    dedicated = sharing_mode not in {"capped", "uncapped"}
+    xml = build_lpar_document(
+        name="ok",
+        resources=LparResources(
+            dedicated=dedicated, desired_procs=1, sharing_mode=sharing_mode
+        ),
+    )
+
+    assert f">{sharing_mode}</SharingMode>" in xml
 
 
 def test_partition_id_and_type():

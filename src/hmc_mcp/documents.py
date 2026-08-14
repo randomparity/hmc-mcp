@@ -57,9 +57,18 @@ PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
 MemoryMirroringMode = Literal["none", "sys_firmware_only"]
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
 TaskRole = Literal["hmcoperator", "hmcviewer", "hmcsuperadmin"]
+SharingMode = Literal[
+    "capped",
+    "uncapped",
+    "keep_idle_procs",
+    "share_idle_procs",
+    "share_idle_procs_active",
+    "share_idle_procs_always",
+]
 
 STORAGE_KINDS = frozenset(get_args(StorageKind))
 TASK_ROLES = frozenset(get_args(TaskRole))
+SHARING_MODES = frozenset(get_args(SharingMode))
 
 
 @dataclass(frozen=True)
@@ -88,7 +97,7 @@ class LparResources:
     min_vcpus: int | None = None
     desired_vcpus: int | None = None
     max_vcpus: int | None = None
-    sharing_mode: str | None = None
+    sharing_mode: SharingMode | None = None
     uncapped: bool | None = None
 
 
@@ -144,6 +153,14 @@ def _memory_config(resources: LparResources) -> str:
         )
     parts.append("  </PartitionMemoryConfiguration>")
     return "\n".join(parts)
+
+
+def _validate_sharing_mode(sharing_mode: SharingMode | None) -> None:
+    if sharing_mode is not None and (
+        not isinstance(sharing_mode, str) or sharing_mode not in SHARING_MODES
+    ):
+        legal_values = ", ".join(sorted(SHARING_MODES))
+        raise ValueError(f"sharing_mode must be one of: {legal_values}")
 
 
 def _dedicated_processor_body(resources: LparResources) -> list[str]:
@@ -229,6 +246,7 @@ def _processor_config(resources: LparResources) -> str:
     e.g. 0.5); vcpus are the virtual processor counts (ints). uncapped=None
     likewise leaves SharingMode / UncappedWeight unchanged.
     """
+    _validate_sharing_mode(resources.sharing_mode)
     have_procs = any(
         value is not None
         for value in (resources.min_procs, resources.desired_procs, resources.max_procs)
