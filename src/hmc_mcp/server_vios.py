@@ -325,11 +325,16 @@ def hmc_power_on_vios(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
+        from .operations_vios import power_vios
+
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            job = await hmc.power_on_vios(vios_uuid)
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+            return await power_vios(
+                hmc,
+                vios_name_or_uuid,
+                on=True,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
@@ -349,11 +354,17 @@ def hmc_power_off_vios(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
+        from .operations_vios import power_vios
+
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            job = await hmc.power_off_vios(vios_uuid, immediate)
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+            return await power_vios(
+                hmc,
+                vios_name_or_uuid,
+                on=False,
+                immediate=immediate,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
