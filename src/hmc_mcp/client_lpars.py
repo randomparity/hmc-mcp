@@ -6,11 +6,16 @@ domain mixin; this module only defines methods for lpars.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from .client_contracts import LparsClient
 from .client_parse import _parse_feed
-from .client_resolution import ambiguity_candidate_ids, bounded_parent_systems
+from .client_resolution import (
+    PARENT_DISCOVERY_TIMEOUT_SECONDS,
+    ambiguity_candidate_ids,
+    bounded_parent_systems,
+)
 
 
 class LparsMixin:
@@ -63,23 +68,30 @@ class LparsMixin:
         systems = bounded_parent_systems(
             await self.list_managed_systems(), "LPAR", name
         )
-        for system in systems:
-            system_uuid = system.get("UUID")
-            system_name = (system.get("Resource") or {}).get("SystemName")
-            if (
-                not isinstance(system_uuid, str)
-                or not system_uuid
-                or not isinstance(system_name, str)
-                or not system_name
-            ):
-                raise ValueError(
-                    f"Cannot resolve ambiguous LPAR name {name!r}: cannot identify "
-                    "managed system from incomplete inventory metadata"
-                )
-            for entry in await self.list_logical_partitions(system_uuid):
-                entry_uuid = str(entry.get("UUID"))
-                if entry_uuid in parents:
-                    parents[entry_uuid].append((system_name, system_uuid))
+        try:
+            async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
+                for system in systems:
+                    system_uuid = system.get("UUID")
+                    system_name = (system.get("Resource") or {}).get("SystemName")
+                    if (
+                        not isinstance(system_uuid, str)
+                        or not system_uuid
+                        or not isinstance(system_name, str)
+                        or not system_name
+                    ):
+                        raise ValueError(
+                            f"Cannot resolve ambiguous LPAR name {name!r}: cannot "
+                            "identify managed system from incomplete inventory metadata"
+                        )
+                    for entry in await self.list_logical_partitions(system_uuid):
+                        entry_uuid = str(entry.get("UUID"))
+                        if entry_uuid in parents:
+                            parents[entry_uuid].append((system_name, system_uuid))
+        except TimeoutError as exc:
+            raise ValueError(
+                f"Cannot resolve ambiguous LPAR name {name!r}: parent discovery "
+                "timed out; supply managed-system scope"
+            ) from exc
         invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
         if invalid:
             raise ValueError(

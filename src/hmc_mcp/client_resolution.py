@@ -3,6 +3,7 @@
 from typing import Any
 
 MAX_PARENT_DISCOVERY_SYSTEMS = 100
+PARENT_DISCOVERY_TIMEOUT_SECONDS = 30
 
 
 def ambiguity_candidate_ids(

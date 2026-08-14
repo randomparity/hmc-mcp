@@ -63,7 +63,8 @@ out of scope and unchanged.
 
 Unscoped parent discovery is bounded to 100 managed systems so one caller
 request cannot amplify into an arbitrary number of child-inventory requests.
-Larger inventories fail before fan-out with guidance to supply system scope.
+The aggregate child-inventory scan has a 30-second deadline. Larger inventories
+and timed-out scans fail with guidance to supply system scope.
 
 ## Tests
 
