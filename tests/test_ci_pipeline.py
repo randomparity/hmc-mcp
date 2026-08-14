@@ -211,6 +211,14 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert "platforms: ppc64le" in body
     assert f"image: {QEMU_IMAGE}" in body
     assert "cache-image: false" in body
+    assert "persist-credentials: false" in body
+    assert "secrets." not in body
+    assert "github.token" not in body
+    assert "GITHUB_TOKEN" not in body
+    assert "SSH_AUTH_SOCK" not in body
+    assert "AWS_" not in body
+    assert "GOOGLE_" not in body
+    assert "AZURE_" not in body
     assert body.count("--platform linux/ppc64le") == 2
     assert "--mount type=bind,source=\"$GITHUB_WORKSPACE\",target=/workspace" in body
     assert "-e " not in body
@@ -219,6 +227,9 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
+    assert "python3" in dockerfile
+    assert "RUST_VERSION=1.97.1" in dockerfile
+    assert "RUSTUP_SHA256=" in dockerfile
     assert r'test \"$(uname -m)\" = \"ppc64le\"' in dockerfile
     assert dockerfile.count("just setup") == 1
     assert dockerfile.count("just verify") == 1
