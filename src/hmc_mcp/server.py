@@ -34,6 +34,8 @@ themselves on the shared FastMCP instance in ``._app`` when imported here.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import socket
 
 from ._app import (
     DESTRUCTIVE_TOOLS as DESTRUCTIVE_TOOLS,
@@ -195,8 +197,36 @@ def main_http(
     host: str = "127.0.0.1",
     port: int = 8000,
     enable_arbitrary_command: bool = False,
+    allow_remote: bool = False,
 ) -> None:
     """Start the fully composed MCP server over streamable HTTP."""
+    if not allow_remote and not _is_loopback(host):
+        raise ValueError(
+            f"listen host {host!r} binds beyond loopback, but the streamable HTTP "
+            "server has no authentication and exposes every enabled tool "
+            "(including user administration). Refusing to start. Explicitly "
+            "authorize remote binding and put an authenticated reverse proxy in front."
+        )
     if enable_arbitrary_command:
         asyncio.run(register_arbitrary_command_tool())
     mcp.run(transport="streamable-http", host=host, port=port)
+
+
+def _is_loopback(host: str) -> bool:
+    """Return true only when every resolved bind address is an IP loopback."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+    for family, _, _, _, sockaddr in infos:
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            return False
+        try:
+            address = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if not address.is_loopback:
+            return False
+    return True

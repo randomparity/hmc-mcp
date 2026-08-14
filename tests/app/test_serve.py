@@ -13,7 +13,8 @@ from click import unstyle
 from typer.testing import CliRunner
 
 from hmc_mcp import server as server_app
-from hmc_mcp.cli import _is_loopback, app
+from hmc_mcp.cli import app
+from hmc_mcp.server import _is_loopback
 
 
 def _address_info(address, family=socket.AF_INET):
@@ -22,7 +23,7 @@ def _address_info(address, family=socket.AF_INET):
 
 def test_is_loopback_accepts_only_loopback_resolution():
     addresses = [_address_info("127.0.0.2"), _address_info("::1", socket.AF_INET6)]
-    with patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses):
+    with patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses):
         assert _is_loopback("localhost")
 
 
@@ -35,13 +36,13 @@ def test_is_loopback_accepts_only_loopback_resolution():
     ],
 )
 def test_is_loopback_rejects_unsafe_resolution(addresses):
-    with patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses):
+    with patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses):
         assert not _is_loopback("localhost")
 
 
 def test_is_loopback_rejects_resolution_failure():
     with patch(
-        "hmc_mcp.cli_app.socket.getaddrinfo", side_effect=socket.gaierror("unknown")
+        "hmc_mcp.server.socket.getaddrinfo", side_effect=socket.gaierror("unknown")
     ):
         assert not _is_loopback("missing.example")
 
@@ -49,8 +50,8 @@ def test_is_loopback_rejects_resolution_failure():
 def test_serve_http_mixed_address_refuses_without_allow_remote():
     addresses = [_address_info("127.0.0.1"), _address_info("203.0.113.5")]
     with (
-        patch("hmc_mcp.cli_app.socket.getaddrinfo", return_value=addresses),
-        patch("hmc_mcp.server.main_http") as main_http,
+        patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses),
+        patch.object(server_app.mcp, "run") as run,
     ):
         result = CliRunner().invoke(
             app, ["serve", "--http", "--listen-host", "localhost"]
@@ -58,7 +59,7 @@ def test_serve_http_mixed_address_refuses_without_allow_remote():
 
     assert result.exit_code == 2
     assert "binds beyond loopback" in unstyle(result.output)
-    main_http.assert_not_called()
+    run.assert_not_called()
 
 
 def test_serve_http_loopback_bind_is_allowed():
@@ -67,12 +68,15 @@ def test_serve_http_loopback_bind_is_allowed():
         result = CliRunner().invoke(app, ["serve", "--http"])
     assert result.exit_code == 0
     main_http.assert_called_once_with(
-        host="127.0.0.1", port=8000, enable_arbitrary_command=False
+        host="127.0.0.1",
+        port=8000,
+        enable_arbitrary_command=False,
+        allow_remote=False,
     )
 
 
 def test_serve_http_non_loopback_refuses_without_allow_remote():
-    with patch("hmc_mcp.server.main_http") as main_http:
+    with patch.object(server_app.mcp, "run") as run:
         result = CliRunner().invoke(
             app, ["serve", "--http", "--listen-host", "0.0.0.0"]
         )
@@ -81,7 +85,7 @@ def test_serve_http_non_loopback_refuses_without_allow_remote():
     assert "binds beyond loopback" in output
     assert "no authentication" in output
     assert "--allow-remote" in output
-    main_http.assert_not_called()
+    run.assert_not_called()
 
 
 def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
@@ -92,7 +96,10 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
         )
     assert result.exit_code == 0
     main_http.assert_called_once_with(
-        host="0.0.0.0", port=8000, enable_arbitrary_command=False
+        host="0.0.0.0",
+        port=8000,
+        enable_arbitrary_command=False,
+        allow_remote=True,
     )
 
 
@@ -137,7 +144,10 @@ def test_serve_passes_arbitrary_command_opt_in(http):
     assert result.exit_code == 0
     if http:
         entrypoint.assert_called_once_with(
-            host="127.0.0.1", port=8000, enable_arbitrary_command=True
+            host="127.0.0.1",
+            port=8000,
+            enable_arbitrary_command=True,
+            allow_remote=False,
         )
     else:
         entrypoint.assert_called_once_with(enable_arbitrary_command=True)
@@ -169,3 +179,18 @@ def test_http_entrypoint_registers_arbitrary_command_when_enabled():
     run.assert_called_once_with(
         transport="streamable-http", host="127.0.0.1", port=9000
     )
+
+
+def test_http_entrypoint_refuses_remote_bind_without_authorization():
+    with patch.object(server_app.mcp, "run") as run:
+        with pytest.raises(ValueError, match="binds beyond loopback"):
+            server_app.main_http(host="0.0.0.0")
+
+    run.assert_not_called()
+
+
+def test_http_entrypoint_accepts_remote_bind_with_authorization():
+    with patch.object(server_app.mcp, "run") as run:
+        server_app.main_http(host="0.0.0.0", allow_remote=True)
+
+    run.assert_called_once_with(transport="streamable-http", host="0.0.0.0", port=8000)

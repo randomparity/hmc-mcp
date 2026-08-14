@@ -17,9 +17,7 @@ module so the command tree is fully built on import.
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
-import socket
 from dataclasses import dataclass
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, NoReturn, TypeVar
@@ -319,41 +317,19 @@ def serve(
         )
 
     if http:
-        if not _is_loopback(listen_host) and not allow_remote:
-            raise typer.BadParameter(
-                f"--listen-host {listen_host!r} binds beyond loopback, but the streamable HTTP "
-                "server has no authentication and exposes every enabled tool "
-                "(including user administration). Refusing to start. "
-                "If you understand the risk, re-run with --allow-remote and put an "
-                "authenticated reverse proxy in front."
+        try:
+            server.main_http(
+                host=listen_host,
+                port=port,
+                enable_arbitrary_command=enable_arbitrary_command,
+                allow_remote=allow_remote,
             )
-        server.main_http(
-            host=listen_host,
-            port=port,
-            enable_arbitrary_command=enable_arbitrary_command,
-        )
+        except ValueError as exc:
+            raise typer.BadParameter(
+                f"{exc} Re-run with --allow-remote if you understand the risk."
+            ) from exc
     else:
         server.main_stdio(enable_arbitrary_command=enable_arbitrary_command)
-
-
-def _is_loopback(host: str) -> bool:
-    """True only when every resolved bind address is an IP loopback."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False
-    if not infos:
-        return False
-    for family, _, _, _, sockaddr in infos:
-        if family not in (socket.AF_INET, socket.AF_INET6):
-            return False
-        try:
-            address = ipaddress.ip_address(sockaddr[0])
-        except ValueError:
-            return False
-        if not address.is_loopback:
-            return False
-    return True
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
