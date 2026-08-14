@@ -1,6 +1,6 @@
 # Template deployment ownership stamping design
 
-**Issue:** [#135](https://github.com/randomparity/hmc-mcp/issues/135)  
+**Issue:** [#135](https://github.com/randomparity/hmc-mcp/issues/135)
 **Decision:** [ADR 0014](../../adr/0014-conservative-template-deployment-ownership-inference.md)
 
 ## Goal
