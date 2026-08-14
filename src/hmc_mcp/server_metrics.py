@@ -1,5 +1,4 @@
-"""MCP tools for Performance and Capacity Monitoring (PCM).
-"""
+"""MCP tools for Performance and Capacity Monitoring (PCM)."""
 
 from __future__ import annotations
 
@@ -19,25 +18,7 @@ from .pcm import newest_metric_link
 
 
 def _check_pcm_error(exc: HMCError) -> None:
-    """Re-raise *exc* with an actionable message for known PCM HTTP errors.
-
-    HTTP 406 means PCM is not licensed or not enabled on this HMC.
-    HTTP 403 means the connecting user does not have PCM authority.
-    All other errors are left unchanged.
-
-    The replacement HMCError intentionally does not forward ``body=exc.body``:
-    the constructor would append the parsed HMC body text after the actionable
-    message, degrading readability.  ``from exc`` sets ``__cause__`` (rendered
-    as "direct cause" in tracebacks) and, combined with the implicit
-    ``__context__`` set by the ``except`` block, makes the original exception
-    accessible in developer diagnostics.
-
-    Note: the CLI ``metrics`` commands call ``PcmMixin`` methods directly and
-    do not share this wrapper; they surface raw HTTP errors for 403/406.
-    Narrowing that gap would require either pushing the translation into
-    ``PcmMixin`` itself (client-layer change) or adding wrapping to
-    ``cli_metrics.py`` — both are out of scope for issue #98.
-    """
+    """Translate PCM authorization and feature errors without response bodies."""
     if exc.status_code == 406:
         raise HMCError(
             "PCM is not licensed or not enabled on this HMC. "
@@ -52,7 +33,9 @@ def _check_pcm_error(exc: HMCError) -> None:
         ) from exc
 
 
-async def _resolve_resource_uuid(hmc: Any, category: str, resource_name_or_uuid: str) -> str:
+async def _resolve_resource_uuid(
+    hmc: Any, category: str, resource_name_or_uuid: str
+) -> str:
     """Resolve a PCM resource name-or-UUID based on its category.
 
     For 'ManagedSystem' uses _resolve_system_uuid; for 'LogicalPartition'
@@ -67,7 +50,9 @@ async def _resolve_resource_uuid(hmc: Any, category: str, resource_name_or_uuid:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str, profile: str | None = None) -> dict[str, Any]:
+def hmc_get_pcm_preferences(
+    category: str, resource_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
@@ -79,7 +64,9 @@ def hmc_get_pcm_preferences(category: str, resource_name_or_uuid: str, profile: 
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            resource_uuid = await _resolve_resource_uuid(
+                hmc, category, resource_name_or_uuid
+            )
             try:
                 return await hmc.get_pcm_preferences(category, resource_uuid)
             except HMCError as exc:
@@ -128,7 +115,9 @@ def hmc_set_pcm_preferences(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            resource_uuid = await _resolve_resource_uuid(
+                hmc, category, resource_name_or_uuid
+            )
             try:
                 return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
             except HMCError as exc:
@@ -161,9 +150,25 @@ def hmc_processed_metrics(
     available in the requested range.
     """
     if mode == "links":
-        return _metrics_links(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples, profile)
+        return _metrics_links(
+            category,
+            resource_name_or_uuid,
+            "processed",
+            start_ts,
+            end_ts,
+            no_of_samples,
+            profile,
+        )
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_name_or_uuid, "processed", start_ts, end_ts, no_of_samples, profile)
+        return _metrics_fetch(
+            category,
+            resource_name_or_uuid,
+            "processed",
+            start_ts,
+            end_ts,
+            no_of_samples,
+            profile,
+        )
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -191,9 +196,25 @@ def hmc_aggregated_metrics(
     aggregation to be enabled in PCM preferences.
     """
     if mode == "links":
-        return _metrics_links(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples, profile)
+        return _metrics_links(
+            category,
+            resource_name_or_uuid,
+            "aggregated",
+            start_ts,
+            end_ts,
+            no_of_samples,
+            profile,
+        )
     elif mode == "fetch":
-        return _metrics_fetch(category, resource_name_or_uuid, "aggregated", start_ts, end_ts, no_of_samples, profile)
+        return _metrics_fetch(
+            category,
+            resource_name_or_uuid,
+            "aggregated",
+            start_ts,
+            end_ts,
+            no_of_samples,
+            profile,
+        )
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'links' or 'fetch'.")
 
@@ -227,7 +248,9 @@ def _metrics_links(
 ) -> list[dict[str, str]]:
     async def _go():
         async with client_from_env(profile) as hmc:
-            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            resource_uuid = await _resolve_resource_uuid(
+                hmc, category, resource_name_or_uuid
+            )
             try:
                 return await _fetch_metric_links(
                     hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples
@@ -253,7 +276,9 @@ def _metrics_fetch(
             # Note: 403/406 from _resolve_resource_uuid are intentionally not
             # wrapped: those list/lookup endpoints are not PCM-specific, so a
             # PCM authority / not-licensed message would be misleading.
-            resource_uuid = await _resolve_resource_uuid(hmc, category, resource_name_or_uuid)
+            resource_uuid = await _resolve_resource_uuid(
+                hmc, category, resource_name_or_uuid
+            )
             try:
                 links = await _fetch_metric_links(
                     hmc, kind, category, resource_uuid, start_ts, end_ts, no_of_samples

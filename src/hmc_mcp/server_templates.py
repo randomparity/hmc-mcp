@@ -1,5 +1,4 @@
-"""MCP tools for the partition template library.
-"""
+"""MCP tools for the partition template library."""
 
 from __future__ import annotations
 
@@ -16,17 +15,7 @@ from .common import client_from_env
 
 
 def _check_templates_error(exc: HMCError) -> None:
-    """Re-raise *exc* with an actionable message for known template HTTP errors.
-
-    HTTP 406 means partition templates are not licensed or not supported on this HMC.
-    All other errors are left unchanged.
-
-    The replacement HMCError intentionally does not forward ``body=exc.body``:
-    the constructor would append the parsed HMC body text after the actionable
-    message, degrading readability. ``from exc`` sets ``__cause__`` and, combined
-    with the implicit ``__context__`` set by the ``except`` block, makes the
-    original exception accessible in developer diagnostics.
-    """
+    """Translate unsupported partition-template errors without response bodies."""
     if exc.status_code == 406:
         raise HMCError(
             "Partition templates are not licensed or not supported on this HMC. "
@@ -47,6 +36,7 @@ def hmc_partition_templates(
     When template_uuid is provided, returns the full config dict for that one
     template, or None if not found.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
@@ -93,10 +83,13 @@ def hmc_deploy_partition_template(
     identify the new LPAR (via ``hmc_lpars``) and call ``hmc_set_lpar_description``
     to stamp ``[hmc-mcp owner:<HMC_AGENT_ID> created:<date>]`` manually.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
-                job = await hmc.deploy_partition_template(draft_template_uuid, target_system_uuid)
+                job = await hmc.deploy_partition_template(
+                    draft_template_uuid, target_system_uuid
+                )
             except HMCError as exc:
                 _check_templates_error(exc)
                 raise
@@ -114,7 +107,9 @@ def hmc_deploy_partition_template(
                 return {
                     "job": job,
                     "ownership_stamped": None,
-                    "warnings": ["ownership stamp not attempted: no job UUID in response"],
+                    "warnings": [
+                        "ownership stamp not attempted: no job UUID in response"
+                    ],
                 }
             final_job = await hmc.wait_for_job(
                 job_uuid, timeout_seconds, poll_interval, job_href=job.get("link")
@@ -125,7 +120,7 @@ def hmc_deploy_partition_template(
             # TODO (#135): Automatic stamping deferred — deploy job does not
             # reliably return the new LPAR name across HMC firmware versions.
             # Full implementation: diff the LPAR list before/after the deploy job
-            # to identify the new partition and stamp it. See ADR 0011 and issue #135.
+            # to identify the new partition and stamp it.
             return {
                 "job": final_job,
                 "ownership_stamped": None,

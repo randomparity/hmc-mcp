@@ -1,5 +1,4 @@
-"""MCP tools for HMC user, password policy, and LDAP management.
-"""
+"""MCP tools for HMC user, password policy, and LDAP management."""
 
 from __future__ import annotations
 
@@ -44,11 +43,13 @@ def hmc_users(
     Returns one dict per user: {UUID, title, link, ResourceType, Resource}
     where Resource holds the flattened HmcUser fields.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             if name is not None:
                 return await hmc.get_hmc_user(name)
             return await hmc.list_hmc_users(user_type)
+
     return _run(_go)
 
 
@@ -68,7 +69,7 @@ def hmc_create_user(
     initial password. description is optional. pwage is the password
     expiration in days (0 = never expires). This creates a real account —
     confirm the taskrole before calling. Returns the created user resource
-    dict.
+    dict, or None when the HMC returns an empty successful response.
     """
     xml = build_hmc_user_document(
         username=name,
@@ -81,6 +82,7 @@ def hmc_create_user(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.create_hmc_user(xml)
+
     return _run(_go)
 
 
@@ -98,7 +100,7 @@ def hmc_modify_user(
     Only the fields you supply are changed. enable=True re-enables a
     disabled account; enable=False disables it. Use hmc_users(name=...) to
     confirm the current state before calling. Returns the updated user
-    resource dict.
+    resource dict, or None when the HMC returns an empty successful response.
     """
     xml = build_hmc_user_document(
         taskrole=taskrole,
@@ -110,6 +112,7 @@ def hmc_modify_user(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.modify_hmc_user(name, xml)
+
     return _run(_go)
 
 
@@ -121,10 +124,12 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     the username with hmc_users(name=...) before calling. Returns a confirmation
     string (immediate delete — no job to poll).
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.delete_hmc_user(name)
             return f"Deleted HMC user {name}"
+
     return _run(_go)
 
 
@@ -139,9 +144,11 @@ def hmc_list_password_policies(
     of defined password policies, 'status' returns activation status.
     Returns one dict per policy: {UUID, title, link, ResourceType, Resource}.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.list_password_policies(policy_type)
+
     return _run(_go)
 
 
@@ -168,7 +175,8 @@ def hmc_create_password_policy(
     previous passwords cannot be reused.  warn_pwage is the number of days
     before expiry to warn the user.  min_pwage is the minimum days before a
     password may be changed.  Confirm the policy_name before calling. Returns
-    the created policy resource dict.
+    the created policy resource dict, or None when the HMC returns an empty
+    successful response.
     """
     xml = build_password_policy_document(
         policy_name=policy_name,
@@ -186,6 +194,7 @@ def hmc_create_password_policy(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.create_password_policy(xml)
+
     return _run(_go)
 
 
@@ -209,7 +218,8 @@ def hmc_modify_password_policy(
     to confirm the current state before calling.  To activate or deactivate a
     policy, use the HMC console — the REST API activates a policy by name via
     the PolicyType=status query path rather than a direct field change.
-    Returns the updated policy resource dict.
+    Returns the updated policy resource dict, or None when the HMC returns an
+    empty successful response.
     """
     xml = build_password_policy_document(
         pwage=pwage,
@@ -226,6 +236,7 @@ def hmc_modify_password_policy(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.modify_password_policy(policy_name, xml)
+
     return _run(_go)
 
 
@@ -237,10 +248,12 @@ def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> 
     the policy_name with hmc_list_password_policies before calling. Returns
     a confirmation string (immediate delete — no job to poll).
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.delete_password_policy(policy_name)
             return f"Deleted HMC password policy {policy_name}"
+
     return _run(_go)
 
 
@@ -253,9 +266,11 @@ def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
     LDAP is configured.
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.get_ldap_config()
+
     return _run(_go)
 
 
@@ -283,7 +298,8 @@ def hmc_configure_ldap(
     group_member_attributes: LDAP attribute used for group membership.
 
     Equivalent to Ansible ``hmc_user`` action=configure_ldap.
-    Returns the updated LDAP configuration resource dict.
+    Returns the updated LDAP configuration resource dict, or None when the HMC
+    returns an empty successful response.
     """
     xml = build_ldap_config_document(
         server_url=server_url,
@@ -298,6 +314,7 @@ def hmc_configure_ldap(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.configure_ldap(xml)
+
     return _run(_go)
 
 
@@ -321,8 +338,10 @@ def hmc_remove_ldap_config(
     Returns a confirmation string (immediate delete — no job to poll).
     """
     validate_ldap_removal_resource(resource)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             await hmc.remove_ldap_config(resource)
             return f"Removed LDAP configuration component: {resource}"
+
     return _run(_go)
