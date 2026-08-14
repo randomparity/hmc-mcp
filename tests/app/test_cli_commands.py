@@ -1205,6 +1205,40 @@ def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
     assert not any(name in mutations for name, _, _ in fake_hmc.calls)
 
 
+def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
+    fake_hmc.fail_on = "add_vscsi_adapter"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--size",
+            "1024",
+            "--vios-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "create_disk" in result.stdout
+    assert "vscsi" in result.stdout
+    assert "error" in result.stdout
+    assert "simulated add_vscsi_adapter failure" in result.stdout
+    assert "storage" in result.stdout
+    assert "skipped" in result.stdout
+
+
 # --------------------------------------------------------------------------- #
 # failure path (_fail)
 # --------------------------------------------------------------------------- #

@@ -136,14 +136,29 @@ def storage_attach_disk(
     )
     if as_json:
         _print_json(asdict(result))
-    elif dry_run:
+        if not dry_run and not result.workflow_completed:
+            raise typer.Exit(1)
+        return
+    if dry_run:
         console.print("[yellow]DRY RUN — preconditions validated[/yellow]")
-    elif result.workflow_completed:
+        return
+    if result.workflow_completed:
         console.print(f"[green]Attached virtual disk '{name}' to {lpar}[/green]")
-    else:
-        console.print(
-            "[yellow]Disk attachment incomplete — check step results[/yellow]"
+        return
+
+    console.print("[yellow]Disk attachment incomplete[/yellow]")
+    table = Table(title=f"Attach-disk steps: {name}")
+    table.add_column("Step")
+    table.add_column("Status")
+    table.add_column("Detail")
+    for step in result.steps:
+        table.add_row(
+            str(step.get("step", "-")),
+            str(step.get("status", "-")),
+            str(step.get("result", "")),
         )
+    console.print(table)
+    raise typer.Exit(1)
 
 
 @storage_app.command("map")
