@@ -96,6 +96,24 @@ def test_console_info_returns_management_console(monkeypatch, mock_hmc):
     assert result["Resource"]["Version"] == "V10R1M1040"
 
 
+def test_console_info_returns_none_for_known_firmware_500(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(500, text="null SessionId")
+    )
+    assert hmc_console_info() is None
+
+
+def test_console_info_propagates_unrelated_hmc_error(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(403, text="forbidden")
+    )
+    with pytest.raises(HMCError) as exc_info:
+        hmc_console_info()
+    assert exc_info.value.status_code == 403
+
+
 # ---------------------------------------------------------------------- #
 # hmc_systems
 # ---------------------------------------------------------------------- #

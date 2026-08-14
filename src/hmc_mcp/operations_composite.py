@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from ._app import _resolve_lpar_uuid, _resolve_system_uuid
@@ -87,14 +88,13 @@ async def _fetch_lpar_data(
     hmc, lpar_uuid: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Fetch LPAR entry and its client network adapters concurrently."""
-    import asyncio
-
-    lpar_task = asyncio.create_task(hmc.get_logical_partition(lpar_uuid))
-    adapters_task = asyncio.create_task(
-        hmc.list_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter")
-    )
-    lpar = await lpar_task
-    adapters = await adapters_task
+    async with asyncio.TaskGroup() as tasks:
+        lpar_task = tasks.create_task(hmc.get_logical_partition(lpar_uuid))
+        adapters_task = tasks.create_task(
+            hmc.list_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter")
+        )
+    lpar = lpar_task.result()
+    adapters = adapters_task.result()
     if lpar is None:
         raise ValueError(
             f"LPAR {lpar_uuid!r} not found after resolution. "
@@ -108,14 +108,13 @@ async def _fetch_system_summary_data(
     system_uuid: str,
 ) -> tuple[dict, list[dict], list[dict]]:
     """Fetch system entry, LPARs, and VIOS concurrently."""
-    import asyncio
-
-    system_task = asyncio.create_task(hmc.get_managed_system(system_uuid))
-    lpars_task = asyncio.create_task(hmc.list_logical_partitions(system_uuid))
-    vios_task = asyncio.create_task(hmc.list_vios(system_uuid))
-    system = await system_task
-    lpars = await lpars_task
-    vios_list = await vios_task
+    async with asyncio.TaskGroup() as tasks:
+        system_task = tasks.create_task(hmc.get_managed_system(system_uuid))
+        lpars_task = tasks.create_task(hmc.list_logical_partitions(system_uuid))
+        vios_task = tasks.create_task(hmc.list_vios(system_uuid))
+    system = system_task.result()
+    lpars = lpars_task.result()
+    vios_list = vios_task.result()
     if system is None:
         raise ValueError(
             f"Managed system {system_uuid!r} not found after resolution. "
