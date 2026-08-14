@@ -25,6 +25,7 @@ element names.
 from __future__ import annotations
 
 from typing import Any
+
 # Element is used only as a type annotation; all XML parsing uses defusedxml.
 from xml.etree.ElementTree import Element  # nosec B405
 
@@ -90,70 +91,48 @@ def element_to_dict(el: Element) -> dict[str, Any] | str:
     return result
 
 
+def _parse_entry(entry: Element) -> dict[str, Any]:
+    """Flatten one Atom entry and its wrapped HMC resource."""
+    result: dict[str, Any] = {
+        "UUID": None,
+        "title": None,
+        "link": None,
+        "ResourceType": None,
+        "Resource": {},
+    }
+    for child in entry:
+        name = localname(child.tag)
+        if name == "id":
+            result["UUID"] = (child.text or "").strip().removeprefix("urn:uuid:")
+        elif name == "title":
+            result["title"] = (child.text or "").strip()
+        elif name == "link" and child.attrib.get("rel", "SELF").upper() == "SELF":
+            result["link"] = child.attrib.get("href")
+        elif name == "content":
+            resource = next(iter(child), None)
+            if resource is not None:
+                result["ResourceType"] = localname(resource.tag)
+                result["Resource"] = element_to_dict(resource)
+    return result
+
+
 def parse_feed(xml_text: str) -> list[dict[str, Any]]:
-    """Parse an HMC Atom feed into a list of resource dicts.
-
-    Each returned dict has:
-      - "UUID": the entry UUID
-      - "title": the Atom entry title
-      - "link": the SELF href of the resource
-      - "ResourceType": e.g. "ManagedSystem"
-      - "Resource": the flattened resource dict
-    """
+    """Parse an HMC Atom feed into flattened resource dictionaries."""
     root = DET.fromstring(xml_text.encode("utf-8"))
-
-    entries: list[dict[str, Any]] = []
-
-    # The document can be a <feed> (collection) or a bare <entry> (single
-    # resource); both appear in HMC responses.
-    if localname(root.tag) == "feed":
-        entry_els = [e for e in root if localname(e.tag) == "entry"]
-    elif localname(root.tag) == "entry":
-        entry_els = [root]
-    else:
-        # Not a feed at all — return the flattened root as a single resource.
-        return [
-            {
-                "UUID": None,
-                "title": None,
-                "link": None,
-                "ResourceType": localname(root.tag),
-                "Resource": element_to_dict(root),
-            }
-        ]
-
-    for entry in entry_els:
-        uuid = None
-        title = None
-        link = None
-        resource: dict[str, Any] = {}
-        resource_type: str | None = None
-
-        for child in entry:
-            name = localname(child.tag)
-            if name == "id":
-                uuid = (child.text or "").strip().removeprefix("urn:uuid:")
-            elif name == "title":
-                title = (child.text or "").strip()
-            elif name == "link" and child.attrib.get("rel", "SELF").upper() == "SELF":
-                link = child.attrib.get("href")
-            elif name == "content":
-                for res_el in child:
-                    resource_type = localname(res_el.tag)
-                    resource = element_to_dict(res_el)
-                    break
-
-        entries.append(
-            {
-                "UUID": uuid,
-                "title": title,
-                "link": link,
-                "ResourceType": resource_type,
-                "Resource": resource,
-            }
-        )
-
-    return entries
+    root_type = localname(root.tag)
+    if root_type == "feed":
+        return [_parse_entry(entry) for entry in root if localname(entry.tag) == "entry"]
+    if root_type == "entry":
+        return [_parse_entry(root)]
+    return [
+        {
+            "UUID": None,
+            "title": None,
+            "link": None,
+            "ResourceType": root_type,
+            "Resource": element_to_dict(root),
+        }
+    ]
 
 
 def find_text(xml_text: str, *names: str) -> str | None:
