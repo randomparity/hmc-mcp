@@ -296,7 +296,7 @@ not be interpreted as a healthy job feed.
 
 | Tool                            | Description |
 |---------------------------------|-------------|
-| `hmc_migrate_lpar`              | Migrate an LPAR to another system — job |
+| `hmc_migrate_lpar`              | Validate to a successful terminal result, then migrate an LPAR; `validate_first=False` opts into direct submission |
 | `hmc_migrate_validate_lpar`     | Pre-check a migration — job |
 | `hmc_migrate_abort_lpar`        | Abort an in-progress migration — job |
 | `hmc_migrate_recover_lpar`      | Recover after a failed migration — job |
