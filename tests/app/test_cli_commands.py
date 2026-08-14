@@ -211,6 +211,14 @@ class FakeHMC:
         self._record("list_virtual_networks", system_uuid)
         return [{"UUID": "network-1", "Resource": {"NetworkName": "prod"}}]
 
+    async def list_virtual_switches(self, system_uuid):
+        self._record("list_virtual_switches", system_uuid)
+        return [{"UUID": "switch-1", "Resource": {"SwitchName": "ETHERNET0"}}]
+
+    async def list_network_bridges(self, system_uuid):
+        self._record("list_network_bridges", system_uuid)
+        return [{"UUID": "bridge-1", "Resource": {"PortVLANID": "1"}}]
+
     async def create_virtual_network(self, system_uuid, name, vlan, vswitch, *, tagged):
         self._record(
             "create_virtual_network", system_uuid, name, vlan, vswitch, tagged=tagged
@@ -468,6 +476,11 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
             "Deleted ClientNetworkAdapter",
         ),
         (
+            ["network", "list-switches", SYSTEM_UUID, "--json"],
+            ("list_virtual_switches", (SYSTEM_UUID,), {}),
+            "switch-1",
+        ),
+        (
             ["network", "list-networks", SYSTEM_UUID, "--json"],
             ("list_virtual_networks", (SYSTEM_UUID,), {}),
             "network-1",
@@ -493,6 +506,11 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
             ["network", "delete", SYSTEM_UUID, "--uuid", "network-1", "--yes"],
             ("delete_virtual_network", (SYSTEM_UUID, "network-1"), {}),
             "Deleted virtual network",
+        ),
+        (
+            ["network", "list-bridges", SYSTEM_UUID, "--json"],
+            ("list_network_bridges", (SYSTEM_UUID,), {}),
+            "bridge-1",
         ),
         (
             ["storage", "list-vgs", VIOS_UUID, "--json"],
