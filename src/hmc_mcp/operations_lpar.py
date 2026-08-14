@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
-from .client import HMCError
+from .client import HMCClient
 from .documents import LparResources, PartitionType
+from .errors import HMCError
 from .ssh import HMCCLIError
 from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
 
@@ -22,6 +23,14 @@ class LparCreation:
     partition_type: PartitionType
     resources: LparResources
     max_virtual_slots: int | None = None
+
+
+class LparCreationResult(TypedDict):
+    """Result shared by direct creation and provisioning workflows."""
+
+    lpar: dict[str, Any] | None
+    ownership_stamped: bool | None
+    warnings: list[str]
 
 
 async def _system_name(hmc, system_uuid: str, fallback: str) -> str:
@@ -64,12 +73,12 @@ async def _stamp_ownership(
 
 
 async def create_and_stamp_lpar(
-    hmc,
+    hmc: HMCClient,
     system_uuid: str,
     system_name_or_uuid: str,
     creation: LparCreation,
     document: str,
-) -> dict[str, Any]:
+) -> LparCreationResult:
     """Create an LPAR with CLI fallback and best-effort ownership stamping."""
     system_name: str | None = None
     try:

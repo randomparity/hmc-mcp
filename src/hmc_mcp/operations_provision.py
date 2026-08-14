@@ -15,7 +15,11 @@ from .client import HMCClient
 from .common import resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
-from .operations_lpar import LparCreation, create_and_stamp_lpar
+from .operations_lpar import (
+    LparCreation,
+    LparCreationResult,
+    create_and_stamp_lpar,
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,19 @@ class ProvisionStorage:
     storage_name: str
     kind: StorageKind = "VirtualDisk"
     vg_uuid: str | None = None
+
+
+@dataclass
+class _ProvisionState:
+    """Validated output from the create step for later ordered steps."""
+
+    creation: LparCreationResult | None = None
+    created_uuid: str | None = None
+
+    def require_created_uuid(self) -> str:
+        if self.created_uuid is None:
+            raise RuntimeError("LPAR UUID is unavailable before the create step")
+        return self.created_uuid
 
 
 # ---------------------------------------------------------------------- #
@@ -157,30 +174,16 @@ async def provision_lpar(
         Target managed system — either a SystemName or UUID.
     name:
         Name for the new LPAR. Must be unique across the HMC.
-    port_vlan_id:
-        PVID for the Virtual Ethernet network adapter (must match an
-        existing VirtualNetwork on the system).
-    vios_uuid:
-        UUID of the VIOS that will host the vSCSI server adapter and the
-        storage mapping.
-    vios_partition_id:
-        Numeric partition ID of the VIOS (for the vSCSI pairing).
-    vios_slot:
-        Virtual slot number of the VIOS server adapter.
-    storage_name:
-        Name of the VirtualDisk (logical volume) or PhysicalVolume to map.
+    network:
+        Virtual Ethernet VLAN and VIOS vSCSI attachment inputs.
+    storage:
+        VIOS-backed storage mapping inputs, including optional volume-group
+        validation.
+    resources:
+        Memory and processor bounds for the new partition.
     partition_type:
         Partition type: ``"AIX/Linux"`` (default), ``"OS400"``, or
         ``"Virtual IO Server"``.
-    min_memory / desired_memory / max_memory:
-        Memory bounds in MiB. Defaults: 256 / 4096 / 8192.
-    desired_vcpus / max_vcpus:
-        Shared-processor virtual CPU counts. Defaults: 1 / 2.
-    storage_kind:
-        ``"VirtualDisk"`` (default) or ``"PhysicalVolume"``.
-    vg_uuid:
-        UUID of the VolumeGroup to validate. When supplied, the tool
-        checks the VG exists on *vios_uuid* before proceeding.
     power_on:
         Submit a PowerOn job after provisioning (default ``True``).
     dry_run:
@@ -238,10 +241,9 @@ async def provision_lpar(
         resources=resources,
     )
 
-    creation_result: dict[str, Any] = {}
+    state = _ProvisionState()
 
     async def create() -> Any:
-        nonlocal creation_result
         creation_result = await create_and_stamp_lpar(
             hmc,
             system_uuid,
@@ -250,33 +252,33 @@ async def provision_lpar(
             lpar_xml,
         )
         created_lpar = creation_result["lpar"]
-        if not (created_lpar or {}).get("UUID"):
-            raise ValueError("LPAR creation returned no UUID")
-        return created_lpar
-
-    def created_uuid() -> str:
-        if "lpar" not in creation_result:
-            raise RuntimeError("LPAR UUID is unavailable before the create step")
-        uuid = (creation_result.get("lpar") or {}).get("UUID")
+        uuid = (created_lpar or {}).get("UUID")
         if not isinstance(uuid, str) or not uuid:
             raise ValueError("LPAR creation returned no UUID")
-        return uuid
+        state.creation = creation_result
+        state.created_uuid = uuid
+        return created_lpar
 
     async def attach_network() -> Any:
-        return await hmc.add_network_adapter(created_uuid(), network.port_vlan_id)
+        return await hmc.add_network_adapter(
+            state.require_created_uuid(), network.port_vlan_id
+        )
 
     async def vscsi() -> Any:
         return await hmc.add_vscsi_adapter(
-            created_uuid(), network.vios_partition_id, network.vios_slot
+            state.require_created_uuid(), network.vios_partition_id, network.vios_slot
         )
 
     async def map_storage() -> Any:
         return await hmc.map_storage_to_lpar(
-            storage.vios_uuid, storage.kind, storage.storage_name, created_uuid()
+            storage.vios_uuid,
+            storage.kind,
+            storage.storage_name,
+            state.require_created_uuid(),
         )
 
     async def start() -> Any:
-        uuid = created_uuid()
+        uuid = state.require_created_uuid()
         return await hmc.submit_job(
             f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn",
             power_on_lpar_job(),
@@ -292,10 +294,13 @@ async def provision_lpar(
         operations.append(("power_on", start))
     created, steps = await _run_steps(operations)
 
+    creation_result = state.creation
     return {
         "created": created,
         "dry_run": False,
-        "ownership_stamped": creation_result.get("ownership_stamped"),
+        "ownership_stamped": (
+            creation_result["ownership_stamped"] if creation_result else None
+        ),
         "steps": steps,
-        "warnings": creation_result.get("warnings", []),
+        "warnings": creation_result["warnings"] if creation_result else [],
     }
