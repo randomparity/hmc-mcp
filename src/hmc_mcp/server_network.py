@@ -12,9 +12,14 @@ from ._app import (
     mcp,
 )
 
-from .errors import HMCError
-from .error_translation import translate_virtual_network_create_error
-from .common import client_from_env, resolve_system_uuid
+from .common import client_from_env
+from .operations_network import (
+    create_virtual_network,
+    delete_virtual_network,
+    list_network_bridges,
+    list_virtual_networks,
+    list_virtual_switches,
+)
 from .ssh_commands import (
     SriovMode,
     add_vnic,
@@ -40,8 +45,7 @@ def hmc_list_virtual_switches(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.list_virtual_switches(system_uuid)
+            return await list_virtual_switches(hmc, system_name_or_uuid)
 
     return _run(_go)
 
@@ -58,8 +62,7 @@ def hmc_list_virtual_networks(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.list_virtual_networks(system_uuid)
+            return await list_virtual_networks(hmc, system_name_or_uuid)
 
     return _run(_go)
 
@@ -84,14 +87,9 @@ def hmc_create_virtual_network(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            try:
-                return await hmc.create_virtual_network(
-                    system_uuid, name, vlan_id, vswitch_id, tagged=tagged
-                )
-            except HMCError as exc:
-                translate_virtual_network_create_error(exc)
-                raise
+            return await create_virtual_network(
+                hmc, system_name_or_uuid, name, vlan_id, vswitch_id, tagged=tagged
+            )
 
     return _run(_go)
 
@@ -111,9 +109,9 @@ def hmc_delete_virtual_network(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            await hmc.delete_virtual_network(system_uuid, network_uuid)
-        return f"Deleted VirtualNetwork {network_uuid} from {system_name_or_uuid}"
+            return await delete_virtual_network(
+                hmc, system_name_or_uuid, network_uuid
+            )
 
     return _run(_go)
 
@@ -130,8 +128,7 @@ def hmc_list_network_bridges(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await hmc.list_network_bridges(system_uuid)
+            return await list_network_bridges(hmc, system_name_or_uuid)
 
     return _run(_go)
 

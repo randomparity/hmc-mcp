@@ -87,7 +87,7 @@ def _hmc_env(monkeypatch):
 def _call_tool_with_resolved_system(monkeypatch, tool, *args, **kwargs):
     _hmc_env(monkeypatch)
     resolver = AsyncMock(return_value="sys-uuid")
-    with patch("hmc_mcp.server_network.resolve_system_uuid", new=resolver):
+    with patch("hmc_mcp.operations_network.resolve_system_uuid", new=resolver):
         result = tool("system-name", *args, **kwargs)
     resolver.assert_awaited_once_with(ANY, "system-name")
     return result

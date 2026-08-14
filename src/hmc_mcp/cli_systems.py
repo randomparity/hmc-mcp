@@ -17,7 +17,8 @@ from .cli_app import (
     err_console,
     systems_app,
 )
-from .jobs import validate_wait_timing, wait_for_submitted_job
+from .operations_systems import power_system
+from .jobs import validate_wait_timing
 
 
 @systems_app.command("list")
@@ -76,7 +77,7 @@ def systems_show(
 
 @systems_app.command("power-on")
 def systems_power_on(
-    uuid: str = typer.Argument(..., help="Managed system UUID"),
+    name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     wait: bool = typer.Option(
         False, "--wait/--no-wait", help="Wait for job completion"
     ),
@@ -88,23 +89,29 @@ def systems_power_on(
 ) -> None:
     """Power on a managed system (submits a PowerOn job)."""
     validate_wait_timing(wait, timeout, interval)
-    if not yes and not typer.confirm(f"Really PowerOn system {uuid}?"):
+    if not yes and not typer.confirm(f"Really PowerOn system {name_or_uuid}?"):
         raise typer.Abort()
 
     async def _go():
         async with _client() as hmc:
-            job = await hmc.power_on_system(uuid)
-            return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
+            return await power_system(
+                hmc,
+                name_or_uuid,
+                on=True,
+                wait=wait,
+                timeout_seconds=timeout,
+                poll_interval=interval,
+            )
 
     job = _run(_go)
 
-    console.print(f"[green]Submitted PowerOn for {uuid}[/green]")
+    console.print(f"[green]Submitted PowerOn for {name_or_uuid}[/green]")
     _print_json(job)
 
 
 @systems_app.command("power-off")
 def systems_power_off(
-    uuid: str = typer.Argument(..., help="Managed system UUID"),
+    name_or_uuid: str = typer.Argument(..., help="Managed system name or UUID"),
     immediate: bool = typer.Option(False, "--immediate"),
     wait: bool = typer.Option(
         False, "--wait/--no-wait", help="Wait for job completion"
@@ -118,17 +125,24 @@ def systems_power_off(
     """Power off a managed system (submits a PowerOff job)."""
     validate_wait_timing(wait, timeout, interval)
     op = "Immediate PowerOff" if immediate else "PowerOff"
-    if not yes and not typer.confirm(f"Really {op} system {uuid}?"):
+    if not yes and not typer.confirm(f"Really {op} system {name_or_uuid}?"):
         raise typer.Abort()
 
     async def _go():
         async with _client() as hmc:
-            job = await hmc.power_off_system(uuid, immediate=immediate)
-            return await wait_for_submitted_job(hmc, job, wait, timeout, interval)
+            return await power_system(
+                hmc,
+                name_or_uuid,
+                on=False,
+                immediate=immediate,
+                wait=wait,
+                timeout_seconds=timeout,
+                poll_interval=interval,
+            )
 
     job = _run(_go)
 
-    console.print(f"[green]Submitted {op} for {uuid}[/green]")
+    console.print(f"[green]Submitted {op} for {name_or_uuid}[/green]")
     _print_json(job)
 
 

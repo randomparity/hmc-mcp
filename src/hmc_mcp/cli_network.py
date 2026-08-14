@@ -28,9 +28,12 @@ from .ssh_commands import (
     remove_vnic,
     set_sriov_adapter_mode,
 )
-from .error_translation import (
-    run_with_error_translation,
-    translate_virtual_network_create_error,
+from .operations_network import (
+    create_virtual_network,
+    delete_virtual_network,
+    list_network_bridges,
+    list_virtual_networks,
+    list_virtual_switches,
 )
 
 
@@ -42,7 +45,7 @@ def network_list_switches(
 ) -> None:
     """List VirtualSwitches on a managed system."""
 
-    switches = _with_client(lambda hmc: hmc.list_virtual_switches(system))
+    switches = _with_client(lambda hmc: list_virtual_switches(hmc, system))
 
     table = None
     if not as_json:
@@ -66,7 +69,7 @@ def network_list_networks(
 ) -> None:
     """List Virtual Networks (VLANs) on a managed system."""
 
-    nets = _with_client(lambda hmc: hmc.list_virtual_networks(system))
+    nets = _with_client(lambda hmc: list_virtual_networks(hmc, system))
 
     table = None
     if not as_json:
@@ -98,11 +101,8 @@ def network_create(
         raise typer.Abort()
 
     net = _with_client(
-        lambda hmc: run_with_error_translation(
-            lambda: hmc.create_virtual_network(
-                system, name, vlan, vswitch, tagged=tagged
-            ),
-            translate_virtual_network_create_error,
+        lambda hmc: create_virtual_network(
+            hmc, system, name, vlan, vswitch, tagged=tagged
         )
     )
 
@@ -120,7 +120,7 @@ def network_delete(
     if not yes and not typer.confirm(f"Delete virtual network {uuid} from {system}?"):
         raise typer.Abort()
 
-    _with_client(lambda hmc: hmc.delete_virtual_network(system, uuid))
+    _with_client(lambda hmc: delete_virtual_network(hmc, system, uuid))
 
     console.print(f"[green]Deleted virtual network {uuid}[/green]")
 
@@ -132,7 +132,7 @@ def network_list_bridges(
 ) -> None:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system."""
 
-    bridges = _with_client(lambda hmc: hmc.list_network_bridges(system))
+    bridges = _with_client(lambda hmc: list_network_bridges(hmc, system))
 
     _output(bridges, as_json, None, "No network bridges found")
 

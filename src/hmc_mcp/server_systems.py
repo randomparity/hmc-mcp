@@ -25,7 +25,7 @@ from .documents import (
     PowerOnLparStartPolicy,
     build_managed_system_document,
 )
-from .jobs import validate_wait_timing, wait_for_submitted_job
+from .jobs import validate_wait_timing
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -308,15 +308,19 @@ def hmc_power_on_system(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power on a managed system, optionally waiting for a terminal job state."""
-
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
+        from .operations_systems import power_system
+
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            job = await hmc.power_on_system(system_uuid)
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+            return await power_system(
+                hmc,
+                system_name_or_uuid,
+                on=True,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
@@ -332,15 +336,20 @@ def hmc_power_off_system(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Power off a managed system, optionally waiting for a terminal job state."""
-
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
+        from .operations_systems import power_system
+
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            job = await hmc.power_off_system(system_uuid, immediate)
-            return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+            return await power_system(
+                hmc,
+                system_name_or_uuid,
+                on=False,
+                immediate=immediate,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
             )
 
     return _run(_go)
