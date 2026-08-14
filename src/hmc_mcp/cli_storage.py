@@ -1,5 +1,4 @@
-"""CLI commands for VIOS storage and the virtual media repository.
-"""
+"""CLI commands for VIOS storage and the virtual media repository."""
 
 from __future__ import annotations
 
@@ -13,26 +12,32 @@ from .cli_app import (
     _client,
     _first_field,
     _output,
-    _partition_not_found,
     _print_json,
-    _resolve_partition_uuid,
     _run,
     _with_client,
     _usage_error,
     console,
     storage_app,
 )
-
+from .operations_storage import (
+    create_media_repository,
+    create_optical_media,
+    create_virtual_disk,
+    create_volume_group,
+    delete_media_repository,
+    list_volume_groups,
+    map_storage,
+)
 
 
 @storage_app.command("list-vgs")
 def storage_list_vgs(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
 
-    vgs = _with_client(lambda hmc: hmc.list_volume_groups(vios))
+    vgs = _with_client(lambda hmc: list_volume_groups(hmc, vios))
 
     table = None
     if not as_json:
@@ -51,19 +56,23 @@ def storage_list_vgs(
 
 @storage_app.command("create-vg")
 def storage_create_vg(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Volume Group name"),
-    pvs: str = typer.Option(..., "--pvs", help="Comma-separated physical volumes, e.g. hdisk10,hdisk11"),
+    pvs: str = typer.Option(
+        ..., "--pvs", help="Comma-separated physical volumes, e.g. hdisk10,hdisk11"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Volume Group on a VIOS from physical volumes."""
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
     if not pv_list:
         _usage_error("Provide at least one physical volume via --pvs")
-    if not yes and not typer.confirm(f"Create VG '{name}' from {pv_list} on VIOS {vios}?"):
+    if not yes and not typer.confirm(
+        f"Create VG '{name}' from {pv_list} on VIOS {vios}?"
+    ):
         raise typer.Abort()
 
-    vg = _with_client(lambda hmc: hmc.create_volume_group(vios, name, pv_list))
+    vg = _with_client(lambda hmc: create_volume_group(hmc, vios, name, pv_list))
 
     console.print(f"[green]Created Volume Group '{name}'[/green]")
     _print_json(vg)
@@ -71,17 +80,19 @@ def storage_create_vg(
 
 @storage_app.command("create-disk")
 def storage_create_disk(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
     size: int = typer.Option(..., "--size", help="Size in MiB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
-    if not yes and not typer.confirm(f"Create {size} MiB virtual disk '{name}' in VG {vg}?"):
+    if not yes and not typer.confirm(
+        f"Create {size} MiB virtual disk '{name}' in VG {vg}?"
+    ):
         raise typer.Abort()
 
-    disk = _with_client(lambda hmc: hmc.create_virtual_disk(vios, vg, name, size))
+    disk = _with_client(lambda hmc: create_virtual_disk(hmc, vios, vg, name, size))
 
     console.print(f"[green]Created virtual disk '{name}' ({size} MiB)[/green]")
     _print_json(disk)
@@ -89,50 +100,47 @@ def storage_create_disk(
 
 @storage_app.command("map")
 def storage_map(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
     disk: str = typer.Option(..., "--disk", help="Storage name (DiskName or hdiskN)"),
     kind: StorageKind = typer.Option(
         "VirtualDisk", "--kind", help="VirtualDisk or PhysicalVolume"
     ),
-    target: str | None = typer.Option(None, "--target", help="Pin the vtscsi device name"),
+    target: str | None = typer.Option(
+        None, "--target", help="Pin the vtscsi device name"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
+    if not yes and not typer.confirm(
+        f"Map {kind} '{disk}' on VIOS {vios} to LPAR '{lpar}'?"
+    ):
+        raise typer.Abort()
 
     async def _go():
         async with _client() as hmc:
-            lpar_uuid = await _resolve_partition_uuid(hmc, lpar)
-            if lpar_uuid is None:
-                return None, None
-            if not yes and not typer.confirm(
-                f"Map {kind} '{disk}' on VIOS {vios} to LPAR '{lpar}' ({lpar_uuid})?"
-            ):
-                raise typer.Abort()
-            return lpar_uuid, await hmc.map_storage_to_lpar(vios, kind, disk, lpar_uuid, target)
+            return await map_storage(hmc, vios, kind, disk, lpar, target)
 
     lpar_uuid, result = _run(_go)
 
-    if lpar_uuid is None:
-        _partition_not_found(lpar)
     console.print(f"[green]Mapped '{disk}'[/green] to {lpar_uuid}")
     _print_json(result)
 
 
-
-
 @storage_app.command("create-media-repo")
 def storage_create_media_repo(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     size_mb: int = typer.Option(..., "--size-mb", help="Repository size in MB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
-    if not yes and not typer.confirm(f"Create {size_mb} MB media repository on VG {vg} (VIOS {vios})?"):
+    if not yes and not typer.confirm(
+        f"Create {size_mb} MB media repository on VG {vg} (VIOS {vios})?"
+    ):
         raise typer.Abort()
 
-    result = _with_client(lambda hmc: hmc.create_media_repository(vios, vg, size_mb))
+    result = _with_client(lambda hmc: create_media_repository(hmc, vios, vg, size_mb))
 
     console.print(f"[green]Created media repository on {vg}[/green]")
     _print_json(result)
@@ -140,17 +148,23 @@ def storage_create_media_repo(
 
 @storage_app.command("create-media")
 def storage_create_media(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
-    name: str = typer.Option(..., "--name", "-n", help="Media file name (e.g. aix.iso)"),
+    name: str = typer.Option(
+        ..., "--name", "-n", help="Media file name (e.g. aix.iso)"
+    ),
     size_mb: int = typer.Option(..., "--size-mb", help="Media size in MB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
-    if not yes and not typer.confirm(f"Create media '{name}' ({size_mb} MB) on VG {vg} (VIOS {vios})?"):
+    if not yes and not typer.confirm(
+        f"Create media '{name}' ({size_mb} MB) on VG {vg} (VIOS {vios})?"
+    ):
         raise typer.Abort()
 
-    result = _with_client(lambda hmc: hmc.create_optical_media(vios, vg, name, size_mb))
+    result = _with_client(
+        lambda hmc: create_optical_media(hmc, vios, vg, name, size_mb)
+    )
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")
     _print_json(result)
@@ -158,14 +172,16 @@ def storage_create_media(
 
 @storage_app.command("delete-media-repo")
 def storage_delete_media_repo(
-    vios: str = typer.Argument(..., help="VIOS UUID"),
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete the Virtual Media Repository from a volume group."""
-    if not yes and not typer.confirm(f"Delete media repository on VG {vg} (VIOS {vios})?"):
+    if not yes and not typer.confirm(
+        f"Delete media repository on VG {vg} (VIOS {vios})?"
+    ):
         raise typer.Abort()
 
-    _with_client(lambda hmc: hmc.delete_media_repository(vios, vg))
+    _with_client(lambda hmc: delete_media_repository(hmc, vios, vg))
 
     console.print(f"[green]Deleted media repository on {vg}[/green]")

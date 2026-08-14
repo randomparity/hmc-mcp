@@ -11,7 +11,7 @@ from ._app import (
     mcp,
 )
 
-from .common import client_from_env, resolve_lpar_uuid, resolve_vios_uuid
+from .common import client_from_env
 from .documents import StorageKind
 from .jobs import (
     DeviceType,
@@ -19,6 +19,15 @@ from .jobs import (
     validate_logical_unit_types,
     validate_wait_timing,
     wait_for_submitted_job,
+)
+from .operations_storage import (
+    create_media_repository,
+    create_optical_media,
+    create_virtual_disk,
+    create_volume_group,
+    delete_media_repository,
+    list_volume_groups,
+    map_storage,
 )
 
 
@@ -36,8 +45,7 @@ def hmc_list_volume_groups(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.list_volume_groups(vios_uuid)
+            return await list_volume_groups(hmc, vios_name_or_uuid)
 
     return _run(_go)
 
@@ -60,8 +68,9 @@ def hmc_create_volume_group(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.create_volume_group(vios_uuid, name, physical_volumes)
+            return await create_volume_group(
+                hmc, vios_name_or_uuid, name, physical_volumes
+            )
 
     return _run(_go)
 
@@ -85,9 +94,8 @@ def hmc_create_virtual_disk(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.create_virtual_disk(
-                vios_uuid, vg_uuid, disk_name, capacity_mb
+            return await create_virtual_disk(
+                hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mb
             )
 
     return _run(_go)
@@ -117,11 +125,15 @@ def hmc_map_storage_to_lpar(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            return await hmc.map_storage_to_lpar(
-                vios_uuid, storage_kind, storage_name, lpar_uuid, target_device
+            _, resource = await map_storage(
+                hmc,
+                vios_name_or_uuid,
+                storage_kind,
+                storage_name,
+                lpar_name_or_uuid,
+                target_device,
             )
+            return resource
 
     return _run(_go)
 
@@ -140,8 +152,9 @@ def hmc_create_media_repository(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.create_media_repository(vios_uuid, vg_uuid, size_mb)
+            return await create_media_repository(
+                hmc, vios_name_or_uuid, vg_uuid, size_mb
+            )
 
     return _run(_go)
 
@@ -164,9 +177,8 @@ def hmc_create_optical_media(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            return await hmc.create_optical_media(
-                vios_uuid, vg_uuid, media_name, size_mb
+            return await create_optical_media(
+                hmc, vios_name_or_uuid, vg_uuid, media_name, size_mb
             )
 
     return _run(_go)
@@ -186,8 +198,7 @@ def hmc_delete_media_repository(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            await hmc.delete_media_repository(vios_uuid, vg_uuid)
+            await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
     return _run(_go)
