@@ -715,6 +715,66 @@ def test_lpars_create_declined_confirm_aborts(fake_hmc):
     assert fake_hmc.calls == []
 
 
+def test_lpars_create_rejects_invalid_partition_type_before_client_call(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "create",
+            "newlpar",
+            "--system",
+            SYSTEM_UUID,
+            "--type",
+            "Windows",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--type must be one of" in result.stderr
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize(
+    ("option", "value", "message"),
+    [
+        ("--type", "Windows", "--type must be one of"),
+        ("--storage-kind", "Tape", "--storage-kind must be one of"),
+    ],
+)
+def test_lpars_provision_rejects_invalid_vocabulary_before_client_call(
+    fake_hmc, option, value, message
+):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "provision",
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "newlpar",
+            "--vlan",
+            "100",
+            "--vios-uuid",
+            VIOS_UUID,
+            "--vios-partition-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--storage-name",
+            "rootvg",
+            option,
+            value,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert message in result.stderr
+    assert fake_hmc.calls == []
+
+
 def test_lpars_modify_renames(fake_hmc):
     result = RUNNER.invoke(
         cli.app,

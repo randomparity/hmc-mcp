@@ -8,7 +8,7 @@ from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import install_vios_job
-from hmc_mcp.documents import build_vios_document
+from hmc_mcp.documents import LparResources, build_vios_document
 
 BASE = "https://hmc.test:12443"
 
@@ -45,15 +45,18 @@ def test_build_vios_document_minimal():
 def test_build_vios_document_custom_resources():
     xml = build_vios_document(
         name="vios2",
-        min_memory=1024,
-        desired_memory=8192,
-        max_memory=16384,
-        desired_vcpus=4,
-        min_vcpus=2,
-        max_vcpus=8,
-        desired_procs=1.0,
-        min_procs=0.5,
-        max_procs=2.0,
+        resources=LparResources(
+            min_memory=1024,
+            desired_memory=8192,
+            max_memory=16384,
+            desired_vcpus=4,
+            min_vcpus=2,
+            max_vcpus=8,
+            desired_procs=1.0,
+            min_procs=0.5,
+            max_procs=2.0,
+            uncapped=True,
+        ),
     )
     assert "vios2" in xml
     assert "Virtual IO Server" in xml

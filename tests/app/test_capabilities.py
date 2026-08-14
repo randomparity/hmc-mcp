@@ -138,6 +138,27 @@ def test_closed_vocab_enum_matches_runtime_constant():
         assert set(parameter["enum"]) == set(values)
 
 
+def test_partition_creation_tools_share_resource_object_schema():
+    by_name = _tools_by_name()
+    lpar_properties = by_name["hmc_create_lpar"].parameters["properties"]
+    vios_properties = by_name["hmc_create_vios"].parameters["properties"]
+
+    assert "resources" in lpar_properties
+    assert "resources" in vios_properties
+    for legacy_name in (
+        "min_memory",
+        "desired_memory",
+        "max_memory",
+        "min_vcpus",
+        "desired_vcpus",
+        "max_vcpus",
+        "min_procs",
+        "desired_procs",
+        "max_procs",
+    ):
+        assert legacy_name not in vios_properties
+
+
 def test_repository_type_enum_matches_runtime_constant():
     """The MCP enum for RepositorySource.type must not drift from the Literal.
 

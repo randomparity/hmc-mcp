@@ -96,15 +96,7 @@ async def create_and_stamp_lpar(
             system_name=system_name,
             name=creation.name,
             partition_type=creation.partition_type,
-            min_memory=resources.min_memory,
-            desired_memory=resources.desired_memory,
-            max_memory=resources.max_memory,
-            desired_vcpus=resources.desired_vcpus,
-            min_vcpus=resources.min_vcpus,
-            max_vcpus=resources.max_vcpus,
-            desired_procs=resources.desired_procs,
-            min_procs=resources.min_procs,
-            max_procs=resources.max_procs,
+            resources=resources,
             max_virtual_slots=creation.max_virtual_slots,
         )
         created_lpar = await hmc.find_partition_by_name(creation.name)

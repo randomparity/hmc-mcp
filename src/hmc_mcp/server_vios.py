@@ -23,22 +23,14 @@ from .common import (
 )
 from .jobs import install_lpar_job, install_vios_job, wait_for_submitted_job
 from .ssh import run_hmc_cli
-from .documents import build_vios_document
+from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
 
 
 @mcp.tool
 def hmc_create_vios(
     system_name_or_uuid: str,
     name: str,
-    min_memory: int = 512,
-    desired_memory: int = 4096,
-    max_memory: int = 8192,
-    desired_vcpus: int = 2,
-    min_vcpus: int = 1,
-    max_vcpus: int = 4,
-    desired_procs: float = 0.5,
-    min_procs: float = 0.1,
-    max_procs: float = 1.0,
+    resources: LparResources = VIOS_DEFAULT_RESOURCES,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new Virtual IO Server (VIOS) partition on a managed system.
@@ -49,18 +41,7 @@ def hmc_create_vios(
     OS with hmc_install_vios before using it as a storage/network server.
     This creates a real partition — confirm its name and system before calling.
     """
-    xml = build_vios_document(
-        name=name,
-        min_memory=min_memory,
-        desired_memory=desired_memory,
-        max_memory=max_memory,
-        desired_vcpus=desired_vcpus,
-        min_vcpus=min_vcpus,
-        max_vcpus=max_vcpus,
-        desired_procs=desired_procs,
-        min_procs=min_procs,
-        max_procs=max_procs,
-    )
+    xml = build_vios_document(name=name, resources=resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:

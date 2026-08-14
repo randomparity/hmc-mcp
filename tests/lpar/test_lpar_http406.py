@@ -99,7 +99,7 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
         patch(
             "hmc_mcp.operations_lpar.create_lpar_via_cli",
             new=AsyncMock(return_value=""),
-        ),
+        ) as create_via_cli,
         patch(
             "hmc_mcp.operations_lpar.stamp_lpar_ownership",
             new=AsyncMock(return_value="tok"),
@@ -110,6 +110,11 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
     assert result is not None
     assert result["lpar"].get("UUID") == LPAR_UUID
+    create_via_cli.assert_awaited_once()
+    resources = create_via_cli.await_args.kwargs["resources"]
+    assert isinstance(resources, LparResources)
+    assert resources.desired_memory == 4096
+    assert resources.desired_vcpus == 1
 
 
 # ---------------------------------------------------------------------- #

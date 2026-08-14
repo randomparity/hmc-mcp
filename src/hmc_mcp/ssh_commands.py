@@ -12,6 +12,7 @@ import shlex
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
+from .documents import LparResources
 from .ssh import HMCCLIError, run_hmc_command
 
 
@@ -79,15 +80,7 @@ async def create_lpar_via_cli(
     system_name: str,
     name: str,
     partition_type: str = "AIX/Linux",
-    min_memory: int | None = None,
-    desired_memory: int | None = None,
-    max_memory: int | None = None,
-    desired_vcpus: int | None = None,
-    min_vcpus: int | None = None,
-    max_vcpus: int | None = None,
-    desired_procs: float | None = None,
-    min_procs: float | None = None,
-    max_procs: float | None = None,
+    resources: LparResources = LparResources(),
     max_virtual_slots: int | None = None,
     profile_name: str = "default_profile",
 ) -> str:
@@ -126,15 +119,15 @@ async def create_lpar_via_cli(
     explicit_resources = any(
         v is not None
         for v in (
-            min_memory,
-            desired_memory,
-            max_memory,
-            min_procs,
-            desired_procs,
-            max_procs,
-            min_vcpus,
-            desired_vcpus,
-            max_vcpus,
+            resources.min_memory,
+            resources.desired_memory,
+            resources.max_memory,
+            resources.min_procs,
+            resources.desired_procs,
+            resources.max_procs,
+            resources.min_vcpus,
+            resources.desired_vcpus,
+            resources.max_vcpus,
         )
     )
 
@@ -142,15 +135,15 @@ async def create_lpar_via_cli(
         # mksyscfg requires min/desired/max for all three resource axes when
         # any explicit value is given; fall back to safe defaults for omitted
         # fields so the command does not fail with a missing-attribute error.
-        _min_mem = min_memory or 256
-        _des_mem = desired_memory or 4096
-        _max_mem = max_memory or max(_des_mem, 8192)
-        _min_pu = min_procs or 0.1
-        _des_pu = desired_procs or 0.1
-        _max_pu = max_procs or max(_des_pu, 2.0)
-        _min_vp = min_vcpus or 1
-        _des_vp = desired_vcpus or 1
-        _max_vp = max_vcpus or max(_des_vp, 2)
+        _min_mem = resources.min_memory or 256
+        _des_mem = resources.desired_memory or 4096
+        _max_mem = resources.max_memory or max(_des_mem, 8192)
+        _min_pu = resources.min_procs or 0.1
+        _des_pu = resources.desired_procs or 0.1
+        _max_pu = resources.max_procs or max(_des_pu, 2.0)
+        _min_vp = resources.min_vcpus or 1
+        _des_vp = resources.desired_vcpus or 1
+        _max_vp = resources.max_vcpus or max(_des_vp, 2)
 
         config_pairs += [
             f"min_mem={_min_mem}",

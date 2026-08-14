@@ -312,40 +312,33 @@ def build_lpar_document(
     return _lpar_envelope(body)
 
 
+VIOS_DEFAULT_RESOURCES = LparResources(
+    min_memory=512,
+    desired_memory=4096,
+    max_memory=8192,
+    desired_vcpus=2,
+    min_vcpus=1,
+    max_vcpus=4,
+    desired_procs=0.5,
+    min_procs=0.1,
+    max_procs=1.0,
+    uncapped=True,
+)
+
+
 def build_vios_document(
     name: str,
-    min_memory: int = 512,
-    desired_memory: int = 4096,
-    max_memory: int = 8192,
-    desired_vcpus: int = 2,
-    min_vcpus: int = 1,
-    max_vcpus: int = 4,
-    desired_procs: float = 0.5,
-    min_procs: float = 0.1,
-    max_procs: float = 1.0,
+    resources: LparResources = VIOS_DEFAULT_RESOURCES,
 ) -> str:
     """Build a LogicalPartition document for creating a Virtual IO Server.
 
     Wraps build_lpar_document with partition_type='Virtual IO Server' and
-    shared-processor defaults appropriate for VIOS provisioning. All resource
-    values are optional; the HMC supplies defaults for anything not set.
-    Memory values are in MiB; procs are processing units (fractional ok).
+    shared-processor defaults appropriate for VIOS provisioning.
     """
     return build_lpar_document(
         name=name,
         partition_type="Virtual IO Server",
-        resources=LparResources(
-            min_memory=min_memory,
-            desired_memory=desired_memory,
-            max_memory=max_memory,
-            min_procs=min_procs,
-            desired_procs=desired_procs,
-            max_procs=max_procs,
-            min_vcpus=min_vcpus,
-            desired_vcpus=desired_vcpus,
-            max_vcpus=max_vcpus,
-            uncapped=True,
-        ),
+        resources=resources,
     )
 
 

@@ -29,7 +29,7 @@ from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
 from .documents import (
     LparResources,
     PARTITION_TYPES,
-    PartitionType,
+    STORAGE_KINDS,
     StorageKind,
     build_lpar_document,
 )
@@ -348,6 +348,10 @@ def lpars_create(
     Creates the partition powered off with a default profile; storage/network
     and boot settings are configured afterwards via the HMC.
     """
+    if partition_type not in PARTITION_TYPES:
+        _usage_error(
+            f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
+        )
     if not yes:
         typer.confirm(
             f"Create LPAR '{name}' ({partition_type}, {memory} MiB) on system {system}?",
@@ -355,7 +359,7 @@ def lpars_create(
         )
     xml = build_lpar_document(
         name=name,
-        partition_type=cast(PartitionType, partition_type),
+        partition_type=partition_type,
         partition_id=partition_id,
         resources=LparResources(
             min_memory=min_memory,
@@ -628,6 +632,15 @@ def lpars_provision(
     """
     from .operations_provision import ProvisionNetwork, ProvisionStorage, provision_lpar
 
+    if partition_type not in PARTITION_TYPES:
+        _usage_error(
+            f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
+        )
+    if storage_kind not in STORAGE_KINDS:
+        _usage_error(
+            "--storage-kind must be one of "
+            f"{', '.join(sorted(STORAGE_KINDS))}, got {storage_kind!r}"
+        )
     if not dry_run and not yes:
         typer.confirm(
             f"Provision LPAR '{name}' on system '{system}' (VLAN {port_vlan_id}, VIOS {vios_uuid})?"
@@ -655,7 +668,7 @@ def lpars_provision(
                     desired_vcpus=vcpus,
                     max_vcpus=max_vcpus,
                 ),
-                partition_type=cast(PartitionType, partition_type),
+                partition_type=partition_type,
                 power_on=power_on,
                 dry_run=dry_run,
             )
