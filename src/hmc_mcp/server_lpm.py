@@ -18,7 +18,7 @@ from .operations_lpm import (
     remote_restart_lpar,
 )
 
-from typing import Any, cast
+from typing import cast
 
 
 tool, register_tools = tool_module()
@@ -33,15 +33,16 @@ def hmc_migrate_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    validate_first: bool = True,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> JobOutcome:
     """Live-migrate (LPM) an LPAR to another managed system.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
-    Submits a Migrate job. The target accepts a managed-system name or UUID.
-    Optionally pin the target profile / wait time. Poll hmc_get_job for status.
-    Run hmc_migrate_validate_lpar first to pre-check.
+    By default, submits validation, waits for successful terminal validation,
+    then submits migration. Validation failure, exception, or timeout raises
+    without submitting migration. Set validate_first=False for direct submission.
 
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
@@ -58,8 +59,9 @@ def hmc_migrate_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                validate_first=validate_first,
             )
-            return result.job
+            return cast(JobOutcome, result.job)
 
     return _run(_go)
 
@@ -74,7 +76,7 @@ def hmc_migrate_validate_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> JobOutcome:
     """Validate whether an LPM migration of an LPAR to target_system would succeed.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
