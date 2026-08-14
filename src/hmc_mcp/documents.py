@@ -87,33 +87,33 @@ class LparResources:
     uncapped: bool | None = None
 
 
-def _memory_config(
-    min_memory: int | None, desired_memory: int | None, max_memory: int | None
-) -> str:
+def _memory_config(resources: LparResources) -> str:
+    min_memory = resources.min_memory
+    desired_memory = resources.desired_memory
+    max_memory = resources.max_memory
     if min_memory is None and desired_memory is None and max_memory is None:
         return ""
-    parts = ["  <PartitionMemoryConfiguration kb=\"CUD\" kxe=\"false\">", "    <Metadata><Atom/></Metadata>"]
+    parts = [
+        '  <PartitionMemoryConfiguration kb="CUD" kxe="false">',
+        "    <Metadata><Atom/></Metadata>",
+    ]
     if desired_memory is not None:
-        parts.append(f'    <DesiredMemory kb="CUD" kxe="false">{desired_memory}</DesiredMemory>')
+        parts.append(
+            f'    <DesiredMemory kb="CUD" kxe="false">{desired_memory}</DesiredMemory>'
+        )
     if max_memory is not None:
-        parts.append(f'    <MaximumMemory kb="CUD" kxe="false">{max_memory}</MaximumMemory>')
+        parts.append(
+            f'    <MaximumMemory kb="CUD" kxe="false">{max_memory}</MaximumMemory>'
+        )
     if min_memory is not None:
-        parts.append(f'    <MinimumMemory kb="CUD" kxe="false">{min_memory}</MinimumMemory>')
+        parts.append(
+            f'    <MinimumMemory kb="CUD" kxe="false">{min_memory}</MinimumMemory>'
+        )
     parts.append("  </PartitionMemoryConfiguration>")
     return "\n".join(parts)
 
 
-def _processor_config(
-    dedicated: bool | None,
-    min_procs: float | None,
-    desired_procs: float | None,
-    max_procs: float | None,
-    min_vcpus: int | None,
-    desired_vcpus: int | None,
-    max_vcpus: int | None,
-    sharing_mode: str | None,
-    uncapped: bool | None,
-) -> str:
+def _processor_config(resources: LparResources) -> str:
     """Build PartitionProcessorConfiguration.
 
     dedicated=True  -> DedicatedProcessorConfiguration (whole CPUs).
@@ -126,29 +126,50 @@ def _processor_config(
     e.g. 0.5); vcpus are the virtual processor counts (ints). uncapped=None
     likewise leaves SharingMode / UncappedWeight unchanged.
     """
-    have_procs = any(v is not None for v in (min_procs, desired_procs, max_procs))
-    have_vcpus = any(v is not None for v in (min_vcpus, desired_vcpus, max_vcpus))
+    have_procs = any(
+        value is not None
+        for value in (resources.min_procs, resources.desired_procs, resources.max_procs)
+    )
+    have_vcpus = any(
+        value is not None
+        for value in (resources.min_vcpus, resources.desired_vcpus, resources.max_vcpus)
+    )
     if not (have_procs or have_vcpus):
         return ""
 
-    parts = ['  <PartitionProcessorConfiguration kb="CUD" kxe="false">', "    <Metadata><Atom/></Metadata>"]
+    parts = [
+        '  <PartitionProcessorConfiguration kb="CUD" kxe="false">',
+        "    <Metadata><Atom/></Metadata>",
+    ]
 
-    if dedicated is True:
+    if resources.dedicated is True:
         parts.append('    <DedicatedProcessorConfiguration kb="CUD" kxe="false">')
         parts.append("      <Metadata><Atom/></Metadata>")
-        if desired_procs is not None:
-            parts.append(f'      <DesiredProcessors kb="CUD" kxe="false">{int(desired_procs)}</DesiredProcessors>')
-        if max_procs is not None:
-            parts.append(f'      <MaximumProcessors kb="CUD" kxe="false">{int(max_procs)}</MaximumProcessors>')
-        if min_procs is not None:
-            parts.append(f'      <MinimumProcessors kb="CUD" kxe="false">{int(min_procs)}</MinimumProcessors>')
+        if resources.desired_procs is not None:
+            parts.append(
+                f'      <DesiredProcessors kb="CUD" kxe="false">{int(resources.desired_procs)}</DesiredProcessors>'
+            )
+        if resources.max_procs is not None:
+            parts.append(
+                f'      <MaximumProcessors kb="CUD" kxe="false">{int(resources.max_procs)}</MaximumProcessors>'
+            )
+        if resources.min_procs is not None:
+            parts.append(
+                f'      <MinimumProcessors kb="CUD" kxe="false">{int(resources.min_procs)}</MinimumProcessors>'
+            )
         parts.append("    </DedicatedProcessorConfiguration>")
-        parts.append('    <HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>')
-        if sharing_mode:
-            parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
+        parts.append(
+            '    <HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>'
+        )
+        if resources.sharing_mode:
+            parts.append(
+                f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
+            )
     else:
-        if dedicated is False:
-            parts.append('    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>')
+        if resources.dedicated is False:
+            parts.append(
+                '    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>'
+            )
         parts.append('    <SharedProcessorConfiguration kb="CUD" kxe="false">')
         parts.append("      <Metadata><Atom/></Metadata>")
 
@@ -158,20 +179,24 @@ def _processor_config(
                     val = int(val)
                 parts.append(f'      <{name} kb="CUD" kxe="false">{val}</{name}>')
 
-        _sp("DesiredProcessingUnits", desired_procs)
-        _sp("MaximumProcessingUnits", max_procs)
-        _sp("MinimumProcessingUnits", min_procs)
-        _sp("DesiredVirtualProcessors", desired_vcpus)
-        _sp("MaximumVirtualProcessors", max_vcpus)
-        _sp("MinimumVirtualProcessors", min_vcpus)
-        if uncapped is False:
-            parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
+        _sp("DesiredProcessingUnits", resources.desired_procs)
+        _sp("MaximumProcessingUnits", resources.max_procs)
+        _sp("MinimumProcessingUnits", resources.min_procs)
+        _sp("DesiredVirtualProcessors", resources.desired_vcpus)
+        _sp("MaximumVirtualProcessors", resources.max_vcpus)
+        _sp("MinimumVirtualProcessors", resources.min_vcpus)
+        if resources.uncapped is False:
+            parts.append(
+                '      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>'
+            )
         parts.append("    </SharedProcessorConfiguration>")
-        if uncapped is True:
+        if resources.uncapped is True:
             parts.append('    <SharingMode kb="CUD" kxe="false">uncapped</SharingMode>')
-        elif sharing_mode:
-            parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
-        elif uncapped is False:
+        elif resources.sharing_mode:
+            parts.append(
+                f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
+            )
+        elif resources.uncapped is False:
             parts.append('    <SharingMode kb="CUD" kxe="false">capped</SharingMode>')
 
     parts.append("  </PartitionProcessorConfiguration>")
@@ -214,24 +239,24 @@ def build_lpar_document(
     if os_type is not None and os_type not in OS_TYPES:
         raise ValueError(f"os_type must be one of {OS_TYPES}, got {os_type!r}")
     if keylock is not None and keylock not in KEYLOCK_POSITIONS:
-        raise ValueError(
-            f"keylock must be one of {KEYLOCK_POSITIONS}, got {keylock!r}"
-        )
+        raise ValueError(f"keylock must be one of {KEYLOCK_POSITIONS}, got {keylock!r}")
 
     resources = resources or LparResources()
 
     body_parts = ["  <Metadata><Atom/></Metadata>"]
     if partition_id is not None:
-        body_parts.append(f'  <PartitionID kb="COD" kxe="false">{partition_id}</PartitionID>')
+        body_parts.append(
+            f'  <PartitionID kb="COD" kxe="false">{partition_id}</PartitionID>'
+        )
 
-    mem = _memory_config(
-        resources.min_memory, resources.desired_memory, resources.max_memory
-    )
+    mem = _memory_config(resources)
     if mem:
         body_parts.append(mem)
 
     if keylock is not None:
-        body_parts.append(f'  <KeylockPosition kb="CUD" kxe="false">{keylock}</KeylockPosition>')
+        body_parts.append(
+            f'  <KeylockPosition kb="CUD" kxe="false">{keylock}</KeylockPosition>'
+        )
 
     if max_virtual_slots is not None:
         body_parts.append(
@@ -239,28 +264,22 @@ def build_lpar_document(
         )
 
     if name is not None:
-        body_parts.append(f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>')
+        body_parts.append(
+            f'  <PartitionName kb="CUR" kxe="false">{name}</PartitionName>'
+        )
 
     if os_type is not None:
         body_parts.append(
             f'  <OperatingSystemType kb="CUD" kxe="false">{os_type}</OperatingSystemType>'
         )
 
-    proc = _processor_config(
-        resources.dedicated,
-        resources.min_procs,
-        resources.desired_procs,
-        resources.max_procs,
-        resources.min_vcpus,
-        resources.desired_vcpus,
-        resources.max_vcpus,
-        resources.sharing_mode,
-        resources.uncapped,
-    )
+    proc = _processor_config(resources)
     if proc:
         body_parts.append(proc)
 
-    body_parts.append(f'  <PartitionType kb="COD" kxe="false">{partition_type}</PartitionType>')
+    body_parts.append(
+        f'  <PartitionType kb="COD" kxe="false">{partition_type}</PartitionType>'
+    )
 
     body = "\n".join(body_parts)
     return _lpar_envelope(body)
@@ -315,17 +334,7 @@ def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     Set dedicated=True to assign whole CPUs; dedicated=False (default) for shared.
     """
     resources = resources or LparResources()
-    proc = _processor_config(
-        resources.dedicated,
-        resources.min_procs,
-        resources.desired_procs,
-        resources.max_procs,
-        resources.min_vcpus,
-        resources.desired_vcpus,
-        resources.max_vcpus,
-        resources.sharing_mode,
-        resources.uncapped,
-    )
+    proc = _processor_config(resources)
     body = "  <Metadata><Atom/></Metadata>"
     if proc:
         body = body + "\n" + proc
@@ -343,9 +352,7 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     `resources` are emitted; processor fields are ignored.
     """
     resources = resources or LparResources()
-    mem = _memory_config(
-        resources.min_memory, resources.desired_memory, resources.max_memory
-    )
+    mem = _memory_config(resources)
     body = "  <Metadata><Atom/></Metadata>"
     if mem:
         body = body + "\n" + mem
@@ -395,10 +402,16 @@ def build_managed_system_document(
 
     body_parts = ["  <Metadata><Atom/></Metadata>"]
 
-    mem_fields = [mem_mirroring_mode, pend_mem_region_size, requested_num_sys_huge_pages]
+    mem_fields = [
+        mem_mirroring_mode,
+        pend_mem_region_size,
+        requested_num_sys_huge_pages,
+    ]
     if any(v is not None for v in mem_fields):
-        mem_parts = ["  <SystemMemoryConfiguration kb=\"CUD\" kxe=\"false\">",
-                     "    <Metadata><Atom/></Metadata>"]
+        mem_parts = [
+            '  <SystemMemoryConfiguration kb="CUD" kxe="false">',
+            "    <Metadata><Atom/></Metadata>",
+        ]
         if mem_mirroring_mode is not None:
             mem_parts.append(
                 f'    <MemoryMirroringMode kb="CUD" kxe="false">{mem_mirroring_mode}</MemoryMirroringMode>'
@@ -418,7 +431,9 @@ def build_managed_system_document(
     if new_name is not None:
         body_parts.append(f'  <SystemName kb="CUD" kxe="false">{new_name}</SystemName>')
     if power_off_policy is not None:
-        body_parts.append(f'  <PowerOffPolicy kb="CUD" kxe="false">{power_off_policy}</PowerOffPolicy>')
+        body_parts.append(
+            f'  <PowerOffPolicy kb="CUD" kxe="false">{power_off_policy}</PowerOffPolicy>'
+        )
     if power_on_lpar_start_policy is not None:
         body_parts.append(
             f'  <PowerOnLparStartPolicy kb="CUD" kxe="false">{power_on_lpar_start_policy}</PowerOnLparStartPolicy>'
@@ -531,9 +546,13 @@ def build_client_network_adapter_document(
     """
     parts = ["  <Metadata><Atom/></Metadata>"]
     if slot_number is not None:
-        parts.append(f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>')
+        parts.append(
+            f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>'
+        )
     if virtual_switch_id is not None:
-        parts.append(f'  <VirtualSwitchID kb="CUD" kxe="false">{virtual_switch_id}</VirtualSwitchID>')
+        parts.append(
+            f'  <VirtualSwitchID kb="CUD" kxe="false">{virtual_switch_id}</VirtualSwitchID>'
+        )
     parts.append(f'  <PortVLANID kb="CUD" kxe="false">{port_vlan_id}</PortVLANID>')
     if tagged:
         parts.append('  <IsTaggedVLAN kb="CUD" kxe="false">true</IsTaggedVLAN>')
@@ -566,9 +585,9 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
         f'    <PhysicalVolume kb="CUD" kxe="false" schemaVersion="V1_0">\n'
-        f'      <Metadata><Atom/></Metadata>\n'
+        f"      <Metadata><Atom/></Metadata>\n"
         f'      <VolumeName kb="CUD" kxe="false">{pv}</VolumeName>\n'
-        f'    </PhysicalVolume>'
+        f"    </PhysicalVolume>"
         for pv in physical_volumes
     )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -615,11 +634,15 @@ def build_vscsi_mapping_document(
     storage is mapped to. target_device optionally pins the vtscsi name.
     """
     if storage_kind not in ("PhysicalVolume", "VirtualDisk"):
-        raise ValueError(f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}")
+        raise ValueError(
+            f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
+        )
     name_field = "VolumeName" if storage_kind == "PhysicalVolume" else "DiskName"
     target = ""
     if target_device:
-        target = f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
+        target = (
+            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
+        )
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
   <Metadata><Atom/></Metadata>
@@ -775,7 +798,9 @@ def build_hmc_user_document(
     if description is not None:
         parts.append(f'  <Description kb="CUR" kxe="false">{description}</Description>')
     if pwage is not None:
-        parts.append(f'  <PasswordAgePolicy kb="CUR" kxe="false">{pwage}</PasswordAgePolicy>')
+        parts.append(
+            f'  <PasswordAgePolicy kb="CUR" kxe="false">{pwage}</PasswordAgePolicy>'
+        )
     if enable is not None:
         val = "true" if enable else "false"
         parts.append(f'  <IsEnabled kb="CUR" kxe="false">{val}</IsEnabled>')
@@ -821,21 +846,37 @@ def build_password_policy_document(
     if pwage is not None:
         parts.append(f'  <MaxPasswordAge kb="CUR" kxe="false">{pwage}</MaxPasswordAge>')
     if min_length is not None:
-        parts.append(f'  <MinPasswordLength kb="CUR" kxe="false">{min_length}</MinPasswordLength>')
+        parts.append(
+            f'  <MinPasswordLength kb="CUR" kxe="false">{min_length}</MinPasswordLength>'
+        )
     if min_digits is not None:
-        parts.append(f'  <MinNumericChars kb="CUR" kxe="false">{min_digits}</MinNumericChars>')
+        parts.append(
+            f'  <MinNumericChars kb="CUR" kxe="false">{min_digits}</MinNumericChars>'
+        )
     if min_uppercase is not None:
-        parts.append(f'  <MinUpperCaseChars kb="CUR" kxe="false">{min_uppercase}</MinUpperCaseChars>')
+        parts.append(
+            f'  <MinUpperCaseChars kb="CUR" kxe="false">{min_uppercase}</MinUpperCaseChars>'
+        )
     if min_lowercase is not None:
-        parts.append(f'  <MinLowerCaseChars kb="CUR" kxe="false">{min_lowercase}</MinLowerCaseChars>')
+        parts.append(
+            f'  <MinLowerCaseChars kb="CUR" kxe="false">{min_lowercase}</MinLowerCaseChars>'
+        )
     if min_special is not None:
-        parts.append(f'  <MinSpecialChars kb="CUR" kxe="false">{min_special}</MinSpecialChars>')
+        parts.append(
+            f'  <MinSpecialChars kb="CUR" kxe="false">{min_special}</MinSpecialChars>'
+        )
     if hist_size is not None:
-        parts.append(f'  <PasswordHistorySize kb="CUR" kxe="false">{hist_size}</PasswordHistorySize>')
+        parts.append(
+            f'  <PasswordHistorySize kb="CUR" kxe="false">{hist_size}</PasswordHistorySize>'
+        )
     if warn_pwage is not None:
-        parts.append(f'  <PasswordExpirationWarning kb="CUR" kxe="false">{warn_pwage}</PasswordExpirationWarning>')
+        parts.append(
+            f'  <PasswordExpirationWarning kb="CUR" kxe="false">{warn_pwage}</PasswordExpirationWarning>'
+        )
     if min_pwage is not None:
-        parts.append(f'  <MinPasswordAge kb="CUR" kxe="false">{min_pwage}</MinPasswordAge>')
+        parts.append(
+            f'  <MinPasswordAge kb="CUR" kxe="false">{min_pwage}</MinPasswordAge>'
+        )
     body = "\n".join(parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <HmcPasswordPolicy xmlns="{WEB_NS}" schemaVersion="V1_0">
@@ -873,7 +914,9 @@ def build_ldap_config_document(
     """
     parts = ["  <Metadata><Atom/></Metadata>"]
     if server_url is not None:
-        parts.append(f'  <LdapServerUrl kb="CUR" kxe="false">{server_url}</LdapServerUrl>')
+        parts.append(
+            f'  <LdapServerUrl kb="CUR" kxe="false">{server_url}</LdapServerUrl>'
+        )
     if base_dn is not None:
         parts.append(f'  <BaseDN kb="CUR" kxe="false">{base_dn}</BaseDN>')
     if bind_dn is not None:
@@ -881,11 +924,15 @@ def build_ldap_config_document(
     if bind_pw is not None:
         parts.append(f'  <BindPw kb="CUR" kxe="false">{bind_pw}</BindPw>')
     if search_filter is not None:
-        parts.append(f'  <SearchFilter kb="CUR" kxe="false">{search_filter}</SearchFilter>')
+        parts.append(
+            f'  <SearchFilter kb="CUR" kxe="false">{search_filter}</SearchFilter>'
+        )
     if hmc_groups is not None:
         parts.append(f'  <HmcGroups kb="CUR" kxe="false">{hmc_groups}</HmcGroups>')
     if group_member_attributes is not None:
-        parts.append(f'  <GroupMemberAttributes kb="CUR" kxe="false">{group_member_attributes}</GroupMemberAttributes>')
+        parts.append(
+            f'  <GroupMemberAttributes kb="CUR" kxe="false">{group_member_attributes}</GroupMemberAttributes>'
+        )
     body = "\n".join(parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <HmcLdapServer xmlns="{WEB_NS}" schemaVersion="V1_0">
