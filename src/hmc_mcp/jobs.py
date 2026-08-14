@@ -21,9 +21,30 @@ LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 
 TERMINAL_JOB_STATUSES = frozenset(
-    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"}
+    {
+        "CANCELED_BEFORE_START",
+        "CANCELED_WHILE_RUNNING",
+        "COMPLETED",
+        "COMPLETED_OK",
+        "COMPLETED_WITH_ERROR",
+        "COMPLETED_WITH_WARNINGS",
+        "EXCEPTION",
+        "FAILED",
+        "FAILED_BEFORE_COMPLETION",
+        "FAILED_BEFORE_COMPLETION_RETRY",
+        "FAILED_TO_START",
+    }
 )
-FAILED_JOB_STATUSES = frozenset({"COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"})
+FAILED_JOB_STATUSES = frozenset(
+    {
+        "COMPLETED_WITH_ERROR",
+        "EXCEPTION",
+        "FAILED",
+        "FAILED_BEFORE_COMPLETION",
+        "FAILED_BEFORE_COMPLETION_RETRY",
+        "FAILED_TO_START",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -74,7 +95,8 @@ def job_identifier(job: dict[str, Any]) -> str | None:
 
 def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
     """Normalize the last polled entry into the public wait result."""
-    resource = (job or {}).get("Resource") or {}
+    resource_value = (job or {}).get("Resource")
+    resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
     return JobOutcome(
@@ -95,15 +117,22 @@ def _job_error(resource: dict[str, Any]) -> str | None:
         if isinstance(parameters, dict):
             parameters = [parameters]
         if isinstance(parameters, list):
+            messages: dict[str, str] = {}
             for parameter in parameters:
-                if (
-                    not isinstance(parameter, dict)
-                    or parameter.get("ParameterName") != "result"
-                ):
+                if not isinstance(parameter, dict):
                     continue
+                name = parameter.get("ParameterName")
                 value = parameter.get("ParameterValue")
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
+                if (
+                    name in {"result", "ErrorData"}
+                    and name not in messages
+                    and isinstance(value, str)
+                    and value.strip()
+                ):
+                    messages[name] = value.strip()
+            for name in ("result", "ErrorData"):
+                if name in messages:
+                    return messages[name]
 
     exception = resource.get("ResponseException")
     if isinstance(exception, dict):

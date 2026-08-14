@@ -506,8 +506,8 @@ class HMCClient(
     ) -> dict[str, Any] | None:
         """Poll an HMC job until it reaches a terminal state or timeout.
 
-        Terminal states: COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR,
-        FAILED, EXCEPTION (covers both UOM Job and web+xml JobResponse shapes).
+        Terminal states cover the UOM Job and documented web+xml JobResponse
+        completion, failure, warning, and cancellation values.
         Returns the last-seen job entry (terminal or not, after timeout).
 
         When *job_href* is provided it is forwarded to ``get_job`` so polling
@@ -524,7 +524,8 @@ class HMCClient(
         deadline = loop.time() + timeout_seconds
         entry = await self.get_job(job_uuid, job_href=job_href)
         while True:
-            status = (entry or {}).get("Resource", {}).get("Status", "")
+            resource = (entry or {}).get("Resource")
+            status = resource.get("Status", "") if isinstance(resource, dict) else ""
             if status in TERMINAL_JOB_STATUSES:
                 return entry
             remaining = deadline - loop.time()

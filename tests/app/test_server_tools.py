@@ -647,6 +647,35 @@ JOB_ENTRY_EXCEPTION = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+JOB_RESPONSE_ERROR_DATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>JobResponse</title>
+  <content type="application/vnd.ibm.powervm.web+xml; type=JobResponse">
+    <JobResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">
+      <JobID>job-uuid-999</JobID>
+      <Status>COMPLETED_WITH_ERROR</Status>
+      <Results>
+        <JobParameter>
+          <ParameterName>ErrorData</ParameterName>
+          <ParameterValue>HSCL3205 The partition entered an error state</ParameterValue>
+        </JobParameter>
+      </Results>
+    </JobResponse>
+  </content>
+</entry>
+"""
+
+JOB_ENTRY_EMPTY_RESOURCE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:uuid:job-uuid-999</id>
+  <title>Job</title>
+  <content type="application/vnd.ibm.powervm.uom+xml">
+    <Job xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>
+  </content>
+</entry>
+"""
+
 JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
 
 
@@ -671,6 +700,11 @@ def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
     [
         (JOB_ENTRY_FAILED, "FAILED", "Power-on was rejected"),
         (JOB_ENTRY_EXCEPTION, "EXCEPTION", "HMC job raised an exception"),
+        (
+            JOB_RESPONSE_ERROR_DATA,
+            "COMPLETED_WITH_ERROR",
+            "HSCL3205 The partition entered an error state",
+        ),
     ],
 )
 def test_wait_for_job_surfaces_terminal_failure(
@@ -705,6 +739,23 @@ def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
     assert result.timed_out is True
     assert result.error is None
     assert result.job["Resource"]["Status"] == "RUNNING"
+
+
+def test_wait_for_job_empty_resource_returns_timed_out_shape(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_EMPTY_RESOURCE)
+    )
+
+    result = hmc_wait_for_job("job-uuid-999", timeout_seconds=0, poll_interval=1)
+
+    assert set(asdict(result)) == JOB_OUTCOME_KEYS
+    assert result.job_id == "job-uuid-999"
+    assert result.status is None
+    assert result.timed_out is True
+    assert result.error is None
+    assert result.job["Resource"] == ""
 
 
 # ---------------------------------------------------------------------- #
