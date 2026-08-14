@@ -17,6 +17,7 @@ from .client import HMCError
 from .common import (
     build_config,
     client_from_env,
+    resolve_lpar_uuid,
     resolve_system_uuid,
     resolve_vios_uuid,
 )
@@ -151,7 +152,7 @@ def hmc_install_vios(
 
 @mcp.tool
 def hmc_install_lpar_os(
-    lpar_uuid: str,
+    lpar_name_or_uuid: str,
     nim_ip: str,
     nim_gateway: str,
     nim_subnetmask: str,
@@ -165,7 +166,7 @@ def hmc_install_lpar_os(
 ) -> dict[str, Any] | None:
     """Submit a NIM-based LPAR OS installation job.
 
-    lpar_uuid is the UUID of an existing (powered-off) LPAR. The LPAR will
+    lpar_name_or_uuid identifies an existing powered-off LPAR by name or UUID. The LPAR will
     PXE-boot from the NIM server at nim_ip to install its OS.
     nim_gateway and nim_subnetmask define the network for the NIM install
     boot; lpar_ip is the IP address the LPAR uses during the NIM install;
@@ -181,6 +182,7 @@ def hmc_install_lpar_os(
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
             job = await hmc.submit_job(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
                 job_xml,
