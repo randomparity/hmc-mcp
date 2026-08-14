@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from ._app import (
     _READ_ONLY,
     _ssh_with_client,
-    mcp,
 )
 
 from .ssh_commands import (
@@ -21,7 +22,10 @@ from .operations_lpar import authorize_lpar_mutation
 from .client import HMCClient
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_get_lpar_description(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
@@ -36,7 +40,7 @@ def hmc_get_lpar_description(
     )
 
 
-@mcp.tool
+@tool
 def hmc_set_lpar_description(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -53,6 +57,7 @@ def hmc_set_lpar_description(
     WARNING: This changes LPAR configuration on the selected HMC.
     """
     validate_lpar_description(description)
+
     async def _set(config, system_name, lpar_name):
         hmc = HMCClient(config)
         await authorize_lpar_mutation(
@@ -71,7 +76,7 @@ def hmc_set_lpar_description(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_lpar_msp(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> bool:
@@ -86,7 +91,7 @@ def hmc_get_lpar_msp(
     )
 
 
-@mcp.tool
+@tool
 def hmc_set_lpar_msp(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -108,7 +113,7 @@ def hmc_set_lpar_msp(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_lpar_proc_compat(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, str]:
@@ -123,7 +128,7 @@ def hmc_get_lpar_proc_compat(
     )
 
 
-@mcp.tool
+@tool
 def hmc_set_lpar_proc_compat(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

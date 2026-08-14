@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from ._app import _STATE_CHANGING, _run, mcp
+from fastmcp import FastMCP
+
+from ._app import _STATE_CHANGING, _run
 from .common import build_config
 from .ssh import run_hmc_cli
 
@@ -17,7 +19,7 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     return _run(lambda: run_hmc_cli(cmd, config))
 
 
-async def configure_arbitrary_command_tool(enabled: bool) -> None:
+async def configure_arbitrary_command_tool(enabled: bool, mcp: FastMCP) -> None:
     """Make escape-hatch registration match the requested capability state."""
     registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
     if enabled and not registered:

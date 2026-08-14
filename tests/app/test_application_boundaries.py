@@ -27,14 +27,39 @@ class _ClientContext:
 def test_cli_import_does_not_register_mcp_tools():
     script = """
 import asyncio
-from hmc_mcp._app import mcp
-before = len(asyncio.run(mcp.list_tools()))
+from hmc_mcp._app import create_mcp
+before = create_mcp()
 import hmc_mcp.cli_lpars
 import hmc_mcp.cli_systems
-after = len(asyncio.run(mcp.list_tools()))
-raise SystemExit(0 if before == after == 0 else 1)
+after = create_mcp()
+counts = (len(asyncio.run(before.list_tools())), len(asyncio.run(after.list_tools())))
+raise SystemExit(0 if before is not after and counts == (0, 0) else 1)
 """
     subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_domain_import_does_not_register_tools_on_base_application():
+    script = """
+import asyncio
+from hmc_mcp._app import create_mcp
+application = create_mcp()
+import hmc_mcp.server_lpars
+raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_create_mcp_returns_independent_complete_applications():
+    import asyncio
+
+    from hmc_mcp.server import create_mcp
+
+    first = create_mcp()
+    second = create_mcp()
+
+    assert first is not second
+    assert len(asyncio.run(first.list_tools())) == 111
+    assert len(asyncio.run(second.list_tools())) == 111
 
 
 def test_operations_do_not_import_application_modules():

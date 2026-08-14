@@ -330,7 +330,9 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
             break
 
     # 8. VIOS — capture UUID and numeric PartitionID scoped to our managed system
-    st, data = await call(client, "hmc_list_vios", system_name_or_uuid=context.system_name)
+    st, data = await call(
+        client, "hmc_list_vios", system_name_or_uuid=context.system_name
+    )
     record(state, 0, "hmc_list_vios (baseline)", st, data)
     if st == "PASS":
         for e in _entries(data):
@@ -410,7 +412,9 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     if st == "PASS" and isinstance(data, dict) and not context.lp3_uuid:
         context.lp3_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_list_vios", system_name_or_uuid=context.system_name)
+    st, data = await call(
+        client, "hmc_list_vios", system_name_or_uuid=context.system_name
+    )
     record(state, 1, "hmc_list_vios", st, data)
     if st == "PASS" and not context.vios_uuid:
         for e in _entries(data):
@@ -812,7 +816,9 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
     if st == "PASS" and isinstance(data, dict):
         context.scratch_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.scratch_name)
+    st, data = await call(
+        client, "hmc_get_lpar", lpar_name_or_uuid=context.scratch_name
+    )
     record(state, 8, "hmc_get_lpar (confirm created)", st, data)
     if st == "PASS" and isinstance(data, dict) and not context.scratch_uuid:
         context.scratch_uuid = data.get("uuid") or data.get("UUID")
@@ -1897,7 +1903,7 @@ async def main(
     if subtask_filter is not None:
         _restore_ctx_from_results(state, results_path)
 
-    await configure_arbitrary_command_tool(True)
+    await configure_arbitrary_command_tool(True, mcp)
     async with Client(mcp) as client:
         tasks = (
             [subtask_filter] if subtask_filter is not None else sorted(SUBTASKS.keys())

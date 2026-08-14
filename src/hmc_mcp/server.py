@@ -27,8 +27,8 @@ Addressing:
     HMC command.
 
 This module is a thin aggregator: the tool handlers live in domain
-submodules (``server_lpars``, ``server_storage``, ...) that register
-themselves on the shared FastMCP instance in ``._app`` when imported here.
+submodules (``server_lpars``, ``server_storage``, ...). ``create_mcp``
+explicitly registers each domain on a fresh application instance.
 """
 
 from __future__ import annotations
@@ -37,10 +37,32 @@ import asyncio
 import ipaddress
 import socket
 
+from fastmcp import FastMCP
+
 from ._app import (
     DESTRUCTIVE_TOOLS as DESTRUCTIVE_TOOLS,
     READ_ONLY_TOOLS as READ_ONLY_TOOLS,
-    mcp as mcp,
+    create_mcp as _create_base_mcp,
+)
+from . import (
+    server_adapters,
+    server_capacity,
+    server_composite,
+    server_jobs,
+    server_lpar_config,
+    server_lpars,
+    server_lpm,
+    server_metrics,
+    server_network,
+    server_profiles,
+    server_provision,
+    server_storage,
+    server_system_resources,
+    server_systems,
+    server_templates,
+    server_updates,
+    server_users,
+    server_vios,
 )
 
 from .server_systems import (
@@ -196,10 +218,42 @@ from .server_provision import (
     hmc_provision_lpar as hmc_provision_lpar,
 )
 
+TOOL_MODULES = (
+    server_systems,
+    server_capacity,
+    server_jobs,
+    server_lpars,
+    server_vios,
+    server_adapters,
+    server_storage,
+    server_network,
+    server_lpm,
+    server_templates,
+    server_metrics,
+    server_users,
+    server_updates,
+    server_profiles,
+    server_lpar_config,
+    server_system_resources,
+    server_composite,
+    server_provision,
+)
+
+
+def create_mcp() -> FastMCP:
+    """Compose every domain into a fresh, complete MCP application."""
+    application = _create_base_mcp()
+    for module in TOOL_MODULES:
+        module.register_tools(application)
+    return application
+
+
+mcp = create_mcp()
+
 
 def main_stdio(enable_arbitrary_command: bool = False) -> None:
     """Start the fully composed MCP server over stdio."""
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command))
+    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
     mcp.run()
 
 
@@ -217,7 +271,7 @@ def main_http(
             "(including user administration). Refusing to start. Explicitly "
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command))
+    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
     mcp.run(transport="streamable-http", host=host, port=port)
 
 

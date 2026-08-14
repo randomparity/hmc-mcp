@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
 from ._app import (
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .common import client_from_env
@@ -18,7 +19,10 @@ from .operations_templates import (
 )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
     """List all partition templates in the HMC template library."""
 
@@ -29,7 +33,7 @@ def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, A
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_partition_template(
     template_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -46,7 +50,7 @@ def hmc_get_partition_template(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_deploy_partition_template(
     draft_template_uuid: str,
     target_system_name_or_uuid: str,

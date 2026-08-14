@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .common import client_from_env
@@ -27,7 +28,10 @@ from .documents import (
 )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_list_users(
     user_type: UserType = "all",
     profile: str | None = None,
@@ -46,7 +50,7 @@ def hmc_list_users(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_user(
     name: str,
     profile: str | None = None,
@@ -65,7 +69,7 @@ def hmc_get_user(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_user(
     name: str,
     taskrole: TaskRole,
@@ -98,7 +102,7 @@ def hmc_create_user(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_modify_user(
     name: str,
     taskrole: TaskRole | None = None,
@@ -128,7 +132,7 @@ def hmc_modify_user(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_user(name: str, profile: str | None = None) -> str:
     """Delete an HMC user account by username.
 
@@ -145,7 +149,7 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_password_policies(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -158,7 +162,7 @@ def hmc_list_password_policies(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_password_policy_status(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -171,7 +175,7 @@ def hmc_list_password_policy_status(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_password_policy(
     policy_name: str,
     settings: PasswordPolicySettings = PASSWORD_POLICY_CREATION_DEFAULTS,
@@ -197,7 +201,7 @@ def hmc_create_password_policy(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_modify_password_policy(
     policy_name: str,
     settings: PasswordPolicySettings = PasswordPolicySettings(),
@@ -223,7 +227,7 @@ def hmc_modify_password_policy(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> str:
     """Delete an HMC password policy by name.
 
@@ -240,7 +244,7 @@ def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> 
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
     """Get the current HMC LDAP server configuration.
 
@@ -257,7 +261,7 @@ def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_configure_ldap(
     server_url: str,
     base_dn: str | None = None,
@@ -301,7 +305,7 @@ def hmc_configure_ldap(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_remove_ldap_config(
     resource: LdapRemovalResource, profile: str | None = None
 ) -> str:

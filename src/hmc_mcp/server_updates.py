@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any, Literal
 
 from ._app import (
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .common import client_from_env, resolve_system_uuid, resolve_vios_uuid
@@ -32,7 +33,10 @@ async def _update_op(
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-@mcp.tool
+tool, register_tools = tool_module()
+
+
+@tool
 def hmc_update_console_software(
     console_uuid: str,
     repository: RepositorySource,
@@ -103,7 +107,7 @@ def _check_ptf_error(exc: HMCError) -> None:
             ) from exc
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_available_hmc_ptfs(
     console_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -127,7 +131,7 @@ def hmc_get_available_hmc_ptfs(
         raise
 
 
-@mcp.tool
+@tool
 def hmc_vios_update(
     vios_name_or_uuid: str,
     repository: RepositorySource,
@@ -175,7 +179,7 @@ def hmc_vios_update(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_update_firmware(
     system_name_or_uuid: str,
     repository: RepositorySource,

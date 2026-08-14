@@ -54,8 +54,9 @@ class _ScriptedClient:
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
-    async def configure(enabled: bool) -> None:
+    async def configure(enabled: bool, application) -> None:
         assert enabled is True
+        assert application is runner.mcp
         return None
 
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
@@ -344,7 +345,10 @@ async def test_lpar_property_workflow_restores_description(monkeypatch):
         for tool, kwargs in calls
         if tool == "hmc_set_lpar_description"
     ]
-    assert descriptions == ["MCP live-test probe R2 safe to clear", "original description"]
+    assert descriptions == [
+        "MCP live-test probe R2 safe to clear",
+        "original description",
+    ]
     proc_set = next(
         kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat"
     )
@@ -367,14 +371,18 @@ async def test_final_restore_replays_baseline_and_audits(monkeypatch):
 
     await runner.restore_lpar_baseline(None, state)
 
-    assert next(
-        kwargs
-        for tool, kwargs in calls
-        if tool == "hmc_set_lpar_description"
-    )["description"] == "baseline"
-    assert next(
-        kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat"
-    )["mode"] == "POWER9"
+    assert (
+        next(kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_description")[
+            "description"
+        ]
+        == "baseline"
+    )
+    assert (
+        next(kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat")[
+            "mode"
+        ]
+        == "POWER9"
+    )
     assert [tool for tool, _ in calls][-2:] == [
         "hmc_run_command",
         "hmc_lpar_summary",

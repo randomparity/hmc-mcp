@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .common import client_from_env
@@ -32,7 +33,10 @@ from .operations_storage import (
 )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_list_volume_groups(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -51,7 +55,7 @@ def hmc_list_volume_groups(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_volume_group(
     vios_name_or_uuid: str,
     name: str,
@@ -76,7 +80,7 @@ def hmc_create_volume_group(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -102,7 +106,7 @@ def hmc_create_virtual_disk(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_map_storage_to_lpar(
     vios_name_or_uuid: str,
     storage_name: str,
@@ -139,7 +143,7 @@ def hmc_map_storage_to_lpar(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, size_mb: int, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -160,7 +164,7 @@ def hmc_create_media_repository(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -185,7 +189,7 @@ def hmc_create_optical_media(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> str:
@@ -205,7 +209,7 @@ def hmc_delete_media_repository(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
     """List Clusters (sets of VIOS nodes sharing a storage pool)."""
 
@@ -216,7 +220,7 @@ def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_shared_storage_pools(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -229,7 +233,7 @@ def hmc_list_shared_storage_pools(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_get_shared_storage_pool(
     ssp_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -242,7 +246,7 @@ def hmc_get_shared_storage_pool(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_logical_unit(
     cluster_uuid: str,
     lu_name: str,
@@ -287,7 +291,7 @@ def hmc_create_logical_unit(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_logical_unit(
     cluster_uuid: str,
     lu_udid: str,

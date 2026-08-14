@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .common import build_config, client_from_env
@@ -30,7 +31,10 @@ from .operations_ssh_network import (
 )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_list_virtual_switches(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -49,7 +53,7 @@ def hmc_list_virtual_switches(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_virtual_networks(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -66,7 +70,7 @@ def hmc_list_virtual_networks(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_create_virtual_network(
     system_name_or_uuid: str,
     name: str,
@@ -93,7 +97,7 @@ def hmc_create_virtual_network(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_virtual_network(
     system_name_or_uuid: str, network_uuid: str, profile: str | None = None
 ) -> str:
@@ -114,7 +118,7 @@ def hmc_delete_virtual_network(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_network_bridges(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -131,7 +135,7 @@ def hmc_list_network_bridges(
     return _run(_go)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_fc_ports(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -158,7 +162,7 @@ def hmc_list_fc_ports(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_sea_adapters(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -185,7 +189,7 @@ def hmc_list_sea_adapters(
     )
 
 
-@mcp.tool
+@tool
 def hmc_set_sriov_adapter_mode(
     system_name_or_uuid: str,
     adapter_id: str,
@@ -220,7 +224,7 @@ def hmc_set_sriov_adapter_mode(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_vnics(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -245,7 +249,7 @@ def hmc_list_vnics(
     )
 
 
-@mcp.tool
+@tool
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -298,7 +302,7 @@ def hmc_add_vnic(
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_remove_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

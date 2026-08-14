@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
-from ._app import _run, mcp
+from .tool_registry import tool_module
+
+from ._app import _run
 from .common import client_from_env
 from .documents import LparResources, PartitionType
-from .operations_provision import ProvisionNetwork, ProvisionResult, ProvisionStorage, provision_lpar
+from .operations_provision import (
+    ProvisionNetwork,
+    ProvisionResult,
+    ProvisionStorage,
+    provision_lpar,
+)
 
 
-@mcp.tool
+tool, register_tools = tool_module()
+
+
+@tool
 def hmc_provision_lpar(
     system_name_or_uuid: str,
     name: str,

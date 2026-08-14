@@ -1,9 +1,8 @@
 """Shared app state and entry points for the hmc-mcp server.
 
-Holds the single :class:`FastMCP` instance (``mcp``) that every domain
-tool module registers itself on via ``@mcp.tool``, the read-only /
-destructive capability annotations and the frozensets that document them,
-and the small sync-run / SSH-passthrough helpers used by the tool bodies.
+Builds empty :class:`FastMCP` instances for explicit composition, defines
+the capability annotations and frozensets that document them, and provides
+the small sync-run / SSH-passthrough helpers used by tool bodies.
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
@@ -14,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Coroutine
+from functools import partial
 from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
@@ -25,7 +25,8 @@ from .ssh_selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
 
-mcp = FastMCP(
+_new_mcp = partial(
+    FastMCP,
     name="hmc-mcp",
     instructions=(
         "Tools for querying and operating IBM Power systems via the HMC "
@@ -96,10 +97,16 @@ mcp = FastMCP(
     ),
 )
 
+
+def create_mcp() -> FastMCP:
+    """Create an empty MCP application for explicit domain composition."""
+    return _new_mcp()
+
+
 # Tool capability annotations. MCP clients and gateways use these to separate
 # read-only, state-changing, and destructive tools (e.g. to auto-approve the
-# first, warn before the last). Tools are tagged inline on their @mcp.tool
-# decorator with _READ_ONLY or _DESTRUCTIVE; everything else is state-changing
+# first, warn before the last). Tools are tagged inline on their @tool
+# collector with _READ_ONLY or _DESTRUCTIVE; everything else is state-changing
 # and intentionally untagged. tests/test_capabilities.py asserts the live tool
 # registry matches the documented READ_ONLY_TOOLS / DESTRUCTIVE_TOOLS sets, so
 # a new tool must be placed in exactly one category there and tagged here.

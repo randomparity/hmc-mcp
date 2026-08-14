@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 import re
 import shlex
 from collections.abc import Callable
@@ -11,7 +13,6 @@ from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
-    mcp,
 )
 
 from .errors import HMCError
@@ -33,7 +34,10 @@ from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
 
 
-@mcp.tool
+tool, register_tools = tool_module()
+
+
+@tool
 def hmc_create_vios(
     system_name_or_uuid: str,
     name: str,
@@ -58,7 +62,7 @@ def hmc_create_vios(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
     """Delete (destroy) a VIOS partition by name or UUID.
 
@@ -94,7 +98,7 @@ def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_install_vios(
     vios_name_or_uuid: str,
     nim_ip: str,
@@ -139,7 +143,7 @@ def hmc_install_vios(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_install_lpar_os(
     lpar_name_or_uuid: str,
     nim_ip: str,
@@ -223,7 +227,7 @@ async def _run_vios_backup_command(
     return await run_hmc_cli(build_command(vios_uuid), build_config(profile=profile))
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_vios_backups(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, str]]:
@@ -245,7 +249,7 @@ def hmc_list_vios_backups(
     return _parse_lsviosbackup_output(output)
 
 
-@mcp.tool
+@tool
 def hmc_backup_vios(
     vios_name_or_uuid: str,
     backup_type: BackupType = "vios",
@@ -283,7 +287,7 @@ def hmc_backup_vios(
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_restore_vios(
     vios_name_or_uuid: str, backup_name: str, profile: str | None = None
 ) -> str:
@@ -312,7 +316,7 @@ def hmc_restore_vios(
     )
 
 
-@mcp.tool
+@tool
 def hmc_power_on_vios(
     vios_name_or_uuid: str,
     wait: bool = False,
@@ -340,7 +344,7 @@ def hmc_power_on_vios(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_vios(
     vios_name_or_uuid: str,
     immediate: bool = False,

@@ -163,7 +163,7 @@ def test_stdio_entrypoint_configures_arbitrary_command(enabled):
     ):
         server_app.main_stdio(enable_arbitrary_command=enabled)
 
-    configure.assert_called_once_with(enabled)
+    configure.assert_called_once_with(enabled, server_app.mcp)
     run.assert_called_once_with()
 
 
@@ -179,7 +179,7 @@ def test_http_entrypoint_configures_arbitrary_command(enabled):
             host="127.0.0.1", port=9000, enable_arbitrary_command=enabled
         )
 
-    configure.assert_called_once_with(enabled)
+    configure.assert_called_once_with(enabled, server_app.mcp)
     run.assert_called_once_with(
         transport="streamable-http", host="127.0.0.1", port=9000
     )

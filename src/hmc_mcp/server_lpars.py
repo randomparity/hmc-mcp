@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
 from ._app import (
     _DESTRUCTIVE,
     _run,
-    mcp,
 )
 from .errors import HMCError
 from .common import client_from_env, resolve_lpar_uuid
@@ -44,7 +45,10 @@ def _check_lpar_write_error(exc: HMCError) -> None:
         ) from exc
 
 
-@mcp.tool
+tool, register_tools = tool_module()
+
+
+@tool
 def hmc_create_lpar(
     system_name_or_uuid: str,
     name: str,
@@ -120,7 +124,7 @@ def hmc_create_lpar(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_modify_lpar(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -153,7 +157,7 @@ def hmc_modify_lpar(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_rename_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -181,7 +185,7 @@ def hmc_rename_lpar(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_dlpar_proc(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -213,7 +217,7 @@ def hmc_dlpar_proc(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -242,7 +246,7 @@ def hmc_dlpar_mem(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_delete_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -283,7 +287,7 @@ def hmc_delete_lpar(
     return _run(_go)
 
 
-@mcp.tool
+@tool
 def hmc_power_on_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
@@ -325,7 +329,7 @@ def hmc_power_on_lpar(
     return _run(_go)
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_power_off_lpar(
     lpar_name_or_uuid: str,
     immediate: bool = False,

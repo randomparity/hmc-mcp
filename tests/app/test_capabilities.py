@@ -75,10 +75,10 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 
     try:
-        asyncio.run(server_command.configure_arbitrary_command_tool(False))
-        asyncio.run(server_command.configure_arbitrary_command_tool(False))
-        asyncio.run(server_command.configure_arbitrary_command_tool(True))
-        asyncio.run(server_command.configure_arbitrary_command_tool(True))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
 
         tools = [
             tool
@@ -88,11 +88,11 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
-        asyncio.run(server_command.configure_arbitrary_command_tool(False))
-        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
         assert "hmc_run_command" not in _tools_by_name()
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
 
 
 def test_closed_vocab_enum_matches_runtime_constant():

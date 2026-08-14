@@ -1,12 +1,12 @@
-"""MCP tools for LPAR profile backup/restore/sync and I/O slot assignment.
-"""
+"""MCP tools for LPAR profile backup/restore/sync and I/O slot assignment."""
 
 from __future__ import annotations
+
+from .tool_registry import tool_module
 
 from ._app import (
     _DESTRUCTIVE,
     _ssh_with_client,
-    mcp,
 )
 
 from .ssh_commands import (
@@ -18,9 +18,15 @@ from .ssh_commands import (
 
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
-@mcp.tool(annotations=_DESTRUCTIVE)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_DESTRUCTIVE)
 def hmc_backup_lpar_profiles(
-    system_name_or_uuid: str, file_path: str, force: bool = False, profile: str | None = None
+    system_name_or_uuid: str,
+    file_path: str,
+    force: bool = False,
+    profile: str | None = None,
 ) -> str:
     """Backup all LPAR profiles on a Power system via the HMC CLI.
 
@@ -58,8 +64,10 @@ def hmc_backup_lpar_profiles(
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str, profile: str | None = None) -> str:
+@tool(annotations=_DESTRUCTIVE)
+def hmc_restore_lpar_profiles(
+    system_name_or_uuid: str, file_path: str, profile: str | None = None
+) -> str:
     """Restore LPAR profiles from a backup file via the HMC CLI.
 
     Runs ``rstprofdata -m <system_name> -f <file_path>`` on the HMC via SSH
@@ -81,7 +89,7 @@ def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str, profile:
         profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
-        The raw HMC CLI output.    """
+        The raw HMC CLI output."""
     return _ssh_with_client(
         lambda config, system_name, _: restore_lpar_profiles(
             config, system_name, file_path
@@ -91,8 +99,10 @@ def hmc_restore_lpar_profiles(system_name_or_uuid: str, file_path: str, profile:
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None) -> str:
+@tool(annotations=_DESTRUCTIVE)
+def hmc_sync_lpar_profile(
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+) -> str:
     """Sync an LPAR's running configuration back to its current profile.
 
     Runs ``chsyscfg -r lpar -m <system_name> -i "name=<lpar_name>,sync_curr_profile=1"``
@@ -115,7 +125,7 @@ def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str, prof
         profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
-        The raw HMC CLI output.    """
+        The raw HMC CLI output."""
     return _ssh_with_client(
         lambda config, system_name, lpar_name: sync_lpar_profile(
             config, system_name, lpar_name
@@ -126,9 +136,13 @@ def hmc_sync_lpar_profile(system_name_or_uuid: str, lpar_name_or_uuid: str, prof
     )
 
 
-@mcp.tool
+@tool
 def hmc_assign_profile_io_slot(
-    system_name_or_uuid: str, lpar_name_or_uuid: str, profile_name: str, drc_index: str, profile: str | None = None
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    profile: str | None = None,
 ) -> str:
     """Add a physical I/O slot DRC index to an LPAR's profile.
 
@@ -151,7 +165,7 @@ def hmc_assign_profile_io_slot(
         profile: optional TOML profile name; when omitted the env-default HMC is used.
 
     Returns:
-        The raw HMC CLI output.    """
+        The raw HMC CLI output."""
     return _ssh_with_client(
         lambda config, system_name, lpar_name: assign_profile_io_slot(
             config, system_name, lpar_name, profile_name, drc_index

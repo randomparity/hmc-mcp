@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from .tool_registry import tool_module
+
 from typing import Any
 
-from ._app import _DESTRUCTIVE, _READ_ONLY, _ssh_with_client, mcp
+from ._app import _DESTRUCTIVE, _READ_ONLY, _ssh_with_client
 from .ssh_commands import (
     PciClass,
     get_proc_compat_modes,
@@ -14,7 +16,10 @@ from .ssh_commands import (
 )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+tool, register_tools = tool_module()
+
+
+@tool(annotations=_READ_ONLY)
 def hmc_get_proc_compat_modes(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[str]:
@@ -26,7 +31,7 @@ def hmc_get_proc_compat_modes(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_io_slots(
     system_name_or_uuid: str,
     pci_class: PciClass = "all",
@@ -40,7 +45,7 @@ def hmc_list_io_slots(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@tool(annotations=_READ_ONLY)
 def hmc_list_memory_pools(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -52,7 +57,7 @@ def hmc_list_memory_pools(
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
+@tool(annotations=_DESTRUCTIVE)
 def hmc_remove_memory_pool(
     system_name_or_uuid: str, pool_name: str, profile: str | None = None
 ) -> str:
