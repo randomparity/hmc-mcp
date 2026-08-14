@@ -22,7 +22,7 @@ from hmc_mcp.errors import HMCError
         (translate_virtual_network_create_error, 406, "virtual network create"),
     ],
 )
-def test_shared_error_translation_suppresses_body_and_chains_cause(
+def test_shared_error_translation_preserves_body_and_chains_cause(
     translator, status, message
 ):
     original = HMCError("raw failure", status, "sensitive response body")
@@ -34,5 +34,6 @@ def test_shared_error_translation_suppresses_body_and_chains_cause(
         asyncio.run(run_with_error_translation(fail, translator))
 
     assert exc_info.value.status_code == status
-    assert exc_info.value.body is None
+    assert exc_info.value.body == "sensitive response body"
+    assert "sensitive response body" in str(exc_info.value)
     assert exc_info.value.__cause__ is original

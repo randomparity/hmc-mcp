@@ -168,6 +168,8 @@ def test_modify_lpar_http_406_actionable(monkeypatch, mock_hmc):
     msg = str(exc_info.value)
     assert "406" in msg
     assert "HMC_SCHEMA_VERSION" in msg or "schema" in msg.lower()
+    assert exc_info.value.body == "<error>Not Acceptable</error>"
+    assert "Not Acceptable" in msg
 
 
 # ---------------------------------------------------------------------- #

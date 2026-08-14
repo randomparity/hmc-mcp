@@ -142,6 +142,8 @@ async def test_run_hmc_command_nonzero_exit_raises_hmcclierror():
 
     # HMCCLIError subclasses HMCError so REST and CLI failures share one type.
     assert isinstance(exc_info.value, HMCError)
+    assert "lssyscfg -r sys" in str(exc_info.value)
+    assert "exit status 1" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

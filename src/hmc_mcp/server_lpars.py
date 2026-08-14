@@ -33,7 +33,7 @@ from .operations_lpar import (
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
-    """Translate LPAR write rejection without its response body."""
+    """Translate an LPAR write rejection while preserving its response body."""
     if exc.status_code == 406:
         raise HMCError(
             "The HMC rejected the LPAR write request (Not Acceptable). "
@@ -42,6 +42,7 @@ def _check_lpar_write_error(exc: HMCError) -> None:
             "(2) XML schema version mismatch — try setting "
             "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
             exc.status_code,
+            body=exc.body,
         ) from exc
 
 
