@@ -16,6 +16,26 @@ MANUAL_TEMPLATE_STAMP_WARNING = (
 )
 
 
+async def list_partition_templates(hmc: HMCClient) -> list[dict[str, Any]]:
+    """List templates with domain-specific HMC error translation."""
+    try:
+        return await hmc.list_partition_templates()
+    except HMCError as exc:
+        translate_template_error(exc)
+        raise
+
+
+async def get_partition_template(
+    hmc: HMCClient, template_uuid: str
+) -> dict[str, Any] | None:
+    """Fetch one template with domain-specific HMC error translation."""
+    try:
+        return await hmc.get_partition_template(template_uuid)
+    except HMCError as exc:
+        translate_template_error(exc)
+        raise
+
+
 async def deploy_partition_template(
     hmc: HMCClient,
     draft_template_uuid: str,

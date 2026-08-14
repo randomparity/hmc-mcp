@@ -15,20 +15,19 @@ from .cli_app import (
     console,
     templates_app,
 )
-from .error_translation import run_with_error_translation, translate_template_error
 from .jobs import validate_wait_timing
-from .operations_templates import deploy_partition_template
+from .operations_templates import (
+    deploy_partition_template,
+    get_partition_template,
+    list_partition_templates,
+)
 
 
 @templates_app.command("list")
 def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
     """List partition templates in the template library."""
 
-    templates = _with_client(
-        lambda hmc: run_with_error_translation(
-            hmc.list_partition_templates, translate_template_error
-        )
-    )
+    templates = _with_client(list_partition_templates)
 
     table = None
     if not as_json:
@@ -46,11 +45,7 @@ def templates_list(as_json: bool = typer.Option(False, "--json")) -> None:
 def templates_show(uuid: str = typer.Argument(..., help="Template UUID")) -> None:
     """Show one partition template."""
 
-    t = _with_client(
-        lambda hmc: run_with_error_translation(
-            lambda: hmc.get_partition_template(uuid), translate_template_error
-        )
-    )
+    t = _with_client(lambda hmc: get_partition_template(hmc, uuid))
 
     _print_json(t)
 

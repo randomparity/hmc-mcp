@@ -10,10 +10,12 @@ from ._app import (
     mcp,
 )
 
-from .errors import HMCError
-from .error_translation import translate_template_error
 from .common import client_from_env
-from .operations_templates import deploy_partition_template
+from .operations_templates import (
+    deploy_partition_template,
+    get_partition_template,
+    list_partition_templates,
+)
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -22,11 +24,7 @@ def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, A
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                return await hmc.list_partition_templates()
-            except HMCError as exc:
-                translate_template_error(exc)
-                raise
+            return await list_partition_templates(hmc)
 
     return _run(_go)
 
@@ -43,11 +41,7 @@ def hmc_get_partition_template(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            try:
-                return await hmc.get_partition_template(template_uuid)
-            except HMCError as exc:
-                translate_template_error(exc)
-                raise
+            return await get_partition_template(hmc, template_uuid)
 
     return _run(_go)
 
