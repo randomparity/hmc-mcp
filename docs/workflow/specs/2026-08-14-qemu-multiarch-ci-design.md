@@ -9,10 +9,11 @@ same repository under ppc64le userspace emulation. Artifact build/install work r
 
 ## Workflow
 
-The existing Python 3.11–3.14 job gains an explicit architecture value paired with exact runner
-labels. Every native arm runs `just verify`; the Python lifecycle drift job remains unchanged.
-The architecture dimension is deliberately independent of the Python support dimension: #161
-proves each architecture at the 3.11 floor, while #163 owns the complete Cartesian product.
+The native matrix contains exactly five entries: the existing amd64 coverage on Python
+3.11–3.14, all paired with `ubuntu-24.04`, plus one arm64 entry on Python 3.11 paired with
+`ubuntu-24.04-arm`. Every native entry runs `just verify`; the Python lifecycle drift job remains
+unchanged. Issue #161 does not create the full architecture-by-Python Cartesian product; #163 owns
+that expansion.
 
 The ppc64le job runs on `ubuntu-24.04`, installs only the ppc64le binfmt handler through
 `docker/setup-qemu-action`, and builds a digest-pinned Ubuntu 24.04 ppc64le verification image.
@@ -61,7 +62,10 @@ provide and are stated as residuals rather than silently claimed as covered.
 
 ## Verification
 
-Workflow tests prove exact runner labels, native architecture coverage, the separate bounded
-ppc64le job, action and image pins, ppc64le-only QEMU registration, the runtime architecture
-assertion, `just verify` delegation, absence of secrets/extra permissions, and explicit emulation
-limits. The repository guardrail remains `just verify`.
+Workflow tests prove the exact five-entry native matrix, the separate bounded ppc64le job, action
+and image pins, ppc64le-only QEMU registration, the runtime architecture assertion, and
+`just verify` delegation. Credential-boundary assertions require `persist-credentials: false`,
+exactly `contents: read` permissions, no `secrets.*` reference or token/credential environment or
+action input in the ppc64le job, and no GitHub token, SSH/cloud credential, Docker socket, or other
+host credential mount in its container invocation. Tests also require explicit emulation limits.
+The repository guardrail remains `just verify`.
