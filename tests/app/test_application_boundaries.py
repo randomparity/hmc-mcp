@@ -115,6 +115,22 @@ def test_fleet_health_cli_delegates_to_neutral_operation():
     assert '"failed_jobs": []' in result.stdout
 
 
+def test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable():
+    from hmc_mcp.operations_health import FleetHealthResult
+
+    client = object()
+    warning = "Recent job health is unavailable"
+    health = AsyncMock(return_value=FleetHealthResult((), (), (), (), (warning,)))
+    with (
+        patch("hmc_mcp.cli_systems.fleet_health", health),
+        patch("hmc_mcp.cli_systems._client", return_value=_ClientContext(client)),
+    ):
+        result = CliRunner().invoke(app, ["systems", "health"])
+    assert result.exit_code == 0
+    assert "No fleet health exceptions found" not in result.stdout
+    assert warning in result.stderr
+
+
 def test_capacity_clis_delegate_to_neutral_operations():
     client = object()
     report = AsyncMock(return_value=[])

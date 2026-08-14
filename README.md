@@ -191,6 +191,15 @@ Exposed tools:
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
 
+`hmc_fleet_health` and `systems health` return only exceptions across the whole
+estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
+RMC, and recent failed jobs. This is not equivalent to composing N
+`hmc_system_summary` calls or using `hmc_capacity_report`, which report per-system
+inventory and capacity rather than individual unhealthy resources. On HMCs that
+do not support global Job listing, the stable response keeps `failed_jobs` empty
+and includes a warning that recent-job health is unavailable; that warning must
+not be interpreted as a healthy job feed.
+
 **Mutating / lifecycle**
 
 | Tool                  | Description |

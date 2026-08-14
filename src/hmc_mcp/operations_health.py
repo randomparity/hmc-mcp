@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -137,6 +136,22 @@ async def _recent_failed_jobs(
     return _sort(failures), ()
 
 
+async def _system_inventory(
+    hmc: HMCClient, system_uuid: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    lpar_task = asyncio.create_task(hmc.list_logical_partitions(system_uuid))
+    vios_task = asyncio.create_task(hmc.list_vios(system_uuid))
+    tasks = (lpar_task, vios_task)
+    try:
+        await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    return lpar_task.result(), vios_task.result()
+
+
 async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
     """Return curated unhealthy resources from the configured HMC estate."""
     systems = await hmc.list_managed_systems()
@@ -163,10 +178,7 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
             except asyncio.QueueEmpty:
                 return
             try:
-                lpars, vioses = await asyncio.gather(
-                    hmc.list_logical_partitions(system_uuid),
-                    hmc.list_vios(system_uuid),
-                )
+                lpars, vioses = await _system_inventory(hmc, system_uuid)
                 lpar_exceptions.extend(
                     exception
                     for lpar in lpars
@@ -191,16 +203,19 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
                 queue.task_done()
 
     worker_count = min(_SYSTEM_WORKERS, len(systems))
+    worker_tasks = [
+        asyncio.create_task(inspect_systems()) for _ in range(worker_count)
+    ]
     job_task = asyncio.create_task(_recent_failed_jobs(hmc))
+    tasks = (*worker_tasks, job_task)
     try:
-        await asyncio.gather(*(inspect_systems() for _ in range(worker_count)))
-        failed_jobs, warnings = await job_task
+        await asyncio.gather(*tasks)
     except BaseException:
-        if not job_task.done():
-            job_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await job_task
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         raise
+    failed_jobs, warnings = job_task.result()
     return FleetHealthResult(
         _sort(system_exceptions),
         _sort(vios_exceptions),

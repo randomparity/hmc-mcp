@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from unittest.mock import AsyncMock
 
 import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import FAILED_JOB_STATUSES
+from hmc_mcp import operations_health
 from hmc_mcp.operations_health import FleetHealthResult, fleet_health
 
 
@@ -198,6 +200,68 @@ async def test_core_inventory_error_propagates_without_partial_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_core_inventory_error_cancels_sibling_reads() -> None:
+    client = _healthy_client()
+    client.list_managed_systems.return_value = [
+        _entry("sys-fail", SystemName="failing", State="operating"),
+        _entry("sys-block", SystemName="blocked", State="operating"),
+    ]
+    sibling_started = asyncio.Event()
+    sibling_cancelled = asyncio.Event()
+    error = HMCError("LPAR inventory failed", 500, "failure")
+
+    async def lpars(system_uuid: str) -> list[dict]:
+        if system_uuid == "sys-fail":
+            await sibling_started.wait()
+            raise error
+        sibling_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            sibling_cancelled.set()
+            raise
+        return []
+
+    client.list_logical_partitions.side_effect = lpars
+
+    with pytest.raises(HMCError) as exc_info:
+        await fleet_health(client)
+
+    assert exc_info.value is error
+    assert sibling_cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_core_inventory_error_cancels_same_system_sibling_read() -> None:
+    client = _healthy_client()
+    sibling_started = asyncio.Event()
+    sibling_cancelled = asyncio.Event()
+    error = HMCError("LPAR inventory failed", 500, "failure")
+
+    async def lpars(_system_uuid: str) -> list[dict]:
+        await sibling_started.wait()
+        raise error
+
+    async def vios(_system_uuid: str) -> list[dict]:
+        sibling_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            sibling_cancelled.set()
+            raise
+        return []
+
+    client.list_logical_partitions.side_effect = lpars
+    client.list_vios.side_effect = vios
+
+    with pytest.raises(HMCError) as exc_info:
+        await fleet_health(client)
+
+    assert exc_info.value is error
+    assert sibling_cancelled.is_set()
+
+
+@pytest.mark.asyncio
 async def test_unsupported_job_feed_preserves_shape_with_warning() -> None:
     client = _healthy_client()
     client.list_uom.side_effect = HMCError(
@@ -248,13 +312,23 @@ async def test_malformed_system_identity_fails_before_child_reads(uuid: object) 
 
 
 @pytest.mark.asyncio
-async def test_system_workers_and_active_inspections_are_bounded() -> None:
+async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) -> None:
     active = 0
     maximum = 0
     release = asyncio.Event()
+    calls: list[str] = []
+    scheduled_coroutines: list[str] = []
+    create_task = asyncio.create_task
+
+    def recording_create_task(coro):
+        scheduled_coroutines.append(coro.cr_code.co_name)
+        return create_task(coro)
+
+    monkeypatch.setattr(operations_health.asyncio, "create_task", recording_create_task)
 
     class RecordingClient:
         async def list_managed_systems(self) -> list[dict]:
+            calls.append("list_managed_systems")
             return [
                 _entry(f"sys-{index}", SystemName=f"system-{index}", State="operating")
                 for index in range(30)
@@ -262,6 +336,7 @@ async def test_system_workers_and_active_inspections_are_bounded() -> None:
 
         async def list_logical_partitions(self, _uuid: str) -> list[dict]:
             nonlocal active, maximum
+            calls.append("list_logical_partitions")
             active += 1
             maximum = max(maximum, active)
             if maximum == 8:
@@ -271,10 +346,12 @@ async def test_system_workers_and_active_inspections_are_bounded() -> None:
             return []
 
         async def list_vios(self, _uuid: str) -> list[dict]:
+            calls.append("list_vios")
             await release.wait()
             return []
 
         async def list_uom(self, resource_type: str) -> list[dict]:
+            calls.append("list_uom")
             assert resource_type == "Job"
             return []
 
@@ -282,3 +359,12 @@ async def test_system_workers_and_active_inspections_are_bounded() -> None:
 
     assert result == FleetHealthResult((), (), (), (), ())
     assert maximum == 8
+    assert scheduled_coroutines.count("inspect_systems") == 8
+    assert Counter(calls) == Counter(
+        {
+            "list_managed_systems": 1,
+            "list_logical_partitions": 30,
+            "list_vios": 30,
+            "list_uom": 1,
+        }
+    )

@@ -37,7 +37,7 @@ def systems_health(
     if as_json:
         _print_json(result)
         return
-    if not any(result[key] for key in ("systems", "vios", "lpars", "failed_jobs")):
+    if not any(result.values()):
         console.print("[green]No fleet health exceptions found[/green]")
     for category in ("systems", "vios", "lpars", "failed_jobs"):
         entries = result[category]

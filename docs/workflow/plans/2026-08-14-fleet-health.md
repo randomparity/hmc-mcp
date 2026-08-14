@@ -75,13 +75,14 @@ executable tests.
 `tests/app/test_application_boundaries.py`; create `tests/system/test_health_tools.py`.
 
 **Interfaces:** consume `FleetHealthResult` and `fleet_health`. Export
-`hmc_fleet_health(profile: str | None = None) -> FleetHealthResult`. Register
+`hmc_fleet_health(profile: str | None = None) -> dict[str, Any]`, serialized from the operation's
+`FleetHealthResult`. Register
 `systems health --json` and human table output.
 
 1. Add failing capability and boundary tests asserting the registered name, `_READ_ONLY`
    annotation, server module ownership, and incremented independent-app tool count. Add an MCP
    handler test that invokes `hmc_fleet_health` with a profile and proves client-profile forwarding,
-   exactly one awaited call to the shared operation, and an unchanged `FleetHealthResult` return.
+   exactly one awaited call to the shared operation, and the exact serialized five-key mapping.
    Add CLI tests asserting delegation, JSON arrays for every collection, degraded category output,
    and warning output. Run the named test files; expect failures for the missing surface.
 2. Implement `server_health.py`, compose and re-export it in `server.py`, add the tool to

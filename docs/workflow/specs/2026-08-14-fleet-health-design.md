@@ -10,7 +10,9 @@ Broad documentation work from #145 and migration validation from #151 are exclud
 
 ## Public contract
 
-`hmc_fleet_health(profile: str | None = None) -> FleetHealthResult` returns a frozen dataclass:
+The presentation-neutral `fleet_health` operation returns a frozen `FleetHealthResult` dataclass.
+`hmc_fleet_health(profile: str | None = None) -> dict[str, Any]` serializes that result as a
+five-key mapping at the MCP boundary:
 
 - `systems`: `{uuid, name, state}` entries whose normalized state is not `operating`;
 - `vios`: `{uuid, name, state, system_uuid, system_name}` entries whose normalized partition
@@ -23,7 +25,8 @@ Broad documentation work from #145 and migration validation from #151 are exclud
 
 Missing or blank state is unhealthy and rendered as `unknown`, because silence must not look
 healthy. Lists are deterministically sorted by name then UUID. A healthy supported estate returns
-five empty tuples, which FastMCP serializes as JSON arrays rather than nulls.
+five empty tuples in the operation result, serialized as JSON arrays rather than nulls at the MCP
+boundary.
 
 ## Components and data flow
 
