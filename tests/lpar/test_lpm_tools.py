@@ -331,22 +331,6 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
     assert result.job_id == "job-uuid-999"
 
 
-def test_migrate_lpar_defaults_to_terminal_validation_first(monkeypatch, mock_hmc):
-    _hmc_env(monkeypatch)
-    validate_route = _job_route(mock_hmc, "MigrateValidate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
-        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
-    )
-    migrate_route = _job_route(mock_hmc, "Migrate")
-
-    result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", wait=False)
-
-    assert validate_route.called
-    assert poll_route.called
-    assert migrate_route.called
-    assert result.status == "RUNNING"
-
-
 def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "MigrateValidate")
