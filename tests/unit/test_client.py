@@ -89,10 +89,12 @@ async def test_logon_failure(mock_hmc):
     mock_hmc.put("/rest/api/web/Logon").mock(
         return_value=httpx.Response(401, text="<error>bad credentials</error>")
     )
+    client = HMCClient(make_config())
     with pytest.raises(HMCError) as exc_info:
-        async with HMCClient(make_config()):
+        async with client:
             pass
     assert exc_info.value.status_code == 401
+    assert client._http.is_closed
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmc_mcp.ssh import validate_agent_id
+from hmc_mcp.config import validate_agent_id
 
 
 # ---------------------------------------------------------------------------

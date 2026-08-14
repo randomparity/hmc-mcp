@@ -14,7 +14,7 @@ from ._app import (
     _run,
     mcp,
 )
-from .common import client_from_env, is_uuid
+from .common import build_config, client_from_env, is_uuid
 from .config import HMCConfig, resolve_config_path
 
 from .ssh import run_hmc_cli
@@ -35,7 +35,7 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
 
     Reference: https://www.ibm.com/docs/en/power10/7063-CR1?topic=hmc-commands
     """
-    config = client_from_env(profile).config
+    config = build_config(profile=profile)
     return _run(lambda: run_hmc_cli(cmd, config))
 
 

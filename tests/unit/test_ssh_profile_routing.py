@@ -100,10 +100,8 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
     # mock_hmc router handles REST resolution for system UUID
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
-    # Stub client_from_env to return a client backed by DEV_CONFIG when
-    # profile="dev" is supplied.
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
-        mock_cfe.return_value.config = DEV_CONFIG
+    # Stub config-only resolution for the selected profile.
+    with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             from hmc_mcp._app import _ssh_with_client
@@ -115,7 +113,7 @@ def test_ssh_with_client_profile_reaches_ssh(monkeypatch, mock_hmc):
                 profile="dev",
             )
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_config.assert_called_once_with(profile="dev")
     call_kwargs = mock_connect.call_args.kwargs
     assert call_kwargs["host"] == DEV_HOST
 
@@ -256,14 +254,14 @@ def test_hmc_run_command_profile_reaches_ssh(monkeypatch):
     """hmc_run_command(cmd, profile=...) routes SSH to the profile's HMC host."""
     from hmc_mcp.server import hmc_run_command
 
-    # server_system.py imports client_from_env from hmc_mcp.common
-    with patch("hmc_mcp.server_system.client_from_env") as mock_cfe:
-        mock_cfe.return_value.config = DEV_CONFIG
+    with patch(
+        "hmc_mcp.server_system.build_config", return_value=DEV_CONFIG
+    ) as mock_config:
         conn = _make_ssh_mock("output")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             hmc_run_command("lshmc -v", profile="dev")
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_config.assert_called_once_with(profile="dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST
 
 
@@ -271,14 +269,14 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
     from hmc_mcp.server import hmc_restore_vios
 
-    # server_vios.py imports client_from_env from hmc_mcp.common
-    with patch("hmc_mcp.server_vios.client_from_env") as mock_cfe:
-        mock_cfe.return_value.config = DEV_CONFIG
+    with patch(
+        "hmc_mcp.server_vios.build_config", return_value=DEV_CONFIG
+    ) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             hmc_restore_vios(SYSTEM_UUID, "backup.tar.gz", profile="dev")
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_config.assert_called_once_with(profile="dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST
 
 
@@ -288,13 +286,12 @@ def test_hmc_list_memory_pools_profile_reaches_ssh(monkeypatch, mock_hmc):
 
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
 
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
-        mock_cfe.return_value.config = DEV_CONFIG
+    with patch("hmc_mcp._app.build_config", return_value=DEV_CONFIG) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
             hmc_list_memory_pools(SYSTEM_NAME, profile="dev")
 
-    mock_cfe.assert_called_once_with("dev")
+    mock_config.assert_called_once_with(profile="dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST
 
 
@@ -309,9 +306,9 @@ def test_different_profiles_produce_independent_configs():
         configs_seen.append(kwargs["host"])
         raise Exception("abort after capture")  # abort the SSH connection attempt
 
-    with patch("hmc_mcp._app.client_from_env") as mock_cfe:
+    with patch("hmc_mcp._app.build_config") as mock_config:
         # First call: profile="dev" → DEV_CONFIG
-        mock_cfe.return_value.config = DEV_CONFIG
+        mock_config.return_value = DEV_CONFIG
         with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
             try:
                 from hmc_mcp._app import _ssh_with_client
@@ -325,7 +322,7 @@ def test_different_profiles_produce_independent_configs():
                 pass
 
         # Second call: profile="prod" → PROD_CONFIG
-        mock_cfe.return_value.config = PROD_CONFIG
+        mock_config.return_value = PROD_CONFIG
         with patch("hmc_mcp.ssh.asyncssh.connect", side_effect=capture_connect):
             try:
                 _ssh_with_client(

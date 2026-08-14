@@ -48,75 +48,6 @@ def validate_lpar_description(description: str) -> None:
         )
 
 
-def validate_agent_id(agent_id: str) -> None:
-    """Raise ``ValueError`` if *agent_id* is not a safe ownership token component.
-
-    Rules:
-    - Must be 1–64 printable ASCII characters (same base constraint as descriptions).
-    - Must not be the reserved value ``"hmc-mcp"`` — that is the default fallback used
-      when no agent_id is set.  An agent_id of ``"hmc-mcp"`` produces a token
-      indistinguishable from a pre-feature LPAR, defeating ownership attribution.
-    - No commas or ``=`` — they corrupt the HMC CLI ``-i`` parser when the agent_id
-      is embedded in the ownership token written via ``chsyscfg``.
-    - No square brackets — they would break the ``[hmc-mcp owner:…]`` token format.
-    - No forward slashes — the HMC REST API rejects ``X-Audit-Memento`` values
-      containing ``/`` (allowed pattern: ``[ a-zA-Z0-9_\\-+().,@:]{1,128}``); a
-      slash in the agent_id would produce a header value the HMC silently rejects.
-    - No colons — the audit memento is formatted as ``hmc-mcp:<agent_id>``; a colon
-      in the agent_id would produce an ambiguous ``hmc-mcp:a:b`` value, and colons
-      also break the ``[hmc-mcp owner:<agent_id> …]`` ownership token format.
-    - No spaces — a space in the agent_id would be embedded in the description token
-      and may corrupt the HMC CLI ``-i`` parser (same concern as for lpar_name).
-
-    Called from :class:`.config.HMCConfig` model validator so errors surface at
-    construction time, before any SSH call is made.
-    """
-    if not agent_id:
-        raise ValueError("agent_id must not be empty")
-    if agent_id == "hmc-mcp":
-        raise ValueError(
-            "agent_id 'hmc-mcp' is reserved — it is the default fallback used when no "
-            "agent_id is set and produces a token indistinguishable from a pre-feature LPAR; "
-            "choose a distinct identifier"
-        )
-    if len(agent_id) > 64:
-        raise ValueError(
-            f"agent_id is {len(agent_id)} characters; maximum is 64"
-        )
-    if not agent_id.isascii() or any(ord(c) < 0x20 or ord(c) == 0x7F for c in agent_id):
-        raise ValueError(
-            "agent_id contains non-ASCII or non-printable characters; "
-            "only printable ASCII is accepted"
-        )
-    if "," in agent_id:
-        raise ValueError(
-            "agent_id contains a comma; commas corrupt the HMC CLI -i parser"
-        )
-    if "=" in agent_id:
-        raise ValueError(
-            "agent_id contains '='; equals signs corrupt the HMC CLI -i parser"
-        )
-    if "[" in agent_id or "]" in agent_id:
-        raise ValueError(
-            "agent_id contains a square bracket; brackets break the ownership token format"
-        )
-    if "/" in agent_id:
-        raise ValueError(
-            "agent_id contains '/'; the HMC REST API rejects X-Audit-Memento values "
-            "containing '/' (allowed: [ a-zA-Z0-9_\\-+().,@:]{1,128})"
-        )
-    if ":" in agent_id:
-        raise ValueError(
-            "agent_id contains ':'; colons break the 'hmc-mcp:<agent_id>' audit "
-            "memento format and the 'owner:<agent_id>' ownership token format"
-        )
-    if " " in agent_id:
-        raise ValueError(
-            "agent_id contains a space; spaces would corrupt the ownership token "
-            "embedded in the chsyscfg -i parser"
-        )
-
-
 async def stamp_lpar_ownership(
     config: HMCConfig,
     system_name: str,
@@ -236,7 +167,7 @@ async def run_hmc_cli(cmd: str, config: HMCConfig | None = None) -> str:
 
     When *config* is supplied it is passed directly to :func:`run_hmc_command`,
     allowing callers to use a profile-selected config (built via
-    ``client_from_env(profile).config``) rather than the env-default config.
+    ``build_config(profile=profile)``) rather than the env-default config.
     """
     return await run_hmc_command(config if config is not None else HMCConfig(), cmd)
 

@@ -90,7 +90,11 @@ class HMCClient(
     # ------------------------------------------------------------------ #
 
     async def __aenter__(self) -> "HMCClient":
-        await self.logon()
+        try:
+            await self.logon()
+        except BaseException:
+            await self._http.aclose()
+            raise
         return self
 
     async def __aexit__(self, *exc_info) -> None:

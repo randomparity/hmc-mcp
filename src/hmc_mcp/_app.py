@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from .client import HMCClient
-from .common import client_from_env, is_uuid
+from .common import build_config, client_from_env, is_uuid
 from .config import HMCConfig
 from .ssh import _ssh_lpar_name, _ssh_system_name
 
@@ -384,7 +384,7 @@ def _ssh_with_client(
     """
 
     async def _go() -> _T:
-        config = client_from_env(profile).config
+        config = build_config(profile=profile)
         system_name = await _resolve_system_name(config, system_name_or_uuid, profile)
         lpar_name = await _resolve_lpar_name(
             config, lpar_name_or_uuid, system_name, profile

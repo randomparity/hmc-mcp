@@ -16,7 +16,7 @@ from ._app import (
 )
 
 from .client import HMCError
-from .common import client_from_env
+from .common import build_config, client_from_env
 from .jobs import install_lpar_job, install_vios_job
 from .ssh import run_hmc_cli
 from .documents import build_vios_document
@@ -236,7 +236,7 @@ def hmc_list_vios_backups(
     (BackupName, Date, Type). Find vios_uuid with hmc_vios.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
-    config = client_from_env(profile).config
+    config = build_config(profile=profile)
     output = _run(
         lambda: run_hmc_cli(f"lsviosbackup -id {shlex.quote(vios_uuid)}", config)
     )
@@ -267,7 +267,7 @@ def hmc_backup_vios(
             f"Invalid backup_type {backup_type!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_BACKUP_TYPES))}"
         )
-    config = client_from_env(profile).config
+    config = build_config(profile=profile)
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation backup -type {shlex.quote(backup_type)}"
     return _run(lambda: run_hmc_cli(cmd, config))
 
@@ -289,6 +289,6 @@ def hmc_restore_vios(
 
     profile: optional TOML profile name; when omitted the env-default HMC is used.
     """
-    config = client_from_env(profile).config
+    config = build_config(profile=profile)
     cmd = f"chviosbackup -id {shlex.quote(vios_uuid)} -operation restore -file {shlex.quote(backup_name)}"
     return _run(lambda: run_hmc_cli(cmd, config))
