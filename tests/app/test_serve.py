@@ -5,13 +5,13 @@ surface, so `hmc-mcp serve --http` must refuse non-loopback binds unless the
 operator explicitly opts in with --allow-remote.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
-from hmc_mcp import _app as server_app
+from hmc_mcp import server as server_app
 from hmc_mcp.cli import _is_loopback, app
 
 
@@ -111,7 +111,9 @@ def test_serve_passes_arbitrary_command_opt_in(http):
 
 def test_stdio_entrypoint_registers_arbitrary_command_when_enabled():
     with (
-        patch("hmc_mcp.server_system.register_arbitrary_command_tool") as register,
+        patch(
+            "hmc_mcp.server.register_arbitrary_command_tool", new_callable=AsyncMock
+        ) as register,
         patch.object(server_app.mcp, "run") as run,
     ):
         server_app.main_stdio(enable_arbitrary_command=True)
@@ -122,7 +124,9 @@ def test_stdio_entrypoint_registers_arbitrary_command_when_enabled():
 
 def test_http_entrypoint_registers_arbitrary_command_when_enabled():
     with (
-        patch("hmc_mcp.server_system.register_arbitrary_command_tool") as register,
+        patch(
+            "hmc_mcp.server.register_arbitrary_command_tool", new_callable=AsyncMock
+        ) as register,
         patch.object(server_app.mcp, "run") as run,
     ):
         server_app.main_http(

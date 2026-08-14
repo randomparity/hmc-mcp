@@ -1425,7 +1425,7 @@ async def main(
     if subtask_filter is not None:
         _restore_ctx_from_results(state, results_path)
 
-    register_arbitrary_command_tool()
+    await register_arbitrary_command_tool()
     async with Client(mcp) as client:
         tasks = [subtask_filter] if subtask_filter is not None else sorted(SUBTASKS.keys())
         for n in tasks:

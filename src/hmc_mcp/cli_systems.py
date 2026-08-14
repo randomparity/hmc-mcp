@@ -129,9 +129,9 @@ def systems_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, MTMS, firmware, LPAR counts, free memory/CPU, VIOS count."""
-    from .server_composite import hmc_system_summary
+    from .operations_composite import system_summary
 
-    result = hmc_system_summary(name_or_uuid)
+    result = _run(lambda: system_summary(name_or_uuid))
     if as_json:
         _print_json(result)
         return
@@ -159,9 +159,9 @@ def systems_capacity(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Capacity report: memory/CPU totals and free resources per managed system."""
-    from .server_system import hmc_capacity_report
+    from .operations_capacity import capacity_report
 
-    report = hmc_capacity_report()
+    report = _run(capacity_report)
     if as_json:
         _print_json(report)
         return
@@ -197,9 +197,9 @@ def systems_find_placement(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Find managed systems with enough free resources for a new LPAR."""
-    from .server_system import hmc_find_placement
+    from .operations_capacity import find_placement
 
-    candidates = hmc_find_placement(desired_memory_mb=memory, desired_proc_units=procs)
+    candidates = _run(lambda: find_placement(memory, procs))
     if as_json:
         _print_json(candidates)
         return

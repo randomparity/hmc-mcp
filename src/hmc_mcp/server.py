@@ -33,12 +33,12 @@ themselves on the shared FastMCP instance in ``._app`` when imported here.
 
 from __future__ import annotations
 
+import asyncio
+
 from ._app import (
     DESTRUCTIVE_TOOLS as DESTRUCTIVE_TOOLS,
     READ_ONLY_TOOLS as READ_ONLY_TOOLS,
     mcp as mcp,
-    main_http as main_http,
-    main_stdio as main_stdio,
 )
 
 from .server_system import (
@@ -56,7 +56,9 @@ from .server_system import (
     hmc_systems as hmc_systems,
     hmc_vios as hmc_vios,
     hmc_wait_for_job as hmc_wait_for_job,
+    register_arbitrary_command_tool,
 )
+
 from .server_power import (
     hmc_create_lpar as hmc_create_lpar,
     hmc_delete_lpar as hmc_delete_lpar,
@@ -172,3 +174,21 @@ from .server_composite import (
 from .server_provision import (
     hmc_provision_lpar as hmc_provision_lpar,
 )
+
+
+def main_stdio(enable_arbitrary_command: bool = False) -> None:
+    """Start the fully composed MCP server over stdio."""
+    if enable_arbitrary_command:
+        asyncio.run(register_arbitrary_command_tool())
+    mcp.run()
+
+
+def main_http(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    enable_arbitrary_command: bool = False,
+) -> None:
+    """Start the fully composed MCP server over streamable HTTP."""
+    if enable_arbitrary_command:
+        asyncio.run(register_arbitrary_command_tool())
+    mcp.run(transport="streamable-http", host=host, port=port)

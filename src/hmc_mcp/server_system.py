@@ -16,6 +16,7 @@ from ._app import (
 )
 from .common import build_config, client_from_env, is_uuid
 from .config import HMCConfig, resolve_config_path
+from .operations_capacity import capacity_report, find_placement
 
 from .ssh import run_hmc_cli
 
@@ -39,16 +40,11 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     return _run(lambda: run_hmc_cli(cmd, config))
 
 
-_arbitrary_command_registered = False
-
-
-def register_arbitrary_command_tool() -> None:
+async def register_arbitrary_command_tool() -> None:
     """Register the arbitrary-command escape hatch once for an opted-in server."""
-    global _arbitrary_command_registered
-    if _arbitrary_command_registered:
+    if await mcp.local_provider.get_tool("hmc_run_command") is not None:
         return
     mcp.tool(hmc_run_command, annotations=_STATE_CHANGING)
-    _arbitrary_command_registered = True
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -333,41 +329,6 @@ def hmc_recent_jobs(
     return jobs[:limit]
 
 
-def _system_capacity(
-    system: dict[str, Any], lpars: list[dict[str, Any]]
-) -> dict[str, Any]:
-    """Compute capacity stats for one managed system from its entry + LPAR list."""
-    res = system.get("Resource") or {}
-    total_mem = int(res.get("AssignableSystemMemory") or 0)
-    total_procs = float(res.get("ConfigurableSystemProcessorUnits") or 0.0)
-
-    assigned_mem = 0
-    assigned_procs = 0.0
-    running = 0
-    for lpar in lpars:
-        lr = lpar.get("Resource") or {}
-        assigned_mem += int(lr.get("DesiredMemory") or 0)
-        try:
-            assigned_procs += float(lr.get("DesiredProcessingUnits") or 0.0)
-        except (TypeError, ValueError):
-            pass
-        if lr.get("PartitionState") == "running":
-            running += 1
-
-    return {
-        "system_uuid": system.get("UUID"),
-        "system_name": res.get("SystemName", ""),
-        "total_memory_mb": total_mem,
-        "assigned_memory_mb": assigned_mem,
-        "free_memory_mb": total_mem - assigned_mem,
-        "total_proc_units": total_procs,
-        "assigned_proc_units": round(assigned_procs, 4),
-        "free_proc_units": round(total_procs - assigned_procs, 4),
-        "total_lpars": len(lpars),
-        "running_lpars": running,
-    }
-
-
 @mcp.tool(annotations=_READ_ONLY)
 def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     """Capacity report: for each managed system, total/assigned/free memory (MiB)
@@ -377,17 +338,7 @@ def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
     system to compute assigned resources. Free = total − assigned.
     """
 
-    async def _go() -> list[dict[str, Any]]:
-        async with client_from_env(profile) as hmc:
-            systems = await hmc.list_managed_systems()
-            result = []
-            for system in systems:
-                uuid = system.get("UUID")
-                lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-                result.append(_system_capacity(system, lpars))
-            return result
-
-    return _run(_go)
+    return _run(lambda: capacity_report(profile))
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -403,23 +354,7 @@ def hmc_find_placement(
     Each result has the same fields as :func:`hmc_capacity_report`.
     """
 
-    async def _go() -> list[dict[str, Any]]:
-        async with client_from_env(profile) as hmc:
-            systems = await hmc.list_managed_systems()
-            candidates = []
-            for system in systems:
-                uuid = system.get("UUID")
-                lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-                cap = _system_capacity(system, lpars)
-                if (
-                    cap["free_memory_mb"] >= desired_memory_mb
-                    and cap["free_proc_units"] >= desired_proc_units
-                ):
-                    candidates.append(cap)
-            candidates.sort(key=lambda c: c["free_memory_mb"], reverse=True)
-            return candidates
-
-    return _run(_go)
+    return _run(lambda: find_placement(desired_memory_mb, desired_proc_units, profile))
 
 
 @mcp.tool(annotations=_READ_ONLY)

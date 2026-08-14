@@ -51,9 +51,9 @@ def lpars_summary(
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """One-call summary: state, RMC, memory/CPU, OS details, adapter count, description."""
-    from .server_composite import hmc_lpar_summary
+    from .operations_composite import lpar_summary
 
-    summary = hmc_lpar_summary(name_or_uuid)
+    summary = _run(lambda: lpar_summary(name_or_uuid))
 
     if as_json:
         _print_json(summary)
@@ -625,7 +625,7 @@ def lpars_provision(
     On partial failure the completed steps are reported as "ok", the failed step as "error",
     and remaining steps as "skipped". No automatic rollback is performed.
     """
-    from .server_provision import hmc_provision_lpar
+    from .operations_provision import provision_lpar
 
     if not dry_run and not yes:
         typer.confirm(
@@ -634,7 +634,7 @@ def lpars_provision(
             abort=True,
         )
 
-    result = hmc_provision_lpar(
+    result = _run(lambda: provision_lpar(
         system_name_or_uuid=system,
         name=name,
         port_vlan_id=port_vlan_id,
@@ -652,7 +652,7 @@ def lpars_provision(
         vg_uuid=vg_uuid,
         power_on=power_on,
         dry_run=dry_run,
-    )
+    ))
 
     if as_json:
         _print_json(result)

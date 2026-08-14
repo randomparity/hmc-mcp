@@ -31,7 +31,10 @@ class _FakeClient:
 
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
-    monkeypatch.setattr(runner, "register_arbitrary_command_tool", lambda: None)
+    async def register() -> None:
+        return None
+
+    monkeypatch.setattr(runner, "register_arbitrary_command_tool", register)
 
 
 def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):

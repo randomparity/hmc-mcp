@@ -392,23 +392,3 @@ def _ssh_with_client(
         return await fn(config, system_name, lpar_name)
 
     return _run(_go)
-
-
-def main_stdio(enable_arbitrary_command: bool = False) -> None:
-    if enable_arbitrary_command:
-        from .server_system import register_arbitrary_command_tool
-
-        register_arbitrary_command_tool()
-    mcp.run()
-
-
-def main_http(
-    host: str = "127.0.0.1",
-    port: int = 8000,
-    enable_arbitrary_command: bool = False,
-) -> None:
-    if enable_arbitrary_command:
-        from .server_system import register_arbitrary_command_tool
-
-        register_arbitrary_command_tool()
-    mcp.run(transport="streamable-http", host=host, port=port)

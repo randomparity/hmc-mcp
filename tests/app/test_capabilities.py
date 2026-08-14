@@ -74,8 +74,8 @@ def test_arbitrary_command_tool_opt_in_is_idempotent():
     from hmc_mcp import server_system
 
     try:
-        server_system.register_arbitrary_command_tool()
-        server_system.register_arbitrary_command_tool()
+        asyncio.run(server_system.register_arbitrary_command_tool())
+        asyncio.run(server_system.register_arbitrary_command_tool())
 
         tools = [
             tool
@@ -87,7 +87,6 @@ def test_arbitrary_command_tool_opt_in_is_idempotent():
         assert tools[0].annotations.readOnlyHint is False
     finally:
         mcp.local_provider.remove_tool("hmc_run_command")
-        server_system._arbitrary_command_registered = False
 
 
 def test_closed_vocab_enum_matches_runtime_constant():

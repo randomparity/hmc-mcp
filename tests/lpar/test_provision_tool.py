@@ -25,7 +25,7 @@ def _patch_stamp_ownership():
     only) and must not attempt real SSH connections to hmc.test.
     """
     with patch(
-        "hmc_mcp.server_provision.stamp_lpar_ownership",
+        "hmc_mcp.operations_provision.stamp_lpar_ownership",
         new=AsyncMock(return_value="[hmc-mcp owner:hmc-mcp created:2026-08-13]"),
     ):
         yield
