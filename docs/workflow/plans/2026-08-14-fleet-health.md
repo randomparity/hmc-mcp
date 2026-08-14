@@ -34,8 +34,10 @@ Later tasks consume both names unchanged.
 1. Write tests constructing healthy and degraded UOM dictionaries. Assert exact curated keys,
    `unknown` for missing state, the four exception predicates, deterministic sort order, and empty
    tuples for a healthy estate. For failed jobs, prove that filtering considers only the first 20
-   records in HMC feed order, then normalizes terminal status; prove missing, blank, and non-string
-   errors become `unknown`, and accepted error text is truncated to 500 characters. Run
+   records in HMC feed order, then matches every canonical `jobs.FAILED_JOB_STATUSES` value while
+   excluding representative successful, running, warning, and unknown statuses; prove missing,
+   blank, and non-string errors become `unknown`, and accepted error text is truncated to 500
+   characters. Run
    `uv run pytest -q --no-cov tests/system/test_fleet_health.py`; expect import failure.
 2. Write async tests with an `AsyncMock` HMC client. Assert unsupported Job root returns one
    warning with empty failed jobs. Add parameterized near misses that independently change the HTTP
@@ -47,7 +49,8 @@ Later tasks consume both names unchanged.
    rather than one waiting task per system. With a strict recording client double, assert the
    complete operation ledger contains only managed-system, LPAR, VIOS, and Job list reads and no
    mutating client call. Run the same command; expect failures for missing behavior.
-3. Implement the dataclass, pure curator functions, exact unsupported-error predicate, bounded
+3. Implement the dataclass, pure curator functions that import and reuse
+   `jobs.FAILED_JOB_STATUSES`, exact unsupported-error predicate, bounded
    system inspection as at most eight fixed workers consuming a shared system queue, fail-closed
    system identity validation, first-20 Job-feed slicing before failure classification, bounded
    failed-job error normalization, deterministic sorting, and `fleet_health`. Do not eagerly create

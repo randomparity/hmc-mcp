@@ -28,9 +28,10 @@ for an unsupported global Job root is tolerated: HTTP 400 with both `REST000E` a
 empty and `warnings` explains that job health is unavailable. Other Job-feed errors fail the
 operation.
 
-Job failure classification uses the normalized terminal semantics introduced by issue #141:
-`COMPLETED_WITH_ERROR`, `FAILED`, and `EXCEPTION` are unhealthy; successful, running, and
-unknown statuses are not reported as failed.
+Job failure classification reuses `jobs.FAILED_JOB_STATUSES`, the canonical semantics introduced
+by issue #141. It includes `COMPLETED_WITH_ERROR`, `EXCEPTION`, `FAILED`,
+`FAILED_BEFORE_COMPLETION`, `FAILED_BEFORE_COMPLETION_RETRY`, and `FAILED_TO_START`.
+Successful, running, warning, and unknown statuses are not reported as failed.
 
 ## Consequences
 

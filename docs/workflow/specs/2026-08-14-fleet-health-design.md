@@ -17,8 +17,8 @@ Broad documentation work from #145 and migration validation from #151 are exclud
   state is not `running`;
 - `lpars`: `{uuid, name, state, rmc_state, system_uuid, system_name}` entries whose normalized
   RMC state is neither `active` nor `busy`;
-- `failed_jobs`: `{uuid, name, status, error}` entries for normalized failure terminal states among
-  the first 20 records in HMC Job-feed order;
+- `failed_jobs`: `{uuid, name, status, error}` entries whose case-normalized status belongs to
+  `jobs.FAILED_JOB_STATUSES`, among the first 20 records in HMC Job-feed order;
 - `warnings`: strings describing tolerated optional-data gaps.
 
 Missing or blank state is unhealthy and rendered as `unknown`, because silence must not look
@@ -91,8 +91,9 @@ does not attempt retry, caching, or historical monitoring.
 ## Testing and verification
 
 Pure curator tests cover case normalization, missing states, stable keys, deterministic sorting,
-normalized failed-job states, Job-feed limit boundaries, and missing, blank, non-string, and
-oversized job errors. Async operation tests cover a healthy estate, all four degraded categories,
+every canonical `FAILED_JOB_STATUSES` value, representative successful/running/warning/unknown
+states, Job-feed limit boundaries, and missing, blank, non-string, and oversized job errors. Async
+operation tests cover a healthy estate, all four degraded categories,
 unsupported global Job listing, unrelated Job failure propagation, a missing or blank
 managed-system UUID failing without a partial result, other core inventory failures, and an
 observed maximum of eight concurrent system inspections. Server/capability tests pin read-only
