@@ -203,13 +203,20 @@ def _processor_config(resources: LparResources) -> str:
     return "\n".join(parts)
 
 
+def _document_envelope(
+    root_element: str, body: str, namespace: str = UOM_NS
+) -> str:
+    """Wrap a document body in the standard HMC XML envelope."""
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<{root_element} xmlns="{namespace}" schemaVersion="V1_0">
+{body}
+</{root_element}>
+"""
+
+
 def _lpar_envelope(body: str) -> str:
     """Wrap an LPAR document body in the LogicalPartition XML envelope."""
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogicalPartition xmlns="{UOM_NS}" schemaVersion="V1_0">
-{body}
-</LogicalPartition>
-"""
+    return _document_envelope("LogicalPartition", body)
 
 
 def build_lpar_document(
@@ -440,11 +447,7 @@ def build_managed_system_document(
         )
 
     body = "\n".join(body_parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ManagedSystem xmlns="{UOM_NS}" schemaVersion="V1_0">
-{body}
-</ManagedSystem>
-"""
+    return _document_envelope("ManagedSystem", body)
 
 
 # ====================================================================== #
@@ -479,14 +482,11 @@ def _adapter_document(
     slot = ""
     if slot_number is not None:
         slot = f'  <VirtualSlotNumber kb="CUD" kxe="false">{slot_number}</VirtualSlotNumber>\n'
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<{root_element} xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = f"""  <Metadata><Atom/></Metadata>
   <AdapterType kb="CUD" kxe="false">Client</AdapterType>
 {slot}  <{partition_id_field} kb="CUD" kxe="false">{vios_partition_id}</{partition_id_field}>
-  <{slot_field} kb="CUD" kxe="false">{vios_slot}</{slot_field}>
-</{root_element}>
-"""
+  <{slot_field} kb="CUD" kxe="false">{vios_slot}</{slot_field}>"""
+    return _document_envelope(root_element, body)
 
 
 def build_vscsi_adapter_document(
@@ -559,11 +559,7 @@ def build_client_network_adapter_document(
     if mac_address:
         parts.append(f'  <MACAddress kb="CUD" kxe="false">{mac_address}</MACAddress>')
     body = "\n".join(parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ClientNetworkAdapter xmlns="{UOM_NS}" schemaVersion="V1_0">
-{body}
-</ClientNetworkAdapter>
-"""
+    return _document_envelope("ClientNetworkAdapter", body)
 
 
 # ====================================================================== #
@@ -590,23 +586,18 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
         f"    </PhysicalVolume>"
         for pv in physical_volumes
     )
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = f"""  <Metadata><Atom/></Metadata>
   <GroupName kb="CUD" kxe="false">{name}</GroupName>
   <PhysicalVolumes kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
 {pvs}
-  </PhysicalVolumes>
-</VolumeGroup>
-"""
+  </PhysicalVolumes>"""
+    return _document_envelope("VolumeGroup", body)
 
 
 def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = f"""  <Metadata><Atom/></Metadata>
   <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
@@ -614,9 +605,8 @@ def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
       <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
       <DiskCapacity kb="CUD" kxe="false">{capacity_mb}</DiskCapacity>
     </VirtualDisk>
-  </VirtualDisks>
-</VolumeGroup>
-"""
+  </VirtualDisks>"""
+    return _document_envelope("VolumeGroup", body)
 
 
 def build_vscsi_mapping_document(
@@ -718,16 +708,13 @@ def build_media_repository_document(size_mb: int) -> str:
 
     The repository is always named VMLibrary; size_mb is RepositorySize.
     """
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = f"""  <Metadata><Atom/></Metadata>
   <VirtualMediaRepository schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
     <RepositorySize kb="CUD" kxe="false">{size_mb}</RepositorySize>
-  </VirtualMediaRepository>
-</VolumeGroup>
-"""
+  </VirtualMediaRepository>"""
+    return _document_envelope("VolumeGroup", body)
 
 
 def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
@@ -736,9 +723,7 @@ def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
     Only blank optical media can be created via the API; media_name is the
     file name (e.g. 'aix.iso'), size_mb is MediaSize.
     """
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = f"""  <Metadata><Atom/></Metadata>
   <VirtualMediaRepository schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <VirtualOpticalMedia schemaVersion="V1_0">
@@ -747,22 +732,18 @@ def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
       <MediaSize kb="CUD" kxe="false">{size_mb}</MediaSize>
       <MediaType kb="CUD" kxe="false">BLANK</MediaType>
     </VirtualOpticalMedia>
-  </VirtualMediaRepository>
-</VolumeGroup>
-"""
+  </VirtualMediaRepository>"""
+    return _document_envelope("VolumeGroup", body)
 
 
 def build_media_repository_delete_document() -> str:
     """VolumeGroup document marking the VirtualMediaRepository for deletion (POST)."""
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VolumeGroup xmlns="{UOM_NS}" schemaVersion="V1_0">
-  <Metadata><Atom/></Metadata>
+    body = """  <Metadata><Atom/></Metadata>
   <VirtualMediaRepository schemaVersion="V1_0" kb="CUD">
     <Metadata><Atom/></Metadata>
     <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
-  </VirtualMediaRepository>
-</VolumeGroup>
-"""
+  </VirtualMediaRepository>"""
+    return _document_envelope("VolumeGroup", body)
 
 
 # ====================================================================== #
@@ -805,11 +786,7 @@ def build_hmc_user_document(
         val = "true" if enable else "false"
         parts.append(f'  <IsEnabled kb="CUR" kxe="false">{val}</IsEnabled>')
     body = "\n".join(parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<HmcUser xmlns="{WEB_NS}" schemaVersion="V1_0">
-{body}
-</HmcUser>
-"""
+    return _document_envelope("HmcUser", body, WEB_NS)
 
 
 # ====================================================================== #
@@ -878,11 +855,7 @@ def build_password_policy_document(
             f'  <MinPasswordAge kb="CUR" kxe="false">{min_pwage}</MinPasswordAge>'
         )
     body = "\n".join(parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<HmcPasswordPolicy xmlns="{WEB_NS}" schemaVersion="V1_0">
-{body}
-</HmcPasswordPolicy>
-"""
+    return _document_envelope("HmcPasswordPolicy", body, WEB_NS)
 
 
 # ====================================================================== #
@@ -934,8 +907,4 @@ def build_ldap_config_document(
             f'  <GroupMemberAttributes kb="CUR" kxe="false">{group_member_attributes}</GroupMemberAttributes>'
         )
     body = "\n".join(parts)
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<HmcLdapServer xmlns="{WEB_NS}" schemaVersion="V1_0">
-{body}
-</HmcLdapServer>
-"""
+    return _document_envelope("HmcLdapServer", body, WEB_NS)
