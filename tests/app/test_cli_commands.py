@@ -115,6 +115,7 @@ class FakeHMC:
         ]
         self.metrics_json = {"data": [1, 2, 3]}
         self.fetch_json_404 = False
+        self.wait_job_status = "COMPLETED"
 
     def _record(self, name: str, *args, **kwargs) -> None:
         self.calls.append((name, args, kwargs))
@@ -288,7 +289,10 @@ class FakeHMC:
             poll_interval,
             job_href=job_href,
         )
-        return {**self.job, "Resource": {**self.job["Resource"], "Status": "COMPLETED"}}
+        return {
+            **self.job,
+            "Resource": {**self.job["Resource"], "Status": self.wait_job_status},
+        }
 
     async def power_on_system(self, system_uuid):
         self._record("power_on_system", system_uuid)
@@ -1327,6 +1331,77 @@ def test_lpm_commands_delegate_resolved_arguments(fake_hmc, args, expected_call)
     assert expected_call in fake_hmc.calls
     assert "Submitted" in result.stdout
     assert LPAR_UUID in result.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["lpars", "migrate-abort", LPAR_NAME, "--yes"],
+        ["lpars", "migrate-recover", LPAR_NAME, "--yes"],
+        [
+            "lpars",
+            "remote-restart",
+            LPAR_NAME,
+            "--target",
+            "sys1",
+            "--yes",
+        ],
+    ],
+)
+def test_lpm_recovery_commands_forward_wait_timing(fake_hmc, args):
+    result = RUNNER.invoke(
+        cli.app, [*args, "--wait", "--timeout", "60", "--interval", "2"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "wait_for_job",
+        (JOB_UUID, 60, 2),
+        {"job_href": f"/jobs/{JOB_UUID}"},
+    ) in fake_hmc.calls
+
+
+def test_lpm_recovery_command_renders_timeout_outcome(fake_hmc):
+    fake_hmc.wait_job_status = "running"
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "migrate-abort",
+            LPAR_NAME,
+            "--yes",
+            "--wait",
+            "--timeout",
+            "0",
+            "--interval",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f'"job_id": "{JOB_UUID}"' in result.stdout
+    assert '"status": "running"' in result.stdout
+    assert '"timed_out": true' in result.stdout
+    assert '"error": null' in result.stdout
+    assert '"job": {' in result.stdout
+
+
+def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "migrate-abort",
+            LPAR_NAME,
+            "--yes",
+            "--wait",
+            "--timeout",
+            "-1",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert fake_hmc.calls == []
 
 
 @pytest.mark.parametrize(
