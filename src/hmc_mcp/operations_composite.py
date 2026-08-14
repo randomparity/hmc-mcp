@@ -7,6 +7,7 @@ from typing import Any
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
+from .operations_capacity import lpar_processing_units
 
 
 def _lpar_summary(
@@ -141,14 +142,7 @@ def _system_summary(
     assigned_mem = sum(
         int((lpar.get("Resource") or {}).get("DesiredMemory") or 0) for lpar in lpars
     )
-    assigned_procs = 0.0
-    for lpar in lpars:
-        try:
-            assigned_procs += float(
-                (lpar.get("Resource") or {}).get("DesiredProcessingUnits") or 0.0
-            )
-        except (TypeError, ValueError):
-            pass
+    assigned_procs = sum(lpar_processing_units(lpar) for lpar in lpars)
 
     return {
         "uuid": system.get("UUID"),

@@ -7,6 +7,21 @@ from typing import Any
 from .client import HMCClient
 
 
+def lpar_processing_units(lpar: dict[str, Any]) -> float:
+    """Return desired processing units, rejecting malformed HMC inventory."""
+    resource = lpar.get("Resource") or {}
+    raw_value = resource.get("DesiredProcessingUnits")
+    if raw_value in (None, ""):
+        return 0.0
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError) as exc:
+        identity = lpar.get("UUID") or resource.get("PartitionName") or "unknown LPAR"
+        raise ValueError(
+            f"LPAR {identity!r} has invalid DesiredProcessingUnits {raw_value!r}"
+        ) from exc
+
+
 def system_capacity(
     system: dict[str, Any], lpars: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -20,12 +35,7 @@ def system_capacity(
     for lpar in lpars:
         lpar_resource = lpar.get("Resource") or {}
         assigned_memory += int(lpar_resource.get("DesiredMemory") or 0)
-        try:
-            assigned_processors += float(
-                lpar_resource.get("DesiredProcessingUnits") or 0.0
-            )
-        except (TypeError, ValueError):
-            pass
+        assigned_processors += lpar_processing_units(lpar)
         if lpar_resource.get("PartitionState") == "running":
             running += 1
     return {
@@ -66,5 +76,12 @@ async def find_placement(
         if capacity["free_memory_mb"] >= desired_memory_mb
         and capacity["free_proc_units"] >= desired_proc_units
     ]
-    candidates.sort(key=lambda capacity: capacity["free_memory_mb"], reverse=True)
+    candidates.sort(
+        key=lambda capacity: (
+            capacity["free_memory_mb"],
+            capacity["free_proc_units"],
+            capacity["system_name"],
+            capacity["system_uuid"] or "",
+        )
+    )
     return candidates
