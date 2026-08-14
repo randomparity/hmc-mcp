@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for users.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, get_args
 
 from .client_parse import _parse_feed
@@ -35,6 +36,10 @@ def validate_ldap_removal_resource(
 
 
 class UsersMixin:
+    _web_get: Callable[..., Awaitable[str]]
+    _web_post: Callable[..., Awaitable[str]]
+    _web_delete: Callable[..., Awaitable[None]]
+
     # ------------------------------------------------------------------ #
     # web-endpoint response parsing
     # ------------------------------------------------------------------ #

@@ -38,14 +38,7 @@ dev = [
 ]
 
 [tool.ty.src]
-include = [
-    "src/hmc_mcp/_app.py",
-    "src/hmc_mcp/cli_app.py",
-    "src/hmc_mcp/common.py",
-    "src/hmc_mcp/config.py",
-    "src/hmc_mcp/documents.py",
-    "src/hmc_mcp/errors.py",
-]
+include = ["src/hmc_mcp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]

@@ -204,7 +204,10 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         async with asyncio.timeout(config.ssh_timeout):
             async with asyncssh.connect(**connect_kwargs) as conn:
                 result = await conn.run(cmd, check=True, timeout=config.ssh_timeout)
-                return result.stdout
+                stdout = result.stdout
+                if isinstance(stdout, bytes):
+                    return stdout.decode()
+                return stdout or ""
     except TimeoutError as exc:
         raise HMCCLIError(
             f"SSH command timed out after {config.ssh_timeout:.0f}s: {cmd!r}. "
@@ -522,7 +525,7 @@ async def list_sea_adapters(
     if not raw.strip():
         return []
     keys = fields.split(",")
-    result = []
+    result: list[dict[str, str]] = []
     for line in raw.strip().splitlines():
         values = line.split(",", len(keys) - 1)
         result.append(dict(zip(keys, values)))

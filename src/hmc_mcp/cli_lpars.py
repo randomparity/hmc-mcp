@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import typer
 from rich.table import Table
+from typing import cast
 
 from .common import is_uuid
 
@@ -25,7 +26,13 @@ from .cli_app import (
 )
 
 from .jobs import power_off_lpar_job, power_on_lpar_job
-from .documents import LparResources, PARTITION_TYPES, build_lpar_document
+from .documents import (
+    LparResources,
+    PARTITION_TYPES,
+    PartitionType,
+    StorageKind,
+    build_lpar_document,
+)
 from .ssh import (
     get_lpar_description,
     get_lpar_msp,
@@ -347,7 +354,7 @@ def lpars_create(
         )
     xml = build_lpar_document(
         name=name,
-        partition_type=partition_type,
+        partition_type=cast(PartitionType, partition_type),
         partition_id=partition_id,
         resources=LparResources(
             min_memory=min_memory,
@@ -635,13 +642,13 @@ def lpars_provision(
         vios_partition_id=vios_partition_id,
         vios_slot=vios_slot,
         storage_name=storage_name,
-        partition_type=partition_type,
+        partition_type=cast(PartitionType, partition_type),
         min_memory=min_memory,
         desired_memory=memory,
         max_memory=max_memory,
         desired_vcpus=vcpus,
         max_vcpus=max_vcpus,
-        storage_kind=storage_kind,
+        storage_kind=cast(StorageKind, storage_kind),
         vg_uuid=vg_uuid,
         power_on=power_on,
         dry_run=dry_run,

@@ -7,7 +7,6 @@ for status.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Literal, Required, TypedDict, get_args
 
 from .xmlutil import WEB_NS
@@ -298,7 +297,7 @@ _REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
 }
 
 
-def _repository_params(repository: Mapping[str, str | None]) -> dict[str, str]:
+def _repository_params(repository: RepositorySource) -> dict[str, str]:
     """Convert a repository dict to JobParameter key/value pairs.
 
     Unknown keys are rejected, the repository type must be present, and

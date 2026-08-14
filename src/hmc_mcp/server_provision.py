@@ -17,7 +17,7 @@ from ._app import (
 )
 from .client import HMCError
 from .common import client_from_env, is_uuid
-from .documents import LparResources, PartitionType, build_lpar_document
+from .documents import LparResources, PartitionType, StorageKind, build_lpar_document
 from .jobs import power_on_lpar_job
 from .ssh import HMCCLIError, _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
 
@@ -46,11 +46,12 @@ async def _check_vlan_exists(hmc, system_uuid: str, port_vlan_id: int) -> None:
     for net in networks:
         res = net.get("Resource") or {}
         vlan = res.get("NetworkVLANID")
-        try:
-            if int(vlan) == port_vlan_id:
-                return
-        except (TypeError, ValueError):
-            pass
+        if vlan is not None:
+            try:
+                if int(vlan) == port_vlan_id:
+                    return
+            except (TypeError, ValueError):
+                pass
     raise ValueError(
         f"No VirtualNetwork with VLAN ID {port_vlan_id} found on system "
         f"{system_uuid!r}. Use hmc_list_virtual_networks to list available VLANs."
@@ -101,7 +102,7 @@ def hmc_provision_lpar(
     max_memory: int = 8192,
     desired_vcpus: int = 1,
     max_vcpus: int = 2,
-    storage_kind: str = "VirtualDisk",
+    storage_kind: StorageKind = "VirtualDisk",
     vg_uuid: str | None = None,
     power_on: bool = True,
     dry_run: bool = False,

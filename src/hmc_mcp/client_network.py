@@ -6,13 +6,20 @@ domain mixin; this module only defines methods for network.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .client_parse import _parse_feed
+from .config import HMCConfig
 from .documents import build_virtual_network_document
 
 
 class NetworkMixin:
+    config: HMCConfig
+    _get: Callable[..., Awaitable[str]]
+    _put: Callable[..., Awaitable[str]]
+    _delete: Callable[..., Awaitable[None]]
+
     # ------------------------------------------------------------------ #
     # Virtual Network management (children of ManagedSystem)
     # ------------------------------------------------------------------ #

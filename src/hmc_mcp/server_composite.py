@@ -131,10 +131,10 @@ async def _fetch_system_summary_data(
 
 
 def _system_summary(
-    system: dict,
-    lpars: list[dict],
-    vios_list: list[dict],
-) -> dict:
+    system: dict[str, Any],
+    lpars: list[dict[str, Any]],
+    vios_list: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Build a summary dict from raw system entry, LPAR list, and VIOS list."""
     res = system.get("Resource") or {}
 
@@ -176,7 +176,9 @@ def _system_summary(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_system_summary(system_name_or_uuid: str, profile: str | None = None) -> dict:
+def hmc_system_summary(
+    system_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any]:
     """One-call managed system summary: state, MTMS, firmware, LPAR counts, free resources, VIOS count.
 
     Composes data from three HMC endpoints in a single call:
@@ -202,7 +204,7 @@ def hmc_system_summary(system_name_or_uuid: str, profile: str | None = None) -> 
 
     Raises ``ValueError`` when the system cannot be found.
     """
-    async def _go() -> dict:
+    async def _go() -> dict[str, Any]:
         async with client_from_env(profile) as hmc:
             system_uuid = await _resolve_system_uuid(hmc, system_name_or_uuid)
             system, lpars, vios_list = await _fetch_system_summary_data(hmc, system_uuid)

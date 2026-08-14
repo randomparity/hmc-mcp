@@ -32,7 +32,7 @@ def hmc_users(
     name: str | None = None,
     user_type: UserType = "all",
     profile: str | None = None,
-) -> Any:
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """List HMC user accounts or get one by username.
 
     When name is provided, returns a single resource dict for that user,

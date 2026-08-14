@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for systems.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .client_parse import _parse_feed
@@ -19,6 +20,13 @@ from .jobs import (
 
 
 class SystemsMixin:
+    list_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
+    get_uom: Callable[..., Awaitable[dict[str, Any] | None]]
+    search_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
+    _get: Callable[..., Awaitable[str]]
+    _post: Callable[..., Awaitable[str]]
+    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
+
     # -- Convenience wrappers for the common resources ----------------- #
     async def get_console_info(self) -> dict[str, Any] | None:
         """ManagementConsole: HMC version, network info, links to systems."""

@@ -6,6 +6,7 @@ domain mixin; this module only defines methods for adapters.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, get_args
 
 from .documents import (
@@ -33,6 +34,10 @@ def validate_adapter_type(adapter_type: AdapterType) -> AdapterType:
 
 
 class AdaptersMixin:
+    list_child: Callable[..., Awaitable[list[dict[str, Any]]]]
+    delete_child: Callable[..., Awaitable[None]]
+    create_child: Callable[..., Awaitable[dict[str, Any] | None]]
+
     async def list_adapters(
         self, lpar_uuid: str, adapter_type: AdapterType
     ) -> list[dict[str, Any]]:

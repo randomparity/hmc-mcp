@@ -36,7 +36,9 @@ def _check_templates_error(exc: HMCError) -> None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_partition_templates(template_uuid: str | None = None, profile: str | None = None) -> Any:
+def hmc_partition_templates(
+    template_uuid: str | None = None, profile: str | None = None
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """List partition templates or get one by UUID.
 
     When template_uuid is omitted, returns a list of all partition templates

@@ -6,7 +6,10 @@ domain mixin; this module only defines methods for templates.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
+
+import httpx
 
 from .client_parse import _parse_feed
 from .errors import HMCError
@@ -14,6 +17,10 @@ from .jobs import deploy_partition_template_job
 
 
 class TemplatesMixin:
+    _http: httpx.AsyncClient
+    _session_token: str | None
+    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
+
     # ------------------------------------------------------------------ #
     # Template Library (/rest/api/templates/, templates+xml media type)
     # ------------------------------------------------------------------ #

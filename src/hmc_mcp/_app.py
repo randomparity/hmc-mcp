@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, overload
 
 import httpx
 from fastmcp import FastMCP
@@ -311,6 +311,46 @@ async def _resolve_vios_uuid(hmc: HMCClient, vios_name_or_uuid: str) -> str:
             "Use hmc_vios to list available Virtual I/O Servers."
         )
     return str(entry["UUID"])
+
+
+@overload
+def _ssh_with_client(
+    fn: Callable[[HMCConfig, str, str], Awaitable[_T]],
+    *,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+) -> _T: ...
+
+
+@overload
+def _ssh_with_client(
+    fn: Callable[[HMCConfig, str, Literal[None]], Awaitable[_T]],
+    *,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: None = None,
+    profile: str | None = None,
+) -> _T: ...
+
+
+@overload
+def _ssh_with_client(
+    fn: Callable[[HMCConfig, Literal[None], str], Awaitable[_T]],
+    *,
+    system_name_or_uuid: None = None,
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+) -> _T: ...
+
+
+@overload
+def _ssh_with_client(
+    fn: Callable[[HMCConfig, Literal[None], Literal[None]], Awaitable[_T]],
+    *,
+    system_name_or_uuid: None = None,
+    lpar_name_or_uuid: None = None,
+    profile: str | None = None,
+) -> _T: ...
 
 
 def _ssh_with_client(

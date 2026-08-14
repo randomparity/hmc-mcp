@@ -6,12 +6,17 @@ domain mixin; this module only defines methods for cluster.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .jobs import DeviceType, LuType, create_logical_unit_job, delete_logical_unit_job
 
 
 class ClusterMixin:
+    list_uom: Callable[..., Awaitable[list[dict[str, Any]]]]
+    get_uom: Callable[..., Awaitable[dict[str, Any] | None]]
+    submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
+
     # ------------------------------------------------------------------ #
     # Cluster / Shared Storage Pool (SSP)
     # ------------------------------------------------------------------ #

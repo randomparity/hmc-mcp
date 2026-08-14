@@ -68,7 +68,7 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_list_configured_hosts() -> dict:
+def hmc_list_configured_hosts() -> dict[str, Any]:
     """List all configured HMC profiles from the platform-native TOML config.
 
     Returns profile names, hostnames, users, ports, TLS settings, default
@@ -133,7 +133,7 @@ def hmc_systems(
     system_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
-) -> Any:
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """List all managed systems or get one by name or UUID.
 
     When system_name_or_uuid is omitted, returns a list of all managed systems
@@ -167,7 +167,7 @@ def hmc_lpars(
     state_only: bool = False,
     state: str | None = None,
     profile: str | None = None,
-) -> Any:
+) -> list[dict[str, Any]] | dict[str, Any] | str | None:
     """List logical partitions (LPARs) or get/find one.
 
     Resolution priority (first match wins):
@@ -220,7 +220,7 @@ def hmc_vios(
     vios_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
-) -> Any:
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """List Virtual I/O Servers or get storage-detail mappings for one.
 
     When vios_name_or_uuid is provided, accepts either a PartitionName or a

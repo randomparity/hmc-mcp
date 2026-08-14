@@ -325,7 +325,9 @@ def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_shared_storage_pools(ssp_uuid: str | None = None, profile: str | None = None) -> Any:
+def hmc_shared_storage_pools(
+    ssp_uuid: str | None = None, profile: str | None = None
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """List Shared Storage Pools or get one by UUID.
 
     When ssp_uuid is omitted, returns a list of all Shared Storage Pools
