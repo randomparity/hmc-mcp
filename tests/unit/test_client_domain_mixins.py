@@ -10,6 +10,8 @@ import pytest
 from hmc_mcp.client_lpars import LparsMixin
 from hmc_mcp.client_lpm import LpmMixin
 from hmc_mcp.client_network import NetworkMixin
+from hmc_mcp.client_storage import StorageMixin
+from hmc_mcp.client_systems import SystemsMixin
 from hmc_mcp.client_templates import TemplatesMixin
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
@@ -44,6 +46,24 @@ class TemplatesHarness(TemplatesMixin):
         self._request = AsyncMock(return_value=response)
         self.submit_job = AsyncMock(return_value={"UUID": "job-1"})
         self._session_token = "session-token"
+
+
+class StorageHarness(StorageMixin):
+    def __init__(self) -> None:
+        self.config = HMCConfig(host="hmc.test", user="user", password="password")
+        self._get = AsyncMock(return_value="")
+        self._put = AsyncMock(return_value="")
+        self._post = AsyncMock(return_value="")
+
+
+class SystemsHarness(SystemsMixin):
+    def __init__(self) -> None:
+        self.list_uom = AsyncMock(return_value=[])
+        self.get_uom = AsyncMock(return_value=None)
+        self.search_uom = AsyncMock(return_value=[])
+        self._get = AsyncMock(return_value="")
+        self._post = AsyncMock(return_value="")
+        self.submit_job = AsyncMock(return_value={"UUID": "job-1"})
 
 
 @pytest.mark.asyncio
@@ -168,3 +188,42 @@ async def test_templates_mixin_routes_deployment_job():
     assert path == "/rest/api/templates/PartitionTemplate/draft-1/do/deploy"
     assert "system-1" in document
     assert "session-token" in document
+
+
+@pytest.mark.asyncio
+async def test_storage_mixin_routes_schema_sensitive_operations():
+    client = StorageHarness()
+
+    assert client.get_lpar_link("lpar-1").endswith("/LogicalPartition/lpar-1")
+    assert await client.list_volume_groups("vios-1") == []
+    assert await client.create_virtual_disk("vios-1", "vg-1", "disk", 1024) is None
+
+    client._get.assert_awaited_once_with(
+        "/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup",
+        "VolumeGroup",
+        include_schema_version=False,
+    )
+    client._post.assert_awaited_once()
+    assert client._post.await_args.kwargs == {
+        "resource_type": "VolumeGroup",
+        "include_schema_version": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_systems_mixin_routes_inventory_and_power_jobs():
+    client = SystemsHarness()
+
+    assert await client.list_managed_systems() == []
+    assert await client.get_managed_system("system-1") is None
+    assert await client.find_vios_by_name("vios-a") is None
+    assert await client.power_off_system("system-1", immediate=True) == {
+        "UUID": "job-1"
+    }
+
+    client.list_uom.assert_awaited_once_with("ManagedSystem")
+    client.get_uom.assert_awaited_once_with("ManagedSystem", "system-1")
+    client.search_uom.assert_awaited_once_with(
+        "VirtualIOServer", "PartitionName", "vios-a"
+    )
+    assert client.submit_job.await_args.args[0].endswith("/system-1/do/PowerOff")
