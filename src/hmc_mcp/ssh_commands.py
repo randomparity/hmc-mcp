@@ -583,13 +583,13 @@ async def set_lpar_msp(
         raise HMCCLIError(
             f"Cannot set MSP on '{lpar_name}': lssyscfg returned no output — "
             f"partition not found on system '{system_name}'. "
-            "Check the partition name with hmc_lpars."
+            "Check the partition name with hmc_list_lpars."
         )
     if lpar_env != "vioserver":
         raise HMCCLIError(
             f"Cannot set MSP on '{lpar_name}': the msp attribute is only valid "
             f"for a VIOS partition (lpar_env=vioserver), but '{lpar_name}' has "
-            f"lpar_env='{lpar_env}'. Use hmc_vios to confirm the partition type."
+            f"lpar_env='{lpar_env}'. Use hmc_list_vios to confirm the partition type."
         )
     value = "1" if enabled else "0"
     cmd = (

@@ -45,11 +45,11 @@ mcp = FastMCP(
         "should be the first choice when their scope matches the task:\n\n"
         "- **hmc_lpar_summary(lpar_name_or_uuid)** — state, RMC status, "
         "memory/CPU, OS version, and adapter count for one LPAR. Use instead "
-        "of hmc_lpars + hmc_list_adapters when you need a quick health check "
+        "of hmc_list_lpars + hmc_list_adapters when you need a quick health check "
         "or status snapshot of a single partition.\n"
         "- **hmc_system_summary(system_name_or_uuid)** — system state, total "
         "resources, LPAR count and state breakdown, and VIOS state for one "
-        "managed system. Use instead of hmc_systems + hmc_lpars + hmc_vios "
+        "managed system. Use instead of hmc_list_systems + hmc_list_lpars + hmc_list_vios "
         "when you need an overview of a single server.\n"
         "- **hmc_capacity_report()** — total, assigned, and free memory (MiB) "
         "and processor units for every managed system, plus running/total LPAR "
@@ -57,7 +57,7 @@ mcp = FastMCP(
         "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
         "returns systems that can host a new LPAR of the given size, sorted by "
         "free memory. Use before provisioning to choose a target system.\n"
-        "- **hmc_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "
+        "- **hmc_list_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "
         "firmware, migrations) on HMC versions that expose the global Job feed. "
         "Use to audit recent activity; poll a submitted job through its SELF link.\n"
         "- **hmc_provision_lpar(...)** — end-to-end LPAR creation: creates the "
@@ -76,9 +76,9 @@ mcp = FastMCP(
         "**Track an operation:** retain the job UUID and SELF link returned by the "
         "submitting tool → hmc_get_job(job_uuid, job_href=self_link) for detail → "
         "hmc_wait_for_job(job_uuid, job_href=self_link) to poll until done. Use "
-        "hmc_recent_jobs only for HMC versions that support the global feed.\n\n"
+        "hmc_list_recent_jobs only for HMC versions that support the global feed.\n\n"
         "## Lower-level tools\n\n"
-        "Use the individual tools (hmc_systems, hmc_lpars, hmc_vios, "
+        "Use the individual tools (hmc_list_systems, hmc_list_lpars, hmc_list_vios, "
         "hmc_list_adapters, etc.) when you need raw resource data, fields not "
         "returned by the composite tools, or operations outside the composite "
         "tool scope (network, storage, templates, metrics, users).\n\n"
@@ -89,7 +89,7 @@ mcp = FastMCP(
         "hmc_create_lpar and hmc_provision_lpar. For hmc_deploy_partition_template, "
         "ownership stamping is manual for now — the deploy job result does not "
         "reliably surface the new LPAR name. After the job completes, resolve the "
-        "LPAR name (e.g. via hmc_lpars or hmc_lpar_summary) and call "
+        "LPAR name (e.g. via hmc_list_lpars or hmc_lpar_summary) and call "
         "hmc_set_lpar_description to write the ownership token.\n\n"
         "**Before delete / rename / description-overwrite:** Read the LPAR "
         "description with hmc_get_lpar_description or hmc_lpar_summary. If it "
@@ -117,20 +117,20 @@ _STATE_CHANGING = ToolAnnotations(readOnlyHint=False)
 READ_ONLY_TOOLS = frozenset(
     {
         "hmc_console_info",
-        "hmc_systems",
+        "hmc_list_systems",
         "hmc_system_summary",
-        "hmc_lpars",
+        "hmc_list_lpars",
         "hmc_get_lpar",
         "hmc_get_lpar_state",
         "hmc_lpar_summary",
-        "hmc_vios",
+        "hmc_list_vios",
         "hmc_get_vios",
         "hmc_list_resources",
         "hmc_get_job",
-        "hmc_recent_jobs",
+        "hmc_list_recent_jobs",
         "hmc_capacity_report",
         "hmc_find_placement",
-        "hmc_find_system",
+        "hmc_get_system",
         "hmc_wait_for_job",
         "hmc_list_adapters",
         "hmc_list_configured_hosts",
@@ -140,17 +140,17 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_list_network_bridges",
         "hmc_list_fc_ports",
         "hmc_list_sea_adapters",
-        "hmc_partition_templates",
+        "hmc_list_partition_templates",
         "hmc_get_partition_template",
         "hmc_list_clusters",
-        "hmc_shared_storage_pools",
+        "hmc_list_shared_storage_pools",
         "hmc_get_shared_storage_pool",
         "hmc_get_pcm_preferences",
         "hmc_processed_metrics",
         "hmc_processed_metric_links",
         "hmc_aggregated_metrics",
         "hmc_aggregated_metric_links",
-        "hmc_users",
+        "hmc_list_users",
         "hmc_get_user",
         "hmc_list_password_policies",
         "hmc_get_password_policy_status",
@@ -209,7 +209,7 @@ async def _system_name_from_rest(hmc: HMCClient, system_uuid: str) -> str:
     if not entry or "SystemName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve system UUID {system_uuid!r} to a system name. "
-            "Use hmc_systems to find the system_uuid."
+            "Use hmc_list_systems to find the system_uuid."
         )
     return entry["Resource"]["SystemName"]
 
@@ -220,7 +220,7 @@ async def _lpar_name_from_rest(hmc: HMCClient, lpar_uuid: str) -> str:
     if not entry or "PartitionName" not in entry.get("Resource", {}):
         raise ValueError(
             f"Could not resolve LPAR UUID {lpar_uuid!r} to a partition name. "
-            "Use hmc_lpars to find the lpar_uuid."
+            "Use hmc_list_lpars to find the lpar_uuid."
         )
     return entry["Resource"]["PartitionName"]
 

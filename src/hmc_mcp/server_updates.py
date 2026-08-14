@@ -140,7 +140,7 @@ def hmc_vios_update(
     """Submit a VIOS software update or upgrade job.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     kind='update' installs fixes (PTF level); kind='upgrade' performs a full
     VIOS version upgrade. repository describes the image source (same format as
     hmc_update_console_software). Submits an Update or Upgrade job to VirtualIOServer; poll
@@ -187,7 +187,7 @@ def hmc_update_firmware(
     """Submit a managed system firmware update job.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     repository describes the firmware image source (same format as
     hmc_update_console_software). Submits an UpdateFirmware job to ManagedSystem; poll
     hmc_get_job for status.

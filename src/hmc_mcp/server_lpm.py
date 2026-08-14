@@ -28,7 +28,7 @@ def hmc_migrate_lpar(
     """Live-migrate (LPM) an LPAR to another managed system.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars).
+    (find it with hmc_list_lpars).
     Submits a Migrate job. target_system is the target managed-system name.
     Optionally pin the target profile / wait time. Poll hmc_get_job for status.
     Run hmc_migrate_validate_lpar first to pre-check.
@@ -66,7 +66,7 @@ def hmc_migrate_validate_lpar(
     """Validate whether an LPM migration of an LPAR to target_system would succeed.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars).
+    (find it with hmc_list_lpars).
     Set wait=True to block until the validation job reaches a terminal state.
     """
 
@@ -92,7 +92,7 @@ def hmc_migrate_abort_lpar(
     """Abort an in-progress LPM migration of an LPAR.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars).
+    (find it with hmc_list_lpars).
     """
 
     async def _go():
@@ -110,7 +110,7 @@ def hmc_migrate_recover_lpar(
     """Recover an LPAR after a failed LPM migration.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars).
+    (find it with hmc_list_lpars).
     """
 
     async def _go():
@@ -128,7 +128,7 @@ def hmc_remote_restart_lpar(
     """Remote-restart a failed LPAR on another managed system.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars).
+    (find it with hmc_list_lpars).
     """
 
     async def _go():

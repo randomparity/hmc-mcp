@@ -87,7 +87,7 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
     if not entry or not entry.get("UUID"):
         raise ValueError(
             f"No managed system named {value!r} found. "
-            "Use hmc_systems to list available systems."
+            "Use hmc_list_systems to list available systems."
         )
     return str(entry["UUID"])
 
@@ -100,7 +100,7 @@ async def resolve_lpar_uuid(hmc: HMCClient, value: str) -> str:
     if not entry or not entry.get("UUID"):
         raise ValueError(
             f"No LPAR named {value!r} found. "
-            "Use hmc_lpars to list available partitions."
+            "Use hmc_list_lpars to list available partitions."
         )
     return str(entry["UUID"])
 
@@ -113,7 +113,7 @@ async def resolve_vios_uuid(hmc: HMCClient, value: str) -> str:
     if not entry or not entry.get("UUID"):
         raise ValueError(
             f"No VIOS named {value!r} found. "
-            "Use hmc_vios to list available Virtual I/O Servers."
+            "Use hmc_list_vios to list available Virtual I/O Servers."
         )
     return str(entry["UUID"])
 

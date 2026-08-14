@@ -34,7 +34,7 @@ def hmc_get_job(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_recent_jobs(
+def hmc_list_recent_jobs(
     limit: int = 20,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:

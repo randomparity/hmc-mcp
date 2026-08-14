@@ -106,7 +106,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_systems(
+def hmc_list_systems(
     state: str | None = None,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -118,7 +118,7 @@ def hmc_systems(
 
     When state is provided, returns only systems whose State property matches
     the given value, using the HMC server-side search endpoint. Use
-    hmc_find_system for a single system lookup by name.
+    hmc_get_system for a single system lookup by name.
     """
 
     async def _go():
@@ -131,7 +131,7 @@ def hmc_systems(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_lpars(
+def hmc_list_lpars(
     system_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
@@ -189,7 +189,7 @@ def hmc_get_lpar_state(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_vios(
+def hmc_list_vios(
     system_name_or_uuid: str | None = None,
     state: str | None = None,
     profile: str | None = None,
@@ -252,7 +252,7 @@ def hmc_list_resources(
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_find_system(name: str, profile: str | None = None) -> dict[str, Any] | None:
+def hmc_get_system(name: str, profile: str | None = None) -> dict[str, Any] | None:
     """Find a managed system by its SystemName (exact match).
 
     Returns the full system dict if found, or None if no system with that

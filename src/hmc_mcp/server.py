@@ -45,18 +45,18 @@ from ._app import (
 
 from .server_systems import (
     hmc_console_info as hmc_console_info,
-    hmc_find_system as hmc_find_system,
+    hmc_get_system as hmc_get_system,
     hmc_get_lpar as hmc_get_lpar,
     hmc_get_lpar_state as hmc_get_lpar_state,
     hmc_get_vios as hmc_get_vios,
     hmc_list_configured_hosts as hmc_list_configured_hosts,
     hmc_list_resources as hmc_list_resources,
-    hmc_lpars as hmc_lpars,
+    hmc_list_lpars as hmc_list_lpars,
     hmc_modify_system as hmc_modify_system,
     hmc_power_off_system as hmc_power_off_system,
     hmc_power_on_system as hmc_power_on_system,
-    hmc_systems as hmc_systems,
-    hmc_vios as hmc_vios,
+    hmc_list_systems as hmc_list_systems,
+    hmc_list_vios as hmc_list_vios,
 )
 from .server_capacity import (
     hmc_capacity_report as hmc_capacity_report,
@@ -68,7 +68,7 @@ from .server_command import (
 )
 from .server_jobs import (
     hmc_get_job as hmc_get_job,
-    hmc_recent_jobs as hmc_recent_jobs,
+    hmc_list_recent_jobs as hmc_list_recent_jobs,
     hmc_wait_for_job as hmc_wait_for_job,
 )
 
@@ -111,7 +111,7 @@ from .server_storage import (
     hmc_list_clusters as hmc_list_clusters,
     hmc_list_volume_groups as hmc_list_volume_groups,
     hmc_map_storage_to_lpar as hmc_map_storage_to_lpar,
-    hmc_shared_storage_pools as hmc_shared_storage_pools,
+    hmc_list_shared_storage_pools as hmc_list_shared_storage_pools,
 )
 from .server_network import (
     hmc_add_vnic as hmc_add_vnic,
@@ -136,7 +136,7 @@ from .server_lpm import (
 from .server_templates import (
     hmc_deploy_partition_template as hmc_deploy_partition_template,
     hmc_get_partition_template as hmc_get_partition_template,
-    hmc_partition_templates as hmc_partition_templates,
+    hmc_list_partition_templates as hmc_list_partition_templates,
 )
 from .server_metrics import (
     hmc_aggregated_metric_links as hmc_aggregated_metric_links,
@@ -159,7 +159,7 @@ from .server_users import (
     hmc_modify_password_policy as hmc_modify_password_policy,
     hmc_modify_user as hmc_modify_user,
     hmc_remove_ldap_config as hmc_remove_ldap_config,
-    hmc_users as hmc_users,
+    hmc_list_users as hmc_list_users,
 )
 from .server_updates import (
     hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,

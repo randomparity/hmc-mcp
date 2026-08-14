@@ -27,7 +27,7 @@ from hmc_mcp.server import (
     hmc_modify_lpar,
     hmc_power_off_lpar,
     hmc_power_on_lpar,
-    hmc_recent_jobs,
+    hmc_list_recent_jobs,
     hmc_run_command,
     hmc_update_firmware,
     hmc_vios_update,
@@ -102,7 +102,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
 
 
 # ---------------------------------------------------------------------- #
-# hmc_get_job / hmc_lpars name-lookup (REST reads)
+# hmc_get_job / hmc_list_lpars name-lookup (REST reads)
 # ---------------------------------------------------------------------- #
 
 
@@ -127,7 +127,7 @@ def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
 
 
 def test_lpars_by_name(monkeypatch, mock_hmc):
-    """hmc_lpars resolves a non-UUID selector as a PartitionName."""
+    """hmc_list_lpars resolves a non-UUID selector as a PartitionName."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==aixprod)").mock(
         return_value=httpx.Response(200, text=LPAR_FEED.format(name="aixprod"))
@@ -138,7 +138,7 @@ def test_lpars_by_name(monkeypatch, mock_hmc):
 
 
 def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_lpars returns None when a partition name matches nothing."""
+    """hmc_list_lpars returns None when a partition name matches nothing."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
@@ -507,7 +507,7 @@ def test_list_available_hmc_ptfs_unsupported(monkeypatch, mock_hmc):
 
 
 # ---------------------------------------------------------------------- #
-# hmc_recent_jobs (job list)
+# hmc_list_recent_jobs (job list)
 # ---------------------------------------------------------------------- #
 
 JOB_FEED_2 = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -537,12 +537,12 @@ JOB_FEED_2 = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
-    """hmc_recent_jobs returns a list of parsed job dicts from the feed."""
+    """hmc_list_recent_jobs returns a list of parsed job dicts from the feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job").mock(
         return_value=httpx.Response(200, text=JOB_FEED_2)
     )
-    result = hmc_recent_jobs()
+    result = hmc_list_recent_jobs()
     assert isinstance(result, list)
     assert len(result) == 2
     job_ids = {j["Resource"]["JobID"] for j in result}
@@ -550,12 +550,12 @@ def test_recent_jobs_parses_feed(monkeypatch, mock_hmc):
 
 
 def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
-    """hmc_recent_jobs(limit=1) returns only the first 1 entry."""
+    """hmc_list_recent_jobs(limit=1) returns only the first 1 entry."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job").mock(
         return_value=httpx.Response(200, text=JOB_FEED_2)
     )
-    result = hmc_recent_jobs(limit=1)
+    result = hmc_list_recent_jobs(limit=1)
     assert len(result) == 1
     assert result[0]["Resource"]["JobID"] == "job-uuid-001"
 
@@ -565,18 +565,18 @@ def test_recent_jobs_rejects_negative_limit_before_request(monkeypatch, mock_hmc
     route = mock_hmc.get("/rest/api/uom/Job")
 
     with pytest.raises(ValueError, match="limit must be greater"):
-        hmc_recent_jobs(limit=-1)
+        hmc_list_recent_jobs(limit=-1)
 
     assert not route.called
 
 
 def test_recent_jobs_empty_feed(monkeypatch, mock_hmc):
-    """hmc_recent_jobs returns an empty list when the HMC has no jobs."""
+    """hmc_list_recent_jobs returns an empty list when the HMC has no jobs."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/Job").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    result = hmc_recent_jobs()
+    result = hmc_list_recent_jobs()
     assert result == []
 
 
@@ -668,7 +668,7 @@ def test_recent_jobs_unsupported_endpoint_raises_actionable_error(
         )
     )
     with pytest.raises(HMCError, match="hmc_get_job") as exc_info:
-        hmc_recent_jobs()
+        hmc_list_recent_jobs()
     assert exc_info.value.status_code == 400
 
 
@@ -679,7 +679,7 @@ def test_recent_jobs_unrelated_400_propagates(monkeypatch, mock_hmc):
     )
 
     with pytest.raises(HMCError, match="Invalid filter expression"):
-        hmc_recent_jobs()
+        hmc_list_recent_jobs()
 
 
 _JOB_SELF_LINK = f"https://hmc.test:12443{_JOB_OP_HREF}"

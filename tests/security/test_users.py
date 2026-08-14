@@ -9,7 +9,7 @@ from hmc_mcp.server import (
     hmc_delete_user,
     hmc_modify_user,
     hmc_get_user,
-    hmc_users,
+    hmc_list_users,
 )
 from hmc_mcp.documents import build_hmc_user_document
 
@@ -347,12 +347,12 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_hmc_users_lists_all(monkeypatch, mock_hmc):
-    """hmc_users() returns parsed dicts, one per account."""
+    """hmc_list_users() returns parsed dicts, one per account."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/web/HmcUser").mock(
         return_value=httpx.Response(200, text=USER_FEED)
     )
-    result = hmc_users()
+    result = hmc_list_users()
     assert isinstance(result, list)
     assert len(result) == 2
     assert result[0]["Resource"]["UserID"] == "hscroot"

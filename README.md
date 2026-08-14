@@ -173,18 +173,20 @@ Exposed tools:
 |-------------------------------|-------------|
 | `hmc_console_info`            | HMC version/network info; cheap connectivity check |
 | `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
-| `hmc_systems`                 | All managed systems, or one by UUID |
-| `hmc_lpars`                   | All LPARs, one by name or UUID, by system, or filtered by state |
+| `hmc_list_systems`            | All managed systems, optionally filtered by state |
+| `hmc_get_system`              | One managed system by exact SystemName |
+| `hmc_list_lpars`              | All LPARs, optionally filtered by system or state |
+| `hmc_get_lpar`                | One LPAR by name or UUID |
 | `hmc_get_lpar_state`          | Quick state lookup for one LPAR by name or UUID |
 | `hmc_lpar_summary`            | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
 | `hmc_system_summary`          | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
-| `hmc_vios`                    | Virtual I/O Servers, or storage-detail mappings for one |
+| `hmc_list_vios`               | Virtual I/O Servers, optionally filtered by system or state |
+| `hmc_get_vios`                | Storage-detail mappings for one VIOS by name or UUID |
 | `hmc_list_resources`          | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
 | `hmc_get_job`                 | Job status/result |
-| `hmc_recent_jobs`             | Recent HMC jobs list (limit=20) |
+| `hmc_list_recent_jobs`        | Recent HMC jobs list (limit=20) |
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
-| `hmc_find_system`             | Find a managed system by SystemName (exact match) |
 | `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
 
 **Mutating / lifecycle**
@@ -273,7 +275,8 @@ Exposed tools:
 
 | Tool                              | Description |
 |-----------------------------------|-------------|
-| `hmc_partition_templates`         | All partition templates, or one by UUID |
+| `hmc_list_partition_templates`    | All partition templates |
+| `hmc_get_partition_template`      | One partition template by UUID |
 | `hmc_deploy_partition_template`   | Deploy a partition from a draft template — job |
 
 **Live Partition Mobility (LPM)**
@@ -301,7 +304,7 @@ Exposed tools:
 | Tool                            | Description |
 |---------------------------------|-------------|
 | `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
-| `hmc_shared_storage_pools`      | All SSPs (capacity, free space, logical units) |
+| `hmc_list_shared_storage_pools` | All SSPs (capacity, free space, logical units) |
 | `hmc_get_shared_storage_pool`   | One SSP by UUID |
 | `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
 | `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
@@ -330,7 +333,7 @@ Exposed tools:
 
 | Tool                          | Description |
 |-------------------------------|-------------|
-| `hmc_users`                   | List HMC user accounts |
+| `hmc_list_users`              | List HMC user accounts |
 | `hmc_get_user`                | Get one HMC user account by username |
 | `hmc_create_user`             | Create a new HMC local user account |
 | `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
@@ -442,7 +445,7 @@ connects with a real FastMCP client and prints the tools:
 uv run python scripts/smoke_mcp.py
 # Connected. <N> tools exposed:
 #   - hmc_console_info
-#   - hmc_systems
+#   - hmc_list_systems
 #   ...
 ```
 

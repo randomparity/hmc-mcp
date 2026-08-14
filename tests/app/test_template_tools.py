@@ -13,7 +13,7 @@ from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     hmc_deploy_partition_template,
     hmc_get_partition_template,
-    hmc_partition_templates,
+    hmc_list_partition_templates,
 )
 
 from conftest import JOB_ENTRY
@@ -41,12 +41,12 @@ def _hmc_env(monkeypatch) -> None:
 
 
 def test_partition_templates_lists_all(monkeypatch, mock_hmc):
-    """hmc_partition_templates() GETs the template library feed."""
+    """hmc_list_partition_templates() GETs the template library feed."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(200, text=TEMPLATE_FEED)
     )
-    result = hmc_partition_templates()
+    result = hmc_list_partition_templates()
     assert result[0]["UUID"] == TEMPLATE_UUID
     assert result[0]["Resource"]["templateName"] == "aix-gold"
 
@@ -73,13 +73,13 @@ def test_partition_templates_with_uuid_error_propagates(monkeypatch, mock_hmc):
 
 
 def test_partition_templates_list_http_406_not_licensed(monkeypatch, mock_hmc):
-    """hmc_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
+    """hmc_list_partition_templates() returns clear message when templates not licensed (HTTP 406)."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
         return_value=httpx.Response(406, text="<error>Not supported</error>")
     )
     with pytest.raises(HMCError) as exc_info:
-        hmc_partition_templates()
+        hmc_list_partition_templates()
     assert exc_info.value.status_code == 406
     error_msg = str(exc_info.value)
     # The message should be actionable and mention templates specifically, not raw HTTP error
@@ -130,7 +130,7 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
     assert result["warnings"] == [
         "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
+        "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
     ]
 
 
@@ -191,5 +191,5 @@ def test_deploy_partition_template_completed_includes_manual_stamp_advisory(
     assert set(result) == {"job", "warnings"}
     assert result["warnings"] == [
         "ownership stamp not attempted: template deployment does not identify and stamp "
-        "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
+        "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
     ]

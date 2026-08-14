@@ -40,7 +40,7 @@ def hmc_get_pcm_preferences(
 
     category is the resource type, e.g. 'ManagedSystem' or 'LogicalPartition';
     resource_name_or_uuid is the name or UUID of that resource (a SystemName
-    or UUID from hmc_systems, or a PartitionName or UUID from hmc_lpars).
+    or UUID from hmc_list_systems, or a PartitionName or UUID from hmc_list_lpars).
     Returns flags like LongTermMonitorEnabled, AggregationEnabled,
     ShortTermMonitorEnabled, ComputeLTMEnabled, EnergyMonitorEnabled.
     """

@@ -33,7 +33,7 @@ def hmc_list_virtual_switches(
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     The SwitchID is what hmc_create_virtual_network and hmc_add_network_adapter
     reference.
     """
@@ -53,7 +53,7 @@ def hmc_list_virtual_networks(
     """List Virtual Networks (VLANs) on a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     """
 
     async def _go():
@@ -76,7 +76,7 @@ def hmc_create_virtual_network(
     """Create a Virtual Network (VLAN) on a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     vswitch_id is the numeric SwitchID of the backing VirtualSwitch (see
     hmc_list_virtual_switches). tagged sets whether bridged traffic keeps the
     VLAN tag.
@@ -103,7 +103,7 @@ def hmc_delete_virtual_network(
     """Delete a Virtual Network from a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     Note: a network referenced by a NetworkBridge, or equal to a trunk
     adapter's PVID, cannot be deleted until the bridge is removed. Returns a
     confirmation string (immediate delete — no job to poll).
@@ -125,7 +125,7 @@ def hmc_list_network_bridges(
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system.
 
     system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_systems).
+    (find it with hmc_list_systems).
     """
 
     async def _go():
@@ -152,8 +152,8 @@ def hmc_list_fc_ports(
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
-    Either a CLI name or UUID works; use hmc_systems to find a system
-    UUID and hmc_lpars to find an LPAR UUID.
+    Either a CLI name or UUID works; use hmc_list_systems to find a system
+    UUID and hmc_list_lpars to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
     return _ssh_with_client(
@@ -182,8 +182,8 @@ def hmc_list_sea_adapters(
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
     runs. Pass lpar_name_or_uuid to restrict results to a single partition.
-    Either a CLI name or UUID works; use hmc_systems to find a system
-    UUID and hmc_lpars to find an LPAR UUID.
+    Either a CLI name or UUID works; use hmc_list_systems to find a system
+    UUID and hmc_list_lpars to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
     return _ssh_with_client(
@@ -247,8 +247,8 @@ def hmc_list_vnics(
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
     lookup over SSH when the REST API is unreachable) before the command
-    runs. Use ``hmc_systems`` to find a system UUID and
-    ``hmc_lpars`` to find an LPAR UUID.
+    runs. Use ``hmc_list_systems`` to find a system UUID and
+    ``hmc_list_lpars`` to find an LPAR UUID.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
     return _ssh_with_client(

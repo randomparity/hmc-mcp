@@ -65,7 +65,7 @@ def hmc_delete_vios(vios_name_or_uuid: str, profile: str | None = None) -> str:
     delete a VIOS whose current state is anything other than 'not activated',
     matching the precondition check pattern used by hmc_remove_memory_pool.
     This permanently removes the VIOS and its profiles from the HMC — it is
-    irreversible. Confirm the target with hmc_vios before calling. Returns a
+    irreversible. Confirm the target with hmc_list_vios before calling. Returns a
     confirmation string (immediate delete — no job to poll).
 
     Raises:
@@ -216,7 +216,7 @@ def hmc_list_vios_backups(
 
     Runs ``lsviosbackup -id <vios_uuid>`` on the HMC via SSH and parses the
     fixed-width table into a list of dicts keyed by the output header
-    (BackupName, Date, Type). Find vios_uuid with hmc_vios.
+    (BackupName, Date, Type). Find vios_uuid with hmc_list_vios.
 
     profile: optional TOML profile name; when omitted the env-default HMC is used."""
     config = build_config(profile=profile)
@@ -233,7 +233,7 @@ def hmc_backup_vios(
     """Create a VIOS backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation backup -type <backup_type>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_vios).
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios).
 
     backup_type must be one of:
       - ``vios``       — full VIOS configuration backup (default)
@@ -262,7 +262,7 @@ def hmc_restore_vios(
     """Restore a VIOS from a named backup via the HMC CLI.
 
     Runs ``chviosbackup -id <vios_uuid> -operation restore -file <backup_name>``
-    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_vios);
+    on the HMC via SSH. vios_uuid is the VIOS UUID (from hmc_list_vios);
     backup_name is the backup file name as listed by hmc_list_vios_backups.
 
     WARNING: Restoring overwrites the current VIOS configuration. Confirm

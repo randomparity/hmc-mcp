@@ -219,8 +219,8 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
     print("\n=== ST0: Capture ltczz386-lp3 Baseline ===")
 
     # 1. Basic LPAR info
-    st, data = await call(client, "hmc_lpars", lpar_name_or_uuid=context.lp3_name)
-    record(state, 0, "hmc_lpars (baseline)", st, data)
+    st, data = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name)
+    record(state, 0, "hmc_get_lpar (baseline)", st, data)
     if st == "PASS" and isinstance(data, dict):
         context.lp3_uuid = data.get("uuid") or data.get("UUID")
         context.lp3_baseline["lpars"] = data
@@ -330,8 +330,8 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
             break
 
     # 8. VIOS — capture UUID and numeric PartitionID scoped to our managed system
-    st, data = await call(client, "hmc_vios", system_name_or_uuid=context.system_name)
-    record(state, 0, "hmc_vios (baseline)", st, data)
+    st, data = await call(client, "hmc_list_vios", system_name_or_uuid=context.system_name)
+    record(state, 0, "hmc_list_vios (baseline)", st, data)
     if st == "PASS":
         for e in _entries(data):
             resource = _resource(e)
@@ -376,8 +376,8 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     if st == "PASS" and isinstance(data, dict):
         context.console_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_systems")
-    record(state, 1, "hmc_systems (list)", st, data)
+    st, data = await call(client, "hmc_list_systems")
+    record(state, 1, "hmc_list_systems (list)", st, data)
     if st == "PASS":
         for e in _entries(data):
             resource = _resource(e)
@@ -393,25 +393,25 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
                 context.system_uuid = first[0].get("UUID")
 
     st, data = await call(
-        client, "hmc_systems", system_name_or_uuid=context.system_name
+        client, "hmc_get_system", name=context.system_name
     )
-    record(state, 1, "hmc_systems (single)", st, data)
+    record(state, 1, "hmc_get_system (single)", st, data)
     # Fall back: extract system UUID from the single-system lookup if the list
     # returned empty (e.g. HMC firmware bug on unfiltered ManagedSystem feed)
     if st == "PASS" and isinstance(data, dict) and not context.system_uuid:
         context.system_uuid = data.get("UUID") or data.get("uuid")
     print(f"  System UUID: {context.system_uuid}")
 
-    st, data = await call(client, "hmc_lpars")
-    record(state, 1, "hmc_lpars (list)", st, data)
+    st, data = await call(client, "hmc_list_lpars")
+    record(state, 1, "hmc_list_lpars (list)", st, data)
 
-    st, data = await call(client, "hmc_lpars", lpar_name_or_uuid=context.lp3_name)
-    record(state, 1, "hmc_lpars (single lp3)", st, data)
+    st, data = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name)
+    record(state, 1, "hmc_get_lpar (single lp3)", st, data)
     if st == "PASS" and isinstance(data, dict) and not context.lp3_uuid:
         context.lp3_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_vios", system_name_or_uuid=context.system_name)
-    record(state, 1, "hmc_vios", st, data)
+    st, data = await call(client, "hmc_list_vios", system_name_or_uuid=context.system_name)
+    record(state, 1, "hmc_list_vios", st, data)
     if st == "PASS" and not context.vios_uuid:
         for e in _entries(data):
             resource = _resource(e)
@@ -429,16 +429,16 @@ async def inventory_connectivity(client: Client, state: RunState) -> None:
     st, data = await call(client, "hmc_find_placement", desired_memory_mb=1024)
     record(state, 1, "hmc_find_placement", st, data)
 
-    st, data = await call(client, "hmc_find_system", name=context.system_name)
-    record(state, 1, "hmc_find_system", st, data)
+    st, data = await call(client, "hmc_get_system", name=context.system_name)
+    record(state, 1, "hmc_get_system", st, data)
 
     st, data = await call(
         client, "hmc_list_resources", resource_type="LogicalPartition"
     )
     record(state, 1, "hmc_list_resources", st, data)
 
-    st, data = await call(client, "hmc_recent_jobs", limit=10)
-    record(state, 1, "hmc_recent_jobs", st, data)
+    st, data = await call(client, "hmc_list_recent_jobs", limit=10)
+    record(state, 1, "hmc_list_recent_jobs", st, data)
     if st == "PASS":
         for e in _entries(data):
             if isinstance(e, dict) and e.get("type") != "error":
@@ -589,8 +589,8 @@ async def inventory_storage(client: Client, state: RunState) -> None:
     st, data = await call(client, "hmc_list_clusters")
     record(state, 3, "hmc_list_clusters", st, data)
 
-    st, data = await call(client, "hmc_shared_storage_pools")
-    record(state, 3, "hmc_shared_storage_pools", st, data)
+    st, data = await call(client, "hmc_list_shared_storage_pools")
+    record(state, 3, "hmc_list_shared_storage_pools", st, data)
 
     st, data = await call(
         client, "hmc_list_io_slots", system_name_or_uuid=context.system_name
@@ -711,11 +711,11 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
         skip_reason="PCM not licensed on this HMC (expected)",
     )
 
-    st, data = await call(client, "hmc_partition_templates")
+    st, data = await call(client, "hmc_list_partition_templates")
     _record_expected_or_real(
         state,
         5,
-        "hmc_partition_templates",
+        "hmc_list_partition_templates",
         st,
         data,
         expected_fail_substrings=["406", "template"],
@@ -731,11 +731,11 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
 async def inventory_users_policies(client: Client, state: RunState) -> None:
     print("\n=== ST6: User & Policy Inventory ===")
 
-    st, data = await call(client, "hmc_users")
+    st, data = await call(client, "hmc_list_users")
     _record_expected_or_real(
         state,
         6,
-        "hmc_users",
+        "hmc_list_users",
         st,
         data,
         expected_fail_substrings=["REST000E", "400"],
@@ -791,7 +791,7 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
 
     if not context.system_uuid:
         st2, d2 = await call(
-            client, "hmc_systems", system_name_or_uuid=context.system_name
+            client, "hmc_get_system", name=context.system_name
         )
         if st2 == "PASS" and isinstance(d2, dict):
             context.system_uuid = d2.get("UUID") or d2.get("uuid")
@@ -810,8 +810,8 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
     if st == "PASS" and isinstance(data, dict):
         context.scratch_uuid = data.get("uuid") or data.get("UUID")
 
-    st, data = await call(client, "hmc_lpars", lpar_name_or_uuid=context.scratch_name)
-    record(state, 8, "hmc_lpars (confirm created)", st, data)
+    st, data = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.scratch_name)
+    record(state, 8, "hmc_get_lpar (confirm created)", st, data)
     if st == "PASS" and isinstance(data, dict) and not context.scratch_uuid:
         context.scratch_uuid = data.get("uuid") or data.get("UUID")
 
@@ -871,8 +871,8 @@ async def exercise_lpar_lifecycle(client: Client, state: RunState) -> None:
     if st == "PASS":
         context.scratch_uuid = None
 
-    st, data = await call(client, "hmc_lpars")
-    record(state, 8, "hmc_lpars (confirm deleted)", st, data)
+    st, data = await call(client, "hmc_list_lpars")
+    record(state, 8, "hmc_list_lpars (confirm deleted)", st, data)
 
 
 # ---------------------------------------------------------------------------
@@ -1243,11 +1243,11 @@ async def administer_test_user(client: Client, state: RunState) -> None:
     )
     user_created = st == "PASS"
 
-    st, data = await call(client, "hmc_users")
+    st, data = await call(client, "hmc_list_users")
     _record_expected_or_real(
         state,
         11,
-        "hmc_users (confirm created)",
+        "hmc_list_users (confirm created)",
         st,
         data,
         expected_fail_substrings=_REST000E_SKIP,
@@ -1328,11 +1328,11 @@ async def administer_test_user(client: Client, state: RunState) -> None:
             "policy not created (REST not supported)",
         )
 
-    st, data = await call(client, "hmc_users")
+    st, data = await call(client, "hmc_list_users")
     _record_expected_or_real(
         state,
         11,
-        "hmc_users (confirm deleted)",
+        "hmc_list_users (confirm deleted)",
         st,
         data,
         expected_fail_substrings=_REST000E_SKIP,
@@ -1449,8 +1449,8 @@ async def inspect_metrics_jobs(client: Client, state: RunState) -> None:
         skip(state, 12, "hmc_get_job", "no job UUID captured (ST8 may have failed)")
         skip(state, 12, "hmc_wait_for_job", "no job UUID")
 
-    st, data = await call(client, "hmc_recent_jobs", limit=20)
-    record(state, 12, "hmc_recent_jobs (post-tests)", st, data)
+    st, data = await call(client, "hmc_list_recent_jobs", limit=20)
+    record(state, 12, "hmc_list_recent_jobs (post-tests)", st, data)
     # Opportunistically capture a job UUID if we still don't have one
     if not context.job_uuid_sample and st == "PASS":
         for e in _entries(data):
@@ -1561,7 +1561,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
     )
 
     # Step 1 — Power off lp3 (skip gracefully if already gone)
-    st_check, _ = await call(client, "hmc_lpars", lpar_name_or_uuid=context.lp3_name)
+    st_check, _ = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name)
     if st_check == "PASS":
         st, data = await call(
             client,
@@ -1592,8 +1592,8 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         )
 
     # Confirm gone
-    st, data = await call(client, "hmc_lpars")
-    record(state, 14, "hmc_lpars (confirm lp3 gone)", st, data)
+    st, data = await call(client, "hmc_list_lpars")
+    record(state, 14, "hmc_list_lpars (confirm lp3 gone)", st, data)
 
     # Step 3 — Audit VG1 after lp3 deletion (VG1-lp3 LV now unmapped)
     st, data = await call(client, "hmc_list_volume_groups", vios_name_or_uuid=vios_uuid)
@@ -1710,8 +1710,8 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
             print(f"    {icon} provision step [{step_name}]: {step_status}")
 
     # Confirm lp3 is back
-    st, data = await call(client, "hmc_lpars", lpar_name_or_uuid=context.lp3_name)
-    record(state, 14, "hmc_lpars (post-provision)", st, data)
+    st, data = await call(client, "hmc_get_lpar", lpar_name_or_uuid=context.lp3_name)
+    record(state, 14, "hmc_get_lpar (post-provision)", st, data)
     if st == "PASS" and isinstance(data, dict):
         context.lp3_uuid = data.get("uuid") or data.get("UUID")
 

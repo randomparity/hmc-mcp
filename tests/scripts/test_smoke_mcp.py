@@ -14,6 +14,6 @@ def test_main_lists_the_live_tool_registry(capsys: pytest.CaptureFixture[str]) -
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith("Connected. ")
     assert lines[0].endswith(" tools exposed:")
-    assert "  - hmc_systems" in lines
-    assert "  - hmc_lpars" in lines
+    assert "  - hmc_list_systems" in lines
+    assert "  - hmc_list_lpars" in lines
     assert len(lines) > 100

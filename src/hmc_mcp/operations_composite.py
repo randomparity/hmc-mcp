@@ -49,7 +49,7 @@ def _lpar_summary(
         "description": res.get("Description"),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
         # (vSCSI adapter → vios_partition_id → VIOS UUID → ViosStorageDetail
-        #  filtered by LPAR link) and is not included here. Use hmc_vios() to
+        #  filtered by LPAR link) and is not included here. Use hmc_list_vios() to
         #  retrieve per-VIOS storage mappings, then filter by the LPAR's
         #  partition ID.
         "mapped_storage": None,
@@ -80,7 +80,7 @@ async def lpar_summary(hmc: HMCClient, lpar_name_or_uuid: str) -> dict[str, Any]
     - ``mapped_storage`` — always ``null``; resolving vSCSI-mapped storage
       requires a VIOS UUID hop (vSCSI adapter → ``vios_partition_id`` →
       ``list_vios`` + PartitionID match → ``get_vios_storage_detail``) and is
-      out of scope for this best-effort summary. Use ``hmc_vios`` for per-VIOS
+      out of scope for this best-effort summary. Use ``hmc_list_vios`` for per-VIOS
       storage mappings.
 
     Raises ``ValueError`` when the partition cannot be found.
@@ -104,7 +104,7 @@ async def _fetch_lpar_data(
     if lpar is None:
         raise ValueError(
             f"LPAR {lpar_uuid!r} not found after resolution. "
-            "Use hmc_lpars to list available partitions."
+            "Use hmc_list_lpars to list available partitions."
         )
     return lpar, adapters
 
@@ -124,7 +124,7 @@ async def _fetch_system_summary_data(
     if system is None:
         raise ValueError(
             f"Managed system {system_uuid!r} not found after resolution. "
-            "Use hmc_systems to list available systems."
+            "Use hmc_list_systems to list available systems."
         )
     return system, lpars, vios_list
 

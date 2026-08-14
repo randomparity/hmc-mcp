@@ -28,7 +28,7 @@ from .documents import (
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_users(
+def hmc_list_users(
     user_type: UserType = "all",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:

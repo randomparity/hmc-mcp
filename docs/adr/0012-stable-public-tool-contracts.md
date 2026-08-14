@@ -22,11 +22,14 @@ Each public MCP tool represents one operation with one stable result shape.
 Selector parameters may narrow a collection but must not switch a collection
 tool into a single-resource lookup or change the output kind.
 
-- `hmc_systems`, `hmc_lpars`, `hmc_vios`, and
-  `hmc_partition_templates` always return collections. System, state, or other
-  collection filters retain the list shape.
+- Collection operations use the `hmc_list_<resource>` grammar and always
+  return collections. System, state, or other collection filters retain the
+  list shape. This includes `hmc_list_systems`, `hmc_list_lpars`,
+  `hmc_list_vios`, `hmc_list_shared_storage_pools`,
+  `hmc_list_partition_templates`, `hmc_list_users`, and
+  `hmc_list_recent_jobs`.
 - Single-resource operations have explicit names:
-  `hmc_find_system`, `hmc_get_lpar`, `hmc_get_vios`, and
+  `hmc_get_system`, `hmc_get_lpar`, `hmc_get_vios`, and
   `hmc_get_partition_template`.
 - `hmc_processed_metric_links` and `hmc_aggregated_metric_links` return metric
   link collections. `hmc_processed_metrics` and `hmc_aggregated_metrics`
@@ -35,7 +38,9 @@ tool into a single-resource lookup or change the output kind.
 - A discriminator remains acceptable when every variant has the same result
   shape and capability annotation, as with update-versus-upgrade operations.
 - New tools must encode materially different operations or result shapes in
-  their names instead of adding modes that produce incompatible schemas.
+  their names instead of adding modes that produce incompatible schemas. New
+  collection and lookup tools use `hmc_list_<resource>` and
+  `hmc_get_<resource>` respectively.
 
 This decision supersedes ADR 0003's optional-identifier list/get merges and
 ADR 0004's metric `mode` merges. It retains the useful constraint that reads

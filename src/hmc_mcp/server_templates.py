@@ -17,12 +17,12 @@ from .jobs import validate_wait_timing, wait_for_submitted_job
 
 _MANUAL_STAMP_WARNING = (
     "ownership stamp not attempted: template deployment does not identify and stamp "
-    "the new LPAR; identify it with hmc_lpars and call hmc_set_lpar_description"
+    "the new LPAR; identify it with hmc_list_lpars and call hmc_set_lpar_description"
 )
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
+def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
     """List all partition templates in the HMC template library."""
 
     async def _go():

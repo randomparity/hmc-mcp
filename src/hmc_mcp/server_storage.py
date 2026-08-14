@@ -29,7 +29,7 @@ def hmc_list_volume_groups(
     """List Volume Groups on a VIOS.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     Each Volume Group shows free space (MiB), the physical volumes backing it
     and the virtual disks already carved out.
     """
@@ -52,7 +52,7 @@ def hmc_create_volume_group(
     """Create a Volume Group on a VIOS from one or more physical volumes.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     physical_volumes is a list of free PV device names (e.g. ['hdisk10']). Use
     the GetFreePhysicalVolumes job / VIOS 'lspv' to find unused disks. This
     pools the disks so virtual disks can be carved out for LPARs.
@@ -77,7 +77,7 @@ def hmc_create_virtual_disk(
     """Create a Virtual Disk (logical volume) inside a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     capacity_mb is the size in MiB. The disk becomes backing storage that you
     then attach to an LPAR with hmc_map_storage_to_lpar (storage_kind
     'VirtualDisk'). Find vg_uuid with hmc_list_volume_groups.
@@ -105,9 +105,9 @@ def hmc_map_storage_to_lpar(
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars). The LPAR must already have a vSCSI adapter
+    (find it with hmc_list_lpars). The LPAR must already have a vSCSI adapter
     paired to this VIOS — see hmc_add_vscsi_adapter.
     storage_kind is 'VirtualDisk' (a logical volume created with
     hmc_create_virtual_disk) or 'PhysicalVolume' (a whole hdisk). storage_name
@@ -133,7 +133,7 @@ def hmc_create_media_repository(
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     The repository holds file-backed ISO images for client partitions; only one
     can exist per VIOS. size_mb is RepositorySize.
     """
@@ -157,7 +157,7 @@ def hmc_create_optical_media(
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     Only blank media can be created via the API; media_name is the file name
     (e.g. 'aix.iso'), size_mb is MediaSize.
     """
@@ -179,7 +179,7 @@ def hmc_delete_media_repository(
     """Delete the Virtual Media Repository from a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_vios).
+    (find it with hmc_list_vios).
     This is an immediate (synchronous) delete — it returns a confirmation
     string once the HMC has applied the change; there is no job to poll.
     """
@@ -205,7 +205,7 @@ def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_READ_ONLY)
-def hmc_shared_storage_pools(
+def hmc_list_shared_storage_pools(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List all Shared Storage Pools with capacity and logical-unit details."""

@@ -30,7 +30,7 @@ from hmc_mcp.server import (
     hmc_list_clusters,
     hmc_list_volume_groups,
     hmc_map_storage_to_lpar,
-    hmc_shared_storage_pools,
+    hmc_list_shared_storage_pools,
 )
 
 from conftest import JOB_ENTRY
@@ -357,12 +357,12 @@ def test_list_clusters(monkeypatch, mock_hmc):
 
 
 def test_shared_storage_pools_lists_all(monkeypatch, mock_hmc):
-    """hmc_shared_storage_pools() GETs the SharedStoragePool collection."""
+    """hmc_list_shared_storage_pools() GETs the SharedStoragePool collection."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/SharedStoragePool").mock(
         return_value=httpx.Response(200, text=_feed(SSP_UUID, "SharedStoragePool"))
     )
-    result = hmc_shared_storage_pools()
+    result = hmc_list_shared_storage_pools()
     assert result[0]["UUID"] == SSP_UUID
 
 

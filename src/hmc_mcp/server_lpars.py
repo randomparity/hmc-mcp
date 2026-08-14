@@ -76,7 +76,7 @@ def hmc_create_lpar(
 
     system_name_or_uuid: the target managed system — accepts either a
     SystemName (e.g. ``"Server-9080-M9S-SN12345"``) or a UUID (find it
-    with hmc_systems). Memory values are in MiB. By default a
+    with hmc_list_systems). Memory values are in MiB. By default a
     shared-processor partition is created; set dedicated=True for dedicated
     CPUs (then procs are whole CPU counts). For shared partitions, procs are
     processing units (may be fractional, e.g. 0.5) and vcpus are virtual
@@ -152,7 +152,7 @@ def hmc_modify_lpar(
     """Modify an LPAR's name and/or resource assignment (memory / CPU).
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars). Only the fields you pass are changed.
+    (find it with hmc_list_lpars). Only the fields you pass are changed.
     Memory values are in MiB. For a running partition these are dynamic
     (DLPAR) operations and require an active RMC connection; otherwise the
     change applies on next activation. Set dedicated=True to assign whole
@@ -330,7 +330,7 @@ def hmc_power_on_lpar(
     """Submit a PowerOn job for a logical partition.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_lpars). Returns the submitted job (check hmc_get_job
+    (find it with hmc_list_lpars). Returns the submitted job (check hmc_get_job
     for status). This changes the state of a real partition — confirm the
     target with hmc_get_lpar(lpar_name_or_uuid=...) before calling.
 
