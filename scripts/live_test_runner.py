@@ -20,7 +20,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import sys
+import tempfile
 import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -75,7 +77,7 @@ def _ensure_schema_version() -> None:
 
 # Throwaway password for the ephemeral test user created and deleted in ST11.
 # Not a real credential — the account is deleted at the end of the sub-task.
-_TEST_USER_PASSWORD = "Mcp1T3stUs3r!"  # pragma: allowlist secret
+_TEST_USER_PASSWORD = f"Aa1!{secrets.token_hex(8)}"
 
 
 @dataclass
@@ -1207,7 +1209,7 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
         client,
         "hmc_backup_lpar_profiles",
         system_name_or_uuid=context.system_name,
-        file_path="/tmp/mcp-lp3-profiles-r2",
+        file_path=str(Path(tempfile.gettempdir()) / "mcp-lp3-profiles-r2"),
         force=True,
     )
     record(state, 10, "hmc_backup_lpar_profiles (force=True)", st, data)

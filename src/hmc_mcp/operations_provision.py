@@ -267,24 +267,28 @@ async def provision_lpar(
             raise ValueError("LPAR creation returned no UUID")
         return created_lpar
 
+    def created_uuid() -> str:
+        if lpar_uuid is None:
+            raise RuntimeError("LPAR UUID is unavailable before the create step")
+        return lpar_uuid
+
     async def network() -> Any:
-        assert lpar_uuid is not None
-        return await hmc.add_network_adapter(lpar_uuid, port_vlan_id)
+        return await hmc.add_network_adapter(created_uuid(), port_vlan_id)
 
     async def vscsi() -> Any:
-        assert lpar_uuid is not None
-        return await hmc.add_vscsi_adapter(lpar_uuid, vios_partition_id, vios_slot)
+        return await hmc.add_vscsi_adapter(
+            created_uuid(), vios_partition_id, vios_slot
+        )
 
     async def storage() -> Any:
-        assert lpar_uuid is not None
         return await hmc.map_storage_to_lpar(
-            vios_uuid, storage_kind, storage_name, lpar_uuid
+            vios_uuid, storage_kind, storage_name, created_uuid()
         )
 
     async def start() -> Any:
-        assert lpar_uuid is not None
+        uuid = created_uuid()
         return await hmc.submit_job(
-            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/PowerOn",
+            f"/rest/api/uom/LogicalPartition/{uuid}/do/PowerOn",
             power_on_lpar_job(),
         )
 

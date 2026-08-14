@@ -126,7 +126,8 @@ def config_show(
     if config_path is None:
         _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
-    assert config_path is not None  # _fail raises; narrowing for type checker
+    if config_path is None:  # pragma: no cover - _fail above always raises
+        raise RuntimeError("config path validation returned unexpectedly")
     # Read the raw TOML dict to determine credential presence WITHOUT
     # resolving password_env (load_profile() resolves it, which requires
     # the env var to be present — a production secret may not be set locally).
