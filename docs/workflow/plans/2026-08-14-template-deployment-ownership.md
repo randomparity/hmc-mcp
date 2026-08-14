@@ -64,21 +64,24 @@ one malformed entry invalidates a snapshot, and only one new UUID authorizes sta
    `uv run pytest -q --no-cov tests/unit/test_template_ownership.py`; expect collection or
    import failure because `_new_lpar_from_snapshots` does not exist. This is the required
    red proof.
-3. Add async orchestration tests using an `AsyncMock` client and monkeypatched
+3. Implement only `_snapshot_uuids` and `_new_lpar_from_snapshots` in
+   `operations_templates.py`. Run the pure-helper tests again and expect them green. Do not
+   change `deploy_partition_template` or the result shape in this step.
+4. Add async orchestration tests using an `AsyncMock` client and monkeypatched
    `resolve_system_uuid`, `wait_for_submitted_job`, and
    `stamp_created_lpar_ownership`. Append labels to an `events` list from each side effect
    and assert the success order is exactly `baseline`, `submit`, `wait`, `post`, `stamp`.
    Assert the stamp receives the new entry's `PartitionName`, the resolved UUID, and the
    original system selector.
-4. Add cases asserting stamp return `(True, [])`, `(False, [warning])`, and no-attempt
+5. Add cases asserting stamp return `(True, [])`, `(False, [warning])`, and no-attempt
    `None` paths. Cover zero/multiple candidates, malformed mixed snapshots, baseline
    `HMCError`, post-list `HMCError`, a returned non-`COMPLETED` job, and `wait=False`.
    Assert non-completed and non-wait paths never post-list or stamp.
-5. Update the app tests so non-wait results expect
+6. Update the app tests so non-wait results expect
    `{"job", "ownership_stamped", "warnings"}` and `ownership_stamped is None`. Replace
    the obsolete completed/manual-advisory test with a public success case that supplies
    before/after system-scoped feeds and patches the shared stamp operation.
-6. Run
+7. Run
    `uv run pytest -q --no-cov tests/unit/test_template_ownership.py tests/app/test_template_tools.py`;
    expect failures in result shape, missing list calls, and no stamp call. Confirm the
    tests bite by preserving this output before implementation.
@@ -111,10 +114,9 @@ target.
    module logger, and replace the unconditional manual-warning constant with reason-specific
    constants for non-wait, non-completed job, unavailable baseline/post snapshot, malformed
    snapshot, zero candidate, and multiple candidates.
-3. Implement `_snapshot_uuids(entries)` so it returns a UUID set only when every entry's
-   top-level `UUID` is a non-empty string. Implement `_new_lpar_from_snapshots` using those
-   sets and a UUID-to-entry map. Return no candidate unless the difference has cardinality
-   one and maps to exactly one post entry.
+3. Retain the already-green `_snapshot_uuids` and `_new_lpar_from_snapshots` behavior from
+   Task 1. Refactor it only if the orchestration needs a type-safe call boundary; rerun its
+   focused tests immediately after any such edit.
 4. Refactor `deploy_partition_template` in this exact order: validate and resolve; if
    waiting, try the baseline list and retain failure as state; submit; wait; initialize
    `ownership_stamped=None`; short-circuit non-wait and non-completed normal results with
@@ -162,10 +164,12 @@ existing job exceptions and direct-create stamping remain unchanged.
    and CLI group imports green. If collection fails, run
    `uv run python scripts/smoke_mcp.py` explicitly before diagnosing further.
 6. Run `uv run prek run --all-files` bare; expect every hook green.
-7. Review `git diff main...HEAD` for names, complexity, warning wording, accidental public
-   surface, and generated artifacts. Commit documentation separately as
-   `docs: document template ownership stamping` if it is not already part of the task-2
-   behavior commit.
+7. Inspect `git status --short --untracked-files=all` and `git diff` so the uncommitted
+   documentation changes and any accidental files are visible. Commit the three explicit
+   documentation paths separately as `docs: document template ownership stamping`.
+8. Review `git diff main...HEAD` for names, complexity, warning wording, accidental public
+   surface, generated artifacts, and the now-committed documentation. Expect only the
+   frozen design, implementation, tests, and ownership-facing documentation.
 
 **Acceptance criteria:** No statement claims template deployment is always manual; all local
 and CI-equivalent guardrails pass; branch diff stays within the frozen surface.
