@@ -676,25 +676,35 @@ def lpars_provision(
     result = _run(_go)
 
     if as_json:
-        _print_json(result)
+        from dataclasses import asdict
+
+        _print_json(asdict(result))
         return
 
     if dry_run:
         console.print("[yellow]DRY RUN — preconditions validated, no LPAR created[/yellow]")
-    elif result.get("created"):
+    elif result.workflow_completed:
         console.print(f"[green]LPAR '{name}' provisioned successfully[/green]")
+    elif result.resource_created:
+        identity = result.lpar_uuid or "UUID unavailable"
+        console.print(
+            f"[yellow]LPAR '{name}' was created ({identity}), but provisioning "
+            "is incomplete — check step results[/yellow]"
+        )
     else:
-        console.print(f"[yellow]Provisioning incomplete — check step results for '{name}'[/yellow]")
+        console.print(
+            f"[yellow]LPAR '{name}' was not created — check step results[/yellow]"
+        )
 
     table = Table(title=f"Provision steps: {name}")
     table.add_column("Step", style="cyan")
     table.add_column("Status", style="green")
-    for step in result.get("steps", []):
+    for step in result.steps:
         status = step.get("status", "-")
         style = "green" if status == "ok" else ("yellow" if status in ("dry_run", "skipped") else "red")
         table.add_row(step.get("step", "-"), f"[{style}]{status}[/{style}]")
     console.print(table)
 
-    if result.get("warnings"):
-        for w in result["warnings"]:
+    if result.warnings:
+        for w in result.warnings:
             console.print(f"[yellow]Warning: {w}[/yellow]")

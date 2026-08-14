@@ -109,7 +109,7 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
 
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
     assert result is not None
-    assert result["lpar"].get("UUID") == LPAR_UUID
+    assert result.lpar.get("UUID") == LPAR_UUID
     create_via_cli.assert_awaited_once()
     resources = create_via_cli.await_args.kwargs["resources"]
     assert isinstance(resources, LparResources)

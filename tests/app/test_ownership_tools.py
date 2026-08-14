@@ -94,12 +94,11 @@ def test_create_lpar_ownership_stamped_true(monkeypatch):
                 name="test-lpar",
             )
 
-    assert isinstance(result, dict)
-    assert "lpar" in result
-    assert result["ownership_stamped"] is True
-    assert result["warnings"] == []
+    assert result.resource_created is True
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
     # The lpar key carries the created partition entry
-    assert result["lpar"]["Resource"]["PartitionName"] == "test-lpar"
+    assert result.lpar["Resource"]["PartitionName"] == "test-lpar"
 
 
 # ---------------------------------------------------------------------- #
@@ -121,11 +120,11 @@ def test_create_lpar_ownership_stamped_false_on_stamp_failure(monkeypatch):
                 name="test-lpar",
             )
 
-    assert result["ownership_stamped"] is False
-    assert len(result["warnings"]) == 1
-    assert "stamp" in result["warnings"][0].lower()
+    assert result.ownership_stamped is False
+    assert len(result.warnings) == 1
+    assert "stamp" in result.warnings[0].lower()
     # LPAR is still returned
-    assert result["lpar"] is not None
+    assert result.lpar is not None
 
 
 # ---------------------------------------------------------------------- #
@@ -147,7 +146,6 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
                 name="test-lpar",
             )
 
-    assert "lpar" in result
-    assert "ownership_stamped" in result
-    assert "warnings" in result
-    assert result["ownership_stamped"] is True
+    assert result.lpar is not None
+    assert result.ownership_stamped is True
+    assert result.warnings == ()

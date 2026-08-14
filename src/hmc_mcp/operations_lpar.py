@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any
 
 from .client import HMCClient
 from .documents import LparResources, PartitionType
@@ -25,12 +25,14 @@ class LparCreation:
     max_virtual_slots: int | None = None
 
 
-class LparCreationResult(TypedDict):
+@dataclass(frozen=True)
+class LparCreationResult:
     """Result shared by direct creation and provisioning workflows."""
 
+    resource_created: bool
     lpar: dict[str, Any] | None
     ownership_stamped: bool | None
-    warnings: list[str]
+    warnings: tuple[str, ...]
 
 
 async def _system_name(hmc, system_uuid: str, fallback: str) -> str:
@@ -102,19 +104,16 @@ async def create_and_stamp_lpar(
         created_lpar = await hmc.find_partition_by_name(creation.name)
 
     if created_lpar is None:
-        return {
-            "lpar": None,
-            "ownership_stamped": None,
-            "warnings": [
+        return LparCreationResult(
+            resource_created=True,
+            lpar=None,
+            ownership_stamped=None,
+            warnings=(
                 f"ownership stamp skipped for LPAR {creation.name!r}: "
-                "create returned no LPAR body"
-            ],
-        }
+                "create returned no LPAR body",
+            ),
+        )
     ownership_stamped, warnings = await _stamp_ownership(
         hmc, system_uuid, system_name or system_name_or_uuid, created_lpar
     )
-    return {
-        "lpar": created_lpar,
-        "ownership_stamped": ownership_stamped,
-        "warnings": warnings,
-    }
+    return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))

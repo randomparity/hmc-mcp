@@ -241,9 +241,9 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
         in body
     )
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
-    assert result["lpar"]["Resource"]["PartitionName"] == "newlpar"
-    assert result["ownership_stamped"] is True
-    assert result["warnings"] == []
+    assert result.lpar["Resource"]["PartitionName"] == "newlpar"
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
 
 
 def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):

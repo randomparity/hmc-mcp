@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ._app import _run, mcp
 from .common import client_from_env
 from .documents import LparResources, PartitionType
-from .operations_provision import ProvisionNetwork, ProvisionStorage, provision_lpar
+from .operations_provision import ProvisionNetwork, ProvisionResult, ProvisionStorage, provision_lpar
 
 
 @mcp.tool
@@ -27,7 +25,7 @@ def hmc_provision_lpar(
     power_on: bool = True,
     dry_run: bool = False,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> ProvisionResult:
     """Provision an LPAR with network, vSCSI storage, and optional power-on."""
 
     async def _go():

@@ -46,12 +46,26 @@ class _ProvisionState:
     """Validated output from the create step for later ordered steps."""
 
     creation: LparCreationResult | None = None
+    resource_created: bool = False
     created_uuid: str | None = None
 
     def require_created_uuid(self) -> str:
         if self.created_uuid is None:
             raise RuntimeError("LPAR UUID is unavailable before the create step")
         return self.created_uuid
+
+
+@dataclass(frozen=True)
+class ProvisionResult:
+    """Truthful outcome of a provisioning attempt."""
+
+    resource_created: bool
+    workflow_completed: bool
+    lpar_uuid: str | None
+    dry_run: bool
+    ownership_stamped: bool | None
+    steps: tuple[dict[str, Any], ...]
+    warnings: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------- #
@@ -154,7 +168,7 @@ async def provision_lpar(
     partition_type: PartitionType = "AIX/Linux",
     power_on: bool = True,
     dry_run: bool = False,
-) -> dict[str, Any]:
+) -> ProvisionResult:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
 
@@ -191,8 +205,10 @@ async def provision_lpar(
 
     Returns
     -------
-    dict with:
-    - ``created`` (bool): ``True`` when all required steps completed.
+    ProvisionResult with:
+    - ``resource_created``: whether the create operation succeeded.
+    - ``workflow_completed``: whether every requested step succeeded.
+    - ``lpar_uuid``: the validated UUID needed for follow-on operations.
     - ``dry_run`` (bool): mirrors the input flag.
     - ``steps`` (list): per-step result dicts ``{step, status, result?}``.
       status is ``"ok"``, ``"error"``, ``"skipped"``, or ``"dry_run"``.
@@ -224,13 +240,7 @@ async def provision_lpar(
         step_names.append("power_on")
 
     if dry_run:
-        return {
-            "created": False,
-            "dry_run": True,
-            "ownership_stamped": None,
-            "steps": [_step(n, "dry_run") for n in step_names],
-            "warnings": [],
-        }
+        return ProvisionResult(False, False, None, True, None, tuple(_step(n, "dry_run") for n in step_names), ())
 
     # ----------------------------------------------------------------
     # 4. Build LPAR XML
@@ -251,11 +261,12 @@ async def provision_lpar(
             LparCreation(name, partition_type, resources),
             lpar_xml,
         )
-        created_lpar = creation_result["lpar"]
+        state.creation = creation_result
+        state.resource_created = creation_result.resource_created
+        created_lpar = creation_result.lpar
         uuid = (created_lpar or {}).get("UUID")
         if not isinstance(uuid, str) or not uuid:
             raise ValueError("LPAR creation returned no UUID")
-        state.creation = creation_result
         state.created_uuid = uuid
         return created_lpar
 
@@ -292,15 +303,15 @@ async def provision_lpar(
     ]
     if power_on:
         operations.append(("power_on", start))
-    created, steps = await _run_steps(operations)
+    workflow_completed, steps = await _run_steps(operations)
 
     creation_result = state.creation
-    return {
-        "created": created,
-        "dry_run": False,
-        "ownership_stamped": (
-            creation_result["ownership_stamped"] if creation_result else None
-        ),
-        "steps": steps,
-        "warnings": creation_result["warnings"] if creation_result else [],
-    }
+    return ProvisionResult(
+        resource_created=state.resource_created,
+        workflow_completed=workflow_completed,
+        lpar_uuid=state.created_uuid,
+        dry_run=False,
+        ownership_stamped=creation_result.ownership_stamped if creation_result else None,
+        steps=tuple(steps),
+        warnings=creation_result.warnings if creation_result else (),
+    )

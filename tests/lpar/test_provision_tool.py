@@ -290,15 +290,17 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    assert result["created"] is True
-    assert result["dry_run"] is False
-    steps = {s["step"]: s for s in result["steps"]}
+    assert result.resource_created is True
+    assert result.workflow_completed is True
+    assert result.lpar_uuid == LPAR_UUID
+    assert result.dry_run is False
+    steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"
     assert steps["vscsi"]["status"] == "ok"
     assert steps["storage"]["status"] == "ok"
     assert steps["power_on"]["status"] == "ok"
-    assert isinstance(result["warnings"], list)
+    assert isinstance(result.warnings, tuple)
 
 
 def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
@@ -309,7 +311,7 @@ def test_provision_lpar_step_results_contain_data(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result["steps"]}
+    steps = {s["step"]: s for s in result.steps}
     # create step should contain partition data
     create_result = steps["create"]["result"]
     assert create_result is not None
@@ -340,7 +342,7 @@ def test_provision_lpar_preserves_complete_resource_input(
 
     result = hmc_provision_lpar(**_provision_args(resources=resources))
 
-    assert result["created"] is True
+    assert result.workflow_completed is True
     body = create_route.calls.last.request.content.decode()
     for value in (512, 2048, 4096, 1, 2, 4):
         assert f">{value}<" in body
@@ -366,8 +368,8 @@ def test_provision_lpar_no_power_on(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args(power_on=False))
 
-    assert result["created"] is True
-    step_names = [s["step"] for s in result["steps"]]
+    assert result.workflow_completed is True
+    step_names = [s["step"] for s in result.steps]
     assert "power_on" not in step_names
 
 
@@ -388,11 +390,13 @@ def test_provision_lpar_dry_run_validates_only(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args(dry_run=True))
 
-    assert result["dry_run"] is True
-    assert result["created"] is False
+    assert result.dry_run is True
+    assert result.resource_created is False
+    assert result.workflow_completed is False
+    assert result.lpar_uuid is None
     assert not create_route.called
     # All steps report dry_run status
-    for step in result["steps"]:
+    for step in result.steps:
         assert step["status"] == "dry_run"
 
 
@@ -448,7 +452,7 @@ def test_provision_lpar_accepts_valid_vlan_after_malformed_entry(monkeypatch, mo
 
     result = hmc_provision_lpar(**_provision_args(dry_run=True))
 
-    assert result["dry_run"] is True
+    assert result.dry_run is True
 
 
 def test_provision_lpar_vg_not_found(monkeypatch, mock_hmc):
@@ -491,7 +495,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
 
     result = hmc_provision_lpar(**_provision_args())
 
-    steps = {s["step"]: s for s in result["steps"]}
+    steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"
     assert steps["vscsi"]["status"] == "error"
@@ -499,5 +503,25 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert steps["power_on"]["status"] == "skipped"
     assert not storage_route.called
     assert not power_on_route.called
-    # created is False when the workflow did not complete successfully
-    assert result["created"] is False
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid == LPAR_UUID
+
+
+def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_hmc):
+    """A successful create with no response body is not reported as no creation."""
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    mock_hmc.put(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(201))
+
+    result = hmc_provision_lpar(**_provision_args())
+
+    assert result.resource_created is True
+    assert result.workflow_completed is False
+    assert result.lpar_uuid is None
+    assert result.steps[0]["status"] == "error"
+    assert "no UUID" in result.steps[0]["result"]
+    assert result.ownership_stamped is None
+    assert "no LPAR body" in result.warnings[0]

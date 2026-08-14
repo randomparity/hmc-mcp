@@ -25,7 +25,7 @@ from .documents import (
     build_lpar_document,
 )
 from .jobs import power_off_lpar_job, power_on_lpar_job, wait_for_submitted_job
-from .operations_lpar import LparCreation, create_and_stamp_lpar
+from .operations_lpar import LparCreation, LparCreationResult, create_and_stamp_lpar
 
 
 def _check_lpar_write_error(exc: HMCError) -> None:
@@ -60,7 +60,7 @@ def hmc_create_lpar(
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> LparCreationResult:
     """Create a new LPAR on a managed system.
 
     system_name_or_uuid: the target managed system — accepts either a

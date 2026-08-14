@@ -400,4 +400,4 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
 
     assert create_route.called
     # result is now wrapped: {"lpar": <entry>, "ownership_stamped": ..., "warnings": []}
-    assert result["lpar"]["Resource"]["PartitionName"] == "new-lpar"
+    assert result.lpar["Resource"]["PartitionName"] == "new-lpar"
