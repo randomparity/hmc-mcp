@@ -163,6 +163,14 @@ def test_partition_creation_tools_share_resource_object_schema():
         assert legacy_name not in vios_properties
 
 
+def test_password_policy_mutations_use_settings_object_schema():
+    by_name = _tools_by_name()
+    for tool_name in ("hmc_create_password_policy", "hmc_modify_password_policy"):
+        properties = by_name[tool_name].parameters["properties"]
+        assert set(properties) == {"policy_name", "settings", "profile"}
+        assert properties["settings"]["type"] == "object"
+
+
 def test_repository_type_enum_matches_runtime_constant():
     """The MCP enum for RepositorySource.type must not drift from the Literal.
 

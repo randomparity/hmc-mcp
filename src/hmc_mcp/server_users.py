@@ -18,6 +18,8 @@ from .client_users import (
     validate_ldap_removal_resource,
 )
 from .documents import (
+    PASSWORD_POLICY_CREATION_DEFAULTS,
+    PasswordPolicySettings,
     TaskRole,
     build_hmc_user_document,
     build_ldap_config_document,
@@ -167,40 +169,20 @@ def hmc_get_password_policy_status(
 @mcp.tool
 def hmc_create_password_policy(
     policy_name: str,
-    pwage: int = 0,
-    min_length: int = 8,
-    min_digits: int = 0,
-    min_uppercase: int = 0,
-    min_lowercase: int = 0,
-    min_special: int = 0,
-    hist_size: int = 0,
-    warn_pwage: int = 0,
-    min_pwage: int = 0,
+    settings: PasswordPolicySettings = PASSWORD_POLICY_CREATION_DEFAULTS,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a new HMC password policy.
 
-    policy_name is the unique name for the policy.  pwage is the maximum
-    password age in days (0 = never expires).  min_length is the minimum
-    password length.  min_digits, min_uppercase, min_lowercase, and
-    min_special set character-class minimums.  hist_size controls how many
-    previous passwords cannot be reused.  warn_pwage is the number of days
-    before expiry to warn the user.  min_pwage is the minimum days before a
-    password may be changed.  Confirm the policy_name before calling. Returns
-    the created policy resource dict, or None when the HMC returns an empty
-    successful response.
+    policy_name is the unique name for the policy. settings contains password
+    age, length, character-class, history, and warning requirements. Omitted
+    settings use the HMC-compatible creation defaults. Confirm policy_name
+    before calling. Returns the created policy resource dict, or None when the
+    HMC returns an empty successful response.
     """
     xml = build_password_policy_document(
         policy_name=policy_name,
-        pwage=pwage,
-        min_length=min_length,
-        min_digits=min_digits,
-        min_uppercase=min_uppercase,
-        min_lowercase=min_lowercase,
-        min_special=min_special,
-        hist_size=hist_size,
-        warn_pwage=warn_pwage,
-        min_pwage=min_pwage,
+        settings=settings,
     )
 
     async def _go():
@@ -213,36 +195,20 @@ def hmc_create_password_policy(
 @mcp.tool
 def hmc_modify_password_policy(
     policy_name: str,
-    pwage: int | None = None,
-    min_length: int | None = None,
-    min_digits: int | None = None,
-    min_uppercase: int | None = None,
-    min_lowercase: int | None = None,
-    min_special: int | None = None,
-    hist_size: int | None = None,
-    warn_pwage: int | None = None,
-    min_pwage: int | None = None,
+    settings: PasswordPolicySettings = PasswordPolicySettings(),
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Modify an existing HMC password policy.
 
-    Only the fields you supply are changed.  Use hmc_list_password_policies
-    to confirm the current state before calling.  To activate or deactivate a
+    Only non-None fields in settings are changed. Use hmc_list_password_policies
+    to confirm the current state before calling. To activate or deactivate a
     policy, use the HMC console — the REST API activates a policy by name via
     the PolicyType=status query path rather than a direct field change.
     Returns the updated policy resource dict, or None when the HMC returns an
     empty successful response.
     """
     xml = build_password_policy_document(
-        pwage=pwage,
-        min_length=min_length,
-        min_digits=min_digits,
-        min_uppercase=min_uppercase,
-        min_lowercase=min_lowercase,
-        min_special=min_special,
-        hist_size=hist_size,
-        warn_pwage=warn_pwage,
-        min_pwage=min_pwage,
+        settings=settings,
     )
 
     async def _go():

@@ -92,6 +92,34 @@ class LparResources:
     uncapped: bool | None = None
 
 
+@dataclass(frozen=True)
+class PasswordPolicySettings:
+    """Password-policy fields shared by create and partial-update requests."""
+
+    pwage: int | None = None
+    min_length: int | None = None
+    min_digits: int | None = None
+    min_uppercase: int | None = None
+    min_lowercase: int | None = None
+    min_special: int | None = None
+    hist_size: int | None = None
+    warn_pwage: int | None = None
+    min_pwage: int | None = None
+
+
+PASSWORD_POLICY_CREATION_DEFAULTS = PasswordPolicySettings(
+    pwage=0,
+    min_length=8,
+    min_digits=0,
+    min_uppercase=0,
+    min_lowercase=0,
+    min_special=0,
+    hist_size=0,
+    warn_pwage=0,
+    min_pwage=0,
+)
+
+
 def _memory_config(resources: LparResources) -> str:
     min_memory = resources.min_memory
     desired_memory = resources.desired_memory
@@ -168,7 +196,9 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
     )
     for name, value in fields:
         if value is not None:
-            rendered = int(value) if isinstance(value, float) and value.is_integer() else value
+            rendered = (
+                int(value) if isinstance(value, float) and value.is_integer() else value
+            )
             parts.append(f'      <{name} kb="CUD" kxe="false">{rendered}</{name}>')
     if resources.uncapped is False:
         parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
@@ -176,10 +206,13 @@ def _shared_processor_body(resources: LparResources) -> list[str]:
     sharing_mode = (
         "uncapped"
         if resources.uncapped is True
-        else resources.sharing_mode or ("capped" if resources.uncapped is False else None)
+        else resources.sharing_mode
+        or ("capped" if resources.uncapped is False else None)
     )
     if sharing_mode:
-        parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
+        parts.append(
+            f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>'
+        )
     return parts
 
 
@@ -223,9 +256,7 @@ def _processor_config(resources: LparResources) -> str:
     return "\n".join(parts)
 
 
-def _document_envelope(
-    root_element: str, body: str, namespace: str = UOM_NS
-) -> str:
+def _document_envelope(root_element: str, body: str, namespace: str = UOM_NS) -> str:
     """Wrap a document body in the standard HMC XML envelope."""
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <{root_element} xmlns="{namespace}" schemaVersion="V1_0">
@@ -817,15 +848,7 @@ def build_hmc_user_document(
 
 def build_password_policy_document(
     policy_name: str | None = None,
-    pwage: int | None = None,
-    min_length: int | None = None,
-    min_digits: int | None = None,
-    min_uppercase: int | None = None,
-    min_lowercase: int | None = None,
-    min_special: int | None = None,
-    hist_size: int | None = None,
-    warn_pwage: int | None = None,
-    min_pwage: int | None = None,
+    settings: PasswordPolicySettings = PasswordPolicySettings(),
 ) -> str:
     """Build an HmcPasswordPolicy XML document for create (POST) or modify (POST).
 
@@ -838,39 +861,41 @@ def build_password_policy_document(
     parts = ["  <Metadata><Atom/></Metadata>"]
     if policy_name is not None:
         parts.append(f'  <PolicyName kb="CUR" kxe="false">{policy_name}</PolicyName>')
-    if pwage is not None:
-        parts.append(f'  <MaxPasswordAge kb="CUR" kxe="false">{pwage}</MaxPasswordAge>')
-    if min_length is not None:
+    if settings.pwage is not None:
         parts.append(
-            f'  <MinPasswordLength kb="CUR" kxe="false">{min_length}</MinPasswordLength>'
+            f'  <MaxPasswordAge kb="CUR" kxe="false">{settings.pwage}</MaxPasswordAge>'
         )
-    if min_digits is not None:
+    if settings.min_length is not None:
         parts.append(
-            f'  <MinNumericChars kb="CUR" kxe="false">{min_digits}</MinNumericChars>'
+            f'  <MinPasswordLength kb="CUR" kxe="false">{settings.min_length}</MinPasswordLength>'
         )
-    if min_uppercase is not None:
+    if settings.min_digits is not None:
         parts.append(
-            f'  <MinUpperCaseChars kb="CUR" kxe="false">{min_uppercase}</MinUpperCaseChars>'
+            f'  <MinNumericChars kb="CUR" kxe="false">{settings.min_digits}</MinNumericChars>'
         )
-    if min_lowercase is not None:
+    if settings.min_uppercase is not None:
         parts.append(
-            f'  <MinLowerCaseChars kb="CUR" kxe="false">{min_lowercase}</MinLowerCaseChars>'
+            f'  <MinUpperCaseChars kb="CUR" kxe="false">{settings.min_uppercase}</MinUpperCaseChars>'
         )
-    if min_special is not None:
+    if settings.min_lowercase is not None:
         parts.append(
-            f'  <MinSpecialChars kb="CUR" kxe="false">{min_special}</MinSpecialChars>'
+            f'  <MinLowerCaseChars kb="CUR" kxe="false">{settings.min_lowercase}</MinLowerCaseChars>'
         )
-    if hist_size is not None:
+    if settings.min_special is not None:
         parts.append(
-            f'  <PasswordHistorySize kb="CUR" kxe="false">{hist_size}</PasswordHistorySize>'
+            f'  <MinSpecialChars kb="CUR" kxe="false">{settings.min_special}</MinSpecialChars>'
         )
-    if warn_pwage is not None:
+    if settings.hist_size is not None:
         parts.append(
-            f'  <PasswordExpirationWarning kb="CUR" kxe="false">{warn_pwage}</PasswordExpirationWarning>'
+            f'  <PasswordHistorySize kb="CUR" kxe="false">{settings.hist_size}</PasswordHistorySize>'
         )
-    if min_pwage is not None:
+    if settings.warn_pwage is not None:
         parts.append(
-            f'  <MinPasswordAge kb="CUR" kxe="false">{min_pwage}</MinPasswordAge>'
+            f'  <PasswordExpirationWarning kb="CUR" kxe="false">{settings.warn_pwage}</PasswordExpirationWarning>'
+        )
+    if settings.min_pwage is not None:
+        parts.append(
+            f'  <MinPasswordAge kb="CUR" kxe="false">{settings.min_pwage}</MinPasswordAge>'
         )
     body = "\n".join(parts)
     return _document_envelope("HmcPasswordPolicy", body, WEB_NS)

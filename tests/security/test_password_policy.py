@@ -11,7 +11,7 @@ from hmc_mcp.server import (
     hmc_list_password_policies,
     hmc_modify_password_policy,
 )
-from hmc_mcp.documents import build_password_policy_document
+from hmc_mcp.documents import PasswordPolicySettings, build_password_policy_document
 
 from conftest import make_config
 
@@ -78,15 +78,17 @@ CREATED_POLICY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 def test_build_password_policy_document_create():
     xml = build_password_policy_document(
         policy_name="StrongPolicy",
-        pwage=90,
-        min_length=12,
-        min_digits=2,
-        min_uppercase=1,
-        min_lowercase=1,
-        min_special=1,
-        hist_size=5,
-        warn_pwage=14,
-        min_pwage=1,
+        settings=PasswordPolicySettings(
+            pwage=90,
+            min_length=12,
+            min_digits=2,
+            min_uppercase=1,
+            min_lowercase=1,
+            min_special=1,
+            hist_size=5,
+            warn_pwage=14,
+            min_pwage=1,
+        ),
     )
     assert "<PolicyName" in xml and "StrongPolicy" in xml
     assert "<MaxPasswordAge" in xml and ">90<" in xml
@@ -102,7 +104,9 @@ def test_build_password_policy_document_create():
 
 
 def test_build_password_policy_document_partial():
-    xml = build_password_policy_document(pwage=60, min_length=10)
+    xml = build_password_policy_document(
+        settings=PasswordPolicySettings(pwage=60, min_length=10)
+    )
     assert "<MaxPasswordAge" in xml and ">60<" in xml
     assert "<MinPasswordLength" in xml and ">10<" in xml
     assert "PolicyName" not in xml  # not passed
@@ -149,7 +153,8 @@ async def test_create_password_policy(mock_hmc):
         return_value=httpx.Response(201, text=CREATED_POLICY)
     )
     policy_xml = build_password_policy_document(
-        policy_name="StrongPolicy", pwage=90, min_length=12
+        policy_name="StrongPolicy",
+        settings=PasswordPolicySettings(pwage=90, min_length=12),
     )
     async with HMCClient(make_config()) as hmc:
         entry = await hmc.create_password_policy(policy_xml)
@@ -164,7 +169,9 @@ async def test_modify_password_policy(mock_hmc):
     route = mock_hmc.post("/rest/api/web/HmcPasswordPolicy/StrongPolicy").mock(
         return_value=httpx.Response(200, text=CREATED_POLICY)
     )
-    policy_xml = build_password_policy_document(pwage=180, min_length=14)
+    policy_xml = build_password_policy_document(
+        settings=PasswordPolicySettings(pwage=180, min_length=14)
+    )
     async with HMCClient(make_config()) as hmc:
         await hmc.modify_password_policy("StrongPolicy", policy_xml)
     assert route.called
@@ -235,7 +242,9 @@ def test_hmc_create_password_policy_returns_dict(monkeypatch, mock_hmc):
     mock_hmc.post("/rest/api/web/HmcPasswordPolicy").mock(
         return_value=httpx.Response(201, text=CREATED_POLICY)
     )
-    result = hmc_create_password_policy("StrongPolicy", pwage=90, min_length=12)
+    result = hmc_create_password_policy(
+        "StrongPolicy", PasswordPolicySettings(pwage=90, min_length=12)
+    )
     assert isinstance(result, dict)
     assert result["Resource"]["PolicyName"] == "StrongPolicy"
 
@@ -246,7 +255,9 @@ def test_hmc_modify_password_policy_returns_dict(monkeypatch, mock_hmc):
     mock_hmc.post("/rest/api/web/HmcPasswordPolicy/StrongPolicy").mock(
         return_value=httpx.Response(200, text=CREATED_POLICY)
     )
-    result = hmc_modify_password_policy("StrongPolicy", pwage=180, min_length=14)
+    result = hmc_modify_password_policy(
+        "StrongPolicy", PasswordPolicySettings(pwage=180, min_length=14)
+    )
     assert isinstance(result, dict)
     assert result["Resource"]["MaxPasswordAge"] == "90"
 
