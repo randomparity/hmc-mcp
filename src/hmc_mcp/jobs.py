@@ -83,7 +83,9 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
 
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
-    identifier = job.get("UUID") or (job.get("Resource") or {}).get("JobID")
+    resource = job.get("Resource")
+    resource_id = resource.get("JobID") if isinstance(resource, dict) else None
+    identifier = job.get("UUID") or resource_id
     if isinstance(identifier, str) and identifier.strip():
         return identifier.strip()
     link = job.get("link")
@@ -99,18 +101,34 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
     resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
+    error = (
+        _job_error(resource, status)
+        if isinstance(status, str) and status in FAILED_JOB_STATUSES
+        else None
+    )
     return JobOutcome(
         job_id=(job_identifier(job) if job is not None else None)
         or requested_id.strip(),
         status=status,
         timed_out=status not in TERMINAL_JOB_STATUSES,
-        error=_job_error(resource) if status in FAILED_JOB_STATUSES else None,
+        error=error,
         job=job,
     )
 
 
-def _job_error(resource: dict[str, Any]) -> str | None:
+def _job_error(resource: dict[str, Any], status: str) -> str | None:
     """Extract the HMC result or response-exception message from a job resource."""
+    exception = resource.get("ResponseException")
+    exception_message = (
+        exception.get("Message") if isinstance(exception, dict) else None
+    )
+    if (
+        status == "EXCEPTION"
+        and isinstance(exception_message, str)
+        and exception_message.strip()
+    ):
+        return exception_message.strip()
+
     results = resource.get("Results")
     if isinstance(results, dict):
         parameters = results.get("JobParameter", [])
@@ -130,15 +148,12 @@ def _job_error(resource: dict[str, Any]) -> str | None:
                     and value.strip()
                 ):
                     messages[name] = value.strip()
-            for name in ("result", "ErrorData"):
+            for name in ("ErrorData", "result"):
                 if name in messages:
                     return messages[name]
 
-    exception = resource.get("ResponseException")
-    if isinstance(exception, dict):
-        message = exception.get("Message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
+    if isinstance(exception_message, str) and exception_message.strip():
+        return exception_message.strip()
     return None
 
 
