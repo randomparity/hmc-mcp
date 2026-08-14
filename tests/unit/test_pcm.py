@@ -558,12 +558,8 @@ def test_set_pcm_preferences_403_actionable(monkeypatch, mock_hmc):
         hmc_set_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001", long_term_monitor=True)
 
 
-def test_check_pcm_error_body_is_none(monkeypatch, mock_hmc):
-    """The replacement HMCError from _check_pcm_error has body=None (documented invariant).
-
-    HMCError.__init__ would append parsed body text after the actionable message,
-    degrading readability. The from-exc chain preserves the body in tracebacks.
-    """
+def test_check_pcm_error_preserves_hmc_body(monkeypatch, mock_hmc):
+    """The translated HMCError retains the HMC diagnostic body and message."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/preferences").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
@@ -572,7 +568,8 @@ def test_check_pcm_error_body_is_none(monkeypatch, mock_hmc):
     with pytest.raises(HMCError) as exc_info:
         hmc_get_pcm_preferences("ManagedSystem", "00000000-0000-0000-0000-000000000001")
 
-    assert exc_info.value.body is None
+    assert exc_info.value.body == "<error>Not Acceptable</error>"
+    assert "Not Acceptable" in str(exc_info.value)
 
 
 def test_processed_metric_links_406_actionable(monkeypatch, mock_hmc):

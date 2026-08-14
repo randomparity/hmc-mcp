@@ -35,7 +35,7 @@ async def test_rest_timeout_names_configured_timeout_and_guidance(mock_hmc):
     mock_hmc.put("/rest/api/web/Logon").mock(side_effect=httpx.ConnectTimeout(""))
 
     with pytest.raises(HMCTransportError) as exc_info:
-        async with HMCClient(make_config(timeout=12.5)):
+        async with HMCClient(make_config(timeout=12.5, verify_ssl=True)):
             pass
 
     message = str(exc_info.value)
