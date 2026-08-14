@@ -243,3 +243,139 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     assert state.context.test_vlan_id == 3001
     assert create_call[1]["vlan_id"] == 3001
     assert create_call[1]["vswitch_id"] == 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("workflow", "configure", "expected_tool"),
+    [
+        (
+            runner.mutate_virtual_networking,
+            lambda _context: None,
+            "hmc_create_virtual_network",
+        ),
+        (
+            runner.validate_provisioning_dry_run,
+            lambda context: setattr(context, "test_vlan_id", 100),
+            "hmc_provision_lpar (dry_run)",
+        ),
+        (
+            runner.exercise_storage_provisioning,
+            lambda _context: None,
+            "pre-flight check",
+        ),
+    ],
+)
+async def test_mutating_workflows_stop_when_inventory_context_is_missing(
+    monkeypatch, workflow, configure, expected_tool
+):
+    calls = []
+
+    async def unexpected_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", unexpected_call)
+    state = runner.RunState()
+    configure(state.context)
+
+    await workflow(None, state)
+
+    assert calls == []
+    matching = [result for result in state.results if result["tool"] == expected_tool]
+    assert matching
+    assert matching[0]["status"] in {"FAIL", "SKIP"}
+
+
+@pytest.mark.asyncio
+async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_create_lpar":
+            return "PASS", {"UUID": "scratch-uuid"}
+        if tool in {"hmc_power_on_lpar", "hmc_power_off_lpar"}:
+            return "PASS", {"UUID": "job-uuid"}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+    state.context.system_uuid = "system-uuid"
+
+    await runner.exercise_lpar_lifecycle(None, state)
+
+    assert [tool for tool, _ in calls] == [
+        "hmc_create_lpar",
+        "hmc_get_lpar",
+        "hmc_modify_lpar",
+        "hmc_lpar_summary",
+        "hmc_power_on_lpar",
+        "hmc_power_off_lpar",
+        "hmc_delete_lpar",
+        "hmc_list_lpars",
+    ]
+    assert state.context.scratch_uuid is None
+    assert state.context.job_uuid_sample == "job-uuid"
+
+
+@pytest.mark.asyncio
+async def test_lpar_property_workflow_restores_description(monkeypatch):
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", "aixlinux"
+        if tool == "hmc_set_lpar_msp":
+            return "FAIL", "only valid for a VIOS partition"
+        if tool == "hmc_get_lpar_proc_compat":
+            return "PASS", {"desired": "POWER10"}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+    state.context.lp3_baseline["description"] = "original description"
+
+    await runner.mutate_lpar_properties(None, state)
+
+    descriptions = [
+        kwargs["description"]
+        for tool, kwargs in calls
+        if tool == "hmc_set_lpar_description"
+    ]
+    assert descriptions == ["MCP live-test probe R2 safe to clear", "original description"]
+    proc_set = next(
+        kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat"
+    )
+    assert proc_set["mode"] == "POWER10"
+
+
+@pytest.mark.asyncio
+async def test_final_restore_replays_baseline_and_audits(monkeypatch):
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_get_lpar_proc_compat":
+            return "PASS", {"curr": "POWER9"}
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+    state.context.lp3_baseline["description"] = "baseline"
+
+    await runner.restore_lpar_baseline(None, state)
+
+    assert next(
+        kwargs
+        for tool, kwargs in calls
+        if tool == "hmc_set_lpar_description"
+    )["description"] == "baseline"
+    assert next(
+        kwargs for tool, kwargs in calls if tool == "hmc_set_lpar_proc_compat"
+    )["mode"] == "POWER9"
+    assert [tool for tool, _ in calls][-2:] == [
+        "hmc_run_command",
+        "hmc_lpar_summary",
+    ]
