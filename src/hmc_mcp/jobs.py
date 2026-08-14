@@ -8,7 +8,7 @@ fallback for responses that omit that link.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol, Required, TypedDict, get_args
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
 
 from .xmlutil import WEB_NS
 
@@ -329,7 +329,7 @@ class RepositorySource(TypedDict, total=False):
         ibm_token   – IBM FixCentral account token
     """
 
-    type: Required[RepositoryType]
+    type: NotRequired[RepositoryType]
     host: str
     path: str
     user: str
