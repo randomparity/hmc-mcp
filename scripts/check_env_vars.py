@@ -96,7 +96,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     # Use word-boundary regex matching so that "HMC_SSH_TIME" is not falsely
     # satisfied by the presence of "HMC_SSH_TIMEOUT".
-    missing = [v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", table_text)]
+    missing = sorted(
+        v for v in env_vars if not re.search(rf"\b{re.escape(v)}\b", table_text)
+    )
 
     if missing:
         print(

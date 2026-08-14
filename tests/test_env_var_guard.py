@@ -8,8 +8,10 @@ The guard script (scripts/check_env_vars.py) must:
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
+from types import ModuleType
 from pathlib import Path
 
 import pytest
@@ -24,6 +26,15 @@ DOC = ROOT / "docs" / "environment-variables.md"
 # Derived from the live HMCConfig — stays in sync automatically.
 _PREFIX = HMCConfig.model_config.get("env_prefix", "")
 EXPECTED_ENV_VARS = {_PREFIX + f.upper() for f in HMCConfig.model_fields}
+
+
+@pytest.fixture(scope="module")
+def guard_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("check_env_vars", GUARD)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_guard_script_exists() -> None:
@@ -170,3 +181,68 @@ def test_guard_uses_default_doc_path_when_no_arg(
         cwd=ROOT,
     )
     assert result.returncode == 0, f"Guard failed:\n{result.stdout}\n{result.stderr}"
+
+
+def test_main_reports_missing_doc_to_stderr(
+    guard_module: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing_doc = tmp_path / "absent.md"
+
+    assert guard_module.main(["--doc", str(missing_doc)]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == f"ERROR: doc not found: {missing_doc}\n"
+
+
+def test_main_reports_missing_reference_to_stderr(
+    guard_module: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    doc = tmp_path / "environment-variables.md"
+    doc.write_text("# Environment Variables\n\n| `HMC_HOST` |\n")
+
+    assert guard_module.main(["--doc", str(doc)]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == (
+        'ERROR: doc has no "## Reference" section; '
+        "cannot verify documentation coverage.\n"
+    )
+
+
+def test_main_lists_missing_variables_in_stable_order(
+    guard_module: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc = tmp_path / "environment-variables.md"
+    doc.write_text(_make_doc({"HMC_PRESENT"}))
+    monkeypatch.setattr(
+        guard_module,
+        "_env_var_names",
+        lambda: ["HMC_ZEBRA", "HMC_PRESENT", "HMC_ALPHA"],
+    )
+
+    assert guard_module.main(["--doc", str(doc)]) == 1
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert output.out.index("  HMC_ALPHA\n") < output.out.index("  HMC_ZEBRA\n")
+    assert f"Add them to {doc}" in output.out
+
+
+def test_main_reports_success_count(
+    guard_module: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc = tmp_path / "environment-variables.md"
+    doc.write_text(_make_doc({"HMC_HOST", "HMC_USER"}))
+    monkeypatch.setattr(
+        guard_module, "_env_var_names", lambda: ["HMC_USER", "HMC_HOST"]
+    )
+
+    assert guard_module.main(["--doc", str(doc)]) == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert output.out == "OK: all 2 HMC_* env vars are documented.\n"
