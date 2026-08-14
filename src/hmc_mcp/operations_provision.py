@@ -56,15 +56,24 @@ async def _check_name_unique(hmc, name: str) -> None:
 async def _check_vlan_exists(hmc, system_uuid: str, port_vlan_id: int) -> None:
     """Raise ValueError if no VirtualNetwork with *port_vlan_id* exists."""
     networks = await hmc.list_virtual_networks(system_uuid)
+    malformed_error: ValueError | None = None
     for net in networks:
         res = net.get("Resource") or {}
         vlan = res.get("NetworkVLANID")
-        if vlan is not None:
-            try:
-                if int(vlan) == port_vlan_id:
-                    return
-            except (TypeError, ValueError):
-                pass
+        if vlan is None:
+            continue
+        try:
+            parsed_vlan = int(vlan)
+        except (TypeError, ValueError):
+            identity = res.get("NetworkName") or net.get("UUID") or "unknown network"
+            malformed_error = ValueError(
+                f"VirtualNetwork {identity!r} has malformed NetworkVLANID {vlan!r}"
+            )
+            continue
+        if parsed_vlan == port_vlan_id:
+            return
+    if malformed_error is not None:
+        raise malformed_error
     raise ValueError(
         f"No VirtualNetwork with VLAN ID {port_vlan_id} found on system "
         f"{system_uuid!r}. Use hmc_list_virtual_networks to list available VLANs."
@@ -254,9 +263,7 @@ async def provision_lpar(
         return uuid
 
     async def attach_network() -> Any:
-        return await hmc.add_network_adapter(
-            created_uuid(), network.port_vlan_id
-        )
+        return await hmc.add_network_adapter(created_uuid(), network.port_vlan_id)
 
     async def vscsi() -> Any:
         return await hmc.add_vscsi_adapter(

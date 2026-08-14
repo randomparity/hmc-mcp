@@ -154,6 +154,18 @@ VLAN_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """
 
+MALFORMED_VLAN_FEED = VLAN_FEED.replace(
+    "<NetworkVLANID>100</NetworkVLANID>",
+    "<NetworkVLANID>not-a-vlan</NetworkVLANID>",
+).replace("VLAN100", "broken-network")
+
+VALID_VLAN_ENTRY = (
+    "<entry>" + VLAN_FEED.split("<entry>", 1)[1].split("</entry>", 1)[0] + "</entry>"
+)
+MALFORMED_THEN_VALID_VLAN_FEED = MALFORMED_VLAN_FEED.replace(
+    "</feed>", f"{VALID_VLAN_ENTRY}\n</feed>"
+)
+
 SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -170,7 +182,13 @@ SYSTEM_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def _mock_preconditions(
-    mock_hmc, *, name="web01", has_lpar=False, has_vlan=True, has_vg=True
+    mock_hmc,
+    *,
+    name="web01",
+    has_lpar=False,
+    has_vlan=True,
+    has_vg=True,
+    vlan_feed=None,
 ):
     """Register the three precondition GET routes."""
     # Support both "web01" (default) and a custom name such as "existing-lpar"
@@ -180,7 +198,9 @@ def _mock_preconditions(
         return_value=httpx.Response(200, text=lpar_feed_text)
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
-        return_value=httpx.Response(200, text=VLAN_FEED if has_vlan else EMPTY_FEED)
+        return_value=httpx.Response(
+            200, text=vlan_feed or (VLAN_FEED if has_vlan else EMPTY_FEED)
+        )
     )
     mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED if has_vg else EMPTY_FEED)
@@ -202,9 +222,7 @@ def _mock_execution_steps(mock_hmc):
     """Register the 5 execution step routes (create, network, vscsi, storage, power-on)."""
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
-    ).mock(
-        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
-    )
+    ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
     # get_managed_system for stamp system-name resolution (REST-first)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
@@ -414,6 +432,23 @@ def test_provision_lpar_vlan_not_found(monkeypatch, mock_hmc):
 
     with pytest.raises(ValueError, match="[Vv][Ll][Aa][Nn]|port_vlan_id|network"):
         hmc_provision_lpar(**_provision_args())
+
+
+def test_provision_lpar_reports_malformed_vlan_inventory(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc, vlan_feed=MALFORMED_VLAN_FEED)
+
+    with pytest.raises(ValueError, match="broken-network.*not-a-vlan"):
+        hmc_provision_lpar(**_provision_args())
+
+
+def test_provision_lpar_accepts_valid_vlan_after_malformed_entry(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc, vlan_feed=MALFORMED_THEN_VALID_VLAN_FEED)
+
+    result = hmc_provision_lpar(**_provision_args(dry_run=True))
+
+    assert result["dry_run"] is True
 
 
 def test_provision_lpar_vg_not_found(monkeypatch, mock_hmc):
