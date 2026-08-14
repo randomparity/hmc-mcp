@@ -18,6 +18,7 @@ import httpx
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
 from .errors import HMCError, HMCTransportError
+from .jobs import TERMINAL_JOB_STATUSES
 from .xmlutil import WEB_NS
 
 from .client_adapters import AdaptersMixin
@@ -519,21 +520,12 @@ class HMCClient(
         if poll_interval <= 0:
             raise ValueError("poll_interval must be greater than 0")
 
-        # UOM Job shape:     COMPLETED, FAILED, EXCEPTION
-        # web+xml JobResponse shape: COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED
-        _TERMINAL = {
-            "COMPLETED",
-            "COMPLETED_OK",
-            "COMPLETED_WITH_ERROR",
-            "FAILED",
-            "EXCEPTION",
-        }
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
         entry = await self.get_job(job_uuid, job_href=job_href)
         while True:
             status = (entry or {}).get("Resource", {}).get("Status", "")
-            if status in _TERMINAL:
+            if status in TERMINAL_JOB_STATUSES:
                 return entry
             remaining = deadline - loop.time()
             if remaining <= 0:

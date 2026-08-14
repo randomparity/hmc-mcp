@@ -8,6 +8,7 @@ fallback for responses that omit that link.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, Protocol, TypedDict, get_args
 from urllib.parse import urlparse
 
@@ -18,6 +19,22 @@ LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
+
+TERMINAL_JOB_STATUSES = frozenset(
+    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"}
+)
+FAILED_JOB_STATUSES = frozenset({"COMPLETED_WITH_ERROR", "FAILED", "EXCEPTION"})
+
+
+@dataclass(frozen=True)
+class JobOutcome:
+    """Stable public result for waiting on an HMC job."""
+
+    job_id: str
+    status: str | None
+    timed_out: bool
+    error: str | None
+    job: dict[str, Any] | None
 
 
 class JobWaitClient(Protocol):
@@ -53,6 +70,47 @@ def job_identifier(job: dict[str, Any]) -> str | None:
         return None
     path = urlparse(link.strip()).path.rstrip("/")
     return path.rsplit("/", 1)[-1] if path else None
+
+
+def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
+    """Normalize the last polled entry into the public wait result."""
+    resource = (job or {}).get("Resource") or {}
+    status_value = resource.get("Status")
+    status = status_value.strip() if isinstance(status_value, str) else None
+    return JobOutcome(
+        job_id=(job_identifier(job) if job is not None else None)
+        or requested_id.strip(),
+        status=status,
+        timed_out=status not in TERMINAL_JOB_STATUSES,
+        error=_job_error(resource) if status in FAILED_JOB_STATUSES else None,
+        job=job,
+    )
+
+
+def _job_error(resource: dict[str, Any]) -> str | None:
+    """Extract the HMC result or response-exception message from a job resource."""
+    results = resource.get("Results")
+    if isinstance(results, dict):
+        parameters = results.get("JobParameter", [])
+        if isinstance(parameters, dict):
+            parameters = [parameters]
+        if isinstance(parameters, list):
+            for parameter in parameters:
+                if (
+                    not isinstance(parameter, dict)
+                    or parameter.get("ParameterName") != "result"
+                ):
+                    continue
+                value = parameter.get("ParameterValue")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+    exception = resource.get("ResponseException")
+    if isinstance(exception, dict):
+        message = exception.get("Message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return None
 
 
 async def wait_for_submitted_job(

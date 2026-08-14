@@ -219,6 +219,44 @@ def test_metrics_tools_have_stable_output_schemas():
         assert "mode" not in tool.parameters.get("properties", {})
 
 
+def test_wait_for_job_has_one_stable_output_schema():
+    by_name = _tools_by_name()
+    schema = by_name["hmc_wait_for_job"].output_schema
+
+    assert schema["type"] == "object"
+    assert set(schema["properties"]) == {
+        "job_id",
+        "status",
+        "timed_out",
+        "error",
+        "job",
+    }
+    assert set(schema["required"]) == set(schema["properties"])
+    assert schema["properties"]["job_id"] == {"type": "string"}
+    assert schema["properties"]["timed_out"] == {"type": "boolean"}
+    for nullable_field in ("status", "error", "job"):
+        assert {
+            variant["type"] for variant in schema["properties"][nullable_field]["anyOf"]
+        } == {
+            "object" if nullable_field == "job" else "string",
+            "null",
+        }
+
+    assert by_name["hmc_get_job"].output_schema == {
+        "properties": {
+            "result": {
+                "anyOf": [
+                    {"additionalProperties": True, "type": "object"},
+                    {"type": "null"},
+                ]
+            }
+        },
+        "required": ["result"],
+        "type": "object",
+        "x-fastmcp-wrap-result": True,
+    }
+
+
 # ------------------------------------------------------------------ #
 # Delete precondition guards (hmc_delete_lpar / hmc_delete_vios)
 # ------------------------------------------------------------------ #
