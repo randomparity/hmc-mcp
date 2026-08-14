@@ -90,7 +90,6 @@ def config_list() -> None:
         names, default = list_profiles_with_default(config_path=config_path)
     except ConfigError as exc:
         _fail(exc)
-        return  # unreachable but satisfies type checker
 
     if not names:
         console.print("No profiles defined in config file.")
@@ -123,8 +122,6 @@ def config_show(
     if config_path is None:
         _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
-    if config_path is None:  # pragma: no cover - _fail above always raises
-        raise RuntimeError("config path validation returned unexpectedly")
     # Read the raw TOML dict to determine credential presence WITHOUT
     # resolving password_env (load_profile() resolves it, which requires
     # the env var to be present — a production secret may not be set locally).
@@ -132,7 +129,6 @@ def config_show(
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         _fail(ConfigError(f"{config_path}: TOML parse error: {exc}"))
-        return  # unreachable but satisfies type checker
 
     # When effective_profile is None, load_profile() will use default_profile
     # from the TOML. We need to resolve that same name for the raw dict lookup.
@@ -155,7 +151,6 @@ def config_show(
         cfg = load_profile(profile=effective_profile, config_path=config_path)
     except ConfigError as exc:
         _fail(exc)
-        return  # unreachable but satisfies type checker
 
     # Gather all output fields before emitting anything (no partial output).
     data: dict[str, Any] = {
