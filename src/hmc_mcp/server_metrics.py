@@ -10,7 +10,7 @@ from ._app import (
     mcp,
 )
 
-from .client import HMCError
+from .errors import HMCError
 from .common import client_from_env, resolve_lpar_uuid, resolve_system_uuid
 from .pcm import newest_metric_link
 

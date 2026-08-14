@@ -13,7 +13,7 @@ from ._app import (
     mcp,
 )
 
-from .client import HMCError
+from .errors import HMCError
 from .common import (
     build_config,
     client_from_env,

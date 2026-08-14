@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import typer
 
-from .client import HMCError
+from .errors import HMCError
 from .cli_app import (
     _client,
     _print_json,
@@ -99,4 +99,3 @@ def metrics_show(
     result = _run(_go)
 
     _print_json(result)
-

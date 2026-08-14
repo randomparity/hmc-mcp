@@ -9,7 +9,7 @@ from ._app import (
     _run,
     mcp,
 )
-from .client import HMCError
+from .errors import HMCError
 from .common import (
     client_from_env,
     resolve_lpar_uuid,

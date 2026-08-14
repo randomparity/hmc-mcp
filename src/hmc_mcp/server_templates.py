@@ -10,7 +10,7 @@ from ._app import (
     mcp,
 )
 
-from .client import HMCError
+from .errors import HMCError
 from .common import client_from_env
 from .jobs import wait_for_submitted_job
 

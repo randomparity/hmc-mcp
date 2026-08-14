@@ -12,7 +12,7 @@ from ._app import (
     mcp,
 )
 
-from .client import HMCError
+from .errors import HMCError
 from .common import client_from_env, resolve_system_uuid
 from .ssh_commands import (
     SriovMode,
