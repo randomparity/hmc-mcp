@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Superseded by [0012](0012-stable-public-tool-contracts.md)** (2026-08-14)
+
 ## Context
 
 The MCP server exposes 105 tools. Six domains each have a
