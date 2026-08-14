@@ -28,10 +28,55 @@ class LparsMixin:
         return await self.get_uom("LogicalPartition", uuid)
 
     async def find_partition_by_name(
-        self: LparsClient, name: str
+        self: LparsClient, name: str, system_uuid: str | None = None
     ) -> dict[str, Any] | None:
+        if system_uuid:
+            entries = await self.list_logical_partitions(system_uuid)
+            results = [
+                entry
+                for entry in entries
+                if (entry.get("Resource") or {}).get("PartitionName") == name
+            ]
+            if len(results) > 1:
+                system = await self.get_managed_system(system_uuid)
+                system_name = (system or {}).get("Resource", {}).get("SystemName")
+                details = ", ".join(
+                    f"{entry.get('UUID')} on {system_name!r} ({system_uuid})"
+                    for entry in sorted(results, key=lambda item: str(item.get("UUID")))
+                )
+                raise ValueError(f"Ambiguous LPAR name {name!r}: {details}")
+            return results[0] if results else None
+
         results = await self.search_uom("LogicalPartition", "PartitionName", name)
-        return results[0] if results else None
+        if len(results) <= 1:
+            return results[0] if results else None
+
+        candidate_ids = {str(entry.get("UUID")) for entry in results}
+        parents: dict[str, list[tuple[str, str]]] = {
+            uuid: [] for uuid in candidate_ids
+        }
+        for system in await self.list_managed_systems():
+            system_uuid = str(system.get("UUID"))
+            system_name = str((system.get("Resource") or {}).get("SystemName"))
+            for entry in await self.list_logical_partitions(system_uuid):
+                entry_uuid = str(entry.get("UUID"))
+                if entry_uuid in parents:
+                    parents[entry_uuid].append((system_name, system_uuid))
+        invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
+        if invalid:
+            raise ValueError(
+                "Cannot resolve ambiguous LPAR name "
+                f"{name!r}: candidates {', '.join(invalid)} must each belong to "
+                "exactly one managed system"
+            )
+        details = ", ".join(
+            f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
+            for uuid in sorted(
+                candidate_ids,
+                key=lambda value: (parents[value][0][0], parents[value][0][1], value),
+            )
+        )
+        raise ValueError(f"Ambiguous LPAR name {name!r}: {details}")
 
     async def create_logical_partition(
         self: LparsClient, system_uuid: str, lpar_xml: str

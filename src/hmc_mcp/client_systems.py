@@ -75,6 +75,12 @@ class SystemsMixin:
     async def find_system_by_name(self, name: str) -> dict[str, Any] | None:
         """Find a managed system by its SystemName (exact match)."""
         results = await self.search_uom("ManagedSystem", "SystemName", name)
+        if len(results) > 1:
+            details = ", ".join(
+                f"{(entry.get('Resource') or {}).get('SystemName')!r} ({entry.get('UUID')})"
+                for entry in sorted(results, key=lambda item: str(item.get("UUID")))
+            )
+            raise ValueError(f"Ambiguous managed-system name {name!r}: {details}")
         return results[0] if results else None
 
     async def modify_managed_system(
@@ -112,10 +118,57 @@ class SystemsMixin:
             power_off_system_job(immediate),
         )
 
-    async def find_vios_by_name(self, name: str) -> dict[str, Any] | None:
+    async def find_vios_by_name(
+        self, name: str, system_uuid: str | None = None
+    ) -> dict[str, Any] | None:
         """Find a Virtual I/O Server by its PartitionName (exact match)."""
+        if system_uuid:
+            entries = await self.list_vios(system_uuid)
+            results = [
+                entry
+                for entry in entries
+                if (entry.get("Resource") or {}).get("PartitionName") == name
+            ]
+            if len(results) > 1:
+                system = await self.get_managed_system(system_uuid)
+                system_name = (system or {}).get("Resource", {}).get("SystemName")
+                details = ", ".join(
+                    f"{entry.get('UUID')} on {system_name!r} ({system_uuid})"
+                    for entry in sorted(results, key=lambda item: str(item.get("UUID")))
+                )
+                raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
+            return results[0] if results else None
+
         results = await self.search_uom("VirtualIOServer", "PartitionName", name)
-        return results[0] if results else None
+        if len(results) <= 1:
+            return results[0] if results else None
+
+        candidate_ids = {str(entry.get("UUID")) for entry in results}
+        parents: dict[str, list[tuple[str, str]]] = {
+            uuid: [] for uuid in candidate_ids
+        }
+        for system in await self.list_managed_systems():
+            parent_uuid = str(system.get("UUID"))
+            parent_name = str((system.get("Resource") or {}).get("SystemName"))
+            for entry in await self.list_vios(parent_uuid):
+                entry_uuid = str(entry.get("UUID"))
+                if entry_uuid in parents:
+                    parents[entry_uuid].append((parent_name, parent_uuid))
+        invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
+        if invalid:
+            raise ValueError(
+                "Cannot resolve ambiguous VIOS name "
+                f"{name!r}: candidates {', '.join(invalid)} must each belong to "
+                "exactly one managed system"
+            )
+        details = ", ".join(
+            f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
+            for uuid in sorted(
+                candidate_ids,
+                key=lambda value: (parents[value][0][0], parents[value][0][1], value),
+            )
+        )
+        raise ValueError(f"Ambiguous VIOS name {name!r}: {details}")
 
     async def power_on_vios(self, vios_uuid: str) -> dict[str, Any] | None:
         """Power on a VIOS (PowerOn job)."""

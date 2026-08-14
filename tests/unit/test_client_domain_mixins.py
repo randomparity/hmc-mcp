@@ -26,6 +26,10 @@ class LparsHarness(LparsMixin):
         self.list_uom = AsyncMock(return_value=[])
         self.get_uom = AsyncMock(return_value=None)
         self.search_uom = AsyncMock(return_value=[])
+        self.list_managed_systems = AsyncMock(return_value=[])
+        self.get_managed_system = AsyncMock(
+            return_value=_entry("sys-a", "system-a", "ManagedSystem")
+        )
 
 
 class LpmHarness(LpmMixin):
@@ -66,6 +70,15 @@ class SystemsHarness(SystemsMixin):
         self.submit_job = AsyncMock(return_value={"UUID": "job-1"})
 
 
+def _entry(uuid: str, name: str, resource_type: str) -> dict:
+    name_key = "SystemName" if resource_type == "ManagedSystem" else "PartitionName"
+    return {
+        "UUID": uuid,
+        "ResourceType": resource_type,
+        "Resource": {name_key: name},
+    }
+
+
 @pytest.mark.asyncio
 async def test_lpar_mixin_routes_scoped_and_global_reads():
     client = LparsHarness()
@@ -84,6 +97,79 @@ async def test_lpar_mixin_routes_scoped_and_global_reads():
     client.search_uom.assert_awaited_once_with(
         "LogicalPartition", "PartitionName", "aix1"
     )
+
+
+@pytest.mark.asyncio
+async def test_lpar_finder_rejects_ambiguous_names_with_parent_systems():
+    client = LparsHarness()
+    lpar_a = _entry("lpar-a", "shared", "LogicalPartition")
+    lpar_b = _entry("lpar-b", "shared", "LogicalPartition")
+    client.search_uom.return_value = [lpar_b, lpar_a]
+    client.list_managed_systems.return_value = [
+        _entry("sys-b", "system-b", "ManagedSystem"),
+        _entry("sys-a", "system-a", "ManagedSystem"),
+    ]
+    client.list_logical_partitions = AsyncMock(
+        side_effect=lambda uuid: [lpar_a] if uuid == "sys-a" else [lpar_b]
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await client.find_partition_by_name("shared")
+
+    message = str(exc_info.value)
+    assert message.index("system-a") < message.index("system-b")
+    assert all(value in message for value in ("lpar-a", "lpar-b", "sys-a", "sys-b"))
+
+
+@pytest.mark.asyncio
+async def test_lpar_finder_requires_exactly_one_parent_per_candidate():
+    client = LparsHarness()
+    lpar_a = _entry("lpar-a", "shared", "LogicalPartition")
+    lpar_b = _entry("lpar-b", "shared", "LogicalPartition")
+    client.search_uom.return_value = [lpar_a, lpar_b]
+    client.list_managed_systems.return_value = [
+        _entry("sys-a", "system-a", "ManagedSystem"),
+        _entry("sys-b", "system-b", "ManagedSystem"),
+    ]
+    client.list_logical_partitions = AsyncMock(return_value=[lpar_a, lpar_b])
+
+    with pytest.raises(ValueError, match="exactly one managed system"):
+        await client.find_partition_by_name("shared")
+
+
+@pytest.mark.asyncio
+async def test_lpar_finder_propagates_parent_discovery_failure():
+    client = LparsHarness()
+    client.search_uom.return_value = [
+        _entry("lpar-a", "shared", "LogicalPartition"),
+        _entry("lpar-b", "shared", "LogicalPartition"),
+    ]
+    client.list_managed_systems.side_effect = HMCError("inventory unavailable")
+
+    with pytest.raises(HMCError, match="inventory unavailable"):
+        await client.find_partition_by_name("shared")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [0, 1, 2])
+async def test_lpar_finder_scoped_zero_one_many(count):
+    client = LparsHarness()
+    matches = [
+        _entry(f"lpar-{index}", "shared", "LogicalPartition")
+        for index in range(count)
+    ]
+    client.list_logical_partitions = AsyncMock(
+        return_value=[*matches, _entry("other", "other", "LogicalPartition")]
+    )
+
+    if count == 2:
+        with pytest.raises(ValueError, match="lpar-0.*lpar-1"):
+            await client.find_partition_by_name("shared", system_uuid="sys-a")
+    else:
+        expected = matches[0] if matches else None
+        assert await client.find_partition_by_name(
+            "shared", system_uuid="sys-a"
+        ) == expected
 
 
 @pytest.mark.asyncio
@@ -227,3 +313,61 @@ async def test_systems_mixin_routes_inventory_and_power_jobs():
         "VirtualIOServer", "PartitionName", "vios-a"
     )
     assert client.submit_job.await_args.args[0].endswith("/system-1/do/PowerOff")
+
+
+@pytest.mark.asyncio
+async def test_system_finder_rejects_ambiguous_names():
+    client = SystemsHarness()
+    client.search_uom.return_value = [
+        _entry("sys-b", "duplicate", "ManagedSystem"),
+        _entry("sys-a", "duplicate", "ManagedSystem"),
+    ]
+
+    with pytest.raises(ValueError, match="sys-a.*sys-b"):
+        await client.find_system_by_name("duplicate")
+
+
+@pytest.mark.asyncio
+async def test_vios_finder_rejects_ambiguous_names_with_parent_systems():
+    client = SystemsHarness()
+    vios_a = _entry("vios-a", "shared", "VirtualIOServer")
+    vios_b = _entry("vios-b", "shared", "VirtualIOServer")
+    client.search_uom.return_value = [vios_b, vios_a]
+    client.list_managed_systems = AsyncMock(
+        return_value=[
+            _entry("sys-a", "system-a", "ManagedSystem"),
+            _entry("sys-b", "system-b", "ManagedSystem"),
+        ]
+    )
+    client.list_vios = AsyncMock(
+        side_effect=lambda uuid: [vios_a] if uuid == "sys-a" else [vios_b]
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await client.find_vios_by_name("shared")
+
+    message = str(exc_info.value)
+    assert message.index("system-a") < message.index("system-b")
+    assert all(value in message for value in ("vios-a", "vios-b", "sys-a", "sys-b"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [0, 1, 2])
+async def test_vios_finder_scoped_zero_one_many(count):
+    client = SystemsHarness()
+    matches = [
+        _entry(f"vios-{index}", "shared", "VirtualIOServer")
+        for index in range(count)
+    ]
+    client.list_vios = AsyncMock(
+        return_value=[*matches, _entry("other", "other", "VirtualIOServer")]
+    )
+
+    if count == 2:
+        with pytest.raises(ValueError, match="vios-0.*vios-1"):
+            await client.find_vios_by_name("shared", system_uuid="sys-a")
+    else:
+        expected = matches[0] if matches else None
+        assert await client.find_vios_by_name(
+            "shared", system_uuid="sys-a"
+        ) == expected
