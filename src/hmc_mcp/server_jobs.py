@@ -30,7 +30,13 @@ def hmc_get_job(
     job_href: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Get one HMC job by UUID, optionally using its submission SELF link."""
+    """Get one HMC job by UUID, optionally using its submission SELF link.
+
+    Args:
+        job_uuid: UUID or JobID returned when the job was submitted.
+        job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:
@@ -48,6 +54,10 @@ def hmc_list_recent_jobs(
 
     Raises HMCError when this HMC does not support global Job listing; use
     hmc_get_job with a UUID and submission link on those firmware versions.
+
+    Args:
+        limit: Maximum number of the most recent jobs to return; zero returns none.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if limit < 0:
         raise ValueError("limit must be greater than or equal to 0")
@@ -78,7 +88,21 @@ def hmc_wait_for_job(
     job_href: str | None = None,
     profile: str | None = None,
 ) -> JobOutcome:
-    """Poll a job and return its normalized status, timeout, and error outcome."""
+    """Poll a job and return its normalized status, timeout, and error outcome.
+
+    Polling stops at CANCELED_BEFORE_START, CANCELED_WHILE_RUNNING, COMPLETED,
+    COMPLETED_OK, COMPLETED_WITH_ERROR, COMPLETED_WITH_WARNINGS, EXCEPTION,
+    FAILED, FAILED_BEFORE_COMPLETION, FAILED_BEFORE_COMPLETION_RETRY, or
+    FAILED_TO_START. If the timeout expires first, the last observed job is
+    returned with ``timed_out`` set to true.
+
+    Args:
+        job_uuid: UUID or JobID returned when the job was submitted.
+        timeout_seconds: Maximum polling duration in seconds; zero performs one poll.
+        poll_interval: Seconds between polls; must be greater than zero.
+        job_href: Optional submission SELF link for firmware that cannot resolve the UUID.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:

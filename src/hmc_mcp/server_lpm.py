@@ -46,6 +46,17 @@ def hmc_migrate_lpar(
 
     Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
     (or until timeout_seconds elapses).
+
+    Args:
+        lpar_name_or_uuid: Source partition name or UUID.
+        target_system_name_or_uuid: Destination managed-system name or UUID.
+        target_profile_name: Optional destination partition profile name.
+        wait_time: HMC migration wait time in seconds, or the HMC default when omitted.
+        wait: Wait for the migration job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        validate_first: Validate successfully before submitting migration when true.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
     async def _go():
@@ -82,6 +93,16 @@ def hmc_migrate_validate_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_lpars).
     Set wait=True to block until the validation job reaches a terminal state.
+
+    Args:
+        lpar_name_or_uuid: Source partition name or UUID.
+        target_system_name_or_uuid: Destination managed-system name or UUID.
+        target_profile_name: Optional destination partition profile name.
+        wait_time: HMC validation wait time in seconds, or the HMC default when omitted.
+        wait: Wait for the validation job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
     async def _go():
@@ -116,6 +137,13 @@ def hmc_migrate_abort_lpar(
     (find it with hmc_list_lpars).
     Returns a normalized job outcome. With wait=False, returns after submission;
     with wait=True, blocks until a terminal state or timeout.
+
+    Args:
+        lpar_name_or_uuid: Migrating partition name or UUID.
+        wait: Wait for the abort job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
     async def _go():
@@ -146,6 +174,13 @@ def hmc_migrate_recover_lpar(
     (find it with hmc_list_lpars).
     Returns a normalized job outcome. With wait=False, returns after submission;
     with wait=True, blocks until a terminal state or timeout.
+
+    Args:
+        lpar_name_or_uuid: Failed partition name or UUID.
+        wait: Wait for the recovery job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
     async def _go():
@@ -177,6 +212,14 @@ def hmc_remote_restart_lpar(
     (find it with hmc_list_lpars).
     Returns a normalized job outcome. With wait=False, returns after submission;
     with wait=True, blocks until a terminal state or timeout.
+
+    Args:
+        lpar_name_or_uuid: Failed partition name or UUID.
+        target_system_name_or_uuid: Managed-system name or UUID on which to restart.
+        wait: Wait for the remote-restart job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
 
     async def _go():

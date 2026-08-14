@@ -37,6 +37,9 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
     Useful as a connectivity check — this is the cheapest HMC call.
+
+    Args:
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def _go():
@@ -123,6 +126,10 @@ def hmc_list_systems(
     When state is provided, returns only systems whose State property matches
     the given value, using the HMC server-side search endpoint. Use
     hmc_get_system for a single system lookup by name.
+
+    Args:
+        state: Optional exact managed-system State value to filter server-side.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def _go():
@@ -144,6 +151,11 @@ def hmc_list_lpars(
 
     Supply at most one of system_name_or_uuid and state. Use hmc_get_lpar for a
     single partition or hmc_get_lpar_state for a lightweight state lookup.
+
+    Args:
+        system_name_or_uuid: Optional SystemName or UUID whose partitions to list.
+        state: Optional exact PartitionState value to filter server-side.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if system_name_or_uuid is not None and state is not None:
         raise ValueError("Provide at most one of system_name_or_uuid or state")
@@ -164,7 +176,12 @@ def hmc_list_lpars(
 def hmc_get_lpar(
     lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
-    """Get one logical partition by partition name or UUID."""
+    """Get one logical partition by partition name or UUID.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -180,7 +197,12 @@ def hmc_get_lpar_state(
     lpar_name_or_uuid: str,
     profile: str | None = None,
 ) -> str | None:
-    """Return the current state of one LPAR by partition name or UUID."""
+    """Return the current state of one LPAR by partition name or UUID.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -207,6 +229,11 @@ def hmc_list_vios(
     VIOS entries whose PartitionState matches the given value, using the HMC
     server-side search endpoint. Supply at most one selector. Use hmc_get_vios
     for the storage-detail mappings of one VIOS.
+
+    Args:
+        system_name_or_uuid: Optional SystemName or UUID whose VIOSes to list.
+        state: Optional exact PartitionState value to filter server-side.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     if system_name_or_uuid is not None and state is not None:
         raise ValueError("Provide at most one of system_name_or_uuid or state")
@@ -227,7 +254,12 @@ def hmc_list_vios(
 def hmc_get_vios(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
-    """Get storage-detail mappings for one VIOS by partition name or UUID."""
+    """Get storage-detail mappings for one VIOS by partition name or UUID.
+
+    Args:
+        vios_name_or_uuid: PartitionName or UUID of the Virtual I/O Server.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -246,6 +278,10 @@ def hmc_list_resources(
     Examples: ManagedSystem, LogicalPartition, VirtualIOServer,
     LogicalPartitionProfile, VirtualSwitch, VirtualNetwork, SharedMemoryPool,
     SharedProcessorPool, HostEthernetAdapter, SRIOVAdapter, Cluster.
+
+    Args:
+        resource_type: Exact HMC UOM resource type to list.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def _go():
@@ -263,6 +299,10 @@ def hmc_get_system(
 
     Returns the full system dict if found, or None if no system with that
     name is known to the HMC.
+
+    Args:
+        system_name_or_uuid: Exact SystemName or UUID of the managed system.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def _go():
@@ -285,7 +325,18 @@ def hmc_modify_system(
     mem_mirroring_mode: MemoryMirroringMode | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Modify a managed system's configuration, leaving omitted fields unchanged."""
+    """Modify a managed system's configuration, leaving omitted fields unchanged.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system to modify.
+        new_name: Replacement SystemName, or null to leave it unchanged.
+        power_off_policy: Power-off policy, or null to leave it unchanged.
+        power_on_lpar_start_policy: LPAR auto-start policy, or null to leave unchanged.
+        pend_mem_region_size: Pending memory-region size in MiB, or null for unchanged.
+        requested_num_sys_huge_pages: Requested system huge-page count, or null.
+        mem_mirroring_mode: Memory-mirroring mode, or null to leave it unchanged.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
     xml = build_managed_system_document(
         new_name=new_name,
         power_off_policy=power_off_policy,
@@ -311,7 +362,18 @@ def hmc_power_on_system(
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Power on a managed system, optionally waiting for a terminal job state."""
+    """Power on a managed system, optionally waiting for a terminal job state.
+
+    Returns the submitted job immediately by default. With ``wait=true``,
+    returns the last polled job after it reaches a terminal state or the timeout.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system to power on.
+        wait: Whether to poll the submitted job until terminal or timed out.
+        timeout_seconds: Maximum polling duration in seconds when waiting.
+        poll_interval: Seconds between job polls when waiting; must be positive.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
@@ -339,7 +401,19 @@ def hmc_power_off_system(
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Power off a managed system, optionally waiting for a terminal job state."""
+    """Power off a managed system, optionally waiting for a terminal job state.
+
+    Returns the submitted job immediately by default. With ``wait=true``,
+    returns the last polled job after it reaches a terminal state or the timeout.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system to power off.
+        immediate: Whether to request immediate shutdown instead of a graceful shutdown.
+        wait: Whether to poll the submitted job until terminal or timed out.
+        timeout_seconds: Maximum polling duration in seconds when waiting.
+        poll_interval: Seconds between job polls when waiting; must be positive.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():

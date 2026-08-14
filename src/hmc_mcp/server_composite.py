@@ -19,7 +19,12 @@ def hmc_lpar_summary(
     lpar_name_or_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """Return state, resources, OS details, adapters, and description for one LPAR."""
+    """Return state, resources, OS details, adapters, and description for one LPAR.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -33,7 +38,12 @@ def hmc_system_summary(
     system_name_or_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """Return state, capacity, partition counts, and VIOS count for one system."""
+    """Return state, capacity, partition counts, and VIOS count for one system.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:

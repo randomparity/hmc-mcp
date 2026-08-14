@@ -51,6 +51,12 @@ def hmc_create_vios(
     ok). The VIOS is created powered off with default settings — install the
     OS with hmc_install_vios before using it as a storage/network server.
     This creates a real partition — confirm its name and system before calling.
+
+    Args:
+        system_name_or_uuid: Target managed-system name or UUID.
+        name: Name for the new VIOS partition.
+        resources: Memory and processor settings for the VIOS.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     xml = build_vios_document(name=name, resources=resources)
 
@@ -83,6 +89,11 @@ def hmc_delete_vios(
 
     Raises:
         HMCError: If the VIOS state is not 'not activated' (HTTP 409).
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
     """
 
     async def _go():
@@ -134,6 +145,19 @@ def hmc_install_vios(
     job — poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        vios_name_or_uuid: Powered-off VIOS partition name or UUID.
+        nim_ip: IPv4 address of the NIM server.
+        nim_gateway: IPv4 gateway for the installation network.
+        nim_subnetmask: IPv4 subnet mask for the installation network.
+        vios_ip: IPv4 address assigned to the VIOS during installation.
+        vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
+        timeout: HMC installation-job timeout in minutes.
+        wait: Wait for the normalized job outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_vios_job(
         nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout
@@ -179,6 +203,19 @@ def hmc_install_lpar_os(
     job — poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        lpar_name_or_uuid: Powered-off partition name or UUID.
+        nim_ip: IPv4 address of the NIM server.
+        nim_gateway: IPv4 gateway for the installation network.
+        nim_subnetmask: IPv4 subnet mask for the installation network.
+        lpar_ip: IPv4 address assigned to the partition during installation.
+        vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
+        timeout: HMC installation-job timeout in minutes.
+        wait: Wait for the normalized job outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_lpar_job(
         nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout
@@ -254,7 +291,10 @@ def hmc_list_vios_backups(
     fixed-width table into a list of dicts keyed by the output header
     (BackupName, Date, Type).
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+    """
     output = _run(
         lambda: _run_vios_backup_command(
             vios_name_or_uuid,
@@ -284,7 +324,10 @@ def hmc_backup_vios(
     Returns the raw HMC CLI output. Poll hmc_list_vios_backups to confirm
     the backup was created.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used.
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        backup_type: Backup kind: vios, viosioconfig, or ssp.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     if backup_type not in _VALID_BACKUP_TYPES:
         raise ValueError(
@@ -324,7 +367,11 @@ def hmc_restore_vios(
 
     Returns the raw HMC CLI output.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used.
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        backup_name: Backup file name returned by hmc_list_vios_backups.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
     """
     return _run(
         lambda: _run_vios_backup_command(
@@ -347,7 +394,15 @@ def hmc_power_on_vios(
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Power on a VIOS, optionally waiting for a terminal job state."""
+    """Power on a VIOS, optionally waiting for a normalized job outcome.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        wait: Wait for the power job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+    """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
@@ -377,7 +432,17 @@ def hmc_power_off_vios(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
-    """Power off a VIOS, optionally scoped by system and waiting for completion."""
+    """Power off a VIOS, optionally scoped by system and waiting for completion.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID.
+        immediate: Request immediate shutdown instead of an orderly shutdown.
+        wait: Wait for the power job's terminal outcome when true.
+        timeout_seconds: Maximum client-side wait in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
+    """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 

@@ -189,7 +189,7 @@ Exposed tools:
 | `hmc_fleet_health`            | Exception-only estate health: systems, VIOS, LPAR RMC, and recent failed jobs |
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
-| `hmc_wait_for_job`            | Poll until COMPLETED, COMPLETED_OK, COMPLETED_WITH_ERROR, FAILED, or EXCEPTION |
+| `hmc_wait_for_job`            | Poll until a terminal HMC state and return a normalized outcome (`status`, `timed_out`, nullable `error`, and last `job`); terminal states include completed, failed, exception, and canceled variants |
 
 `hmc_fleet_health` and `systems health` return only exceptions across the whole
 estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
@@ -206,14 +206,14 @@ not be interpreted as a healthy job feed.
 |-----------------------|-------------|
 | `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
-| `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources |
-| `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ownership |
+| `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |
+| `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ADR 0011 description ownership (`ownership_override` only with explicit approval) |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
 | `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
 | `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
 | `hmc_power_on_lpar`   | Submit PowerOn job; returns stable `already_running`, nullable `job`, and nullable `message` fields (`force=True` overrides the running-state guard) |
-| `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag) |
-| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`) — job |
+| `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag); optionally wait for a normalized outcome |
+| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`); optionally wait for a normalized outcome |
 
 **Virtual adapters (network / storage)**
 
@@ -268,7 +268,7 @@ not be interpreted as a healthy job feed.
 |-----------------------|-------------|
 | `hmc_create_vios`     | Create a VIOS partition on a managed system |
 | `hmc_delete_vios`     | Delete (destroy) a VIOS partition (must be powered off) |
-| `hmc_install_vios`    | Submit a NIM-based VIOS installation job — job |
+| `hmc_install_vios`    | Submit a NIM-based VIOS installation job; optionally wait for a normalized outcome |
 | `hmc_list_vios_backups` | List existing VIOS backups (SSH/CLI) |
 | `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
 | `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |

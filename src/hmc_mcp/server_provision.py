@@ -36,7 +36,23 @@ def hmc_provision_lpar(
     dry_run: bool = False,
     profile: str | None = None,
 ) -> ProvisionResult:
-    """Provision an LPAR with network, vSCSI storage, and optional power-on."""
+    """Provision an LPAR with network, vSCSI storage, and optional power-on.
+
+    Args:
+        system_name_or_uuid: Target managed-system name or UUID.
+        name: Name for the new logical partition.
+        network: Virtual Ethernet and VIOS vSCSI attachment settings.
+        storage: VIOS-backed storage mapping settings.
+        resources: Memory and processor settings for the partition.
+        partition_type: Partition environment: AIX/Linux, OS400, or VIOS.
+        power_on: Power on the partition after configuration succeeds.
+        dry_run: Validate preconditions without creating or changing resources.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+
+    Returns:
+        A structured result with resource_created, workflow_completed, lpar_uuid,
+        dry_run, ownership_stamped, steps, and warnings fields.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
