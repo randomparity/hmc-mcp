@@ -101,9 +101,7 @@ def test_secret_baseline_is_an_exact_reviewed_allowlist() -> None:
         baseline = json.load(file)
 
     results = baseline["results"]
-    assert {
-        path: len(findings) for path, findings in results.items()
-    } == BASELINED_FINDINGS
+    assert {path: len(findings) for path, findings in results.items()} == BASELINED_FINDINGS
     excluded_paths = baseline.get("exclude", {})
     assert not any(
         path == "tests" or path.startswith("tests/") for path in excluded_paths
@@ -219,7 +217,9 @@ def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
     )
     assert job_permissions
     assert job_permissions["body"] == (
-        "      contents: read\n      security-events: write\n      id-token: write\n"
+        "      contents: read\n"
+        "      security-events: write\n"
+        "      id-token: write\n"
     )
     assert "runs-on: ubuntu-24.04" in workflow
     assert "timeout-minutes: 10" in workflow
