@@ -83,8 +83,9 @@ This change adds no network listener, credential handling, or authorization deci
 
 The operation accepts no estate selector, path, query, or command input beyond the existing
 profile selector. Concurrency is capped at eight system inspections. The trusted side also rejects
-estates above 256 systems before child fan-out and rejects either child category above 10,000
-resources per system, rather than truncating into a false healthy result. Curators select named scalar
+estates above 256 systems before child fan-out, either child category above 10,000 resources per
+system, aggregate results above 10,000 exceptions, and scalar fields above 500 characters. Every
+limit fails closed rather than truncating into a false healthy result. Curators select named scalar
 fields only; raw entries and response bodies are not returned. Existing HMC error translation
 controls failure disclosure. The known unsupported-feed match checks status and the specific HMC
 error identifiers rather than suppressing arbitrary HTTP 400 responses.

@@ -14,6 +14,8 @@ from .jobs import FAILED_JOB_STATUSES, job_outcome
 _SYSTEM_WORKERS = 8
 _MAX_SYSTEMS = 256
 _MAX_RESOURCES_PER_SYSTEM = 10_000
+_MAX_EXCEPTIONS = 10_000
+_MAX_SCALAR_LENGTH = 500
 _RECENT_JOB_LIMIT = 20
 _MAX_ERROR_LENGTH = 500
 _UNSUPPORTED_JOB_WARNING = "Recent job health is unavailable because this HMC does not support global Job listing."
@@ -32,7 +34,12 @@ class FleetHealthResult:
 
 def _text(value: object) -> str:
     if isinstance(value, str) and value.strip():
-        return value.strip()
+        normalized = value.strip()
+        if len(normalized) > _MAX_SCALAR_LENGTH:
+            raise ValueError(
+                f"Fleet health scalar exceeds the safe limit of {_MAX_SCALAR_LENGTH} characters"
+            )
+        return normalized
     return "unknown"
 
 
@@ -44,6 +51,13 @@ def _resource(entry: dict[str, Any]) -> dict[str, Any]:
 def _sort(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
     records.sort(key=lambda record: (record["name"], record["uuid"]))
     return tuple(records)
+
+
+def _check_exception_budget(*categories: list[dict[str, Any]]) -> None:
+    if sum(map(len, categories)) > _MAX_EXCEPTIONS:
+        raise ValueError(
+            f"Fleet health result exceeds the safe limit of {_MAX_EXCEPTIONS} exceptions"
+        )
 
 
 def _system_exception(system: dict[str, Any]) -> dict[str, Any] | None:
@@ -101,7 +115,11 @@ def _failed_job(job: dict[str, Any]) -> dict[str, Any] | None:
     uuid = _text(job.get("UUID"))
     normalized_job = {**job, "Resource": {**resource, "Status": status}}
     error = job_outcome(uuid, normalized_job).error
-    bounded_error = _text(error)[:_MAX_ERROR_LENGTH]
+    bounded_error = (
+        error.strip()[:_MAX_ERROR_LENGTH]
+        if isinstance(error, str) and error.strip()
+        else "unknown"
+    )
     return {
         "uuid": uuid,
         "name": _text(resource.get("JobName")),
@@ -182,6 +200,7 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
         exception = _system_exception(system)
         if exception is not None:
             system_exceptions.append(exception)
+            _check_exception_budget(system_exceptions)
 
     vios_exceptions: list[dict[str, Any]] = []
     lpar_exceptions: list[dict[str, Any]] = []
@@ -205,6 +224,9 @@ async def fleet_health(hmc: HMCClient) -> FleetHealthResult:
                     for vios in vioses
                     if (exception := _vios_exception(vios, system_uuid, system_name))
                     is not None
+                )
+                _check_exception_budget(
+                    system_exceptions, vios_exceptions, lpar_exceptions
                 )
             finally:
                 queue.task_done()

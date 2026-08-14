@@ -327,6 +327,34 @@ async def test_oversized_system_inventory_fails_closed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_aggregate_exception_budget_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_EXCEPTIONS", 1)
+    client = _healthy_client()
+    client.list_managed_systems.return_value = [
+        _entry("sys-1", SystemName="one", State="error"),
+        _entry("sys-2", SystemName="two", State="standby"),
+    ]
+
+    with pytest.raises(ValueError, match="safe limit of 1 exceptions"):
+        await fleet_health(client)
+
+    client.list_logical_partitions.assert_not_awaited()
+    client.list_vios.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_scalar_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(operations_health, "_MAX_SCALAR_LENGTH", 5)
+    client = _healthy_client()
+    client.list_managed_systems.return_value = [
+        _entry("sys-1", SystemName="too-long", State="operating")
+    ]
+
+    with pytest.raises(ValueError, match="safe limit of 5 characters"):
+        await fleet_health(client)
+
+
+@pytest.mark.asyncio
 async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) -> None:
     active = 0
     maximum = 0
