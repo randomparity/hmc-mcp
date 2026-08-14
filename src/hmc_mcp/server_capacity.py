@@ -16,7 +16,11 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_capacity_report(profile: str | None = None) -> list[dict[str, Any]]:
-    """Report assigned and available memory and processors by system."""
+    """Report assigned and available memory and processors by system.
+
+    Args:
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -31,7 +35,13 @@ def hmc_find_placement(
     desired_proc_units: float = 0.5,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Rank systems able to host an LPAR with the requested capacity."""
+    """Rank systems able to host an LPAR with the requested capacity.
+
+    Args:
+        desired_memory_mb: Required LPAR memory in MiB.
+        desired_proc_units: Required shared-processor processing units.
+        profile: Optional TOML profile name; uses environment defaults when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:

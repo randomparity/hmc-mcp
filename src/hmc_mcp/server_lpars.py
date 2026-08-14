@@ -102,6 +102,17 @@ def hmc_create_lpar(
       was written; ``False`` when the SSH stamp attempt failed; ``None`` when the
       stamp was not attempted (no LPAR body available to confirm the partition name).
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system to create on.
+        name: Unique PartitionName for the new logical partition.
+        resources: Memory and processor assignments for the new partition.
+        partition_type: Partition type: AIX/Linux, OS400, or Virtual IO Server.
+        partition_id: Optional numeric partition ID; the HMC assigns one when omitted.
+        os_type: Optional target operating-system family: aix, linux, or ibmi.
+        keylock: Optional initial keylock position: normal, manual, or auto.
+        max_virtual_slots: Optional maximum number of virtual I/O slots.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     async def _go():
@@ -145,6 +156,15 @@ def hmc_modify_lpar(
 
     Use hmc_rename_lpar for a name change, which requires a managed-system
     selector for ownership authorization.
+
+    Before modifying, inspect the description with hmc_get_lpar_description.
+    Under the ADR 0011 advisory protocol, stop and ask the operator when its
+    ownership token names a different agent.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to modify.
+        resources: Memory and processor fields to change; omitted fields stay unchanged.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     xml = build_lpar_document(name=None, resources=resources)
 
@@ -168,7 +188,19 @@ def hmc_rename_lpar(
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Rename one LPAR after enforcing its ownership token."""
+    """Rename one LPAR after enforcing its ownership token.
+
+    Before renaming, inspect the description with hmc_get_lpar_description.
+    Under the ADR 0011 advisory protocol, stop and ask the operator when its
+    ownership token names a different agent.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID containing the logical partition.
+        lpar_name_or_uuid: Current PartitionName or UUID of the logical partition.
+        new_name: Replacement PartitionName.
+        ownership_override: Bypass ownership rejection only after explicit operator approval.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -205,6 +237,11 @@ def hmc_dlpar_proc(
 
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
+        resources: Processor fields to change; omitted fields stay unchanged.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     xml = build_dlpar_proc_document(resources)
 
@@ -234,6 +271,11 @@ def hmc_dlpar_mem(
 
     If the LPAR does not have an active RMC connection, the change is
     profile-only and takes effect on next activation (no reboot is triggered).
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
+        resources: Memory fields in MiB to change; omitted fields stay unchanged.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
     xml = build_dlpar_mem_document(resources)
 
@@ -273,6 +315,12 @@ def hmc_delete_lpar(
     malformed tokens are rejected before state checks or deletion. Set
     ownership_override=True only after explicit operator approval.
 
+    Args:
+        system_name_or_uuid: SystemName or UUID containing the logical partition.
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to delete.
+        ownership_override: Bypass ownership rejection only after operator approval.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+
     Raises:
         HMCError: If the partition state is not 'not activated' (HTTP 409).
     """
@@ -311,8 +359,16 @@ def hmc_power_on_lpar(
     true, ``job`` is null, and ``message`` explains that no job was submitted.
     Pass force=True to skip this check and submit PowerOn unconditionally.
 
-    Set wait=True to block until the job reaches COMPLETED / FAILED / EXCEPTION
-    (or until timeout_seconds elapses).
+    Set wait=True to block until the job reaches a terminal state or until
+    timeout_seconds elapses; ``job`` then contains the last polled job.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to power on.
+        wait: Whether to poll the submitted job until terminal or timed out.
+        timeout_seconds: Maximum polling duration in seconds when waiting.
+        poll_interval: Seconds between job polls when waiting; must be positive.
+        force: Submit PowerOn even when the partition already reports running.
+        profile: Optional configured HMC profile name; uses the default when omitted.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -352,6 +408,15 @@ def hmc_power_off_lpar(
     Returns the submitted job. This changes the state of a real partition.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to power off.
+        immediate: Whether to request immediate shutdown instead of graceful shutdown.
+        wait: Whether to poll the submitted job until terminal or timed out.
+        timeout_seconds: Maximum polling duration in seconds when waiting.
+        poll_interval: Seconds between job polls when waiting; must be positive.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID used to disambiguate its name.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)

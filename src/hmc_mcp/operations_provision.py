@@ -8,7 +8,7 @@ result and an optional dry-run that validates preconditions only.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .client import HMCClient
@@ -29,32 +29,67 @@ from .operations_storage import create_virtual_disk, map_storage
 class ProvisionNetwork:
     """Virtual Ethernet and vSCSI attachment inputs."""
 
-    port_vlan_id: int
-    vios_partition_id: int
-    vios_slot: int
+    port_vlan_id: int = field(
+        metadata={
+            "description": "VLAN identifier for the client virtual Ethernet adapter."
+        }
+    )
+    vios_partition_id: int = field(
+        metadata={"description": "Partition ID of the VIOS that serves storage."}
+    )
+    vios_slot: int = field(
+        metadata={"description": "Virtual slot number for the VIOS-side vSCSI adapter."}
+    )
 
 
 @dataclass(frozen=True)
 class ProvisionStorage:
     """VIOS-backed storage mapping inputs."""
 
-    vios_uuid: str
-    storage_name: str
-    kind: StorageKind = "VirtualDisk"
-    vg_uuid: str | None = None
+    vios_uuid: str = field(
+        metadata={"description": "UUID of the VIOS that owns the storage."}
+    )
+    storage_name: str = field(
+        metadata={"description": "Physical-volume or virtual-disk name to map."}
+    )
+    kind: StorageKind = field(
+        default="VirtualDisk", metadata={"description": "Storage resource kind to map."}
+    )
+    vg_uuid: str | None = field(
+        default=None,
+        metadata={
+            "description": "Volume-group UUID used when creating a virtual disk."
+        },
+    )
 
 
 @dataclass(frozen=True)
 class ProvisionResult:
     """Truthful outcome of a provisioning attempt."""
 
-    resource_created: bool
-    workflow_completed: bool
-    lpar_uuid: str | None
-    dry_run: bool
-    ownership_stamped: bool | None
-    steps: tuple[dict[str, Any], ...]
-    warnings: tuple[str, ...]
+    resource_created: bool = field(
+        metadata={"description": "Whether this call created the LPAR."}
+    )
+    workflow_completed: bool = field(
+        metadata={"description": "Whether every requested workflow step completed."}
+    )
+    lpar_uuid: str | None = field(
+        metadata={"description": "Created LPAR UUID, or null before creation."}
+    )
+    dry_run: bool = field(
+        metadata={"description": "Whether the call only validated preconditions."}
+    )
+    ownership_stamped: bool | None = field(
+        metadata={
+            "description": "Ownership-token stamp result, or null when not attempted."
+        }
+    )
+    steps: tuple[dict[str, Any], ...] = field(
+        metadata={"description": "Ordered per-step status and result records."}
+    )
+    warnings: tuple[str, ...] = field(
+        metadata={"description": "Non-fatal workflow warnings."}
+    )
 
 
 @dataclass(frozen=True)

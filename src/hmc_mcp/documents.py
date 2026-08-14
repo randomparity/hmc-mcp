@@ -24,7 +24,7 @@ defaults (profiles, virtual adapters, boot mode, etc.).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from .xmlutil import ATOM_NS, WEB_NS
@@ -87,18 +87,66 @@ class LparResources:
     silently flipping the sharing mode.
     """
 
-    min_memory: int | None = None
-    desired_memory: int | None = None
-    max_memory: int | None = None
-    dedicated: bool | None = None
-    min_procs: float | None = None
-    desired_procs: float | None = None
-    max_procs: float | None = None
-    min_vcpus: int | None = None
-    desired_vcpus: int | None = None
-    max_vcpus: int | None = None
-    sharing_mode: SharingMode | None = None
-    uncapped: bool | None = None
+    min_memory: int | None = field(
+        default=None, metadata={"description": "Minimum memory in MiB."}
+    )
+    desired_memory: int | None = field(
+        default=None, metadata={"description": "Desired memory in MiB."}
+    )
+    max_memory: int | None = field(
+        default=None, metadata={"description": "Maximum memory in MiB."}
+    )
+    dedicated: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Whether processors are dedicated rather than shared."
+        },
+    )
+    min_procs: float | None = field(
+        default=None,
+        metadata={
+            "description": "Minimum whole CPUs when dedicated, or processing units when shared."
+        },
+    )
+    desired_procs: float | None = field(
+        default=None,
+        metadata={
+            "description": "Desired whole CPUs when dedicated, or processing units when shared."
+        },
+    )
+    max_procs: float | None = field(
+        default=None,
+        metadata={
+            "description": "Maximum whole CPUs when dedicated, or processing units when shared."
+        },
+    )
+    min_vcpus: int | None = field(
+        default=None,
+        metadata={
+            "description": "Minimum virtual processor count for a shared partition."
+        },
+    )
+    desired_vcpus: int | None = field(
+        default=None,
+        metadata={
+            "description": "Desired virtual processor count for a shared partition."
+        },
+    )
+    max_vcpus: int | None = field(
+        default=None,
+        metadata={
+            "description": "Maximum virtual processor count for a shared partition."
+        },
+    )
+    sharing_mode: SharingMode | None = field(
+        default=None, metadata={"description": "HMC processor sharing mode."}
+    )
+    uncapped: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Whether a shared partition may consume spare processing capacity."
+        },
+    )
 
 
 @dataclass(frozen=True)
