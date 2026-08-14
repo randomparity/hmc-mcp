@@ -43,6 +43,6 @@ include = ["src/hmc_mcp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
-# Coverage gate: the CLI command tests keep the package at ~77%; the floor
-# makes any regression visible. Run a subset with `--no-cov` to skip the gate.
-addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=75"
+# Keep the package-wide gate at the rounded full-suite baseline. Run a focused
+# subset with `--no-cov` when package-wide coverage is not meaningful.
+addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=90"
