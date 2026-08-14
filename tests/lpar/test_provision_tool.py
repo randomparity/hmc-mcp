@@ -194,9 +194,9 @@ def _mock_preconditions(
     # Support both "web01" (default) and a custom name such as "existing-lpar"
     # by registering the search URL for whatever name was requested.
     lpar_feed_text = EXISTING_LPAR_FEED if has_lpar else EMPTY_FEED
-    mock_hmc.get(f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})").mock(
-        return_value=httpx.Response(200, text=lpar_feed_text)
-    )
+    name_lookup = mock_hmc.get(
+        f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})"
+    ).mock(return_value=httpx.Response(200, text=lpar_feed_text))
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(
             200, text=vlan_feed or (VLAN_FEED if has_vlan else EMPTY_FEED)
@@ -205,6 +205,7 @@ def _mock_preconditions(
     mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup").mock(
         return_value=httpx.Response(200, text=VG_FEED if has_vg else EMPTY_FEED)
     )
+    return name_lookup
 
 
 SYSTEM_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -285,7 +286,7 @@ def _provision_args(**overrides):
 def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     """hmc_provision_lpar executes all 5 steps and returns structured results."""
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc)
+    name_lookup = _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
 
     result = hmc_provision_lpar(**_provision_args())
@@ -294,6 +295,7 @@ def test_provision_lpar_full_workflow(monkeypatch, mock_hmc):
     assert result.workflow_completed is True
     assert result.lpar_uuid == LPAR_UUID
     assert result.dry_run is False
+    assert name_lookup.call_count == 1
     steps = {s["step"]: s for s in result.steps}
     assert steps["create"]["status"] == "ok"
     assert steps["network"]["status"] == "ok"

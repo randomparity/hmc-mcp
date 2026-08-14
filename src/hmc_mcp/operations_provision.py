@@ -232,7 +232,8 @@ async def provision_lpar(
     # ----------------------------------------------------------------
     # 2. Preconditions (always, including dry-run)
     # ----------------------------------------------------------------
-    await _check_name_unique(hmc, name)
+    if dry_run:
+        await _check_name_unique(hmc, name)
     await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
     if storage.vg_uuid is not None:
         await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
