@@ -98,12 +98,10 @@ async def deploy_partition_template(
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     target_system_uuid = await resolve_system_uuid(hmc, target_system_name_or_uuid)
     baseline: list[dict[str, Any]] | None = None
-    baseline_warning: str | None = None
     if wait:
         try:
             baseline = await hmc.list_logical_partitions(target_system_uuid)
         except HMCError as exc:
-            baseline_warning = BASELINE_SNAPSHOT_WARNING
             _logger.warning(
                 "Cannot capture template-deployment LPAR baseline for system %s "
                 "(HTTP status %s)",
@@ -141,7 +139,7 @@ async def deploy_partition_template(
         return {
             "job": selected_job,
             "ownership_stamped": None,
-            "warnings": [baseline_warning or BASELINE_SNAPSHOT_WARNING],
+            "warnings": [BASELINE_SNAPSHOT_WARNING],
         }
 
     try:
