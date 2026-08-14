@@ -23,8 +23,10 @@ collections.
 Fetch managed systems once, then fetch each system's LPAR and VIOS collections concurrently.
 Limit the number of systems being inspected at once to eight. A core inventory error fails the
 whole operation so an incomplete estate is never reported as healthy. Only the known HMC error
-for an unsupported global Job root is tolerated: `failed_jobs` stays empty and `warnings`
-explains that job health is unavailable. Other Job-feed errors fail the operation.
+for an unsupported global Job root is tolerated: HTTP 400 with both `REST000E` and
+`Unrecognized root REST type of Job` in the HMC response body. In that case, `failed_jobs` stays
+empty and `warnings` explains that job health is unavailable. Other Job-feed errors fail the
+operation.
 
 Job failure classification uses the normalized terminal semantics introduced by issue #141:
 `COMPLETED_WITH_ERROR`, `FAILED`, and `EXCEPTION` are unhealthy; successful, running, and
@@ -36,9 +38,13 @@ The operation is an exception index, not a third summary: it omits every healthy
 does not expose capacity fields. The fixed envelope makes unsupported optional telemetry
 visible without a result-shape union. Bounded concurrency reduces latency without creating one
 task per estate system at once. Callers receive no partial core inventory; they must retry or
-surface the underlying error.
+surface the underlying error. The result is assembled from multiple reads and is not an atomic
+point-in-time view; resources can change while the operation is collecting them.
 
 ## Considered & rejected
+
+**Do nothing.** Existing summaries cannot identify the unhealthy resources named by the issue,
+so callers would continue to fan out, filter, and reconcile incompatible views themselves.
 
 **Call `hmc_system_summary` N times.** That returns per-system state and capacity, not
 exception-only fleet health, and lacks LPAR RMC and recent-job failure detail.

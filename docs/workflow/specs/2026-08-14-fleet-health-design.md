@@ -3,7 +3,8 @@
 ## Scope and governing decision
 
 Issue #152 requests one read-only estate query for unhealthy managed systems, VIOS partitions,
-LPAR RMC state, and recent jobs. [ADR 0019](../../adr/0019-fleet-health-exception-envelope.md)
+LPAR RMC state, and recent jobs.
+[ADR 0019](../../adr/0019-fleet-health-exception-envelope.md)
 governs the envelope, concurrency, and failure contract. ADR 0012 governs stable public shapes.
 Broad documentation work from #145 and migration validation from #151 are excluded.
 
@@ -16,7 +17,8 @@ Broad documentation work from #145 and migration validation from #151 are exclud
   state is not `running`;
 - `lpars`: `{uuid, name, state, rmc_state, system_uuid, system_name}` entries whose normalized
   RMC state is neither `active` nor `busy`;
-- `failed_jobs`: `{uuid, name, status, error}` entries for normalized failure terminal states;
+- `failed_jobs`: `{uuid, name, status, error}` entries for normalized failure terminal states among
+  the first 20 records in HMC Job-feed order;
 - `warnings`: strings describing tolerated optional-data gaps.
 
 Missing or blank state is unhealthy and rendered as `unknown`, because silence must not look
@@ -33,7 +35,9 @@ FastMCP with `_READ_ONLY`. `cli_systems.py` provides `systems health`, using the
 printing JSON or exception tables.
 
 The operation calls `HMCClient.list_uom("Job")` directly so it can distinguish the exact known
-unsupported-root `HMCError`. That error produces an empty `failed_jobs` collection plus one
+unsupported-root `HMCError`. The HMC controls Job-feed ordering and retention; matching
+`hmc_list_recent_jobs` behavior, the snapshot applies no local time cutoff and inspects the first
+20 records returned by the feed. That error produces an empty `failed_jobs` collection plus one
 warning. Every other Job or inventory error propagates. No partially collected core result is
 returned.
 
@@ -47,10 +51,15 @@ with unhealthy resources, not estate size, and healthy resources are absent.
 
 ## Error handling and observability
 
-Core inventory failures propagate with the existing HMC error translation. Malformed entries
-remain visible as curated `unknown` exceptions rather than being discarded. Unsupported Job-feed
-warnings explicitly state that system, VIOS, and LPAR health remains available while recent-job
-health is unknown. The CLI displays warnings even when all four exception tables are empty.
+Core inventory failures propagate with the existing HMC error translation. A managed-system entry
+with a missing or blank UUID fails the operation because its child inventory cannot be inspected;
+the operation never skips that system and returns a partial snapshot. Malformed scalar health
+fields on otherwise identifiable entries remain visible as curated `unknown` exceptions rather
+than being discarded. A failed job's missing, blank, or non-string error is rendered as `unknown`;
+accepted error text is limited to its first 500 characters before crossing the result boundary.
+Unsupported Job-feed warnings explicitly state that system, VIOS, and LPAR health remains
+available while recent-job health is unknown. The CLI displays warnings even when all four
+exception tables are empty.
 
 ## Threat model
 
@@ -82,11 +91,13 @@ does not attempt retry, caching, or historical monitoring.
 ## Testing and verification
 
 Pure curator tests cover case normalization, missing states, stable keys, deterministic sorting,
-and normalized failed-job states. Async operation tests cover a healthy estate, all four degraded
-categories, unsupported global Job listing, unrelated Job failure propagation, core inventory
-failure, and an observed maximum of eight concurrent system inspections. Server/capability tests
-pin read-only registration and schema. CLI tests pin JSON, warning, and degraded output. Run
-focused tests during TDD and `just verify` before every push.
+normalized failed-job states, Job-feed limit boundaries, and missing, blank, non-string, and
+oversized job errors. Async operation tests cover a healthy estate, all four degraded categories,
+unsupported global Job listing, unrelated Job failure propagation, a missing or blank
+managed-system UUID failing without a partial result, other core inventory failures, and an
+observed maximum of eight concurrent system inspections. Server/capability tests pin read-only
+registration and schema. CLI tests pin JSON, warning, and degraded output. Run focused tests
+during TDD and `just verify` before every push.
 
 ## Durable workflow context
 
