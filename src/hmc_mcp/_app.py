@@ -48,6 +48,9 @@ _new_mcp = partial(
         "- **hmc_capacity_report()** — total, assigned, and free memory (MiB) "
         "and processor units for every managed system, plus running/total LPAR "
         "counts. Use to survey available capacity across the whole HMC.\n"
+        "- **hmc_fleet_health()** — exception-only estate view covering systems "
+        "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
+        "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
         "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
         "returns systems that can host a new LPAR of the given size, sorted by "
         "free memory. Use before provisioning to choose a target system.\n"
@@ -129,6 +132,7 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_list_resources",
         "hmc_get_job",
         "hmc_list_recent_jobs",
+        "hmc_fleet_health",
         "hmc_capacity_report",
         "hmc_find_placement",
         "hmc_get_system",
