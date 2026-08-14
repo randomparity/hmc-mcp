@@ -118,6 +118,71 @@ def _memory_config(resources: LparResources) -> str:
     return "\n".join(parts)
 
 
+def _dedicated_processor_body(resources: LparResources) -> list[str]:
+    parts = [
+        '    <DedicatedProcessorConfiguration kb="CUD" kxe="false">',
+        "      <Metadata><Atom/></Metadata>",
+    ]
+    fields = (
+        ("DesiredProcessors", resources.desired_procs),
+        ("MaximumProcessors", resources.max_procs),
+        ("MinimumProcessors", resources.min_procs),
+    )
+    parts.extend(
+        f'      <{name} kb="CUD" kxe="false">{int(value)}</{name}>'
+        for name, value in fields
+        if value is not None
+    )
+    parts.extend(
+        (
+            "    </DedicatedProcessorConfiguration>",
+            '    <HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>',
+        )
+    )
+    if resources.sharing_mode:
+        parts.append(
+            f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
+        )
+    return parts
+
+
+def _shared_processor_body(resources: LparResources) -> list[str]:
+    parts: list[str] = []
+    if resources.dedicated is False:
+        parts.append(
+            '    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>'
+        )
+    parts.extend(
+        (
+            '    <SharedProcessorConfiguration kb="CUD" kxe="false">',
+            "      <Metadata><Atom/></Metadata>",
+        )
+    )
+    fields = (
+        ("DesiredProcessingUnits", resources.desired_procs),
+        ("MaximumProcessingUnits", resources.max_procs),
+        ("MinimumProcessingUnits", resources.min_procs),
+        ("DesiredVirtualProcessors", resources.desired_vcpus),
+        ("MaximumVirtualProcessors", resources.max_vcpus),
+        ("MinimumVirtualProcessors", resources.min_vcpus),
+    )
+    for name, value in fields:
+        if value is not None:
+            rendered = int(value) if isinstance(value, float) and value.is_integer() else value
+            parts.append(f'      <{name} kb="CUD" kxe="false">{rendered}</{name}>')
+    if resources.uncapped is False:
+        parts.append('      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>')
+    parts.append("    </SharedProcessorConfiguration>")
+    sharing_mode = (
+        "uncapped"
+        if resources.uncapped is True
+        else resources.sharing_mode or ("capped" if resources.uncapped is False else None)
+    )
+    if sharing_mode:
+        parts.append(f'    <SharingMode kb="CUD" kxe="false">{sharing_mode}</SharingMode>')
+    return parts
+
+
 def _processor_config(resources: LparResources) -> str:
     """Build PartitionProcessorConfiguration.
 
@@ -147,62 +212,12 @@ def _processor_config(resources: LparResources) -> str:
         "    <Metadata><Atom/></Metadata>",
     ]
 
-    if resources.dedicated is True:
-        parts.append('    <DedicatedProcessorConfiguration kb="CUD" kxe="false">')
-        parts.append("      <Metadata><Atom/></Metadata>")
-        if resources.desired_procs is not None:
-            parts.append(
-                f'      <DesiredProcessors kb="CUD" kxe="false">{int(resources.desired_procs)}</DesiredProcessors>'
-            )
-        if resources.max_procs is not None:
-            parts.append(
-                f'      <MaximumProcessors kb="CUD" kxe="false">{int(resources.max_procs)}</MaximumProcessors>'
-            )
-        if resources.min_procs is not None:
-            parts.append(
-                f'      <MinimumProcessors kb="CUD" kxe="false">{int(resources.min_procs)}</MinimumProcessors>'
-            )
-        parts.append("    </DedicatedProcessorConfiguration>")
-        parts.append(
-            '    <HasDedicatedProcessors kb="CUD" kxe="false">true</HasDedicatedProcessors>'
-        )
-        if resources.sharing_mode:
-            parts.append(
-                f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
-            )
-    else:
-        if resources.dedicated is False:
-            parts.append(
-                '    <HasDedicatedProcessors kb="CUD" kxe="false">false</HasDedicatedProcessors>'
-            )
-        parts.append('    <SharedProcessorConfiguration kb="CUD" kxe="false">')
-        parts.append("      <Metadata><Atom/></Metadata>")
-
-        def _sp(name: str, val):
-            if val is not None:
-                if isinstance(val, float) and val.is_integer():
-                    val = int(val)
-                parts.append(f'      <{name} kb="CUD" kxe="false">{val}</{name}>')
-
-        _sp("DesiredProcessingUnits", resources.desired_procs)
-        _sp("MaximumProcessingUnits", resources.max_procs)
-        _sp("MinimumProcessingUnits", resources.min_procs)
-        _sp("DesiredVirtualProcessors", resources.desired_vcpus)
-        _sp("MaximumVirtualProcessors", resources.max_vcpus)
-        _sp("MinimumVirtualProcessors", resources.min_vcpus)
-        if resources.uncapped is False:
-            parts.append(
-                '      <UncappedWeight kb="CUD" kxe="false">0</UncappedWeight>'
-            )
-        parts.append("    </SharedProcessorConfiguration>")
-        if resources.uncapped is True:
-            parts.append('    <SharingMode kb="CUD" kxe="false">uncapped</SharingMode>')
-        elif resources.sharing_mode:
-            parts.append(
-                f'    <SharingMode kb="CUD" kxe="false">{resources.sharing_mode}</SharingMode>'
-            )
-        elif resources.uncapped is False:
-            parts.append('    <SharingMode kb="CUD" kxe="false">capped</SharingMode>')
+    body_builder = (
+        _dedicated_processor_body
+        if resources.dedicated is True
+        else _shared_processor_body
+    )
+    parts.extend(body_builder(resources))
 
     parts.append("  </PartitionProcessorConfiguration>")
     return "\n".join(parts)
