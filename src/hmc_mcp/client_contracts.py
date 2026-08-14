@@ -56,6 +56,10 @@ class PcmClient(Protocol):
     config: HMCConfig
     _http: httpx.AsyncClient
 
+    async def _request(
+        self, method: str, path: str, **kwargs: Any
+    ) -> httpx.Response: ...
+
     async def _get(
         self,
         path: str,

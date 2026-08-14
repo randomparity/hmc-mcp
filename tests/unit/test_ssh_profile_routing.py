@@ -12,11 +12,11 @@ These tests verify that:
 
 from __future__ import annotations
 
-import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.ssh import run_hmc_cli
 
 from conftest import mock_uuid_resolution
@@ -216,7 +216,7 @@ async def test_resolve_lpar_name_uses_profile():
 
 @pytest.mark.asyncio
 async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
-    """When the REST leg raises httpx.HTTPError, the SSH fallback uses the supplied config.
+    """When REST transport fails, the SSH fallback uses the supplied config.
 
     The config passed to the fallback is the same one given to _resolve_system_name,
     so a caller that built config from client_from_env(profile).config ensures the
@@ -232,7 +232,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get_managed_system = AsyncMock(
-            side_effect=httpx.ConnectError("unreachable")
+            side_effect=HMCTransportError("GET managed system failed: unreachable")
         )
         mock_cfe.return_value = mock_client
 

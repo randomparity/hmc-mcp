@@ -44,16 +44,14 @@ class PcmMixin:
         return _pcm_preferences(resp_xml, path) if resp_xml else {}
 
     async def _post_pcm(self: PcmClient, path: str, body: str) -> str:
-        resp = await self._http.post(
-            path, content=body, headers={"Content-Type": "application/xml"}
+        resp = await self._request(
+            "POST", path, content=body, headers={"Content-Type": "application/xml"}
         )
         if resp.status_code not in (200, 201, 202, 204):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
 
-    async def get_metrics_feed(
-        self: PcmClient, path: str
-    ) -> list[dict[str, str]]:
+    async def get_metrics_feed(self: PcmClient, path: str) -> list[dict[str, str]]:
         """GET a PCM metrics Atom feed and return its JSON links."""
 
         xml = await self._get(path)
@@ -68,7 +66,9 @@ class PcmMixin:
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
-        return await self._metrics_links(category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(
+            category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples
+        )
 
     async def get_aggregated_metric_links(
         self: PcmClient,
@@ -79,7 +79,14 @@ class PcmMixin:
         no_of_samples: int | None = None,
     ) -> list[dict[str, str]]:
         """Links to AggregatedMetrics JSON (long-term rollup)."""
-        return await self._metrics_links(category, resource_uuid, "AggregatedMetrics", start_ts, end_ts, no_of_samples)
+        return await self._metrics_links(
+            category,
+            resource_uuid,
+            "AggregatedMetrics",
+            start_ts,
+            end_ts,
+            no_of_samples,
+        )
 
     async def get_ltm_metric_links(
         self: PcmClient,
@@ -90,7 +97,12 @@ class PcmMixin:
     ) -> list[dict[str, str]]:
         """Links to raw Long Term Monitor metrics JSON."""
         return await self._metrics_links(
-            category, resource_uuid, "RawMetrics/LongTermMonitor", start_ts, end_ts, None
+            category,
+            resource_uuid,
+            "RawMetrics/LongTermMonitor",
+            start_ts,
+            end_ts,
+            None,
         )
 
     async def _metrics_links(
@@ -120,7 +132,7 @@ class PcmMixin:
         catch HMCError and translate it (see hmc_processed_metrics).
         """
         url = link if link.startswith("http") else f"{self.config.base_url}{link}"
-        resp = await self._http.get(url, headers={"Accept": "application/json"})
+        resp = await self._request("GET", url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
         try:

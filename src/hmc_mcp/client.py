@@ -17,7 +17,7 @@ import httpx
 
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
-from .errors import HMCError
+from .errors import HMCError, HMCTransportError
 from .xmlutil import WEB_NS
 
 from .client_adapters import AdaptersMixin
@@ -143,7 +143,8 @@ class HMCClient(
         body = LOGON_REQUEST_TEMPLATE.format(
             web_ns=WEB_NS, user=self.config.user, password=self.config.password
         )
-        resp = await self._http.put(
+        resp = await self._request(
+            "PUT",
             "/rest/api/web/Logon",
             content=body,
             headers=self._web_headers(
@@ -167,8 +168,10 @@ class HMCClient(
         if not self._session_token:
             return
         try:
-            await self._http.delete(
-                "/rest/api/web/Logon", headers=self._web_headers({"Accept": MEDIA_WEB})
+            await self._request(
+                "DELETE",
+                "/rest/api/web/Logon",
+                headers=self._web_headers({"Accept": MEDIA_WEB}),
             )
         finally:
             self._session_token = None
@@ -177,6 +180,15 @@ class HMCClient(
     # ------------------------------------------------------------------ #
     # Generic request helpers
     # ------------------------------------------------------------------ #
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Send one REST request and normalize transport-layer failures."""
+        try:
+            return await self._http.request(method, path, **kwargs)
+        except httpx.TransportError as exc:
+            raise HMCTransportError(
+                f"{method.upper()} {path} failed before the HMC returned a response: {exc}"
+            ) from exc
 
     def _uom_headers(
         self,
@@ -197,7 +209,8 @@ class HMCClient(
         resource_type: str | None = None,
         include_schema_version: bool = True,
     ) -> str:
-        resp = await self._http.get(
+        resp = await self._request(
+            "GET",
             path,
             headers=self._uom_headers(resource_type, include_schema_version),
         )
@@ -216,7 +229,7 @@ class HMCClient(
     ) -> str:
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
-        resp = await self._http.post(path, content=body, headers=headers)
+        resp = await self._request("POST", path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)
         return resp.text
@@ -230,13 +243,13 @@ class HMCClient(
     ) -> str:
         headers = self._uom_headers(resource_type, include_schema_version)
         headers["Content-Type"] = headers["Accept"]
-        resp = await self._http.put(path, content=body, headers=headers)
+        resp = await self._request("PUT", path, content=body, headers=headers)
         if resp.status_code not in (200, 201, 202, 204):
             raise HMCError(f"PUT {path} failed", resp.status_code, resp.text)
         return resp.text
 
     async def _delete(self, path: str) -> None:
-        resp = await self._http.delete(path, headers=self._uom_headers(None))
+        resp = await self._request("DELETE", path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
 
@@ -288,8 +301,8 @@ class HMCClient(
             )
 
     async def _web_get(self, path: str) -> str:
-        resp = await self._http.get(
-            path, headers=self._web_headers({"Accept": MEDIA_WEB})
+        resp = await self._request(
+            "GET", path, headers=self._web_headers({"Accept": MEDIA_WEB})
         )
         if resp.status_code == 204:
             return ""
@@ -299,7 +312,8 @@ class HMCClient(
         return resp.text
 
     async def _web_post(self, path: str, body: str) -> str:
-        resp = await self._http.post(
+        resp = await self._request(
+            "POST",
             path,
             content=body,
             headers=self._web_headers({"Content-Type": MEDIA_WEB, "Accept": MEDIA_WEB}),
@@ -310,8 +324,8 @@ class HMCClient(
         return resp.text
 
     async def _web_delete(self, path: str) -> None:
-        resp = await self._http.delete(
-            path, headers=self._web_headers({"Accept": MEDIA_WEB})
+        resp = await self._request(
+            "DELETE", path, headers=self._web_headers({"Accept": MEDIA_WEB})
         )
         if resp.status_code not in (200, 202, 204):
             self._check_web_rest000e(path, resp.status_code, resp.text)
@@ -355,7 +369,7 @@ class HMCClient(
         a typed uom+xml Accept header causes HTTP 406.
         """
         path = f"/rest/api/uom/{resource_type}/{uuid}/quick/{property_name}"
-        resp = await self._http.get(path, headers={"Accept": "*/*"})
+        resp = await self._request("GET", path, headers={"Accept": "*/*"})
         if resp.status_code == 204:
             return None
         if resp.status_code != 200:
@@ -438,7 +452,8 @@ class HMCClient(
         types, and atom+xml Accept — as confirmed by the ansible-power-hmc
         reference implementation.
         """
-        resp = await self._http.put(
+        resp = await self._request(
+            "PUT",
             job_path,
             content=job_request_xml,
             headers={
@@ -543,7 +558,7 @@ class HMCClient(
         Returns a 2-tuple so callers can inspect response headers such as
         ``X-HMC-Schema-Version`` to discover the schema version in effect.
         """
-        resp = await self._http.get(path, headers={"Accept": accept})
+        resp = await self._request("GET", path, headers={"Accept": accept})
         if resp.status_code == 204:
             return "", dict(resp.headers)
         if resp.status_code != 200:
@@ -553,8 +568,8 @@ class HMCClient(
     async def raw_post(
         self, path: str, body: str, content_type: str = "application/xml"
     ) -> str:
-        resp = await self._http.post(
-            path, content=body, headers={"Content-Type": content_type}
+        resp = await self._request(
+            "POST", path, content=body, headers={"Content-Type": content_type}
         )
         if resp.status_code not in (200, 201, 202):
             raise HMCError(f"POST {path} failed", resp.status_code, resp.text)

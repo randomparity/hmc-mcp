@@ -19,6 +19,7 @@ from .jobs import deploy_partition_template_job
 class TemplatesMixin:
     _http: httpx.AsyncClient
     _session_token: str | None
+    _request: Callable[..., Awaitable[httpx.Response]]
     submit_job: Callable[..., Awaitable[dict[str, Any] | None]]
 
     # ------------------------------------------------------------------ #
@@ -27,8 +28,10 @@ class TemplatesMixin:
     TEMPLATES_MEDIA = "application/vnd.ibm.powervm.templates+xml"
 
     async def _templates_get(self, path: str) -> str:
-        resp = await self._http.get(
-            path, headers={"Accept": f"{self.TEMPLATES_MEDIA}; type=PartitionTemplate"}
+        resp = await self._request(
+            "GET",
+            path,
+            headers={"Accept": f"{self.TEMPLATES_MEDIA}; type=PartitionTemplate"},
         )
         if resp.status_code == 204:
             return ""
@@ -43,10 +46,14 @@ class TemplatesMixin:
 
     async def get_partition_template(self, template_uuid: str) -> dict[str, Any] | None:
         """Get one partition template by UUID."""
-        xml = await self._templates_get(f"/rest/api/templates/PartitionTemplate/{template_uuid}")
+        xml = await self._templates_get(
+            f"/rest/api/templates/PartitionTemplate/{template_uuid}"
+        )
         if not xml:
             return None
-        entries = _parse_feed(xml, f"/rest/api/templates/PartitionTemplate/{template_uuid}")
+        entries = _parse_feed(
+            xml, f"/rest/api/templates/PartitionTemplate/{template_uuid}"
+        )
         return entries[0] if entries else None
 
     async def deploy_partition_template(

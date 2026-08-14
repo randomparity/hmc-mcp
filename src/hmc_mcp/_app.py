@@ -17,7 +17,6 @@ import asyncio
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Literal, TypeVar, overload
 
-import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -28,6 +27,7 @@ from .common import (
     is_uuid,
 )
 from .config import HMCConfig
+from .errors import HMCTransportError
 from .ssh_commands import _ssh_lpar_name, _ssh_system_name
 
 _T = TypeVar("_T")
@@ -233,7 +233,7 @@ async def _resolve_system_name(
 
     Names pass through untouched (no REST needed). UUIDs are resolved via
     REST, falling back to an ``lssyscfg`` name lookup over SSH only when the
-    REST transport is unreachable (``httpx.HTTPError``). A REST 4xx/5xx
+    REST transport is unreachable (``HMCTransportError``). A REST 4xx/5xx
     (``HMCError``) is *not* a transport failure — REST answered and the UUID
     is unknown, so the error surfaces rather than falling back.
 
@@ -246,7 +246,7 @@ async def _resolve_system_name(
     try:
         async with client_from_env(profile) as hmc:
             return await _system_name_from_rest(hmc, system_name_or_uuid)
-    except httpx.HTTPError:
+    except HMCTransportError:
         return await _ssh_system_name(config, system_name_or_uuid)
 
 
@@ -267,7 +267,7 @@ async def _resolve_lpar_name(
     try:
         async with client_from_env(profile) as hmc:
             return await _lpar_name_from_rest(hmc, lpar_name_or_uuid)
-    except httpx.HTTPError:
+    except HMCTransportError:
         return await _ssh_lpar_name(config, lpar_name_or_uuid, system_name)
 
 

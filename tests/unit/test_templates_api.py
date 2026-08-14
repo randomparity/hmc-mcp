@@ -6,6 +6,7 @@ import pytest
 from conftest import JOB_ENTRY, make_config
 
 from hmc_mcp.client import HMCClient
+from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import deploy_partition_template_job
 
 TEMPLATE_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -41,6 +42,17 @@ def test_deploy_job():
     assert "TargetUuid" in xml and "sys-uuid" in xml
     assert "TemplateUuid" not in xml  # draft UUID is in the URL, not a parameter
     assert "K_X_API_SESSION_MEMENTO" in xml and "memento-1" in xml
+
+
+@pytest.mark.asyncio
+async def test_template_transport_failure_uses_shared_hmc_error(mock_hmc):
+    mock_hmc.get("/rest/api/templates/PartitionTemplate").mock(
+        side_effect=httpx.ReadTimeout("template request timed out")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCTransportError, match="GET /rest/api/templates"):
+            await hmc.list_partition_templates()
 
 
 @pytest.mark.asyncio

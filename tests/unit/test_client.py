@@ -8,11 +8,27 @@ import httpx
 import pytest
 
 from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
 
 from conftest import make_config
 
 BASE = "https://hmc.test:12443"
+
+
+@pytest.mark.asyncio
+async def test_rest_transport_failure_uses_hmc_error_hierarchy(mock_hmc):
+    request = mock_hmc.put("/rest/api/web/Logon").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+
+    with pytest.raises(HMCTransportError, match=r"PUT /rest/api/web/Logon") as exc_info:
+        async with HMCClient(make_config()):
+            pass
+
+    assert request.called
+    assert isinstance(exc_info.value.__cause__, httpx.ConnectError)
+
 
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
