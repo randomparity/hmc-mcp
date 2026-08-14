@@ -35,10 +35,11 @@ presentation-neutral operation so the template workflow can reuse exactly the sa
    result. If a normally returned selected job has a `Resource.Status` other than exactly
    `COMPLETED`, return it without a post-list or stamp, with `ownership_stamped=None` and a
    reason-specific warning.
-5. After `COMPLETED`, list again. Compare valid, non-empty string UUIDs against the
-   baseline. Exactly one new entry is the stamp target. Zero, multiple, malformed, or
-   unavailable snapshots produce `ownership_stamped=None` and a warning that says why no
-   safe target was selected.
+5. After `COMPLETED`, list again. A snapshot is usable only when every entry has a valid,
+   non-empty string UUID; do not filter malformed entries out of an otherwise usable set.
+   Compare the post-deployment UUIDs against the baseline. Exactly one new entry is the
+   stamp target. Zero, multiple, malformed, or unavailable snapshots produce
+   `ownership_stamped=None` and a warning that says why no safe target was selected.
 6. Pass the selected entry, resolved system UUID, and original system selector to the
    shared ownership-stamp operation. Return its status and warnings unchanged.
 
@@ -76,7 +77,9 @@ Focused tests must prove:
 - zero and multiple new UUIDs do not stamp and return distinct actionable warnings;
 - a baseline or post-list HMC error does not fail a successful deployment;
 - a non-completed terminal job performs no post-list or stamp;
-- entries without a usable UUID are never selected by name alone.
+- a snapshot containing an entry without a usable UUID is wholly inconclusive, including
+  when another entry looks like one valid new candidate; no entry is selected by name
+  alone;
 - the successful orchestration order is baseline list, job submission, wait to
   `COMPLETED`, post-deployment list, then ownership stamp.
 
