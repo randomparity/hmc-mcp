@@ -36,13 +36,15 @@ timeout_seconds: int, poll_interval: int) -> JobOutcome`. Add the standard
 keyword-only wait triple to `abort_lpar_migration`, `recover_lpar_migration`,
 and `remote_restart_lpar`.
 
-1. Add parameterized tests for abort, recover, and remote restart proving
-   invalid active timing raises before any PUT; immediate calls do not poll and
-   return a five-field outcome with `timed_out is False`; waited calls poll the
-   submission link to COMPLETED, FAILED/EXCEPTION, and a nonterminal timeout.
-   Assert the same key set and field types across outcomes. Run
-   `uv run pytest -q tests/lpar/test_lpm_tools.py`; expect failures because the
-   operation and tool signatures do not accept the wait triple.
+1. Add operation-level parameterized tests for abort, recover, and remote
+   restart proving invalid active timing raises before the mocked resolver or
+   client submission; immediate calls do not poll and return a five-field
+   outcome with `timed_out is False`; waited calls poll to COMPLETED,
+   FAILED/EXCEPTION, and a nonterminal timeout. Assert the same key set and field
+   types across outcomes. Run
+   `uv run pytest -q tests/lpar/test_lpm_tools.py`; expect only the new
+   operation-level tests to fail because those three operation signatures do
+   not accept the wait triple. Do not add MCP wrapper tests until Task 2.
 2. Implement `_finish_job`: derive `submitted_id = job_identifier(job) or ""`;
    if `wait` is false, call `job_outcome(submitted_id, job)` and use
    `dataclasses.replace(..., timed_out=False)`; otherwise await
@@ -97,8 +99,12 @@ interval)` before `_lpm_run` and forwards the values to its operation. Update
 1. Extend command-runner cases to pass `--wait --timeout 60 --interval 1` and
    assert each fake client call receives the corresponding keyword arguments.
    Add an invalid active timing case proving no confirmation or operation call.
-   Run `uv run pytest -q tests/app/test_cli_commands.py`; expect the new options
-   to be rejected.
+   Add one presentation test whose operation returns a `JobOutcome` with
+   `job_id="job-uuid-999"`, `status="RUNNING"`, `timed_out=True`, `error=None`,
+   and a raw job dictionary; assert the CLI emits those exact five JSON fields
+   with their native types. Run `uv run pytest -q tests/app/test_cli_commands.py`;
+   expect the new options to be rejected and the timeout outcome to serialize
+   as a string rather than the required JSON object.
 2. Add the three options and validation/forwarding exactly as specified. Import
    `asdict` and `JobOutcome`, and convert only that payload in `_lpm_run` before
    `_print_json`.
