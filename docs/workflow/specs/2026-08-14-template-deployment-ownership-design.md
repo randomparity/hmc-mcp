@@ -30,9 +30,11 @@ presentation-neutral operation so the template workflow can reuse exactly the sa
    stamp.
 3. With `wait=True`, request `list_logical_partitions(system_uuid)` before submission.
    If it fails, retain an unavailable-baseline marker and continue deployment.
-4. Submit and wait using the current helpers. If the selected job is absent or its
-   `Resource.Status` is not exactly `COMPLETED`, return it without a post-list or stamp,
-   with `ownership_stamped=None` and a reason-specific warning.
+4. Submit and wait using the current helpers. Existing submission and wait validation
+   errors, including an absent submitted job, continue to raise without a deployment
+   result. If a normally returned selected job has a `Resource.Status` other than exactly
+   `COMPLETED`, return it without a post-list or stamp, with `ownership_stamped=None` and a
+   reason-specific warning.
 5. After `COMPLETED`, list again. Compare valid, non-empty string UUIDs against the
    baseline. Exactly one new entry is the stamp target. Zero, multiple, malformed, or
    unavailable snapshots produce `ownership_stamped=None` and a warning that says why no
@@ -40,9 +42,10 @@ presentation-neutral operation so the template workflow can reuse exactly the sa
 6. Pass the selected entry, resolved system UUID, and original system selector to the
    shared ownership-stamp operation. Return its status and warnings unchanged.
 
-Every result contains `job`, `ownership_stamped`, and `warnings`. A stamp succeeds with
-`True` and no ownership warning; an attempted stamp failure returns `False`; no attempt
-returns `None`.
+Every normally returned result contains `job`, `ownership_stamped`, and `warnings`.
+Existing validation, submission, and polling exceptions still produce no result. A stamp
+succeeds with `True` and no ownership warning; an attempted stamp failure returns `False`;
+no attempt returns `None`.
 
 ## Failure handling
 
@@ -74,6 +77,8 @@ Focused tests must prove:
 - a baseline or post-list HMC error does not fail a successful deployment;
 - a non-completed terminal job performs no post-list or stamp;
 - entries without a usable UUID are never selected by name alone.
+- the successful orchestration order is baseline list, job submission, wait to
+  `COMPLETED`, post-deployment list, then ownership stamp.
 
 Run the focused template and ownership tests during TDD, then `just verify` and
 `uv run prek run --all-files` before shipment.
