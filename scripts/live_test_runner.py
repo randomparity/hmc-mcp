@@ -32,7 +32,7 @@ from typing import Any
 from fastmcp import Client
 
 from hmc_mcp.server import mcp
-from hmc_mcp.server_command import register_arbitrary_command_tool
+from hmc_mcp.server_command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
@@ -1895,7 +1895,7 @@ async def main(
     if subtask_filter is not None:
         _restore_ctx_from_results(state, results_path)
 
-    await register_arbitrary_command_tool()
+    await configure_arbitrary_command_tool(True)
     async with Client(mcp) as client:
         tasks = (
             [subtask_filter] if subtask_filter is not None else sorted(SUBTASKS.keys())

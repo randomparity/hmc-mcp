@@ -54,10 +54,11 @@ class _ScriptedClient:
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
-    async def register() -> None:
+    async def configure(enabled: bool) -> None:
+        assert enabled is True
         return None
 
-    monkeypatch.setattr(runner, "register_arbitrary_command_tool", register)
+    monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
 
 
 def test_schema_preflight_is_explicit_and_actionable(monkeypatch, capsys):

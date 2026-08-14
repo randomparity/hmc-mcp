@@ -153,29 +153,33 @@ def test_serve_passes_arbitrary_command_opt_in(http):
         entrypoint.assert_called_once_with(enable_arbitrary_command=True)
 
 
-def test_stdio_entrypoint_registers_arbitrary_command_when_enabled():
+@pytest.mark.parametrize("enabled", [False, True])
+def test_stdio_entrypoint_configures_arbitrary_command(enabled):
     with (
         patch(
-            "hmc_mcp.server.register_arbitrary_command_tool", new_callable=AsyncMock
-        ) as register,
+            "hmc_mcp.server.configure_arbitrary_command_tool", new_callable=AsyncMock
+        ) as configure,
         patch.object(server_app.mcp, "run") as run,
     ):
-        server_app.main_stdio(enable_arbitrary_command=True)
+        server_app.main_stdio(enable_arbitrary_command=enabled)
 
-    register.assert_called_once_with()
+    configure.assert_called_once_with(enabled)
     run.assert_called_once_with()
 
 
-def test_http_entrypoint_registers_arbitrary_command_when_enabled():
+@pytest.mark.parametrize("enabled", [False, True])
+def test_http_entrypoint_configures_arbitrary_command(enabled):
     with (
         patch(
-            "hmc_mcp.server.register_arbitrary_command_tool", new_callable=AsyncMock
-        ) as register,
+            "hmc_mcp.server.configure_arbitrary_command_tool", new_callable=AsyncMock
+        ) as configure,
         patch.object(server_app.mcp, "run") as run,
     ):
-        server_app.main_http(host="127.0.0.1", port=9000, enable_arbitrary_command=True)
+        server_app.main_http(
+            host="127.0.0.1", port=9000, enable_arbitrary_command=enabled
+        )
 
-    register.assert_called_once_with()
+    configure.assert_called_once_with(enabled)
     run.assert_called_once_with(
         transport="streamable-http", host="127.0.0.1", port=9000
     )

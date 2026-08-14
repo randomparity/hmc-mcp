@@ -64,7 +64,7 @@ from .server_capacity import (
 )
 from .server_command import (
     hmc_run_command as hmc_run_command,
-    register_arbitrary_command_tool,
+    configure_arbitrary_command_tool,
 )
 from .server_jobs import (
     hmc_get_job as hmc_get_job,
@@ -193,8 +193,7 @@ from .server_provision import (
 
 def main_stdio(enable_arbitrary_command: bool = False) -> None:
     """Start the fully composed MCP server over stdio."""
-    if enable_arbitrary_command:
-        asyncio.run(register_arbitrary_command_tool())
+    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command))
     mcp.run()
 
 
@@ -212,8 +211,7 @@ def main_http(
             "(including user administration). Refusing to start. Explicitly "
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
-    if enable_arbitrary_command:
-        asyncio.run(register_arbitrary_command_tool())
+    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command))
     mcp.run(transport="streamable-http", host=host, port=port)
 
 

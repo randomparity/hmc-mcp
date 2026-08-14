@@ -17,8 +17,10 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
     return _run(lambda: run_hmc_cli(cmd, config))
 
 
-async def register_arbitrary_command_tool() -> None:
-    """Register the escape hatch once for a server that explicitly enables it."""
-    if await mcp.local_provider.get_tool("hmc_run_command") is not None:
-        return
-    mcp.tool(hmc_run_command, annotations=_STATE_CHANGING)
+async def configure_arbitrary_command_tool(enabled: bool) -> None:
+    """Make escape-hatch registration match the requested capability state."""
+    registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
+    if enabled and not registered:
+        mcp.tool(hmc_run_command, annotations=_STATE_CHANGING)
+    elif not enabled and registered:
+        mcp.local_provider.remove_tool("hmc_run_command")

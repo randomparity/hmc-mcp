@@ -70,12 +70,14 @@ def test_arbitrary_command_tool_is_disabled_by_default():
     assert "hmc_run_command" not in _tools_by_name()
 
 
-def test_arbitrary_command_tool_opt_in_is_idempotent():
+def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 
     try:
-        asyncio.run(server_command.register_arbitrary_command_tool())
-        asyncio.run(server_command.register_arbitrary_command_tool())
+        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True))
+        asyncio.run(server_command.configure_arbitrary_command_tool(True))
 
         tools = [
             tool
@@ -85,8 +87,11 @@ def test_arbitrary_command_tool_opt_in_is_idempotent():
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
+        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        asyncio.run(server_command.configure_arbitrary_command_tool(False))
+        assert "hmc_run_command" not in _tools_by_name()
     finally:
-        mcp.local_provider.remove_tool("hmc_run_command")
+        asyncio.run(server_command.configure_arbitrary_command_tool(False))
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
