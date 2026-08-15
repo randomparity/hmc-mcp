@@ -42,8 +42,16 @@ test:
 smoke:
     uv run --no-sync python scripts/smoke_mcp.py
 
+# construct a fresh wheel and source distribution from clean Git provenance
+build:
+    uv build --clear --wheel --sdist --out-dir dist .
+
+# validate the retained distributions without rebuilding them
+verify-artifacts:
+    uv run --no-sync python tests/validate_release_artifacts.py dist .
+
 # full verification: tests + handshake + CLI groups load
-verify: static test smoke
+verify: static test smoke build verify-artifacts
     uv run --no-sync hmc-mcp --help >/dev/null
     uv run --no-sync hmc-mcp lpars --help >/dev/null
     uv run --no-sync hmc-mcp storage --help >/dev/null
