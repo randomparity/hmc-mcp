@@ -95,4 +95,4 @@ own those risks.
 
 Branch `feat/git-derived-versions-159`; base `main`. Host architecture `arm64`; target
 architectures `amd64` and `arm64`; relationship included. Guardrails are `just verify` and the
-separately CI-gated `uv run prek run --all-files`.
+separately CI-gated `UV_NO_SYNC=1 uv run prek run --all-files`, both after `just setup`.
