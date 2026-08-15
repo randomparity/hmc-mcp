@@ -43,9 +43,10 @@ dependency graph from `uv.lock` without the project, installs those exact depend
 environment, and then installs the sole downloaded wheel with `--no-deps`. It invokes only
 executables from `.wheel-venv`: `hmc-mcp --help` plus every installed CLI group help path (`lpars`,
 `storage`, `network`, `templates`, `metrics`) and `.wheel-venv/bin/python scripts/smoke_mcp.py`.
-The repository uses a `src/` layout, so executing the script from `scripts/` resolves `hmc_mcp`
-from the installed wheel rather than the checkout. The consumer does not run `just setup`, install
-the editable project, rebuild the artifact, or resolve dependencies outside the lockfile.
+Before smoke, the consumer imports `hmc_mcp`, resolves its `__file__`, and fails unless that path is
+beneath `.wheel-venv`; the package-boundary proof therefore does not depend only on the repository's
+`src/` layout. The consumer does not run `just setup`, install the editable project, rebuild the
+artifact, or resolve dependencies outside the lockfile.
 
 The consumer's checkout supplies only the smoke script. The wheel is the sole package installation
 source and was already validated by the corresponding producer's `just verify`. A missing,
@@ -105,9 +106,9 @@ inactive ppc64le template performs no work and is neither activated nor broadene
 
 `tests/test_ci_pipeline.py` proves the exact eight-entry producer matrix and exact matching consumer
 matrix, `fail-fast: false`, job-name identity, producer-to-artifact-to-consumer mapping, immutable
-action pins, exact wheel count, fresh-environment installation, installed CLI and MCP commands,
-least privilege, and the absence of active ppc64le execution. It continues to prove the retained
-ppc64le template byte-for-contract behavior.
+action pins, exact wheel count, fresh-environment installation, installed-package path assertion,
+installed CLI and MCP commands, least privilege, and the absence of active ppc64le execution. It
+continues to prove the retained ppc64le template byte-for-contract behavior.
 
 The TDD proof first changes the expected matrix and consumer contract so the focused test fails on
 the five-entry workflow. Implementation then makes that test pass. Required guardrails are `just

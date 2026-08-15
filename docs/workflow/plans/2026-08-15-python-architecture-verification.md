@@ -66,11 +66,16 @@ job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are id
    .wheel-requirements.txt`, then install the exported locked requirements. Install only the
    validated wheel with `uv pip install --no-deps --python .wheel-venv/bin/python`. Run
    `.wheel-venv/bin/hmc-mcp --help` and all five group help paths, then run
+   `.wheel-venv/bin/hmc-mcp lpars --help`, `.wheel-venv/bin/hmc-mcp storage --help`,
+   `.wheel-venv/bin/hmc-mcp network --help`, `.wheel-venv/bin/hmc-mcp templates --help`, and
+   `.wheel-venv/bin/hmc-mcp metrics --help`. Before MCP smoke, run a Python assertion that resolves
+   `hmc_mcp.__file__` and requires it to be beneath the resolved `.wheel-venv` path. Then run
    `.wheel-venv/bin/python scripts/smoke_mcp.py`.
 6. Run `uv run --no-sync pytest -q tests/test_ci_pipeline.py`. Expect all tests in the file to pass.
 7. Run `just workflow-security`. Expect exit 0 with no zizmor findings. Review
    `git diff --check` and the workflow diff, confirming the delimited ppc64le block is unchanged.
-8. Commit with `git commit -m "ci: verify every native Python architecture arm"`.
+8. Stage only `.github/workflows/ci.yml` and `tests/test_ci_pipeline.py`, then commit with `git
+   commit -m "ci: verify every native Python architecture arm"`.
 
 **Acceptance criteria:** Tests prove exactly eight producer and eight matching consumer arms;
 matrix/job failures identify architecture and Python; each consumer installs exactly its producer's
@@ -82,8 +87,8 @@ external configuration requires cleanup.
 
 ## Task 2: Verify the integrated workflow contract
 
-**Files:** Modify only the design or test wording if a guardrail exposes a factual mismatch; do not
-broaden the implementation surface.
+**Files:** No planned modifications. Any evidence-backed correction gets its own explicitly staged
+review-fix commit and must remain inside the frozen surface.
 
 **Interfaces:** Consumes the completed workflow and tests from Task 1. Produces a fully verified
 branch suitable for adversarial review and delivery.
@@ -93,11 +98,9 @@ branch suitable for adversarial review and delivery.
    and artifact validation all to exit 0.
 3. Run `UV_NO_SYNC=1 uv run prek run --all-files`. Expect every hook to pass.
 4. Run `git diff --check` and inspect `git status --short --untracked-files=all`. Expect no whitespace
-   errors and only intended tracked design/workflow/test changes before the final documentation
-   commit.
-5. Commit the durable spec and plan separately with `git commit -m "docs: specify native matrix
-   verification"` if they were not committed before Task 1; otherwise leave the prior design commit
-   intact. Do not combine later review fixes into either implementation or design commits.
+   errors and an empty tree. The durable spec and plan are prerequisites committed before Task 1;
+   do not sweep them into the implementation commit. Every commit explicitly stages only its named
+   files. Do not combine later review fixes with implementation or design commits.
 
 **Acceptance criteria:** All required guardrails pass from the external worktree, the documented
 contract matches the workflow byte-for-contract tests, and commit history keeps design,
@@ -105,3 +108,30 @@ implementation, and review fixes logically separated.
 
 **Rollback:** Revert only the commit whose behavior or documentation is being removed; the two
 logical commits remain independently bisectable.
+
+## Task 3: Observe every native arm on the delivered branch head
+
+**Files:** No repository modifications. This is delivery evidence collected after the branch is
+pushed and the pull request exists.
+
+**Interfaces:** Consumes the immutable delivered HEAD SHA and pull-request number from the delivery
+phase. Produces evidence that GitHub Actions executed every required producer and consumer check for
+that exact SHA.
+
+1. Resolve the pull request with `gh pr view <PR> --repo randomparity/hmc-mcp --json
+   headRefOid,headRefName,baseRefName,mergeable,mergeStateStatus`. Require `headRefOid` to equal the
+   full reviewed `git rev-parse HEAD`, head `feat/python-architecture-matrix-163`, and base `main`.
+2. Poll `gh pr checks <PR> --repo randomparity/hmc-mcp --json name,state` on a backing-off interval
+   until checks reach terminal states. Expect one successful check for each exact name `<amd64|arm64>
+   / Python <3.11|3.12|3.13|3.14> / verify` and one for each matching name ending `/ wheel smoke`.
+3. Treat any absent, duplicate, skipped, cancelled, timed-out, or failed required arm as incomplete.
+   Also require every other required repository check to succeed and the pull request to report
+   `MERGEABLE` with merge state `CLEAN`; after one evidence-backed correction, surface another
+   failure instead of polling indefinitely.
+
+**Acceptance criteria:** The exact delivered branch head has 16 successful matrix checks, all other
+required checks are green, and the pull request is clean and mergeable. Every observed job name
+identifies its architecture, Python version, and producer or consumer stage.
+
+**Rollback:** None; this task is read-only. A failed live arm returns to diagnosis and a new reviewed
+commit rather than changing external infrastructure or retrying blindly.
