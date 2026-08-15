@@ -25,10 +25,10 @@ def _run_git(project_dir: Path, *arguments: str) -> subprocess.CompletedProcess[
             text=True,
             timeout=GIT_TIMEOUT_SECONDS,
         )
-    except FileNotFoundError as error:
+    except FileNotFoundError:
         raise NotVCSError(
             "Git executable is unavailable; install Git or build from an unpacked sdist"
-        ) from error
+        ) from None
     except subprocess.TimeoutExpired:
         raise RuntimeError(
             "Git provenance check timed out; verify repository health and retry"

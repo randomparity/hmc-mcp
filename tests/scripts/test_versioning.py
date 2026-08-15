@@ -171,13 +171,16 @@ def test_gitless_directory_uses_versioningit_fallback_boundary(tmp_path: Path) -
 def test_missing_git_executable_uses_versioningit_fallback_boundary(
     repository: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    sentinel = "/sensitive/project/missing-git"
+
     def missing_git(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        raise FileNotFoundError("git executable is unavailable")
+        raise FileNotFoundError(f"git executable is unavailable at {sentinel}")
 
     monkeypatch.setattr(versioning.subprocess, "run", missing_git)
 
-    with pytest.raises(NotVCSError, match=r"Git executable is unavailable"):
+    with pytest.raises(NotVCSError, match=r"Git executable is unavailable") as caught:
         describe_git(project_dir=repository, params={})
+    assert sentinel not in "".join(traceback.format_exception(caught.value))
 
 
 def test_corrupt_git_metadata_remains_a_hard_failure(repository: Path) -> None:
