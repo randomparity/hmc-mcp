@@ -29,19 +29,23 @@ process while retaining a fresh, event-loop-local `httpx.AsyncClient` for every
 tool call.
 
 The cache key includes both the caller-selected profile and the effective HMC
-endpoint/user route. A per-key cross-loop synchronization mechanism serializes
-Logon so a cache miss creates at most one session. The cache holds at most one
-published or remotely live token per key during successful operation, never
-persists tokens, and explicitly logs off cached sessions during orderly
-shutdown. Replacement waits for active borrowers of the retired token to drain
-and for cleanup to complete. An ambiguous cleanup failure quarantines the key
-and blocks replacement Logon until operator reconciliation, preventing repeated
-failures from accumulating remote sessions.
+endpoint/user route. Cross-loop synchronization first serializes configuration
+resolution and route replacement by profile selector, then serializes Logon per
+route key. A waiting caller re-resolves configuration after acquiring the
+selector lock, so a stale route snapshot cannot publish after a newer one. The
+cache holds at most one published or remotely live token per key during
+successful operation, never persists tokens, and explicitly logs off cached
+sessions during orderly shutdown. Replacement waits for active borrowers of the
+retired token to drain and for cleanup to complete. An ambiguous cleanup failure
+quarantines the key and blocks replacement Logon until operator reconciliation,
+preventing repeated failures from accumulating remote sessions.
 
-Orderly shutdown stops new acquisitions and waits up to 30 seconds for active
-borrowers. If borrowers remain, it reports their count, discards local token
-state, and leaves their remote sessions to HMC invalidation. It never forces
-Logoff beneath an active mutation.
+Orderly shutdown stops new acquisitions and gives active borrowers a fixed
+30-second drain deadline. If borrowers remain, it reports their count, discards
+local token state, and leaves their remote sessions to HMC invalidation. It
+never forces Logoff beneath an active mutation. If borrowers drain, independent
+Logoff requests run concurrently and retain their existing per-request timeout;
+the 30-second promise applies to drain, not subsequent cleanup duration.
 
 Profile isolation means the process-wide count is not a fixed constant: its
 worst case is one retained session for every distinct profile/route key touched.
@@ -57,8 +61,10 @@ and deployment topology are operator-configured and no safe universal value is
 documented.
 
 The client assumes no fixed token lifetime. A 401 evicts the matching token.
-Read-only/idempotent requests may perform one serialized re-logon and one
-replay. Mutating requests are not replayed after a 401; they return an
+Only request definitions on an explicit reviewed allowlist may perform one
+serialized re-logon and one replay; classification means safe after an ambiguous
+response and never derives from HTTP verb alone. Missing or unknown
+classification is non-replayable. Mutating and unclassified requests return an
 actionable authentication-expired error because the client cannot prove the
 original operation had no effect.
 
@@ -83,9 +89,10 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
   operator timeout and maximum-session configuration.
 - Replacement can wait for in-flight callers, and an ambiguous cleanup failure
   makes that key unavailable until the operator reconciles the HMC session.
-- Shutdown is bounded to 30 seconds. Deadline expiry can leave remote sessions
-  until HMC invalidation, but cannot interrupt an active mutation by logging off
-  its session.
+- Borrower drain during shutdown is bounded to 30 seconds. Deadline expiry can
+  leave remote sessions until HMC invalidation, but cannot interrupt an active
+  mutation by logging off its session. Subsequent concurrent Logoff requests
+  retain the configured per-request timeout.
 - A process that touches many profiles can retain many sessions; deployments
   must include every active process when comparing demand with the HMC's
   per-user maximum.

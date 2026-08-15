@@ -155,15 +155,24 @@ token to disk.
 The cache key must include the caller-selected profile and the effective HMC
 endpoint and user. Calls for different profiles must never share a token, even
 when their current configuration happens to resolve to the same endpoint.
-Logon creation for a key must be serialized so concurrent misses create at most
-one session. The cache must hold at most one published or remotely live token
-per key during successful operation and explicitly log off cached sessions
-during orderly process shutdown.
+Configuration resolution and route replacement must be serialized by profile
+selector (the explicit profile name or a default-selection sentinel). A caller
+resolves configuration only after acquiring that selector lock, compares it
+with the current route generation, and retires the prior route before a new
+per-route Logon begins. A waiting caller re-resolves after acquiring the lock,
+so a stale snapshot captured before a newer route cannot later win. Logon
+creation for a route key is serialized so concurrent misses create at most one
+session. The cache must hold at most one published or remotely live token per
+key during successful operation and explicitly log off cached sessions during
+orderly process shutdown.
 
-A 401 invalidates the token. Read-only/idempotent requests may perform one
-serialized re-logon and one replay. Mutating requests must not be replayed after
-a 401 because the client cannot prove that the HMC did not apply the operation;
-they must return an actionable authentication-expired error. No retry loop is
+A 401 invalidates the token. Only request definitions on an explicit, reviewed
+replay allowlist may perform one serialized re-logon and one replay. Allowlist
+membership means the operation is safe to repeat after an ambiguous response;
+an HTTP verb or tool description alone is not evidence of that property. Every
+absent or unknown classification defaults to non-replayable. Mutating and
+unclassified requests return an actionable authentication-expired error because
+the client cannot prove the HMC did not apply the operation. No retry loop is
 permitted.
 
 Credential-only changes do not change the cache key, and the evidence does not
@@ -186,6 +195,8 @@ deployment topology are configurable.
 ## Concurrency and lifecycle invariants
 
 - Token state is process-local; transport objects remain event-loop-local.
+- A cross-loop selector lock covers effective-route resolution, route-generation
+  comparison, and retirement. A stale concurrent route snapshot cannot publish.
 - A synchronization primitive usable across separate `asyncio.run` calls guards
   each key's token and logon transition; an asyncio lock must not cross loops.
 - Each published token has a monotonically changing per-key generation and an
@@ -208,6 +219,10 @@ deployment topology are configurable.
   for active borrowers. If the deadline expires, it reports the outstanding
   borrower count, discards local token state, never forces Logoff beneath an
   active mutation, and leaves remaining remote cleanup to HMC invalidation.
+- Thirty seconds bounds borrower drain, not all orderly-shutdown work. After a
+  successful drain, Logoff calls for independent keys run concurrently and each
+  remains bounded by the existing HTTP request timeout. Cleanup failures are
+  reported; shutdown does not retry them.
 - Cleanup failure is reported and the local token is discarded; a stale local
   reference must not be reused.
 
@@ -217,7 +232,11 @@ shutdown during active use, repeated invalidation while borrowers remain active,
 ambiguous cleanup failure, and cancellation during Logon and after acquisition.
 The shutdown test must cover both drain before 30 seconds and deadline expiry
 with an outstanding mutation borrower, including the reported count and absence
-of a forced Logoff.
+of a forced Logoff. It must also cover multiple slow Logoffs running concurrently.
+Replay tests must prove every existing request definition is classified, unknown
+classification is non-replayable, and allowlisted requests replay at most once.
+A two-route race test must prove that a stale route cannot publish or remain
+cached after a newer selector-locked resolution.
 
 ## Threat model for future implementation
 
