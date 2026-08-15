@@ -43,8 +43,11 @@ canonical files and metadata that README navigation and future package consumers
 3. Add the exact MIT text to `LICENSE`; write the focused contribution and security policies; add
    README navigation; add the specified PEP 621 metadata and URLs.
 4. Run `uv run pytest --no-cov tests/test_project_metadata.py -q`. Expect all tests to pass.
-5. Run `git diff --check`, inspect the diff for duplicated or contradictory policy, and commit with
-   `feat: establish repository governance`.
+5. Run `just verify`, then `uv run prek run --all-files`. Expect both commands to pass without
+   modifying files. If a hook formats a file, inspect the change and rerun the focused test and
+   both guardrails before continuing.
+6. Run `git diff --check`, inspect the diff for duplicated or contradictory policy, and commit with
+   `feat: establish repository governance` only after every preceding check is green.
 
 **Acceptance:** Every governance assertion passes; the contribution guide contains the complete
 minimum local and pull-request path; only GitHub private advisories accept security reports;
@@ -60,9 +63,8 @@ shipping; no later task consumes a new code interface.
 
 1. Run `just verify`. Expect static checks, the full pytest suite, MCP smoke, and every CLI group to
    pass with zero warnings.
-2. Run `uv run prek run --all-files`. Expect every hook to pass without modifying files. If a hook
-   formats a file, inspect the change, rerun the focused test and both guardrails, then commit the
-   mechanical correction separately.
+2. Run `uv run prek run --all-files`. Expect every hook to pass without modifying files. A
+   post-commit mutation contradicts Task 1's evidence; stop and investigate it before proceeding.
 3. Review `git diff main...HEAD --name-only` and confirm it contains only the file map plus ADR 0022,
    this specification, and this plan. Confirm no workflow file changed and inspect the
    `pyproject.toml` diff to verify it contains only the declared governance metadata.
