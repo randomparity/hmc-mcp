@@ -246,9 +246,15 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
         "        apt-get install --yes --no-remove --no-install-recommends "
         "--fix-broken \\\n"
     )
+    toolchain_install = (
+        "    && DEBIAN_FRONTEND=noninteractive \\\n"
+        "        apt-get install --yes --no-remove --no-install-recommends \\\n"
+        "        ca-certificates \\\n"
+    )
     add_pattern = re.compile(f"^{re.escape(bootstrap_add)}", re.MULTILINE)
     assert add_pattern.search(dockerfile)
     assert bootstrap_chain in dockerfile
+    assert toolchain_install in dockerfile
     assert not add_pattern.search(dockerfile.replace("--checksum=sha256:", "# checksum="))
     assert bootstrap_chain not in dockerfile.replace(
         "/etc/ssl/certs/ca-certificates.crt", "/tmp/ca-certificates.crt"

@@ -21,7 +21,8 @@ RUN ubuntu_snapshot=20260813T000000Z \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-remove --no-install-recommends --fix-broken \
-    && apt-get install --yes --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-remove --no-install-recommends \
         ca-certificates \
         curl \
         build-essential \
