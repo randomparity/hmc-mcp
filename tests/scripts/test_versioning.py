@@ -4,6 +4,7 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -96,6 +97,33 @@ def test_development_description_uses_unique_revision(repository: Path) -> None:
     assert git(repository, "rev-parse", description.fields["rev"]) == git(
         repository, "rev-parse", "HEAD"
     )
+
+
+def test_detached_head_has_no_branch(repository: Path) -> None:
+    git(repository, "checkout", "--detach")
+
+    description = describe_git(project_dir=repository, params={})
+
+    assert description.branch is None
+
+
+def test_unexpected_branch_query_failure_is_actionable(
+    repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_run = versioning.subprocess.run
+
+    def fail_symbolic_ref(
+        *args: Any, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        command = args[0]
+        if "symbolic-ref" in command:
+            return subprocess.CompletedProcess(command, 128, "", "fatal: broken ref\n")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(versioning.subprocess, "run", fail_symbolic_ref)
+
+    with pytest.raises(RuntimeError, match=r"Git provenance check failed.*broken ref"):
+        describe_git(project_dir=repository, params={})
 
 
 def test_no_tag_history_uses_semantic_origin(repository: Path) -> None:

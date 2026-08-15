@@ -13,9 +13,9 @@ RELEASE_LINES = ("patch", "minor", "major")
 GIT_TIMEOUT_SECONDS = 10
 
 
-def _git(project_dir: Path, *arguments: str) -> str:
+def _run_git(project_dir: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     try:
-        result = subprocess.run(
+        return subprocess.run(
             ["git", "-C", str(project_dir), *arguments],
             check=False,
             capture_output=True,
@@ -24,9 +24,17 @@ def _git(project_dir: Path, *arguments: str) -> str:
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RuntimeError(f"Git provenance check failed: {error}") from error
+
+
+def _raise_git_error(result: subprocess.CompletedProcess[str]) -> None:
+    detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
+    raise RuntimeError(f"Git provenance check failed: {detail}")
+
+
+def _git(project_dir: Path, *arguments: str) -> str:
+    result = _run_git(project_dir, *arguments)
     if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
-        raise RuntimeError(f"Git provenance check failed: {detail}")
+        _raise_git_error(result)
     return result.stdout.strip()
 
 
@@ -41,14 +49,12 @@ def _release_tags(project_dir: Path) -> list[tuple[tuple[int, int, int], str]]:
 
 
 def _branch(project_dir: Path) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", str(project_dir), "symbolic-ref", "--quiet", "--short", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=GIT_TIMEOUT_SECONDS,
-    )
-    return result.stdout.strip() or None
+    result = _run_git(project_dir, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if result.returncode == 1:
+        return None
+    if result.returncode != 0:
+        _raise_git_error(result)
+    return result.stdout.strip()
 
 
 def _validate_repository(project_dir: Path) -> None:
