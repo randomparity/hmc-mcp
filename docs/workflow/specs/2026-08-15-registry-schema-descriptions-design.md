@@ -1,7 +1,9 @@
 # Registry-wide tool parameter descriptions
 
-**Issue:** [#146](https://github.com/randomparity/hmc-mcp/issues/146)  
-**Decision:** [ADR 0016](../../adr/0016-rendered-lifecycle-tool-descriptions.md)  
+**Issue:** [#146](https://github.com/randomparity/hmc-mcp/issues/146)
+
+**Decision:** [ADR 0016](../../adr/0016-rendered-lifecycle-tool-descriptions.md)
+
 **Guardrails:** `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`
 
 ## Outcome

@@ -1,8 +1,11 @@
 # Registry-wide tool parameter descriptions plan
 
-**Issue:** #146  
-**Base:** `main`  
-**Host/targets:** arm64; amd64, arm64, ppc64le; host included  
+**Issue:** #146
+
+**Base:** `main`
+
+**Host/targets:** arm64; amd64, arm64, ppc64le; host included
+
 **Guardrails:** `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`
 
 ## Files and responsibilities
