@@ -82,6 +82,7 @@ def _client() -> AsyncMock:
     hmc = AsyncMock()
     hmc.list_logical_partitions.return_value = [_lpar()]
     hmc.get_logical_partition.return_value = _lpar()
+    hmc.get_quick_property.return_value = "not activated"
 
     async def list_adapters(_lpar_uuid: str, adapter_type: str) -> list[dict[str, object]]:
         adapters = {
@@ -558,6 +559,9 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "UUID": "job-uuid",
         "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
     }
+    hmc.get_quick_property.side_effect = (
+        lambda *args, **kwargs: calls.append("get_state") or "not activated"
+    )
     hmc.delete_adapter.side_effect = (
         lambda lpar_uuid, adapter_type, adapter_uuid: calls.append(
             f"delete_adapter:{adapter_type}:{adapter_uuid}"
@@ -611,6 +615,7 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "authorize:system-a:aix-prod:False",
         "submit_job",
         "wait_for_job",
+        "get_state",
         "delete_adapter:ClientNetworkAdapter:cna-1",
         "delete_adapter:ClientNetworkAdapter:cna-2",
         "delete_adapter:VirtualSCSIClientAdapter:vscsi-1",
@@ -637,6 +642,97 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
     }
     hmc.submit_job.assert_not_awaited()
     hmc.wait_for_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_stops_when_initially_off_lpar_restarts_before_detach(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.get_logical_partition.return_value = _lpar(state="not activated")
+    hmc.get_quick_property.return_value = "running"
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert result.workflow_completed is False
+    assert result.steps == (
+        {
+            "step": "power_off",
+            "status": "ok",
+            "result": {"already_off": True, "state": "not activated"},
+        },
+        {
+            "step": "detach_adapters",
+            "status": "error",
+            "result": (
+                "Cannot detach adapters from LPAR 'aix-prod': current state is "
+                "'running'; expected 'not activated'."
+            ),
+        },
+        {"step": "delete_lpar", "status": "skipped"},
+    )
+    hmc.get_quick_property.assert_awaited_once_with(
+        "LogicalPartition", LPAR_UUID, "PartitionState"
+    )
+    hmc.submit_job.assert_not_awaited()
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_stops_when_lpar_restarts_after_power_off_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.get_quick_property.return_value = "running"
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert result.workflow_completed is False
+    assert result.steps[0]["status"] == "ok"
+    assert result.steps[0]["result"]["already_off"] is False
+    assert result.steps[1] == {
+        "step": "detach_adapters",
+        "status": "error",
+        "result": (
+            "Cannot detach adapters from LPAR 'aix-prod': current state is "
+            "'running'; expected 'not activated'."
+        ),
+    }
+    assert result.steps[2] == {"step": "delete_lpar", "status": "skipped"}
+    hmc.submit_job.assert_awaited_once()
+    hmc.wait_for_job.assert_awaited_once()
+    hmc.get_quick_property.assert_awaited_once_with(
+        "LogicalPartition", LPAR_UUID, "PartitionState"
+    )
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_stops_when_detach_state_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.get_quick_property.side_effect = HMCError("state read failed")
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert result.workflow_completed is False
+    assert result.steps[1] == {
+        "step": "detach_adapters",
+        "status": "error",
+        "result": "Could not verify LPAR 'aix-prod' state before detaching adapters: state read failed",
+    }
+    assert result.steps[2] == {"step": "delete_lpar", "status": "skipped"}
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
 
 
 @pytest.mark.asyncio

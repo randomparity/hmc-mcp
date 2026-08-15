@@ -151,7 +151,7 @@ class FakeHMC:
 
     async def get_quick_property(self, resource_type, uuid, property_name):
         self._record("get_quick_property", resource_type, uuid, property_name)
-        return "running"
+        return self.lpar["Resource"]["PartitionState"]
 
     async def submit_job(self, job_path, job_request_xml):
         self._record("submit_job", job_path, job_request_xml)

@@ -67,7 +67,10 @@ For execution, the workflow repeats the ownership check after inventory and imme
 before its first mutation. An already `not activated` LPAR records `power_off` as `ok`
 with `already_off=True`. Otherwise the workflow submits immediate or graceful power-off
 with `wait=True`, validates the normalized terminal outcome, and treats timeout, missing
-terminal status, or a failed terminal status as an error. Only then does it delete every
+terminal status, or a failed terminal status as an error. After either the successful job
+or the initially-inactive shortcut, it re-reads `PartitionState` immediately before
+adapter deletion. Any value other than exactly `not activated`, or a failed state read,
+marks `detach_adapters` as `error` and skips all deletion. Only then does it delete every
 inventoried adapter in deterministic type/UUID order. The adapter step is `ok` only when
 all deletes succeed; the first failure stops remaining adapter deletes and skips LPAR
 deletion. Finally it calls the client's LPAR delete directly against the frozen UUID. Any

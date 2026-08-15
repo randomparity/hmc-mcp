@@ -507,6 +507,30 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, A
     )
 
 
+async def _detach_state_error(
+    hmc: HMCClient, inventory: _Inventory
+) -> dict[str, Any] | None:
+    try:
+        state = await hmc.get_quick_property(
+            "LogicalPartition", inventory.lpar_uuid, "PartitionState"
+        )
+    except HMCError as exc:
+        return _step(
+            "detach_adapters",
+            "error",
+            f"Could not verify LPAR {inventory.lpar_name!r} state before "
+            f"detaching adapters: {exc}",
+        )
+    if state == "not activated":
+        return None
+    return _step(
+        "detach_adapters",
+        "error",
+        f"Cannot detach adapters from LPAR {inventory.lpar_name!r}: current state "
+        f"is {state!r}; expected 'not activated'.",
+    )
+
+
 def _result(
     inventory: _Inventory,
     *,
@@ -605,13 +629,14 @@ async def decommission_lpar(
             steps=_dry_run_steps(inventory),
         )
 
-    await authorize_lpar_mutation(
-        hmc,
-        inventory.system_name,
-        inventory.ownership_lpar_name,
-        ownership_override=ownership_override,
-    )
     steps: list[dict[str, Any]] = []
+    if inventory.state != "not activated":
+        await authorize_lpar_mutation(
+            hmc,
+            inventory.system_name,
+            inventory.ownership_lpar_name,
+            ownership_override=ownership_override,
+        )
     power_step = await _power_step_with_errors(
         hmc,
         inventory,
@@ -624,6 +649,19 @@ async def decommission_lpar(
         _skip_steps(steps, "detach_adapters", "delete_lpar")
         return _incomplete_result(inventory, steps)
 
+    detach_state_error = await _detach_state_error(hmc, inventory)
+    if detach_state_error is not None:
+        steps.append(detach_state_error)
+        steps.append(_step("delete_lpar", "skipped"))
+        return _incomplete_result(inventory, steps)
+
+    if inventory.state == "not activated":
+        await authorize_lpar_mutation(
+            hmc,
+            inventory.system_name,
+            inventory.ownership_lpar_name,
+            ownership_override=ownership_override,
+        )
     detach_step = await _detach_adapters(hmc, inventory)
     steps.append(detach_step)
     if detach_step["status"] != "ok":

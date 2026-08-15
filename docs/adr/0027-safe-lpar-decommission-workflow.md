@@ -44,14 +44,15 @@ A dry run returns the inventory with `dry_run` step statuses and performs no wri
 The stable step identifiers are `power_off`, `detach_adapters`, and `delete_lpar`. In dry
 run all three are `dry_run`. During execution an already inactive LPAR records
 `power_off` as `ok` with `already_off: true`; otherwise it waits for a successful
-terminal power-off outcome. Adapters are ordered by type as `ClientNetworkAdapter`,
-`VirtualSCSIClientAdapter`, `VirtualFibreChannelClientAdapter`, then
-`VirtualNICDedicated`, and by UUID within a type. The `detach_adapters` result contains
-one `{type, uuid}` record for each deleted instance. The first failed adapter deletion
-marks the whole phase `error`, stops further adapter deletion, and makes `delete_lpar`
-`skipped`. Any failed phase makes every later phase `skipped`; earlier successes remain
-`ok`. Public results expose identifiers and summary fields, not raw sub-operation
-payloads, and no rollback is attempted.
+terminal power-off outcome. Immediately before adapter deletion, the workflow re-reads
+`PartitionState` and fails the detach phase unless the value is exactly `not activated`.
+Adapters are ordered by type as `ClientNetworkAdapter`, `VirtualSCSIClientAdapter`,
+`VirtualFibreChannelClientAdapter`, then `VirtualNICDedicated`, and by UUID within a type.
+The `detach_adapters` result contains one `{type, uuid}` record for each deleted instance.
+The first failed adapter deletion marks the whole phase `error`, stops further adapter
+deletion, and makes `delete_lpar` `skipped`. Any failed phase makes every later phase
+`skipped`; earlier successes remain `ok`. Public results expose identifiers and summary
+fields, not raw sub-operation payloads, and no rollback is attempted.
 
 ## Consequences
 
