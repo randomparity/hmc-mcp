@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from versioningit.errors import NotVCSError
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
 versioning = importlib.import_module("versioning")
@@ -123,6 +124,33 @@ def test_unexpected_branch_query_failure_is_actionable(
     monkeypatch.setattr(versioning.subprocess, "run", fail_symbolic_ref)
 
     with pytest.raises(RuntimeError, match=r"Git provenance check failed.*broken ref"):
+        describe_git(project_dir=repository, params={})
+
+
+def test_gitless_directory_uses_versioningit_fallback_boundary(tmp_path: Path) -> None:
+    with pytest.raises(NotVCSError, match=r"not a Git repository"):
+        describe_git(project_dir=tmp_path, params={})
+
+
+def test_missing_git_executable_uses_versioningit_fallback_boundary(
+    repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def missing_git(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("git executable is unavailable")
+
+    monkeypatch.setattr(versioning.subprocess, "run", missing_git)
+
+    with pytest.raises(NotVCSError, match=r"Git executable is unavailable"):
+        describe_git(project_dir=repository, params={})
+
+
+def test_corrupt_git_metadata_remains_a_hard_failure(repository: Path) -> None:
+    revision = git(repository, "rev-parse", "HEAD")
+    object_path = repository / ".git" / "objects" / revision[:2] / revision[2:]
+    object_path.chmod(0o600)
+    object_path.write_bytes(b"corrupt object")
+
+    with pytest.raises(RuntimeError, match=r"Git provenance check failed"):
         describe_git(project_dir=repository, params={})
 
 

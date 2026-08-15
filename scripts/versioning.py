@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
 
 from versioningit import VCSDescription
+from versioningit.errors import NotVCSError
 
 RELEASE_TAG = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 RELEASE_LINES = ("patch", "minor", "major")
@@ -19,9 +21,14 @@ def _run_git(project_dir: Path, *arguments: str) -> subprocess.CompletedProcess[
             ["git", "-C", str(project_dir), *arguments],
             check=False,
             capture_output=True,
+            env={**os.environ, "LC_ALL": "C"},
             text=True,
             timeout=GIT_TIMEOUT_SECONDS,
         )
+    except FileNotFoundError as error:
+        raise NotVCSError(
+            "Git executable is unavailable; install Git or build from an unpacked sdist"
+        ) from error
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RuntimeError(f"Git provenance check failed: {error}") from error
 
@@ -58,8 +65,15 @@ def _branch(project_dir: Path) -> str | None:
 
 
 def _validate_repository(project_dir: Path) -> None:
-    if _git(project_dir, "rev-parse", "--is-inside-work-tree") != "true":
-        raise RuntimeError("Git provenance check failed: not a Git worktree")
+    result = _run_git(project_dir, "rev-parse", "--is-inside-work-tree")
+    if result.returncode != 0:
+        if "not a git repository" in result.stderr.lower():
+            raise NotVCSError(
+                "not a Git repository; build from Git or an unpacked sdist"
+            )
+        _raise_git_error(result)
+    if result.stdout.strip() != "true":
+        raise NotVCSError("not a Git repository; build from Git or an unpacked sdist")
     if _git(project_dir, "rev-parse", "--is-shallow-repository") == "true":
         raise RuntimeError(
             "Git repository is shallow; fetch full history before building the package"
