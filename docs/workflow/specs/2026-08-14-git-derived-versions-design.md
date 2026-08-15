@@ -4,10 +4,12 @@ Decision: [ADR 0023](../../adr/0023-git-derived-package-versions.md)
 
 ## Scope and guarantees
 
-Issue #159 replaces both static `0.1.0` declarations with one build-time computation. Exact
-three-component release tags produce the tag version. Untagged commits produce
-`<next-version>.devN+g<sha>`, where `N` is the first-parent-independent Git commit distance
-reported by `git describe` and `sha` is Git's abbreviated object name. Dirty and shallow
+Issue #159 replaces both static `0.1.0` declarations with one build-time computation. Tags must
+match decimal `X.Y.Z` exactly. Among matching tags reachable from `HEAD`, the highest semantic
+version is the base; annotated and lightweight tags are equivalent and nonmatching tags are
+ignored. An exact tagged commit produces the tag version. Other commits produce
+`<next-version>.devN+g<sha>`, where `N` is `git rev-list --count TAG..HEAD` and `sha` is Git's
+seven-character abbreviated object name. Dirty and shallow
 repositories fail with an error that names the invalid state and remediation. No publishing,
 tag creation, or release automation is added.
 
@@ -21,8 +23,9 @@ select `1.2.4`, `1.3.0`, and `2.0.0`. With no tags, the same rules apply to sema
 `pyproject.toml` uses dynamic project version metadata, Hatchling 1.32.0, and Versioningit
 3.3.0. `scripts/versioning.py` provides two narrow build-time functions:
 
-- `describe_git(project_dir, params)` rejects shallow and dirty repositories, then delegates
-  clean Git description to Versioningit with the internal semantic origin `0.0.0`.
+- `describe_git(project_dir, params)` rejects shallow and dirty repositories, selects the highest
+  reachable strict release tag, and returns Versioningit's description fields. With no release
+  tag it uses internal semantic origin `0.0.0` and `git rev-list --count HEAD`.
 - `next_release(version, branch, params)` validates the one `release-line` parameter and bumps
   the requested semantic component.
 
@@ -46,9 +49,11 @@ preparation, not a provenance bypass.
 
 ## Tests
 
-Focused tests create isolated temporary Git repositories and exercise exact tags, commits after
-tags, dirty state, shallow clones, no-tag history, all three release-line transitions, and invalid
-selectors. A build test inspects wheel metadata and imports the installed package version path.
+Focused tests create isolated temporary Git repositories and exercise exact tags, highest-version
+selection across reachable tags, ignored malformed/prefixed tags, commits after tags, dirty state,
+shallow clones, no-tag history, all three release-line transitions, and invalid selectors. Build
+tests inspect wheel contents and metadata, rebuild a wheel from the sdist, exercise editable
+installation, and import the installed package version path.
 Supply-chain tests cover the pinned direct build requirements, and workflow tests assert full
 checkout depth for every active job that invokes `uv` on the project. The final gates are
 `just verify` and `uv run prek run --all-files`.

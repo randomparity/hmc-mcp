@@ -18,9 +18,13 @@ version provider. Project-owned methods validate a full, clean Git worktree and 
 next release from the single `release-line` setting in `pyproject.toml`, whose only valid
 values are `patch`, `minor`, and `major`.
 
-An exact `X.Y.Z` tag yields `X.Y.Z`. Commits after a tag yield
-`<next-version>.devN+g<sha>`. A full-history repository with no tags uses the semantic
-origin `0.0.0`. Dirty or shallow repositories fail before metadata is produced. Runtime
+Only tags matching decimal `X.Y.Z` exactly are release tags; annotated and lightweight tags
+are equivalent after resolving them to commits. The base is the highest semantic version among
+release tags reachable from `HEAD`. If `HEAD` is that tag's commit, the result is `X.Y.Z`.
+Otherwise the result is `<next-version>.devN+g<sha>`, where `N` is the number of commits in
+`TAG..HEAD`. Nonmatching tags are ignored. A full-history repository with no release tags uses
+the semantic origin `0.0.0` and counts every commit reachable from `HEAD`, so its first commit is
+development commit 1. Dirty or shallow repositories fail before metadata is produced. Runtime
 version access reads installed distribution metadata.
 
 CI jobs that install the project fetch full Git history so the same provenance checks apply
@@ -34,6 +38,9 @@ locally and in hosted builds.
 - Changing the next release line is one explicit configuration edit.
 - The build dependency graph replaces `uv_build` with two pinned packages and their locked
   transitive dependencies.
+- Backend compatibility tests must prove the expected wheel package contents, sdist-to-wheel
+  rebuild, editable installation, and installed metadata; version correctness alone is not
+  sufficient evidence for replacing `uv_build`.
 
 ## Considered & rejected
 
