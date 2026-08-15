@@ -649,12 +649,6 @@ async def decommission_lpar(
         _skip_steps(steps, "detach_adapters", "delete_lpar")
         return _incomplete_result(inventory, steps)
 
-    detach_state_error = await _detach_state_error(hmc, inventory)
-    if detach_state_error is not None:
-        steps.append(detach_state_error)
-        steps.append(_step("delete_lpar", "skipped"))
-        return _incomplete_result(inventory, steps)
-
     if inventory.state == "not activated":
         await authorize_lpar_mutation(
             hmc,
@@ -662,6 +656,12 @@ async def decommission_lpar(
             inventory.ownership_lpar_name,
             ownership_override=ownership_override,
         )
+    detach_state_error = await _detach_state_error(hmc, inventory)
+    if detach_state_error is not None:
+        steps.append(detach_state_error)
+        steps.append(_step("delete_lpar", "skipped"))
+        return _incomplete_result(inventory, steps)
+
     detach_step = await _detach_adapters(hmc, inventory)
     steps.append(detach_step)
     if detach_step["status"] != "ok":

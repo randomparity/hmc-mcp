@@ -633,6 +633,26 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
     hmc.get_logical_partition.return_value = _lpar(state="not activated")
     _patch_common(monkeypatch, calls)
 
+    async def list_adapters(
+        _lpar_uuid: str, adapter_type: str
+    ) -> list[dict[str, object]]:
+        if adapter_type == "ClientNetworkAdapter":
+            return [_adapter(adapter_type, "adapter-1")]
+        return []
+
+    hmc.list_adapters.side_effect = list_adapters
+    hmc.get_quick_property.side_effect = (
+        lambda *args, **kwargs: calls.append("get_state") or "not activated"
+    )
+    hmc.delete_adapter.side_effect = (
+        lambda _lpar_uuid, adapter_type, adapter_uuid: calls.append(
+            f"delete_adapter:{adapter_type}:{adapter_uuid}"
+        )
+    )
+    hmc.delete_logical_partition.side_effect = lambda uuid: calls.append(
+        f"delete_lpar:{uuid}"
+    )
+
     result = await decommission_lpar(hmc, "system-a", "aix-prod")
 
     assert result.steps[0] == {
@@ -642,6 +662,15 @@ async def test_decommission_marks_already_off_lpar_without_power_job(monkeypatch
     }
     hmc.submit_job.assert_not_awaited()
     hmc.wait_for_job.assert_not_awaited()
+    assert calls == [
+        "resolve_system_uuid:system-a",
+        f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
+        "authorize:system-a:aix-prod:False",
+        "authorize:system-a:aix-prod:False",
+        "get_state",
+        "delete_adapter:ClientNetworkAdapter:adapter-1",
+        f"delete_lpar:{LPAR_UUID}",
+    ]
 
 
 @pytest.mark.asyncio
