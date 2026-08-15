@@ -38,10 +38,12 @@ incompatible removal, rename, signature change, or owned-model change waits for 
 An additive facade export also requires a minor release and an intentional exact-export test
 update. Patches remain compatible and do not change the export set.
 
-`HMCClient` remains concrete for construction, async context management, and injection. Its exact
-supported lifecycle allowlist is `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`,
-and `logoff`. Discoverable inherited methods are explicitly unsupported. The facade also owns the
-configuration entry points and error hierarchy named in ADR 0029.
+`HMCClient` remains concrete for construction, async context management, and injection of a
+constructed instance into operation functions. Its exact supported lifecycle allowlist is
+`__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff`. Discoverable inherited
+methods are explicitly unsupported. Duck-typed fakes are a testing technique, not a supported
+alternate-client protocol. The facade also owns the configuration entry points and error hierarchy
+named in ADR 0029.
 
 Package-owned dataclasses and literal aliases are stable facade types. Raw resource mappings are
 opaque IBM HMC data: container shape in a signature is supported, but resource keys and nested

@@ -35,11 +35,13 @@ configuration. It exports the complete failure hierarchy callers need at the fac
 `HMCError`, `HMCTransportError`, and `HMCCLIError`.
 
 `HMCClient` is concrete so consumers can construct it, use it as an async context manager, and
-inject a fake or alternate compatible object into operation functions. Its supported lifecycle
-member allowlist is exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and
-`logoff`. Tests compare this allowlist with the declared contract. Inherited mixin methods and
-generic UOM helpers remain callable and discoverable attributes, but are unsupported and may
-change without a compatibility release. `__all__` cannot and does not hide those attributes.
+inject a constructed instance into operation functions. Its supported lifecycle member allowlist
+is exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff`. Tests
+compare this allowlist with the declared contract. Inherited mixin methods and generic UOM helpers
+remain callable and discoverable attributes, but are unsupported and may change without a
+compatibility release. `__all__` cannot and does not hide those attributes. Duck-typed fakes may
+exercise operations in tests, but this ADR does not define or promise a public alternate-client
+protocol.
 
 Every current `operations_*.py` module is governed by one deterministic rule: export every
 non-underscore top-level asynchronous function and each package-owned input, result, enum, or
