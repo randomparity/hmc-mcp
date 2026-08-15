@@ -108,9 +108,10 @@ def test_detached_head_has_no_branch(repository: Path) -> None:
     assert description.branch is None
 
 
-def test_unexpected_branch_query_failure_is_actionable(
+def test_git_failure_is_categorical_and_does_not_disclose_paths(
     repository: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    sentinel = "/sensitive/project/git-output"
     original_run = versioning.subprocess.run
 
     def fail_symbolic_ref(
@@ -118,13 +119,47 @@ def test_unexpected_branch_query_failure_is_actionable(
     ) -> subprocess.CompletedProcess[str]:
         command = args[0]
         if "symbolic-ref" in command:
-            return subprocess.CompletedProcess(command, 128, "", "fatal: broken ref\n")
+            return subprocess.CompletedProcess(command, 128, "", f"fatal: {sentinel}\n")
         return original_run(*args, **kwargs)
 
     monkeypatch.setattr(versioning.subprocess, "run", fail_symbolic_ref)
 
-    with pytest.raises(RuntimeError, match=r"Git provenance check failed.*broken ref"):
+    with pytest.raises(RuntimeError, match=r"Git command failed.*repository integrity") as caught:
         describe_git(project_dir=repository, params={})
+    assert sentinel not in str(caught.value)
+    assert sentinel in str(caught.value.__cause__)
+
+
+def test_git_spawn_failure_is_categorical_and_does_not_disclose_paths(
+    repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinel = "/sensitive/project/spawn"
+
+    def fail_spawn(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise OSError(f"cannot access {sentinel}")
+
+    monkeypatch.setattr(versioning.subprocess, "run", fail_spawn)
+
+    with pytest.raises(RuntimeError, match=r"could not start.*Git installation") as caught:
+        describe_git(project_dir=repository, params={})
+    assert sentinel not in str(caught.value)
+    assert sentinel in str(caught.value.__cause__)
+
+
+def test_git_timeout_is_categorical_and_does_not_disclose_paths(
+    repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinel = "/sensitive/project/timeout"
+
+    def time_out(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(["git", "-C", sentinel], 10)
+
+    monkeypatch.setattr(versioning.subprocess, "run", time_out)
+
+    with pytest.raises(RuntimeError, match=r"timed out.*repository health") as caught:
+        describe_git(project_dir=repository, params={})
+    assert sentinel not in str(caught.value)
+    assert sentinel in str(caught.value.__cause__)
 
 
 def test_gitless_directory_uses_versioningit_fallback_boundary(tmp_path: Path) -> None:
@@ -150,7 +185,7 @@ def test_corrupt_git_metadata_remains_a_hard_failure(repository: Path) -> None:
     object_path.chmod(0o600)
     object_path.write_bytes(b"corrupt object")
 
-    with pytest.raises(RuntimeError, match=r"Git provenance check failed"):
+    with pytest.raises(RuntimeError, match=r"Git command failed"):
         describe_git(project_dir=repository, params={})
 
 
