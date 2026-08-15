@@ -156,8 +156,9 @@ The cache key must include the caller-selected profile and the effective HMC
 endpoint and user. Calls for different profiles must never share a token, even
 when their current configuration happens to resolve to the same endpoint.
 Logon creation for a key must be serialized so concurrent misses create at most
-one session. The cache must hold at most one live token per key and explicitly
-log off cached sessions during orderly process shutdown.
+one session. The cache must hold at most one published or remotely live token
+per key during successful operation and explicitly log off cached sessions
+during orderly process shutdown.
 
 A 401 invalidates the token. Read-only/idempotent requests may perform one
 serialized re-logon and one replay. Mutating requests must not be replayed after
@@ -193,7 +194,12 @@ deployment topology are configurable.
   for an older generation cannot evict its replacement.
 - Replacement, route-change eviction, and shutdown mark a generation retired;
   Logoff is deferred until its active-borrower count reaches zero. New callers
-  cannot acquire a retired generation.
+  cannot acquire a retired generation, and no replacement Logon may begin until
+  that generation drains and its cleanup outcome is known.
+- Successful or definitively already-invalid cleanup permits one replacement
+  Logon. An ambiguous cleanup failure quarantines the key: it publishes no
+  replacement and returns an actionable reconciliation error, preventing
+  repeated failures from accumulating remote sessions.
 - A failed or cancelled logon publishes no token.
 - Cancellation after acquisition releases its borrower count exactly once and
   cannot publish, evict, or close a newer generation.
@@ -205,7 +211,8 @@ deployment topology are configurable.
 
 A future implementation must deterministically test concurrent read/read reuse,
 a delayed 401 from an older generation, route change during an in-flight call,
-shutdown during active use, and cancellation during Logon and after acquisition.
+shutdown during active use, repeated invalidation while borrowers remain active,
+ambiguous cleanup failure, and cancellation during Logon and after acquisition.
 
 ## Threat model for future implementation
 

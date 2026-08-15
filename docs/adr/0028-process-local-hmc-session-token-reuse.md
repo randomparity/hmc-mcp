@@ -31,8 +31,12 @@ tool call.
 The cache key includes both the caller-selected profile and the effective HMC
 endpoint/user route. A per-key cross-loop synchronization mechanism serializes
 Logon so a cache miss creates at most one session. The cache holds at most one
-live token per key, never persists tokens, and explicitly logs off cached
-sessions during orderly shutdown.
+published or remotely live token per key during successful operation, never
+persists tokens, and explicitly logs off cached sessions during orderly
+shutdown. Replacement waits for active borrowers of the retired token to drain
+and for cleanup to complete. An ambiguous cleanup failure quarantines the key
+and blocks replacement Logon until operator reconciliation, preventing repeated
+failures from accumulating remote sessions.
 
 Profile isolation means the process-wide count is not a fixed constant: its
 worst case is one retained session for every distinct profile/route key touched.
@@ -72,6 +76,8 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
   authentication, not transport setup.
 - The one-token-per-key bound reduces session pressure but does not replace HMC
   operator timeout and maximum-session configuration.
+- Replacement can wait for in-flight callers, and an ambiguous cleanup failure
+  makes that key unavailable until the operator reconciles the HMC session.
 - A process that touches many profiles can retain many sessions; deployments
   must include every active process when comparing demand with the HMC's
   per-user maximum.
