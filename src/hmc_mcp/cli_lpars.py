@@ -739,44 +739,46 @@ def lpars_decommission(
 
     if as_json:
         _print_json(asdict(result))
-        return
-
-    if result.dry_run:
-        console.print(
-            "[yellow]DRY RUN — decommission plan generated; no adapters or LPARs "
-            "were deleted[/yellow]"
-        )
-    elif result.workflow_completed:
-        console.print(
-            f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]"
-        )
     else:
-        console.print(
-            f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "
-            "check step results[/yellow]"
-        )
+        if result.dry_run:
+            console.print(
+                "[yellow]DRY RUN — decommission plan generated; no adapters or LPARs "
+                "were deleted[/yellow]"
+            )
+        elif result.workflow_completed:
+            console.print(
+                f"[green]LPAR '{name_or_uuid}' decommissioned successfully[/green]"
+            )
+        else:
+            console.print(
+                f"[yellow]LPAR '{name_or_uuid}' was not fully decommissioned — "
+                "check step results[/yellow]"
+            )
 
-    table = Table(title=f"Decommission steps: {name_or_uuid}")
-    table.add_column("Step", style="cyan")
-    table.add_column("Status", style="green")
-    table.add_column("Result")
-    for step in result.steps:
-        status = step.get("status", "-")
-        style = (
-            "green"
-            if status == "ok"
-            else ("yellow" if status in ("dry_run", "skipped") else "red")
-        )
-        table.add_row(
-            step.get("step", "-"),
-            f"[{style}]{status}[/{style}]",
-            "-" if "result" not in step else str(step["result"]),
-        )
-    console.print(table)
+        table = Table(title=f"Decommission steps: {name_or_uuid}")
+        table.add_column("Step", style="cyan")
+        table.add_column("Status", style="green")
+        table.add_column("Result")
+        for step in result.steps:
+            status = step.get("status", "-")
+            style = (
+                "green"
+                if status == "ok"
+                else ("yellow" if status in ("dry_run", "skipped") else "red")
+            )
+            table.add_row(
+                step.get("step", "-"),
+                f"[{style}]{status}[/{style}]",
+                "-" if "result" not in step else str(step["result"]),
+            )
+        console.print(table)
 
-    if result.warnings:
-        for warning in result.warnings:
-            console.print(f"[yellow]Warning: {warning}[/yellow]")
+        if result.warnings:
+            for warning in result.warnings:
+                console.print(f"[yellow]Warning: {warning}[/yellow]")
+
+    if not result.dry_run and not result.workflow_completed:
+        raise typer.Exit(1)
 
 
 @lpars_app.command("get-description")

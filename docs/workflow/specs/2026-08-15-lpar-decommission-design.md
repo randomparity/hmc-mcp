@@ -94,6 +94,8 @@ Each step contains `step`, one of `ok`, `error`, `skipped`, or `dry_run`, and an
 curated `result`. Errors are actionable strings. There is no rollback field or hidden
 retry. `workflow_completed` is true for a successful execution and for a fully evaluated
 dry run; `resource_deleted` is true only after the final HMC delete succeeds.
+The CLI renders this full result before returning; an incomplete non-dry execution exits
+with status 1 in both human and JSON modes.
 
 Mocked tests include sparse storage-detail records and prove they produce a non-zero
 unresolved count and an incomplete-inventory warning rather than disappearing silently.

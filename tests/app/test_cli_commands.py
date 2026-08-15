@@ -1124,6 +1124,56 @@ def test_lpars_decommission_yes_executes_workflow(fake_hmc):
     assert "Aborted" not in result.stderr
 
 
+def test_lpars_decommission_incomplete_human_result_exits_1_after_rendering(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+    fake_hmc.fail_on = "delete_logical_partition"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "was not fully decommissioned" in result.stdout
+    assert "delete_lpar" in result.stdout
+    assert "error" in result.stdout
+    assert "simulated delete_logical_partition failure" in result.stdout
+
+
+def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+    fake_hmc.fail_on = "delete_logical_partition"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["resource_deleted"] is False
+    assert payload["workflow_completed"] is False
+    assert payload["dry_run"] is False
+    assert payload["steps"][-1]["step"] == "delete_lpar"
+    assert payload["steps"][-1]["status"] == "error"
+    assert "simulated delete_logical_partition failure" in payload["steps"][-1]["result"]
+
+
 def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch):
     async def foreign_description(*_args):
         return "[hmc-mcp owner:other-agent created:2026-08-14]"
