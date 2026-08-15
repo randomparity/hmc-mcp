@@ -86,6 +86,20 @@ def power_on_outcome(result: LparPowerResult) -> LparPowerOnOutcome:
     return LparPowerOnOutcome(already_running=False, job=job, message=None)
 
 
+def parse_lpar_ownership_owner(description: str) -> str | None:
+    """Return the advisory hmc-mcp owner token embedded in *description*."""
+    match = _OWNERSHIP_TOKEN.search(description)
+    return match.group("owner") if match is not None else None
+
+
+async def read_lpar_ownership_owner(
+    hmc: HMCClient, system_name: str, lpar_name: str
+) -> str | None:
+    """Read and parse the advisory owner token for one LPAR."""
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    return parse_lpar_ownership_owner(description)
+
+
 async def authorize_lpar_mutation(
     hmc: HMCClient,
     system_name: str,
