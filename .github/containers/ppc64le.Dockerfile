@@ -2,7 +2,7 @@ FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e8
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-RUN ubuntu_snapshot=20260814T000000Z \
+RUN ubuntu_snapshot=20260813T000000Z \
     && echo "APT::Snapshot \"${ubuntu_snapshot}\";" > /etc/apt/apt.conf.d/50snapshot \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \

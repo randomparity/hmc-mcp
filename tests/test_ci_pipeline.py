@@ -227,7 +227,7 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
-    assert "ubuntu_snapshot=20260814T000000Z" in dockerfile
+    assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
     assert 'APT::Snapshot \\\"${ubuntu_snapshot}\\\";' in dockerfile
     assert "python3" in dockerfile
     assert "rust_version=1.97.1" in dockerfile
