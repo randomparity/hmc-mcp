@@ -105,6 +105,12 @@ a 401 because the client cannot prove that the HMC did not apply the operation;
 they must return an actionable authentication-expired error. No retry loop is
 permitted.
 
+Credential-only changes do not change the cache key, and the evidence does not
+show that HMC password rotation revokes existing tokens. Operators requiring
+immediate revocation must restart `hmc-mcp` or use a future explicitly
+authorized invalidation interface. Authentication material must never become
+part of the key.
+
 The design does not assume a fixed lifetime or cap. Operator-configured HMC
 timeouts remain authoritative. Worst-case retained sessions equal the number of
 distinct profile/route keys touched by each process, multiplied by the number

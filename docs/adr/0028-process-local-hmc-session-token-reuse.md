@@ -53,6 +53,12 @@ replay. Mutating requests are not replayed after a 401; they return an
 actionable authentication-expired error because the client cannot prove the
 original operation had no effect.
 
+A credential-only profile change does not alter the cache key, and no cited HMC
+documentation proves that credential rotation immediately revokes existing
+tokens. Operators must restart `hmc-mcp`, or use a future explicitly authorized
+cache-invalidation interface, when rotating credentials and immediate session
+revocation is required. Authentication material must not be added to the key.
+
 The implementation is deferred to a separate issue with concurrency,
 invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
 
@@ -73,6 +79,9 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
   orderly shutdown attempts explicit Logoff and reports cleanup failures.
 - Mutating callers may need to inspect state and decide whether to retry after
   an authentication-expired error.
+- Credential rotation may not affect an already-issued token until HMC
+  invalidation or process restart; restart is the supported immediate-revocation
+  action unless later authoritative HMC evidence establishes stronger behavior.
 
 ## Considered & rejected
 
