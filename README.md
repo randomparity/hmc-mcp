@@ -15,6 +15,12 @@ Power systems, inspect LPARs/VIOS, and submit jobs such as power on/off.
   shell out to HMC CLI commands (`lssyscfg`, `lshwres`, `chsyscfg`, ...) over
   SSH
 
+## Contributing, security, and license
+
+See [Contributing](CONTRIBUTING.md) for the development and pull-request path. Report suspected
+vulnerabilities through the private channel in the [Security policy](SECURITY.md). This project is
+available under the [License](LICENSE).
+
 ## Install
 
 ```bash

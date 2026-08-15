@@ -3,6 +3,8 @@ name = "hmc-mcp"
 version = "0.1.0"
 description = "MCP server and CLI for the IBM HMC (Hardware Management Console) REST API"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "asyncssh==2.24.0",
@@ -15,6 +17,11 @@ dependencies = [
     "rich==15.0.0",
     "typer==0.27.1",
 ]
+
+[project.urls]
+Repository = "https://github.com/randomparity/hmc-mcp"
+Contributing = "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.md"
+Security = "https://github.com/randomparity/hmc-mcp/security/policy"
 
 [project.scripts]
 hmc-mcp = "hmc_mcp:main"
