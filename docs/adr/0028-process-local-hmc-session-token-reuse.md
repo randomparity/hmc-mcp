@@ -68,15 +68,18 @@ The client assumes no fixed token lifetime. A 401 evicts only the matching
 generation. The request observing the 401 is itself a borrower, so it atomically
 retires the matching generation and releases its own lease exactly once before
 waiting for the remaining borrowers to drain. Cancellation cannot leave that
-lease held or release it twice. The generation must then pass the same validated
-Logoff contract before one replacement Logon may proceed; a 401 does not prove
-that the HMC removed the remote session. Only request definitions on an explicit
-reviewed allowlist may then perform one replay, and that replay acquires a new
-generation and lease. Classification means safe after an ambiguous response and
-never derives from HTTP verb alone. Missing or unknown classification is
-non-replayable. Mutating and unclassified requests return an actionable
-authentication-expired error because the client cannot prove the original
-operation had no effect.
+lease held or release it twice. Retirement also transfers cleanup responsibility
+to process-owned per-key state, so observer cancellation cannot abandon it. A
+later owner resumes cleanup when cancellation precedes Logoff dispatch;
+cancellation during or after dispatch is ambiguous and quarantines the key. The
+generation must then pass the same validated Logoff contract before one
+replacement Logon may proceed; a 401 does not prove that the HMC removed the
+remote session. Only request definitions on an explicit reviewed allowlist may
+then perform one replay, and that replay acquires a new generation and lease.
+Classification means safe after an ambiguous response and never derives from
+HTTP verb alone. Missing or unknown classification is non-replayable. Mutating
+and unclassified requests return an actionable authentication-expired error
+because the client cannot prove the original operation had no effect.
 
 A credential-only profile change does not alter the cache key, and no cited HMC
 documentation proves that credential rotation immediately revokes existing
@@ -88,7 +91,9 @@ The implementation is deferred to a separate issue with concurrency,
 invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
 Those tests include a single-borrower 401 case proving the observer cannot wait
 on its own lease, plus cancellation at retirement, release, cleanup, and
-replacement acquisition boundaries.
+replacement acquisition boundaries. Every boundary must reach either validated
+cleanup and replacement eligibility or actionable process-lifetime quarantine;
+no retired generation may be left without a cleanup owner.
 
 ## Consequences
 

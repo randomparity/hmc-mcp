@@ -216,11 +216,16 @@ deployment topology are configurable.
   atomically retire the matching generation and release its own lease exactly
   once before awaiting the remaining borrowers. Cancellation at any point in
   that transition must not double-release the lease or leave it held. After the
-  remaining active borrowers drain, the rejected generation must pass the same
-  validated Logoff contract before one replacement Logon may proceed; rejection
-  does not prove that the HMC removed the remote session. An allowlisted replay
-  acquires the replacement generation and a new lease rather than reusing the
-  retired generation's released lease.
+  atomic transition, cleanup responsibility belongs to process-owned per-key
+  state rather than to the observer task. Cancellation cannot abandon that
+  responsibility. If cancellation occurs before Logoff dispatch, a later owner
+  resumes drain and cleanup. Cancellation during or after Logoff dispatch is an
+  ambiguous cleanup failure and quarantines the key with the actionable
+  reconciliation error. After the remaining active borrowers drain, the
+  rejected generation must pass the same validated Logoff contract before one
+  replacement Logon may proceed; rejection does not prove that the HMC removed
+  the remote session. An allowlisted replay acquires the replacement generation
+  and a new lease rather than reusing the retired generation's released lease.
 - Replacement, route-change eviction, and shutdown mark a generation retired;
   Logoff is deferred until its active-borrower count reaches zero. New callers
   cannot acquire a retired generation, and no replacement Logon may begin until
@@ -262,7 +267,11 @@ waiting on itself; an allowlisted replay must then acquire a new generation and
 lease. Cancellation tests must cover cancellation before and after retirement,
 lease release, cleanup, and replacement acquisition, proving no leaked or
 double-released lease and no publication, eviction, or cleanup of a newer
-generation.
+generation. Each cancellation boundary must reach exactly one terminal state:
+validated cleanup followed by eligibility for one replacement acquisition, or
+process-lifetime quarantine with the actionable reconciliation error. A
+pre-dispatch cancellation must prove that a later owner resumes cleanup; a
+during- or post-dispatch cancellation must prove quarantine.
 The shutdown test must cover both drain before 30 seconds and deadline expiry
 with an outstanding mutation borrower, including the reported count and absence
 of a forced Logoff. It must also cover multiple slow Logoffs running concurrently.

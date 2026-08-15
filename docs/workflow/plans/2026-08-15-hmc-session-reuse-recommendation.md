@@ -18,7 +18,9 @@ future implementation. This change is Markdown documentation.
 - A 401 observer atomically retires its matching generation and releases its
   own lease exactly once before awaiting drain; any replay acquires a new
   generation and lease. Future tests cover the single-borrower deadlock and
-  cancellation across retirement, release, cleanup, and reacquisition.
+  cancellation across retirement, release, cleanup, and reacquisition. Cleanup
+  ownership is process-local: cancellation must end in resumed validated cleanup
+  and replacement eligibility or actionable process-lifetime quarantine.
 - Use only repository evidence, authoritative IBM documentation, and the raw
   operator-supplied measurement.
 - Do not disclose credentials, tokens, hostnames, or IP addresses.
@@ -44,7 +46,8 @@ issue consumes ADR 0028's cache, invalidation, and replay invariants.
 3. State the proceed recommendation and link ADR 0028.
 4. Record the approved cache key, cross-loop ownership, generation/lease
    transition, invalidation, retry, shutdown, and mutation-safety decisions in
-   ADR 0028, including the single-borrower 401 and cancellation test contract.
+   ADR 0028, including the single-borrower 401 and cancellation test contract,
+   process-owned cleanup responsibility, and its two permitted terminal states.
 5. Run `UV_NO_SYNC=1 uv run prek run --all-files`; expect exit 0 and no modified
    files after formatter hooks settle.
 6. Run `just verify`; expect exit 0 and `verify: all groups load OK`.
