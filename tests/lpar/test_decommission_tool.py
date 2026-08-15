@@ -230,6 +230,62 @@ async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_decommission_resolves_uuid_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc_uuid = "abcdefab-cdef-abcd-efab-cdefabcdefab"
+    hmc = _client()
+    hmc.list_logical_partitions.return_value = [_lpar(uuid=hmc_uuid)]
+    hmc.get_logical_partition.return_value = _lpar(uuid=hmc_uuid)
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(
+        hmc,
+        "system-a",
+        hmc_uuid.upper(),
+        dry_run=True,
+    )
+
+    assert result.lpar_uuid == hmc_uuid
+    hmc.get_logical_partition.assert_awaited_once_with(hmc_uuid)
+    assert [call.args[0] for call in hmc.list_adapters.await_args_list] == [hmc_uuid] * 4
+
+
+@pytest.mark.asyncio
+async def test_decommission_refuses_incomplete_adapter_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    _patch_common(monkeypatch, calls)
+
+    async def list_adapters(
+        _lpar_uuid: str, adapter_type: str
+    ) -> list[dict[str, object]]:
+        if adapter_type == "ClientNetworkAdapter":
+            return [{"AdapterType": adapter_type}]
+        return []
+
+    hmc.list_adapters.side_effect = list_adapters
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Cannot safely decommission LPAR .*ClientNetworkAdapter.*missing its UUID"
+        ),
+    ):
+        await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    hmc.submit_job.assert_not_awaited()
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+    hmc.delete_storage_mapping.assert_not_awaited()
+    hmc.delete_virtual_disk.assert_not_awaited()
+    hmc.delete_logical_unit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     hmc = _client()

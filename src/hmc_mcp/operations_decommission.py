@@ -142,8 +142,12 @@ def _extract_target_uuid(link: Any) -> str | None:
 def _matching_child_uuid(
     children: list[dict[str, Any]], lpar_name_or_uuid: str
 ) -> list[dict[str, Any]]:
+    normalized_selector = lpar_name_or_uuid.casefold()
     return [
-        child for child in children if _text(child.get("UUID")) == lpar_name_or_uuid
+        child
+        for child in children
+        if (child_uuid := _text(child.get("UUID"))) is not None
+        and child_uuid.casefold() == normalized_selector
     ]
 
 
@@ -296,7 +300,11 @@ async def _inventory_adapters(
         for entry in sorted(entries, key=lambda item: str(item.get("UUID") or "")):
             uuid = _text(entry.get("UUID"))
             if uuid is None:
-                continue
+                raise ValueError(
+                    f"Cannot safely decommission LPAR {lpar_uuid!r}: HMC returned a "
+                    f"{adapter_type} inventory entry missing its UUID. Retry after "
+                    "refreshing the HMC inventory or remove the unresolved adapter manually."
+                )
             adapters.append({"type": adapter_type, "uuid": uuid})
     return tuple(adapters)
 
