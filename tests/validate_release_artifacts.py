@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import re
 import stat
+import struct
 import sys
 import tarfile
 import tomllib
@@ -16,7 +17,7 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import Never, Protocol
+from typing import BinaryIO, Never, Protocol
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
@@ -30,6 +31,11 @@ MAX_ARCHIVE_MEMBERS = 4096
 MAX_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_BYTES = 512 * 1024 * 1024
 READ_CHUNK_BYTES = 1024 * 1024
+ZIP_EOCD_SIZE = 22
+ZIP_EOCD_SEARCH_BYTES = ZIP_EOCD_SIZE + 0xFFFF
+ZIP64_LOCATOR_SIZE = 20
+ZIP64_EOCD_MIN_SIZE = 56
+ZIP_DIRECTORY_HEADER_SIZE = 46
 SINGLETON_METADATA = (
     "Metadata-Version",
     "Name",
@@ -109,6 +115,120 @@ def _check_archive_input(path: Path) -> None:
         _fail(path.name, "archive input exceeds 256 MiB")
 
 
+def _find_zip_eocd(tail: bytes, tail_offset: int, file_size: int, artifact: str) -> int:
+    signature = b"PK\x05\x06"
+    position = len(tail)
+    while (position := tail.rfind(signature, 0, position)) >= 0:
+        if position + ZIP_EOCD_SIZE <= len(tail):
+            comment_size = struct.unpack_from("<H", tail, position + 20)[0]
+            absolute = tail_offset + position
+            if absolute + ZIP_EOCD_SIZE + comment_size == file_size:
+                return position
+    _fail(artifact, "wheel archive is malformed: end record")
+
+
+def _read_zip64_directory(
+    stream: BinaryIO,
+    *,
+    eocd_offset: int,
+    artifact: str,
+) -> tuple[int, int, int, int]:
+    locator_offset = eocd_offset - ZIP64_LOCATOR_SIZE
+    if locator_offset < 0:
+        _fail(artifact, "wheel archive is malformed: ZIP64 locator")
+    stream.seek(locator_offset)
+    locator = stream.read(ZIP64_LOCATOR_SIZE)
+    if len(locator) != ZIP64_LOCATOR_SIZE:
+        _fail(artifact, "wheel archive is malformed: ZIP64 locator")
+    signature, disk, record_offset, disks = struct.unpack("<4sLQL", locator)
+    if signature != b"PK\x06\x07" or disk != 0 or disks != 1:
+        _fail(artifact, "wheel archive is malformed: ZIP64 locator")
+    if record_offset + ZIP64_EOCD_MIN_SIZE > locator_offset:
+        _fail(artifact, "wheel archive is malformed: ZIP64 record")
+    stream.seek(record_offset)
+    record = stream.read(ZIP64_EOCD_MIN_SIZE)
+    if len(record) != ZIP64_EOCD_MIN_SIZE:
+        _fail(artifact, "wheel archive is malformed: ZIP64 record")
+    values = struct.unpack("<4sQ2H2L4Q", record)
+    signature, record_size = values[:2]
+    disk, directory_disk, disk_entries, entries, size, offset = values[4:]
+    if (
+        signature != b"PK\x06\x06"
+        or record_size < 44
+        or record_offset + 12 + record_size > locator_offset
+        or disk != 0
+        or directory_disk != 0
+        or disk_entries != entries
+    ):
+        _fail(artifact, "wheel archive is malformed: ZIP64 record")
+    return entries, size, offset, record_offset
+
+
+def _scan_zip_directory(
+    stream: BinaryIO,
+    *,
+    offset: int,
+    size: int,
+    declared_entries: int,
+    artifact: str,
+) -> None:
+    stream.seek(offset)
+    consumed = 0
+    entries = 0
+    while consumed < size:
+        remaining = size - consumed
+        if remaining < ZIP_DIRECTORY_HEADER_SIZE:
+            _fail(artifact, "wheel archive is malformed: central directory")
+        header = stream.read(ZIP_DIRECTORY_HEADER_SIZE)
+        if len(header) != ZIP_DIRECTORY_HEADER_SIZE or header[:4] != b"PK\x01\x02":
+            _fail(artifact, "wheel archive is malformed: central directory")
+        name_size, extra_size, comment_size = struct.unpack_from("<3H", header, 28)
+        record_size = ZIP_DIRECTORY_HEADER_SIZE + name_size + extra_size + comment_size
+        if record_size > remaining:
+            _fail(artifact, "wheel archive is malformed: central directory")
+        stream.seek(record_size - ZIP_DIRECTORY_HEADER_SIZE, 1)
+        consumed += record_size
+        entries += 1
+        if entries > MAX_ARCHIVE_MEMBERS:
+            _fail(artifact, "archive contains more than 4096 members")
+    if entries != declared_entries:
+        _fail(artifact, "wheel archive is malformed: central directory entry count")
+
+
+def _preflight_zip_directory(path: Path) -> None:
+    file_size = path.stat().st_size
+    tail_size = min(file_size, ZIP_EOCD_SEARCH_BYTES)
+    try:
+        with path.open("rb") as stream:
+            stream.seek(file_size - tail_size)
+            tail = stream.read(tail_size)
+            position = _find_zip_eocd(tail, file_size - tail_size, file_size, path.name)
+            eocd_offset = file_size - tail_size + position
+            values = struct.unpack_from("<4s4H2LH", tail, position)
+            disk, directory_disk, disk_entries, entries, size, offset = values[1:7]
+            if disk != 0 or directory_disk != 0 or disk_entries != entries:
+                _fail(path.name, "wheel archive is malformed: central directory")
+            if 0xFFFF in (disk_entries, entries) or 0xFFFFFFFF in (size, offset):
+                entries, size, offset, directory_end = _read_zip64_directory(
+                    stream, eocd_offset=eocd_offset, artifact=path.name
+                )
+            else:
+                directory_end = eocd_offset
+            if entries > MAX_ARCHIVE_MEMBERS:
+                _fail(path.name, "archive contains more than 4096 members")
+            if offset > directory_end or size > directory_end - offset:
+                _fail(path.name, "wheel archive is malformed: central directory")
+            _scan_zip_directory(
+                stream,
+                offset=offset,
+                size=size,
+                declared_entries=entries,
+                artifact=path.name,
+            )
+    except OSError as error:
+        _fail(path.name, f"wheel archive is malformed: {type(error).__name__}")
+
+
 def _read_bounded(
     stream: _Readable,
     artifact: str,
@@ -137,6 +257,7 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
     total = 0
     try:
         _check_archive_input(path)
+        _preflight_zip_directory(path)
         with zipfile.ZipFile(path) as archive:
             items = archive.infolist()
             if len(items) > MAX_ARCHIVE_MEMBERS:

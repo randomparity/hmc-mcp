@@ -6,6 +6,7 @@ import hashlib
 import io
 import shutil
 import stat
+import struct
 import subprocess
 import tarfile
 import re
@@ -283,6 +284,113 @@ def test_rejects_declared_archive_limit_overrun(
         monkeypatch.setattr(validator, "MAX_TOTAL_BYTES", 1)
 
     _assert_invalid(artifacts, project, capsys, invariant)
+
+
+def _eocd_offset(payload: bytes) -> int:
+    offset = payload.rfind(b"PK\x05\x06")
+    assert offset >= 0
+    return offset
+
+
+def test_rejects_excessive_zip_entry_count_before_member_enumeration(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    eocd = _eocd_offset(payload)
+    payload[eocd + 8 : eocd + 12] = struct.pack("<HH", 1, 1)
+    wheel.write_bytes(payload)
+    monkeypatch.setattr(validator, "MAX_ARCHIVE_MEMBERS", 1)
+
+    def reject_enumeration(_archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+        raise AssertionError("members enumerated before the directory was bounded")
+
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", reject_enumeration)
+
+    with pytest.raises(
+        validator.ValidationError, match="archive contains more than 4096 members"
+    ):
+        validator._read_wheel(wheel)
+
+
+@pytest.mark.parametrize("field_offset", [12, 16])
+def test_rejects_malformed_zip_directory_bounds(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    field_offset: int,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    eocd = _eocd_offset(payload)
+    payload[eocd + field_offset : eocd + field_offset + 4] = struct.pack(
+        "<L", len(payload)
+    )
+    wheel.write_bytes(payload)
+
+    with pytest.raises(
+        validator.ValidationError, match="wheel archive is malformed: central directory"
+    ):
+        validator._read_wheel(wheel)
+
+
+def test_accepts_zip64_entry_count_at_exact_boundary(tmp_path: Path) -> None:
+    directory_record = b"PK\x01\x02" + bytes(42)
+    directory = directory_record * validator.MAX_ARCHIVE_MEMBERS
+    zip64_record = struct.pack(
+        "<4sQ2H2L4Q",
+        b"PK\x06\x06",
+        44,
+        45,
+        45,
+        0,
+        0,
+        validator.MAX_ARCHIVE_MEMBERS,
+        validator.MAX_ARCHIVE_MEMBERS,
+        len(directory),
+        0,
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, len(directory), 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,
+        0xFFFF,
+        0xFFFFFFFF,
+        0xFFFFFFFF,
+        0,
+    )
+    wheel = tmp_path / "boundary.whl"
+    wheel.write_bytes(directory + zip64_record + locator + eocd)
+
+    validator._preflight_zip_directory(wheel)
+
+
+def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, 1, 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,
+        0xFFFF,
+        0xFFFFFFFF,
+        0xFFFFFFFF,
+        0,
+    )
+    wheel = tmp_path / "malformed.whl"
+    wheel.write_bytes(locator + eocd)
+
+    with pytest.raises(
+        validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
+    ):
+        validator._preflight_zip_directory(wheel)
 
 
 @pytest.mark.parametrize(
