@@ -43,6 +43,11 @@ class ValidationError(ValueError):
     pass
 
 
+class _CaseConfigParser(configparser.ConfigParser):
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
+
+
 @dataclass(frozen=True)
 class Distribution:
     name: str
@@ -246,9 +251,11 @@ def _wheel_file(members: dict[str, bytes], root: str, tag: str, artifact: str) -
 
 
 def _scripts_from_wheel(data: bytes, artifact: str) -> dict[str, str]:
-    parser = configparser.ConfigParser(interpolation=None)
+    parser = _CaseConfigParser(interpolation=None)
     try:
         parser.read_string(data.decode())
+        if parser.sections() != ["console_scripts"]:
+            _fail(artifact, "entry_points.txt contains undeclared groups")
         return dict(parser["console_scripts"])
     except (UnicodeDecodeError, configparser.Error, KeyError) as error:
         _fail(artifact, f"entry_points.txt is malformed: {type(error).__name__}")

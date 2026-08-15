@@ -566,6 +566,28 @@ def test_rejects_wheel_entry_point_mismatch_with_valid_record(
     _assert_invalid(artifacts, project, capsys, "console scripts differ")
 
 
+@pytest.mark.parametrize("mutation", ["case", "extra-group"])
+def test_rejects_nonexact_wheel_entry_points_with_valid_record(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    mutation: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    def change_entry_points(members: dict[str, bytes]) -> None:
+        name = next(item for item in members if item.endswith(".dist-info/entry_points.txt"))
+        if mutation == "case":
+            members[name] = members[name].replace(b"hmc-mcp =", b"HMC-MCP =")
+        else:
+            members[name] += b"\n[other]\ncommand = hmc_mcp:main\n"
+
+    _rewrite_wheel(wheel, change_entry_points)
+    expected = "console scripts differ" if mutation == "case" else "undeclared groups"
+    _assert_invalid(artifacts, project, capsys, expected)
+
+
 @pytest.mark.parametrize(
     "member_type",
     [
