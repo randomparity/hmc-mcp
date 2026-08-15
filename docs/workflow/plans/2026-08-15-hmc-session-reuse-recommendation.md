@@ -13,6 +13,8 @@ future implementation. This change is Markdown documentation.
 
 - No runtime implementation, migration, dependency, configuration, or ADR index
   change.
+- The future shutdown contract uses a fixed 30-second borrower-drain deadline;
+  it never forces Logoff beneath an active mutation.
 - Use only repository evidence, authoritative IBM documentation, and the raw
   operator-supplied measurement.
 - Do not disclose credentials, tokens, hostnames, or IP addresses.
@@ -48,4 +50,3 @@ change, distinguish verified evidence from inference, and pass both guardrails.
 
 **Rollback:** Revert the documentation commit; no runtime or external state
 requires cleanup.
-

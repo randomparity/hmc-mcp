@@ -38,6 +38,11 @@ and for cleanup to complete. An ambiguous cleanup failure quarantines the key
 and blocks replacement Logon until operator reconciliation, preventing repeated
 failures from accumulating remote sessions.
 
+Orderly shutdown stops new acquisitions and waits up to 30 seconds for active
+borrowers. If borrowers remain, it reports their count, discards local token
+state, and leaves their remote sessions to HMC invalidation. It never forces
+Logoff beneath an active mutation.
+
 Profile isolation means the process-wide count is not a fixed constant: its
 worst case is one retained session for every distinct profile/route key touched.
 Multiple `hmc-mcp` processes multiply that count for the same HMC user. The
@@ -78,6 +83,9 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
   operator timeout and maximum-session configuration.
 - Replacement can wait for in-flight callers, and an ambiguous cleanup failure
   makes that key unavailable until the operator reconciles the HMC session.
+- Shutdown is bounded to 30 seconds. Deadline expiry can leave remote sessions
+  until HMC invalidation, but cannot interrupt an active mutation by logging off
+  its session.
 - A process that touches many profiles can retain many sessions; deployments
   must include every active process when comparing demand with the HMC's
   per-user maximum.

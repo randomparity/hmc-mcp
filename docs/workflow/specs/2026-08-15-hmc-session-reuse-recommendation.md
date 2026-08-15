@@ -204,8 +204,10 @@ deployment topology are configurable.
 - Cancellation after acquisition releases its borrower count exactly once and
   cannot publish, evict, or close a newer generation.
 - Shutdown makes the cache unavailable before attempting best-effort Logoff, so
-  no new caller can acquire a token being closed; it waits for active borrowers
-  before cleanup. Existing operation timeouts remain the bound on that wait.
+  no new caller can acquire a token being closed. It waits at most 30 seconds
+  for active borrowers. If the deadline expires, it reports the outstanding
+  borrower count, discards local token state, never forces Logoff beneath an
+  active mutation, and leaves remaining remote cleanup to HMC invalidation.
 - Cleanup failure is reported and the local token is discarded; a stale local
   reference must not be reused.
 
@@ -213,6 +215,9 @@ A future implementation must deterministically test concurrent read/read reuse,
 a delayed 401 from an older generation, route change during an in-flight call,
 shutdown during active use, repeated invalidation while borrowers remain active,
 ambiguous cleanup failure, and cancellation during Logon and after acquisition.
+The shutdown test must cover both drain before 30 seconds and deadline expiry
+with an outstanding mutation borrower, including the reported count and absence
+of a forced Logoff.
 
 ## Threat model for future implementation
 
