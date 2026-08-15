@@ -361,6 +361,26 @@ def test_wheel_input_limit_uses_the_open_stream(
     validator._read_wheel(wheel)
 
 
+def test_member_enumeration_uses_an_immutable_wheel_snapshot(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    original_preflight = validator._preflight_zip_directory
+
+    def mutate_source_after_preflight(source: BinaryIO, artifact: str) -> None:
+        original_preflight(source, artifact)
+        wheel.write_bytes(b"replaced after preflight")
+
+    monkeypatch.setattr(
+        validator, "_preflight_zip_directory", mutate_source_after_preflight
+    )
+
+    assert validator._read_wheel(wheel)
+
+
 @pytest.mark.parametrize("field_offset", [12, 16])
 def test_rejects_malformed_zip_directory_bounds(
     tmp_path: Path,

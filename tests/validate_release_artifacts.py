@@ -8,6 +8,7 @@ import stat
 import struct
 import sys
 import tarfile
+import tempfile
 import tomllib
 import unicodedata
 import zipfile
@@ -261,7 +262,13 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
     declared_total = 0
     total = 0
     try:
-        with path.open("rb") as wheel_stream:
+        with path.open("rb") as source, tempfile.TemporaryFile("w+b") as wheel_stream:
+            observed_size = 0
+            while chunk := source.read(READ_CHUNK_BYTES):
+                observed_size += len(chunk)
+                _check_archive_size(observed_size, path.name)
+                wheel_stream.write(chunk)
+            wheel_stream.seek(0)
             _preflight_zip_directory(wheel_stream, path.name)
             wheel_stream.seek(0)
             with zipfile.ZipFile(wheel_stream) as archive:
