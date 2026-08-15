@@ -18,8 +18,9 @@ version provider. Project-owned methods validate a full, clean Git worktree and 
 next release from the single `release-line` setting in `pyproject.toml`, whose only valid
 values are `patch`, `minor`, and `major`.
 
-Only tags matching decimal `X.Y.Z` exactly are release tags; annotated and lightweight tags
-are equivalent after resolving them to commits. The base is the highest semantic version among
+Only tags matching canonical decimal `X.Y.Z` exactly are release tags: each component has no
+leading zero unless it is the single digit `0`. Annotated and lightweight tags are equivalent
+after resolving them to commits. The base is the highest semantic version among
 release tags reachable from `HEAD`. If `HEAD` is that tag's commit, the result is `X.Y.Z`.
 Otherwise the result is `<next-version>.devN+g<sha>`, where `N` is the number of commits in
 `TAG..HEAD`. Nonmatching tags are ignored. A full-history repository with no release tags uses

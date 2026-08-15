@@ -5,7 +5,8 @@ Decision: [ADR 0023](../../adr/0023-git-derived-package-versions.md)
 ## Scope and guarantees
 
 Issue #159 replaces both static `0.1.0` declarations with one build-time computation. Tags must
-match decimal `X.Y.Z` exactly. Among matching tags reachable from `HEAD`, the highest semantic
+match canonical decimal `X.Y.Z` exactly; each component has no leading zero unless it is `0`.
+Among matching tags reachable from `HEAD`, the highest semantic
 version is the base; annotated and lightweight tags are equivalent and nonmatching tags are
 ignored. An exact tagged commit produces the tag version. Other commits produce
 `<next-version>.devN+g<sha>`, where `N` is `git rev-list --count TAG..HEAD` and `sha` is Git's
@@ -35,7 +36,7 @@ configured. `hmc_mcp.__version__` uses `importlib.metadata.version("hmc-mcp")`, 
 runtime and artifact metadata share one authority.
 
 Hatchling writes the computed version into the sdist's `PKG-INFO`. Versioningit's standard
-sdist fallback may read that embedded value when rebuilding without `.git`; this preserves
+sdist fallback must read that embedded value when rebuilding without `.git`; this preserves
 already-proven artifact metadata rather than inventing a fallback version. A Git-less source
 copy without valid `PKG-INFO` fails as provenance-incomplete.
 
@@ -57,7 +58,8 @@ preparation, not a provenance bypass.
 ## Tests
 
 Focused tests create isolated temporary Git repositories and exercise exact tags, highest-version
-selection across reachable tags, ignored malformed/prefixed tags, commits after tags, dirty state,
+selection across reachable tags, ignored malformed, prefixed, and leading-zero tags, commits
+after tags, dirty state,
 including staged, tracked unstaged, untracked source, and ignored-file cases; shallow clones,
 no-tag history, repository-unique abbreviation resolution, all three release-line transitions,
 and invalid selectors. Build tests inspect wheel contents and metadata, rebuild a wheel from the
