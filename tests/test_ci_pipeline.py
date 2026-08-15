@@ -231,7 +231,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("runs-on: ubuntu-24.04") == 2
+    assert workflow.count("runs-on: ubuntu-24.04") == 3
     assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
@@ -270,9 +270,9 @@ def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
         active_workflow,
     )
 
-    assert len(checkout_settings) == 3
+    assert len(checkout_settings) == 4
     assert active_workflow.count("uv run") >= 2
-    assert sum("fetch-depth: 0\n" in settings for settings in checkout_settings) == 2
+    assert sum("fetch-depth: 0\n" in settings for settings in checkout_settings) == 3
     for settings in checkout_settings:
         assert "persist-credentials: false\n" in settings
 
@@ -427,6 +427,43 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "uv sync" not in body
     assert "pip install -e" not in body
     assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
+
+
+def test_github_ci_exercises_the_installed_public_api_without_app_dependencies() -> (
+    None
+):
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
+    consumer = re.search(
+        r"^  library-wheel-smoke:\n(?P<body>.*?)(?=^  wheel-smoke:)",
+        active_workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+
+    assert consumer
+    body = consumer["body"]
+    assert "    needs: ci\n" in body
+    assert "    name: amd64 / Python 3.13 / library wheel smoke\n" in body
+    assert "    runs-on: ubuntu-24.04\n" in body
+    assert '          python-version: "3.13"\n' in body
+    assert "name: release-wheel-amd64-py3.13" in body
+    assert "uv pip install --python .library-wheel-venv/bin/python" in body
+    assert '            "${wheels[0]}"' in body
+    assert "from hmc_mcp.api import capacity_report" in body
+    assert "import hmc_mcp.api" not in body
+    for package in ("fastmcp", "mcp", "rich", "typer"):
+        assert f'assert find_spec("{package}") is None' in body
+    assert "class FakeHMC:" in body
+    assert "async def list_managed_systems(" in body
+    assert "async def list_logical_partitions(" in body
+    assert "asyncio.run(capacity_report(FakeHMC()))" in body
+    assert '"system_name": "p10"' in body
+    assert "assert report ==" in body
+    assert "[app]" not in body
+    assert "uv export" not in body
+    assert "--no-deps" not in body
+    assert "scripts/smoke_mcp.py" not in body
+    assert "pip install -e" not in body
 
 
 def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
