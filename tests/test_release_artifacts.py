@@ -331,6 +331,35 @@ def test_accepts_declared_archive_limits_at_exact_boundaries(
     assert main([str(artifacts), str(project)]) == 0
 
 
+def test_rejects_hidden_pax_payload_before_tarfile_member_reads(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+    with tarfile.open(
+        sdist,
+        "w:gz",
+        format=tarfile.PAX_FORMAT,
+        pax_headers={"comment": "x" * 1024},
+    ) as archive:
+        member = tarfile.TarInfo("hmc_mcp-1.0/README.md")
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"x"))
+    monkeypatch.setattr(validator, "MAX_MEMBER_BYTES", 100)
+
+    def reject_tarfile_open(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("tarfile opened before hidden records were bounded")
+
+    monkeypatch.setattr(validator.tarfile, "open", reject_tarfile_open)
+
+    with pytest.raises(
+        validator.ValidationError, match="archive member exceeds 64 MiB uncompressed"
+    ):
+        validator._read_sdist(sdist)
+
+
 def test_rejects_unsupported_wheel_compression_actionably(
     tmp_path: Path,
     built_project: tuple[Path, Path],

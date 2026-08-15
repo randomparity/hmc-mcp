@@ -1,6 +1,7 @@
 import base64
 import configparser
 import csv
+import gzip
 import hashlib
 import re
 import stat
@@ -15,7 +16,7 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import IO, Never
+from typing import Never, Protocol
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
@@ -47,6 +48,10 @@ SDIST_INPUTS = (
 
 class ValidationError(ValueError):
     pass
+
+
+class _Readable(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
 
 
 class _CaseConfigParser(configparser.ConfigParser):
@@ -105,7 +110,7 @@ def _check_archive_input(path: Path) -> None:
 
 
 def _read_bounded(
-    stream: IO[bytes],
+    stream: _Readable,
     artifact: str,
     member: str,
     *,
@@ -170,6 +175,49 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
     return members
 
 
+def _consume_tar_bytes(stream: _Readable, size: int, artifact: str) -> None:
+    remaining = size
+    while remaining:
+        chunk = stream.read(min(READ_CHUNK_BYTES, remaining))
+        if not chunk:
+            _fail(artifact, "sdist archive is truncated")
+        remaining -= len(chunk)
+
+
+def _scan_sdist_limits(path: Path) -> None:
+    count = 0
+    declared_total = 0
+    try:
+        with gzip.open(path, "rb") as stream:
+            while header := stream.read(tarfile.BLOCKSIZE):
+                if len(header) != tarfile.BLOCKSIZE:
+                    _fail(path.name, "sdist archive has a truncated header")
+                if header == tarfile.NUL * tarfile.BLOCKSIZE:
+                    break
+                item = tarfile.TarInfo.frombuf(header, "utf-8", "surrogateescape")
+                count += 1
+                if count > MAX_ARCHIVE_MEMBERS:
+                    _fail(path.name, "archive contains more than 4096 members")
+                if item.size > MAX_MEMBER_BYTES:
+                    _fail(
+                        path.name,
+                        f"archive member exceeds 64 MiB uncompressed: {item.name}",
+                    )
+                declared_total += item.size
+                if declared_total > MAX_TOTAL_BYTES:
+                    _fail(path.name, "archive exceeds 512 MiB total uncompressed")
+                padded_size = (item.size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE
+                _consume_tar_bytes(stream, padded_size * tarfile.BLOCKSIZE, path.name)
+    except (
+        OSError,
+        EOFError,
+        gzip.BadGzipFile,
+        tarfile.HeaderError,
+        zlib.error,
+    ) as error:
+        _fail(path.name, f"sdist archive is malformed: {type(error).__name__}")
+
+
 def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
     members: dict[str, bytes] = {}
     root: str | None = None
@@ -177,6 +225,7 @@ def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
     total = 0
     try:
         _check_archive_input(path)
+        _scan_sdist_limits(path)
         with tarfile.open(path, mode="r:gz") as archive:
             for count, item in enumerate(archive, start=1):
                 if count > MAX_ARCHIVE_MEMBERS:
