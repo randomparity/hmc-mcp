@@ -126,7 +126,7 @@ jobs:
         with:
           name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}
           path: dist
-      - name: Install validated wheel in a fresh environment
+      - name: Install bare validated wheel in a fresh environment
         env:
           MATRIX_ARCHITECTURE: ${{ matrix.architecture }}
           MATRIX_PYTHON: ${{ matrix.python-version }}
@@ -144,17 +144,27 @@ jobs:
           uv pip install --python .wheel-venv/bin/python \
             --requirements .wheel-requirements.txt
           uv pip install --no-deps --python .wheel-venv/bin/python "${wheels[0]}"
-      - name: Exercise installed CLI and MCP
+      - name: Exercise presentation-neutral core imports
         run: |
           .wheel-venv/bin/python - <<'PY'
+          from importlib.util import find_spec
           from pathlib import Path
 
           import hmc_mcp
+          from hmc_mcp.client import HMCClient
 
           package_path = Path(hmc_mcp.__file__).resolve()
           environment = Path(".wheel-venv").resolve()
           assert package_path.is_relative_to(environment), package_path
+          assert HMCClient.__module__ == "hmc_mcp.client"
+          for package in ("fastmcp", "mcp", "rich", "typer"):
+              assert find_spec(package) is None, package
           PY
+      - name: Install and exercise the app extra
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          uv pip install --python .wheel-venv/bin/python "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
           .wheel-venv/bin/hmc-mcp lpars --help >/dev/null
           .wheel-venv/bin/hmc-mcp storage --help >/dev/null

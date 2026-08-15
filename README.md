@@ -25,7 +25,7 @@ available under the [License](LICENSE).
 
 ```bash
 cd ~/src/hmc-mcp
-uv sync
+uv sync --extra app
 ```
 
 ## Configure
