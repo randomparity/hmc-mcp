@@ -123,7 +123,9 @@ both metadata documents.
 
 The required gates are `just setup`, focused pytest during TDD, `just verify`, and separately
 `UV_NO_SYNC=1 uv run prek run --all-files`. Workflow changes also pass the repository's pinned
-offline `zizmor` gate through `just verify`.
+offline `zizmor` gate through `just verify`. The canonical global `just setup` recipe invokes
+`uv sync --locked --link-mode copy`, avoiding cross-filesystem hard-link warnings without changing
+the locked dependency graph.
 
 ## Scope boundaries
 

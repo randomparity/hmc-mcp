@@ -21,6 +21,8 @@ subprocess execution. CI composes the commands through `just verify` and uploads
 - `BASE_BRANCH` is `main`.
 - Required gates are `just setup`, `just verify`, and separately
   `UV_NO_SYNC=1 uv run prek run --all-files`.
+- The canonical global `just setup` command uses `uv sync --locked --link-mode copy` so setup is
+  reliable when this repository and uv's cache are on different filesystems.
 
 ## Task 1: Validate existing wheel and sdist artifacts
 
@@ -164,4 +166,4 @@ validator commits remain bisectable.
 
 Branch: `feat/build-validate-artifacts-162`. Base: `main`. Guardrails: `just setup`, `just verify`,
 and `UV_NO_SYNC=1 uv run prek run --all-files`. Assigned ADR: 0024. ADR index coupling: not coupled;
-no index exists. Scope token: `27d8be71-180c-49a4-a8bc-70907db34fee`.
+no index exists. Scope token: `b206ccc4-710f-4929-9cd1-13f8d5e232db`.

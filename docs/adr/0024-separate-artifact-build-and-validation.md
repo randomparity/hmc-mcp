@@ -34,6 +34,9 @@ suite and uploads only the wheel for downstream fresh-environment installation t
 upload is retention, not publication, and requires no expanded workflow permissions or PyPI
 credentials.
 
+The repository's canonical `just setup` recipe uses `uv sync --locked --link-mode copy`. This
+keeps setup deterministic across filesystems while preserving the locked dependency graph.
+
 ## Consequences
 
 Local and hosted verification now exercise the package boundary and take longer because they build
