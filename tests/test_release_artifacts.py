@@ -251,6 +251,28 @@ def test_rejects_corrupt_archive(
     _assert_invalid(artifacts, project, capsys, f"{artifact} archive is malformed")
 
 
+def test_rejects_unsupported_wheel_compression_actionably(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    for signature, compression_offset in ((b"PK\x03\x04", 8), (b"PK\x01\x02", 10)):
+        position = 0
+        while (position := payload.find(signature, position)) != -1:
+            payload[
+                position + compression_offset : position + compression_offset + 2
+            ] = (99).to_bytes(2, "little")
+            position += len(signature)
+    wheel.write_bytes(payload)
+
+    _assert_invalid(
+        artifacts, project, capsys, "wheel archive is malformed: NotImplementedError"
+    )
+
+
 def test_rejects_duplicate_wheel_member(
     tmp_path: Path,
     built_project: tuple[Path, Path],
@@ -306,6 +328,117 @@ def test_rejects_wheel_filename_identity_mismatch(
     wheel.rename(artifacts / "-".join(parts))
 
     _assert_invalid(artifacts, project, capsys, invariant)
+
+
+@pytest.mark.parametrize(
+    ("location", "invariant"),
+    [
+        ("wheel-filename", "wheel filename and .dist-info identity differ"),
+        ("wheel-root", "wheel filename and .dist-info identity differ"),
+        ("wheel-metadata", "metadata version is inconsistent"),
+        ("sdist-filename", "sdist filename and root identity differ"),
+        ("sdist-root", "sdist filename and root identity differ"),
+        ("sdist-metadata", "metadata version is inconsistent"),
+    ],
+)
+def test_rejects_each_independent_version_location_mutation(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    location: str,
+    invariant: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    sdist = next(artifacts.glob("*.tar.gz"))
+    if location == "wheel-filename":
+        parts = wheel.name.split("-")
+        parts[1] = "9.9.9"
+        wheel.rename(artifacts / "-".join(parts))
+    elif location == "wheel-root":
+
+        def change_wheel_root(members: dict[str, bytes]) -> None:
+            for name in list(members):
+                if ".dist-info/" in name:
+                    members[name.replace(".dist-info/", ".changed.dist-info/")] = (
+                        members.pop(name)
+                    )
+
+        _rewrite_wheel(wheel, change_wheel_root)
+    elif location == "wheel-metadata":
+
+        def change_wheel_metadata(members: dict[str, bytes]) -> None:
+            name = next(
+                item for item in members if item.endswith(".dist-info/METADATA")
+            )
+            members[name] = re.sub(
+                rb"(?m)^Version: .+$", b"Version: 9.9.9", members[name]
+            )
+
+        _rewrite_wheel(wheel, change_wheel_metadata)
+    elif location == "sdist-filename":
+        sdist.rename(
+            artifacts / re.sub(r"-[^-]+\.tar\.gz$", "-9.9.9.tar.gz", sdist.name)
+        )
+    elif location == "sdist-root":
+        old_root = sdist.name.removesuffix(".tar.gz")
+
+        def change_sdist_root(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+            for member, _ in entries:
+                member.name = f"hmc_mcp-9.9.9{member.name.removeprefix(old_root)}"
+
+        _rewrite_sdist(sdist, change_sdist_root)
+    else:
+
+        def change_sdist_metadata(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+            for index, (member, data) in enumerate(entries):
+                if member.name.endswith("/PKG-INFO"):
+                    changed = re.sub(rb"(?m)^Version: .+$", b"Version: 9.9.9", data)
+                    member.size = len(changed)
+                    entries[index] = (member, changed)
+
+        _rewrite_sdist(sdist, change_sdist_metadata)
+
+    _assert_invalid(artifacts, project, capsys, invariant)
+
+
+def test_rejects_synchronized_invalid_version_across_all_six_locations(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    wheel_parts = wheel.name.split("-")
+    wheel_parts[1] = "1..0"
+
+    def change_wheel(members: dict[str, bytes]) -> None:
+        for name in list(members):
+            changed_name = re.sub(r"(?<=hmc_mcp-)[^/]+(?=\.dist-info/)", "1..0", name)
+            data = members.pop(name)
+            if changed_name.endswith(".dist-info/METADATA"):
+                data = re.sub(rb"(?m)^Version: .+$", b"Version: 1..0", data)
+            members[changed_name] = data
+
+    _rewrite_wheel(wheel, change_wheel)
+    wheel.rename(artifacts / "-".join(wheel_parts))
+
+    sdist = next(artifacts.glob("*.tar.gz"))
+    old_root = sdist.name.removesuffix(".tar.gz")
+    new_root = "hmc_mcp-1..0"
+
+    def change_sdist(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        for index, (member, data) in enumerate(entries):
+            member.name = new_root + member.name.removeprefix(old_root)
+            if member.name.endswith("/PKG-INFO"):
+                changed = re.sub(rb"(?m)^Version: .+$", b"Version: 1..0", data)
+                member.size = len(changed)
+                entries[index] = (member, changed)
+
+    _rewrite_sdist(sdist, change_sdist)
+    sdist.rename(artifacts / f"{new_root}.tar.gz")
+
+    _assert_invalid(artifacts, project, capsys, "version must be valid PEP 440")
 
 
 def test_rejects_record_digest_mismatch(
@@ -878,14 +1011,20 @@ def test_validation_does_not_invoke_subprocess(
 
 
 @pytest.mark.parametrize(
-    "mutation",
-    ["missing-name", "missing-scripts", "dependencies-type", "bad-requirement"],
+    ("mutation", "detail"),
+    [
+        ("missing-name", "project.name must be a non-empty string"),
+        ("missing-scripts", "project.scripts must be a non-empty string mapping"),
+        ("dependencies-type", "project.dependencies must be a list of strings"),
+        ("bad-requirement", "project.dependencies contains an invalid requirement"),
+    ],
 )
 def test_rejects_malformed_project_configuration_actionably(
     tmp_path: Path,
     built_project: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
     mutation: str,
+    detail: str,
 ) -> None:
     artifacts, project = built_project
     malformed = tmp_path / "project"
@@ -912,7 +1051,7 @@ def test_rejects_malformed_project_configuration_actionably(
 
     assert main([str(artifacts), str(malformed)]) == 1
     error = capsys.readouterr().err
-    assert "project metadata is invalid" in error
+    assert detail in error
     assert "Traceback" not in error
 
 

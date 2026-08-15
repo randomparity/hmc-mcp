@@ -99,13 +99,17 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
         with zipfile.ZipFile(path) as archive:
             for item in archive.infolist():
                 name = _validate_member_name(item.filename, path.name)
-                unix_type = stat.S_IFMT(item.external_attr >> 16) if item.create_system == 3 else 0
+                unix_type = (
+                    stat.S_IFMT(item.external_attr >> 16)
+                    if item.create_system == 3
+                    else 0
+                )
                 if item.is_dir() or unix_type not in {0, stat.S_IFREG}:
                     _fail(path.name, f"wheel member must be a regular file: {name}")
                 if name in members:
                     _fail(path.name, f"duplicate archive member: {name}")
                 members[name] = archive.read(item)
-    except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as error:
         _fail(path.name, f"wheel archive is malformed: {type(error).__name__}")
     return members
 
@@ -124,7 +128,9 @@ def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
                     _fail(path.name, f"sdist member must be a regular file: {name}")
                 parts = name.split("/", 1)
                 if len(parts) != 2:
-                    _fail(path.name, f"sdist member lacks one top-level directory: {name}")
+                    _fail(
+                        path.name, f"sdist member lacks one top-level directory: {name}"
+                    )
                 root = root or parts[0]
                 if parts[0] != root or parts[1] in members:
                     _fail(path.name, f"sdist root or member is not unique: {name}")
@@ -161,7 +167,9 @@ def _metadata(data: bytes, artifact: str, member: str) -> Message:
 
 def _requirements(message: Message, artifact: str) -> set[str]:
     try:
-        return {str(Requirement(value)) for value in message.get_all("Requires-Dist", [])}
+        return {
+            str(Requirement(value)) for value in message.get_all("Requires-Dist", [])
+        }
     except Exception as error:
         _fail(artifact, f"Requires-Dist is malformed: {type(error).__name__}")
 
@@ -169,24 +177,46 @@ def _requirements(message: Message, artifact: str) -> set[str]:
 def _project_configuration(root: Path) -> ProjectConfiguration:
     try:
         with (root / "pyproject.toml").open("rb") as file:
-            project = tomllib.load(file)["project"]
-        name = project["name"]
-        requires_python = project["requires-python"]
-        license_expression = project["license"]
-        dependencies = project["dependencies"]
-        scripts = project["scripts"]
-        if not all(isinstance(value, str) for value in (name, requires_python, license_expression)):
-            raise TypeError("project scalar fields must be strings")
-        if not isinstance(dependencies, list) or not all(isinstance(value, str) for value in dependencies):
-            raise TypeError("project dependencies must be a list of strings")
-        if not isinstance(scripts, dict) or not scripts or not all(
-            isinstance(key, str) and isinstance(value, str) for key, value in scripts.items()
-        ):
-            raise TypeError("project scripts must be a non-empty string mapping")
+            document = tomllib.load(file)
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        _fail(
+            "pyproject.toml", f"project metadata is unreadable: {type(error).__name__}"
+        )
+    project = document.get("project")
+    if not isinstance(project, dict):
+        _fail("pyproject.toml", "project must be a table")
+
+    def required_string(field: str) -> str:
+        value = project.get(field)
+        if not isinstance(value, str) or not value:
+            _fail("pyproject.toml", f"project.{field} must be a non-empty string")
+        return value
+
+    name = required_string("name")
+    requires_python = required_string("requires-python")
+    license_expression = required_string("license")
+    dependencies = project.get("dependencies")
+    if not isinstance(dependencies, list) or not all(
+        isinstance(value, str) for value in dependencies
+    ):
+        _fail("pyproject.toml", "project.dependencies must be a list of strings")
+    scripts = project.get("scripts")
+    if (
+        not isinstance(scripts, dict)
+        or not scripts
+        or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in scripts.items()
+        )
+    ):
+        _fail("pyproject.toml", "project.scripts must be a non-empty string mapping")
+    try:
         normalized = {str(Requirement(value)) for value in dependencies}
-    except (OSError, KeyError, TypeError, InvalidRequirement, tomllib.TOMLDecodeError) as error:
-        _fail("pyproject.toml", f"project metadata is invalid: {type(error).__name__}")
-    return ProjectConfiguration(name, requires_python, license_expression, normalized, scripts)
+    except InvalidRequirement:
+        _fail("pyproject.toml", "project.dependencies contains an invalid requirement")
+    return ProjectConfiguration(
+        name, requires_python, license_expression, normalized, scripts
+    )
 
 
 def _validate_metadata(
@@ -200,7 +230,10 @@ def _validate_metadata(
     if _valid_version(message["Version"], artifact) != distribution.version:
         _fail(artifact, "metadata version is inconsistent")
     expected_name = _canonical_name(project.name)
-    if expected_name != PROJECT_NAME or message["Requires-Python"] != project.requires_python:
+    if (
+        expected_name != PROJECT_NAME
+        or message["Requires-Python"] != project.requires_python
+    ):
         _fail(artifact, "project name or Requires-Python differs from pyproject.toml")
     if message["License-Expression"] != project.license_expression:
         _fail(artifact, "license expression differs from pyproject.toml")
@@ -256,7 +289,11 @@ def _wheel_record(members: dict[str, bytes], root: str, artifact: str) -> None:
             if digest or size:
                 _fail(artifact, "RECORD self-row must omit digest and size")
             continue
-        encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+        encoded = (
+            base64.urlsafe_b64encode(hashlib.sha256(data).digest())
+            .rstrip(b"=")
+            .decode()
+        )
         if digest != f"sha256={encoded}" or size != str(len(data)):
             _fail(artifact, f"RECORD digest or size differs for {name}")
 
@@ -269,7 +306,12 @@ def _wheel_file(members: dict[str, bytes], root: str, tag: str, artifact: str) -
     if message["Wheel-Version"] != "1.0" or message["Root-Is-Purelib"] != "true":
         _fail(artifact, "WHEEL version or purelib flag is unsupported")
     tags = message.get_all("Tag", [])
-    if not tags or len(tags) != len(set(tags)) or set(tags) != {tag} or tag != "py3-none-any":
+    if (
+        not tags
+        or len(tags) != len(set(tags))
+        or set(tags) != {tag}
+        or tag != "py3-none-any"
+    ):
         _fail(artifact, "WHEEL tags differ from the pure-Python filename tag")
 
 
@@ -328,7 +370,10 @@ def _validate_wheel(
             _fail(path.name, f"package bytes differ for {member}")
     if members[f"{root}/licenses/LICENSE"] != (project_root / "LICENSE").read_bytes():
         _fail(path.name, "wheel license bytes differ from checkout")
-    if _scripts_from_wheel(members[f"{root}/entry_points.txt"], path.name) != project.scripts:
+    if (
+        _scripts_from_wheel(members[f"{root}/entry_points.txt"], path.name)
+        != project.scripts
+    ):
         _fail(path.name, "wheel console scripts differ from pyproject.toml")
     return distribution
 
@@ -361,7 +406,9 @@ def _validate_sdist(
         embedded = tomllib.loads(members["pyproject.toml"].decode())
         scripts = embedded["project"]["scripts"]
     except (UnicodeDecodeError, KeyError, tomllib.TOMLDecodeError) as error:
-        _fail(path.name, f"embedded pyproject.toml is malformed: {type(error).__name__}")
+        _fail(
+            path.name, f"embedded pyproject.toml is malformed: {type(error).__name__}"
+        )
     if scripts != project.scripts:
         _fail(path.name, "sdist console scripts differ from checkout")
     return distribution
@@ -387,7 +434,10 @@ def validate(artifact_dir: Path, project_root: Path) -> None:
 def main(arguments: list[str] | None = None) -> int:
     args = sys.argv[1:] if arguments is None else arguments
     if len(args) != 2:
-        print("usage: validate_release_artifacts.py ARTIFACT_DIR PROJECT_ROOT", file=sys.stderr)
+        print(
+            "usage: validate_release_artifacts.py ARTIFACT_DIR PROJECT_ROOT",
+            file=sys.stderr,
+        )
         return 2
     try:
         validate(Path(args[0]), Path(args[1]))
