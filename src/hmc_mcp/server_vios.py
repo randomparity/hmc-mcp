@@ -162,7 +162,12 @@ def hmc_install_vios(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_vios_job(
-        nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, hmc_timeout_minutes
+        nim_ip,
+        nim_gateway,
+        nim_subnetmask,
+        vios_ip,
+        vlan_id,
+        hmc_timeout_minutes=hmc_timeout_minutes,
     )
     effective_wait_timeout = install_wait_timeout_seconds(
         hmc_timeout_minutes, wait_timeout_seconds, poll_interval
@@ -223,7 +228,12 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_lpar_job(
-        nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, hmc_timeout_minutes
+        nim_ip,
+        nim_gateway,
+        nim_subnetmask,
+        lpar_ip,
+        vlan_id,
+        hmc_timeout_minutes=hmc_timeout_minutes,
     )
     effective_wait_timeout = install_wait_timeout_seconds(
         hmc_timeout_minutes, wait_timeout_seconds, poll_interval

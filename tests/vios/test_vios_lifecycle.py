@@ -77,7 +77,7 @@ def test_install_vios_job_xml():
         nim_subnetmask="255.255.255.0",
         vios_ip="192.168.1.20",
         vlan_id="100",
-        timeout=90,
+        hmc_timeout_minutes=90,
     )
     assert "InstallVIOS" in xml
     assert "VirtualIOServer" in xml

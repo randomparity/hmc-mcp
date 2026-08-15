@@ -35,7 +35,7 @@ def test_install_lpar_job_xml():
         nim_subnetmask="255.255.255.0",
         lpar_ip="192.168.1.30",
         vlan_id="100",
-        timeout=90,
+        hmc_timeout_minutes=90,
     )
     assert "InstallLPAR" in xml
     assert "LogicalPartition" in xml
