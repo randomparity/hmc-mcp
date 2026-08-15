@@ -58,5 +58,7 @@ def test_security_policy_uses_only_private_vulnerability_reporting() -> None:
 
     assert PRIVATE_ADVISORY_URL in policy
     assert "do not open a public issue" in policy.lower()
-    assert "password" in policy.lower()
-    assert "token" in policy.lower()
+    assert (
+        "do not include passwords, access tokens, production data, or other secrets"
+        in policy.lower()
+    )
