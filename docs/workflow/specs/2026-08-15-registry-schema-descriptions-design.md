@@ -1,7 +1,7 @@
 # Registry-wide tool parameter descriptions
 
 **Issue:** [#146](https://github.com/randomparity/hmc-mcp/issues/146)  
-**Decision:** [ADR 0016](../../adr/0016-render-lifecycle-tool-parameter-descriptions.md)  
+**Decision:** [ADR 0016](../../adr/0016-rendered-lifecycle-tool-descriptions.md)  
 **Guardrails:** `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`
 
 ## Outcome
@@ -21,8 +21,9 @@ not change.
 Nested dataclass fields use Pydantic-compatible `field(metadata={"description": ...})` metadata.
 The registry test recursively follows local `$ref` values and walks object properties, including
 objects under combinators and arrays. It reports the tool and schema path for every missing or
-blank description. The test runs once against the default registry and once after enabling
-`hmc_run_command`, restoring the default state after each configured run.
+blank description. A synthetic schema exercises the negative checker without registering a tool.
+The live-registry test runs once against the default registry and once after enabling
+`hmc_run_command`, restoring the default state in `finally` after each configured run.
 
 The README tool table remains an inventory, so it is regenerated or minimally updated to match
 the current live registry without inventing tools or behavior.
@@ -36,8 +37,8 @@ the current live registry without inventing tools or behavior.
 
 ## Acceptance proof
 
-1. A focused negative test registers a deliberately undescribed parameter and observes the
-   checker report its path.
+1. A focused negative test passes a synthetic schema with deliberately undescribed top-level and
+   nested properties to the checker and observes both reported paths.
 2. Registry-wide tests pass with arbitrary commands disabled and enabled.
 3. Nested `$defs` fields are included by the same traversal and existing nested resource/policy
    inputs pass.
