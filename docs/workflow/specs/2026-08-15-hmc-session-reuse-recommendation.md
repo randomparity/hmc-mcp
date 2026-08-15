@@ -135,12 +135,21 @@ async def main(profile: str) -> None:
         print(f"{name}: n=20 median={median:.2f}ms p95={p95:.2f}ms")
 
 
-asyncio.run(main(sys.argv[1]))
+try:
+    asyncio.run(main(sys.argv[1]))
+except Exception as exc:
+    print(
+        f"measurement failed ({type(exc).__name__}); reconcile HMC sessions",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from None
 ```
 
 If any cycle raises, the run is failed even if the `finally` Logoff succeeds;
 reconcile the HMC session inventory before repeating it. After a successful
-run, independently confirm that no measurement-created session remains.
+run, independently confirm that no measurement-created session remains. Do not
+copy raw exception objects or tracebacks into the evidence record because they
+can contain the endpoint or server response text.
 
 Concurrency is intentionally excluded: it would mix authentication latency
 with HMC load and session-cap behavior.
@@ -211,6 +220,10 @@ deployment topology are configurable.
   Logon. An ambiguous cleanup failure quarantines the key: it publishes no
   replacement and returns an actionable reconciliation error, preventing
   repeated failures from accumulating remote sessions.
+- Quarantine lasts for the process lifetime. After reconciling the remote HMC
+  session, restarting `hmc-mcp` is the supported recovery action, and the error
+  must state both steps. In-process quarantine clearing is not part of the first
+  implementation.
 - A failed or cancelled logon publishes no token.
 - Cancellation after acquisition releases its borrower count exactly once and
   cannot publish, evict, or close a newer generation.
@@ -254,8 +267,9 @@ not widen the stdio-only deployment boundary.
 - Tokens remain memory-only and must never appear in logs, errors, metrics, or
   persisted measurement output.
 - A per-key single-flight logon and one-token bound limit session creation.
-- One retry for reads prevents loops; no mutation replay prevents ambiguous
-  duplicate side effects.
+- At most one retry for explicitly allowlisted operations prevents loops; HTTP
+  verb and read-like naming are insufficient, and absent classification is
+  non-replayable.
 - Fresh per-call clients retain existing TLS and audit-header configuration and
   avoid cross-event-loop transport use.
 

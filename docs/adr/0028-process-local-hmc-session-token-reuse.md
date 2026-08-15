@@ -38,7 +38,9 @@ successful operation, never persists tokens, and explicitly logs off cached
 sessions during orderly shutdown. Replacement waits for active borrowers of the
 retired token to drain and for cleanup to complete. An ambiguous cleanup failure
 quarantines the key and blocks replacement Logon until operator reconciliation,
-preventing repeated failures from accumulating remote sessions.
+preventing repeated failures from accumulating remote sessions. Quarantine
+lasts for the process lifetime; after reconciling the HMC session, process
+restart is the supported recovery action.
 
 Orderly shutdown stops new acquisitions and gives active borrowers a fixed
 30-second drain deadline. If borrowers remain, it reports their count, discards
@@ -88,7 +90,8 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
 - The one-token-per-key bound reduces session pressure but does not replace HMC
   operator timeout and maximum-session configuration.
 - Replacement can wait for in-flight callers, and an ambiguous cleanup failure
-  makes that key unavailable until the operator reconciles the HMC session.
+  makes that key unavailable until the operator reconciles the HMC session and
+  restarts the process.
 - Borrower drain during shutdown is bounded to 30 seconds. Deadline expiry can
   leave remote sessions until HMC invalidation, but cannot interrupt an active
   mutation by logging off its session. Subsequent concurrent Logoff requests
