@@ -35,7 +35,9 @@ canonical files and metadata that README navigation and future package consumers
 1. Create `tests/test_project_metadata.py` with tests that parse `pyproject.toml`, assert the exact
    license fields, MIT classifier, and three project URLs; assert `LICENSE`, `CONTRIBUTING.md`, and
    `SECURITY.md` exist; assert the README links all three; and assert `SECURITY.md` contains the
-   exact advisory URL and says not to use public issues.
+   exact advisory URL and says not to use public issues. Assert `CONTRIBUTING.md` names
+   `uv sync --locked`, `just verify`, `uv run prek run --all-files`, focused changes with tests,
+   opening a pull request, and the `SECURITY.md` redirect for suspected vulnerabilities.
 2. Run `uv run pytest --no-cov tests/test_project_metadata.py -q`. Expect failures for the absent
    policy files and metadata, proving the tests bite.
 3. Add the exact MIT text to `LICENSE`; write the focused contribution and security policies; add
@@ -44,8 +46,9 @@ canonical files and metadata that README navigation and future package consumers
 5. Run `git diff --check`, inspect the diff for duplicated or contradictory policy, and commit with
    `feat: establish repository governance`.
 
-**Acceptance:** Every governance assertion passes; only GitHub private advisories accept security
-reports; metadata and README identify the same files; no publication behavior appears.
+**Acceptance:** Every governance assertion passes; the contribution guide contains the complete
+minimum local and pull-request path; only GitHub private advisories accept security reports;
+metadata and README identify the same files; no publication behavior appears.
 
 **Rollback:** Revert the task commit. Disabling private vulnerability reporting is an owner action
 outside this code change.
