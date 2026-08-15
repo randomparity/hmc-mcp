@@ -46,4 +46,4 @@ RUN rustup_version=1.29.0 \
 WORKDIR /workspace
 
 CMD ["bash", "-euo", "pipefail", "-c", \
-    "test \"$(uname -m)\" = \"ppc64le\" && git config --global --add safe.directory /workspace && just setup && just verify"]
+    "architecture=$(uname -m) && echo \"runtime architecture: ${architecture}\" && test \"${architecture}\" = \"ppc64le\" && git config --global --add safe.directory /workspace && just setup && just verify"]
