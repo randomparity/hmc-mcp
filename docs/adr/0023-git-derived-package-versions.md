@@ -31,6 +31,10 @@ version access reads installed distribution metadata.
 CI jobs that install the project fetch full Git history so the same provenance checks apply
 locally and in hosted builds.
 
+`just setup` owns locked environment synchronization. Canonical post-setup commands disable uv's
+automatic sync so a dirty `pyproject.toml` can be linted and tested without triggering a package
+rebuild that the dirty-provenance rule must reject.
+
 ## Consequences
 
 - Package builds require Git provenance unless building from metadata already embedded in an
@@ -42,6 +46,8 @@ locally and in hosted builds.
 - Backend compatibility tests must prove the expected wheel package contents, sdist-to-wheel
   rebuild, editable installation, and installed metadata; version correctness alone is not
   sufficient evidence for replacing `uv_build`.
+- Developers and CI must run setup before no-sync guardrails; this makes environment freshness an
+  explicit prerequisite instead of an implicit per-command side effect.
 
 ## Considered & rejected
 

@@ -17,7 +17,8 @@ release-line selector. Runtime code reads installed distribution metadata.
 - Dirty means staged, tracked unstaged, or untracked files; ignored files do not count.
 - Shallow repositories fail. Git-less unpacked sdists may use valid embedded `PKG-INFO`; ordinary
   Git-less source copies fail.
-- Guardrails: `just verify` and separately `uv run prek run --all-files`.
+- Setup: `just setup` performs the single `uv sync --locked`. Post-setup just recipes use
+  `uv run --no-sync`; the standalone gate is `UV_NO_SYNC=1 uv run prek run --all-files`.
 
 ## Task 1: Prove and implement deterministic Git version calculation
 
@@ -68,17 +69,23 @@ sets `release-line = "minor"`. `hmc_mcp.__version__` is the result of
 
 ## Task 3: Give CI complete provenance and close the full gates
 
-**Files:** modify `.github/workflows/ci.yml`; create or update a focused workflow-policy test.
+**Files:** modify `justfile`, `CONTRIBUTING.md`, `.github/workflows/ci.yml`, and focused
+command/workflow-policy tests.
 
 **Interfaces:** every active checkout feeding a project `uv` invocation has `fetch-depth: 0` and
 retains `persist-credentials: false`.
 
-1. Add a failing workflow-policy test that identifies active jobs invoking project `uv` and requires
-   full checkout depth without weakening credential handling.
+1. Add failing policy tests that identify active jobs invoking project `uv`, require full checkout
+   depth without weakening credential handling, and require canonical no-sync commands after setup.
+   Add a regression fixture that syncs a clean copy, dirties `pyproject.toml`, and proves just/prek
+   reach their tools rather than invoking an editable rebuild.
 2. Run its exact pytest node; expect failure on the current shallow checkout configuration.
-3. Add `fetch-depth: 0` to both active checkout steps and re-run the focused test; expect pass.
+3. Add `fetch-depth: 0` to both active checkout steps. Make `just setup` the explicit sync point,
+   convert post-setup recipes to `uv run --no-sync`, and update CI/CONTRIBUTING/contract references
+   to `UV_NO_SYNC=1 uv run prek run --all-files`. Re-run focused tests; expect pass.
 4. Run `just verify`; expect all static, test, smoke, and CLI gates to pass with zero warnings.
-5. Run `uv run prek run --all-files`; expect every hook to pass without modifying tracked files.
+5. Run `UV_NO_SYNC=1 uv run prek run --all-files`; expect every hook to pass without modifying
+   tracked files.
 6. Commit as `ci: fetch full history for version provenance`.
 
 ## Rollback and cleanup

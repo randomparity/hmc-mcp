@@ -44,6 +44,12 @@ copy without valid `PKG-INFO` fails as provenance-incomplete.
 Active CI jobs that run `uv` against the project set `fetch-depth: 0`. This is required input
 preparation, not a provenance bypass.
 
+`just setup` performs the one explicit `uv sync --locked`. Every post-setup `justfile` tool uses
+`uv run --no-sync`; the separately invoked hook gate uses
+`UV_NO_SYNC=1 uv run prek run --all-files`. CI, contributor documentation, and command-contract
+tests use those same forms. This lets guardrails inspect a dirty `pyproject.toml` without asking
+the build backend to produce metadata from a dirty tree; it does not relax artifact rejection.
+
 ## Error handling
 
 - A shallow repository raises `RuntimeError` identifying shallow history and instructing the
@@ -68,8 +74,10 @@ sdist, exercise editable
 installation, import the installed package version path, and reject a Git-less ordinary source
 copy with no `PKG-INFO`.
 Supply-chain tests cover the pinned direct build requirements, and workflow tests assert full
-checkout depth for every active job that invokes `uv` on the project. The final gates are
-`just verify` and `uv run prek run --all-files`.
+checkout depth for every active job that invokes `uv` on the project. A regression fixture first
+synchronizes a clean copy, dirties `pyproject.toml`, and proves canonical just/prek commands reach
+their tools without a rebuild. The final gates are `just verify` and
+`UV_NO_SYNC=1 uv run prek run --all-files` after `just setup`.
 
 ## Threat model
 
