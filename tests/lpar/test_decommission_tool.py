@@ -331,6 +331,63 @@ async def test_decommission_warns_when_vios_storage_detail_is_unavailable(
 
 
 @pytest.mark.asyncio
+async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.get_vios_storage_detail.return_value = None
+    _patch_common(monkeypatch, calls)
+
+    async def list_adapters(
+        _lpar_uuid: str, adapter_type: str
+    ) -> list[dict[str, object]]:
+        if adapter_type == "ClientNetworkAdapter":
+            return [_adapter(adapter_type, "adapter-1")]
+        return []
+
+    hmc.list_adapters.side_effect = list_adapters
+    hmc.submit_job.side_effect = lambda *args, **kwargs: calls.append("submit_job") or {
+        "UUID": "job-uuid",
+        "link": "/rest/api/uom/jobs/job-uuid",
+    }
+    hmc.wait_for_job.side_effect = lambda *args, **kwargs: calls.append("wait_for_job") or {
+        "UUID": "job-uuid",
+        "Resource": {"JobID": "job-uuid", "Status": "COMPLETED_OK"},
+    }
+    hmc.delete_adapter.side_effect = (
+        lambda _lpar_uuid, adapter_type, adapter_uuid: calls.append(
+            f"delete_adapter:{adapter_type}:{adapter_uuid}"
+        )
+    )
+    hmc.delete_logical_partition.side_effect = lambda uuid: calls.append(
+        f"delete_lpar:{uuid}"
+    )
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert result.resource_deleted is True
+    assert result.workflow_completed is True
+    assert [step["status"] for step in result.steps] == ["ok", "ok", "ok"]
+    assert result.blast_radius["unresolved_storage_mapping_count"] == 0
+    assert result.blast_radius["unavailable_storage_source_count"] == 1
+    assert result.warnings == (
+        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+        "storage detail, so its storage mappings could not be inventoried.",
+    )
+    assert calls == [
+        "resolve_system_uuid:system-a",
+        f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
+        "authorize:system-a:aix-prod:False",
+        "read_owner:system-a:aix-prod",
+        "submit_job",
+        "wait_for_job",
+        "delete_adapter:ClientNetworkAdapter:adapter-1",
+        f"delete_lpar:{LPAR_UUID}",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     hmc = _client()

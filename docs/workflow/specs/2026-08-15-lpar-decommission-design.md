@@ -92,6 +92,9 @@ dry run; `resource_deleted` is true only after the final HMC delete succeeds.
 
 Mocked tests include sparse storage-detail records and prove they produce a non-zero
 unresolved count and an incomplete-inventory warning rather than disappearing silently.
+Dry-run tests cover both a UUID-less listed VIOS and a VIOS returning no storage detail;
+an execution test proves the latter retains its warning and source count while power-off,
+adapter deletion, and LPAR deletion continue in order to success.
 
 ## Threat model
 
