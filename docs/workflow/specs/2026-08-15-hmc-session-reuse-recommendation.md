@@ -211,9 +211,10 @@ deployment topology are configurable.
 - Each published token has a monotonically changing per-key generation and an
   active-borrower count. A request releases the same generation it acquired.
 - A 401 may invalidate only the generation used by that request. A delayed 401
-  for an older generation cannot evict its replacement. This operator-approved
-  invalidation path does not issue DELETE for the rejected token; after active
-  borrowers drain, one replacement Logon may proceed.
+  for an older generation cannot evict its replacement. After active borrowers
+  drain, the rejected generation must pass the same validated Logoff contract
+  before one replacement Logon may proceed; rejection does not prove that the
+  HMC removed the remote session.
 - Replacement, route-change eviction, and shutdown mark a generation retired;
   Logoff is deferred until its active-borrower count reaches zero. New callers
   cannot acquire a retired generation, and no replacement Logon may begin until
@@ -258,7 +259,8 @@ A two-route race test must prove that a stale route cannot publish or remain
 cached after a newer selector-locked resolution. Cleanup tests must prove that
 200, 202, and 204 permit replacement; every other 4xx/5xx, malformed response,
 timeout, cancellation, and transport failure quarantines; and a generation
-rejected with 401 follows the separate invalidation path without DELETE.
+rejected with 401 cannot be replaced unless its subsequent validated Logoff
+succeeds. Repeated 401 tests must prove remote sessions cannot accumulate.
 
 ## Threat model for future implementation
 

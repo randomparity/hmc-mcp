@@ -65,13 +65,14 @@ and deployment topology are operator-configured and no safe universal value is
 documented.
 
 The client assumes no fixed token lifetime. A 401 evicts only the matching
-generation and does not issue DELETE for that rejected token. After its active
-borrowers drain, one replacement Logon may proceed. Only request definitions on
-an explicit reviewed allowlist may then perform one replay; classification means
-safe after an ambiguous response and never derives from HTTP verb alone. Missing
-or unknown classification is non-replayable. Mutating and unclassified requests
-return an actionable authentication-expired error because the client cannot
-prove the original operation had no effect.
+generation. After its active borrowers drain, that generation must pass the
+same validated Logoff contract before one replacement Logon may proceed; a 401
+does not prove that the HMC removed the remote session. Only request definitions
+on an explicit reviewed allowlist may then perform one replay; classification
+means safe after an ambiguous response and never derives from HTTP verb alone.
+Missing or unknown classification is non-replayable. Mutating and unclassified
+requests return an actionable authentication-expired error because the client
+cannot prove the original operation had no effect.
 
 A credential-only profile change does not alter the cache key, and no cited HMC
 documentation proves that credential rotation immediately revokes existing
