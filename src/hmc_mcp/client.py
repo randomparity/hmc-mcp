@@ -9,11 +9,11 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
+from importlib import import_module
+from types import ModuleType
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
-
-import httpx
 
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
@@ -31,6 +31,24 @@ from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
 from .client_templates import TemplatesMixin
 from .client_users import UsersMixin
+
+if TYPE_CHECKING:
+    import httpx
+
+
+class _LazyHttpx:
+    """Load HTTPX only when a client instance first needs the transport."""
+
+    _module: ModuleType | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._module is None:
+            self._module = import_module("httpx")
+        return getattr(self._module, name)
+
+
+if not TYPE_CHECKING:
+    httpx = _LazyHttpx()
 
 LOGON_REQUEST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <LogonRequest xmlns="{web_ns}" schemaVersion="V1_0">

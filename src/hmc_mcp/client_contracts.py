@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 from .config import HMCConfig
 

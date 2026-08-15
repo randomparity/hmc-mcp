@@ -7,9 +7,10 @@ domain mixin; this module only defines methods for templates.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 from .client_parse import _parse_feed
 from .errors import HMCError
