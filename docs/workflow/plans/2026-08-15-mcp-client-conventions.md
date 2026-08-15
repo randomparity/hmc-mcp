@@ -42,13 +42,14 @@ clients receive rather than an unrelated constant or source-text fragment.
    qualified timeout names and defaults, install-derived budget, `poll_interval=5`, and the
    `wait=False` submitted-job result. Assert the conventions heading precedes the workflows
    heading.
-2. Run `uv run --no-sync pytest -q tests/unit/test_mcp_instructions.py`. Expect the new test to
-   fail because the current instructions omit these conventions.
+2. Run `uv run --no-sync pytest -q --no-cov tests/unit/test_mcp_instructions.py`. The focused
+   run disables the repository-wide coverage threshold and should fail because the current
+   instructions omit these conventions.
 3. In `src/hmc_mcp/_app.py`, insert a `## Resource addressing and asynchronous jobs` section
    between composite tools and recommended workflows. State every rule in Global Constraints,
    qualifying timeout rules by the tools that expose them.
-4. Run `uv run --no-sync pytest -q tests/unit/test_mcp_instructions.py`. Expect all tests in the
-   file to pass.
+4. Run `uv run --no-sync pytest -q --no-cov tests/unit/test_mcp_instructions.py`. Expect all tests
+   in the file to pass; the full suite in the next step enforces repository-wide coverage.
 5. Run `just verify`. Expect all static checks, tests, smoke checks, builds, artifact checks, and
    CLI loading checks to pass.
 6. Run `UV_NO_SYNC=1 uv run prek run --all-files`. Expect every hook to pass.
