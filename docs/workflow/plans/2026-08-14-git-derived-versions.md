@@ -40,7 +40,8 @@ params: dict[str, object]) -> str`. Task 2 configures these exact callables.
 5. Confirm the shallow fixture reports `true` from `git rev-parse --is-shallow-repository`.
    Mutation-check dirty rejection, shallow rejection, the lower-tag-on-`HEAD` base selection, and
    one transition by temporarily breaking each invariant, observing failures, and restoring it.
-6. Commit as `feat: compute versions from Git provenance`.
+6. Re-run the exact focused command from step 4 and expect all tests to pass. Inspect the diff to
+   confirm no mutation residue remains, then commit as `feat: compute versions from Git provenance`.
 
 ## Task 2: Make Git computation the package metadata authority
 
