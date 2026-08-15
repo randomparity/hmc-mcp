@@ -33,12 +33,13 @@ params: dict[str, object]) -> str`. Task 2 configures these exact callables.
    patch/minor/major plus invalid/missing selector values.
 2. Run `uv run --with versioningit==3.3.0 pytest --no-cov -q tests/scripts/test_versioning.py`;
    expect failures because `scripts/versioning.py` does not exist.
-3. Implement subprocess-backed Git queries with bounded literal arguments, actionable errors, strict
-   tag parsing, `packaging.version.Version` comparison, Versioningit `VCSDescription`, and semantic
-   component bumping. Keep each function under project complexity limits.
+3. Implement subprocess-backed Git queries with bounded literal arguments, actionable errors,
+   strict tag parsing, integer-triple comparison, Versioningit `VCSDescription`, and semantic
+   component bumping. Keep each function under project complexity limits and add no dependency.
 4. Re-run the focused command; expect all version tests to pass.
-5. Mutation-check one dirty-state assertion and one transition assertion by temporarily breaking
-   the implementation, observing failures, and restoring it.
+5. Confirm the shallow fixture reports `true` from `git rev-parse --is-shallow-repository`.
+   Mutation-check dirty rejection, shallow rejection, the lower-tag-on-`HEAD` base selection, and
+   one transition by temporarily breaking each invariant, observing failures, and restoring it.
 6. Commit as `feat: compute versions from Git provenance`.
 
 ## Task 2: Make Git computation the package metadata authority
@@ -58,9 +59,11 @@ sets `release-line = "minor"`. `hmc_mcp.__version__` is the result of
 3. Replace static project version with `dynamic = ["version"]`; replace `uv_build` with exact pins
    `hatchling==1.32.0` and `versioningit==3.3.0`; configure Hatch/Versioningit and update the lock.
 4. Replace the runtime literal with `importlib.metadata.version`.
-5. Commit the dirty integration changes before invoking a build, then run `uv sync` so the backend's
-   clean-tree requirement can succeed. Run the focused tests and expect all to pass.
-6. Commit any test-only follow-up as `test: verify package version artifacts`.
+5. Run the focused artifact tests against their clean fixture repositories and expect all to pass.
+   Run the relevant Ruff and ty checks, then commit the verified integration and tests together as
+   `feat: derive package metadata versions from Git`.
+6. Run `uv sync` from the now-clean feature worktree and re-run the focused tests; expect pass under
+   the repository's installed editable environment.
 
 ## Task 3: Give CI complete provenance and close the full gates
 
