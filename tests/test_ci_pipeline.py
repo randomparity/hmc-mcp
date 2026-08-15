@@ -431,7 +431,9 @@ def test_scheduled_job_checks_the_same_explicit_versions() -> None:
     assert "if: github.event_name == 'schedule'" in body
     assert "timeout-minutes: 5" in body
     command = re.search(
-        r"run: uv run python scripts/check_python_support.py (?P<args>[^\n]+)", body
+        r"run: uv run --no-project python scripts/check_python_support.py "
+        r"(?P<args>[^\n]+)",
+        body,
     )
     assert command
     assert command["args"].split() == SUPPORTED_PYTHONS
