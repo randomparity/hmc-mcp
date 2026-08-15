@@ -45,6 +45,7 @@ def _locked_requirements() -> list[str]:
     return [
         *project["project"]["dependencies"],
         *project["dependency-groups"]["dev"],
+        *project["build-system"]["requires"],
     ]
 
 
@@ -61,6 +62,7 @@ def test_direct_dependency_pins_match_the_lockfile() -> None:
     locked = {
         package["name"].lower().replace("_", "-"): package["version"]
         for package in lock["package"]
+        if "version" in package
     }
 
     for requirement in _locked_requirements():
