@@ -15,7 +15,8 @@ from typing import Callable
 
 import pytest
 
-from validate_release_artifacts import main
+import validate_release_artifacts as validator
+from validate_release_artifacts import _read_bounded, main
 
 
 ROOT = Path(__file__).parents[1]
@@ -249,6 +250,85 @@ def test_rejects_corrupt_archive(
     next(artifacts.glob(pattern)).write_bytes(b"not an archive")
 
     _assert_invalid(artifacts, project, capsys, f"{artifact} archive is malformed")
+
+
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+@pytest.mark.parametrize(
+    ("limit", "invariant"),
+    [
+        ("input", "archive input exceeds 256 MiB"),
+        ("members", "archive contains more than 4096 members"),
+        ("member-size", "archive member exceeds 64 MiB uncompressed"),
+        ("total-size", "archive exceeds 512 MiB total uncompressed"),
+    ],
+)
+def test_rejects_declared_archive_limit_overrun(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: str,
+    limit: str,
+    invariant: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    path = next(artifacts.glob("*.whl" if artifact == "wheel" else "*.tar.gz"))
+    if limit == "input":
+        monkeypatch.setattr(validator, "MAX_ARCHIVE_BYTES", path.stat().st_size - 1)
+    elif limit == "members":
+        monkeypatch.setattr(validator, "MAX_ARCHIVE_MEMBERS", 1)
+    elif limit == "member-size":
+        monkeypatch.setattr(validator, "MAX_MEMBER_BYTES", 1)
+    else:
+        monkeypatch.setattr(validator, "MAX_TOTAL_BYTES", 1)
+
+    _assert_invalid(artifacts, project, capsys, invariant)
+
+
+@pytest.mark.parametrize(
+    ("limit", "invariant"),
+    [
+        ("member", "member exceeds 64 MiB uncompressed"),
+        ("total", "archive exceeds 512 MiB total uncompressed"),
+    ],
+)
+def test_rejects_observed_overrun_during_bounded_read(
+    monkeypatch: pytest.MonkeyPatch,
+    limit: str,
+    invariant: str,
+) -> None:
+    monkeypatch.setattr(validator, "MAX_MEMBER_BYTES", 1 if limit == "member" else 10)
+    monkeypatch.setattr(validator, "MAX_TOTAL_BYTES", 1)
+
+    with pytest.raises(validator.ValidationError, match=invariant):
+        _read_bounded(
+            io.BytesIO(b"ab"), "artifact.whl", "member", declared_size=1, total=0
+        )
+
+
+def test_accepts_declared_archive_limits_at_exact_boundaries(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, project = built_project
+    wheel = next(artifacts.glob("*.whl"))
+    sdist = next(artifacts.glob("*.tar.gz"))
+    with zipfile.ZipFile(wheel) as archive:
+        wheel_sizes = [item.file_size for item in archive.infolist()]
+    with tarfile.open(sdist, "r:gz") as archive:
+        sdist_sizes = [item.size for item in archive if item.isfile()]
+    monkeypatch.setattr(
+        validator, "MAX_ARCHIVE_BYTES", max(wheel.stat().st_size, sdist.stat().st_size)
+    )
+    monkeypatch.setattr(
+        validator, "MAX_ARCHIVE_MEMBERS", max(len(wheel_sizes), len(sdist_sizes))
+    )
+    monkeypatch.setattr(validator, "MAX_MEMBER_BYTES", max(wheel_sizes + sdist_sizes))
+    monkeypatch.setattr(
+        validator, "MAX_TOTAL_BYTES", max(sum(wheel_sizes), sum(sdist_sizes))
+    )
+
+    assert main([str(artifacts), str(project)]) == 0
 
 
 def test_rejects_unsupported_wheel_compression_actionably(

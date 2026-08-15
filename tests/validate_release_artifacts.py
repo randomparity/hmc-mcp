@@ -15,7 +15,7 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import Never
+from typing import IO, Never
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
@@ -24,6 +24,11 @@ from packaging.version import InvalidVersion, Version
 PROJECT_NAME = "hmc-mcp"
 PACKAGE_NAME = "hmc_mcp"
 CORE_METADATA_VERSION = "2.5"
+MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 4096
+MAX_MEMBER_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_BYTES = 512 * 1024 * 1024
+READ_CHUNK_BYTES = 1024 * 1024
 SINGLETON_METADATA = (
     "Metadata-Version",
     "Name",
@@ -94,11 +99,44 @@ def _validate_member_name(name: str, artifact: str) -> str:
     return str(PurePosixPath(*parts))
 
 
+def _check_archive_input(path: Path) -> None:
+    if path.stat().st_size > MAX_ARCHIVE_BYTES:
+        _fail(path.name, "archive input exceeds 256 MiB")
+
+
+def _read_bounded(
+    stream: IO[bytes],
+    artifact: str,
+    member: str,
+    *,
+    declared_size: int,
+    total: int,
+) -> bytes:
+    if declared_size > MAX_MEMBER_BYTES:
+        _fail(artifact, f"archive member exceeds 64 MiB uncompressed: {member}")
+    if total + declared_size > MAX_TOTAL_BYTES:
+        _fail(artifact, "archive exceeds 512 MiB total uncompressed")
+    data = bytearray()
+    while chunk := stream.read(READ_CHUNK_BYTES):
+        data.extend(chunk)
+        if len(data) > MAX_MEMBER_BYTES:
+            _fail(artifact, f"archive member exceeds 64 MiB uncompressed: {member}")
+        if total + len(data) > MAX_TOTAL_BYTES:
+            _fail(artifact, "archive exceeds 512 MiB total uncompressed")
+    return bytes(data)
+
+
 def _read_wheel(path: Path) -> dict[str, bytes]:
     members: dict[str, bytes] = {}
+    declared_total = 0
+    total = 0
     try:
+        _check_archive_input(path)
         with zipfile.ZipFile(path) as archive:
-            for item in archive.infolist():
+            items = archive.infolist()
+            if len(items) > MAX_ARCHIVE_MEMBERS:
+                _fail(path.name, "archive contains more than 4096 members")
+            for item in items:
                 name = _validate_member_name(item.filename, path.name)
                 unix_type = (
                     stat.S_IFMT(item.external_attr >> 16)
@@ -109,7 +147,18 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
                     _fail(path.name, f"wheel member must be a regular file: {name}")
                 if name in members:
                     _fail(path.name, f"duplicate archive member: {name}")
-                members[name] = archive.read(item)
+                declared_total += item.file_size
+                if declared_total > MAX_TOTAL_BYTES:
+                    _fail(path.name, "archive exceeds 512 MiB total uncompressed")
+                with archive.open(item) as stream:
+                    members[name] = _read_bounded(
+                        stream,
+                        path.name,
+                        name,
+                        declared_size=item.file_size,
+                        total=total,
+                    )
+                total += len(members[name])
     except (
         OSError,
         zipfile.BadZipFile,
@@ -124,9 +173,14 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
 def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
     members: dict[str, bytes] = {}
     root: str | None = None
+    declared_total = 0
+    total = 0
     try:
+        _check_archive_input(path)
         with tarfile.open(path, mode="r:gz") as archive:
-            for item in archive.getmembers():
+            for count, item in enumerate(archive, start=1):
+                if count > MAX_ARCHIVE_MEMBERS:
+                    _fail(path.name, "archive contains more than 4096 members")
                 name = _validate_member_name(item.name, path.name)
                 if item.issym() or item.islnk():
                     _validate_member_name(item.linkname, path.name)
@@ -141,10 +195,20 @@ def _read_sdist(path: Path) -> tuple[str, dict[str, bytes]]:
                 root = root or parts[0]
                 if parts[0] != root or parts[1] in members:
                     _fail(path.name, f"sdist root or member is not unique: {name}")
+                declared_total += item.size
+                if declared_total > MAX_TOTAL_BYTES:
+                    _fail(path.name, "archive exceeds 512 MiB total uncompressed")
                 extracted = archive.extractfile(item)
                 if extracted is None:
                     _fail(path.name, f"sdist member is unreadable: {name}")
-                members[parts[1]] = extracted.read()
+                members[parts[1]] = _read_bounded(
+                    extracted,
+                    path.name,
+                    name,
+                    declared_size=item.size,
+                    total=total,
+                )
+                total += len(members[parts[1]])
     except (OSError, tarfile.TarError) as error:
         _fail(path.name, f"sdist archive is malformed: {type(error).__name__}")
     if root is None:
