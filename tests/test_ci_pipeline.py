@@ -452,6 +452,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "    runs-on: ubuntu-24.04\n" in body
     assert '          python-version: "3.13"\n' in body
     assert "name: release-wheel-amd64-py3.13" in body
+    assert "uv pip install --python .library-wheel-venv/bin/python" in body
+    assert '            "${wheels[0]}"' in body
     assert "from hmc_mcp.api import capacity_report" in body
     assert "import hmc_mcp.api" not in body
     for package in ("fastmcp", "mcp", "rich", "typer"):
@@ -463,6 +465,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert '"system_name": "p10"' in body
     assert "assert report ==" in body
     assert "[app]" not in body
+    assert "uv export" not in body
+    assert "--no-deps" not in body
     assert "scripts/smoke_mcp.py" not in body
     assert "pip install -e" not in body
 

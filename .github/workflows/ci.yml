@@ -108,11 +108,7 @@ jobs:
             exit 1
           fi
           uv venv --python "3.13" .library-wheel-venv
-          uv export --frozen --no-dev --no-emit-project --no-header \
-            --output-file .library-wheel-requirements.txt
           uv pip install --python .library-wheel-venv/bin/python \
-            --requirements .library-wheel-requirements.txt
-          uv pip install --no-deps --python .library-wheel-venv/bin/python \
             "${wheels[0]}"
       - name: Exercise the installed public API
         run: |
