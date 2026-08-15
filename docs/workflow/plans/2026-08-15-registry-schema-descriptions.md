@@ -13,6 +13,7 @@
 - `src/hmc_mcp/server_health.py` and `src/hmc_mcp/server_command.py`: description-only fixes
   required by the current default and conditional live registries.
 - `src/hmc_mcp/documents.py`: descriptions for nested public input fields not already covered.
+- `src/hmc_mcp/jobs.py`: description metadata for nested update-repository fields.
 - `README.md`: current tool inventory text.
 
 ## Tasks

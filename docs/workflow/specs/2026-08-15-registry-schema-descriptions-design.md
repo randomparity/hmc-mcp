@@ -18,7 +18,8 @@ units, defaults, enumerated meanings, destructive preconditions, and related dis
 those facts affect correct use. Existing signatures, defaults, validation, and return shapes do
 not change.
 
-Nested dataclass fields use Pydantic-compatible `field(metadata={"description": ...})` metadata.
+Nested dataclass fields use Pydantic-compatible `field(metadata={"description": ...})` metadata;
+the existing `RepositorySource` TypedDict uses equivalent `Annotated` field metadata.
 The registry test recursively follows local `$ref` values and walks object properties, including
 objects under combinators and arrays. It reports the tool and schema path for every missing or
 blank description. A synthetic schema exercises the negative checker without registering a tool.
