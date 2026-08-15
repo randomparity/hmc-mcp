@@ -13,8 +13,7 @@ import warnings
 from typing import Any
 from urllib.parse import urlparse
 
-import httpx
-
+from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
 from .errors import HMCError, HMCTransportError

@@ -1,0 +1,175 @@
+"""Supported reusable-library facade for hmc-mcp."""
+
+from hmc_mcp.client import HMCClient
+from hmc_mcp.client_adapters import AdapterType
+from hmc_mcp.config import ConfigError, HMCConfig, load_profile
+from hmc_mcp.documents import LparResources, PartitionType, StorageKind
+from hmc_mcp.errors import HMCError, HMCTransportError
+from hmc_mcp.jobs import DeviceType, LuType
+from hmc_mcp.operations_adapters import (
+    AdapterResult,
+    add_network_adapter,
+    add_vios_adapter,
+    delete_adapter,
+    list_adapters,
+)
+from hmc_mcp.operations_capacity import capacity_report, find_placement
+from hmc_mcp.operations_composite import lpar_summary, system_summary
+from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.operations_health import FleetHealthResult, fleet_health
+from hmc_mcp.operations_lpar import (
+    LparCreation,
+    LparCreationResult,
+    LparPowerResult,
+    authorize_decommission_lpar_ownership_snapshot,
+    authorize_lpar_mutation,
+    create_and_stamp_lpar,
+    delete_lpar,
+    power_lpar,
+    rename_lpar,
+    resolve_lpar_ownership_names,
+    stamp_created_lpar_ownership,
+)
+from hmc_mcp.operations_lpm import (
+    LpmResult,
+    abort_lpar_migration,
+    migrate_lpar,
+    recover_lpar_migration,
+    remote_restart_lpar,
+)
+from hmc_mcp.operations_network import (
+    create_virtual_network,
+    delete_virtual_network,
+    list_network_bridges,
+    list_virtual_networks,
+    list_virtual_switches,
+)
+from hmc_mcp.operations_pcm import (
+    MetricKind,
+    PcmCategory,
+    get_pcm_preferences,
+    metric_data,
+    metric_links,
+    resolve_pcm_resource,
+    set_pcm_preferences,
+)
+from hmc_mcp.operations_provision import (
+    AttachDiskResult,
+    ProvisionNetwork,
+    ProvisionResult,
+    ProvisionStorage,
+    attach_disk_to_lpar,
+    provision_lpar,
+)
+from hmc_mcp.operations_ssh_network import (
+    add_vnic,
+    list_fc_ports,
+    list_sea_adapters,
+    list_vnics,
+    remove_vnic,
+    set_sriov_adapter_mode,
+)
+from hmc_mcp.operations_storage import (
+    create_logical_unit,
+    create_media_repository,
+    create_optical_media,
+    create_virtual_disk,
+    create_volume_group,
+    delete_logical_unit,
+    delete_media_repository,
+    list_volume_groups,
+    map_storage,
+)
+from hmc_mcp.operations_systems import power_system
+from hmc_mcp.operations_templates import (
+    deploy_partition_template,
+    get_partition_template,
+    list_partition_templates,
+)
+from hmc_mcp.operations_vios import power_vios
+from hmc_mcp.ssh import HMCCLIError
+from hmc_mcp.ssh_commands import SriovMode
+
+__all__ = [
+    "HMCClient",
+    "HMCConfig",
+    "ConfigError",
+    "load_profile",
+    "HMCError",
+    "HMCTransportError",
+    "HMCCLIError",
+    "list_adapters",
+    "add_network_adapter",
+    "add_vios_adapter",
+    "delete_adapter",
+    "AdapterResult",
+    "AdapterType",
+    "capacity_report",
+    "find_placement",
+    "lpar_summary",
+    "system_summary",
+    "decommission_lpar",
+    "DecommissionResult",
+    "fleet_health",
+    "FleetHealthResult",
+    "authorize_decommission_lpar_ownership_snapshot",
+    "authorize_lpar_mutation",
+    "resolve_lpar_ownership_names",
+    "stamp_created_lpar_ownership",
+    "create_and_stamp_lpar",
+    "delete_lpar",
+    "power_lpar",
+    "rename_lpar",
+    "LparCreation",
+    "LparCreationResult",
+    "LparPowerResult",
+    "migrate_lpar",
+    "abort_lpar_migration",
+    "recover_lpar_migration",
+    "remote_restart_lpar",
+    "LpmResult",
+    "list_virtual_switches",
+    "list_virtual_networks",
+    "create_virtual_network",
+    "delete_virtual_network",
+    "list_network_bridges",
+    "resolve_pcm_resource",
+    "get_pcm_preferences",
+    "set_pcm_preferences",
+    "metric_links",
+    "metric_data",
+    "PcmCategory",
+    "MetricKind",
+    "attach_disk_to_lpar",
+    "provision_lpar",
+    "ProvisionNetwork",
+    "ProvisionStorage",
+    "ProvisionResult",
+    "AttachDiskResult",
+    "LparResources",
+    "PartitionType",
+    "list_fc_ports",
+    "list_sea_adapters",
+    "set_sriov_adapter_mode",
+    "list_vnics",
+    "add_vnic",
+    "remove_vnic",
+    "SriovMode",
+    "list_volume_groups",
+    "create_volume_group",
+    "create_virtual_disk",
+    "map_storage",
+    "create_media_repository",
+    "create_optical_media",
+    "delete_media_repository",
+    "create_logical_unit",
+    "delete_logical_unit",
+    "StorageKind",
+    "LuType",
+    "DeviceType",
+    "power_system",
+    "list_partition_templates",
+    "get_partition_template",
+    "deploy_partition_template",
+    "power_vios",
+]

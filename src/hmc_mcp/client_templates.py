@@ -9,8 +9,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import httpx
-
+from .client_contracts import httpx
 from .client_parse import _parse_feed
 from .errors import HMCError
 from .jobs import deploy_partition_template_job
