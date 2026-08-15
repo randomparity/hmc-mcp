@@ -211,15 +211,21 @@ deployment topology are configurable.
 - Each published token has a monotonically changing per-key generation and an
   active-borrower count. A request releases the same generation it acquired.
 - A 401 may invalidate only the generation used by that request. A delayed 401
-  for an older generation cannot evict its replacement.
+  for an older generation cannot evict its replacement. This operator-approved
+  invalidation path does not issue DELETE for the rejected token; after active
+  borrowers drain, one replacement Logon may proceed.
 - Replacement, route-change eviction, and shutdown mark a generation retired;
   Logoff is deferred until its active-borrower count reaches zero. New callers
   cannot acquire a retired generation, and no replacement Logon may begin until
   that generation drains and its cleanup outcome is known.
-- Successful or definitively already-invalid cleanup permits one replacement
-  Logon. An ambiguous cleanup failure quarantines the key: it publishes no
-  replacement and returns an actionable reconciliation error, preventing
-  repeated failures from accumulating remote sessions.
+- Explicit Logoff succeeds only on HTTP 200, 202, or 204, the success statuses
+  identified by IBM's Logoff guidance. `HMCClient.logoff()` must validate that
+  response instead of clearing the token for every status as it does today.
+  Successful Logoff permits one replacement Logon. Every other HTTP status,
+  malformed response, timeout, cancellation, or transport failure is ambiguous
+  and quarantines the key: it publishes no replacement and returns an actionable
+  reconciliation error, preventing repeated failures from accumulating remote
+  sessions.
 - Quarantine lasts for the process lifetime. After reconciling the remote HMC
   session, restarting `hmc-mcp` is the supported recovery action, and the error
   must state both steps. In-process quarantine clearing is not part of the first
@@ -249,7 +255,10 @@ of a forced Logoff. It must also cover multiple slow Logoffs running concurrentl
 Replay tests must prove every existing request definition is classified, unknown
 classification is non-replayable, and allowlisted requests replay at most once.
 A two-route race test must prove that a stale route cannot publish or remain
-cached after a newer selector-locked resolution.
+cached after a newer selector-locked resolution. Cleanup tests must prove that
+200, 202, and 204 permit replacement; every other 4xx/5xx, malformed response,
+timeout, cancellation, and transport failure quarantines; and a generation
+rejected with 401 follows the separate invalidation path without DELETE.
 
 ## Threat model for future implementation
 

@@ -36,11 +36,13 @@ selector lock, so a stale route snapshot cannot publish after a newer one. The
 cache holds at most one published or remotely live token per key during
 successful operation, never persists tokens, and explicitly logs off cached
 sessions during orderly shutdown. Replacement waits for active borrowers of the
-retired token to drain and for cleanup to complete. An ambiguous cleanup failure
-quarantines the key and blocks replacement Logon until operator reconciliation,
-preventing repeated failures from accumulating remote sessions. Quarantine
-lasts for the process lifetime; after reconciling the HMC session, process
-restart is the supported recovery action.
+retired token to drain and for cleanup to complete. Explicit Logoff succeeds
+only on HTTP 200, 202, or 204. Every other HTTP response, malformed response,
+timeout, cancellation, or transport failure is ambiguous: it quarantines the
+key and blocks replacement Logon until operator reconciliation, preventing
+repeated failures from accumulating remote sessions. Quarantine lasts for the
+process lifetime; after reconciling the HMC session, process restart is the
+supported recovery action.
 
 Orderly shutdown stops new acquisitions and gives active borrowers a fixed
 30-second drain deadline. If borrowers remain, it reports their count, discards
@@ -62,13 +64,14 @@ processes they run. No universal client-wide cap is chosen because the HMC cap
 and deployment topology are operator-configured and no safe universal value is
 documented.
 
-The client assumes no fixed token lifetime. A 401 evicts the matching token.
-Only request definitions on an explicit reviewed allowlist may perform one
-serialized re-logon and one replay; classification means safe after an ambiguous
-response and never derives from HTTP verb alone. Missing or unknown
-classification is non-replayable. Mutating and unclassified requests return an
-actionable authentication-expired error because the client cannot prove the
-original operation had no effect.
+The client assumes no fixed token lifetime. A 401 evicts only the matching
+generation and does not issue DELETE for that rejected token. After its active
+borrowers drain, one replacement Logon may proceed. Only request definitions on
+an explicit reviewed allowlist may then perform one replay; classification means
+safe after an ambiguous response and never derives from HTTP verb alone. Missing
+or unknown classification is non-replayable. Mutating and unclassified requests
+return an actionable authentication-expired error because the client cannot
+prove the original operation had no effect.
 
 A credential-only profile change does not alter the cache key, and no cited HMC
 documentation proves that credential rotation immediately revokes existing
@@ -92,6 +95,8 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
 - Replacement can wait for in-flight callers, and an ambiguous cleanup failure
   makes that key unavailable until the operator reconciles the HMC session and
   restarts the process.
+- The existing `HMCClient.logoff()` must gain response-status validation; silent
+  local token clearing after an unaccepted response is not successful cleanup.
 - Borrower drain during shutdown is bounded to 30 seconds. Deadline expiry can
   leave remote sessions until HMC invalidation, but cannot interrupt an active
   mutation by logging off its session. Subsequent concurrent Logoff requests
