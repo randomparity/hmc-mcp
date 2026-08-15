@@ -1042,6 +1042,12 @@ def test_rejects_unsupported_core_metadata_version(
             b"Requires-Dist: asyncssh==2.23.0",
             "runtime dependencies differ",
         ),
+        (
+            "Provides-Extra",
+            b"Provides-Extra: app",
+            b"Provides-Extra: other",
+            "optional extras differ",
+        ),
     ],
 )
 def test_rejects_wheel_metadata_mismatch_with_valid_record(
@@ -1324,7 +1330,11 @@ def test_validation_does_not_invoke_subprocess(
         ("missing-name", "project.name must be a non-empty string"),
         ("missing-scripts", "project.scripts must be a non-empty string mapping"),
         ("dependencies-type", "project.dependencies must be a list of strings"),
-        ("bad-requirement", "project.dependencies contains an invalid requirement"),
+        (
+            "optional-dependencies-type",
+            "project.optional-dependencies must map extras to lists of strings",
+        ),
+        ("bad-requirement", "project dependencies contain an invalid requirement"),
     ],
 )
 def test_rejects_malformed_project_configuration_actionably(
@@ -1352,6 +1362,10 @@ def test_rejects_malformed_project_configuration_actionably(
             content,
             count=1,
             flags=re.DOTALL,
+        )
+    elif mutation == "optional-dependencies-type":
+        content = content.replace(
+            "[project.optional-dependencies]", "optional-dependencies = []"
         )
     else:
         content = content.replace('"asyncssh==2.24.0"', '"not a valid requirement !!!"')

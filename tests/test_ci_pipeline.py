@@ -157,10 +157,10 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
     justfile = (ROOT / "justfile").read_text()
 
-    assert justfile.count("uv sync --locked --link-mode copy") == 1
+    assert justfile.count("uv sync --locked --extra app --link-mode copy") == 1
     assert (
         "setup:\n"
-        "    uv sync --locked --link-mode copy\n"
+        "    uv sync --locked --extra app --link-mode copy\n"
         "    uv run --no-sync prek install\n"
         in justfile
     )
@@ -298,7 +298,7 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
     subprocess.run(
-        ["uv", "sync", "--locked"],
+        ["uv", "sync", "--locked", "--extra", "app"],
         cwd=project,
         check=True,
         capture_output=True,
