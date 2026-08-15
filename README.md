@@ -23,10 +23,53 @@ available under the [License](LICENSE).
 
 ## Install
 
+For reusable-library use, install the bare project dependencies:
+
 ```bash
 cd ~/src/hmc-mcp
-uv sync --extra app
+uv sync --no-dev
 ```
+
+To use the CLI or MCP server, install the `app` extra as well:
+
+```bash
+cd ~/src/hmc-mcp
+uv sync --no-dev --extra app
+```
+
+## Reusable Python API
+
+Import reusable library code only from `hmc_mcp.api`. This example reads connection settings from
+the `HMC_*` environment variables described below, constructs a client, and runs an exported domain
+operation:
+
+```python
+import asyncio
+
+from hmc_mcp.api import HMCClient, HMCConfig, capacity_report
+
+
+async def main() -> None:
+    async with HMCClient(HMCConfig()) as hmc:
+        for system in await capacity_report(hmc):
+            print(system)
+
+
+asyncio.run(main())
+```
+
+`hmc_mcp.api` is the only supported reusable-library import path. Its explicit `__all__` is the
+complete compatibility manifest. For `HMCClient`, only `__init__`, `__aenter__`, `__aexit__`,
+`is_logged_on`, `logon`, and `logoff` are supported lifecycle members. Other import paths, generic
+UOM helpers, inherited mixin methods, XML and parser helpers, SSH primitives, and CLI and MCP
+presentation modules are implementation details. They may remain importable or discoverable, but
+they are unsupported and may change without a compatibility release.
+
+While hmc-mcp is in `0.x`, strict SemVer applies to this supported surface: removing or renaming an
+export, invalidating a compatible call, changing an owned model incompatibly, changing an exported
+enum or literal value set, or adding a facade export requires a minor release. Patch releases are
+limited to compatible fixes that change neither the export set nor enum and literal value sets.
+See [ADR 0029](docs/adr/0029-supported-reusable-python-api-contract.md) for the complete contract.
 
 ## Configure
 
