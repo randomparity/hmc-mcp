@@ -34,6 +34,9 @@ promises, or a second vulnerability inbox.
 
 ## Considered & rejected
 
+- **Do nothing.** The repository would remain without an explicit license or contribution path,
+  vulnerabilities would lack a documented private route, and README and package metadata would
+  continue to omit the required governance policies.
 - **Publish a maintainer email address.** It adds a second channel and exposes contact information
   when the repository already provides a private, access-controlled channel.
 - **Accept security reports in public issues.** Disclosure before coordination can harm users and
@@ -42,4 +45,3 @@ promises, or a second vulnerability inbox.
   canonical governance files and project URLs; README-only prose is easier to drift.
 - **Add a metadata-validation dependency.** The required contract is deterministic TOML and file
   content that existing Python tooling can test without expanding the dependency surface.
-
