@@ -48,7 +48,8 @@ The build command intentionally replaces `dist/`; callers must copy artifacts th
 before invoking it again. The validation command never extracts, repairs, rebuilds, or silently
 selects among duplicate artifacts. It rejects unknown wheel members, every non-regular sdist member,
 unsafe link targets, conflicting metadata cardinality, and wheel tags inconsistent with the
-filename.
+filename. Malformed project fields and unsupported archive operations fail with bounded,
+field-specific diagnostics rather than library exceptions.
 
 ## Considered & rejected
 
