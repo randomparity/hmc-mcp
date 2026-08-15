@@ -42,6 +42,10 @@ ACTION_PINS = {
         "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",  # pragma: allowlist secret
         "v7.0.1",
     ),
+    "actions/download-artifact": (
+        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",  # pragma: allowlist secret
+        "v8.0.1",
+    ),
     "docker/setup-qemu-action": (
         "96fe6ef7f33517b61c61be40b68a1882f3264fb8",  # pragma: allowlist secret
         "v4.2.0",
@@ -50,7 +54,9 @@ ACTION_PINS = {
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
 NATIVE_MATRIX = [
     ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
-] + [("arm64", "ubuntu-24.04-arm", "3.11")]
+] + [
+    ("arm64", "ubuntu-24.04-arm", version) for version in SUPPORTED_PYTHONS
+]
 QEMU_IMAGE = (
     "docker.io/tonistiigi/binfmt@"
     "sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
@@ -264,10 +270,10 @@ def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
         active_workflow,
     )
 
-    assert len(checkout_settings) == 2
+    assert len(checkout_settings) == 3
     assert active_workflow.count("uv run") >= 2
+    assert sum("fetch-depth: 0\n" in settings for settings in checkout_settings) == 2
     for settings in checkout_settings:
-        assert "fetch-depth: 0\n" in settings
         assert "persist-credentials: false\n" in settings
 
 
@@ -347,11 +353,74 @@ def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
         for architecture, runner, version in NATIVE_MATRIX
     )
     assert matrix["body"] == expected_matrix
+    assert (
+        "name: ${{ matrix.architecture }} / Python "
+        "${{ matrix.python-version }} / verify" in workflow
+    )
+    assert "      fail-fast: false\n      matrix:\n" in active_workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
     assert active_workflow.count("run: just verify") == 1
     assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
     assert "docker/setup-qemu-action" not in active_workflow
     assert "architecture: [amd64, arm64]" not in workflow
+
+
+def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
+    consumer = re.search(
+        r"^  wheel-smoke:\n(?P<body>.*?)(?=^  python-support-drift:)",
+        active_workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+
+    assert consumer
+    body = consumer["body"]
+    expected_matrix = "      matrix:\n        include:\n" + "".join(
+        f"          - architecture: {architecture}\n"
+        f"            runner: {runner}\n"
+        f'            python-version: "{version}"\n'
+        for architecture, runner, version in NATIVE_MATRIX
+    )
+    assert "    needs: ci\n" in body
+    assert (
+        "    name: ${{ matrix.architecture }} / Python "
+        "${{ matrix.python-version }} / wheel smoke\n" in body
+    )
+    assert "      fail-fast: false\n" in body
+    assert expected_matrix in body
+    assert "    runs-on: ${{ matrix.runner }}\n" in body
+    assert "    timeout-minutes: 10\n" in body
+    assert (
+        "uses: actions/download-artifact@"
+        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1" in body
+    )
+    assert (
+        "name: release-wheel-${{ matrix.architecture }}-py"
+        "${{ matrix.python-version }}" in body
+    )
+    assert "path: dist" in body
+    assert "merge-multiple:" not in body
+    assert "wheels=(dist/*.whl)" in body
+    assert "${#wheels[@]} != 1" in body
+    assert "expected exactly one wheel" in body
+    assert "uv venv --python \"${MATRIX_PYTHON}\" .wheel-venv" in body
+    assert "uv export --frozen --no-dev --no-emit-project --no-header" in body
+    assert "uv pip install --python .wheel-venv/bin/python" in body
+    assert "--requirements .wheel-requirements.txt" in body
+    assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
+    assert "import hmc_mcp" in body
+    assert "is_relative_to(environment)" in body
+    for group in ("", "lpars", "storage", "network", "templates", "metrics"):
+        command = ".wheel-venv/bin/hmc-mcp"
+        if group:
+            command += f" {group}"
+        assert f"{command} --help" in body
+    assert ".wheel-venv/bin/python scripts/smoke_mcp.py" in body
+    assert "just setup" not in body
+    assert "uv sync" not in body
+    assert "pip install -e" not in body
+    assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
 
 
 def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
