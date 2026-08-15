@@ -161,6 +161,7 @@ def _tool_result() -> DecommissionResult:
             "adapters": (),
             "storage_mappings": (),
             "unresolved_storage_mapping_count": 0,
+            "unavailable_storage_source_count": 0,
         },
     )
 
@@ -286,6 +287,50 @@ async def test_decommission_refuses_incomplete_adapter_inventory(
 
 
 @pytest.mark.asyncio
+async def test_decommission_warns_when_listed_vios_has_no_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.list_vios.return_value = [
+        {"Resource": {"PartitionName": "vios-missing-id"}}
+    ]
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=True)
+
+    assert result.blast_radius["storage_mappings"] == ()
+    assert result.blast_radius["unresolved_storage_mapping_count"] == 0
+    assert result.blast_radius["unavailable_storage_source_count"] == 1
+    assert result.warnings == (
+        "Storage blast radius may be incomplete: listed VIOS 'vios-missing-id' "
+        "has no UUID, so its storage mappings could not be inventoried.",
+    )
+    hmc.get_vios_storage_detail.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_warns_when_vios_storage_detail_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    hmc = _client()
+    hmc.get_vios_storage_detail.return_value = None
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=True)
+
+    assert result.blast_radius["storage_mappings"] == ()
+    assert result.blast_radius["unresolved_storage_mapping_count"] == 0
+    assert result.blast_radius["unavailable_storage_source_count"] == 1
+    assert result.warnings == (
+        f"Storage blast radius may be incomplete: VIOS {VIOS_UUID!r} returned no "
+        "storage detail, so its storage mappings could not be inventoried.",
+    )
+    hmc.get_vios_storage_detail.assert_awaited_once_with(VIOS_UUID)
+
+
+@pytest.mark.asyncio
 async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     hmc = _client()
@@ -352,6 +397,7 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
                 },
             ),
             "unresolved_storage_mapping_count": 1,
+            "unavailable_storage_source_count": 0,
         },
     )
     assert calls == [

@@ -30,6 +30,12 @@ or edits storage mappings or backing storage. Mappings whose client identity is 
 sparse to classify are counted separately and produce an incomplete-inventory warning;
 they are never silently presented as a complete negative result.
 
+A listed VIOS without a UUID or without returned storage detail increments
+`unavailable_storage_source_count` and emits one source-specific warning without
+inventing an unresolved mapping count. These source warnings are non-fatal, so execution
+may continue with the incomplete inventory disclosed in the existing warnings and
+blast-radius result fields.
+
 A dry run returns the inventory with `dry_run` step statuses and performs no writes.
 The stable step identifiers are `power_off`, `detach_adapters`, and `delete_lpar`. In dry
 run all three are `dry_run`. During execution an already inactive LPAR records

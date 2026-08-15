@@ -1203,6 +1203,7 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
             ],
             "storage_mappings": [],
             "unresolved_storage_mapping_count": 0,
+            "unavailable_storage_source_count": 0,
         },
     }
 

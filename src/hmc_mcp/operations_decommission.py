@@ -74,6 +74,7 @@ class _Inventory:
     adapters: tuple[dict[str, str], ...]
     storage_mappings: tuple[dict[str, str], ...]
     unresolved_storage_mapping_count: int
+    unavailable_storage_source_count: int
     warnings: tuple[str, ...]
 
     def blast_radius(self) -> dict[str, Any]:
@@ -86,6 +87,7 @@ class _Inventory:
             "adapters": self.adapters,
             "storage_mappings": self.storage_mappings,
             "unresolved_storage_mapping_count": self.unresolved_storage_mapping_count,
+            "unavailable_storage_source_count": self.unavailable_storage_source_count,
         }
 
 
@@ -343,25 +345,40 @@ def _collect_storage_records(
 
 async def _inventory_storage_mappings(
     hmc: HMCClient, system_uuid: str, lpar_uuid: str, partition_id: int | None
-) -> tuple[tuple[dict[str, str], ...], int]:
+) -> tuple[tuple[dict[str, str], ...], int, tuple[str, ...]]:
     storage_mappings: list[dict[str, str]] = []
     unresolved = 0
+    source_warnings: list[str] = []
     partition_id_text = str(partition_id) if partition_id is not None else None
     for vios in await hmc.list_vios(system_uuid):
         vios_uuid = _text(vios.get("UUID"))
         if vios_uuid is None:
+            vios_name = _text(_resource(vios).get("PartitionName")) or "unknown"
+            source_warnings.append(
+                "Storage blast radius may be incomplete: listed VIOS "
+                f"{vios_name!r} has no UUID, so its storage mappings could not be "
+                "inventoried."
+            )
             continue
         detail = await hmc.get_vios_storage_detail(vios_uuid)
+        if detail is None:
+            source_warnings.append(
+                f"Storage blast radius may be incomplete: VIOS {vios_uuid!r} returned "
+                "no storage detail, so its storage mappings could not be inventoried."
+            )
+            continue
         detail_resource = _resource(detail)
         records, unresolved_count = _collect_storage_records(
             detail_resource, vios_uuid, lpar_uuid, partition_id_text
         )
         storage_mappings.extend(records)
         unresolved += unresolved_count
-    return tuple(storage_mappings), unresolved
+    return tuple(storage_mappings), unresolved, tuple(source_warnings)
 
 
-def _inventory_warnings(partition_name: str, unresolved: int) -> tuple[str, ...]:
+def _inventory_warnings(
+    partition_name: str, unresolved: int, source_warnings: tuple[str, ...]
+) -> tuple[str, ...]:
     warnings: list[str] = []
     if unresolved:
         warnings.append(
@@ -369,6 +386,7 @@ def _inventory_warnings(partition_name: str, unresolved: int) -> tuple[str, ...]
             f"{unresolved} mapping(s) lacked enough client identity to prove they belong "
             f"to LPAR {partition_name!r}."
         )
+    warnings.extend(source_warnings)
     return tuple(warnings)
 
 
@@ -389,7 +407,7 @@ async def _inventory(
         hmc, lpar_uuid, lpar_name
     )
     adapters = await _inventory_adapters(hmc, lpar_uuid)
-    storage_mappings, unresolved = await _inventory_storage_mappings(
+    storage_mappings, unresolved, source_warnings = await _inventory_storage_mappings(
         hmc, system_uuid, lpar_uuid, partition_id
     )
 
@@ -402,7 +420,8 @@ async def _inventory(
         adapters=adapters,
         storage_mappings=storage_mappings,
         unresolved_storage_mapping_count=unresolved,
-        warnings=_inventory_warnings(partition_name, unresolved),
+        unavailable_storage_source_count=len(source_warnings),
+        warnings=_inventory_warnings(partition_name, unresolved, source_warnings),
     )
 
 

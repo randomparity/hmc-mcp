@@ -40,13 +40,18 @@ Preconditions always execute before a result is returned:
    and retain only vSCSI/vFC mappings whose client-partition identity matches the target
    LPAR UUID or numeric partition ID. If a mapping lacks enough client identity to prove a
    match, do not report it as affected; increment `unresolved_storage_mapping_count` and
-   add a warning that the storage blast radius may be incomplete.
+   add a warning that the storage blast radius may be incomplete. If a listed VIOS lacks
+   a UUID or returns no storage detail, increment `unavailable_storage_source_count` and
+   emit one warning for that source without increasing the unresolved mapping count.
 
 Each call takes a fresh inventory; a prior dry-run does not bind a later execution. The
 inventory is bounded by the selected system and contains curated values: LPAR UUID,
 name, state, parsed ownership holder or null, adapters as `{type, uuid}`, and storage
 mappings as `{vios_uuid, type, uuid, backing_device}` when those fields exist, plus the
-unresolved mapping count. Raw HMC entries and credentials never enter the public result.
+unresolved mapping and unavailable storage-source counts. Raw HMC entries and credentials
+never enter the public result. An unavailable source is a non-fatal inventory warning, so
+execution continues under the same warning rather than claiming a mapping count that the
+workflow could not observe.
 
 Adapters are ordered by type as `ClientNetworkAdapter`, `VirtualSCSIClientAdapter`,
 `VirtualFibreChannelClientAdapter`, and `VirtualNICDedicated`, then by UUID within each
