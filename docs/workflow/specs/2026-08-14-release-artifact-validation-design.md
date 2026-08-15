@@ -98,6 +98,8 @@ operation, never environment variables, credentials, raw Git stderr, or archive 
 Wheel and sdist inputs larger than 256 MiB, archives with more than 4,096 members, members larger
 than 64 MiB uncompressed, and archives larger than 512 MiB total uncompressed fail closed. Declared
 overruns fail before member reads; chunked reads independently enforce observed uncompressed sizes.
+The sdist's bounded raw-record preflight includes PAX and GNU extension headers and payloads that
+the standard tar member iterator consumes internally.
 
 ## Testing
 

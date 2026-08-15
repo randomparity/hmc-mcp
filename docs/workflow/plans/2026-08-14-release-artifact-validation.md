@@ -25,7 +25,8 @@ subprocess execution. CI composes the commands through `just verify` and uploads
   reliable when this repository and uv's cache are on different filesystems.
 - Both archive readers reject inputs over 256 MiB, more than 4,096 members, members over 64 MiB
   uncompressed, or totals over 512 MiB uncompressed, checking declarations before reads and
-  observed bytes during chunked reads.
+  observed bytes during chunked reads. Raw sdist preflight includes hidden PAX/GNU extension
+  records before the standard tar parser consumes them.
 
 ## Task 1: Validate existing wheel and sdist artifacts
 
