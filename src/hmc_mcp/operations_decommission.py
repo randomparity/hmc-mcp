@@ -139,6 +139,47 @@ def _extract_target_uuid(link: Any) -> str | None:
     return link.rsplit("/LogicalPartition/", 1)[-1].strip("/") or None
 
 
+def _matching_child_uuid(
+    children: list[dict[str, Any]], lpar_name_or_uuid: str
+) -> list[dict[str, Any]]:
+    return [
+        child for child in children if _text(child.get("UUID")) == lpar_name_or_uuid
+    ]
+
+
+def _matching_child_name(
+    children: list[dict[str, Any]], lpar_name_or_uuid: str
+) -> list[dict[str, Any]]:
+    return [
+        child
+        for child in children
+        if _text(_resource(child).get("PartitionName")) == lpar_name_or_uuid
+    ]
+
+
+def _missing_target_error(system_uuid: str, lpar_name_or_uuid: str) -> ValueError:
+    if is_uuid(lpar_name_or_uuid):
+        return ValueError(
+            f"No LPAR {lpar_name_or_uuid!r} found on managed system {system_uuid!r}."
+        )
+    return ValueError(
+        f"No LPAR named {lpar_name_or_uuid!r} found on managed system {system_uuid!r}."
+    )
+
+
+def _ambiguous_name_error(
+    matches: list[dict[str, Any]], system_uuid: str, lpar_name_or_uuid: str
+) -> ValueError:
+    identities = ", ".join(
+        str(child.get("UUID") or "unknown")
+        for child in sorted(matches, key=lambda item: str(item.get("UUID")))
+    )
+    return ValueError(
+        f"Ambiguous LPAR name {lpar_name_or_uuid!r} on managed system "
+        f"{system_uuid!r}: {identities}"
+    )
+
+
 def _mapping_matches_target(
     mapping: dict[str, Any], lpar_uuid: str, partition_id: str | None
 ) -> bool | None:
@@ -160,24 +201,34 @@ def _mapping_matches_target(
     return None
 
 
+def _named_storage_value(
+    storage: dict[str, Any], section_name: str, field_name: str
+) -> str | None:
+    section = storage.get(section_name)
+    if not isinstance(section, dict):
+        return None
+    return _text(section.get(field_name))
+
+
+def _storage_backing_device(storage: dict[str, Any]) -> str | None:
+    candidates = (
+        ("PhysicalVolume", "VolumeName"),
+        ("VirtualDisk", "DiskName"),
+        ("LogicalUnit", "UnitName"),
+    )
+    for section_name, field_name in candidates:
+        name = _named_storage_value(storage, section_name, field_name)
+        if name is not None:
+            return name
+    return None
+
+
 def _backing_device(mapping: dict[str, Any]) -> str | None:
     storage = mapping.get("Storage")
     if isinstance(storage, dict):
-        physical = storage.get("PhysicalVolume")
-        if isinstance(physical, dict):
-            name = _text(physical.get("VolumeName"))
-            if name is not None:
-                return name
-        virtual_disk = storage.get("VirtualDisk")
-        if isinstance(virtual_disk, dict):
-            name = _text(virtual_disk.get("DiskName"))
-            if name is not None:
-                return name
-        logical_unit = storage.get("LogicalUnit")
-        if isinstance(logical_unit, dict):
-            name = _text(logical_unit.get("UnitName"))
-            if name is not None:
-                return name
+        name = _storage_backing_device(storage)
+        if name is not None:
+            return name
     port = mapping.get("Port")
     if isinstance(port, dict):
         return _text(port.get("WWPNPair"))
@@ -189,37 +240,26 @@ async def _resolve_target_lpar(
 ) -> dict[str, Any]:
     children = await hmc.list_logical_partitions(system_uuid)
     if is_uuid(lpar_name_or_uuid):
-        matches = [
-            child
-            for child in children
-            if _text(child.get("UUID")) == lpar_name_or_uuid
-        ]
+        matches = _matching_child_uuid(children, lpar_name_or_uuid)
         if len(matches) == 1:
             return matches[0]
-        raise ValueError(
-            f"No LPAR {lpar_name_or_uuid!r} found on managed system {system_uuid!r}."
-        )
+        raise _missing_target_error(system_uuid, lpar_name_or_uuid)
 
-    matches = [
-        child
-        for child in children
-        if _text(_resource(child).get("PartitionName")) == lpar_name_or_uuid
-    ]
+    matches = _matching_child_name(children, lpar_name_or_uuid)
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise ValueError(
-            f"No LPAR named {lpar_name_or_uuid!r} found on managed system {system_uuid!r}."
-        )
-    identities = ", ".join(
-        str(child.get("UUID") or "unknown") for child in sorted(matches, key=lambda item: str(item.get("UUID")))
-    )
-    raise ValueError(
-        f"Ambiguous LPAR name {lpar_name_or_uuid!r} on managed system {system_uuid!r}: {identities}"
-    )
+        raise _missing_target_error(system_uuid, lpar_name_or_uuid)
+    raise _ambiguous_name_error(matches, system_uuid, lpar_name_or_uuid)
 
 
-async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid: str, *, ownership_override: bool) -> _Inventory:
+async def _resolve_inventory_identity(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    *,
+    ownership_override: bool,
+) -> tuple[str, str, str, str | None]:
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     child = await _resolve_target_lpar(hmc, system_uuid, lpar_name_or_uuid)
     lpar_uuid = _text(child.get("UUID"))
@@ -233,13 +273,23 @@ async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
     owner = await read_lpar_ownership_owner(hmc, system_name, lpar_name)
+    return system_uuid, lpar_uuid, lpar_name, owner
 
+
+async def _partition_snapshot(
+    hmc: HMCClient, lpar_uuid: str, fallback_name: str
+) -> tuple[str, int | None, str | None]:
     lpar = await hmc.get_logical_partition(lpar_uuid)
     resource = _resource(lpar)
-    partition_name = _text(resource.get("PartitionName")) or lpar_name
+    partition_name = _text(resource.get("PartitionName")) or fallback_name
     partition_id = _as_int(resource.get("PartitionID"))
     state = _text(resource.get("PartitionState"))
+    return partition_name, partition_id, state
 
+
+async def _inventory_adapters(
+    hmc: HMCClient, lpar_uuid: str
+) -> tuple[dict[str, str], ...]:
     adapters: list[dict[str, str]] = []
     for adapter_type in _ADAPTER_ORDER:
         entries = await hmc.list_adapters(lpar_uuid, adapter_type)
@@ -248,7 +298,44 @@ async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid
             if uuid is None:
                 continue
             adapters.append({"type": adapter_type, "uuid": uuid})
+    return tuple(adapters)
 
+
+def _mapping_record(
+    mapping: dict[str, Any], vios_uuid: str, item_name: str
+) -> dict[str, str]:
+    record = {
+        "vios_uuid": vios_uuid,
+        "type": item_name,
+        "uuid": _text(mapping.get("UUID")) or "unknown",
+    }
+    backing_device = _backing_device(mapping)
+    if backing_device is not None:
+        record["backing_device"] = backing_device
+    return record
+
+
+def _collect_storage_records(
+    detail_resource: dict[str, Any],
+    vios_uuid: str,
+    lpar_uuid: str,
+    partition_id_text: str | None,
+) -> tuple[tuple[dict[str, str], ...], int]:
+    storage_mappings: list[dict[str, str]] = []
+    unresolved = 0
+    for block_name, item_name in _STORAGE_MAPPING_TYPES:
+        for mapping in _records(detail_resource.get(block_name), item_name):
+            matches = _mapping_matches_target(mapping, lpar_uuid, partition_id_text)
+            if matches is True:
+                storage_mappings.append(_mapping_record(mapping, vios_uuid, item_name))
+            elif matches is None:
+                unresolved += 1
+    return tuple(storage_mappings), unresolved
+
+
+async def _inventory_storage_mappings(
+    hmc: HMCClient, system_uuid: str, lpar_uuid: str, partition_id: int | None
+) -> tuple[tuple[dict[str, str], ...], int]:
     storage_mappings: list[dict[str, str]] = []
     unresolved = 0
     partition_id_text = str(partition_id) if partition_id is not None else None
@@ -258,22 +345,15 @@ async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid
             continue
         detail = await hmc.get_vios_storage_detail(vios_uuid)
         detail_resource = _resource(detail)
-        for block_name, item_name in _STORAGE_MAPPING_TYPES:
-            for mapping in _records(detail_resource.get(block_name), item_name):
-                matches = _mapping_matches_target(mapping, lpar_uuid, partition_id_text)
-                if matches is True:
-                    record = {
-                        "vios_uuid": vios_uuid,
-                        "type": item_name,
-                        "uuid": _text(mapping.get("UUID")) or "unknown",
-                    }
-                    backing_device = _backing_device(mapping)
-                    if backing_device is not None:
-                        record["backing_device"] = backing_device
-                    storage_mappings.append(record)
-                elif matches is None:
-                    unresolved += 1
+        records, unresolved_count = _collect_storage_records(
+            detail_resource, vios_uuid, lpar_uuid, partition_id_text
+        )
+        storage_mappings.extend(records)
+        unresolved += unresolved_count
+    return tuple(storage_mappings), unresolved
 
+
+def _inventory_warnings(partition_name: str, unresolved: int) -> tuple[str, ...]:
     warnings: list[str] = []
     if unresolved:
         warnings.append(
@@ -281,6 +361,29 @@ async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid
             f"{unresolved} mapping(s) lacked enough client identity to prove they belong "
             f"to LPAR {partition_name!r}."
         )
+    return tuple(warnings)
+
+
+async def _inventory(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    *,
+    ownership_override: bool,
+) -> _Inventory:
+    system_uuid, lpar_uuid, lpar_name, owner = await _resolve_inventory_identity(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        ownership_override=ownership_override,
+    )
+    partition_name, partition_id, state = await _partition_snapshot(
+        hmc, lpar_uuid, lpar_name
+    )
+    adapters = await _inventory_adapters(hmc, lpar_uuid)
+    storage_mappings, unresolved = await _inventory_storage_mappings(
+        hmc, system_uuid, lpar_uuid, partition_id
+    )
 
     return _Inventory(
         lpar_uuid=lpar_uuid,
@@ -288,10 +391,10 @@ async def _inventory(hmc: HMCClient, system_name_or_uuid: str, lpar_name_or_uuid
         partition_id=partition_id,
         state=state,
         owner=owner,
-        adapters=tuple(adapters),
-        storage_mappings=tuple(storage_mappings),
+        adapters=adapters,
+        storage_mappings=storage_mappings,
         unresolved_storage_mapping_count=unresolved,
-        warnings=tuple(warnings),
+        warnings=_inventory_warnings(partition_name, unresolved),
     )
 
 
@@ -369,6 +472,75 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, A
     )
 
 
+def _result(
+    inventory: _Inventory,
+    *,
+    resource_deleted: bool,
+    workflow_completed: bool,
+    dry_run: bool,
+    steps: tuple[dict[str, Any], ...],
+) -> DecommissionResult:
+    return DecommissionResult(
+        resource_deleted=resource_deleted,
+        workflow_completed=workflow_completed,
+        lpar_uuid=inventory.lpar_uuid,
+        dry_run=dry_run,
+        steps=steps,
+        warnings=inventory.warnings,
+        blast_radius=inventory.blast_radius(),
+    )
+
+
+def _dry_run_steps(inventory: _Inventory) -> tuple[dict[str, Any], ...]:
+    return (
+        _step("power_off", "dry_run", {"state": inventory.state}),
+        _step("detach_adapters", "dry_run", {"adapters": inventory.adapters}),
+        _step("delete_lpar", "dry_run", {"lpar_uuid": inventory.lpar_uuid}),
+    )
+
+
+def _incomplete_result(
+    inventory: _Inventory, steps: list[dict[str, Any]]
+) -> DecommissionResult:
+    return _result(
+        inventory,
+        resource_deleted=False,
+        workflow_completed=False,
+        dry_run=False,
+        steps=tuple(steps),
+    )
+
+
+async def _power_step_with_errors(
+    hmc: HMCClient,
+    inventory: _Inventory,
+    *,
+    immediate: bool,
+    timeout_seconds: int,
+    poll_interval: int,
+) -> dict[str, Any]:
+    try:
+        return await _power_off(
+            hmc,
+            inventory,
+            immediate=immediate,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        )
+    except HMCError as exc:
+        return _step("power_off", "error", str(exc))
+
+
+async def _delete_lpar_step(
+    hmc: HMCClient, lpar_uuid: str
+) -> dict[str, Any]:
+    try:
+        await hmc.delete_logical_partition(lpar_uuid)
+    except HMCError as exc:
+        return _step("delete_lpar", "error", str(exc))
+    return _step("delete_lpar", "ok", {"lpar_uuid": lpar_uuid})
+
+
 async def decommission_lpar(
     hmc: HMCClient,
     system_name_or_uuid: str,
@@ -390,94 +562,42 @@ async def decommission_lpar(
     )
 
     if dry_run:
-        return DecommissionResult(
+        return _result(
+            inventory,
             resource_deleted=False,
             workflow_completed=True,
-            lpar_uuid=inventory.lpar_uuid,
             dry_run=True,
-            steps=(
-                _step("power_off", "dry_run", {"state": inventory.state}),
-                _step(
-                    "detach_adapters",
-                    "dry_run",
-                    {"adapters": inventory.adapters},
-                ),
-                _step("delete_lpar", "dry_run", {"lpar_uuid": inventory.lpar_uuid}),
-            ),
-            warnings=inventory.warnings,
-            blast_radius=inventory.blast_radius(),
+            steps=_dry_run_steps(inventory),
         )
 
     steps: list[dict[str, Any]] = []
-
-    try:
-        power_step = await _power_off(
-            hmc,
-            inventory,
-            immediate=immediate,
-            timeout_seconds=timeout_seconds,
-            poll_interval=poll_interval,
-        )
-    except HMCError as exc:
-        steps.append(_step("power_off", "error", str(exc)))
-        _skip_steps(steps, "detach_adapters", "delete_lpar")
-        return DecommissionResult(
-            resource_deleted=False,
-            workflow_completed=False,
-            lpar_uuid=inventory.lpar_uuid,
-            dry_run=False,
-            steps=tuple(steps),
-            warnings=inventory.warnings,
-            blast_radius=inventory.blast_radius(),
-        )
+    power_step = await _power_step_with_errors(
+        hmc,
+        inventory,
+        immediate=immediate,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+    )
     steps.append(power_step)
     if power_step["status"] != "ok":
         _skip_steps(steps, "detach_adapters", "delete_lpar")
-        return DecommissionResult(
-            resource_deleted=False,
-            workflow_completed=False,
-            lpar_uuid=inventory.lpar_uuid,
-            dry_run=False,
-            steps=tuple(steps),
-            warnings=inventory.warnings,
-            blast_radius=inventory.blast_radius(),
-        )
+        return _incomplete_result(inventory, steps)
 
     detach_step = await _detach_adapters(hmc, inventory)
     steps.append(detach_step)
     if detach_step["status"] != "ok":
         steps.append(_step("delete_lpar", "skipped"))
-        return DecommissionResult(
-            resource_deleted=False,
-            workflow_completed=False,
-            lpar_uuid=inventory.lpar_uuid,
-            dry_run=False,
-            steps=tuple(steps),
-            warnings=inventory.warnings,
-            blast_radius=inventory.blast_radius(),
-        )
+        return _incomplete_result(inventory, steps)
 
-    try:
-        await hmc.delete_logical_partition(inventory.lpar_uuid)
-    except HMCError as exc:
-        steps.append(_step("delete_lpar", "error", str(exc)))
-        return DecommissionResult(
-            resource_deleted=False,
-            workflow_completed=False,
-            lpar_uuid=inventory.lpar_uuid,
-            dry_run=False,
-            steps=tuple(steps),
-            warnings=inventory.warnings,
-            blast_radius=inventory.blast_radius(),
-        )
+    delete_step = await _delete_lpar_step(hmc, inventory.lpar_uuid)
+    steps.append(delete_step)
+    if delete_step["status"] != "ok":
+        return _incomplete_result(inventory, steps)
 
-    steps.append(_step("delete_lpar", "ok", {"lpar_uuid": inventory.lpar_uuid}))
-    return DecommissionResult(
+    return _result(
+        inventory,
         resource_deleted=True,
         workflow_completed=True,
-        lpar_uuid=inventory.lpar_uuid,
         dry_run=False,
         steps=tuple(steps),
-        warnings=inventory.warnings,
-        blast_radius=inventory.blast_radius(),
     )
