@@ -7,10 +7,14 @@ Accepted
 ## Context
 
 Every MCP tool call currently creates an `HMCClient`, logs on, performs the
-operation, logs off, and closes its HTTP client. A representative HMC V10R3
-measurement recorded a 562.7 ms median Logon and 182.0 ms median Logoff across
-20 successful sequential cycles: about 745 ms of authentication overhead per
-tool call.
+operation, logs off, and closes its HTTP client. The issue #155 measurement on
+a same-LAN HMC V10R3 SP1060 recorded 20 successful cycles with no failures: a
+562.7 ms median and 649.3 ms p95 Logon, plus a 182.0 ms median and 237.0 ms p95
+Logoff. Every measured session was closed. The linked
+[research recommendation](../workflow/specs/2026-08-15-hmc-session-reuse-recommendation.md)
+records the procedure, independent recalculation, execution context, raw
+evidence location, and the absent-script caveat. The median authentication
+overhead is about 745 ms per tool call.
 
 HMC session lifetime and maximum web sessions are configurable, and leaked
 sessions can exhaust HMC resources. Per-call profile routing is an existing
@@ -29,6 +33,17 @@ endpoint/user route. A per-key cross-loop synchronization mechanism serializes
 Logon so a cache miss creates at most one session. The cache holds at most one
 live token per key, never persists tokens, and explicitly logs off cached
 sessions during orderly shutdown.
+
+Profile isolation means the process-wide count is not a fixed constant: its
+worst case is one retained session for every distinct profile/route key touched.
+Multiple `hmc-mcp` processes multiply that count for the same HMC user. The
+future implementation must log off and evict a token when its profile is
+removed or its effective route changes, and must surface an HMC session-limit
+rejection without retaining a new entry. Operators remain responsible for
+sizing the HMC's configured maximum web sessions above the profiles and
+processes they run. No universal client-wide cap is chosen because the HMC cap
+and deployment topology are operator-configured and no safe universal value is
+documented.
 
 The client assumes no fixed token lifetime. A 401 evicts the matching token.
 Read-only/idempotent requests may perform one serialized re-logon and one
@@ -49,6 +64,9 @@ invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
   authentication, not transport setup.
 - The one-token-per-key bound reduces session pressure but does not replace HMC
   operator timeout and maximum-session configuration.
+- A process that touches many profiles can retain many sessions; deployments
+  must include every active process when comparing demand with the HMC's
+  per-user maximum.
 - Unexpected process termination may leave a session until HMC invalidation;
   orderly shutdown attempts explicit Logoff and reports cleanup failures.
 - Mutating callers may need to inspect state and decide whether to retry after
@@ -72,4 +90,3 @@ without evidence that cross-process reuse is required.
 **Automatically replay every request after reauthentication.** A mutating
 request might have taken effect even if the client receives a 401 or loses the
 response. Automatic replay would risk duplicate or conflicting side effects.
-

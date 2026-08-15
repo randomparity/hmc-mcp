@@ -106,8 +106,13 @@ they must return an actionable authentication-expired error. No retry loop is
 permitted.
 
 The design does not assume a fixed lifetime or cap. Operator-configured HMC
-timeouts remain authoritative, and the one-session-per-key bound limits client
-pressure against the configured maximum.
+timeouts remain authoritative. Worst-case retained sessions equal the number of
+distinct profile/route keys touched by each process, multiplied by the number
+of processes using that HMC user. Profile removal or an effective-route change
+must evict and log off the displaced token; a session-limit rejection must not
+publish a cache entry. Operators must size the HMC maximum for their deployment.
+A universal process cap would be an unsupported guess because both the HMC cap
+and deployment topology are configurable.
 
 ## Concurrency and lifecycle invariants
 
@@ -167,4 +172,3 @@ implementation and its tests/security review.
 2. IBM, [HMC settings](https://www.ibm.com/docs/en/power11/9824-42A?topic=tasks-hmc-settings).
 3. IBM Support, [HMC session settings might cause deploy, LPM, or resize failure](https://www.ibm.com/support/pages/node/7185326).
 4. IBM Support, [HMC REST API Logout to Close Sessions](https://www.ibm.com/support/pages/hmc-rest-api-logout-close-sessions).
-
