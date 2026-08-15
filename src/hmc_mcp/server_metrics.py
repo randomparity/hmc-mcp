@@ -14,6 +14,7 @@ from ._app import (
 from .common import client_from_env
 from .operations_pcm import (
     MetricKind,
+    PcmCategory,
     get_pcm_preferences,
     metric_data,
     metric_links,
@@ -27,7 +28,7 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_get_pcm_preferences(
-    category: str, resource_name_or_uuid: str, profile: str | None = None
+    category: PcmCategory, resource_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any]:
     """Get PCM monitoring preferences for a resource.
 
@@ -47,7 +48,7 @@ def hmc_get_pcm_preferences(
 
 @tool
 def hmc_set_pcm_preferences(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     long_term_monitor: bool | None = None,
     aggregation: bool | None = None,
@@ -89,7 +90,7 @@ def hmc_set_pcm_preferences(
 
 @tool(annotations=_READ_ONLY)
 def hmc_processed_metrics(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
@@ -120,7 +121,7 @@ def hmc_processed_metrics(
 
 @tool(annotations=_READ_ONLY)
 def hmc_processed_metric_links(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
@@ -141,7 +142,7 @@ def hmc_processed_metric_links(
 
 @tool(annotations=_READ_ONLY)
 def hmc_aggregated_metrics(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
@@ -173,7 +174,7 @@ def hmc_aggregated_metrics(
 
 @tool(annotations=_READ_ONLY)
 def hmc_aggregated_metric_links(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     start_ts: str,
     end_ts: str | None = None,
@@ -193,7 +194,7 @@ def hmc_aggregated_metric_links(
 
 
 def _metrics_links(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     kind: MetricKind,
     start_ts: str,
@@ -217,7 +218,7 @@ def _metrics_links(
 
 
 def _metrics_fetch(
-    category: str,
+    category: PcmCategory,
     resource_name_or_uuid: str,
     kind: MetricKind,
     start_ts: str,

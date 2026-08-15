@@ -29,14 +29,14 @@ async def create_virtual_network(
     system_name_or_uuid: str,
     name: str,
     vlan_id: int,
-    vswitch_id: int,
+    virtual_switch_id: int,
     *,
     tagged: bool = False,
 ) -> dict[str, Any] | None:
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     try:
         return await hmc.create_virtual_network(
-            system_uuid, name, vlan_id, vswitch_id, tagged=tagged
+            system_uuid, name, vlan_id, virtual_switch_id, tagged=tagged
         )
     except HMCError as exc:
         translate_virtual_network_create_error(exc)

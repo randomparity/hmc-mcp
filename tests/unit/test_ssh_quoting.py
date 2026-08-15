@@ -93,7 +93,7 @@ async def test_list_io_slots_quotes_hostile_system_name():
 
 
 def test_add_vnic_quotes_hostile_vswitch(monkeypatch, mock_hmc):
-    """hmc_add_vnic keeps a hostile vswitch_name inside the quoted -a payload."""
+    """hmc_add_vnic keeps a hostile virtual_switch_name inside the quoted -a payload."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
     conn = _make_ssh_mock("")
@@ -103,7 +103,7 @@ def test_add_vnic_quotes_hostile_vswitch(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
-            vswitch_name=HOSTILE,
+            virtual_switch_name=HOSTILE,
             port_vlan_id=100,
         )
 
@@ -123,7 +123,7 @@ def test_add_vnic_quotes_hostile_backing_devices(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
-            vswitch_name="ETHERNET0",
+            virtual_switch_name="ETHERNET0",
             port_vlan_id=100,
             backing_devices=f"U78DA.001.XYZ {HOSTILE}",
         )

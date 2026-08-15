@@ -913,7 +913,7 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
         system_name_or_uuid=context.system_name,
         name=f"mcp-test-vlan{context.test_vlan_id}",
         vlan_id=context.test_vlan_id,
-        vswitch_id=vswitch_id,
+        virtual_switch_id=vswitch_id,
         tagged=False,
     )
     _record_expected_or_real(
@@ -1647,7 +1647,7 @@ async def exercise_storage_provisioning(client: Client, state: RunState) -> None
         vios_name_or_uuid=vios_uuid,
         vg_uuid=vg_uuid,
         disk_name=context.vdisk_name,
-        capacity_mb=int(vdisk_size_mb),
+        capacity_mib=int(vdisk_size_mb),
     )
     _record_expected_or_real(
         state,

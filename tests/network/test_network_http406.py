@@ -47,16 +47,16 @@ def test_create_virtual_network_http_406_actionable(monkeypatch, mock_hmc):
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
     # create returns 406
-    mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork"
-    ).mock(return_value=httpx.Response(406, text="<error>Not Acceptable</error>"))
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
+        return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
+    )
 
     with pytest.raises(HMCError) as exc_info:
         hmc_create_virtual_network(
             system_name_or_uuid=SYSTEM_UUID,
             name="VLAN100-ETHERNET0",
             vlan_id=100,
-            vswitch_id=3,
+            virtual_switch_id=3,
         )
 
     assert exc_info.value.status_code == 406

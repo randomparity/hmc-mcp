@@ -21,6 +21,7 @@ from .cli_app import (
 from .operations_systems import power_system
 from .operations_health import fleet_health
 from .jobs import validate_wait_timing
+from .server_systems import ManagedSystemState
 
 
 @systems_app.command("health")
@@ -56,7 +57,7 @@ def systems_health(
 
 @systems_app.command("list")
 def systems_list(
-    state: str | None = typer.Option(
+    state: ManagedSystemState | None = typer.Option(
         None, "--state", help="Filter by State (server-side search)"
     ),
     as_json: bool = typer.Option(False, "--json"),

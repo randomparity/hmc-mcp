@@ -5,7 +5,7 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 import tomllib
-from typing import Any
+from typing import Any, Literal
 
 from ._app import (
     _DESTRUCTIVE,
@@ -30,6 +30,67 @@ from .jobs import validate_wait_timing
 
 
 tool, register_tools = tool_module()
+
+ManagedSystemState = Literal[
+    "operating",
+    "power off",
+    "standby",
+    "initializing",
+    "error",
+    "error - dump in progress",
+    "error - terminated",
+    "incomplete",
+    "pending authentication - password updates required",
+    "failed authentication",
+    "recovery",
+    "no connection",
+    "on demand recovery",
+]
+MANAGED_SYSTEM_STATES: frozenset[ManagedSystemState] = frozenset(
+    {
+        "operating",
+        "power off",
+        "standby",
+        "initializing",
+        "error",
+        "error - dump in progress",
+        "error - terminated",
+        "incomplete",
+        "pending authentication - password updates required",
+        "failed authentication",
+        "recovery",
+        "no connection",
+        "on demand recovery",
+    }
+)
+PartitionState = Literal[
+    "running",
+    "not activated",
+    "starting",
+    "shutting down",
+    "stopping",
+    "open firmware",
+    "error",
+    "migrating",
+    "suspended",
+    "resuming",
+    "unknown",
+]
+PARTITION_STATES: frozenset[PartitionState] = frozenset(
+    {
+        "running",
+        "not activated",
+        "starting",
+        "shutting down",
+        "stopping",
+        "open firmware",
+        "error",
+        "migrating",
+        "suspended",
+        "resuming",
+        "unknown",
+    }
+)
 
 
 @tool(annotations=_READ_ONLY)
@@ -114,7 +175,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_systems(
-    state: str | None = None,
+    state: ManagedSystemState | None = None,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List managed systems, optionally filtered by state.
@@ -144,7 +205,7 @@ def hmc_list_systems(
 @tool(annotations=_READ_ONLY)
 def hmc_list_lpars(
     system_name_or_uuid: str | None = None,
-    state: str | None = None,
+    state: PartitionState | None = None,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List LPARs, optionally filtered by system or state.
@@ -217,7 +278,7 @@ def hmc_get_lpar_state(
 @tool(annotations=_READ_ONLY)
 def hmc_list_vios(
     system_name_or_uuid: str | None = None,
-    state: str | None = None,
+    state: PartitionState | None = None,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual I/O Servers, optionally filtered by system or state.

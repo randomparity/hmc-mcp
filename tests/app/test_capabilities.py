@@ -171,6 +171,71 @@ def test_closed_vocab_enum_matches_runtime_constant():
         assert set(parameter["enum"]) == set(values)
 
 
+def test_parameter_normalization_contract_is_schema_pinned():
+    from hmc_mcp.operations_pcm import PCM_CATEGORIES
+    from hmc_mcp.server_lpar_config import PROCESSOR_COMPATIBILITY_MODES
+    from hmc_mcp.server_systems import MANAGED_SYSTEM_STATES, PARTITION_STATES
+
+    by_name = _tools_by_name()
+    replacements = {
+        "hmc_install_vios": {"hmc_timeout_minutes", "wait_timeout_seconds"},
+        "hmc_install_lpar_os": {"hmc_timeout_minutes", "wait_timeout_seconds"},
+        "hmc_attach_disk_to_lpar": {"capacity_mib"},
+        "hmc_create_virtual_disk": {"capacity_mib"},
+        "hmc_create_media_repository": {"size_mib"},
+        "hmc_create_optical_media": {"size_mib"},
+        "hmc_create_logical_unit": {"lu_size_gib"},
+        "hmc_create_virtual_network": {"virtual_switch_id"},
+        "hmc_add_vnic": {"virtual_switch_name"},
+    }
+    displaced = {
+        "timeout",
+        "capacity_mb",
+        "size_mb",
+        "lu_size_gb",
+        "vswitch_id",
+        "vswitch_name",
+    }
+    for tool_name, expected in replacements.items():
+        properties = set(by_name[tool_name].parameters["properties"])
+        assert expected <= properties
+        assert not (properties & displaced)
+    for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
+        properties = by_name[install_tool].parameters["properties"]
+        assert properties["hmc_timeout_minutes"]["default"] == 60
+        assert properties["wait_timeout_seconds"]["default"] is None
+
+    enum_contracts = {
+        ("hmc_list_systems", "state"): MANAGED_SYSTEM_STATES,
+        ("hmc_list_lpars", "state"): PARTITION_STATES,
+        ("hmc_list_vios", "state"): PARTITION_STATES,
+        ("hmc_set_lpar_proc_compat", "mode"): PROCESSOR_COMPATIBILITY_MODES,
+    }
+    pcm_tools = (
+        "hmc_get_pcm_preferences",
+        "hmc_set_pcm_preferences",
+        "hmc_processed_metrics",
+        "hmc_processed_metric_links",
+        "hmc_aggregated_metrics",
+        "hmc_aggregated_metric_links",
+    )
+    enum_contracts.update(
+        {(tool_name, "category"): PCM_CATEGORIES for tool_name in pcm_tools}
+    )
+    for key, values in enum_contracts.items():
+        tool_name, parameter_name = key
+        parameter = by_name[tool_name].parameters["properties"][parameter_name]
+        enum = next(
+            (
+                option["enum"]
+                for option in parameter.get("anyOf", [])
+                if "enum" in option
+            ),
+            parameter.get("enum"),
+        )
+        assert set(enum) == set(values)
+
+
 def test_destructive_partition_tools_expose_system_scope():
     by_name = _tools_by_name()
 

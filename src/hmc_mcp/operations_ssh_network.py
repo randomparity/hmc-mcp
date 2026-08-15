@@ -59,7 +59,7 @@ async def add_vnic(
     system: str,
     lpar: str,
     capacity: int,
-    vswitch_name: str,
+    virtual_switch_name: str,
     port_vlan_id: int,
     backing_devices: str | None = None,
 ) -> str:
@@ -69,7 +69,7 @@ async def add_vnic(
         cast(str, system_name),
         cast(str, lpar_name),
         capacity,
-        vswitch_name,
+        virtual_switch_name,
         port_vlan_id,
         backing_devices,
     )

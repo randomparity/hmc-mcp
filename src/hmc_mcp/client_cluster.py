@@ -36,7 +36,7 @@ class ClusterMixin:
         self,
         cluster_uuid: str,
         lu_name: str,
-        lu_size_gb: int,
+        lu_size_gib: int,
         lu_type: LuType = "THIN",
         device_type: DeviceType = "VirtualIO_Disk",
         cloned_from: str | None = None,
@@ -48,13 +48,15 @@ class ClusterMixin:
         """
 
         job_xml = create_logical_unit_job(
-            lu_name, lu_size_gb, lu_type, device_type, cloned_from
+            lu_name, lu_size_gib, lu_type, device_type, cloned_from
         )
         return await self.submit_job(
             f"/rest/api/uom/Cluster/{cluster_uuid}/do/CreateLogicalUnit", job_xml
         )
 
-    async def delete_logical_unit(self, cluster_uuid: str, lu_udid: str) -> dict[str, Any] | None:
+    async def delete_logical_unit(
+        self, cluster_uuid: str, lu_udid: str
+    ) -> dict[str, Any] | None:
         """Submit a DeleteLogicalUnit job against a Cluster/SSP."""
 
         job_xml = delete_logical_unit_job(lu_udid)

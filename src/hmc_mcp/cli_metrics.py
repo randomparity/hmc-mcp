@@ -15,6 +15,7 @@ from .cli_app import (
     metrics_app,
 )
 from .operations_pcm import (
+    PcmCategory,
     get_pcm_preferences,
     metric_data,
     metric_links,
@@ -25,7 +26,9 @@ from .operations_pcm import (
 
 @metrics_app.command("prefs")
 def metrics_prefs(
-    category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
+    category: PcmCategory = typer.Argument(
+        ..., help="ManagedSystem or LogicalPartition"
+    ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
@@ -37,7 +40,9 @@ def metrics_prefs(
 
 @metrics_app.command("set-prefs")
 def metrics_set_prefs(
-    category: str = typer.Argument(..., help="e.g. ManagedSystem"),
+    category: PcmCategory = typer.Argument(
+        ..., help="ManagedSystem or LogicalPartition"
+    ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     ltm: bool | None = typer.Option(
         None, "--ltm/--no-ltm", help="Long-term monitoring"
@@ -75,7 +80,9 @@ def metrics_set_prefs(
 
 @metrics_app.command("show")
 def metrics_show(
-    category: str = typer.Argument(..., help="e.g. ManagedSystem, LogicalPartition"),
+    category: PcmCategory = typer.Argument(
+        ..., help="ManagedSystem or LogicalPartition"
+    ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     start: str = typer.Option(..., "--start", help="Start TS yyyy-MM-ddTHH:mm:ssZ"),
     end: str | None = typer.Option(None, "--end", help="End TS (optional)"),

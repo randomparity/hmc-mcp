@@ -68,7 +68,9 @@ def cluster_list_ssps(
 def cluster_create_lu(
     cluster: str = typer.Argument(..., help="Cluster UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Logical unit name"),
-    size: int = typer.Option(..., "--size", help="Size in GB"),
+    lu_size_gib: int = typer.Option(
+        ..., "--lu-size-gib", help="Logical unit size in GiB"
+    ),
     lu_type: LuType = typer.Option("THIN", "--type", help="THIN or THICK"),
     device_type: DeviceType = typer.Option(
         "VirtualIO_Disk", "--device-type", help="VirtualIO_Disk or VirtualIO_Image"
@@ -90,7 +92,7 @@ def cluster_create_lu(
         lu_type, device_type, wait, timeout_seconds, poll_interval
     )
     if not yes and not typer.confirm(
-        f"Create {size} GB {lu_type} LU '{name}' in cluster {cluster}?"
+        f"Create {lu_size_gib} GiB {lu_type} LU '{name}' in cluster {cluster}?"
     ):
         raise typer.Abort()
 
@@ -99,7 +101,7 @@ def cluster_create_lu(
             hmc,
             cluster,
             name,
-            size,
+            lu_size_gib,
             lu_type,
             device_type,
             cloned_from,

@@ -35,7 +35,7 @@ async def test_attach_disk_dry_run_validates_without_mutating() -> None:
         client,
         "existing-lpar",
         _storage(),
-        capacity_mb=1024,
+        capacity_mib=1024,
         vios_partition_id=2,
         vios_slot=10,
         dry_run=True,
@@ -70,7 +70,7 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
         client,
         LPAR_UUID,
         _storage(),
-        capacity_mb=1024,
+        capacity_mib=1024,
         vios_partition_id=2,
         vios_slot=10,
     )
@@ -80,7 +80,7 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
     assert [step["status"] for step in result.steps] == ["ok", "ok", "ok"]
     assert result.steps[0]["result"] == {
         "disk_name": "disk01",
-        "capacity_mb": 1024,
+        "capacity_mib": 1024,
     }
     assert result.steps[1]["result"] == {
         "lpar_uuid": LPAR_UUID,
@@ -105,7 +105,7 @@ async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None
         client,
         LPAR_UUID,
         _storage(),
-        capacity_mb=1024,
+        capacity_mib=1024,
         vios_partition_id=2,
         vios_slot=10,
     )
@@ -119,12 +119,12 @@ async def test_attach_disk_reports_partial_failure_and_skips_remainder() -> None
 async def test_attach_disk_rejects_invalid_capacity_before_mutating() -> None:
     client = _client()
 
-    with pytest.raises(ValueError, match="capacity_mb must be greater than zero"):
+    with pytest.raises(ValueError, match="capacity_mib must be greater than zero"):
         await attach_disk_to_lpar(
             client,
             LPAR_UUID,
             _storage(),
-            capacity_mb=0,
+            capacity_mib=0,
             vios_partition_id=2,
             vios_slot=10,
         )

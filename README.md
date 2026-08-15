@@ -207,6 +207,20 @@ do not support global Job listing, the stable response keeps `failed_jobs` empty
 and includes a warning that recent-job health is unavailable; that warning must
 not be interpreted as a healthy job feed.
 
+### Public parameter units and selectors
+
+Storage quantities use binary-unit suffixes: `capacity_mib` for virtual disks,
+`size_mib` for media repositories and optical media, and `lu_size_gib` for
+Shared Storage Pool logical units. Numeric virtual-switch selectors are named
+`virtual_switch_id`; the SSH vNIC tool uses `virtual_switch_name` because it
+requires a name instead.
+
+The NIM install tools distinguish `hmc_timeout_minutes` from the client-side
+`wait_timeout_seconds`. With `wait=True` and no explicit client budget, the
+client waits for the HMC timeout converted to seconds plus one polling interval,
+so it can observe the terminal state at the HMC deadline. LPM's separate
+`wait_time` value is an HMC migration/validation field measured in seconds.
+
 **Mutating / lifecycle**
 
 | Tool                  | Description |
@@ -220,7 +234,7 @@ not be interpreted as a healthy job feed.
 | `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
 | `hmc_power_on_lpar`   | Submit PowerOn job; returns stable `already_running`, nullable `job`, and nullable `message` fields (`force=True` overrides the running-state guard) |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag); optionally wait for a normalized outcome |
-| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`lparnetboot`); optionally wait for a normalized outcome |
+| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`hmc_timeout_minutes`); optionally wait for a normalized outcome |
 
 **Virtual adapters (network / storage)**
 
@@ -238,16 +252,16 @@ not be interpreted as a healthy job feed.
 |---------------------------|-------------|
 | `hmc_list_volume_groups`  | List VIOS Volume Groups (free space, PVs, virtual disks) |
 | `hmc_create_volume_group` | Create a Volume Group from physical volumes |
-| `hmc_create_virtual_disk` | Carve a Virtual Disk (logical volume) out of a VG |
-| `hmc_attach_disk_to_lpar` | Create a Virtual Disk, add its vSCSI adapter, and map it to an existing LPAR; supports `dry_run=True` and per-step failure reporting |
+| `hmc_create_virtual_disk` | Carve a `capacity_mib` Virtual Disk (logical volume) out of a VG |
+| `hmc_attach_disk_to_lpar` | Create a `capacity_mib` Virtual Disk, add its vSCSI adapter, and map it to an existing LPAR; supports `dry_run=True` and per-step failure reporting |
 | `hmc_map_storage_to_lpar` | Map a VirtualDisk/PhysicalVolume to an LPAR (vSCSI mapping) |
 
 **Virtual media (ISO library)**
 
 | Tool                          | Description |
 |-------------------------------|-------------|
-| `hmc_create_media_repository` | Create the Virtual Media Repository (VMLibrary) on a VG |
-| `hmc_create_optical_media`    | Create a blank optical media (ISO container) |
+| `hmc_create_media_repository` | Create a `size_mib` Virtual Media Repository (VMLibrary) on a VG |
+| `hmc_create_optical_media`    | Create a blank `size_mib` optical media (ISO container) |
 | `hmc_delete_media_repository` | Delete the Virtual Media Repository from a VG |
 
 **Virtual networking (switches / networks / bridges)**
@@ -256,7 +270,7 @@ not be interpreted as a healthy job feed.
 |--------------------------------|-------------|
 | `hmc_list_virtual_switches`    | List VirtualSwitches (names, SwitchIDs, mode) |
 | `hmc_list_virtual_networks`    | List Virtual Networks (VLANs) on a system |
-| `hmc_create_virtual_network`   | Create a Virtual Network (VLAN) |
+| `hmc_create_virtual_network`   | Create a Virtual Network (VLAN) using `virtual_switch_id` |
 | `hmc_delete_virtual_network`   | Delete a Virtual Network |
 | `hmc_list_network_bridges`     | List NetworkBridges (Shared Ethernet Adapters) |
 
@@ -275,7 +289,7 @@ not be interpreted as a healthy job feed.
 |-----------------------|-------------|
 | `hmc_create_vios`     | Create a VIOS partition on a managed system |
 | `hmc_delete_vios`     | Delete (destroy) a VIOS partition (must be powered off) |
-| `hmc_install_vios`    | Submit a NIM-based VIOS installation job; optionally wait for a normalized outcome |
+| `hmc_install_vios`    | Submit a NIM-based VIOS installation job (`hmc_timeout_minutes`); optionally wait for a normalized outcome |
 | `hmc_list_vios_backups` | List existing VIOS backups (SSH/CLI) |
 | `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
 | `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
@@ -285,7 +299,7 @@ not be interpreted as a healthy job feed.
 | Tool                       | Description |
 |----------------------------|-------------|
 | `hmc_list_vnics`           | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR |
-| `hmc_add_vnic`             | Add a vNIC to an LPAR |
+| `hmc_add_vnic`             | Add a vNIC to an LPAR using `virtual_switch_name` |
 | `hmc_remove_vnic`          | Remove a vNIC from an LPAR |
 | `hmc_list_fc_ports`        | List Virtual Fibre Channel (NPIV) adapters for a system |
 | `hmc_list_sea_adapters`    | List Shared Ethernet Adapters for a system |
@@ -417,7 +431,7 @@ hmc-mcp adapters add-vscsi web01 --vios-id 1 --vios-slot 5
 
 # 3. carve a virtual disk out of a VIOS volume group
 hmc-mcp storage list-vgs <vios-uuid>                       # find the VG + free space
-hmc-mcp storage create-disk <vios-uuid> --vg <vg-uuid> --name web01_root --size 51200
+hmc-mcp storage create-disk <vios-uuid> --vg <vg-uuid> --name web01_root --capacity-mib 51200
 
 # 4. map the disk to the partition
 hmc-mcp storage map <vios-uuid> --lpar web01 --disk web01_root

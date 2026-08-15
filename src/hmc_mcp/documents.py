@@ -705,7 +705,7 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
-def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
+def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualDisks kb="CUD" kxe="false" schemaVersion="V1_0">
@@ -713,7 +713,7 @@ def build_virtual_disk_document(disk_name: str, capacity_mb: int) -> str:
     <VirtualDisk kb="CUD" kxe="false" schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <DiskName kb="CUD" kxe="false">{disk_name}</DiskName>
-      <DiskCapacity kb="CUD" kxe="false">{capacity_mb}</DiskCapacity>
+      <DiskCapacity kb="CUD" kxe="false">{capacity_mib}</DiskCapacity>
     </VirtualDisk>
   </VirtualDisks>"""
     return _document_envelope("VolumeGroup", body)
@@ -776,7 +776,7 @@ def build_vscsi_mapping_document(
 def build_virtual_network_document(
     name: str,
     vlan_id: int,
-    vswitch_id: int,
+    virtual_switch_id: int,
     switch_link: str | None = None,
     tagged: bool = False,
 ) -> str:
@@ -798,7 +798,7 @@ def build_virtual_network_document(
   <Metadata><Atom/></Metadata>
 {assoc}  <NetworkName kb="CUD" kxe="false">{name}</NetworkName>
   <NetworkVLANID kb="CUD" kxe="false">{vlan_id}</NetworkVLANID>
-  <VswitchID kb="CUD" kxe="false">{vswitch_id}</VswitchID>
+  <VswitchID kb="CUD" kxe="false">{virtual_switch_id}</VswitchID>
   <TaggedNetwork kb="CUD" kxe="false">{tagged_str}</TaggedNetwork>
 </VirtualNetwork>
 """
@@ -813,25 +813,25 @@ def build_virtual_network_document(
 # ====================================================================== #
 
 
-def build_media_repository_document(size_mb: int) -> str:
+def build_media_repository_document(size_mib: int) -> str:
     """VolumeGroup document carrying a VirtualMediaRepository (create POST).
 
-    The repository is always named VMLibrary; size_mb is RepositorySize.
+    The repository is always named VMLibrary; size_mib is RepositorySize.
     """
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualMediaRepository schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
     <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
-    <RepositorySize kb="CUD" kxe="false">{size_mb}</RepositorySize>
+    <RepositorySize kb="CUD" kxe="false">{size_mib}</RepositorySize>
   </VirtualMediaRepository>"""
     return _document_envelope("VolumeGroup", body)
 
 
-def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
+def build_virtual_optical_media_document(media_name: str, size_mib: int) -> str:
     """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
 
     Only blank optical media can be created via the API; media_name is the
-    file name (e.g. 'aix.iso'), size_mb is MediaSize.
+    file name (e.g. 'aix.iso'), size_mib is MediaSize.
     """
     body = f"""  <Metadata><Atom/></Metadata>
   <VirtualMediaRepository schemaVersion="V1_0">
@@ -839,7 +839,7 @@ def build_virtual_optical_media_document(media_name: str, size_mb: int) -> str:
     <VirtualOpticalMedia schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
       <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
-      <MediaSize kb="CUD" kxe="false">{size_mb}</MediaSize>
+      <MediaSize kb="CUD" kxe="false">{size_mib}</MediaSize>
       <MediaType kb="CUD" kxe="false">BLANK</MediaType>
     </VirtualOpticalMedia>
   </VirtualMediaRepository>"""
