@@ -273,6 +273,30 @@ def test_rejects_unsupported_wheel_compression_actionably(
     )
 
 
+def test_rejects_corrupt_deflate_payload_actionably(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    with zipfile.ZipFile(wheel) as archive:
+        item = next(
+            entry
+            for entry in archive.infolist()
+            if entry.compress_type == zipfile.ZIP_DEFLATED
+        )
+    header = item.header_offset
+    name_size = int.from_bytes(payload[header + 26 : header + 28], "little")
+    extra_size = int.from_bytes(payload[header + 28 : header + 30], "little")
+    compressed_start = header + 30 + name_size + extra_size
+    payload[compressed_start] |= 0b00000110
+    wheel.write_bytes(payload)
+
+    _assert_invalid(artifacts, project, capsys, "wheel archive is malformed: error")
+
+
 def test_rejects_duplicate_wheel_member(
     tmp_path: Path,
     built_project: tuple[Path, Path],

@@ -9,6 +9,7 @@ import tarfile
 import tomllib
 import unicodedata
 import zipfile
+import zlib
 from dataclasses import dataclass
 from email.message import Message
 from email.parser import BytesParser
@@ -109,7 +110,13 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
                 if name in members:
                     _fail(path.name, f"duplicate archive member: {name}")
                 members[name] = archive.read(item)
-    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as error:
+    except (
+        OSError,
+        zipfile.BadZipFile,
+        RuntimeError,
+        NotImplementedError,
+        zlib.error,
+    ) as error:
         _fail(path.name, f"wheel archive is malformed: {type(error).__name__}")
     return members
 
