@@ -1036,7 +1036,11 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
 
 
 def test_lpars_decommission_help_lists_cli_contract(fake_hmc):
-    result = RUNNER.invoke(cli.app, ["lpars", "decommission", "--help"])
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "decommission", "--help"],
+        env={"COLUMNS": "200"},
+    )
 
     assert result.exit_code == 0, result.output
     for expected in (
