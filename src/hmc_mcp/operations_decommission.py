@@ -18,7 +18,7 @@ from .jobs import (
     wait_for_submitted_job,
 )
 from .operations_lpar import (
-    authorize_lpar_mutation,
+    authorize_decommission_lpar_ownership_snapshot,
     resolve_lpar_ownership_names,
 )
 
@@ -276,7 +276,7 @@ async def _resolve_inventory_identity(
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )
-    owner = await authorize_lpar_mutation(
+    owner = await authorize_decommission_lpar_ownership_snapshot(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
     return system_uuid, system_name, lpar_uuid, lpar_name, owner
@@ -631,7 +631,7 @@ async def decommission_lpar(
 
     steps: list[dict[str, Any]] = []
     if inventory.state != "not activated":
-        await authorize_lpar_mutation(
+        await authorize_decommission_lpar_ownership_snapshot(
             hmc,
             inventory.system_name,
             inventory.ownership_lpar_name,
@@ -650,7 +650,7 @@ async def decommission_lpar(
         return _incomplete_result(inventory, steps)
 
     if inventory.state == "not activated":
-        await authorize_lpar_mutation(
+        await authorize_decommission_lpar_ownership_snapshot(
             hmc,
             inventory.system_name,
             inventory.ownership_lpar_name,

@@ -132,7 +132,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
 
     monkeypatch.setattr(ops, "resolve_system_uuid", resolve_system_uuid)
     monkeypatch.setattr(ops, "resolve_lpar_ownership_names", resolve_names)
-    monkeypatch.setattr(ops, "authorize_lpar_mutation", authorize)
+    monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
 
 
 def _tool_result() -> DecommissionResult:
@@ -217,7 +217,7 @@ async def test_decommission_rejects_uuid_outside_selected_system(monkeypatch: py
     from hmc_mcp import operations_decommission as ops
 
     monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
-    monkeypatch.setattr(ops, "authorize_lpar_mutation", authorize)
+    monkeypatch.setattr(ops, "authorize_decommission_lpar_ownership_snapshot", authorize)
 
     with pytest.raises(ValueError, match="No LPAR .* on managed system"):
         await decommission_lpar(hmc, "system-a", LPAR_UUID)
@@ -482,7 +482,7 @@ async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pyt
     )
     monkeypatch.setattr(
         ops,
-        "authorize_lpar_mutation",
+        "authorize_decommission_lpar_ownership_snapshot",
         AsyncMock(side_effect=PermissionError("foreign owner")),
     )
     with pytest.raises(PermissionError, match="foreign owner"):
@@ -508,6 +508,40 @@ async def test_decommission_allows_explicit_ownership_override(monkeypatch: pyte
 
     assert result.workflow_completed is True
     assert "authorize:system-a:aix-prod:True" in calls
+
+
+@pytest.mark.asyncio
+async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hmc = _client()
+    hmc.config = HMCConfig(
+        host="hmc.test", user="user", agent_id="alice", _env_file=None
+    )
+
+    from hmc_mcp import operations_decommission as ops
+
+    monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
+    monkeypatch.setattr(
+        ops,
+        "resolve_lpar_ownership_names",
+        AsyncMock(return_value=("system-a", "aix-prod")),
+    )
+    descriptions = AsyncMock(
+        side_effect=(
+            "[hmc-mcp owner:bob created:2026-08-14]",
+            "[hmc-mcp owner:bob created:2026-08-14]",
+        )
+    )
+    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+
+    result = await decommission_lpar(
+        hmc, "system-a", "aix-prod", ownership_override=True
+    )
+
+    assert result.workflow_completed is True
+    assert result.blast_radius["owner"] == "bob"
+    assert descriptions.await_count == 2
 
 
 @pytest.mark.asyncio

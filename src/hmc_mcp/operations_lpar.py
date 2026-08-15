@@ -92,25 +92,31 @@ def parse_lpar_ownership_owner(description: str) -> str | None:
     return match.group("owner") if match is not None else None
 
 
-async def authorize_lpar_mutation(
+def _audit_lpar_ownership_override(
+    hmc: HMCClient, system_name: str, lpar_name: str
+) -> None:
+    _logger.warning(
+        "LPAR ownership override approved",
+        extra={
+            "hmc_system": system_name,
+            "hmc_lpar": lpar_name,
+            "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
+        },
+    )
+
+
+def _authorize_lpar_ownership_description(
     hmc: HMCClient,
     system_name: str,
     lpar_name: str,
+    description: str,
     *,
     ownership_override: bool = False,
 ) -> str | None:
-    """Authorize one description snapshot and return its parsed owner."""
-    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    """Authorize a supplied description snapshot and return its parsed owner."""
     owner = parse_lpar_ownership_owner(description)
     if ownership_override:
-        _logger.warning(
-            "LPAR ownership override approved",
-            extra={
-                "hmc_system": system_name,
-                "hmc_lpar": lpar_name,
-                "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
-            },
-        )
+        _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return owner
     if owner is None:
         if "[hmc-mcp" in description:
@@ -126,6 +132,39 @@ async def authorize_lpar_mutation(
             "retry only with ownership_override=true after operator approval"
         )
     return owner
+
+
+async def authorize_decommission_lpar_ownership_snapshot(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    *,
+    ownership_override: bool,
+) -> str | None:
+    """Read and authorize one ownership snapshot for LPAR decommission."""
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    return _authorize_lpar_ownership_description(
+        hmc,
+        system_name,
+        lpar_name,
+        description,
+        ownership_override=ownership_override,
+    )
+
+
+async def authorize_lpar_mutation(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    *,
+    ownership_override: bool = False,
+) -> None:
+    """Reject mutations of foreign-owned or malformed ownership-stamped LPARs."""
+    if ownership_override:
+        _audit_lpar_ownership_override(hmc, system_name, lpar_name)
+        return
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    _authorize_lpar_ownership_description(hmc, system_name, lpar_name, description)
 
 
 async def resolve_lpar_ownership_names(

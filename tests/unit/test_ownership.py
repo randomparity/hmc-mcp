@@ -175,31 +175,17 @@ def test_authorize_lpar_mutation(description, agent_id, allowed):
                 asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
 
-def test_authorize_lpar_mutation_returns_owner_from_authorizing_read():
-    hmc = type(
-        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
-    )()
-    read = AsyncMock(return_value="[hmc-mcp owner:alice created:2026-08-14]")
-
-    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
-        owner = asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
-
-    assert owner == "alice"
-    read.assert_awaited_once_with(hmc.config, "sys1", "lpar1")
-
-
 def test_authorize_lpar_mutation_override_is_audited(caplog):
     hmc = type("StubHMC", (), {"config": _config()})()
-    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    read = AsyncMock()
     with (
         patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
         caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_lpar"),
     ):
-        owner = asyncio.run(
+        asyncio.run(
             authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
         )
-    assert owner == "bob"
-    read.assert_awaited_once_with(hmc.config, "sys1", "lpar1")
+    read.assert_not_awaited()
     record = caplog.records[-1]
     assert record.getMessage() == "LPAR ownership override approved"
     assert record.hmc_system == "sys1"

@@ -17,12 +17,8 @@ def _client_factory(hmc):
 
 
 @pytest.mark.asyncio
-async def test_delete_lpar_uses_required_system_to_scope_name_resolution(monkeypatch):
+async def test_delete_lpar_uses_required_system_to_scope_name_resolution():
     hmc = AsyncMock()
-    ownership = AsyncMock(return_value="")
-    monkeypatch.setattr(
-        "hmc_mcp.operations_lpar.get_lpar_description", ownership
-    )
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.get_logical_partition.return_value = {
@@ -38,16 +34,11 @@ async def test_delete_lpar_uses_required_system_to_scope_name_resolution(monkeyp
     hmc.find_partition_by_name.assert_awaited_once_with(
         "aix1", system_uuid="system-uuid"
     )
-    ownership.assert_awaited_once_with(hmc.config, "system-name", "aix1")
 
 
 @pytest.mark.asyncio
-async def test_rename_lpar_uses_required_system_to_scope_name_resolution(monkeypatch):
+async def test_rename_lpar_uses_required_system_to_scope_name_resolution():
     hmc = AsyncMock()
-    ownership = AsyncMock(return_value="")
-    monkeypatch.setattr(
-        "hmc_mcp.operations_lpar.get_lpar_description", ownership
-    )
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.get_logical_partition.return_value = {
@@ -68,7 +59,6 @@ async def test_rename_lpar_uses_required_system_to_scope_name_resolution(monkeyp
     hmc.find_partition_by_name.assert_awaited_once_with(
         "aix1", system_uuid="system-uuid"
     )
-    ownership.assert_awaited_once_with(hmc.config, "system-name", "aix1")
 
 
 @pytest.mark.asyncio
