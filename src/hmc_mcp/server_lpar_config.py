@@ -20,9 +20,37 @@ from .ssh_commands import (
 )
 from .operations_lpar import authorize_lpar_mutation
 from .client import HMCClient
+from typing import Literal
 
 
 tool, register_tools = tool_module()
+
+ProcessorCompatibilityMode = Literal[
+    "default",
+    "POWER5",
+    "POWER6",
+    "POWER6+",
+    "POWER7",
+    "POWER8",
+    "POWER9_Base",
+    "POWER9",
+    "POWER10",
+    "POWER11",
+]
+PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset(
+    {
+        "default",
+        "POWER5",
+        "POWER6",
+        "POWER6+",
+        "POWER7",
+        "POWER8",
+        "POWER9_Base",
+        "POWER9",
+        "POWER10",
+        "POWER11",
+    }
+)
 
 
 @tool(annotations=_READ_ONLY)
@@ -132,7 +160,7 @@ def hmc_get_lpar_proc_compat(
 def hmc_set_lpar_proc_compat(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    mode: str,
+    mode: ProcessorCompatibilityMode,
     profile: str | None = None,
 ) -> str:
     """Set an LPAR's processor compatibility mode.

@@ -77,7 +77,7 @@ def test_install_vios_job_xml():
         nim_subnetmask="255.255.255.0",
         vios_ip="192.168.1.20",
         vlan_id="100",
-        timeout=90,
+        hmc_timeout_minutes=90,
     )
     assert "InstallVIOS" in xml
     assert "VirtualIOServer" in xml
@@ -252,7 +252,7 @@ def test_install_vios_tool_wait_true_polls_to_completion(monkeypatch, mock_hmc):
         nim_subnetmask="255.255.255.0",
         vios_ip="192.168.1.20",
         wait=True,
-        timeout_seconds=60,
+        wait_timeout_seconds=60,
         poll_interval=1,
     )
     assert submit_route.called

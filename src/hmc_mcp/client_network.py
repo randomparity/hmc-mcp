@@ -46,13 +46,13 @@ class NetworkMixin:
         system_uuid: str,
         name: str,
         vlan_id: int,
-        vswitch_id: int,
+        virtual_switch_id: int,
         switch_uuid: str | None = None,
         tagged: bool = False,
     ) -> dict[str, Any] | None:
         """Create a Virtual Network (VLAN) on a managed system.
 
-        vswitch_id is the numeric SwitchID (from list_virtual_switches);
+        virtual_switch_id is the numeric SwitchID (from list_virtual_switches);
         switch_uuid optionally provides the AssociatedSwitch link.
         """
 
@@ -62,10 +62,13 @@ class NetworkMixin:
                 f"{self.config.base_url}/rest/api/uom/ManagedSystem/"
                 f"{system_uuid}/VirtualSwitch/{switch_uuid}"
             )
-        xml = build_virtual_network_document(name, vlan_id, vswitch_id, switch_link, tagged)
+        xml = build_virtual_network_document(
+            name, vlan_id, virtual_switch_id, switch_link, tagged
+        )
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualNetwork"
-        resp = await self._put(path, xml, resource_type="VirtualNetwork",
-                               include_schema_version=False)
+        resp = await self._put(
+            path, xml, resource_type="VirtualNetwork", include_schema_version=False
+        )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 

@@ -85,18 +85,22 @@ def storage_create_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
-    size: int = typer.Option(..., "--size", help="Size in MiB"),
+    capacity_mib: int = typer.Option(
+        ..., "--capacity-mib", help="Virtual disk capacity in MiB"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
     if not yes and not typer.confirm(
-        f"Create {size} MiB virtual disk '{name}' in VG {vg}?"
+        f"Create {capacity_mib} MiB virtual disk '{name}' in VG {vg}?"
     ):
         raise typer.Abort()
 
-    disk = _with_client(lambda hmc: create_virtual_disk(hmc, vios, vg, name, size))
+    disk = _with_client(
+        lambda hmc: create_virtual_disk(hmc, vios, vg, name, capacity_mib)
+    )
 
-    console.print(f"[green]Created virtual disk '{name}' ({size} MiB)[/green]")
+    console.print(f"[green]Created virtual disk '{name}' ({capacity_mib} MiB)[/green]")
     _print_json(disk)
 
 
@@ -106,7 +110,9 @@ def storage_attach_disk(
     vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
     name: str = typer.Option(..., "--name", "-n", help="New virtual disk name"),
-    size: int = typer.Option(..., "--size", help="Disk size in MiB"),
+    capacity_mib: int = typer.Option(
+        ..., "--capacity-mib", help="Disk capacity in MiB"
+    ),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS partition ID"),
     vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server slot"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without mutation"),
@@ -118,7 +124,7 @@ def storage_attach_disk(
         not dry_run
         and not yes
         and not typer.confirm(
-            f"Create {size} MiB disk '{name}' and attach it to LPAR '{lpar}'?"
+            f"Create {capacity_mib} MiB disk '{name}' and attach it to LPAR '{lpar}'?"
         )
     ):
         raise typer.Abort()
@@ -128,7 +134,7 @@ def storage_attach_disk(
             hmc,
             lpar,
             ProvisionStorage(vios, name, vg_uuid=vg),
-            capacity_mb=size,
+            capacity_mib=capacity_mib,
             vios_partition_id=vios_id,
             vios_slot=vios_slot,
             dry_run=dry_run,
@@ -194,16 +200,16 @@ def storage_map(
 def storage_create_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
-    size_mb: int = typer.Option(..., "--size-mb", help="Repository size in MB"),
+    size_mib: int = typer.Option(..., "--size-mib", help="Repository size in MiB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
     if not yes and not typer.confirm(
-        f"Create {size_mb} MB media repository on VG {vg} (VIOS {vios})?"
+        f"Create {size_mib} MiB media repository on VG {vg} (VIOS {vios})?"
     ):
         raise typer.Abort()
 
-    result = _with_client(lambda hmc: create_media_repository(hmc, vios, vg, size_mb))
+    result = _with_client(lambda hmc: create_media_repository(hmc, vios, vg, size_mib))
 
     console.print(f"[green]Created media repository on {vg}[/green]")
     _print_json(result)
@@ -216,17 +222,17 @@ def storage_create_media(
     name: str = typer.Option(
         ..., "--name", "-n", help="Media file name (e.g. aix.iso)"
     ),
-    size_mb: int = typer.Option(..., "--size-mb", help="Media size in MB"),
+    size_mib: int = typer.Option(..., "--size-mib", help="Media size in MiB"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
     if not yes and not typer.confirm(
-        f"Create media '{name}' ({size_mb} MB) on VG {vg} (VIOS {vios})?"
+        f"Create media '{name}' ({size_mib} MiB) on VG {vg} (VIOS {vios})?"
     ):
         raise typer.Abort()
 
     result = _with_client(
-        lambda hmc: create_optical_media(hmc, vios, vg, name, size_mb)
+        lambda hmc: create_optical_media(hmc, vios, vg, name, size_mib)
     )
 
     console.print(f"[green]Created media '{name}' on {vg}[/green]")

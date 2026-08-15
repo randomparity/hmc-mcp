@@ -29,10 +29,10 @@ async def create_volume_group(
 
 
 async def create_virtual_disk(
-    hmc: HMCClient, vios: str, vg_uuid: str, name: str, size_mb: int
+    hmc: HMCClient, vios: str, vg_uuid: str, name: str, size_mib: int
 ) -> dict[str, Any] | None:
     return await hmc.create_virtual_disk(
-        await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mb
+        await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mib
     )
 
 
@@ -53,18 +53,18 @@ async def map_storage(
 
 
 async def create_media_repository(
-    hmc: HMCClient, vios: str, vg_uuid: str, size_mb: int
+    hmc: HMCClient, vios: str, vg_uuid: str, size_mib: int
 ) -> dict[str, Any] | None:
     return await hmc.create_media_repository(
-        await resolve_vios_uuid(hmc, vios), vg_uuid, size_mb
+        await resolve_vios_uuid(hmc, vios), vg_uuid, size_mib
     )
 
 
 async def create_optical_media(
-    hmc: HMCClient, vios: str, vg_uuid: str, name: str, size_mb: int
+    hmc: HMCClient, vios: str, vg_uuid: str, name: str, size_mib: int
 ) -> dict[str, Any] | None:
     return await hmc.create_optical_media(
-        await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mb
+        await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mib
     )
 
 
@@ -78,7 +78,7 @@ async def create_logical_unit(
     hmc: HMCClient,
     cluster_uuid: str,
     lu_name: str,
-    lu_size_gb: int,
+    lu_size_gib: int,
     lu_type: LuType,
     device_type: DeviceType,
     cloned_from: str | None,
@@ -89,7 +89,7 @@ async def create_logical_unit(
     validate_logical_unit_types(lu_type, device_type)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     job = await hmc.create_logical_unit(
-        cluster_uuid, lu_name, lu_size_gb, lu_type, device_type, cloned_from
+        cluster_uuid, lu_name, lu_size_gib, lu_type, device_type, cloned_from
     )
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 

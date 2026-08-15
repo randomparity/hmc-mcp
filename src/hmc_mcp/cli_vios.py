@@ -18,6 +18,7 @@ from .cli_app import (
 )
 from .jobs import validate_wait_timing
 from .operations_vios import power_vios
+from .server_systems import PartitionState
 
 
 @vios_app.command("list")
@@ -25,7 +26,7 @@ def vios_list(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Restrict to this managed system UUID"
     ),
-    state: str | None = typer.Option(
+    state: PartitionState | None = typer.Option(
         None, "--state", help="Filter by PartitionState (server-side search)"
     ),
     as_json: bool = typer.Option(False, "--json"),

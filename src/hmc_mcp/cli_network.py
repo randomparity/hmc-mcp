@@ -89,21 +89,21 @@ def network_create(
     system: str = typer.Argument(..., help="Managed system UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Network name"),
     vlan: int = typer.Option(..., "--vlan", help="VLAN ID"),
-    vswitch: int = typer.Option(
-        ..., "--vswitch", help="Backing VirtualSwitch SwitchID"
+    virtual_switch_id: int = typer.Option(
+        ..., "--virtual-switch-id", help="Backing VirtualSwitch numeric SwitchID"
     ),
     tagged: bool = typer.Option(False, "--tagged", help="Tagged (bridged) network"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Create a Virtual Network (VLAN) on a managed system."""
     if not yes and not typer.confirm(
-        f"Create network '{name}' (VLAN {vlan}, vswitch {vswitch}) on {system}?"
+        f"Create network '{name}' (VLAN {vlan}, switch ID {virtual_switch_id}) on {system}?"
     ):
         raise typer.Abort()
 
     net = _with_client(
         lambda hmc: create_virtual_network(
-            hmc, system, name, vlan, vswitch, tagged=tagged
+            hmc, system, name, vlan, virtual_switch_id, tagged=tagged
         )
     )
 
@@ -225,7 +225,9 @@ def network_add_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
-    vswitch: str = typer.Option(..., "--vswitch", help="Virtual switch name"),
+    virtual_switch_name: str = typer.Option(
+        ..., "--virtual-switch-name", help="Virtual switch name"
+    ),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
     backing_devices: str | None = typer.Option(
         None, "--backing-devices", help="Backing devices (opaque string, v1 only)"
@@ -234,13 +236,20 @@ def network_add_vnic(
 ) -> None:
     """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
     if not yes and not typer.confirm(
-        f"Add vNIC (capacity={capacity}, vswitch={vswitch}, vlan={vlan}) to '{lpar}' on '{system_name}'?"
+        f"Add vNIC (capacity={capacity}, switch={virtual_switch_name}, vlan={vlan}) "
+        f"to '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
     result = _run(
         lambda: add_vnic(
-            _ssh_config(), system_name, lpar, capacity, vswitch, vlan, backing_devices
+            _ssh_config(),
+            system_name,
+            lpar,
+            capacity,
+            virtual_switch_name,
+            vlan,
+            backing_devices,
         )
     )
 

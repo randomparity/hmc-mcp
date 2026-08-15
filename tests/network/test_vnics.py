@@ -110,7 +110,7 @@ def test_add_vnic_correct_command_minimal(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
-            vswitch_name="ETHERNET0",
+            virtual_switch_name="ETHERNET0",
             port_vlan_id=100,
         )
 
@@ -138,7 +138,7 @@ def test_add_vnic_with_backing_devices(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             capacity=5,
-            vswitch_name="ETHERNET0",
+            virtual_switch_name="ETHERNET0",
             port_vlan_id=200,
             backing_devices=backing,
         )
@@ -158,7 +158,7 @@ def test_add_vnic_without_backing_devices_excludes_it(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
             lpar_name_or_uuid=LPAR_UUID,
             capacity=2,
-            vswitch_name="ETHERNET0",
+            virtual_switch_name="ETHERNET0",
             port_vlan_id=100,
         )
 
@@ -194,7 +194,7 @@ def test_add_vnic_sriov_mode_error_path(monkeypatch, mock_hmc):
                 system_name_or_uuid=SYSTEM_UUID,
                 lpar_name_or_uuid=LPAR_UUID,
                 capacity=2,
-                vswitch_name="ETHERNET0",
+                virtual_switch_name="ETHERNET0",
                 port_vlan_id=100,
             )
 

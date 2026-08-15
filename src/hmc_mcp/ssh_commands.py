@@ -723,7 +723,7 @@ async def add_vnic(
     system_name: str,
     lpar_name: str,
     capacity: int,
-    vswitch_name: str,
+    virtual_switch_name: str,
     port_vlan_id: int,
     backing_devices: str | None = None,
 ) -> str:
@@ -733,7 +733,7 @@ async def add_vnic(
     --filter lpar_names=<lpar_name> -a "<attrs>"`` and returns the raw command
     output.
 
-    **V1 scope boundary:** Only ``capacity``, ``vswitch_name``,
+    **V1 scope boundary:** Only ``capacity``, ``virtual_switch_name``,
     ``port_vlan_id``, and ``backing_devices`` (optional, opaque string passed
     verbatim) are supported.  Complex backing-device topology (multi-adapter
     failover, per-device SR-IOV physical port IDs, capacity weights) is a
@@ -743,9 +743,7 @@ async def add_vnic(
         HMCCLIError: If the HMC command fails, e.g. because the underlying
             SR-IOV adapter is not in SR-IOV mode.
     """
-    attrs = (
-        f"capacity={capacity},vswitch_name={vswitch_name},port_vlan_id={port_vlan_id}"
-    )
+    attrs = f"capacity={capacity},vswitch_name={virtual_switch_name},port_vlan_id={port_vlan_id}"
     if backing_devices is not None:
         attrs += f",backing_devices={backing_devices}"
 

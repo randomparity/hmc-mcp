@@ -91,7 +91,7 @@ def hmc_attach_disk_to_lpar(
     vios_uuid: str,
     vg_uuid: str,
     disk_name: str,
-    capacity_mb: int,
+    capacity_mib: int,
     vios_partition_id: int,
     vios_slot: int,
     dry_run: bool = False,
@@ -111,7 +111,7 @@ def hmc_attach_disk_to_lpar(
                 hmc,
                 lpar_name_or_uuid,
                 ProvisionStorage(vios_uuid, disk_name, vg_uuid=vg_uuid),
-                capacity_mb=capacity_mb,
+                capacity_mib=capacity_mib,
                 vios_partition_id=vios_partition_id,
                 vios_slot=vios_slot,
                 dry_run=dry_run,
@@ -125,14 +125,14 @@ def hmc_create_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
     disk_name: str,
-    capacity_mb: int,
+    capacity_mib: int,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a Virtual Disk (logical volume) inside a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_vios).
-    capacity_mb is the size in MiB. The disk becomes backing storage that you
+    capacity_mib is the size in MiB. The disk becomes backing storage that you
     then attach to an LPAR with hmc_map_storage_to_lpar (storage_kind
     'VirtualDisk'). Find vg_uuid with hmc_list_volume_groups.
     """
@@ -140,7 +140,7 @@ def hmc_create_virtual_disk(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_virtual_disk(
-                hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mb
+                hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mib
             )
 
     return _run(_go)
@@ -185,20 +185,20 @@ def hmc_map_storage_to_lpar(
 
 @tool
 def hmc_create_media_repository(
-    vios_name_or_uuid: str, vg_uuid: str, size_mb: int, profile: str | None = None
+    vios_name_or_uuid: str, vg_uuid: str, size_mib: int, profile: str | None = None
 ) -> dict[str, Any] | None:
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
     vios_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_vios).
     The repository holds file-backed ISO images for client partitions; only one
-    can exist per VIOS. size_mb is RepositorySize.
+    can exist per VIOS. size_mib is RepositorySize measured in MiB.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_media_repository(
-                hmc, vios_name_or_uuid, vg_uuid, size_mb
+                hmc, vios_name_or_uuid, vg_uuid, size_mib
             )
 
     return _run(_go)
@@ -209,7 +209,7 @@ def hmc_create_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
     media_name: str,
-    size_mb: int,
+    size_mib: int,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
@@ -217,13 +217,13 @@ def hmc_create_optical_media(
     vios_name_or_uuid: accepts either a PartitionName or a UUID
     (find it with hmc_list_vios).
     Only blank media can be created via the API; media_name is the file name
-    (e.g. 'aix.iso'), size_mb is MediaSize.
+    (e.g. 'aix.iso'), size_mib is MediaSize measured in MiB.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_optical_media(
-                hmc, vios_name_or_uuid, vg_uuid, media_name, size_mb
+                hmc, vios_name_or_uuid, vg_uuid, media_name, size_mib
             )
 
     return _run(_go)
@@ -290,7 +290,7 @@ def hmc_get_shared_storage_pool(
 def hmc_create_logical_unit(
     cluster_uuid: str,
     lu_name: str,
-    lu_size_gb: int,
+    lu_size_gib: int,
     lu_type: LuType = "THIN",
     device_type: DeviceType = "VirtualIO_Disk",
     cloned_from: str | None = None,
@@ -302,7 +302,8 @@ def hmc_create_logical_unit(
     """Create a Logical Unit (file-backed disk) in a Cluster/SSP.
 
     Submits a CreateLogicalUnit job and returns it — poll hmc_get_job for
-    status; the result holds the new LU's UDID in LUCreated. lu_type is THIN
+    status; the result holds the new LU's UDID in LUCreated. lu_size_gib is the
+    requested logical-unit size in GiB. lu_type is THIN
     or THICK; device_type is VirtualIO_Disk or VirtualIO_Image. cloned_from is
     an optional source LU UDID to clone. Find cluster_uuid with
     hmc_list_clusters.
@@ -319,7 +320,7 @@ def hmc_create_logical_unit(
                 hmc,
                 cluster_uuid,
                 lu_name,
-                lu_size_gb,
+                lu_size_gib,
                 lu_type,
                 device_type,
                 cloned_from,

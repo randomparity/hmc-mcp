@@ -53,20 +53,32 @@ class AdaptersMixin:
         )
 
     async def add_vscsi_adapter(
-        self, lpar_uuid: str, vios_partition_id: int, vios_slot: int, slot_number: int | None = None
+        self,
+        lpar_uuid: str,
+        vios_partition_id: int,
+        vios_slot: int,
+        slot_number: int | None = None,
     ) -> dict[str, Any] | None:
         """Add a Virtual SCSI client adapter, paired to a VIOS server adapter."""
 
         xml = build_vscsi_adapter_document(vios_partition_id, vios_slot, slot_number)
-        return await self.create_child("LogicalPartition", lpar_uuid, "VirtualSCSIClientAdapter", xml)
+        return await self.create_child(
+            "LogicalPartition", lpar_uuid, "VirtualSCSIClientAdapter", xml
+        )
 
     async def add_vfc_adapter(
-        self, lpar_uuid: str, vios_partition_id: int, vios_slot: int, slot_number: int | None = None
+        self,
+        lpar_uuid: str,
+        vios_partition_id: int,
+        vios_slot: int,
+        slot_number: int | None = None,
     ) -> dict[str, Any] | None:
         """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
 
         xml = build_vfc_adapter_document(vios_partition_id, vios_slot, slot_number)
-        return await self.create_child("LogicalPartition", lpar_uuid, "VirtualFibreChannelClientAdapter", xml)
+        return await self.create_child(
+            "LogicalPartition", lpar_uuid, "VirtualFibreChannelClientAdapter", xml
+        )
 
     async def add_network_adapter(
         self,
@@ -82,4 +94,6 @@ class AdaptersMixin:
         xml = build_client_network_adapter_document(
             port_vlan_id, slot_number, virtual_switch_id, tagged, mac_address
         )
-        return await self.create_child("LogicalPartition", lpar_uuid, "ClientNetworkAdapter", xml)
+        return await self.create_child(
+            "LogicalPartition", lpar_uuid, "ClientNetworkAdapter", xml
+        )

@@ -1,5 +1,4 @@
-"""CLI commands for virtual adapters (network / storage) on LPARs.
-"""
+"""CLI commands for virtual adapters (network / storage) on LPARs."""
 
 from __future__ import annotations
 
@@ -50,9 +49,15 @@ def adapters_list(
 def adapters_add_network(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID (PVID)"),
-    slot: int | None = typer.Option(None, "--slot", help="Virtual slot (auto if omitted)"),
-    vswitch: int | None = typer.Option(None, "--vswitch", help="VirtualSwitch ID"),
-    tagged: bool = typer.Option(False, "--tagged", help="VLAN-tagged (trunking) adapter"),
+    slot: int | None = typer.Option(
+        None, "--slot", help="Virtual slot (auto if omitted)"
+    ),
+    virtual_switch_id: int | None = typer.Option(
+        None, "--virtual-switch-id", help="VirtualSwitch numeric SwitchID"
+    ),
+    tagged: bool = typer.Option(
+        False, "--tagged", help="VLAN-tagged (trunking) adapter"
+    ),
     mac: str | None = typer.Option(None, "--mac", help="Pin the MAC address"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
@@ -63,7 +68,9 @@ def adapters_add_network(
 
     async def _go():
         async with _client() as hmc:
-            return await add_network_adapter(hmc, lpar, vlan, slot, vswitch, tagged, mac)
+            return await add_network_adapter(
+                hmc, lpar, vlan, slot, virtual_switch_id, tagged, mac
+            )
 
     _adapter_mutation(_go, lpar, "network")
 
@@ -73,12 +80,16 @@ def adapters_add_vscsi(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
     vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server-side slot"),
-    slot: int | None = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
+    slot: int | None = typer.Option(
+        None, "--slot", help="Client virtual slot (auto if omitted)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual SCSI client adapter, paired to a VIOS."""
 
-    if not yes and not typer.confirm(f"Add vSCSI adapter to '{lpar}' via VIOS {vios_id}?"):
+    if not yes and not typer.confirm(
+        f"Add vSCSI adapter to '{lpar}' via VIOS {vios_id}?"
+    ):
         raise typer.Abort()
 
     async def _go():
@@ -95,12 +106,16 @@ def adapters_add_vfc(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     vios_id: int = typer.Option(..., "--vios-id", help="VIOS PartitionID (integer)"),
     vios_slot: int = typer.Option(..., "--vios-slot", help="VIOS server-side FC slot"),
-    slot: int | None = typer.Option(None, "--slot", help="Client virtual slot (auto if omitted)"),
+    slot: int | None = typer.Option(
+        None, "--slot", help="Client virtual slot (auto if omitted)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Add a Virtual Fibre Channel (NPIV) client adapter, paired to a VIOS."""
 
-    if not yes and not typer.confirm(f"Add vFC adapter to '{lpar}' via VIOS {vios_id}?"):
+    if not yes and not typer.confirm(
+        f"Add vFC adapter to '{lpar}' via VIOS {vios_id}?"
+    ):
         raise typer.Abort()
 
     async def _go():
@@ -116,12 +131,16 @@ def adapters_add_vfc(
 def adapters_delete(
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     adapter_type: AdapterType = typer.Option(..., "--type", "-t", help=_ADAPTER_TYPES),
-    adapter_uuid: str = typer.Option(..., "--uuid", help="Adapter UUID (from `adapters list`)"),
+    adapter_uuid: str = typer.Option(
+        ..., "--uuid", help="Adapter UUID (from `adapters list`)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Remove a virtual adapter from an LPAR."""
 
-    if not yes and not typer.confirm(f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"):
+    if not yes and not typer.confirm(
+        f"Delete {adapter_type} {adapter_uuid} from '{lpar}'?"
+    ):
         raise typer.Abort()
 
     async def _go():
@@ -131,7 +150,6 @@ def adapters_delete(
     uuid = _run(_go)
 
     console.print(f"[green]Deleted {adapter_type} {adapter_uuid}[/green] from {uuid}")
-
 
 
 def _adapter_mutation(go_coro, lpar: str, kind: str) -> None:

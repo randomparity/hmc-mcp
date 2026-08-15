@@ -234,7 +234,7 @@ async def _map_storage(
 
 
 async def _create_disk(
-    hmc: HMCClient, storage: ProvisionStorage, capacity_mb: int
+    hmc: HMCClient, storage: ProvisionStorage, capacity_mib: int
 ) -> dict[str, Any]:
     assert storage.vg_uuid is not None
     await create_virtual_disk(
@@ -242,9 +242,9 @@ async def _create_disk(
         storage.vios_uuid,
         storage.vg_uuid,
         storage.storage_name,
-        capacity_mb,
+        capacity_mib,
     )
-    return {"disk_name": storage.storage_name, "capacity_mb": capacity_mb}
+    return {"disk_name": storage.storage_name, "capacity_mb": capacity_mib}
 
 
 async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:
@@ -263,14 +263,14 @@ async def _run_storage_leg(
     *,
     vios_partition_id: int,
     vios_slot: int,
-    disk_capacity_mb: int | None = None,
+    disk_capacity_mib: int | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Run the shared ordered vSCSI storage workflow."""
     steps: list[dict[str, Any]] = []
     operations: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
-    if disk_capacity_mb is not None:
+    if disk_capacity_mib is not None:
         operations.append(
-            ("create_disk", lambda: _create_disk(hmc, storage, disk_capacity_mb))
+            ("create_disk", lambda: _create_disk(hmc, storage, disk_capacity_mib))
         )
     operations.extend(
         (
@@ -293,14 +293,14 @@ async def attach_disk_to_lpar(
     lpar_name_or_uuid: str,
     storage: ProvisionStorage,
     *,
-    capacity_mb: int,
+    capacity_mib: int,
     vios_partition_id: int,
     vios_slot: int,
     dry_run: bool = False,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR."""
-    if capacity_mb <= 0:
-        raise ValueError("capacity_mb must be greater than zero")
+    if capacity_mib <= 0:
+        raise ValueError("capacity_mib must be greater than zero")
     if storage.kind != "VirtualDisk" or storage.vg_uuid is None:
         raise ValueError("disk attachment requires a VirtualDisk with vg_uuid")
 
@@ -322,7 +322,7 @@ async def attach_disk_to_lpar(
         storage,
         vios_partition_id=vios_partition_id,
         vios_slot=vios_slot,
-        disk_capacity_mb=capacity_mb,
+        disk_capacity_mib=capacity_mib,
     )
     return AttachDiskResult(completed, lpar_uuid, False, tuple(steps), ())
 

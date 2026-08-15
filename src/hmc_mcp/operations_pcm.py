@@ -11,9 +11,15 @@ from .error_translation import translate_pcm_error
 from .pcm import newest_metric_link
 
 MetricKind = Literal["processed", "aggregated"]
+PcmCategory = Literal["ManagedSystem", "LogicalPartition"]
+PCM_CATEGORIES: frozenset[PcmCategory] = frozenset(
+    {"ManagedSystem", "LogicalPartition"}
+)
 
 
-async def resolve_pcm_resource(hmc: HMCClient, category: str, resource: str) -> str:
+async def resolve_pcm_resource(
+    hmc: HMCClient, category: PcmCategory, resource: str
+) -> str:
     if category == "ManagedSystem":
         return await resolve_system_uuid(hmc, resource)
     if category == "LogicalPartition":
@@ -39,7 +45,7 @@ def preference_flags(
 
 
 async def get_pcm_preferences(
-    hmc: HMCClient, category: str, resource: str
+    hmc: HMCClient, category: PcmCategory, resource: str
 ) -> dict[str, Any]:
     resource_uuid = await resolve_pcm_resource(hmc, category, resource)
     try:
@@ -51,7 +57,7 @@ async def get_pcm_preferences(
 
 async def set_pcm_preferences(
     hmc: HMCClient,
-    category: str,
+    category: PcmCategory,
     resource: str,
     flags: dict[str, bool],
 ) -> dict[str, Any]:
@@ -67,7 +73,7 @@ async def set_pcm_preferences(
 
 async def metric_links(
     hmc: HMCClient,
-    category: str,
+    category: PcmCategory,
     resource: str,
     kind: MetricKind,
     start_ts: str,
@@ -89,7 +95,7 @@ async def metric_links(
 
 async def metric_data(
     hmc: HMCClient,
-    category: str,
+    category: PcmCategory,
     resource: str,
     kind: MetricKind,
     start_ts: str,

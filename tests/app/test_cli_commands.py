@@ -194,8 +194,8 @@ class FakeHMC:
         self._record("create_volume_group", vios_uuid, name, physical_volumes)
         return self.vg
 
-    async def create_virtual_disk(self, vios_uuid, vg_uuid, disk_name, capacity_mb):
-        self._record("create_virtual_disk", vios_uuid, vg_uuid, disk_name, capacity_mb)
+    async def create_virtual_disk(self, vios_uuid, vg_uuid, disk_name, capacity_mib):
+        self._record("create_virtual_disk", vios_uuid, vg_uuid, disk_name, capacity_mib)
         return self.disk
 
     async def list_adapters(self, lpar_uuid, adapter_type):
@@ -250,8 +250,8 @@ class FakeHMC:
         self._record("map_storage_to_lpar", vios_uuid, kind, disk, lpar_uuid, target)
         return {"UUID": "mapping-1"}
 
-    async def create_media_repository(self, vios_uuid, vg_uuid, size_mb):
-        self._record("create_media_repository", vios_uuid, vg_uuid, size_mb)
+    async def create_media_repository(self, vios_uuid, vg_uuid, size_mib):
+        self._record("create_media_repository", vios_uuid, vg_uuid, size_mib)
         return {"UUID": "repo-1"}
 
     async def delete_media_repository(self, vios_uuid, vg_uuid):
@@ -333,7 +333,7 @@ class FakeHMC:
         self,
         cluster_uuid,
         lu_name,
-        lu_size_gb,
+        lu_size_gib,
         lu_type="THIN",
         device_type="VirtualIO_Disk",
         cloned_from=None,
@@ -342,7 +342,7 @@ class FakeHMC:
             "create_logical_unit",
             cluster_uuid,
             lu_name,
-            lu_size_gb,
+            lu_size_gib,
             lu_type,
             device_type,
             cloned_from,
@@ -511,7 +511,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "prod",
                 "--vlan",
                 "100",
-                "--vswitch",
+                "--virtual-switch-id",
                 "2",
                 "--tagged",
                 "--yes",
@@ -560,7 +560,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "create-media-repo",
                 VIOS_UUID,
                 VG_UUID,
-                "--size-mb",
+                "--size-mib",
                 "2048",
                 "--yes",
             ],
@@ -595,7 +595,7 @@ def test_network_cli_translates_create_rejection(fake_hmc):
             "prod",
             "--vlan",
             "100",
-            "--vswitch",
+            "--virtual-switch-id",
             "2",
             "--yes",
         ],
@@ -1129,7 +1129,7 @@ def test_storage_create_disk(fake_hmc):
             VG_UUID,
             "--name",
             "bootvol",
-            "--size",
+            "--capacity-mib",
             "1024",
             "--yes",
         ],
@@ -1156,7 +1156,7 @@ def test_storage_attach_disk_runs_workflow(fake_hmc):
             VG_UUID,
             "--name",
             "bootvol",
-            "--size",
+            "--capacity-mib",
             "1024",
             "--vios-id",
             "2",
@@ -1193,7 +1193,7 @@ def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
             VG_UUID,
             "--name",
             "bootvol",
-            "--size",
+            "--capacity-mib",
             "1024",
             "--vios-id",
             "2",
@@ -1224,7 +1224,7 @@ def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
             VG_UUID,
             "--name",
             "bootvol",
-            "--size",
+            "--capacity-mib",
             "1024",
             "--vios-id",
             "2",
@@ -1472,7 +1472,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
                 "lpar1",
                 "--capacity",
                 "20",
-                "--vswitch",
+                "--virtual-switch-name",
                 "ETHERNET0",
                 "--vlan",
                 "100",
@@ -1831,7 +1831,7 @@ def test_cluster_create_lu(fake_hmc):
             CLUSTER_UUID,
             "--name",
             "vol1",
-            "--size",
+            "--lu-size-gib",
             "50",
             "--yes",
         ],
@@ -1852,7 +1852,15 @@ def test_cluster_create_lu(fake_hmc):
 def test_cluster_create_lu_declined_confirm_aborts(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["cluster", "create-lu", CLUSTER_UUID, "--name", "vol1", "--size", "50"],
+        [
+            "cluster",
+            "create-lu",
+            CLUSTER_UUID,
+            "--name",
+            "vol1",
+            "--lu-size-gib",
+            "50",
+        ],
         input="n\n",
     )
 
@@ -1874,7 +1882,7 @@ def test_cluster_create_lu_rejects_invalid_vocabulary(fake_hmc, option, value):
             CLUSTER_UUID,
             "--name",
             "vol1",
-            "--size",
+            "--lu-size-gib",
             "50",
             option,
             value,

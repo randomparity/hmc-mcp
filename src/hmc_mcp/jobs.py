@@ -86,6 +86,23 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         raise ValueError("poll_interval must be greater than 0")
 
 
+def install_wait_timeout_seconds(
+    hmc_timeout_minutes: int,
+    wait_timeout_seconds: int | None,
+    poll_interval: int,
+) -> int:
+    """Validate install timing and return the client polling budget."""
+    if hmc_timeout_minutes <= 0:
+        raise ValueError("hmc_timeout_minutes must be greater than 0")
+    if wait_timeout_seconds is not None and wait_timeout_seconds < 0:
+        raise ValueError("wait_timeout_seconds must be greater than or equal to 0")
+    if poll_interval <= 0:
+        raise ValueError("poll_interval must be greater than 0")
+    if wait_timeout_seconds is not None:
+        return wait_timeout_seconds
+    return hmc_timeout_minutes * 60 + poll_interval
+
+
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     resource = job.get("Resource")
@@ -300,7 +317,7 @@ def power_off_vios_job(immediate: bool = False) -> str:
 
 def create_logical_unit_job(
     lu_name: str,
-    lu_size_gb: int,
+    lu_size_gib: int,
     lu_type: LuType = "THIN",
     device_type: DeviceType = "VirtualIO_Disk",
     cloned_from: str | None = None,
@@ -314,7 +331,7 @@ def create_logical_unit_job(
     params: dict[str, str] = {
         "TierUDID": "",
         "LUName": lu_name,
-        "LUSize": str(lu_size_gb),
+        "LUSize": str(lu_size_gib),
         "LUType": lu_type,
         "DeviceType": device_type,
     }
@@ -584,14 +601,14 @@ def install_vios_job(
     nim_subnetmask: str,
     vios_ip: str,
     vlan_id: str,
-    timeout: int = 60,
+    hmc_timeout_minutes: int = 60,
 ) -> str:
     """InstallVIOS job: NIM-based VIOS installation.
 
     nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
     the network for the VIOS during install; vios_ip is the IP the VIOS uses
     during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); timeout is the job timeout in minutes.
+    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
     """
     return build_job_request(
         "InstallVIOS",
@@ -602,7 +619,7 @@ def install_vios_job(
             "nim_subnetmask": nim_subnetmask,
             "vios_IP": vios_ip,
             "vlanid": vlan_id,
-            "timeout": str(timeout),
+            "timeout": str(hmc_timeout_minutes),
         },
     )
 
@@ -618,14 +635,14 @@ def install_lpar_job(
     nim_subnetmask: str,
     lpar_ip: str,
     vlan_id: str,
-    timeout: int = 60,
+    hmc_timeout_minutes: int = 60,
 ) -> str:
     """InstallLPAR job: NIM-based LPAR OS installation.
 
     nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
     the network for the LPAR during install; lpar_ip is the IP the LPAR uses
     during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); timeout is the job timeout in minutes.
+    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
     """
     return build_job_request(
         "InstallLPAR",
@@ -636,6 +653,6 @@ def install_lpar_job(
             "nim_subnetmask": nim_subnetmask,
             "lpar_IP": lpar_ip,
             "vlanid": vlan_id,
-            "timeout": str(timeout),
+            "timeout": str(hmc_timeout_minutes),
         },
     )

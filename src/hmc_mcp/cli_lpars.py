@@ -26,6 +26,8 @@ from .cli_app import (
 )
 
 from .jobs import JobOutcome, validate_wait_timing
+from .server_lpar_config import ProcessorCompatibilityMode
+from .server_systems import PartitionState
 from .operations_lpar import (
     LparCreation,
     authorize_lpar_mutation,
@@ -115,7 +117,7 @@ def lpars_list(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Restrict to this managed system UUID"
     ),
-    state: str | None = typer.Option(
+    state: PartitionState | None = typer.Option(
         None, "--state", help="Filter by PartitionState (server-side search)"
     ),
     as_json: bool = typer.Option(False, "--json"),
@@ -800,7 +802,9 @@ def lpars_get_proc_compat(
 def lpars_set_proc_compat(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
-    mode: str = typer.Argument(..., help="Processor compatibility mode to set"),
+    mode: ProcessorCompatibilityMode = typer.Argument(
+        ..., help="Processor compatibility mode supported by the managed system"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Set the processor compatibility mode of an LPAR (HMC CLI via SSH)."""

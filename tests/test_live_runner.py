@@ -243,7 +243,7 @@ async def test_network_inventory_hands_identifiers_to_mutation(monkeypatch):
     assert state.context.test_vswitch_id == 7
     assert state.context.test_vlan_id == 3001
     assert create_call[1]["vlan_id"] == 3001
-    assert create_call[1]["vswitch_id"] == 7
+    assert create_call[1]["virtual_switch_id"] == 7
 
 
 @pytest.mark.asyncio

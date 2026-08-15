@@ -75,7 +75,7 @@ def hmc_create_virtual_network(
     system_name_or_uuid: str,
     name: str,
     vlan_id: int,
-    vswitch_id: int,
+    virtual_switch_id: int,
     tagged: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
@@ -83,7 +83,7 @@ def hmc_create_virtual_network(
 
     system_name_or_uuid: accepts either a SystemName or a UUID
     (find it with hmc_list_systems).
-    vswitch_id is the numeric SwitchID of the backing VirtualSwitch (see
+    virtual_switch_id is the numeric SwitchID of the backing VirtualSwitch (see
     hmc_list_virtual_switches). tagged sets whether bridged traffic keeps the
     VLAN tag.
     """
@@ -91,7 +91,12 @@ def hmc_create_virtual_network(
     async def _go():
         async with client_from_env(profile) as hmc:
             return await create_virtual_network(
-                hmc, system_name_or_uuid, name, vlan_id, vswitch_id, tagged=tagged
+                hmc,
+                system_name_or_uuid,
+                name,
+                vlan_id,
+                virtual_switch_id,
+                tagged=tagged,
             )
 
     return _run(_go)
@@ -254,7 +259,7 @@ def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     capacity: int,
-    vswitch_name: str,
+    virtual_switch_name: str,
     port_vlan_id: int,
     backing_devices: str | None = None,
     profile: str | None = None,
@@ -270,7 +275,7 @@ def hmc_add_vnic(
     runs.
 
     **V1 scope boundary:** Only the following parameters are supported in
-    this version: ``capacity``, ``vswitch_name``, ``port_vlan_id``, and
+    this version: ``capacity``, ``virtual_switch_name``, ``port_vlan_id``, and
     ``backing_devices`` (optional, opaque string passed verbatim).  Complex
     backing-device topology (multi-adapter failover, per-device SR-IOV
     physical port IDs, capacity weights) is a follow-up and explicitly out
@@ -279,7 +284,7 @@ def hmc_add_vnic(
     Returns the raw HMC command output on success.
 
     WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name_or_uuid, lpar_name_or_uuid, and vswitch_name before calling.  The
+    system_name_or_uuid, lpar_name_or_uuid, and virtual_switch_name before calling.  The
     underlying physical adapter must be in SR-IOV mode (see
     ``hmc_set_sriov_adapter_mode``).
 
@@ -295,7 +300,7 @@ def hmc_add_vnic(
             system_name_or_uuid,
             lpar_name_or_uuid,
             capacity,
-            vswitch_name,
+            virtual_switch_name,
             port_vlan_id,
             backing_devices,
         )

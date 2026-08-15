@@ -28,6 +28,7 @@ from .jobs import (
     install_lpar_job,
     install_vios_job,
     validate_wait_timing,
+    install_wait_timeout_seconds,
     wait_for_submitted_job,
 )
 from .ssh import run_hmc_cli
@@ -128,9 +129,9 @@ def hmc_install_vios(
     nim_subnetmask: str,
     vios_ip: str,
     vlan_id: str = "0",
-    timeout: int = 60,
+    hmc_timeout_minutes: int = 60,
     wait: bool = False,
-    timeout_seconds: int = 300,
+    wait_timeout_seconds: int | None = None,
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
@@ -141,7 +142,7 @@ def hmc_install_vios(
     nim_gateway and nim_subnetmask define the network for the NIM install
     boot; vios_ip is the IP address the VIOS uses during the NIM install;
     vlan_id is the VLAN tag for the install network (use "0" for untagged).
-    timeout is the job timeout in minutes (default 60). Returns the submitted
+    hmc_timeout_minutes is the job timeout in minutes (default 60). Returns the submitted
     job — poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
@@ -153,16 +154,24 @@ def hmc_install_vios(
         nim_subnetmask: IPv4 subnet mask for the installation network.
         vios_ip: IPv4 address assigned to the VIOS during installation.
         vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
-        timeout: HMC installation-job timeout in minutes.
+        hmc_timeout_minutes: HMC installation-job timeout in minutes.
         wait: Wait for the normalized job outcome when true.
-        timeout_seconds: Maximum client-side wait in seconds.
+        wait_timeout_seconds: Maximum client-side wait in seconds. When omitted,
+            derives the HMC timeout in seconds plus one polling interval.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_vios_job(
-        nim_ip, nim_gateway, nim_subnetmask, vios_ip, vlan_id, timeout
+        nim_ip,
+        nim_gateway,
+        nim_subnetmask,
+        vios_ip,
+        vlan_id,
+        hmc_timeout_minutes=hmc_timeout_minutes,
     )
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    effective_wait_timeout = install_wait_timeout_seconds(
+        hmc_timeout_minutes, wait_timeout_seconds, poll_interval
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -172,7 +181,7 @@ def hmc_install_vios(
                 job_xml,
             )
             return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+                hmc, job, wait, effective_wait_timeout, poll_interval
             )
 
     return _run(_go)
@@ -186,9 +195,9 @@ def hmc_install_lpar_os(
     nim_subnetmask: str,
     lpar_ip: str,
     vlan_id: str = "0",
-    timeout: int = 60,
+    hmc_timeout_minutes: int = 60,
     wait: bool = False,
-    timeout_seconds: int = 300,
+    wait_timeout_seconds: int | None = None,
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
@@ -199,7 +208,7 @@ def hmc_install_lpar_os(
     nim_gateway and nim_subnetmask define the network for the NIM install
     boot; lpar_ip is the IP address the LPAR uses during the NIM install;
     vlan_id is the VLAN tag for the install network (use "0" for untagged).
-    timeout is the job timeout in minutes (default 60). Returns the submitted
+    hmc_timeout_minutes is the job timeout in minutes (default 60). Returns the submitted
     job — poll hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
@@ -211,16 +220,24 @@ def hmc_install_lpar_os(
         nim_subnetmask: IPv4 subnet mask for the installation network.
         lpar_ip: IPv4 address assigned to the partition during installation.
         vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
-        timeout: HMC installation-job timeout in minutes.
+        hmc_timeout_minutes: HMC installation-job timeout in minutes.
         wait: Wait for the normalized job outcome when true.
-        timeout_seconds: Maximum client-side wait in seconds.
+        wait_timeout_seconds: Maximum client-side wait in seconds. When omitted,
+            derives the HMC timeout in seconds plus one polling interval.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
     """
     job_xml = install_lpar_job(
-        nim_ip, nim_gateway, nim_subnetmask, lpar_ip, vlan_id, timeout
+        nim_ip,
+        nim_gateway,
+        nim_subnetmask,
+        lpar_ip,
+        vlan_id,
+        hmc_timeout_minutes=hmc_timeout_minutes,
     )
-    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    effective_wait_timeout = install_wait_timeout_seconds(
+        hmc_timeout_minutes, wait_timeout_seconds, poll_interval
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -230,7 +247,7 @@ def hmc_install_lpar_os(
                 job_xml,
             )
             return await wait_for_submitted_job(
-                hmc, job, wait, timeout_seconds, poll_interval
+                hmc, job, wait, effective_wait_timeout, poll_interval
             )
 
     return _run(_go)

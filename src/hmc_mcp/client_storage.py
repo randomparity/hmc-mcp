@@ -70,7 +70,7 @@ class StorageMixin:
         vios_uuid: str,
         vg_uuid: str,
         disk_name: str,
-        capacity_mb: int,
+        capacity_mib: int,
     ) -> dict[str, Any] | None:
         """Create a Virtual Disk (logical volume) in a Volume Group.
 
@@ -79,10 +79,11 @@ class StorageMixin:
         the schema-version header here.
         """
 
-        xml = build_virtual_disk_document(disk_name, capacity_mb)
+        xml = build_virtual_disk_document(disk_name, capacity_mib)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        resp = await self._post(path, xml, resource_type="VolumeGroup",
-                                include_schema_version=False)
+        resp = await self._post(
+            path, xml, resource_type="VolumeGroup", include_schema_version=False
+        )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
@@ -109,8 +110,9 @@ class StorageMixin:
             storage_kind, storage_name, lpar_link, target_device=target_device
         )
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        resp = await self._post(path, xml, resource_type="VirtualIOServer",
-                                include_schema_version=False)
+        resp = await self._post(
+            path, xml, resource_type="VirtualIOServer", include_schema_version=False
+        )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
@@ -126,12 +128,12 @@ class StorageMixin:
         return entries[0] if entries else None
 
     async def create_media_repository(
-        self: StorageClient, vios_uuid: str, vg_uuid: str, size_mb: int
+        self: StorageClient, vios_uuid: str, vg_uuid: str, size_mib: int
     ) -> dict[str, Any] | None:
         """Create the Virtual Media Repository (named VMLibrary) on a Volume Group."""
 
         return await self._post_volume_group_op(
-            vios_uuid, vg_uuid, build_media_repository_document(size_mb)
+            vios_uuid, vg_uuid, build_media_repository_document(size_mib)
         )
 
     async def create_optical_media(
@@ -139,12 +141,14 @@ class StorageMixin:
         vios_uuid: str,
         vg_uuid: str,
         media_name: str,
-        size_mb: int,
+        size_mib: int,
     ) -> dict[str, Any] | None:
         """Create a blank VirtualOpticalMedia (ISO container) in the repository."""
 
         return await self._post_volume_group_op(
-            vios_uuid, vg_uuid, build_virtual_optical_media_document(media_name, size_mb)
+            vios_uuid,
+            vg_uuid,
+            build_virtual_optical_media_document(media_name, size_mib),
         )
 
     async def delete_media_repository(
