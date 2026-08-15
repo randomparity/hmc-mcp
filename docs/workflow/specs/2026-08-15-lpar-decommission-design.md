@@ -31,8 +31,9 @@ Preconditions always execute before a result is returned:
    UUID to match exactly one child. UUID selectors do not use the shared pass-through
    behavior: a UUID absent from that child collection fails before any further read.
 2. Resolve the managed-system and LPAR names required by the existing ownership reader.
-3. Read the description and enforce ADR-0011. A valid foreign owner or malformed
-   hmc-mcp token raises `PermissionError` unless `ownership_override=True`.
+3. Read the description once, enforce ADR-0011, and retain the parsed owner from that
+   authorizing snapshot. A valid foreign owner or malformed hmc-mcp token raises
+   `PermissionError` unless `ownership_override=True`.
 4. Read the LPAR resource and current `PartitionState`.
 5. List `ClientNetworkAdapter`, `VirtualSCSIClientAdapter`,
    `VirtualFibreChannelClientAdapter`, and `VirtualNICDedicated` children.
@@ -62,16 +63,17 @@ For `dry_run=True`, the three execution steps (`power_off`, `detach_adapters`,
 SSH write method is called. Reads, including the SSH-backed ownership description read,
 are allowed and required.
 
-For execution, an already `not activated` LPAR records `power_off` as `ok` with
-`already_off=True`. Otherwise the workflow submits immediate or graceful power-off with
-`wait=True`, validates the normalized terminal outcome, and treats timeout, missing
+For execution, the workflow repeats the ownership check after inventory and immediately
+before its first mutation. An already `not activated` LPAR records `power_off` as `ok`
+with `already_off=True`. Otherwise the workflow submits immediate or graceful power-off
+with `wait=True`, validates the normalized terminal outcome, and treats timeout, missing
 terminal status, or a failed terminal status as an error. Only then does it delete every
 inventoried adapter in deterministic type/UUID order. The adapter step is `ok` only when
 all deletes succeed; the first failure stops remaining adapter deletes and skips LPAR
-deletion. Finally it calls the client's LPAR delete directly, because
-resolution and ownership were already enforced once against the frozen UUID. Any expected
-`HMCError`, `PermissionError`, or `ValueError` before mutation propagates; expected HMC
-failures during execution become an `error` step and short-circuit the remainder.
+deletion. Finally it calls the client's LPAR delete directly against the frozen UUID. Any
+expected `HMCError`, `PermissionError`, or `ValueError` before mutation propagates;
+expected HMC failures during execution become an `error` step and short-circuit the
+remainder.
 
 ## Result contract
 

@@ -21,7 +21,11 @@ selector and proves that either an LPAR name or UUID identifies exactly one chil
 that resolved system. A UUID is not passed through under ADR-0015's compatibility rule:
 a missing, duplicate, or cross-system target fails before ownership reads, inventory, or
 mutation. The workflow reads and enforces the ADR-0011 ownership token even for dry runs
-and accepts `ownership_override=True` only as an explicit caller decision.
+and accepts `ownership_override=True` only as an explicit caller decision. The owner
+reported in the blast radius comes from that same authorizing description read. Before
+execution performs its first mutation, it repeats the ownership read and enforcement so
+an ownership change during inventory fails closed; this remains an advisory check rather
+than a cross-process lock under ADR-0011.
 
 Every call inventories the current power state, all four supported client-adapter
 types, and VIOS storage-detail mappings associated with the resolved LPAR. Storage

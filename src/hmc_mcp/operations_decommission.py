@@ -19,7 +19,6 @@ from .jobs import (
 )
 from .operations_lpar import (
     authorize_lpar_mutation,
-    read_lpar_ownership_owner,
     resolve_lpar_ownership_names,
 )
 
@@ -66,6 +65,8 @@ class DecommissionResult:
 
 @dataclass(frozen=True)
 class _Inventory:
+    system_name: str
+    ownership_lpar_name: str
     lpar_uuid: str
     lpar_name: str
     partition_id: int | None
@@ -265,7 +266,7 @@ async def _resolve_inventory_identity(
     lpar_name_or_uuid: str,
     *,
     ownership_override: bool,
-) -> tuple[str, str, str, str | None]:
+) -> tuple[str, str, str, str, str | None]:
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     child = await _resolve_target_lpar(hmc, system_uuid, lpar_name_or_uuid)
     lpar_uuid = _text(child.get("UUID"))
@@ -275,11 +276,10 @@ async def _resolve_inventory_identity(
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_name_or_uuid, lpar_uuid
     )
-    await authorize_lpar_mutation(
+    owner = await authorize_lpar_mutation(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
-    owner = await read_lpar_ownership_owner(hmc, system_name, lpar_name)
-    return system_uuid, lpar_uuid, lpar_name, owner
+    return system_uuid, system_name, lpar_uuid, lpar_name, owner
 
 
 async def _partition_snapshot(
@@ -397,7 +397,13 @@ async def _inventory(
     *,
     ownership_override: bool,
 ) -> _Inventory:
-    system_uuid, lpar_uuid, lpar_name, owner = await _resolve_inventory_identity(
+    (
+        system_uuid,
+        system_name,
+        lpar_uuid,
+        lpar_name,
+        owner,
+    ) = await _resolve_inventory_identity(
         hmc,
         system_name_or_uuid,
         lpar_name_or_uuid,
@@ -412,6 +418,8 @@ async def _inventory(
     )
 
     return _Inventory(
+        system_name=system_name,
+        ownership_lpar_name=lpar_name,
         lpar_uuid=lpar_uuid,
         lpar_name=partition_name,
         partition_id=partition_id,
@@ -597,6 +605,12 @@ async def decommission_lpar(
             steps=_dry_run_steps(inventory),
         )
 
+    await authorize_lpar_mutation(
+        hmc,
+        inventory.system_name,
+        inventory.ownership_lpar_name,
+        ownership_override=ownership_override,
+    )
     steps: list[dict[str, Any]] = []
     power_step = await _power_step_with_errors(
         hmc,

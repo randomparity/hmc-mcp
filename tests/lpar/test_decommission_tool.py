@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
 from hmc_mcp.server import hmc_decommission_lpar
@@ -128,14 +129,9 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
     async def authorize(hmc, system_name: str, lpar_name: str, *, ownership_override: bool = False) -> None:
         calls.append(f"authorize:{system_name}:{lpar_name}:{ownership_override}")
 
-    async def read_owner(hmc, system_name: str, lpar_name: str) -> None:
-        calls.append(f"read_owner:{system_name}:{lpar_name}")
-        return None
-
     monkeypatch.setattr(ops, "resolve_system_uuid", resolve_system_uuid)
     monkeypatch.setattr(ops, "resolve_lpar_ownership_names", resolve_names)
     monkeypatch.setattr(ops, "authorize_lpar_mutation", authorize)
-    monkeypatch.setattr(ops, "read_lpar_ownership_owner", read_owner)
 
 
 def _tool_result() -> DecommissionResult:
@@ -379,7 +375,7 @@ async def test_decommission_continues_when_vios_storage_detail_is_unavailable(
         "resolve_system_uuid:system-a",
         f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
         "authorize:system-a:aix-prod:False",
-        "read_owner:system-a:aix-prod",
+        "authorize:system-a:aix-prod:False",
         "submit_job",
         "wait_for_job",
         "delete_adapter:ClientNetworkAdapter:adapter-1",
@@ -461,7 +457,6 @@ async def test_decommission_dry_run_inventories_without_mutating(monkeypatch: py
         "resolve_system_uuid:system-a",
         f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
         "authorize:system-a:aix-prod:False",
-        "read_owner:system-a:aix-prod",
     ]
     hmc.submit_job.assert_not_awaited()
     hmc.wait_for_job.assert_not_awaited()
@@ -489,8 +484,6 @@ async def test_decommission_enforces_ownership_even_for_dry_run(monkeypatch: pyt
         "authorize_lpar_mutation",
         AsyncMock(side_effect=PermissionError("foreign owner")),
     )
-    monkeypatch.setattr(ops, "read_lpar_ownership_owner", AsyncMock(return_value=None))
-
     with pytest.raises(PermissionError, match="foreign owner"):
         await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=True)
 
@@ -514,6 +507,40 @@ async def test_decommission_allows_explicit_ownership_override(monkeypatch: pyte
 
     assert result.workflow_completed is True
     assert "authorize:system-a:aix-prod:True" in calls
+
+
+@pytest.mark.asyncio
+async def test_decommission_revalidates_changed_owner_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hmc = _client()
+    hmc.config = HMCConfig(
+        host="hmc.test", user="user", agent_id="alice", _env_file=None
+    )
+
+    from hmc_mcp import operations_decommission as ops
+
+    monkeypatch.setattr(ops, "resolve_system_uuid", AsyncMock(return_value=SYSTEM_UUID))
+    monkeypatch.setattr(
+        ops,
+        "resolve_lpar_ownership_names",
+        AsyncMock(return_value=("system-a", "aix-prod")),
+    )
+    descriptions = AsyncMock(
+        side_effect=(
+            "[hmc-mcp owner:alice created:2026-08-14]",
+            "[hmc-mcp owner:bob created:2026-08-15]",
+        )
+    )
+    monkeypatch.setattr("hmc_mcp.operations_lpar.get_lpar_description", descriptions)
+
+    with pytest.raises(PermissionError, match="owned by 'bob'"):
+        await decommission_lpar(hmc, "system-a", "aix-prod")
+
+    assert descriptions.await_count == 2
+    hmc.submit_job.assert_not_awaited()
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -581,7 +608,7 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "resolve_system_uuid:system-a",
         f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
         "authorize:system-a:aix-prod:False",
-        "read_owner:system-a:aix-prod",
+        "authorize:system-a:aix-prod:False",
         "submit_job",
         "wait_for_job",
         "delete_adapter:ClientNetworkAdapter:cna-1",
@@ -694,7 +721,7 @@ async def test_decommission_stops_after_first_adapter_failure(monkeypatch: pytes
         "resolve_system_uuid:system-a",
         f"resolve_names:{SYSTEM_UUID}:system-a:{LPAR_UUID}",
         "authorize:system-a:aix-prod:False",
-        "read_owner:system-a:aix-prod",
+        "authorize:system-a:aix-prod:False",
         "delete_adapter:ClientNetworkAdapter:cna-1",
         "delete_adapter:ClientNetworkAdapter:cna-2",
         "delete_adapter:VirtualSCSIClientAdapter:vscsi-1",

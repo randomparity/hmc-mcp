@@ -92,22 +92,16 @@ def parse_lpar_ownership_owner(description: str) -> str | None:
     return match.group("owner") if match is not None else None
 
 
-async def read_lpar_ownership_owner(
-    hmc: HMCClient, system_name: str, lpar_name: str
-) -> str | None:
-    """Read and parse the advisory owner token for one LPAR."""
-    description = await get_lpar_description(hmc.config, system_name, lpar_name)
-    return parse_lpar_ownership_owner(description)
-
-
 async def authorize_lpar_mutation(
     hmc: HMCClient,
     system_name: str,
     lpar_name: str,
     *,
     ownership_override: bool = False,
-) -> None:
-    """Reject mutations of foreign-owned or malformed ownership-stamped LPARs."""
+) -> str | None:
+    """Authorize one description snapshot and return its parsed owner."""
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    owner = parse_lpar_ownership_owner(description)
     if ownership_override:
         _logger.warning(
             "LPAR ownership override approved",
@@ -117,23 +111,21 @@ async def authorize_lpar_mutation(
                 "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
             },
         )
-        return
-    description = await get_lpar_description(hmc.config, system_name, lpar_name)
-    match = _OWNERSHIP_TOKEN.search(description)
-    if match is None:
+        return owner
+    if owner is None:
         if "[hmc-mcp" in description:
             raise PermissionError(
                 f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
                 "retry only with ownership_override=true after operator approval"
             )
-        return
-    owner = match.group("owner")
+        return None
     current_owner = hmc.config.agent_id or "hmc-mcp"
     if owner != current_owner:
         raise PermissionError(
             f"LPAR {lpar_name!r} is owned by {owner!r}, not {current_owner!r}; "
             "retry only with ownership_override=true after operator approval"
         )
+    return owner
 
 
 async def resolve_lpar_ownership_names(
