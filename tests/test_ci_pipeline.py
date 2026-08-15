@@ -272,10 +272,11 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
         r'    "architecture=$(uname -m) && echo \"runtime architecture: ${architecture}\" '
         r'&& test \"${architecture}\" = \"ppc64le\" '
         "&& git config --global --add safe.directory /workspace "
-        '&& just setup && just verify"]\n'
+        "&& uv sync --locked --no-install-package prek "
+        '&& UV_NO_SYNC=1 just verify"]\n'
     )
     assert dockerfile.endswith(expected_cmd)
-    assert dockerfile.count("just setup") == 1
+    assert "just setup" not in dockerfile
     assert dockerfile.count("just verify") == 1
     assert "COPY" not in dockerfile
     assert "rm -rf" not in dockerfile

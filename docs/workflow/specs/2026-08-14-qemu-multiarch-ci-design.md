@@ -75,3 +75,8 @@ action input in the ppc64le job, and no GitHub token, SSH/cloud credential, Dock
 host credential mount in its container invocation. Tests also require the ppc64le Python and Rust
 build prerequisites and explicit emulation limits.
 The repository guardrail remains `just verify`.
+
+The ppc64le environment synchronizes the locked dependency graph without `prek`, which is used
+only by the separate `just setup` recipe to install local Git hooks. Disabling uv's implicit
+resynchronization then runs the canonical `just verify` recipe unchanged. This avoids compiling a
+hook installer under QEMU without removing any command or dependency exercised by the guardrail.
