@@ -27,7 +27,7 @@ actions.
   references remain immutable full commits with version comments.
 - Branch `feat/python-architecture-matrix-163`; base `main`. Host architecture `arm64`; declared
   targets `amd64`, `arm64`, and `ppc64le`; relationship `included`.
-- Guardrails: `just setup`; focused `uv run --no-sync pytest -q tests/test_ci_pipeline.py`; `just
+- Guardrails: `just setup`; focused `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`; `just
   verify`; `UV_NO_SYNC=1 uv run prek run --all-files`.
 
 ## Task 1: Specify and implement the complete producer and consumer matrices
@@ -52,7 +52,7 @@ job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are id
    installed CLI help path, and installed MCP smoke. Assert it never runs `just setup`, installs
    the project checkout, resolves dependencies outside `uv.lock`, merges artifacts, or activates
    ppc64le.
-3. Run `uv run --no-sync pytest -q tests/test_ci_pipeline.py`. Expect failure because arm64 has only
+3. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect failure because arm64 has only
    Python 3.11, `fail-fast` and `/ verify` are absent, the download pin is absent, and `wheel-smoke`
    does not exist. Preserve this red result in the forge ledger.
 4. Expand `.github/workflows/ci.yml` to the exact eight producer tuples, set `fail-fast: false`, and
@@ -71,7 +71,7 @@ job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are id
    `.wheel-venv/bin/hmc-mcp metrics --help`. Before MCP smoke, run a Python assertion that resolves
    `hmc_mcp.__file__` and requires it to be beneath the resolved `.wheel-venv` path. Then run
    `.wheel-venv/bin/python scripts/smoke_mcp.py`.
-6. Run `uv run --no-sync pytest -q tests/test_ci_pipeline.py`. Expect all tests in the file to pass.
+6. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect all tests in the file to pass.
 7. Run `just workflow-security`. Expect exit 0 with no zizmor findings. Review
    `git diff --check` and the workflow diff, confirming the delimited ppc64le block is unchanged.
 8. Stage only `.github/workflows/ci.yml` and `tests/test_ci_pipeline.py`, then commit with `git
