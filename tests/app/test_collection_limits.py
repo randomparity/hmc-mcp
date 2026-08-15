@@ -107,10 +107,15 @@ def test_run_limited_collection_rejects_negative_limit_before_operation():
 def test_collection_tool_signatures_and_limit_schema(tool_name, entry):
     module, _args, expected_parameters = entry
     function = getattr(module, tool_name)
-    assert list(inspect.signature(function).parameters) == expected_parameters
+    parameters = inspect.signature(function).parameters
+    assert list(parameters) == expected_parameters
+
+    expected_default = 20 if tool_name == "hmc_list_recent_jobs" else None
+    assert parameters["limit"].default == expected_default
 
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
     limit_schema = tools[tool_name].parameters["properties"]["limit"]
+    assert limit_schema["default"] == expected_default
     description = limit_schema["description"]
     assert "client-side" in description
     assert "complete HMC feed" in description
