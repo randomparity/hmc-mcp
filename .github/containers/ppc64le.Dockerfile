@@ -3,7 +3,9 @@ FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e8
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 RUN ubuntu_snapshot=20260813T000000Z \
-    && echo "APT::Snapshot \"${ubuntu_snapshot}\";" > /etc/apt/apt.conf.d/50snapshot \
+    && sed -i \
+        "s|http://ports.ubuntu.com/ubuntu-ports|https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}|" \
+        /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
