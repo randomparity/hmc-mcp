@@ -65,14 +65,18 @@ and deployment topology are operator-configured and no safe universal value is
 documented.
 
 The client assumes no fixed token lifetime. A 401 evicts only the matching
-generation. After its active borrowers drain, that generation must pass the
-same validated Logoff contract before one replacement Logon may proceed; a 401
-does not prove that the HMC removed the remote session. Only request definitions
-on an explicit reviewed allowlist may then perform one replay; classification
-means safe after an ambiguous response and never derives from HTTP verb alone.
-Missing or unknown classification is non-replayable. Mutating and unclassified
-requests return an actionable authentication-expired error because the client
-cannot prove the original operation had no effect.
+generation. The request observing the 401 is itself a borrower, so it atomically
+retires the matching generation and releases its own lease exactly once before
+waiting for the remaining borrowers to drain. Cancellation cannot leave that
+lease held or release it twice. The generation must then pass the same validated
+Logoff contract before one replacement Logon may proceed; a 401 does not prove
+that the HMC removed the remote session. Only request definitions on an explicit
+reviewed allowlist may then perform one replay, and that replay acquires a new
+generation and lease. Classification means safe after an ambiguous response and
+never derives from HTTP verb alone. Missing or unknown classification is
+non-replayable. Mutating and unclassified requests return an actionable
+authentication-expired error because the client cannot prove the original
+operation had no effect.
 
 A credential-only profile change does not alter the cache key, and no cited HMC
 documentation proves that credential rotation immediately revokes existing
@@ -82,6 +86,9 @@ revocation is required. Authentication material must not be added to the key.
 
 The implementation is deferred to a separate issue with concurrency,
 invalidation, shutdown, profile-isolation, redaction, and replay-boundary tests.
+Those tests include a single-borrower 401 case proving the observer cannot wait
+on its own lease, plus cancellation at retirement, release, cleanup, and
+replacement acquisition boundaries.
 
 ## Consequences
 

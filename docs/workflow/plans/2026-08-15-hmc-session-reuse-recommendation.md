@@ -15,6 +15,10 @@ future implementation. This change is Markdown documentation.
   change.
 - The future shutdown contract uses a fixed 30-second borrower-drain deadline;
   it never forces Logoff beneath an active mutation.
+- A 401 observer atomically retires its matching generation and releases its
+  own lease exactly once before awaiting drain; any replay acquires a new
+  generation and lease. Future tests cover the single-borrower deadlock and
+  cancellation across retirement, release, cleanup, and reacquisition.
 - Use only repository evidence, authoritative IBM documentation, and the raw
   operator-supplied measurement.
 - Do not disclose credentials, tokens, hostnames, or IP addresses.
@@ -38,8 +42,9 @@ issue consumes ADR 0028's cache, invalidation, and replay invariants.
 2. Record the measurement procedure, cleanup confirmation, environment class,
    missing-script caveat, and authoritative session facts.
 3. State the proceed recommendation and link ADR 0028.
-4. Record the approved cache key, cross-loop ownership, invalidation, retry,
-   shutdown, and mutation-safety decisions in ADR 0028.
+4. Record the approved cache key, cross-loop ownership, generation/lease
+   transition, invalidation, retry, shutdown, and mutation-safety decisions in
+   ADR 0028, including the single-borrower 401 and cancellation test contract.
 5. Run `UV_NO_SYNC=1 uv run prek run --all-files`; expect exit 0 and no modified
    files after formatter hooks settle.
 6. Run `just verify`; expect exit 0 and `verify: all groups load OK`.

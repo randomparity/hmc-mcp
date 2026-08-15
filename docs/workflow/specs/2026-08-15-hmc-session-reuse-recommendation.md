@@ -211,10 +211,16 @@ deployment topology are configurable.
 - Each published token has a monotonically changing per-key generation and an
   active-borrower count. A request releases the same generation it acquired.
 - A 401 may invalidate only the generation used by that request. A delayed 401
-  for an older generation cannot evict its replacement. After active borrowers
-  drain, the rejected generation must pass the same validated Logoff contract
-  before one replacement Logon may proceed; rejection does not prove that the
-  HMC removed the remote session.
+  for an older generation cannot evict its replacement. The request observing
+  the 401 is itself a borrower: while holding the key transition lock, it must
+  atomically retire the matching generation and release its own lease exactly
+  once before awaiting the remaining borrowers. Cancellation at any point in
+  that transition must not double-release the lease or leave it held. After the
+  remaining active borrowers drain, the rejected generation must pass the same
+  validated Logoff contract before one replacement Logon may proceed; rejection
+  does not prove that the HMC removed the remote session. An allowlisted replay
+  acquires the replacement generation and a new lease rather than reusing the
+  retired generation's released lease.
 - Replacement, route-change eviction, and shutdown mark a generation retired;
   Logoff is deferred until its active-borrower count reaches zero. New callers
   cannot acquire a retired generation, and no replacement Logon may begin until
@@ -250,6 +256,13 @@ A future implementation must deterministically test concurrent read/read reuse,
 a delayed 401 from an older generation, route change during an in-flight call,
 shutdown during active use, repeated invalidation while borrowers remain active,
 ambiguous cleanup failure, and cancellation during Logon and after acquisition.
+One single-borrower 401 test must prove that the observer retires the matching
+generation, releases its own lease exactly once, and reaches cleanup without
+waiting on itself; an allowlisted replay must then acquire a new generation and
+lease. Cancellation tests must cover cancellation before and after retirement,
+lease release, cleanup, and replacement acquisition, proving no leaked or
+double-released lease and no publication, eviction, or cleanup of a newer
+generation.
 The shutdown test must cover both drain before 30 seconds and deadline expiry
 with an outstanding mutation borrower, including the reported count and absence
 of a forced Logoff. It must also cover multiple slow Logoffs running concurrently.
