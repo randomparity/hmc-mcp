@@ -27,14 +27,14 @@ For reusable-library use, install the bare project dependencies:
 
 ```bash
 cd ~/src/hmc-mcp
-uv sync
+uv sync --no-dev
 ```
 
 To use the CLI or MCP server, install the `app` extra as well:
 
 ```bash
 cd ~/src/hmc-mcp
-uv sync --extra app
+uv sync --no-dev --extra app
 ```
 
 ## Reusable Python API
