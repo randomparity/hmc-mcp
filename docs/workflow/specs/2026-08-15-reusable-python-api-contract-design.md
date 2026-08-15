@@ -20,11 +20,12 @@ behavior changes in this slice.
 ## Inventory method
 
 Enumerate every tracked `src/hmc_mcp/operations_*.py` module. For each module, inspect its
-top-level definitions and public signatures. Every non-underscore top-level function is included,
-whether it performs remote work, transforms a result, validates arguments, or enforces policy.
-Every package-owned model or literal alias in those signatures is included. Underscore definitions
-are excluded as internal. Built-in containers, `Any`, and their opaque HMC payload contents are not
-package-owned types.
+top-level definitions and public signatures. Every non-underscore top-level asynchronous function
+is included, including asynchronous policy-enforcement workflows. Synchronous transformation,
+parsing, and validation helpers are excluded because the public operation contract is
+asynchronous. Every package-owned model or literal alias in selected signatures is included.
+Underscore definitions are excluded as internal. Built-in containers, `Any`, and their opaque HMC
+payload contents are not package-owned types.
 
 The resulting 15-row inventory is written directly into ADR 0029 so later facade work has one
 reviewable source for exact names and exclusion reasons. A future module or operation requires an
@@ -33,8 +34,9 @@ intentional ADR/facade/test update rather than silently becoming supported.
 ## Compatibility boundary
 
 The facade is the sole reusable-library import contract. Strict pre-1.0 SemVer means an
-incompatible removal, rename, signature change, or owned-model change waits for a minor release;
-patches remain compatible. Additive exports require an intentional exact-export test update.
+incompatible removal, rename, signature change, or owned-model change waits for a minor release.
+An additive facade export also requires a minor release and an intentional exact-export test
+update. Patches remain compatible and do not change the export set.
 
 `HMCClient` remains concrete for construction, async context management, and injection. Its exact
 supported lifecycle allowlist is `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`,
