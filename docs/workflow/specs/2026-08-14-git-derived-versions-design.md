@@ -8,7 +8,8 @@ Issue #159 replaces both static `0.1.0` declarations with one build-time computa
 match canonical decimal `X.Y.Z` exactly; each component has no leading zero unless it is `0`.
 Among matching tags reachable from `HEAD`, the highest semantic
 version is the base; annotated and lightweight tags are equivalent and nonmatching tags are
-ignored. An exact tagged commit produces the tag version. Other commits produce
+ignored. If `HEAD` is the selected highest-version base tag's commit, it produces the clean tag
+version. Other commits produce
 `<next-version>.devN+g<sha>`, where `N` is `git rev-list --count TAG..HEAD` and `sha` is Git's
 repository-unique abbreviation with a minimum length of seven characters. Dirty and shallow
 repositories fail with an error that names the invalid state and remediation. No publishing,
@@ -58,8 +59,8 @@ preparation, not a provenance bypass.
 ## Tests
 
 Focused tests create isolated temporary Git repositories and exercise exact tags, highest-version
-selection across reachable tags, ignored malformed, prefixed, and leading-zero tags, commits
-after tags, dirty state,
+selection across reachable tags, a lower-version tag on `HEAD` beneath a higher reachable base,
+ignored malformed, prefixed, and leading-zero tags, commits after tags, dirty state,
 including staged, tracked unstaged, untracked source, and ignored-file cases; shallow clones,
 no-tag history, repository-unique abbreviation resolution, all three release-line transitions,
 and invalid selectors. Build tests inspect wheel contents and metadata, rebuild a wheel from the
