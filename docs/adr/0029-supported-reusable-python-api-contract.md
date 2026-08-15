@@ -19,16 +19,17 @@ open-ended IBM HMC resource mappings, and defines strict pre-1.0 compatibility.
 ## Decision
 
 `hmc_mcp.api` is the only supported reusable-library import path. Its explicit `__all__` is an
-exhaustive compatibility manifest. An exported name, its call signature, and the fields and
-constructor of an exported package-owned model are supported. Import paths outside
-`hmc_mcp.api` are implementation details even when Python can import them.
+exhaustive compatibility manifest. An exported name, its call signature, the fields and
+constructor of an exported package-owned model, and the members and values of an exported enum or
+literal alias are supported. Import paths outside `hmc_mcp.api` are implementation details even
+when Python can import them.
 
 During `0.x`, removing or renaming an export, making a compatible call invalid, or changing an
-owned model incompatibly requires a minor release. Patch releases preserve the facade contract.
-Additive facade exports also require a minor release because they expand the manifest. Patch
-releases are limited to compatible fixes that do not change the export set. The `1.0.0` release
-may strengthen the policy but must not silently weaken promises already made within its release
-line.
+owned model incompatibly requires a minor release. Adding, removing, renaming, or changing an
+exported enum member or literal alternative also requires a minor release. Additive facade exports
+require a minor release because they expand the manifest. Patch releases are limited to compatible
+fixes that change neither the export set nor enum and literal value sets. The `1.0.0` release may
+strengthen the policy but must not silently weaken promises already made within its release line.
 
 The facade exports `HMCClient`, `HMCConfig`, `ConfigError`, and `load_profile` for construction and
 configuration. It exports the complete failure hierarchy callers need at the facade boundary:
@@ -111,10 +112,9 @@ support policy.
 
 Consumers receive one explicit, testable import surface instead of depending on internal module
 layout. Contract tests must freeze the exact `__all__`, lifecycle allowlist, asynchronous
-signatures,
-presentation-import isolation, and absence of presentation types. Future operation modules and
-public top-level functions do not enter the facade automatically: maintainers must consciously
-update the facade, inventory, and tests.
+signatures, enum and literal value sets, presentation-import isolation, and absence of presentation
+types. Future operation modules and public top-level functions do not enter the facade
+automatically: maintainers must consciously update the facade, inventory, and tests.
 
 The initial surface is broad because the deterministic rule includes every asynchronous domain
 operation, including policy-enforcement workflows. That breadth is preferable to an undocumented

@@ -35,8 +35,10 @@ intentional ADR/facade/test update rather than silently becoming supported.
 
 The facade is the sole reusable-library import contract. Strict pre-1.0 SemVer means an
 incompatible removal, rename, signature change, or owned-model change waits for a minor release.
-An additive facade export also requires a minor release and an intentional exact-export test
-update. Patches remain compatible and do not change the export set.
+Adding, removing, renaming, or changing an exported enum member or literal alternative also
+requires a minor release and exact-value-set test updates. An additive facade export requires a
+minor release and an intentional exact-export test update. Patches remain compatible and change
+neither set.
 
 `HMCClient` remains concrete for construction, async context management, and injection of a
 constructed instance into operation functions. Its exact supported lifecycle allowlist is
