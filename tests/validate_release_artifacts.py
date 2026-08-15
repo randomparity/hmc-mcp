@@ -3,6 +3,7 @@ import configparser
 import csv
 import hashlib
 import re
+import stat
 import sys
 import tarfile
 import tomllib
@@ -84,7 +85,8 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
         with zipfile.ZipFile(path) as archive:
             for item in archive.infolist():
                 name = _validate_member_name(item.filename, path.name)
-                if item.is_dir():
+                unix_type = stat.S_IFMT(item.external_attr >> 16) if item.create_system == 3 else 0
+                if item.is_dir() or unix_type not in {0, stat.S_IFREG}:
                     _fail(path.name, f"wheel member must be a regular file: {name}")
                 if name in members:
                     _fail(path.name, f"duplicate archive member: {name}")

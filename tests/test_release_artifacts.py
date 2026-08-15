@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import shutil
+import stat
 import subprocess
 import tarfile
 import zipfile
@@ -125,6 +126,22 @@ def _rewrite_wheel(
             archive.writestr(name, data)
 
 
+def _rewrite_wheel_mode(path: Path, suffix: str, mode: int) -> None:
+    with zipfile.ZipFile(path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    record = next(name for name in members if name.endswith(".dist-info/RECORD"))
+    members[record] = _record_bytes(members)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            if name.endswith(suffix):
+                item = zipfile.ZipInfo(name)
+                item.create_system = 3
+                item.external_attr = mode << 16
+                archive.writestr(item, data)
+            else:
+                archive.writestr(name, data)
+
+
 def _tar_data(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
     if not member.isfile():
         return b""
@@ -227,6 +244,28 @@ def test_rejects_unexpected_wheel_payload_with_valid_record(
     _rewrite_wheel(wheel, lambda members: members.__setitem__("other/payload", b"payload"))
 
     _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
+
+
+@pytest.mark.parametrize(
+    ("suffix", "mode"),
+    [
+        ("hmc_mcp/__init__.py", stat.S_IFLNK | 0o777),
+        (".dist-info/WHEEL", stat.S_IFIFO | 0o644),
+    ],
+)
+def test_rejects_non_regular_wheel_member(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    suffix: str,
+    mode: int,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    _rewrite_wheel_mode(wheel, suffix, mode)
+
+    _assert_invalid(artifacts, project, capsys, "wheel member must be a regular file")
 
 
 @pytest.mark.parametrize(
