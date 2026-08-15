@@ -218,6 +218,17 @@ def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     return asyncio.run(fn())
 
 
+def _run_limited_collection(
+    fn: Callable[[], Coroutine[Any, Any, list[_T]]],
+    limit: int | None,
+) -> list[_T]:
+    """Run a full collection request, then cap its agent-facing result."""
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be greater than or equal to 0")
+    entries = _run(fn)
+    return entries if limit is None else entries[:limit]
+
+
 @overload
 def _ssh_with_client(
     fn: Callable[[HMCConfig, str, str], Awaitable[_T]],
