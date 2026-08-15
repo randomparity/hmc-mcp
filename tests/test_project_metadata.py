@@ -45,7 +45,11 @@ def test_readme_links_canonical_governance_files() -> None:
 def test_contribution_guide_defines_the_complete_local_path() -> None:
     guide = (ROOT / "CONTRIBUTING.md").read_text()
 
-    for command in ("uv sync --locked", "just verify", "uv run prek run --all-files"):
+    for command in (
+        "just setup",
+        "just verify",
+        "UV_NO_SYNC=1 uv run prek run --all-files",
+    ):
         assert f"`{command}`" in guide
     assert "focused" in guide.lower()
     assert "test" in guide.lower()

@@ -1,6 +1,6 @@
 [project]
 name = "hmc-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "MCP server and CLI for the IBM HMC (Hardware Management Console) REST API"
 readme = "README.md"
 license = "MIT"
@@ -27,14 +27,28 @@ Security = "https://github.com/randomparity/hmc-mcp/security/policy"
 hmc-mcp = "hmc_mcp:main"
 
 [build-system]
-requires = ["uv_build==0.12.3"]
-build-backend = "uv_build"
+requires = ["hatchling==1.32.0", "versioningit==3.3.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "versioningit"
+
+[tool.versioningit.vcs]
+method = { module = "versioning", value = "describe_git", module-dir = "scripts" }
+
+[tool.versioningit.next-version]
+method = { module = "versioning", value = "next_release", module-dir = "scripts" }
+release-line = "minor"
+
+[tool.versioningit.format]
+distance = "{next_version}.dev{distance}+{vcs}{rev}"
 
 [dependency-groups]
 dev = [
     "cryptography==50.0.0",
     "detect-secrets==1.5.0",
     "fastmcp-slim[client]==3.4.7",
+    "hatchling==1.32.0",
     "prek==0.4.10",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
@@ -42,6 +56,7 @@ dev = [
     "respx==0.23.1",
     "ruff==0.15.22",
     "ty==0.0.62",
+    "versioningit==3.3.0",
     "zizmor==1.29.0",
 ]
 
