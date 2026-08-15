@@ -5,8 +5,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-import yaml
-
 
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
@@ -204,13 +202,19 @@ def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
 
-    matrix = yaml.safe_load(active_workflow)["jobs"]["ci"]["strategy"]["matrix"]
-    expected_entries = [
-        {"architecture": architecture, "runner": runner, "python-version": version}
+    matrix = re.search(
+        r"^      matrix:\n(?P<body>.*?)(?=^    steps:)",
+        active_workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert matrix
+    expected_matrix = "        include:\n" + "".join(
+        f"          - architecture: {architecture}\n"
+        f"            runner: {runner}\n"
+        f'            python-version: "{version}"\n'
         for architecture, runner, version in NATIVE_MATRIX
-    ]
-    assert matrix == {"include": expected_entries}
-    assert len(matrix["include"]) == 5
+    )
+    assert matrix["body"] == expected_matrix
     assert "python-version: ${{ matrix.python-version }}" in workflow
     assert active_workflow.count("run: just verify") == 1
     assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
