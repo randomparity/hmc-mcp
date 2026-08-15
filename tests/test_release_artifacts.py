@@ -1,5 +1,6 @@
 import os
 import base64
+import copy
 import csv
 import hashlib
 import io
@@ -156,7 +157,9 @@ def _rewrite_sdist(
     mutate: Callable[[list[tuple[tarfile.TarInfo, bytes]]], None],
 ) -> None:
     with tarfile.open(path, "r:gz") as archive:
-        entries = [(member, _tar_data(archive, member)) for member in archive.getmembers()]
+        entries = [
+            (member, _tar_data(archive, member)) for member in archive.getmembers()
+        ]
     mutate(entries)
     with tarfile.open(path, "w:gz") as archive:
         for member, data in entries:
@@ -187,7 +190,11 @@ def test_rejects_missing_input_directory(
 ) -> None:
     artifacts, project = built_project
     absent = tmp_path / "absent"
-    arguments = [str(absent), str(project)] if missing == "artifacts" else [str(artifacts), str(absent)]
+    arguments = (
+        [str(absent), str(project)]
+        if missing == "artifacts"
+        else [str(artifacts), str(absent)]
+    )
 
     assert main(arguments) == 1
     assert "does not exist" in capsys.readouterr().err
@@ -228,6 +235,54 @@ def test_rejects_duplicate_wheel(
     shutil.copy2(wheel, artifacts / f"duplicate-{wheel.name}")
 
     _assert_invalid(artifacts, project, capsys, "exactly one wheel")
+
+
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+def test_rejects_corrupt_archive(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    artifact: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    pattern = "*.whl" if artifact == "wheel" else "*.tar.gz"
+    next(artifacts.glob(pattern)).write_bytes(b"not an archive")
+
+    _assert_invalid(artifacts, project, capsys, f"{artifact} archive is malformed")
+
+
+def test_rejects_duplicate_wheel_member(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    with zipfile.ZipFile(wheel) as archive:
+        entries = [(item, archive.read(item)) for item in archive.infolist()]
+    with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item, data in entries:
+            archive.writestr(item, data)
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            archive.writestr(entries[0][0].filename, entries[0][1])
+
+    _assert_invalid(artifacts, project, capsys, "duplicate archive member")
+
+
+def test_rejects_duplicate_sdist_member(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+
+    def duplicate(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        member, data = entries[0]
+        entries.append((copy.copy(member), data))
+
+    _rewrite_sdist(sdist, duplicate)
+    _assert_invalid(artifacts, project, capsys, "sdist root or member is not unique")
 
 
 @pytest.mark.parametrize(
@@ -331,7 +386,9 @@ def test_rejects_unexpected_wheel_payload_with_valid_record(
 ) -> None:
     artifacts, project = _artifact_copy(tmp_path, built_project)
     wheel = next(artifacts.glob("*.whl"))
-    _rewrite_wheel(wheel, lambda members: members.__setitem__("other/payload", b"payload"))
+    _rewrite_wheel(
+        wheel, lambda members: members.__setitem__("other/payload", b"payload")
+    )
 
     _assert_invalid(artifacts, project, capsys, "wheel member set is not closed")
 
@@ -413,13 +470,19 @@ def test_rejects_invalid_wheel_contract_with_valid_record(
         elif mutation == "duplicate_version":
             members[name] += b"Wheel-Version: 1.0\n"
         elif mutation == "version":
-            members[name] = members[name].replace(b"Wheel-Version: 1.0", b"Wheel-Version: 2.0")
+            members[name] = members[name].replace(
+                b"Wheel-Version: 1.0", b"Wheel-Version: 2.0"
+            )
         elif mutation == "purelib":
-            members[name] = members[name].replace(b"Root-Is-Purelib: true", b"Root-Is-Purelib: false")
+            members[name] = members[name].replace(
+                b"Root-Is-Purelib: true", b"Root-Is-Purelib: false"
+            )
         elif mutation == "duplicate_tag":
             members[name] += b"Tag: py3-none-any\n"
         else:
-            members[name] = members[name].replace(b"Tag: py3-none-any", b"Tag: cp311-none-any")
+            members[name] = members[name].replace(
+                b"Tag: py3-none-any", b"Tag: cp311-none-any"
+            )
 
     _rewrite_wheel(wheel, change_wheel)
     _assert_invalid(artifacts, project, capsys, invariant)
@@ -437,7 +500,9 @@ def test_rejects_duplicate_core_metadata_singleton(
         wheel = next(artifacts.glob("*.whl"))
 
         def duplicate_name(members: dict[str, bytes]) -> None:
-            name = next(item for item in members if item.endswith(".dist-info/METADATA"))
+            name = next(
+                item for item in members if item.endswith(".dist-info/METADATA")
+            )
             members[name] = b"Name: conflicting\n" + members[name]
 
         _rewrite_wheel(wheel, duplicate_name)
@@ -470,7 +535,9 @@ def test_rejects_missing_core_metadata_singleton(
     def remove_field(members: dict[str, bytes]) -> None:
         name = next(item for item in members if item.endswith(".dist-info/METADATA"))
         lines = members[name].splitlines(keepends=True)
-        members[name] = b"".join(line for line in lines if not line.startswith(f"{field}:".encode()))
+        members[name] = b"".join(
+            line for line in lines if not line.startswith(f"{field}:".encode())
+        )
 
     _rewrite_wheel(wheel, remove_field)
     _assert_invalid(artifacts, project, capsys, f"exactly one {field}")
@@ -488,8 +555,12 @@ def test_rejects_unsupported_core_metadata_version(
         wheel = next(artifacts.glob("*.whl"))
 
         def change_version(members: dict[str, bytes]) -> None:
-            name = next(item for item in members if item.endswith(".dist-info/METADATA"))
-            members[name] = members[name].replace(b"Metadata-Version: 2.5", b"Metadata-Version: 1.0")
+            name = next(
+                item for item in members if item.endswith(".dist-info/METADATA")
+            )
+            members[name] = members[name].replace(
+                b"Metadata-Version: 2.5", b"Metadata-Version: 1.0"
+            )
 
         _rewrite_wheel(wheel, change_version)
     else:
@@ -498,7 +569,9 @@ def test_rejects_unsupported_core_metadata_version(
         def change_version(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
             for index, (member, data) in enumerate(entries):
                 if member.name.endswith("/PKG-INFO"):
-                    changed = data.replace(b"Metadata-Version: 2.5", b"Metadata-Version: 1.0")
+                    changed = data.replace(
+                        b"Metadata-Version: 2.5", b"Metadata-Version: 1.0"
+                    )
                     member.size = len(changed)
                     entries[index] = (member, changed)
 
@@ -560,7 +633,9 @@ def test_rejects_wheel_entry_point_mismatch_with_valid_record(
     wheel = next(artifacts.glob("*.whl"))
 
     def change_entry_point(members: dict[str, bytes]) -> None:
-        name = next(item for item in members if item.endswith(".dist-info/entry_points.txt"))
+        name = next(
+            item for item in members if item.endswith(".dist-info/entry_points.txt")
+        )
         members[name] = members[name].replace(b"hmc_mcp:main", b"hmc_mcp:missing")
 
     _rewrite_wheel(wheel, change_entry_point)
@@ -578,7 +653,9 @@ def test_rejects_nonexact_wheel_entry_points_with_valid_record(
     wheel = next(artifacts.glob("*.whl"))
 
     def change_entry_points(members: dict[str, bytes]) -> None:
-        name = next(item for item in members if item.endswith(".dist-info/entry_points.txt"))
+        name = next(
+            item for item in members if item.endswith(".dist-info/entry_points.txt")
+        )
         if mutation == "case":
             members[name] = members[name].replace(b"hmc-mcp =", b"HMC-MCP =")
         else:
@@ -618,10 +695,15 @@ def test_rejects_non_regular_sdist_member(
         entries.append((member, b""))
 
     _rewrite_sdist(sdist, add_link)
-    expected = "archive member path is not canonical" if member_type in {
-        tarfile.SYMTYPE,
-        tarfile.LNKTYPE,
-    } else "sdist member must be a regular file"
+    expected = (
+        "archive member path is not canonical"
+        if member_type
+        in {
+            tarfile.SYMTYPE,
+            tarfile.LNKTYPE,
+        }
+        else "sdist member must be a regular file"
+    )
     _assert_invalid(artifacts, project, capsys, expected)
 
 
@@ -711,7 +793,9 @@ def test_rejects_sdist_entry_point_mismatch(
     def change_pyproject(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
         for index, (member, data) in enumerate(entries):
             if member.name.endswith("/pyproject.toml"):
-                changed = data.replace(b'hmc-mcp = "hmc_mcp:main"', b'hmc-mcp = "hmc_mcp:missing"')
+                changed = data.replace(
+                    b'hmc-mcp = "hmc_mcp:main"', b'hmc-mcp = "hmc_mcp:missing"'
+                )
                 member.size = len(changed)
                 entries[index] = (member, changed)
 
@@ -719,7 +803,84 @@ def test_rejects_sdist_entry_point_mismatch(
     _assert_invalid(artifacts, project, capsys, "sdist input bytes differ")
 
 
-@pytest.mark.parametrize("mutation", ["missing-name", "missing-scripts", "dependencies-type", "bad-requirement"])
+def test_rejects_sdist_filename_root_version_mismatch(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+    sdist.rename(artifacts / re.sub(r"-[^-]+\.tar\.gz$", "-9.9.9.tar.gz", sdist.name))
+
+    _assert_invalid(
+        artifacts, project, capsys, "sdist filename and root identity differ"
+    )
+
+
+def test_rejects_cross_artifact_version_mismatch(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+    old_root = sdist.name.removesuffix(".tar.gz")
+    new_root = re.sub(r"-[^-]+$", "-9.9.9", old_root)
+
+    def synchronize_sdist_version(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        for index, (member, data) in enumerate(entries):
+            member.name = new_root + member.name.removeprefix(old_root)
+            if member.name.endswith("/PKG-INFO"):
+                changed = re.sub(rb"(?m)^Version: .+$", b"Version: 9.9.9", data)
+                member.size = len(changed)
+                entries[index] = (member, changed)
+
+    _rewrite_sdist(sdist, synchronize_sdist_version)
+    sdist.rename(artifacts / f"{new_root}.tar.gz")
+    _assert_invalid(
+        artifacts, project, capsys, "wheel and sdist identity or version differs"
+    )
+
+
+def test_rejects_sdist_dependency_mismatch(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+
+    def change_dependency(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        for index, (member, data) in enumerate(entries):
+            if member.name.endswith("/PKG-INFO"):
+                changed = data.replace(
+                    b"Requires-Dist: asyncssh==2.24.0",
+                    b"Requires-Dist: asyncssh==2.23.0",
+                )
+                member.size = len(changed)
+                entries[index] = (member, changed)
+
+    _rewrite_sdist(sdist, change_dependency)
+    _assert_invalid(artifacts, project, capsys, "runtime dependencies differ")
+
+
+def test_validation_does_not_invoke_subprocess(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, project = built_project
+
+    def reject_subprocess(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("artifact validation invoked a subprocess")
+
+    monkeypatch.setattr(subprocess, "run", reject_subprocess)
+    assert main([str(artifacts), str(project)]) == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing-name", "missing-scripts", "dependencies-type", "bad-requirement"],
+)
 def test_rejects_malformed_project_configuration_actionably(
     tmp_path: Path,
     built_project: tuple[Path, Path],
@@ -728,7 +889,9 @@ def test_rejects_malformed_project_configuration_actionably(
 ) -> None:
     artifacts, project = built_project
     malformed = tmp_path / "project"
-    shutil.copytree(project, malformed, ignore=shutil.ignore_patterns(".git", ".venv", "dist"))
+    shutil.copytree(
+        project, malformed, ignore=shutil.ignore_patterns(".git", ".venv", "dist")
+    )
     pyproject = malformed / "pyproject.toml"
     content = pyproject.read_text()
     if mutation == "missing-name":
@@ -736,7 +899,13 @@ def test_rejects_malformed_project_configuration_actionably(
     elif mutation == "missing-scripts":
         content = content.replace('[project.scripts]\nhmc-mcp = "hmc_mcp:main"\n', "")
     elif mutation == "dependencies-type":
-        content = re.sub(r"dependencies = \[\n.*?\n\]", 'dependencies = "wrong"', content, count=1, flags=re.DOTALL)
+        content = re.sub(
+            r"dependencies = \[\n.*?\n\]",
+            'dependencies = "wrong"',
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
     else:
         content = content.replace('"asyncssh==2.24.0"', '"not a valid requirement !!!"')
     pyproject.write_text(content)
