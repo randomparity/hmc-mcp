@@ -203,6 +203,55 @@ def test_rejects_unexpected_artifact(
     _assert_invalid(artifacts, project, capsys, "exactly one wheel")
 
 
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+def test_rejects_missing_artifact(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    artifact: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    pattern = "*.whl" if artifact == "wheel" else "*.tar.gz"
+    next(artifacts.glob(pattern)).rename(tmp_path / f"removed-{artifact}")
+
+    _assert_invalid(artifacts, project, capsys, "exactly one wheel")
+
+
+def test_rejects_duplicate_wheel(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    shutil.copy2(wheel, artifacts / f"duplicate-{wheel.name}")
+
+    _assert_invalid(artifacts, project, capsys, "exactly one wheel")
+
+
+@pytest.mark.parametrize(
+    ("identity", "invariant"),
+    [
+        ("other", "wheel filename and .dist-info identity differ"),
+        ("version", "wheel filename and .dist-info identity differ"),
+    ],
+)
+def test_rejects_wheel_filename_identity_mismatch(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    identity: str,
+    invariant: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    parts = wheel.name.split("-")
+    parts[0 if identity == "other" else 1] = "other" if identity == "other" else "9.9.9"
+    wheel.rename(artifacts / "-".join(parts))
+
+    _assert_invalid(artifacts, project, capsys, invariant)
+
+
 def test_rejects_record_digest_mismatch(
     tmp_path: Path,
     built_project: tuple[Path, Path],
@@ -217,6 +266,46 @@ def test_rejects_record_digest_mismatch(
 
     _rewrite_wheel(wheel, corrupt_record, repair_record=False)
     _assert_invalid(artifacts, project, capsys, "RECORD digest or size differs")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "invariant"),
+    [
+        ("missing", "RECORD is missing or malformed"),
+        ("extra", "RECORD member set is inconsistent"),
+        ("duplicate", "RECORD rows must be unique triples"),
+        ("size", "RECORD digest or size differs"),
+    ],
+)
+def test_rejects_invalid_record_structure(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    mutation: str,
+    invariant: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    def change_record(members: dict[str, bytes]) -> None:
+        name = next(item for item in members if item.endswith(".dist-info/RECORD"))
+        if mutation == "missing":
+            del members[name]
+            return
+        rows = list(csv.reader(members[name].decode().splitlines()))
+        if mutation == "extra":
+            rows.append(["absent.py", "", ""])
+        elif mutation == "duplicate":
+            rows.append(rows[0])
+        else:
+            row = next(row for row in rows if row[0] != name)
+            row[2] = str(int(row[2]) + 1)
+        stream = io.StringIO(newline="")
+        csv.writer(stream, lineterminator="\n").writerows(rows)
+        members[name] = stream.getvalue().encode()
+
+    _rewrite_wheel(wheel, change_record, repair_record=False)
+    _assert_invalid(artifacts, project, capsys, invariant)
 
 
 def test_rejects_byte_divergent_wheel_package_with_valid_record(
@@ -247,6 +336,30 @@ def test_rejects_unexpected_wheel_payload_with_valid_record(
 
 
 @pytest.mark.parametrize(
+    "member_name",
+    [
+        "../escape.py",
+        "C:/drive.py",
+        "back\\slash.py",
+        "empty//component.py",
+        "dot/./component.py",
+        "unicode/cafe\u0301.py",
+    ],
+)
+def test_rejects_noncanonical_wheel_path(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    member_name: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    _rewrite_wheel(wheel, lambda members: members.__setitem__(member_name, b"payload"))
+
+    _assert_invalid(artifacts, project, capsys, "archive member path")
+
+
+@pytest.mark.parametrize(
     ("suffix", "mode"),
     [
         ("hmc_mcp/__init__.py", stat.S_IFLNK | 0o777),
@@ -272,6 +385,8 @@ def test_rejects_non_regular_wheel_member(
     ("mutation", "invariant"),
     [
         ("missing", "WHEEL must contain exactly one Wheel-Version"),
+        ("missing_tag", "WHEEL tags differ"),
+        ("duplicate_version", "WHEEL must contain exactly one Wheel-Version"),
         ("version", "WHEEL version or purelib flag is unsupported"),
         ("purelib", "WHEEL version or purelib flag is unsupported"),
         ("tag", "WHEEL tags differ"),
@@ -292,6 +407,10 @@ def test_rejects_invalid_wheel_contract_with_valid_record(
         name = next(item for item in members if item.endswith(".dist-info/WHEEL"))
         if mutation == "missing":
             del members[name]
+        elif mutation == "missing_tag":
+            members[name] = members[name].replace(b"Tag: py3-none-any\n", b"")
+        elif mutation == "duplicate_version":
+            members[name] += b"Wheel-Version: 1.0\n"
         elif mutation == "version":
             members[name] = members[name].replace(b"Wheel-Version: 1.0", b"Wheel-Version: 2.0")
         elif mutation == "purelib":
@@ -334,6 +453,28 @@ def test_rejects_duplicate_core_metadata_singleton(
     _assert_invalid(artifacts, project, capsys, "exactly one Name")
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["Name", "Version", "Requires-Python", "License-Expression"],
+)
+def test_rejects_missing_core_metadata_singleton(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    def remove_field(members: dict[str, bytes]) -> None:
+        name = next(item for item in members if item.endswith(".dist-info/METADATA"))
+        lines = members[name].splitlines(keepends=True)
+        members[name] = b"".join(line for line in lines if not line.startswith(f"{field}:".encode()))
+
+    _rewrite_wheel(wheel, remove_field)
+    _assert_invalid(artifacts, project, capsys, f"exactly one {field}")
+
+
 @pytest.mark.parametrize("member_suffix", ["METADATA", "PKG-INFO"])
 def test_rejects_unsupported_core_metadata_version(
     tmp_path: Path,
@@ -362,6 +503,67 @@ def test_rejects_unsupported_core_metadata_version(
 
         _rewrite_sdist(sdist, change_version)
     _assert_invalid(artifacts, project, capsys, "Metadata-Version must be 2.5")
+
+
+@pytest.mark.parametrize(
+    ("field", "old", "new", "invariant"),
+    [
+        ("Name", b"Name: hmc-mcp", b"Name: other", "project name is inconsistent"),
+        (
+            "Requires-Python",
+            b"Requires-Python: >=3.11",
+            b"Requires-Python: >=3.12",
+            "Requires-Python differs",
+        ),
+        (
+            "License-Expression",
+            b"License-Expression: MIT",
+            b"License-Expression: Apache-2.0",
+            "license expression differs",
+        ),
+        (
+            "Requires-Dist",
+            b"Requires-Dist: asyncssh==2.24.0",
+            b"Requires-Dist: asyncssh==2.23.0",
+            "runtime dependencies differ",
+        ),
+    ],
+)
+def test_rejects_wheel_metadata_mismatch_with_valid_record(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    old: bytes,
+    new: bytes,
+    invariant: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    def change_metadata(members: dict[str, bytes]) -> None:
+        name = next(item for item in members if item.endswith(".dist-info/METADATA"))
+        assert old in members[name], field
+        members[name] = members[name].replace(old, new, 1)
+
+    _rewrite_wheel(wheel, change_metadata)
+    _assert_invalid(artifacts, project, capsys, invariant)
+
+
+def test_rejects_wheel_entry_point_mismatch_with_valid_record(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+
+    def change_entry_point(members: dict[str, bytes]) -> None:
+        name = next(item for item in members if item.endswith(".dist-info/entry_points.txt"))
+        members[name] = members[name].replace(b"hmc_mcp:main", b"hmc_mcp:missing")
+
+    _rewrite_wheel(wheel, change_entry_point)
+    _assert_invalid(artifacts, project, capsys, "console scripts differ")
 
 
 @pytest.mark.parametrize(
@@ -400,6 +602,25 @@ def test_rejects_non_regular_sdist_member(
     _assert_invalid(artifacts, project, capsys, expected)
 
 
+def test_rejects_sdist_link_with_safe_target(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+
+    def add_link(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        root = entries[0][0].name.split("/", 1)[0]
+        member = tarfile.TarInfo(f"{root}/safe-looking-link")
+        member.type = tarfile.SYMTYPE
+        member.linkname = "README.md"
+        entries.append((member, b""))
+
+    _rewrite_sdist(sdist, add_link)
+    _assert_invalid(artifacts, project, capsys, "sdist links are forbidden")
+
+
 def test_rejects_byte_divergent_sdist_package(
     tmp_path: Path,
     built_project: tuple[Path, Path],
@@ -417,6 +638,62 @@ def test_rejects_byte_divergent_sdist_package(
 
     _rewrite_sdist(sdist, change_package)
     _assert_invalid(artifacts, project, capsys, "package bytes differ")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "bytes", "nonregular"])
+def test_rejects_invalid_required_sdist_input(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    mutation: str,
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+
+    def change_input(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        index = next(
+            index
+            for index, (member, _) in enumerate(entries)
+            if member.name.endswith("/README.md")
+        )
+        member, data = entries[index]
+        if mutation == "missing":
+            entries.pop(index)
+        elif mutation == "bytes":
+            changed = data + b"\nchanged\n"
+            member.size = len(changed)
+            entries[index] = (member, changed)
+        else:
+            member.type = tarfile.FIFOTYPE
+            member.size = 0
+            entries[index] = (member, b"")
+
+    _rewrite_sdist(sdist, change_input)
+    expected = {
+        "missing": "sdist member set is not closed",
+        "bytes": "sdist input bytes differ",
+        "nonregular": "sdist member must be a regular file",
+    }[mutation]
+    _assert_invalid(artifacts, project, capsys, expected)
+
+
+def test_rejects_sdist_entry_point_mismatch(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    artifacts, project = _artifact_copy(tmp_path, built_project)
+    sdist = next(artifacts.glob("*.tar.gz"))
+
+    def change_pyproject(entries: list[tuple[tarfile.TarInfo, bytes]]) -> None:
+        for index, (member, data) in enumerate(entries):
+            if member.name.endswith("/pyproject.toml"):
+                changed = data.replace(b'hmc-mcp = "hmc_mcp:main"', b'hmc-mcp = "hmc_mcp:missing"')
+                member.size = len(changed)
+                entries[index] = (member, changed)
+
+    _rewrite_sdist(sdist, change_pyproject)
+    _assert_invalid(artifacts, project, capsys, "sdist input bytes differ")
 
 
 def test_rejects_unexpected_regular_sdist_member(
