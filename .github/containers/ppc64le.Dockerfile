@@ -2,6 +2,10 @@ FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e8
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
+ADD --checksum=sha256:6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50 \
+    https://snapshot.ubuntu.com/ubuntu/20260813T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb \
+    /tmp/ca-certificates.deb
+
 RUN ubuntu_snapshot=20260813T000000Z \
     && ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources \
     && old_uri=http://ports.ubuntu.com/ubuntu-ports/ \
@@ -12,6 +16,8 @@ RUN ubuntu_snapshot=20260813T000000Z \
         "${ubuntu_sources}" \
     && ! grep -Fq "${old_uri}" "${ubuntu_sources}" \
     && test "$(grep -Fxc "URIs: ${snapshot_uri}" "${ubuntu_sources}" || true)" = 2 \
+    && dpkg --unpack /tmp/ca-certificates.deb \
+    && cat /usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
@@ -23,6 +29,7 @@ RUN ubuntu_snapshot=20260813T000000Z \
         pkg-config \
         python3 \
         python3-dev \
+    && rm /tmp/ca-certificates.deb \
     && find /var/lib/apt/lists -mindepth 1 -delete
 
 RUN uv_version=0.12.3 \

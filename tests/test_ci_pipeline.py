@@ -230,6 +230,10 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
     assert "old_uri=http://ports.ubuntu.com/ubuntu-ports/" in dockerfile
     assert "https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" in dockerfile
+    assert "--checksum=sha256:6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50" in dockerfile
+    assert "ca-certificates_20260601~24.04.1_all.deb" in dockerfile
+    assert "dpkg --unpack /tmp/ca-certificates.deb" in dockerfile
+    assert "cat /usr/share/ca-certificates/mozilla/*.crt" in dockerfile
     assert "ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources" in dockerfile
     assert dockerfile.count("grep -Fxc") == 2
     assert dockerfile.count('"${ubuntu_sources}" || true)" = 2') == 2
