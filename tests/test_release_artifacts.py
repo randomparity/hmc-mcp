@@ -32,9 +32,8 @@ def _run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.fixture(scope="module")
-def built_project(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    project = tmp_path_factory.mktemp("release-project")
+def _clean_project(project: Path) -> Path:
+    project.mkdir(exist_ok=True)
     tracked = subprocess.run(
         ["git", "ls-files", "-z"],
         cwd=ROOT,
@@ -57,6 +56,12 @@ def built_project(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]
     ):
         result = _run(*command, cwd=project)
         assert result.returncode == 0, result.stderr
+    return project
+
+
+@pytest.fixture(scope="module")
+def built_project(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    project = _clean_project(tmp_path_factory.mktemp("release-project"))
 
     artifacts = project / "dist"
     result = _run(
@@ -391,3 +396,28 @@ def test_rejects_unexpected_regular_sdist_member(
 
     _rewrite_sdist(sdist, add_file)
     _assert_invalid(artifacts, project, capsys, "sdist member set is not closed")
+
+
+def test_clean_checkout_runs_canonical_artifact_commands(tmp_path: Path) -> None:
+    project = _clean_project(tmp_path / "project")
+
+    for command in (
+        ("just", "setup"),
+        ("just", "build"),
+        ("just", "verify-artifacts"),
+    ):
+        result = _run(*command, cwd=project)
+        assert result.returncode == 0, result.stderr
+    assert len(list((project / "dist").glob("*.whl"))) == 1
+    assert len(list((project / "dist").glob("*.tar.gz"))) == 1
+
+
+def test_dirty_checkout_build_fails_with_actionable_provenance(tmp_path: Path) -> None:
+    project = _clean_project(tmp_path / "project")
+    (project / "dirty.txt").write_text("dirty")
+
+    result = _run("just", "build", cwd=project)
+
+    assert result.returncode != 0
+    assert "Git repository is dirty" in result.stderr
+    assert "commit or clean staged, unstaged, and untracked files" in result.stderr
