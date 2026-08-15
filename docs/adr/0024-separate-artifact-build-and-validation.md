@@ -23,8 +23,10 @@ Provide two canonical commands with distinct ownership:
   from the clean checkout.
 - `just verify-artifacts` validates the existing `dist/` wheel and source distribution without
   invoking a build backend. It checks the artifact set, normalized project name, version agreement,
-  core metadata, package contents, and the sdist's ability to rebuild the same wheel version
-  without Git metadata.
+  wheel compatibility metadata, unambiguous core metadata, and closed package contents directly
+  from both archives, comparing package members with the clean source checkout without consulting
+  Git. The build configuration limits the sdist to the package and inputs required to rebuild it,
+  making both artifact member sets explicit and reject-by-default.
 
 `just verify` composes both commands after the existing source checks. CI runs that canonical
 suite and uploads only the wheel for downstream fresh-environment installation tests. Artifact
@@ -39,16 +41,18 @@ wheel has a stable downstream handoff, while the sdist remains validated in the 
 without becoming a downstream matrix input.
 
 The build command intentionally replaces `dist/`; callers must copy artifacts they intend to keep
-before invoking it again. The validation command never repairs, rebuilds, or silently selects among
-duplicate artifacts.
+before invoking it again. The validation command never extracts, repairs, rebuilds, or silently
+selects among duplicate artifacts. It rejects unknown wheel members, every non-regular sdist member,
+unsafe link targets, conflicting metadata cardinality, and wheel tags inconsistent with the
+filename.
 
 ## Considered & rejected
 
 - **Build and validate in one command.** This cannot establish that validation consumes the exact
   retained artifact and gives downstream jobs no independently reusable producer boundary.
 - **Use `twine check` as the complete validator.** It checks distribution metadata but not the
-  expected package files, wheel/sdist agreement, or Gitless sdist reconstruction, and would add a
-  dependency for incomplete coverage.
+  expected package files or wheel/sdist agreement, and would add a dependency for incomplete
+  coverage.
 - **Upload both wheel and sdist.** The downstream requirement consumes the wheel only; retaining a
   second artifact adds storage and another interface without a current consumer.
 - **Publish to a package index as validation.** Publication is explicitly excluded and would add
