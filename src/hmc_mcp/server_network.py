@@ -40,10 +40,12 @@ def hmc_list_virtual_switches(
 ) -> list[dict[str, Any]]:
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
     The SwitchID is what hmc_create_virtual_network and hmc_add_network_adapter
     reference.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -59,8 +61,9 @@ def hmc_list_virtual_networks(
 ) -> list[dict[str, Any]]:
     """List Virtual Networks (VLANs) on a managed system.
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -81,11 +84,13 @@ def hmc_create_virtual_network(
 ) -> dict[str, Any] | None:
     """Create a Virtual Network (VLAN) on a managed system.
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
-    virtual_switch_id is the numeric SwitchID of the backing VirtualSwitch (see
-    hmc_list_virtual_switches). tagged sets whether bridged traffic keeps the
-    VLAN tag.
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        name: Unique virtual-network name on the managed system.
+        vlan_id: VLAN identifier for the network.
+        virtual_switch_id: Numeric SwitchID from ``hmc_list_virtual_switches``.
+        tagged: Whether bridged traffic retains its VLAN tag.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -108,11 +113,14 @@ def hmc_delete_virtual_network(
 ) -> str:
     """Delete a Virtual Network from a managed system.
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
     Note: a network referenced by a NetworkBridge, or equal to a trunk
     adapter's PVID, cannot be deleted until the bridge is removed. Returns a
     confirmation string (immediate delete — no job to poll).
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        network_uuid: Virtual-network UUID from ``hmc_list_virtual_networks``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -129,8 +137,9 @@ def hmc_list_network_bridges(
 ) -> list[dict[str, Any]]:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system.
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -159,7 +168,11 @@ def hmc_list_fc_ports(
     Either a CLI name or UUID works; use hmc_list_systems to find a system
     UUID and hmc_list_lpars to find an LPAR UUID.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Optional partition name or UUID to restrict results.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: list_fc_ports(
             build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
@@ -186,7 +199,11 @@ def hmc_list_sea_adapters(
     Either a CLI name or UUID works; use hmc_list_systems to find a system
     UUID and hmc_list_lpars to find an LPAR UUID.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Optional partition name or UUID to restrict results.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: list_sea_adapters(
             build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
@@ -221,7 +238,13 @@ def hmc_set_sriov_adapter_mode(
     WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
     functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        adapter_id: Physical adapter ID returned by ``hmc_list_io_slots``.
+        mode: ``sriov`` for shared virtual functions or ``dedicated`` for
+            passthrough use.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: set_sriov_adapter_mode(
             build_config(profile=profile), system_name_or_uuid, adapter_id, mode
@@ -246,7 +269,11 @@ def hmc_list_vnics(
     runs. Use ``hmc_list_systems`` to find a system UUID and
     ``hmc_list_lpars`` to find an LPAR UUID.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: list_vnics(
             build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
@@ -292,7 +319,14 @@ def hmc_add_vnic(
         HMCCLIError: If the HMC command fails, e.g. because the underlying
             SR-IOV adapter is not in SR-IOV mode.
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used.
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        capacity: Requested vNIC capacity percentage.
+        virtual_switch_name: Backing switch name from ``hmc_list_virtual_switches``.
+        port_vlan_id: Port VLAN ID assigned to untagged traffic.
+        backing_devices: Optional opaque HMC backing-device attribute string.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return _run(
         lambda: add_vnic(
@@ -331,7 +365,12 @@ def hmc_remove_vnic(
     system_name_or_uuid, lpar_name_or_uuid, and vnic_id before calling. Returns the HMC CLI
     output (immediate delete — no job to poll).
 
-    profile: optional TOML profile name; when omitted the env-default HMC is used."""
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        vnic_id: Numeric vNIC ID returned by ``hmc_list_vnics``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: remove_vnic(
             build_config(profile=profile),

@@ -37,6 +37,11 @@ def hmc_get_pcm_preferences(
     or UUID from hmc_list_systems, or a PartitionName or UUID from hmc_list_lpars).
     Returns flags like LongTermMonitorEnabled, AggregationEnabled,
     ShortTermMonitorEnabled, ComputeLTMEnabled, EnergyMonitorEnabled.
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -65,6 +70,16 @@ def hmc_set_pcm_preferences(
     monitoring on the HMC. Long-term + aggregation are required before
     processed/aggregated metrics become available. Returns the updated
     preferences dict (``{}`` if the HMC returns no body).
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        long_term_monitor: Enable or disable long-term metric collection.
+        aggregation: Enable or disable long-term metric aggregation.
+        short_term_monitor: Enable or disable short-term metric collection.
+        compute_ltm: Enable or disable computed long-term metrics.
+        energy_monitor: Enable or disable energy metric collection.
+        profile: TOML profile name, or the environment-default HMC when omitted.
 
     Raises:
         ValueError: if no preference flags are supplied.
@@ -107,6 +122,14 @@ def hmc_processed_metrics(
     Returns the parsed JSON object of the most recent document, or ``{}`` when
     no metrics are available in the requested range. Use
     hmc_processed_metric_links to inspect the Atom feed.
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        start_ts: Inclusive UTC start in ``yyyy-MM-ddTHH:mm:ssZ`` form.
+        end_ts: Optional inclusive UTC end in the same format.
+        no_of_samples: Optional maximum number of metric documents to request.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return _metrics_fetch(
         category,
@@ -128,7 +151,16 @@ def hmc_processed_metric_links(
     no_of_samples: int | None = None,
     profile: str | None = None,
 ) -> list[dict[str, str]]:
-    """List processed PCM metric documents available in the requested range."""
+    """List processed PCM metric documents available in the requested range.
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        start_ts: Inclusive UTC start in ``yyyy-MM-ddTHH:mm:ssZ`` form.
+        end_ts: Optional inclusive UTC end in the same format.
+        no_of_samples: Optional maximum number of feed entries to request.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _metrics_links(
         category,
         resource_name_or_uuid,
@@ -160,6 +192,14 @@ def hmc_aggregated_metrics(
     no metrics are available in the requested range. Requires aggregation to
     be enabled in PCM preferences. Use hmc_aggregated_metric_links to inspect
     the Atom feed.
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        start_ts: Inclusive UTC start in ``yyyy-MM-ddTHH:mm:ssZ`` form.
+        end_ts: Optional inclusive UTC end in the same format.
+        no_of_samples: Optional maximum number of metric documents to request.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return _metrics_fetch(
         category,
@@ -181,7 +221,16 @@ def hmc_aggregated_metric_links(
     no_of_samples: int | None = None,
     profile: str | None = None,
 ) -> list[dict[str, str]]:
-    """List aggregated PCM metric documents available in the requested range."""
+    """List aggregated PCM metric documents available in the requested range.
+
+    Args:
+        category: ``ManagedSystem`` or ``LogicalPartition`` resource type.
+        resource_name_or_uuid: Name or UUID of the selected system or partition.
+        start_ts: Inclusive UTC start in ``yyyy-MM-ddTHH:mm:ssZ`` form.
+        end_ts: Optional inclusive UTC end in the same format.
+        no_of_samples: Optional maximum number of feed entries to request.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _metrics_links(
         category,
         resource_name_or_uuid,

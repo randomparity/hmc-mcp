@@ -26,7 +26,14 @@ def hmc_list_adapters(
     adapter_type: AdapterType = "ClientNetworkAdapter",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List one LPAR's virtual adapters of the selected adapter type."""
+    """List one LPAR's virtual adapters of the selected adapter type.
+
+    Args:
+        lpar_name_or_uuid: Partition name or UUID; discover partitions with
+            ``hmc_list_lpars``.
+        adapter_type: Adapter resource type to list.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     validate_adapter_type(adapter_type)
 
     async def operation():
@@ -47,7 +54,19 @@ def hmc_add_network_adapter(
     mac_address: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC."""
+    """Add a virtual Ethernet adapter to an LPAR; active LPARs require RMC.
+
+    Args:
+        lpar_name_or_uuid: Partition name or UUID; discover partitions with
+            ``hmc_list_lpars``.
+        port_vlan_id: Port VLAN ID assigned to untagged traffic.
+        slot_number: Client virtual slot, or ``None`` for HMC auto-assignment.
+        virtual_switch_id: Numeric switch ID from ``hmc_list_virtual_switches``,
+            or ``None`` to use the HMC default.
+        tagged: Whether the adapter accepts IEEE 802.1Q tagged VLAN traffic.
+        mac_address: Optional 12-hex-digit MAC address, with no separators.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:
@@ -74,7 +93,15 @@ def hmc_add_vscsi_adapter(
     slot_number: int | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Add a virtual SCSI client adapter paired to a VIOS server slot."""
+    """Add a virtual SCSI client adapter paired to a VIOS server slot.
+
+    Args:
+        lpar_name_or_uuid: Client partition name or UUID.
+        vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
+        vios_slot: Server-side virtual slot configured on that VIOS.
+        slot_number: Client virtual slot, or ``None`` for HMC auto-assignment.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:
@@ -100,7 +127,15 @@ def hmc_add_vfc_adapter(
     slot_number: int | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Add an NPIV virtual Fibre Channel client adapter to an LPAR."""
+    """Add an NPIV virtual Fibre Channel client adapter to an LPAR.
+
+    Args:
+        lpar_name_or_uuid: Client partition name or UUID.
+        vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
+        vios_slot: Server-side NPIV virtual slot configured on that VIOS.
+        slot_number: Client virtual slot, or ``None`` for HMC auto-assignment.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:
@@ -125,7 +160,16 @@ def hmc_delete_adapter(
     adapter_uuid: str,
     profile: str | None = None,
 ) -> str:
-    """Remove an adapter by UUID, detaching its network or storage path."""
+    """Remove an adapter by UUID, detaching its network or storage path.
+
+    Confirm the adapter is no longer required before deletion.
+
+    Args:
+        lpar_name_or_uuid: Partition name or UUID containing the adapter.
+        adapter_type: Adapter resource type that owns ``adapter_uuid``.
+        adapter_uuid: Adapter UUID returned by ``hmc_list_adapters``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     validate_adapter_type(adapter_type)
 
     async def operation():

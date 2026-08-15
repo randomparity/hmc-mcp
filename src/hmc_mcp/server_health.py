@@ -15,7 +15,11 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_fleet_health(profile: str | None = None) -> dict[str, Any]:
-    """Return exception-only health across managed systems, partitions, and jobs."""
+    """Return exception-only health across managed systems, partitions, and jobs.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def operation():
         async with client_from_env(profile) as hmc:

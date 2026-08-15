@@ -14,6 +14,10 @@ def hmc_run_command(cmd: str, profile: str | None = None) -> str:
 
     This operator escape hatch can change HMC state. Prefer a dedicated tool
     when one exists. SSH authentication comes from the selected HMC profile.
+
+    Args:
+        cmd: Complete HMC CLI command to execute without shell mediation.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     config = build_config(profile=profile)
     return _run(lambda: run_hmc_cli(cmd, config))

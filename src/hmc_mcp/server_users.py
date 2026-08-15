@@ -36,11 +36,16 @@ def hmc_list_users(
     user_type: UserType = "all",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List HMC user accounts filtered by
-    user_type: 'local' (local HMC accounts), 'kerberos'
+    """List HMC user accounts filtered by type.
+
+    ``local`` selects local HMC accounts, ``kerberos`` selects
     (Kerberos/LDAP-backed accounts), or 'all' (default).
     Returns one dict per user: {UUID, title, link, ResourceType, Resource}
     where Resource holds the flattened HmcUser fields.
+
+    Args:
+        user_type: ``local``, ``kerberos``, or ``all`` accounts.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -60,6 +65,10 @@ def hmc_get_user(
     Returns None only when the HMC sends an empty successful response. A
     missing account reported as HTTP 404 raises HMCError like other REST
     lookup failures.
+
+    Args:
+        name: Exact HMC login username.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -86,6 +95,14 @@ def hmc_create_user(
     expiration in days (0 = never expires). This creates a real account —
     confirm the taskrole before calling. Returns the created user resource
     dict, or None when the HMC returns an empty successful response.
+
+    Args:
+        name: Login username for the new local account.
+        taskrole: HMC authorization role assigned to the account.
+        password: Initial account password.
+        description: Optional human-readable account description.
+        pwage: Password lifetime in days; ``0`` means it never expires.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     xml = build_hmc_user_document(
         username=name,
@@ -117,6 +134,14 @@ def hmc_modify_user(
     disabled account; enable=False disables it. Use hmc_get_user(name) to
     confirm the current state before calling. Returns the updated user
     resource dict, or None when the HMC returns an empty successful response.
+
+    Args:
+        name: Exact username of the account to modify.
+        taskrole: Replacement HMC role, or ``None`` to leave it unchanged.
+        password: Replacement password, or ``None`` to leave it unchanged.
+        description: Replacement description, or ``None`` to leave it unchanged.
+        enable: ``True`` to enable, ``False`` to disable, or ``None`` unchanged.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     xml = build_hmc_user_document(
         taskrole=taskrole,
@@ -139,6 +164,10 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
     This permanently removes the account — it is irreversible. Confirm
     the username with hmc_get_user(name) before calling. Returns a confirmation
     string (immediate delete — no job to poll).
+
+    Args:
+        name: Exact username of the account to permanently remove.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -153,7 +182,11 @@ def hmc_delete_user(name: str, profile: str | None = None) -> str:
 def hmc_list_password_policies(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List defined HMC password-policy resources."""
+    """List defined HMC password-policy resources.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -166,7 +199,11 @@ def hmc_list_password_policies(
 def hmc_list_password_policy_status(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Get activation-status resources for HMC password policies."""
+    """Get activation-status resources for HMC password policies.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -188,6 +225,11 @@ def hmc_create_password_policy(
     settings use the HMC-compatible creation defaults. Confirm policy_name
     before calling. Returns the created policy resource dict, or None when the
     HMC returns an empty successful response.
+
+    Args:
+        policy_name: Unique name for the new password policy.
+        settings: Password requirements; omitted fields use creation defaults.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     xml = build_password_policy_document(
         policy_name=policy_name,
@@ -215,6 +257,11 @@ def hmc_modify_password_policy(
     the PolicyType=status query path rather than a direct field change.
     Returns the updated policy resource dict, or None when the HMC returns an
     empty successful response.
+
+    Args:
+        policy_name: Exact password-policy name to modify.
+        settings: Partial requirements; ``None`` fields remain unchanged.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     xml = build_password_policy_document(
         settings=settings,
@@ -234,6 +281,10 @@ def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> 
     This permanently removes the policy — it is irreversible.  Confirm
     the policy_name with hmc_list_password_policies before calling. Returns
     a confirmation string (immediate delete — no job to poll).
+
+    Args:
+        policy_name: Exact password-policy name to permanently remove.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -252,6 +303,9 @@ def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
     base DN, bind DN, search filter, and HMC group mappings, or None if no
     LDAP is configured.
     Equivalent to Ansible ``hmc_user`` state=ldap_facts.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -277,16 +331,19 @@ def hmc_configure_ldap(
     server_url is the LDAP or LDAPS URL (e.g. 'ldap://ldap.example.com' or
     'ldaps://ldap.example.com:636'). Only the fields you supply are changed.
 
-    base_dn: LDAP search base (e.g. 'dc=example,dc=com').
-    bind_dn: DN of the account used to bind for searches.
-    bind_pw: password for the bind account.
-    search_filter: LDAP search filter (e.g. '(objectClass=person)').
-    hmc_groups: comma-separated LDAP groups mapped to HMC access.
-    group_member_attributes: LDAP attribute used for group membership.
-
     Equivalent to Ansible ``hmc_user`` action=configure_ldap.
     Returns the updated LDAP configuration resource dict, or None when the HMC
     returns an empty successful response.
+
+    Args:
+        server_url: LDAP or LDAPS server URL, including an optional port.
+        base_dn: LDAP search base, such as ``dc=example,dc=com``.
+        bind_dn: Distinguished name used to bind for directory searches.
+        bind_pw: Password for the bind account.
+        search_filter: LDAP search filter, such as ``(objectClass=person)``.
+        hmc_groups: Comma-separated LDAP groups mapped to HMC access.
+        group_member_attributes: LDAP attribute used for group membership.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     xml = build_ldap_config_document(
         server_url=server_url,
@@ -323,6 +380,12 @@ def hmc_remove_ldap_config(
     Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
     Use hmc_get_ldap_config to inspect the current state before calling.
     Returns a confirmation string (immediate delete — no job to poll).
+
+    Args:
+        resource: LDAP component to remove: ``backup``, ``ldap``, ``binddn``,
+            ``bindpw``, ``searchfilter``, ``hmcgroups``, or
+            ``groupmemberattributes``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_ldap_removal_resource(resource)
 

@@ -173,7 +173,9 @@ hmc-mcp serve --enable-arbitrary-command
 > `hmc_run_command` escape hatch is disabled unless the server starts with
 > `--enable-arbitrary-command`.
 
-Exposed tools:
+Exposed tools are listed below. MCP clients also receive a rendered description for every tool
+parameter, including fields nested inside structured inputs such as LPAR resources, password
+policies, and update repositories.
 
 **Read-only / inventory**
 

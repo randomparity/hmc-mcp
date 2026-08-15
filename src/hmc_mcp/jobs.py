@@ -9,10 +9,12 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, NotRequired, Protocol, get_args
+from typing import Annotated, Any, Literal, NotRequired, Protocol, get_args
 from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
+
+from pydantic import Field
 
 from .errors import HMCError
 from .xmlutil import WEB_NS
@@ -479,15 +481,24 @@ class RepositorySource(TypedDict, total=False):
         ibm_token   – IBM FixCentral account token
     """
 
-    type: NotRequired[RepositoryType]
-    host: str
-    path: str
-    user: str
-    sftp_pw: str
-    mount_loc: str
-    insecure: str
-    ibm_id: str
-    ibm_token: str
+    type: NotRequired[
+        Annotated[RepositoryType, Field(description="Repository transport type.")]
+    ]
+    host: Annotated[
+        str, Field(description="NFS or SFTP server hostname or IP address.")
+    ]
+    path: Annotated[str, Field(description="NFS export path or SFTP remote path.")]
+    user: Annotated[str, Field(description="SFTP login username.")]
+    sftp_pw: Annotated[str, Field(description="SFTP login password.")]
+    mount_loc: Annotated[
+        str, Field(description="HMC-local mount point for an NFS source.")
+    ]
+    insecure: Annotated[
+        str,
+        Field(description="IBM Fix Central certificate-check setting: true or false."),
+    ]
+    ibm_id: Annotated[str, Field(description="IBM Fix Central account identifier.")]
+    ibm_token: Annotated[str, Field(description="IBM Fix Central access token.")]
 
 
 _REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
