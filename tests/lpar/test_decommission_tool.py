@@ -1,13 +1,15 @@
-"""Tests for the presentation-neutral LPAR decommission workflow."""
+"""Tests for the presentation-neutral LPAR decommission workflow and MCP tool."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
+from hmc_mcp.server import hmc_decommission_lpar
 
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
@@ -134,6 +136,78 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
     monkeypatch.setattr(ops, "resolve_lpar_ownership_names", resolve_names)
     monkeypatch.setattr(ops, "authorize_lpar_mutation", authorize)
     monkeypatch.setattr(ops, "read_lpar_ownership_owner", read_owner)
+
+
+def _tool_result() -> DecommissionResult:
+    return DecommissionResult(
+        resource_deleted=True,
+        workflow_completed=True,
+        lpar_uuid=LPAR_UUID,
+        dry_run=False,
+        steps=(
+            {
+                "step": "power_off",
+                "status": "ok",
+                "result": {"already_off": True, "state": "not activated"},
+            },
+        ),
+        warnings=(),
+        blast_radius={
+            "lpar_uuid": LPAR_UUID,
+            "lpar_name": "aix-prod",
+            "partition_id": 7,
+            "state": "not activated",
+            "owner": None,
+            "adapters": (),
+            "storage_mappings": (),
+            "unresolved_storage_mapping_count": 0,
+        },
+    )
+
+
+def test_hmc_decommission_lpar_delegates_with_one_configured_client() -> None:
+    expected = _tool_result()
+    entered_clients: list[tuple[str | None, object]] = []
+    hmc = object()
+
+    @asynccontextmanager
+    async def fake_client_context(profile: str | None):
+        entered_clients.append((profile, hmc))
+        yield hmc
+
+    def fake_client_from_env(profile: str | None = None):
+        return fake_client_context(profile)
+
+    with (
+        patch("hmc_mcp.server_lpars.client_from_env", side_effect=fake_client_from_env),
+        patch(
+            "hmc_mcp.server_lpars.decommission_lpar",
+            new=AsyncMock(return_value=expected),
+        ) as decommission_mock,
+    ):
+        result = hmc_decommission_lpar(
+            system_name_or_uuid="system-a",
+            lpar_name_or_uuid="aix-prod",
+            dry_run=True,
+            ownership_override=True,
+            immediate=True,
+            timeout_seconds=123,
+            poll_interval=7,
+            profile="ops",
+        )
+
+    assert result == expected
+    assert entered_clients == [("ops", hmc)]
+    decommission_mock.assert_awaited_once_with(
+        hmc,
+        "system-a",
+        "aix-prod",
+        dry_run=True,
+        ownership_override=True,
+        immediate=True,
+        timeout_seconds=123,
+        poll_interval=7,
+    )
 
 
 @pytest.mark.asyncio

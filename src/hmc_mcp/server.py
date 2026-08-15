@@ -98,6 +98,7 @@ from .server_health import hmc_fleet_health as hmc_fleet_health
 
 from .server_lpars import (
     hmc_create_lpar as hmc_create_lpar,
+    hmc_decommission_lpar as hmc_decommission_lpar,
     hmc_delete_lpar as hmc_delete_lpar,
     hmc_dlpar_mem as hmc_dlpar_mem,
     hmc_dlpar_proc as hmc_dlpar_proc,

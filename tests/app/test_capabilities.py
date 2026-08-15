@@ -21,6 +21,7 @@ from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     DESTRUCTIVE_TOOLS,
     READ_ONLY_TOOLS,
+    hmc_decommission_lpar,
     hmc_delete_lpar,
     hmc_delete_vios,
     mcp,
@@ -332,6 +333,7 @@ def test_destructive_partition_tools_expose_system_scope():
     by_name = _tools_by_name()
 
     for tool_name in (
+        "hmc_decommission_lpar",
         "hmc_power_off_lpar",
         "hmc_delete_vios",
         "hmc_restore_vios",
@@ -339,6 +341,45 @@ def test_destructive_partition_tools_expose_system_scope():
     ):
         properties = by_name[tool_name].parameters["properties"]
         assert "system_name_or_uuid" in properties
+
+
+def test_decommission_lpar_is_public_destructive_and_schema_stable():
+    assert callable(hmc_decommission_lpar)
+
+    tool = _tools_by_name()["hmc_decommission_lpar"]
+    assert "hmc_decommission_lpar" in DESTRUCTIVE_TOOLS
+    assert tool.annotations is not None and tool.annotations.destructiveHint is True
+    assert tool.annotations.readOnlyHint is not True
+
+    properties = tool.parameters["properties"]
+    assert set(properties) == {
+        "system_name_or_uuid",
+        "lpar_name_or_uuid",
+        "dry_run",
+        "ownership_override",
+        "immediate",
+        "timeout_seconds",
+        "poll_interval",
+        "profile",
+    }
+    assert properties["dry_run"]["default"] is False
+    assert properties["ownership_override"]["default"] is False
+    assert properties["immediate"]["default"] is False
+    assert properties["timeout_seconds"]["default"] == 300
+    assert properties["poll_interval"]["default"] == 5
+
+    schema = tool.output_schema
+    assert schema["type"] == "object"
+    assert set(schema["properties"]) == {
+        "resource_deleted",
+        "workflow_completed",
+        "lpar_uuid",
+        "dry_run",
+        "steps",
+        "warnings",
+        "blast_radius",
+    }
+    assert set(schema["required"]) == set(schema["properties"])
 
 
 def test_partition_creation_tools_share_resource_object_schema():
