@@ -38,6 +38,10 @@ ACTION_PINS = {
         "53165ef7e734c5c07cb06b3c8e7b647c5aa16db3",  # pragma: allowlist secret
         "v4",
     ),
+    "actions/upload-artifact": (
+        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",  # pragma: allowlist secret
+        "v7.0.1",
+    ),
     "docker/setup-qemu-action": (
         "96fe6ef7f33517b61c61be40b68a1882f3264fb8",  # pragma: allowlist secret
         "v4.2.0",
@@ -133,7 +137,13 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     ):
         assert f"\n{recipe}:" in justfile
     assert "\nstatic: lint typecheck secrets workflow-security env-vars\n" in justfile
-    assert "\nverify: static test smoke\n" in justfile
+    assert "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
+    assert (
+        "\nverify-artifacts:\n"
+        "    uv run --no-sync python tests/validate_release_artifacts.py dist .\n"
+        in justfile
+    )
+    assert "\nverify: static test smoke build verify-artifacts\n" in justfile
     assert "--baseline .secrets.baseline --no-verify --" in justfile
     assert "uv run --no-sync hmc-mcp metrics --help" in justfile
 
@@ -141,9 +151,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
     justfile = (ROOT / "justfile").read_text()
 
-    assert justfile.count("uv sync --locked") == 1
+    assert justfile.count("uv sync --locked --link-mode copy") == 1
     assert (
-        "setup:\n    uv sync --locked\n    uv run --no-sync prek install\n" in justfile
+        "setup:\n"
+        "    uv sync --locked --link-mode copy\n"
+        "    uv run --no-sync prek install\n"
+        in justfile
     )
     run_lines = [line.strip() for line in justfile.splitlines() if "uv run" in line]
     assert run_lines
@@ -229,6 +242,16 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
         "UV_NO_SYNC=1 uv run prek run --all-files",
     ):
         assert f"run: {command}" in workflow
+    verification = workflow.index("run: just verify")
+    upload = workflow.index("uses: actions/upload-artifact@")
+    assert verification < upload
+    assert "name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}" in workflow
+    assert "path: dist/*.whl" in workflow
+    assert "if-no-files-found: error" in workflow
+    assert "retention-days: 7" in workflow
+    assert "dist/*.tar.gz" not in workflow
+    assert "id-token: write" not in workflow
+    assert "PYPI" not in workflow.upper()
 
 
 def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
