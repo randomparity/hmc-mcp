@@ -38,14 +38,14 @@ downloads exactly `release-wheel-<architecture>-py<version>` into `dist/` with t
 `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c`. Matrix-unique names establish a one-to-one producer
 and consumer mapping; merge mode is not used.
 
-The consumer creates `.wheel-venv` with the matrix Python, installs the sole downloaded wheel into
-that environment with `uv pip install --python .wheel-venv/bin/python dist/*.whl`, and then invokes
-only executables from `.wheel-venv`. It runs `hmc-mcp --help` plus every installed CLI group help
-path (`lpars`, `storage`, `network`, `templates`, `metrics`) and runs
-`.wheel-venv/bin/python scripts/smoke_mcp.py`. The repository uses a `src/` layout, so executing the
-script from `scripts/` resolves `hmc_mcp` from the installed wheel rather than the checkout. The
-consumer does not run `just setup`, install the editable project, rebuild the artifact, or invoke
-the source environment.
+The consumer creates `.wheel-venv` with the matrix Python. It exports the frozen production
+dependency graph from `uv.lock` without the project, installs those exact dependencies into the new
+environment, and then installs the sole downloaded wheel with `--no-deps`. It invokes only
+executables from `.wheel-venv`: `hmc-mcp --help` plus every installed CLI group help path (`lpars`,
+`storage`, `network`, `templates`, `metrics`) and `.wheel-venv/bin/python scripts/smoke_mcp.py`.
+The repository uses a `src/` layout, so executing the script from `scripts/` resolves `hmc_mcp`
+from the installed wheel rather than the checkout. The consumer does not run `just setup`, install
+the editable project, rebuild the artifact, or resolve dependencies outside the lockfile.
 
 The consumer's checkout supplies only the smoke script. The wheel is the sole package installation
 source and was already validated by the corresponding producer's `just verify`. A missing,
@@ -56,15 +56,18 @@ architecture and Python version in the failure message.
 ## Failure behavior
 
 GitHub reports each producer and consumer by architecture and Python version. Matrix fail-fast is
-disabled for both jobs so one failure does not hide the state of the other combinations. Producer
-failures remain attributable to the canonical source and artifact verification graph. Consumer
-failures distinguish artifact download, exact-count validation, wheel installation, installed CLI,
-and installed MCP smoke steps.
+disabled within both stages, so one producer does not cancel the other producer arms and one
+consumer does not cancel the other consumer arms. Producer failures remain attributable to the
+canonical source and artifact verification graph. Consumer failures distinguish artifact download,
+exact-count validation, locked dependency installation, wheel installation, installed CLI, and
+installed MCP smoke steps.
 
 The workflow has no retry loop or fallback architecture. An unavailable runner, missing artifact,
-or failed smoke remains a failed arm. The `wheel-smoke` dependency prevents consumers from running
-when any producer fails; this avoids consuming an incomplete matrix and leaves producer job names
-as the primary diagnosis. The scheduled Python-policy job remains separate and unchanged.
+or failed smoke remains a failed arm. The job-level `wheel-smoke` dependency means any producer
+failure skips the entire consumer stage even when seven wheels were retained; that intentionally
+avoids presenting a partial fresh-wheel matrix as complete, at the cost of requiring a later green
+producer run before any hidden consumer failure becomes visible. Producer job names remain the
+primary diagnosis for that run. The scheduled Python-policy job remains separate and unchanged.
 
 ## Security model
 
@@ -84,7 +87,8 @@ artifact names or counts to select themselves safely.
   requests one matrix-derived artifact name and one fixed destination; it does not merge artifacts
   or use a wildcard artifact selector.
 - The producer validates the wheel before upload. The consumer fails unless `dist/` contains
-  exactly one regular `.whl`, then installs only that path into its new environment.
+  exactly one regular `.whl`, exports locked non-project production dependencies, installs those
+  dependencies, then installs only that wheel path with dependency resolution disabled.
 - No token, secret, cache credential, publication permission, package-index upload, self-hosted
   runner, or persistent environment is added. Existing timeouts bound both native job classes.
 - Failure output names only public architecture, Python, step, and local artifact information; it
