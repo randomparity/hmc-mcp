@@ -27,8 +27,8 @@ actions.
   references remain immutable full commits with version comments.
 - Branch `feat/python-architecture-matrix-163`; base `main`. Host architecture `arm64`; declared
   targets `amd64`, `arm64`, and `ppc64le`; relationship `included`.
-- Guardrails: `just setup`; focused `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`; `just
-  verify`; `UV_NO_SYNC=1 uv run prek run --all-files`.
+- Guardrails: `just setup`; focused `uv run --no-sync pytest -q --no-cov
+  tests/test_ci_pipeline.py`; `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`.
 
 ## Task 1: Specify and implement the complete producer and consumer matrices
 
@@ -36,8 +36,8 @@ actions.
 
 **Interfaces:** Consumes the existing `SUPPORTED_PYTHONS`, `NATIVE_MATRIX`, action-pin contract,
 `just verify`, artifact name `release-wheel-${{ matrix.architecture }}-py${{
-matrix.python-version }}`, and `dist/*.whl`. Produces an eight-tuple `NATIVE_MATRIX`, a `ci` producer
-job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are identical.
+matrix.python-version }}`, and `dist/*.whl`. Produces an eight-tuple `NATIVE_MATRIX`, a `ci`
+producer job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are identical.
 
 1. Change `NATIVE_MATRIX` in `tests/test_ci_pipeline.py` to construct four amd64 and four arm64
    tuples from `SUPPORTED_PYTHONS`. Add the immutable download-action pin
@@ -46,15 +46,16 @@ job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are id
 2. Extend `test_github_ci_uses_a_bounded_native_architecture_matrix` to require `fail-fast: false`,
    producer name `${{ matrix.architecture }} / Python ${{ matrix.python-version }} / verify`, and
    the exact eight-entry matrix. Add a focused test that extracts `wheel-smoke`, requires `needs:
-   ci`, its matching explicit matrix and name, checkout/setup/download pins, the exact matrix-derived
-   artifact name, destination `dist`, exact-one-wheel validation, `.wheel-venv` creation, frozen
+   ci`, its matching explicit matrix and name, checkout/setup/download pins, the exact
+   matrix-derived artifact name, destination `dist`, exact-one-wheel validation, `.wheel-venv`
+   creation, frozen
    non-project dependency export and installation, wheel installation with `--no-deps`, every
    installed CLI help path, and installed MCP smoke. Assert it never runs `just setup`, installs
    the project checkout, resolves dependencies outside `uv.lock`, merges artifacts, or activates
    ppc64le.
-3. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect failure because arm64 has only
-   Python 3.11, `fail-fast` and `/ verify` are absent, the download pin is absent, and `wheel-smoke`
-   does not exist. Preserve this red result in the forge ledger.
+3. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect failure because
+   arm64 has only Python 3.11, `fail-fast` and `/ verify` are absent, the download pin is absent,
+   and `wheel-smoke` does not exist. Preserve this red result in the forge ledger.
 4. Expand `.github/workflows/ci.yml` to the exact eight producer tuples, set `fail-fast: false`, and
    suffix its name with `/ verify`. Add `wheel-smoke` with `needs: ci`, the matching eight tuples,
    the same runner and Python setup, credential-free checkout, the pinned downloader, and a
@@ -71,7 +72,8 @@ job, and a `wheel-smoke` consumer job whose tuple and artifact interfaces are id
    `.wheel-venv/bin/hmc-mcp metrics --help`. Before MCP smoke, run a Python assertion that resolves
    `hmc_mcp.__file__` and requires it to be beneath the resolved `.wheel-venv` path. Then run
    `.wheel-venv/bin/python scripts/smoke_mcp.py`.
-6. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect all tests in the file to pass.
+6. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py`. Expect all tests in the
+   file to pass.
 7. Run `just workflow-security`. Expect exit 0 with no zizmor findings. Review
    `git diff --check` and the workflow diff, confirming the delimited ppc64le block is unchanged.
 8. Stage only `.github/workflows/ci.yml` and `tests/test_ci_pipeline.py`, then commit with `git
@@ -94,13 +96,13 @@ review-fix commit and must remain inside the frozen surface.
 branch suitable for adversarial review and delivery.
 
 1. Run `just setup`. Expect the locked environment and hooks to install successfully.
-2. Run `just verify`. Expect pytest, static checks, MCP smoke, CLI help paths, artifact construction,
-   and artifact validation all to exit 0.
+2. Run `just verify`. Expect pytest, static checks, MCP smoke, CLI help paths, artifact
+   construction, and artifact validation all to exit 0.
 3. Run `UV_NO_SYNC=1 uv run prek run --all-files`. Expect every hook to pass.
-4. Run `git diff --check` and inspect `git status --short --untracked-files=all`. Expect no whitespace
-   errors and an empty tree. The durable spec and plan are prerequisites committed before Task 1;
-   do not sweep them into the implementation commit. Every commit explicitly stages only its named
-   files. Do not combine later review fixes with implementation or design commits.
+4. Run `git diff --check` and inspect `git status --short --untracked-files=all`. Expect no
+   whitespace errors and an empty tree. The durable spec and plan are prerequisites committed
+   before Task 1; do not sweep them into the implementation commit. Every commit explicitly stages
+   only its named files. Do not combine later review fixes with implementation or design commits.
 
 **Acceptance criteria:** All required guardrails pass from the external worktree, the documented
 contract matches the workflow byte-for-contract tests, and commit history keeps design,
@@ -122,8 +124,9 @@ that exact SHA.
    headRefOid,headRefName,baseRefName,mergeable,mergeStateStatus`. Require `headRefOid` to equal the
    full reviewed `git rev-parse HEAD`, head `feat/python-architecture-matrix-163`, and base `main`.
 2. Poll `gh pr checks <PR> --repo randomparity/hmc-mcp --json name,state` on a backing-off interval
-   until checks reach terminal states. Expect one successful check for each exact name `<amd64|arm64>
-   / Python <3.11|3.12|3.13|3.14> / verify` and one for each matching name ending `/ wheel smoke`.
+   until checks reach terminal states. Expect one successful check for each exact name
+   `<amd64|arm64> / Python <3.11|3.12|3.13|3.14> / verify` and one for each matching name ending
+   `/ wheel smoke`.
 3. Treat any absent, duplicate, skipped, cancelled, timed-out, or failed required arm as incomplete.
    Also require every other required repository check to succeed and the pull request to report
    `MERGEABLE` with merge state `CLEAN`; after one evidence-backed correction, surface another
@@ -133,5 +136,5 @@ that exact SHA.
 required checks are green, and the pull request is clean and mergeable. Every observed job name
 identifies its architecture, Python version, and producer or consumer stage.
 
-**Rollback:** None; this task is read-only. A failed live arm returns to diagnosis and a new reviewed
-commit rather than changing external infrastructure or retrying blindly.
+**Rollback:** None; this task is read-only. A failed live arm returns to diagnosis and a new
+reviewed commit rather than changing external infrastructure or retrying blindly.
