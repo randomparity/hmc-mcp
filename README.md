@@ -184,6 +184,12 @@ Exposed tools are listed below. MCP clients also receive a rendered description 
 parameter, including fields nested inside structured inputs such as LPAR resources, password
 policies, and update repositories.
 
+Feed-backed collection tools accept an optional client-side `limit`. The complete HMC feed is
+still transferred and parsed before the result is truncated: the limit bounds only the number of
+entries returned to the agent, not HMC work, network bytes, parsing cost, or the size of each
+entry. `hmc_list_recent_jobs` defaults to 20 entries; the other affected collection tools are
+unbounded when `limit` is omitted.
+
 **Read-only / inventory**
 
 | Tool                          | Description |

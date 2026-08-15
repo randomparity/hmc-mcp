@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -245,3 +246,10 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
 
     assert result == entries[:2]
     client.list_uom.assert_awaited_once_with("Cluster")
+
+
+def test_readme_discloses_collection_limit_costs():
+    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
+    assert "client-side" in readme
+    assert "complete HMC feed" in readme
+    assert "transferred and parsed" in readme
