@@ -19,7 +19,8 @@ RUN ubuntu_snapshot=20260813T000000Z \
     && dpkg --unpack /tmp/ca-certificates.deb \
     && cat /usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt \
     && apt-get update \
-    && apt-get install --yes --no-install-recommends --fix-broken \
+    && DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-remove --no-install-recommends --fix-broken \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         curl \
