@@ -6,12 +6,12 @@ RUN ubuntu_snapshot=20260813T000000Z \
     && ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources \
     && old_uri=http://ports.ubuntu.com/ubuntu-ports/ \
     && snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" \
-    && test "$(grep -Fxc "URIs: ${old_uri}" "${ubuntu_sources}" || true)" = 1 \
+    && test "$(grep -Fxc "URIs: ${old_uri}" "${ubuntu_sources}" || true)" = 2 \
     && sed -i \
         "s|${old_uri}|${snapshot_uri}|" \
         "${ubuntu_sources}" \
     && ! grep -Fq "${old_uri}" "${ubuntu_sources}" \
-    && test "$(grep -Fxc "URIs: ${snapshot_uri}" "${ubuntu_sources}" || true)" = 1 \
+    && test "$(grep -Fxc "URIs: ${snapshot_uri}" "${ubuntu_sources}" || true)" = 2 \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \

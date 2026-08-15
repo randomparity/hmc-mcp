@@ -232,6 +232,7 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert "https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" in dockerfile
     assert "ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources" in dockerfile
     assert dockerfile.count("grep -Fxc") == 2
+    assert dockerfile.count('"${ubuntu_sources}" || true)" = 2') == 2
     assert '! grep -Fq "${old_uri}" "${ubuntu_sources}"' in dockerfile
     assert "python3" in dockerfile
     assert "rust_version=1.97.1" in dockerfile
