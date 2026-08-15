@@ -237,7 +237,7 @@ def hmc_list_vnics(
 
     Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
     --filter lpar_names=<lpar_name>`` on the HMC via SSH and returns one dict
-    per vNIC with fields such as ``vnic_id``, ``capacity``, ``virtual_switch_name``,
+    per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
     ``port_vlan_id``, and ``backing_devices``.
 
     The system and partition may be given by CLI name or by UUID; UUIDs

@@ -244,7 +244,7 @@ async def _create_disk(
         storage.storage_name,
         capacity_mib,
     )
-    return {"disk_name": storage.storage_name, "capacity_mib": capacity_mib}
+    return {"disk_name": storage.storage_name, "capacity_mb": capacity_mib}
 
 
 async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:

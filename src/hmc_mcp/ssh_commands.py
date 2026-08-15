@@ -371,7 +371,7 @@ async def list_vnics(
     Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
     --filter lpar_names=<lpar_name>`` and returns one dict per vNIC parsed
     from the key=value rows, with fields such as ``vnic_id``, ``capacity``,
-    ``virtual_switch_name``, ``port_vlan_id``, and ``backing_devices``.
+    ``vswitch_name``, ``port_vlan_id``, and ``backing_devices``.
     """
     cmd = (
         f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"

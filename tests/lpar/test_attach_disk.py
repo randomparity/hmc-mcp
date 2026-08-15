@@ -80,7 +80,7 @@ async def test_attach_disk_runs_shared_storage_leg_in_order() -> None:
     assert [step["status"] for step in result.steps] == ["ok", "ok", "ok"]
     assert result.steps[0]["result"] == {
         "disk_name": "disk01",
-        "capacity_mib": 1024,
+        "capacity_mb": 1024,
     }
     assert result.steps[1]["result"] == {
         "lpar_uuid": LPAR_UUID,

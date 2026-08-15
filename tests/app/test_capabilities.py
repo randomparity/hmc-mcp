@@ -202,6 +202,7 @@ def test_parameter_normalization_contract_is_schema_pinned():
         assert not (properties & displaced)
     for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
         properties = by_name[install_tool].parameters["properties"]
+        assert "timeout_seconds" not in properties
         assert properties["hmc_timeout_minutes"]["default"] == 60
         assert properties["wait_timeout_seconds"]["default"] is None
 
