@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _READ_ONLY, _run
+from ._app import _READ_ONLY, _run, _run_limited_collection
 from .common import client_from_env
 from .errors import HMCError
 from .jobs import JobOutcome, job_outcome
@@ -56,18 +56,17 @@ def hmc_list_recent_jobs(
     hmc_get_job with a UUID and submission link on those firmware versions.
 
     Args:
-        limit: Maximum number of the most recent jobs to return; zero returns none.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; zero returns none. This client-side cap does not reduce HMC
+            work or network transfer.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-    if limit < 0:
-        raise ValueError("limit must be greater than or equal to 0")
-
     async def operation():
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom("Job")
 
     try:
-        jobs = _run(operation)
+        return _run_limited_collection(operation, limit)
     except HMCError as exc:
         if not _is_unsupported_job_listing(exc):
             raise
@@ -77,7 +76,6 @@ def hmc_list_recent_jobs(
             status_code=400,
             body=exc.body,
         ) from exc
-    return jobs[:limit]
 
 
 @tool(annotations=_READ_ONLY)

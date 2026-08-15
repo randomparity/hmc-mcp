@@ -10,6 +10,7 @@ from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
+    _run_limited_collection,
 )
 
 from .common import client_from_env
@@ -43,7 +44,9 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_volume_groups(
-    vios_name_or_uuid: str, profile: str | None = None
+    vios_name_or_uuid: str,
+    profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
@@ -53,13 +56,16 @@ def hmc_list_volume_groups(
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_volume_groups(hmc, vios_name_or_uuid)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool
@@ -290,35 +296,44 @@ def hmc_delete_media_repository(
 
 
 @tool(annotations=_READ_ONLY)
-def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
+def hmc_list_clusters(
+    profile: str | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
     """List Clusters (sets of VIOS nodes sharing a storage pool).
 
     Args:
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.list_clusters()
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_shared_storage_pools(
     profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List all Shared Storage Pools with capacity and logical-unit details.
 
     Args:
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.list_shared_storage_pools()
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)

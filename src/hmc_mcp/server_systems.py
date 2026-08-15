@@ -11,6 +11,7 @@ from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
+    _run_limited_collection,
 )
 from .common import (
     client_from_env,
@@ -177,6 +178,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
 def hmc_list_systems(
     state: ManagedSystemState | None = None,
     profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List managed systems, optionally filtered by state.
 
@@ -191,6 +193,9 @@ def hmc_list_systems(
     Args:
         state: Optional exact managed-system State value to filter server-side.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
@@ -199,7 +204,7 @@ def hmc_list_systems(
                 return await hmc.search_uom("ManagedSystem", "State", state)
             return await hmc.list_managed_systems()
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
@@ -207,6 +212,7 @@ def hmc_list_lpars(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
     profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List LPARs, optionally filtered by system or state.
 
@@ -217,6 +223,9 @@ def hmc_list_lpars(
         system_name_or_uuid: Optional SystemName or UUID whose partitions to list.
         state: Optional exact PartitionState value to filter server-side.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
     if system_name_or_uuid is not None and state is not None:
         raise ValueError("Provide at most one of system_name_or_uuid or state")
@@ -230,7 +239,7 @@ def hmc_list_lpars(
                 return await hmc.search_uom("LogicalPartition", "PartitionState", state)
             return await hmc.list_logical_partitions(None)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
@@ -280,6 +289,7 @@ def hmc_list_vios(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
     profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual I/O Servers, optionally filtered by system or state.
 
@@ -295,6 +305,9 @@ def hmc_list_vios(
         system_name_or_uuid: Optional SystemName or UUID whose VIOSes to list.
         state: Optional exact PartitionState value to filter server-side.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
     if system_name_or_uuid is not None and state is not None:
         raise ValueError("Provide at most one of system_name_or_uuid or state")
@@ -308,7 +321,7 @@ def hmc_list_vios(
                 return await hmc.search_uom("VirtualIOServer", "PartitionState", state)
             return await hmc.list_vios(None)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
@@ -332,7 +345,9 @@ def hmc_get_vios(
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_resources(
-    resource_type: str, profile: str | None = None
+    resource_type: str,
+    profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List any uom resource type exposed by the HMC.
 
@@ -343,13 +358,16 @@ def hmc_list_resources(
     Args:
         resource_type: Exact HMC UOM resource type to list.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom(resource_type)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)

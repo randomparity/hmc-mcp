@@ -578,6 +578,17 @@ def test_recent_jobs_limit_truncates(monkeypatch, mock_hmc):
     assert result[0]["Resource"]["JobID"] == "job-uuid-001"
 
 
+def test_recent_jobs_zero_limit_still_fetches_and_parses(monkeypatch, mock_hmc):
+    """A zero cap does not skip the HMC request or feed parsing."""
+    _hmc_env(monkeypatch)
+    route = mock_hmc.get("/rest/api/uom/Job").mock(
+        return_value=httpx.Response(200, text=JOB_FEED_2)
+    )
+
+    assert hmc_list_recent_jobs(limit=0) == []
+    assert route.called
+
+
 def test_recent_jobs_rejects_negative_limit_before_request(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.get("/rest/api/uom/Job")

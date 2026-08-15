@@ -1,10 +1,78 @@
 """Contract tests for client-side collection payload limits."""
 
-from unittest.mock import AsyncMock
+import asyncio
+import inspect
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from hmc_mcp import (
+    server_adapters,
+    server_jobs,
+    server_network,
+    server_storage,
+    server_systems,
+)
 from hmc_mcp._app import _run_limited_collection
+from hmc_mcp.server import mcp
+
+
+EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"/>
+"""
+
+
+COLLECTION_TOOLS = {
+    "hmc_list_systems": (server_systems, (), ["state", "profile", "limit"]),
+    "hmc_list_lpars": (
+        server_systems,
+        (),
+        ["system_name_or_uuid", "state", "profile", "limit"],
+    ),
+    "hmc_list_vios": (
+        server_systems,
+        (),
+        ["system_name_or_uuid", "state", "profile", "limit"],
+    ),
+    "hmc_list_resources": (
+        server_systems,
+        ("ManagedSystem",),
+        ["resource_type", "profile", "limit"],
+    ),
+    "hmc_list_adapters": (
+        server_adapters,
+        ("lpar-1",),
+        ["lpar_name_or_uuid", "adapter_type", "profile", "limit"],
+    ),
+    "hmc_list_virtual_switches": (
+        server_network,
+        ("system-1",),
+        ["system_name_or_uuid", "profile", "limit"],
+    ),
+    "hmc_list_virtual_networks": (
+        server_network,
+        ("system-1",),
+        ["system_name_or_uuid", "profile", "limit"],
+    ),
+    "hmc_list_network_bridges": (
+        server_network,
+        ("system-1",),
+        ["system_name_or_uuid", "profile", "limit"],
+    ),
+    "hmc_list_volume_groups": (
+        server_storage,
+        ("vios-1",),
+        ["vios_name_or_uuid", "profile", "limit"],
+    ),
+    "hmc_list_clusters": (server_storage, (), ["profile", "limit"]),
+    "hmc_list_shared_storage_pools": (
+        server_storage,
+        (),
+        ["profile", "limit"],
+    ),
+    "hmc_list_recent_jobs": (server_jobs, (), ["limit", "profile"]),
+}
 
 
 @pytest.mark.parametrize(
@@ -32,3 +100,148 @@ def test_run_limited_collection_rejects_negative_limit_before_operation():
         _run_limited_collection(operation, -1)
 
     operation.assert_not_called()
+
+
+@pytest.mark.parametrize(("tool_name", "entry"), COLLECTION_TOOLS.items())
+def test_collection_tool_signatures_and_limit_schema(tool_name, entry):
+    module, _args, expected_parameters = entry
+    function = getattr(module, tool_name)
+    assert list(inspect.signature(function).parameters) == expected_parameters
+
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    limit_schema = tools[tool_name].parameters["properties"]["limit"]
+    description = limit_schema["description"]
+    assert "client-side" in description
+    assert "complete HMC feed" in description
+    assert "parsed" in description
+
+
+@pytest.mark.parametrize("limit", [None, 2, 0, -1])
+@pytest.mark.parametrize(("tool_name", "entry"), COLLECTION_TOOLS.items())
+def test_collection_tools_delegate_limit_to_shared_helper(tool_name, entry, limit):
+    module, args, _expected_parameters = entry
+    function = getattr(module, tool_name)
+
+    with patch.object(module, "_run_limited_collection", return_value=[{"id": 1}]) as run:
+        result = function(*args, limit=limit)
+
+    assert result == [{"id": 1}]
+    assert run.call_args.args[1] == limit
+
+
+def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, mock_hmc):
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    cases = [
+        (
+            mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+                return_value=httpx.Response(200, text=EMPTY_FEED)
+            ),
+            lambda: server_systems.hmc_list_systems(limit=1),
+        ),
+        (
+            mock_hmc.get(
+                "/rest/api/uom/LogicalPartition/"
+                "00000000-0000-0000-0000-000000000002/ClientNetworkAdapter"
+            ).mock(return_value=httpx.Response(200, text=EMPTY_FEED)),
+            lambda: server_adapters.hmc_list_adapters(
+                "00000000-0000-0000-0000-000000000002", limit=1
+            ),
+        ),
+        (
+            mock_hmc.get(
+                "/rest/api/uom/ManagedSystem/search/(State==operating)"
+            ).mock(return_value=httpx.Response(200, text=EMPTY_FEED)),
+            lambda: server_systems.hmc_list_systems(state="operating", limit=1),
+        ),
+        (
+            mock_hmc.get("/rest/api/uom/Job").mock(
+                return_value=httpx.Response(200, text=EMPTY_FEED)
+            ),
+            lambda: server_jobs.hmc_list_recent_jobs(limit=1),
+        ),
+    ]
+
+    forbidden = {"limit", "_limit", "maxCount", "count"}
+    for route, invoke in cases:
+        assert invoke() == []
+        assert route.called
+        assert forbidden.isdisjoint(route.calls[-1].request.url.params.keys())
+
+
+def _client_context(client):
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=client)
+    context.__aexit__ = AsyncMock(return_value=False)
+    return context
+
+
+def test_system_state_selector_runs_before_results_are_capped():
+    entries = [{"id": 1}, {"id": 2}, {"id": 3}]
+    client = MagicMock()
+    client.search_uom = AsyncMock(return_value=entries)
+    with patch.object(
+        server_systems, "client_from_env", return_value=_client_context(client)
+    ):
+        result = server_systems.hmc_list_systems(state="operating", limit=2)
+
+    assert result == entries[:2]
+    client.search_uom.assert_awaited_once_with("ManagedSystem", "State", "operating")
+
+
+def test_lpar_parent_selector_runs_before_results_are_capped():
+    entries = [{"id": 1}, {"id": 2}, {"id": 3}]
+    client = MagicMock()
+    client.list_logical_partitions = AsyncMock(return_value=entries)
+    with (
+        patch.object(
+            server_systems, "client_from_env", return_value=_client_context(client)
+        ),
+        patch.object(
+            server_systems,
+            "resolve_system_uuid",
+            new=AsyncMock(return_value="system-uuid"),
+        ) as resolve,
+    ):
+        result = server_systems.hmc_list_lpars("system-name", limit=2)
+
+    assert result == entries[:2]
+    resolve.assert_awaited_once_with(client, "system-name")
+    client.list_logical_partitions.assert_awaited_once_with("system-uuid")
+
+
+def test_adapter_type_selector_runs_before_results_are_capped():
+    entries = [{"id": 1}, {"id": 2}, {"id": 3}]
+    client = MagicMock()
+    with (
+        patch.object(
+            server_adapters, "client_from_env", return_value=_client_context(client)
+        ),
+        patch.object(
+            server_adapters,
+            "list_adapters",
+            new=AsyncMock(return_value=("lpar-uuid", entries)),
+        ) as list_selected,
+    ):
+        result = server_adapters.hmc_list_adapters(
+            "lpar-name", "VirtualSCSIClientAdapter", limit=2
+        )
+
+    assert result == entries[:2]
+    list_selected.assert_awaited_once_with(
+        client, "lpar-name", "VirtualSCSIClientAdapter"
+    )
+
+
+def test_arbitrary_resource_type_runs_before_results_are_capped():
+    entries = [{"id": 1}, {"id": 2}, {"id": 3}]
+    client = MagicMock()
+    client.list_uom = AsyncMock(return_value=entries)
+    with patch.object(
+        server_systems, "client_from_env", return_value=_client_context(client)
+    ):
+        result = server_systems.hmc_list_resources("Cluster", limit=2)
+
+    assert result == entries[:2]
+    client.list_uom.assert_awaited_once_with("Cluster")
