@@ -80,6 +80,7 @@ class ProjectConfiguration:
     requires_python: str
     license_expression: str
     dependencies: set[str]
+    extras: set[str]
     scripts: dict[str, str]
 
 
@@ -454,6 +455,18 @@ def _project_configuration(root: Path) -> ProjectConfiguration:
         isinstance(value, str) for value in dependencies
     ):
         _fail("pyproject.toml", "project.dependencies must be a list of strings")
+    optional_dependencies = project.get("optional-dependencies", {})
+    if not isinstance(optional_dependencies, dict) or not all(
+        isinstance(extra, str)
+        and extra
+        and isinstance(requirements, list)
+        and all(isinstance(value, str) for value in requirements)
+        for extra, requirements in optional_dependencies.items()
+    ):
+        _fail(
+            "pyproject.toml",
+            "project.optional-dependencies must map extras to lists of strings",
+        )
     scripts = project.get("scripts")
     if (
         not isinstance(scripts, dict)
@@ -466,10 +479,20 @@ def _project_configuration(root: Path) -> ProjectConfiguration:
         _fail("pyproject.toml", "project.scripts must be a non-empty string mapping")
     try:
         normalized = {str(Requirement(value)) for value in dependencies}
+        for extra, requirements in optional_dependencies.items():
+            normalized.update(
+                str(Requirement(f'{value}; extra == "{extra}"'))
+                for value in requirements
+            )
     except InvalidRequirement:
-        _fail("pyproject.toml", "project.dependencies contains an invalid requirement")
+        _fail("pyproject.toml", "project dependencies contain an invalid requirement")
     return ProjectConfiguration(
-        name, requires_python, license_expression, normalized, scripts
+        name,
+        requires_python,
+        license_expression,
+        normalized,
+        set(optional_dependencies),
+        scripts,
     )
 
 
@@ -493,6 +516,8 @@ def _validate_metadata(
         _fail(artifact, "license expression differs from pyproject.toml")
     if _requirements(message, artifact) != project.dependencies:
         _fail(artifact, "runtime dependencies differ from pyproject.toml")
+    if set(message.get_all("Provides-Extra", [])) != project.extras:
+        _fail(artifact, "optional extras differ from pyproject.toml")
 
 
 def _parse_wheel_filename(path: Path) -> tuple[str, str, str]:

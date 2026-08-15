@@ -157,10 +157,10 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
     justfile = (ROOT / "justfile").read_text()
 
-    assert justfile.count("uv sync --locked --link-mode copy") == 1
+    assert justfile.count("uv sync --locked --extra app --link-mode copy") == 1
     assert (
         "setup:\n"
-        "    uv sync --locked --link-mode copy\n"
+        "    uv sync --locked --extra app --link-mode copy\n"
         "    uv run --no-sync prek install\n"
         in justfile
     )
@@ -298,7 +298,7 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
     subprocess.run(
-        ["uv", "sync", "--locked"],
+        ["uv", "sync", "--locked", "--extra", "app"],
         cwd=project,
         check=True,
         capture_output=True,
@@ -406,9 +406,15 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "expected exactly one wheel" in body
     assert "uv venv --python \"${MATRIX_PYTHON}\" .wheel-venv" in body
     assert "uv export --frozen --no-dev --no-emit-project --no-header" in body
+    assert (
+        "uv export --frozen --extra app --no-dev --no-emit-project --no-header"
+        in body
+    )
     assert "uv pip install --python .wheel-venv/bin/python" in body
     assert "--requirements .wheel-requirements.txt" in body
+    assert "--requirements .wheel-app-requirements.txt" in body
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
+    assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
     assert "is_relative_to(environment)" in body
     for group in ("", "lpars", "storage", "network", "templates", "metrics"):

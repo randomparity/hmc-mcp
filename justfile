@@ -7,7 +7,7 @@
 
 # synchronize locked dependencies and install repository hooks
 setup:
-    uv sync --locked --link-mode copy
+    uv sync --locked --extra app --link-mode copy
     uv run --no-sync prek install
 
 # Python lint
