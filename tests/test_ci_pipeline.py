@@ -36,8 +36,43 @@ ACTION_PINS = {
         "53165ef7e734c5c07cb06b3c8e7b647c5aa16db3",  # pragma: allowlist secret
         "v4",
     ),
+    "docker/setup-qemu-action": (
+        "96fe6ef7f33517b61c61be40b68a1882f3264fb8",  # pragma: allowlist secret
+        "v4.2.0",
+    ),
 }
 SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
+NATIVE_MATRIX = [
+    ("amd64", "ubuntu-24.04", version) for version in SUPPORTED_PYTHONS
+] + [("arm64", "ubuntu-24.04-arm", "3.11")]
+QEMU_IMAGE = (
+    "docker.io/tonistiigi/binfmt@"
+    "sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
+)
+PPC64LE_BASE = (
+    "ubuntu:24.04@"
+    "sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea"
+)
+UV_PPC64LE_SHA256 = (
+    "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
+    "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
+)
+
+
+def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
+    template = re.search(
+        r"^  # ppc64le-release-artifact-template: begin\n"
+        r"(?P<body>(?:^  #.*\n)+)"
+        r"^  # ppc64le-release-artifact-template: end\n",
+        workflow,
+        re.MULTILINE,
+    )
+    assert template
+    body = "".join(
+        f"{line.removeprefix('  # ')}\n" for line in template["body"].splitlines()
+    )
+    active_workflow = workflow[: template.start()] + workflow[template.end() :]
+    return active_workflow, body
 SCORECARD_ACTION_PINS = {
     "actions/checkout": (
         "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
@@ -149,6 +184,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
     assert workflow.count("runs-on: ubuntu-24.04") == 2
+    assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
     expected_actions = {f"{action}@{sha}" for action, (sha, _) in ACTION_PINS.items()}
@@ -162,14 +198,117 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
         assert f"run: {command}" in workflow
 
 
-def test_github_ci_uses_an_explicit_supported_python_matrix() -> None:
+def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
 
-    matrix = re.search(r"matrix:\n\s+python-version: \[(?P<versions>[^]]+)\]", workflow)
+    matrix = re.search(
+        r"^      matrix:\n(?P<body>.*?)(?=^    steps:)",
+        active_workflow,
+        re.MULTILINE | re.DOTALL,
+    )
     assert matrix
-    assert re.findall(r'"(\d+\.\d+)"', matrix["versions"]) == SUPPORTED_PYTHONS
+    expected_matrix = "        include:\n" + "".join(
+        f"          - architecture: {architecture}\n"
+        f"            runner: {runner}\n"
+        f'            python-version: "{version}"\n'
+        for architecture, runner, version in NATIVE_MATRIX
+    )
+    assert matrix["body"] == expected_matrix
     assert "python-version: ${{ matrix.python-version }}" in workflow
-    assert workflow.count("run: just verify") == 1
+    assert active_workflow.count("run: just verify") == 1
+    assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
+    assert "docker/setup-qemu-action" not in active_workflow
+    assert "architecture: [amd64, arm64]" not in workflow
+
+
+def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    dockerfile = (ROOT / ".github" / "containers" / "ppc64le.Dockerfile").read_text()
+    active_workflow, retained_job = _inactive_ppc64le_job(workflow)
+
+    job = re.search(
+        r"^ppc64le:\n(?P<body>.*)\Z",
+        retained_job,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert job
+    body = job["body"]
+    assert "ppc64le" not in active_workflow
+    assert "runs-on: ubuntu-24.04" in body
+    assert "timeout-minutes: 30" in body
+    assert "platforms: ppc64le" in body
+    assert f"image: {QEMU_IMAGE}" in body
+    assert "cache-image: false" in body
+    assert "persist-credentials: false" in body
+    assert "secrets." not in body
+    assert "github.token" not in body
+    assert "GITHUB_TOKEN" not in body
+    assert "SSH_AUTH_SOCK" not in body
+    assert "AWS_" not in body
+    assert "GOOGLE_" not in body
+    assert "AZURE_" not in body
+    assert body.count("--platform linux/ppc64le") == 2
+    assert "--mount type=bind,source=\"$GITHUB_WORKSPACE\",target=/workspace" in body
+    assert "-e " not in body
+    assert "/var/run/docker.sock" not in body
+
+    assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
+    assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
+    assert UV_PPC64LE_SHA256 in dockerfile
+    assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
+    assert "old_uri=http://ports.ubuntu.com/ubuntu-ports/" in dockerfile
+    assert "https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" in dockerfile
+    bootstrap_add = (
+        "ADD --checksum=sha256:6bac2a01979e210d9eac1d4d56747ec7"
+        "09ea60654744d66705dc3c36e7629e50 \\\n"
+        "    https://snapshot.ubuntu.com/ubuntu/20260813T000000Z/pool/main/c/"
+        "ca-certificates/ca-certificates_20260601~24.04.1_all.deb \\\n"
+        "    /tmp/ca-certificates.deb\n"
+    )
+    bootstrap_chain = (
+        "    && dpkg --unpack /tmp/ca-certificates.deb \\\n"
+        "    && cat /usr/share/ca-certificates/mozilla/*.crt "
+        "> /etc/ssl/certs/ca-certificates.crt \\\n"
+        "    && apt-get update \\\n"
+        "    && DEBIAN_FRONTEND=noninteractive \\\n"
+        "        apt-get install --yes --no-remove --no-install-recommends "
+        "--fix-broken \\\n"
+    )
+    toolchain_install = (
+        "    && DEBIAN_FRONTEND=noninteractive \\\n"
+        "        apt-get install --yes --no-remove --no-install-recommends \\\n"
+        "        ca-certificates \\\n"
+    )
+    add_pattern = re.compile(f"^{re.escape(bootstrap_add)}", re.MULTILINE)
+    assert add_pattern.search(dockerfile)
+    assert bootstrap_chain in dockerfile
+    assert toolchain_install in dockerfile
+    assert not add_pattern.search(dockerfile.replace("--checksum=sha256:", "# checksum="))
+    assert bootstrap_chain not in dockerfile.replace(
+        "/etc/ssl/certs/ca-certificates.crt", "/tmp/ca-certificates.crt"
+    )
+    assert "ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources" in dockerfile
+    assert dockerfile.count("grep -Fxc") == 2
+    assert dockerfile.count('"${ubuntu_sources}" || true)" = 2') == 2
+    assert '! grep -Fq "${old_uri}" "${ubuntu_sources}"' in dockerfile
+    assert "python3" in dockerfile
+    assert "rust_version=1.97.1" in dockerfile
+    assert "rustup_sha256=" in dockerfile
+    assert "ARG " not in dockerfile
+    expected_cmd = (
+        'CMD ["bash", "-euo", "pipefail", "-c", \\\n'
+        r'    "architecture=$(uname -m) && echo \"runtime architecture: ${architecture}\" '
+        r'&& test \"${architecture}\" = \"ppc64le\" '
+        "&& git config --global --add safe.directory /workspace "
+        "&& uv sync --locked --no-install-package prek "
+        '&& UV_NO_SYNC=1 just verify"]\n'
+    )
+    assert dockerfile.endswith(expected_cmd)
+    assert "just setup" not in dockerfile
+    assert dockerfile.count("just verify") == 1
+    assert "COPY" not in dockerfile
+    assert "rm -rf" not in dockerfile
 
 
 def test_scheduled_job_checks_the_same_explicit_versions() -> None:
