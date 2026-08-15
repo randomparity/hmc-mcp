@@ -53,8 +53,10 @@ policy file exists, and checks the README links them. It also asserts that `SECU
 private advisory URL and rejects public issue reporting. Exact values make drift fail with the
 offending contract visible in the assertion.
 
-The test scans workflow and metadata surfaces to ensure this change adds neither a PyPI publication
-workflow nor publication credential names. Existing dependency and CI tests remain unchanged.
+The no-publication exclusion is verified against the branch diff: no workflow file may be added or
+modified, and `pyproject.toml` may change only the declared governance metadata. The existing
+secret scanner remains responsible for credential-like content; this change does not add a brittle
+global credential-name denylist. Existing dependency and CI tests remain unchanged.
 
 ## Threat model
 
@@ -95,4 +97,3 @@ public.
 3. Focused tests fail on missing or inconsistent governance metadata and pass on the final files.
 4. `just verify` and `uv run prek run --all-files` pass with zero warnings.
 5. No publication credential or PyPI release workflow is introduced.
-

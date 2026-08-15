@@ -34,9 +34,8 @@ canonical files and metadata that README navigation and future package consumers
 
 1. Create `tests/test_project_metadata.py` with tests that parse `pyproject.toml`, assert the exact
    license fields, MIT classifier, and three project URLs; assert `LICENSE`, `CONTRIBUTING.md`, and
-   `SECURITY.md` exist; assert the README links all three; assert `SECURITY.md` contains the exact
-   advisory URL and says not to use public issues; and assert no tracked workflow or `pyproject.toml`
-   contains a PyPI credential or upload command.
+   `SECURITY.md` exist; assert the README links all three; and assert `SECURITY.md` contains the
+   exact advisory URL and says not to use public issues.
 2. Run `uv run pytest --no-cov tests/test_project_metadata.py -q`. Expect failures for the absent
    policy files and metadata, proving the tests bite.
 3. Add the exact MIT text to `LICENSE`; write the focused contribution and security policies; add
@@ -62,10 +61,10 @@ shipping; no later task consumes a new code interface.
    formats a file, inspect the change, rerun the focused test and both guardrails, then commit the
    mechanical correction separately.
 3. Review `git diff main...HEAD --name-only` and confirm it contains only the file map plus ADR 0022,
-   this specification, and this plan.
+   this specification, and this plan. Confirm no workflow file changed and inspect the
+   `pyproject.toml` diff to verify it contains only the declared governance metadata.
 
 **Acceptance:** Both exact guardrail commands exit zero and the branch remains clean.
 
 **Rollback:** No generated or temporary artifacts remain. Revert only an evidence-driven corrective
 commit if one was necessary.
-
