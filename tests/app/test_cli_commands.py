@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import pytest
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
@@ -1036,14 +1037,16 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
 
 
 def test_lpars_decommission_help_lists_cli_contract(fake_hmc):
-    result = RUNNER.invoke(
-        cli.app,
-        ["lpars", "decommission", "--help"],
-        env={"COLUMNS": "200"},
-    )
+    root_command = get_command(cli.app)
+    decommission_command = root_command.commands["lpars"].commands["decommission"]
+    option_names = {
+        option
+        for parameter in decommission_command.params
+        for option in parameter.opts
+        if option.startswith("--")
+    }
 
-    assert result.exit_code == 0, result.output
-    for expected in (
+    assert option_names == {
         "--system",
         "--dry-run",
         "--ownership-override",
@@ -1052,8 +1055,7 @@ def test_lpars_decommission_help_lists_cli_contract(fake_hmc):
         "--poll-interval",
         "--json",
         "--yes",
-    ):
-        assert expected in result.stdout
+    }
 
 
 def test_lpars_decommission_dry_run_skips_confirmation(fake_hmc):
