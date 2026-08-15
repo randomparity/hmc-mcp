@@ -164,7 +164,12 @@ jobs:
         run: |
           shopt -s nullglob
           wheels=(dist/*.whl)
-          uv pip install --python .wheel-venv/bin/python "${wheels[0]}[app]"
+          uv export --frozen --extra app --no-dev --no-emit-project --no-header \
+            --output-file .wheel-app-requirements.txt
+          uv pip install --python .wheel-venv/bin/python \
+            --requirements .wheel-app-requirements.txt
+          uv pip install --no-deps --python .wheel-venv/bin/python \
+            "${wheels[0]}[app]"
           .wheel-venv/bin/hmc-mcp --help >/dev/null
           .wheel-venv/bin/hmc-mcp lpars --help >/dev/null
           .wheel-venv/bin/hmc-mcp storage --help >/dev/null

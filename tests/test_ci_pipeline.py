@@ -406,9 +406,15 @@ def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     assert "expected exactly one wheel" in body
     assert "uv venv --python \"${MATRIX_PYTHON}\" .wheel-venv" in body
     assert "uv export --frozen --no-dev --no-emit-project --no-header" in body
+    assert (
+        "uv export --frozen --extra app --no-dev --no-emit-project --no-header"
+        in body
+    )
     assert "uv pip install --python .wheel-venv/bin/python" in body
     assert "--requirements .wheel-requirements.txt" in body
+    assert "--requirements .wheel-app-requirements.txt" in body
     assert "uv pip install --no-deps --python .wheel-venv/bin/python" in body
+    assert '"${wheels[0]}[app]"' in body
     assert "import hmc_mcp" in body
     assert "is_relative_to(environment)" in body
     for group in ("", "lpars", "storage", "network", "templates", "metrics"):
