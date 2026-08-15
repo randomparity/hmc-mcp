@@ -37,9 +37,11 @@ sessions during orderly shutdown.
 Profile isolation means the process-wide count is not a fixed constant: its
 worst case is one retained session for every distinct profile/route key touched.
 Multiple `hmc-mcp` processes multiply that count for the same HMC user. The
-future implementation must log off and evict a token when its profile is
-removed or its effective route changes, and must surface an HMC session-limit
-rejection without retaining a new entry. Operators remain responsible for
+future implementation must log off and evict the prior token when a later call
+for the same profile observes an effective-route change, and must surface an
+HMC session-limit rejection without retaining a new entry. Profile deletion
+without another call is not observable in this design; its token remains until
+orderly shutdown or HMC-side invalidation. Operators remain responsible for
 sizing the HMC's configured maximum web sessions above the profiles and
 processes they run. No universal client-wide cap is chosen because the HMC cap
 and deployment topology are operator-configured and no safe universal value is

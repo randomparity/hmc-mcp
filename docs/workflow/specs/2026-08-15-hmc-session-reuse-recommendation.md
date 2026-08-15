@@ -108,11 +108,13 @@ permitted.
 The design does not assume a fixed lifetime or cap. Operator-configured HMC
 timeouts remain authoritative. Worst-case retained sessions equal the number of
 distinct profile/route keys touched by each process, multiplied by the number
-of processes using that HMC user. Profile removal or an effective-route change
-must evict and log off the displaced token; a session-limit rejection must not
-publish a cache entry. Operators must size the HMC maximum for their deployment.
-A universal process cap would be an unsupported guess because both the HMC cap
-and deployment topology are configurable.
+of processes using that HMC user. When a later call for the same profile
+observes an effective-route change, it must evict and log off the displaced
+token; profile deletion without another call is only cleaned up by orderly
+shutdown or HMC-side invalidation. A session-limit rejection must not publish a
+cache entry. Operators must size the HMC maximum for their deployment. A
+universal process cap would be an unsupported guess because both the HMC cap and
+deployment topology are configurable.
 
 ## Concurrency and lifecycle invariants
 
