@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -108,7 +108,16 @@ def test_set_lpar_description_runs_correct_command(monkeypatch, mock_hmc):
         f"chsyscfg -r lpar -m {SYSTEM_NAME} "
         f"-i 'name={LPAR_NAME},description=new description'"
     )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    ownership_cmd = (
+        f"lssyscfg -r lpar -m {SYSTEM_NAME} "
+        f"--filter lpar_names={LPAR_NAME} -F description"
+    )
+    conn_mock.run.assert_has_awaits(
+        [
+            call(ownership_cmd, check=True, timeout=300.0),
+            call(expected_cmd, check=True, timeout=300.0),
+        ]
+    )
     assert result == ""
 
 
@@ -196,7 +205,8 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
             SYSTEM_UUID, LPAR_UUID, "", ownership_override=True
         )
 
-    conn_mock.run.assert_called_once()
+    assert conn_mock.run.await_count == 2
+    assert conn_mock.run.await_args.args[0].startswith("chsyscfg -r lpar")
     assert result == ""
 
 
