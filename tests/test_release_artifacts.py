@@ -12,7 +12,7 @@ import tarfile
 import re
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import BinaryIO, Callable
 
 import pytest
 
@@ -286,7 +286,7 @@ def test_rejects_declared_archive_limit_overrun(
     _assert_invalid(artifacts, project, capsys, invariant)
 
 
-def _eocd_offset(payload: bytes) -> int:
+def _eocd_offset(payload: bytes | bytearray) -> int:
     offset = payload.rfind(b"PK\x05\x06")
     assert offset >= 0
     return offset
@@ -314,6 +314,36 @@ def test_rejects_excessive_zip_entry_count_before_member_enumeration(
         validator.ValidationError, match="archive contains more than 4096 members"
     ):
         validator._read_wheel(wheel)
+
+
+def test_preflight_and_member_enumeration_share_one_open_wheel(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = built_project
+    wheel = next(artifacts.glob("*.whl"))
+    original_preflight = validator._preflight_zip_directory
+    original_zip_file = zipfile.ZipFile
+    preflight_source: object | None = None
+    enumeration_source: object | None = None
+
+    def capture_preflight(source: BinaryIO, artifact: str) -> None:
+        nonlocal preflight_source
+        preflight_source = source
+        original_preflight(source, artifact)
+
+    def capture_zip_file(source: BinaryIO) -> zipfile.ZipFile:
+        nonlocal enumeration_source
+        enumeration_source = source
+        return original_zip_file(source)
+
+    monkeypatch.setattr(validator, "_preflight_zip_directory", capture_preflight)
+    monkeypatch.setattr(zipfile, "ZipFile", capture_zip_file)
+
+    validator._read_wheel(wheel)
+
+    assert preflight_source is enumeration_source
+    assert not isinstance(preflight_source, Path)
 
 
 @pytest.mark.parametrize("field_offset", [12, 16])
@@ -368,7 +398,8 @@ def test_accepts_zip64_entry_count_at_exact_boundary(tmp_path: Path) -> None:
     wheel = tmp_path / "boundary.whl"
     wheel.write_bytes(directory + zip64_record + locator + eocd)
 
-    validator._preflight_zip_directory(wheel)
+    with wheel.open("rb") as stream:
+        validator._preflight_zip_directory(stream, wheel.name)
 
 
 def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
@@ -390,7 +421,8 @@ def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
     with pytest.raises(
         validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
     ):
-        validator._preflight_zip_directory(wheel)
+        with wheel.open("rb") as stream:
+            validator._preflight_zip_directory(stream, wheel.name)
 
 
 @pytest.mark.parametrize(
