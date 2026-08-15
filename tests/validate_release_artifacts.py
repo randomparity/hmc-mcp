@@ -14,9 +14,9 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import Any, Never
+from typing import Never
 
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 
@@ -54,6 +54,15 @@ class Distribution:
     version: str
     metadata: Message
     members: dict[str, bytes]
+
+
+@dataclass(frozen=True)
+class ProjectConfiguration:
+    name: str
+    requires_python: str
+    license_expression: str
+    dependencies: set[str]
+    scripts: dict[str, str]
 
 
 def _fail(artifact: str, invariant: str) -> Never:
@@ -157,17 +166,32 @@ def _requirements(message: Message, artifact: str) -> set[str]:
         _fail(artifact, f"Requires-Dist is malformed: {type(error).__name__}")
 
 
-def _project_configuration(root: Path) -> dict[str, Any]:
+def _project_configuration(root: Path) -> ProjectConfiguration:
     try:
         with (root / "pyproject.toml").open("rb") as file:
-            return tomllib.load(file)["project"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError) as error:
-        _fail("pyproject.toml", f"project metadata is unreadable: {type(error).__name__}")
+            project = tomllib.load(file)["project"]
+        name = project["name"]
+        requires_python = project["requires-python"]
+        license_expression = project["license"]
+        dependencies = project["dependencies"]
+        scripts = project["scripts"]
+        if not all(isinstance(value, str) for value in (name, requires_python, license_expression)):
+            raise TypeError("project scalar fields must be strings")
+        if not isinstance(dependencies, list) or not all(isinstance(value, str) for value in dependencies):
+            raise TypeError("project dependencies must be a list of strings")
+        if not isinstance(scripts, dict) or not scripts or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in scripts.items()
+        ):
+            raise TypeError("project scripts must be a non-empty string mapping")
+        normalized = {str(Requirement(value)) for value in dependencies}
+    except (OSError, KeyError, TypeError, InvalidRequirement, tomllib.TOMLDecodeError) as error:
+        _fail("pyproject.toml", f"project metadata is invalid: {type(error).__name__}")
+    return ProjectConfiguration(name, requires_python, license_expression, normalized, scripts)
 
 
 def _validate_metadata(
     distribution: Distribution,
-    project: dict[str, Any],
+    project: ProjectConfiguration,
     artifact: str,
 ) -> None:
     message = distribution.metadata
@@ -175,13 +199,12 @@ def _validate_metadata(
         _fail(artifact, "project name is inconsistent")
     if _valid_version(message["Version"], artifact) != distribution.version:
         _fail(artifact, "metadata version is inconsistent")
-    expected_name = _canonical_name(str(project["name"]))
-    if expected_name != PROJECT_NAME or message["Requires-Python"] != project["requires-python"]:
+    expected_name = _canonical_name(project.name)
+    if expected_name != PROJECT_NAME or message["Requires-Python"] != project.requires_python:
         _fail(artifact, "project name or Requires-Python differs from pyproject.toml")
-    if message["License-Expression"] != project["license"]:
+    if message["License-Expression"] != project.license_expression:
         _fail(artifact, "license expression differs from pyproject.toml")
-    expected = {str(Requirement(value)) for value in project["dependencies"]}
-    if _requirements(message, artifact) != expected:
+    if _requirements(message, artifact) != project.dependencies:
         _fail(artifact, "runtime dependencies differ from pyproject.toml")
 
 
@@ -274,7 +297,11 @@ def _source_members(root: Path) -> dict[str, bytes]:
     return members
 
 
-def _validate_wheel(path: Path, project_root: Path, project: dict[str, Any]) -> Distribution:
+def _validate_wheel(
+    path: Path,
+    project_root: Path,
+    project: ProjectConfiguration,
+) -> Distribution:
     name, version, tag = _parse_wheel_filename(path)
     members = _read_wheel(path)
     root = _dist_info(members, path.name)
@@ -301,13 +328,16 @@ def _validate_wheel(path: Path, project_root: Path, project: dict[str, Any]) -> 
             _fail(path.name, f"package bytes differ for {member}")
     if members[f"{root}/licenses/LICENSE"] != (project_root / "LICENSE").read_bytes():
         _fail(path.name, "wheel license bytes differ from checkout")
-    expected_scripts = {str(key): str(value) for key, value in project["scripts"].items()}
-    if _scripts_from_wheel(members[f"{root}/entry_points.txt"], path.name) != expected_scripts:
+    if _scripts_from_wheel(members[f"{root}/entry_points.txt"], path.name) != project.scripts:
         _fail(path.name, "wheel console scripts differ from pyproject.toml")
     return distribution
 
 
-def _validate_sdist(path: Path, project_root: Path, project: dict[str, Any]) -> Distribution:
+def _validate_sdist(
+    path: Path,
+    project_root: Path,
+    project: ProjectConfiguration,
+) -> Distribution:
     name, version = _parse_sdist_filename(path)
     root, members = _read_sdist(path)
     expected_root = f"{PACKAGE_NAME}-{version}"
@@ -332,7 +362,7 @@ def _validate_sdist(path: Path, project_root: Path, project: dict[str, Any]) -> 
         scripts = embedded["project"]["scripts"]
     except (UnicodeDecodeError, KeyError, tomllib.TOMLDecodeError) as error:
         _fail(path.name, f"embedded pyproject.toml is malformed: {type(error).__name__}")
-    if scripts != project["scripts"]:
+    if scripts != project.scripts:
         _fail(path.name, "sdist console scripts differ from checkout")
     return distribution
 

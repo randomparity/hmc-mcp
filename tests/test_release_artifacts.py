@@ -7,6 +7,7 @@ import shutil
 import stat
 import subprocess
 import tarfile
+import re
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -716,6 +717,34 @@ def test_rejects_sdist_entry_point_mismatch(
 
     _rewrite_sdist(sdist, change_pyproject)
     _assert_invalid(artifacts, project, capsys, "sdist input bytes differ")
+
+
+@pytest.mark.parametrize("mutation", ["missing-name", "missing-scripts", "dependencies-type", "bad-requirement"])
+def test_rejects_malformed_project_configuration_actionably(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+    mutation: str,
+) -> None:
+    artifacts, project = built_project
+    malformed = tmp_path / "project"
+    shutil.copytree(project, malformed, ignore=shutil.ignore_patterns(".git", ".venv", "dist"))
+    pyproject = malformed / "pyproject.toml"
+    content = pyproject.read_text()
+    if mutation == "missing-name":
+        content = content.replace('name = "hmc-mcp"', 'renamed = "hmc-mcp"')
+    elif mutation == "missing-scripts":
+        content = content.replace('[project.scripts]\nhmc-mcp = "hmc_mcp:main"\n', "")
+    elif mutation == "dependencies-type":
+        content = re.sub(r"dependencies = \[\n.*?\n\]", 'dependencies = "wrong"', content, count=1, flags=re.DOTALL)
+    else:
+        content = content.replace('"asyncssh==2.24.0"', '"not a valid requirement !!!"')
+    pyproject.write_text(content)
+
+    assert main([str(artifacts), str(malformed)]) == 1
+    error = capsys.readouterr().err
+    assert "project metadata is invalid" in error
+    assert "Traceback" not in error
 
 
 def test_rejects_unexpected_regular_sdist_member(
