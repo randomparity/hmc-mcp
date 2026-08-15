@@ -58,15 +58,25 @@ cycles succeeded, and no token was persisted.
 | Logoff median | 182.0 ms | 182.0 ms |
 | Logoff p95 | 237.0 ms | 236.85 ms |
 
+The exact retained samples, in milliseconds, are:
+
+```text
+Logon:  593.6, 627.6, 622.4, 647.4, 606.2, 579.2, 602.7, 649.3, 603.0, 580.3,
+        546.1, 488.1, 481.0, 478.4, 485.3, 483.6, 480.9, 503.0, 462.1, 467.9
+Logoff: 220.6, 222.4, 196.9, 212.2, 219.2, 199.8, 237.0, 233.9, 217.1, 183.4,
+        178.4, 169.8, 173.4, 180.6, 178.4, 164.9, 160.6, 177.3, 162.6, 160.0
+```
+
 The recalculation uses Python `statistics.median` and the exclusive p95 from
 `statistics.quantiles(samples, n=100, method="exclusive")[94]`. The roughly
 745 ms median Logon-plus-Logoff tax is material in a multi-tool agent workflow.
 
-The issue comment names `scripts/measure_logon_latency.py`, but that path is not
-present in `origin/main` or local Git history as of 2026-08-15. The raw samples,
-procedure, environment description, and cleanup result are independently
-sufficient to review and repeat the experiment; this document does not claim
-that the named script is available.
+The [exact measurement comment](https://github.com/randomparity/hmc-mcp/issues/155#issuecomment-5302760125)
+is the raw evidence source. It names `scripts/measure_logon_latency.py`, but that
+path is not present in `origin/main` or local Git history as of 2026-08-15. The
+raw samples, procedure, environment description, cleanup result, and executable
+equivalent below are independently sufficient to review and repeat the
+experiment; this document does not claim that the named script is available.
 
 ## Reproducible measurement procedure
 
@@ -81,6 +91,56 @@ that the named script is available.
 5. Abort on a failed Logoff and reconcile the open session before continuing.
 6. Verify no measurement-created sessions remain. Report successes, failures,
    median, and the p95 method for Logon and Logoff separately.
+
+Save the following as a temporary file and run it with `uv run python FILE
+PROFILE`. It deliberately emits only aggregate timings and never emits the
+profile, endpoint, credentials, or tokens.
+
+```python
+import asyncio
+import statistics
+import sys
+import time
+
+from hmc_mcp.client import HMCClient
+from hmc_mcp.common import build_config
+
+
+async def cycle(profile: str) -> tuple[float, float]:
+    client = HMCClient(build_config(profile))
+    entered = False
+    try:
+        start = time.monotonic()
+        await client.__aenter__()
+        entered = True
+        logon_ms = (time.monotonic() - start) * 1_000
+        start = time.monotonic()
+        entered = False
+        await client.__aexit__(None, None, None)
+        return logon_ms, (time.monotonic() - start) * 1_000
+    finally:
+        if entered:
+            await client.__aexit__(None, None, None)
+
+
+async def main(profile: str) -> None:
+    await cycle(profile)  # connectivity
+    for _ in range(3):
+        await cycle(profile)  # discarded warm-up
+    samples = [await cycle(profile) for _ in range(20)]
+    for index, name in enumerate(("Logon", "Logoff")):
+        values = [sample[index] for sample in samples]
+        p95 = statistics.quantiles(values, n=100, method="exclusive")[94]
+        median = statistics.median(values)
+        print(f"{name}: n=20 median={median:.2f}ms p95={p95:.2f}ms")
+
+
+asyncio.run(main(sys.argv[1]))
+```
+
+If any cycle raises, the run is failed even if the `finally` Logoff succeeds;
+reconcile the HMC session inventory before repeating it. After a successful
+run, independently confirm that no measurement-created session remains.
 
 Concurrency is intentionally excluded: it would mix authentication latency
 with HMC load and session-cap behavior.
@@ -127,12 +187,25 @@ deployment topology are configurable.
 - Token state is process-local; transport objects remain event-loop-local.
 - A synchronization primitive usable across separate `asyncio.run` calls guards
   each key's token and logon transition; an asyncio lock must not cross loops.
-- Only the cache owner may replace or log off a cached token.
+- Each published token has a monotonically changing per-key generation and an
+  active-borrower count. A request releases the same generation it acquired.
+- A 401 may invalidate only the generation used by that request. A delayed 401
+  for an older generation cannot evict its replacement.
+- Replacement, route-change eviction, and shutdown mark a generation retired;
+  Logoff is deferred until its active-borrower count reaches zero. New callers
+  cannot acquire a retired generation.
 - A failed or cancelled logon publishes no token.
+- Cancellation after acquisition releases its borrower count exactly once and
+  cannot publish, evict, or close a newer generation.
 - Shutdown makes the cache unavailable before attempting best-effort Logoff, so
-  no new caller can acquire a token being closed.
+  no new caller can acquire a token being closed; it waits for active borrowers
+  before cleanup. Existing operation timeouts remain the bound on that wait.
 - Cleanup failure is reported and the local token is discarded; a stale local
   reference must not be reused.
+
+A future implementation must deterministically test concurrent read/read reuse,
+a delayed 401 from an older generation, route change during an in-flight call,
+shutdown during active use, and cancellation during Logon and after acquisition.
 
 ## Threat model for future implementation
 
