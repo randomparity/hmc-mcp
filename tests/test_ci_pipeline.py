@@ -57,6 +57,22 @@ UV_PPC64LE_SHA256 = (
     "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
     "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
 )
+
+
+def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
+    template = re.search(
+        r"^  # ppc64le-release-artifact-template: begin\n"
+        r"(?P<body>(?:^  #.*\n)+)"
+        r"^  # ppc64le-release-artifact-template: end\n",
+        workflow,
+        re.MULTILINE,
+    )
+    assert template
+    body = "".join(
+        f"{line.removeprefix('  # ')}\n" for line in template["body"].splitlines()
+    )
+    active_workflow = workflow[: template.start()] + workflow[template.end() :]
+    return active_workflow, body
 SCORECARD_ACTION_PINS = {
     "actions/checkout": (
         "3d3c42e5aac5ba805825da76410c181273ba90b1",  # pragma: allowlist secret
@@ -184,28 +200,34 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
 
 def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
 
     entries = re.findall(
         r"- architecture: (\w+)\n\s+runner: ([\w.-]+)\n\s+python-version: \"([\d.]+)\"",
         workflow,
     )
     assert entries == NATIVE_MATRIX
+    assert len(entries) == 5
     assert "python-version: ${{ matrix.python-version }}" in workflow
-    assert workflow.count("run: just verify") == 1
+    assert active_workflow.count("run: just verify") == 1
+    assert not re.search(r"^  ppc64le:", active_workflow, re.MULTILINE)
+    assert "docker/setup-qemu-action" not in active_workflow
     assert "architecture: [amd64, arm64]" not in workflow
 
 
-def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
+def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     dockerfile = (ROOT / ".github" / "containers" / "ppc64le.Dockerfile").read_text()
+    active_workflow, retained_job = _inactive_ppc64le_job(workflow)
 
     job = re.search(
-        r"^  ppc64le:\n(?P<body>.*?)(?=^  [\w-]+:|\Z)",
-        workflow,
+        r"^ppc64le:\n(?P<body>.*)\Z",
+        retained_job,
         re.MULTILINE | re.DOTALL,
     )
     assert job
     body = job["body"]
+    assert "ppc64le" not in active_workflow
     assert "runs-on: ubuntu-24.04" in body
     assert "timeout-minutes: 30" in body
     assert "platforms: ppc64le" in body

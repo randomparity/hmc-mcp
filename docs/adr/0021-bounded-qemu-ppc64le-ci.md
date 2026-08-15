@@ -1,4 +1,4 @@
-# 0021: Use bounded QEMU for ppc64le CI
+# 0021: Retain bounded QEMU for release-artifact CI
 
 ## Status
 
@@ -8,34 +8,40 @@ Accepted
 
 The project supports amd64, arm64, and ppc64le, but GitHub-hosted Linux runners cover only the
 first two architectures natively. Native Power capacity adds external ownership, credentials,
-availability, and cost. The application is Python and is not strongly coupled to system internals,
-so instruction-level emulation provides useful compatibility evidence at lower operational cost.
+availability, and cost. Bounded QEMU proved real ppc64le userspace execution, but building locked
+development tools from source exceeded its 30-minute pull-request budget. That recurring cost is
+not justified on every pull request and is better reserved for later release artifacts and wheels.
 
 ## Decision
 
-Run amd64 on `ubuntu-24.04` and arm64 on `ubuntu-24.04-arm`. Run one separate ppc64le job on
-`ubuntu-24.04` using Docker's SHA-pinned QEMU setup action, a digest-pinned binfmt image restricted
-to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. Its Ubuntu package repository
-view is fixed to a snapshot timestamp. The container uses Ubuntu's Python 3.12 and a pinned Rust
-toolchain so locked development tools without ppc64le wheels can be built. It verifies `uname -m`
-before invoking the canonical `just verify` recipe. Every job retains read-only repository
-permissions and an explicit timeout.
+Run active pull-request checks for amd64 on `ubuntu-24.04` and arm64 on `ubuntu-24.04-arm`. Do not
+execute or require a ppc64le pull-request check. Retain the reviewed ppc64le job as explicitly
+delimited commented YAML in the workflow for later release-artifact and wheel verification.
+
+The retained template runs on `ubuntu-24.04` using Docker's SHA-pinned QEMU setup action, a
+digest-pinned binfmt image restricted to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le
+container. Its Ubuntu package view is fixed to a snapshot timestamp. The container verifies
+`uname -m` before invoking the canonical `just verify` recipe. The template retains read-only
+permissions, disabled checkout credential persistence, no secret forwarding, and a 30-minute
+timeout. Executing it again requires a reviewed change that removes the comment prefix and adapts
+the verification input to bounded release artifacts or wheels.
 
 The repository maintainers own workflow and pin updates. GitHub owns native hosted-runner
 isolation and availability; Docker and Ubuntu own the pinned QEMU and container artifacts.
 Checkout disables credential persistence, the mounted checkout contains no persisted repository
 credential, and the workflow passes no GitHub token or other secret into the ppc64le container.
 
-QEMU setup performs privileged, VM-scoped binfmt registration before public pull-request code runs
-in the emulated container. The ephemeral GitHub-hosted VM, not the disposable container, is the
-security boundary. This job must not run on a self-hosted or persistent runner.
+When activated for later release work, QEMU setup performs privileged, VM-scoped binfmt
+registration before repository code runs in the emulated container. The ephemeral GitHub-hosted
+VM, not the disposable container, is the security boundary. The template must not be activated on
+a self-hosted or persistent runner.
 
 ## Consequences
 
-The hosted matrix supplies native amd64 and arm64 evidence plus ppc64le userspace instruction and
-dependency compatibility evidence. QEMU is slower than native Power and cannot establish native
-timing, kernel, device, virtualization, or performance behavior. A QEMU or registry outage fails
-the bounded ppc64le job without falling back to cross-compilation or silently skipping coverage.
+Pull requests receive native amd64 and arm64 evidence only; they make no ppc64le coverage claim.
+The inactive template preserves the reviewed QEMU trust boundary without consuming per-PR runner
+time. Later release work can reactivate it for bounded artifact execution. QEMU remains unable to
+establish native timing, kernel, device, virtualization, or performance behavior.
 
 GitHub-hosted public-repository runners have no project-managed infrastructure charge. The Ubuntu
 snapshot makes package resolution repeatable while Canonical retains it; Canonical promises at
@@ -50,4 +56,7 @@ downloads and GitHub availability remain external dependencies.
   isolation work, and cost for this application.
 - **Cross-compilation only.** It never executes the package and therefore does not satisfy the
   ppc64le execution requirement.
-- **No ppc64le arm.** It leaves a declared target untested.
+- **Active ppc64le QEMU on every pull request.** Hosted evidence reached real ppc64le execution,
+  but source-building the locked verification tools exceeded the 30-minute budget.
+- **Delete the ppc64le job.** That discards reviewed pins and isolation controls needed by later
+  release-artifact and wheel verification.
