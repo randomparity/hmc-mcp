@@ -25,8 +25,9 @@ Provide two canonical commands with distinct ownership:
   invoking a build backend. It checks the artifact set, normalized project name, version agreement,
   wheel compatibility metadata, unambiguous core metadata, and closed package contents directly
   from both archives, comparing package members with the clean source checkout without consulting
-  Git. The build configuration limits the sdist to the package and inputs required to rebuild it,
-  making both artifact member sets explicit and reject-by-default.
+  Git. The build configuration limits the sdist to the package and inputs required to rebuild it;
+  the validator also admits hatchling's automatic root `.gitignore`, making both artifact member
+  sets explicit and reject-by-default.
 
 `just verify` composes both commands after the existing source checks. CI runs that canonical
 suite and uploads only the wheel for downstream fresh-environment installation tests. Artifact

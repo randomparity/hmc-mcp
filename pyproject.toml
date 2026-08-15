@@ -33,6 +33,15 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "versioningit"
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/LICENSE",
+    "/README.md",
+    "/pyproject.toml",
+    "/scripts/versioning.py",
+    "/src/hmc_mcp",
+]
+
 [tool.versioningit.vcs]
 method = { module = "versioning", value = "describe_git", module-dir = "scripts" }
 

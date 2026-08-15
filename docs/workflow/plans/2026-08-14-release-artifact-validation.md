@@ -72,7 +72,8 @@ returns zero only when every invariant holds. It is not collected by ordinary py
    and confirm each case fails on its intended invariant.
 6. Implement the minimum fail-closed direct-inspection checks and configure hatchling's sdist target
    to include only `src/hmc_mcp`, `scripts/versioning.py`, `pyproject.toml`, `README.md`, and
-   `LICENSE`; the backend supplies `PKG-INFO`. The validator must not extract an archive or invoke a
+   `LICENSE`; hatchling additionally supplies `.gitignore` and `PKG-INFO`, which the validator
+   includes in the closed byte-checked set. The validator must not extract an archive or invoke a
    build subprocess. Run the focused test; expect all cases to pass.
 7. Mutate one version-consistency comparison, run its focused test and observe failure, restore the
    comparison, then rerun green.
