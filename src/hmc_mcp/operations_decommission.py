@@ -198,8 +198,16 @@ def _mapping_matches_target(
         _text(mapping.get("AssociatedLogicalPartitionID")),
         _text(mapping.get("ClientPartitionID")),
         _text(mapping.get("RemoteLogicalPartitionID")),
-        _text((_resource({"Resource": mapping.get("ClientAdapter")}) or {}).get("RemoteLogicalPartitionID")),
-        _text((_resource({"Resource": mapping.get("ServerAdapter")}) or {}).get("RemoteLogicalPartitionID")),
+        _text(
+            _resource({"Resource": mapping.get("ClientAdapter")}).get(
+                "RemoteLogicalPartitionID"
+            )
+        ),
+        _text(
+            _resource({"Resource": mapping.get("ServerAdapter")}).get(
+                "RemoteLogicalPartitionID"
+            )
+        ),
         _text(mapping.get("ConnectingPartitionID")),
     )
     for candidate in candidate_ids:
@@ -460,7 +468,8 @@ async def _power_off(
         return _step(
             "power_off",
             "error",
-            f"PowerOff for LPAR {inventory.lpar_name!r} timed out before reaching a successful terminal status.",
+            f"PowerOff for LPAR {inventory.lpar_name!r} timed out before reaching "
+            "a successful terminal status.",
         )
     if outcome.status not in SUCCESSFUL_JOB_STATUSES:
         detail = outcome.error or "no error detail returned"
@@ -590,9 +599,7 @@ async def _power_step_with_errors(
         return _step("power_off", "error", str(exc))
 
 
-async def _delete_lpar_step(
-    hmc: HMCClient, lpar_uuid: str
-) -> dict[str, Any]:
+async def _delete_lpar_step(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any]:
     try:
         await hmc.delete_logical_partition(lpar_uuid)
     except HMCError as exc:

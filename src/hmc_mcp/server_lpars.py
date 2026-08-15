@@ -380,8 +380,10 @@ def hmc_decommission_lpar(
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to inventory or delete.
         dry_run: When True, inventory the blast radius and planned steps without mutating resources.
         ownership_override: Bypass ownership rejection only after explicit operator approval.
-        immediate: Whether to request immediate shutdown instead of graceful shutdown before deletion.
-        timeout_seconds: Maximum polling duration in seconds for the power-off job; must be positive.
+        immediate: Whether to request immediate shutdown instead of graceful shutdown
+            before deletion.
+        timeout_seconds: Maximum polling duration in seconds for the power-off job;
+            must be positive.
         poll_interval: Seconds between power-off job polls; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
