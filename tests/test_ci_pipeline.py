@@ -227,6 +227,8 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
+    assert "UBUNTU_SNAPSHOT=20260814T000000Z" in dockerfile
+    assert 'APT::Snapshot \\\"${UBUNTU_SNAPSHOT}\\\";' in dockerfile
     assert "python3" in dockerfile
     assert "RUST_VERSION=1.97.1" in dockerfile
     assert "RUSTUP_SHA256=" in dockerfile
@@ -235,6 +237,7 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert dockerfile.count("just setup") == 1
     assert dockerfile.count("just verify") == 1
     assert "COPY" not in dockerfile
+    assert "rm -rf" not in dockerfile
 
 
 def test_scheduled_job_checks_the_same_explicit_versions() -> None:

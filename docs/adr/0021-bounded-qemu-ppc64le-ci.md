@@ -15,10 +15,11 @@ so instruction-level emulation provides useful compatibility evidence at lower o
 
 Run amd64 on `ubuntu-24.04` and arm64 on `ubuntu-24.04-arm`. Run one separate ppc64le job on
 `ubuntu-24.04` using Docker's SHA-pinned QEMU setup action, a digest-pinned binfmt image restricted
-to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. The container uses Ubuntu's
-Python 3.12 and a pinned Rust toolchain so locked development tools without ppc64le wheels can be
-built. It verifies `uname -m` before invoking the canonical `just verify` recipe. Every job retains read-only
-repository permissions and an explicit timeout.
+to `ppc64le`, and a digest-pinned Ubuntu 24.04 ppc64le container. Its Ubuntu package repository
+view is fixed to a snapshot timestamp. The container uses Ubuntu's Python 3.12 and a pinned Rust
+toolchain so locked development tools without ppc64le wheels can be built. It verifies `uname -m`
+before invoking the canonical `just verify` recipe. Every job retains read-only repository
+permissions and an explicit timeout.
 
 The repository maintainers own workflow and pin updates. GitHub owns native hosted-runner
 isolation and availability; Docker and Ubuntu own the pinned QEMU and container artifacts.
@@ -36,9 +37,10 @@ dependency compatibility evidence. QEMU is slower than native Power and cannot e
 timing, kernel, device, virtualization, or performance behavior. A QEMU or registry outage fails
 the bounded ppc64le job without falling back to cross-compilation or silently skipping coverage.
 
-GitHub-hosted public-repository runners have no project-managed infrastructure charge. Registry
-downloads and GitHub availability remain external dependencies. Pin updates are explicit reviewed
-maintenance.
+GitHub-hosted public-repository runners have no project-managed infrastructure charge. The Ubuntu
+snapshot makes package resolution repeatable while Canonical retains it; Canonical promises at
+least two years of retention, so snapshot refreshes are explicit reviewed maintenance. Registry
+downloads and GitHub availability remain external dependencies.
 
 ## Considered & rejected
 

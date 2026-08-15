@@ -17,9 +17,11 @@ that expansion.
 
 The ppc64le job runs on `ubuntu-24.04`, installs only the ppc64le binfmt handler through
 `docker/setup-qemu-action`, and builds a digest-pinned Ubuntu 24.04 ppc64le verification image.
-The action commit, binfmt image, base image, uv version, uv archive checksum, and Rust toolchain
-version are immutable in the repository. Ubuntu's Python 3.12 executes the project. The Rust
-toolchain builds locked development tools that do not publish ppc64le wheels. The container
+The action commit, binfmt image, base image, Ubuntu package snapshot, uv version, uv archive
+checksum, and Rust toolchain version are immutable in the repository. Canonical promises at least
+two years of snapshot retention; refreshing the timestamp is reviewed maintenance. Ubuntu's
+Python 3.12 executes the project. The Rust toolchain builds locked development tools that do not
+publish ppc64le wheels. The container
 asserts `uname -m` equals `ppc64le`, trusts only the fixed `/workspace` bind mount for Git's
 cross-UID ownership check, runs `just setup`, then runs `just verify`.
 Cross-compilation never counts as execution.

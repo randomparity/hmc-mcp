@@ -2,7 +2,10 @@ FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e8
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-RUN apt-get update \
+ARG UBUNTU_SNAPSHOT=20260814T000000Z
+
+RUN echo "APT::Snapshot \"${UBUNTU_SNAPSHOT}\";" > /etc/apt/apt.conf.d/50snapshot \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         curl \
@@ -13,7 +16,7 @@ RUN apt-get update \
         pkg-config \
         python3 \
         python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && find /var/lib/apt/lists -mindepth 1 -delete
 
 ARG UV_VERSION=0.12.3
 ARG UV_SHA256=bff188fcf2d867c5595f8db6061a39e54752ab213eaefc14287f37e85afe9ead
