@@ -22,6 +22,7 @@ from .documents import (
     build_lpar_document,
 )
 from .jobs import validate_wait_timing
+from .operations_decommission import DecommissionResult, decommission_lpar
 from .operations_lpar import (
     LparCreation,
     LparPowerOnOutcome,
@@ -334,6 +335,71 @@ def hmc_delete_lpar(
                 ownership_override=ownership_override,
             )
             return f"Deleted LPAR {lpar_uuid}"
+
+    return _run(_go)
+
+
+@tool(annotations=_DESTRUCTIVE)
+def hmc_decommission_lpar(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    dry_run: bool = False,
+    ownership_override: bool = False,
+    immediate: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+) -> DecommissionResult:
+    """Inventory, authorize, and optionally decommission one LPAR.
+
+    This tool orchestrates the high-risk decommission workflow in one call:
+    resolve the target LPAR on the selected managed system, enforce the
+    ownership token, inventory its adapter and observed storage blast radius,
+    power it off when needed, detach client adapters, and finally delete the
+    partition. Set dry_run=True to render the blast radius and step plan
+    without mutating anything. With dry_run=False, the final delete is
+    irreversible once reached.
+
+    Ownership enforcement runs even for dry runs. If the LPAR description
+    names a different owner, stop and ask the operator before proceeding. Set
+    ownership_override=True only after explicit operator approval.
+
+    Returns a structured result with these fields:
+
+    - ``resource_deleted`` — whether the final LPAR delete completed.
+    - ``workflow_completed`` — whether every requested workflow step completed.
+    - ``lpar_uuid`` — UUID of the resolved target LPAR.
+    - ``dry_run`` — whether the call only inventoried the blast radius.
+    - ``steps`` — ordered per-step status and curated result records.
+    - ``warnings`` — non-fatal warnings discovered during inventory.
+    - ``blast_radius`` — curated inventory of the LPAR, adapters, and observed
+      storage mappings.
+
+    Args:
+        system_name_or_uuid: SystemName or UUID of the managed system containing the target LPAR.
+        lpar_name_or_uuid: PartitionName or UUID of the logical partition to inventory or delete.
+        dry_run: When True, inventory the blast radius and planned steps without mutating resources.
+        ownership_override: Bypass ownership rejection only after explicit operator approval.
+        immediate: Whether to request immediate shutdown instead of graceful shutdown
+            before deletion.
+        timeout_seconds: Maximum polling duration in seconds for the power-off job;
+            must be positive.
+        poll_interval: Seconds between power-off job polls; must be positive.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await decommission_lpar(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                dry_run=dry_run,
+                ownership_override=ownership_override,
+                immediate=immediate,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
 
     return _run(_go)
 

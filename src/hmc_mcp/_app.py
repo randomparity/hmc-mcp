@@ -190,6 +190,7 @@ DESTRUCTIVE_TOOLS = frozenset(
     {
         "hmc_power_off_lpar",
         "hmc_delete_lpar",
+        "hmc_decommission_lpar",
         "hmc_delete_vios",
         "hmc_delete_adapter",
         "hmc_delete_virtual_network",

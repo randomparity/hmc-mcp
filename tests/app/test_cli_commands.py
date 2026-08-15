@@ -13,7 +13,9 @@ create-vg/create-disk) had zero direct coverage.
 
 from __future__ import annotations
 
+import json
 import pytest
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
@@ -106,6 +108,7 @@ class FakeHMC:
             },
         }
         self.template = {"UUID": TEMPLATE_UUID, "Resource": {"templateName": "tpl1"}}
+        self.vios_storage_detail = {"Resource": {}}
         self.pcm_prefs = {"LongTermMonitorEnabled": True, "AggregationEnabled": False}
         self.metric_links = [
             {
@@ -149,7 +152,7 @@ class FakeHMC:
 
     async def get_quick_property(self, resource_type, uuid, property_name):
         self._record("get_quick_property", resource_type, uuid, property_name)
-        return "running"
+        return self.lpar["Resource"]["PartitionState"]
 
     async def submit_job(self, job_path, job_request_xml):
         self._record("submit_job", job_path, job_request_xml)
@@ -306,6 +309,10 @@ class FakeHMC:
     async def list_vios(self, system_uuid=None):
         self._record("list_vios", system_uuid)
         return [self.vios]
+
+    async def get_vios_storage_detail(self, vios_uuid):
+        self._record("get_vios_storage_detail", vios_uuid)
+        return self.vios_storage_detail
 
     async def power_on_vios(self, vios_uuid):
         self._record("power_on_vios", vios_uuid)
@@ -1027,6 +1034,234 @@ def test_lpars_delete_denies_foreign_owned_partition_without_transport(
     assert result.exit_code == 1
     assert "owned by" in result.stderr
     assert all(call[0] != "delete_logical_partition" for call in fake_hmc.calls)
+
+
+def test_lpars_decommission_help_lists_cli_contract(fake_hmc):
+    root_command = get_command(cli.app)
+    decommission_command = root_command.commands["lpars"].commands["decommission"]
+    option_names = {
+        option
+        for parameter in decommission_command.params
+        for option in parameter.opts
+        if option.startswith("--")
+    }
+
+    assert option_names == {
+        "--system",
+        "--dry-run",
+        "--ownership-override",
+        "--immediate",
+        "--timeout-seconds",
+        "--poll-interval",
+        "--json",
+        "--yes",
+    }
+
+
+def test_lpars_decommission_dry_run_skips_confirmation(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.stdout
+    assert "power_off" in result.stdout
+    assert "dry_run" in result.stdout
+    assert "Aborted" not in result.stderr
+    assert "delete_logical_partition" not in [name for name, _, _ in fake_hmc.calls]
+
+
+def test_lpars_decommission_declined_confirmation_aborts(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "decommission", LPAR_NAME, "--system", SYSTEM_UUID],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert fake_hmc.calls == []
+
+
+def test_lpars_decommission_confirmed_prompt_names_target_and_executes(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "decommission", LPAR_NAME, "--system", SYSTEM_UUID],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
+    assert "decommissioned successfully" in result.stdout
+    names = [name for name, _, _ in fake_hmc.calls]
+    assert "delete_logical_partition" in names
+    assert "Aborted" not in result.stderr
+
+
+def test_lpars_decommission_yes_executes_workflow(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "decommissioned successfully" in result.stdout
+    names = [name for name, _, _ in fake_hmc.calls]
+    assert "delete_logical_partition" in names
+    assert "Aborted" not in result.stderr
+
+
+def test_lpars_decommission_incomplete_human_result_exits_1_after_rendering(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+    fake_hmc.fail_on = "delete_logical_partition"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "was not fully decommissioned" in result.stdout
+    assert "delete_lpar" in result.stdout
+    assert "error" in result.stdout
+    assert "simulated delete_logical_partition failure" in result.stdout
+
+
+def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+    fake_hmc.fail_on = "delete_logical_partition"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["resource_deleted"] is False
+    assert payload["workflow_completed"] is False
+    assert payload["dry_run"] is False
+    assert payload["steps"][-1]["step"] == "delete_lpar"
+    assert payload["steps"][-1]["status"] == "error"
+    assert "simulated delete_logical_partition failure" in payload["steps"][-1]["result"]
+
+
+def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch):
+    async def foreign_description(*_args):
+        return "[hmc-mcp owner:other-agent created:2026-08-14]"
+
+    monkeypatch.setattr(operations_lpar, "get_lpar_description", foreign_description)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "owned by" in result.stderr
+    assert "delete_logical_partition" not in [name for name, _, _ in fake_hmc.calls]
+
+
+def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "decommission",
+            LPAR_NAME,
+            "--system",
+            SYSTEM_UUID,
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "resource_deleted": False,
+        "workflow_completed": True,
+        "lpar_uuid": LPAR_UUID,
+        "dry_run": True,
+        "steps": [
+            {"step": "power_off", "status": "dry_run", "result": {"state": "running"}},
+            {
+                "step": "detach_adapters",
+                "status": "dry_run",
+                "result": {
+                    "adapters": [
+                        {"type": "ClientNetworkAdapter", "uuid": "adapter-1"},
+                        {"type": "VirtualSCSIClientAdapter", "uuid": "adapter-1"},
+                        {"type": "VirtualFibreChannelClientAdapter", "uuid": "adapter-1"},
+                        {"type": "VirtualNICDedicated", "uuid": "adapter-1"},
+                    ]
+                },
+            },
+            {
+                "step": "delete_lpar",
+                "status": "dry_run",
+                "result": {"lpar_uuid": LPAR_UUID},
+            },
+        ],
+        "warnings": [],
+        "blast_radius": {
+            "lpar_uuid": LPAR_UUID,
+            "lpar_name": LPAR_NAME,
+            "partition_id": 1,
+            "state": "running",
+            "owner": None,
+            "adapters": [
+                {"type": "ClientNetworkAdapter", "uuid": "adapter-1"},
+                {"type": "VirtualSCSIClientAdapter", "uuid": "adapter-1"},
+                {"type": "VirtualFibreChannelClientAdapter", "uuid": "adapter-1"},
+                {"type": "VirtualNICDedicated", "uuid": "adapter-1"},
+            ],
+            "storage_mappings": [],
+            "unresolved_storage_mapping_count": 0,
+            "unavailable_storage_source_count": 0,
+        },
+    }
 
 
 # --------------------------------------------------------------------------- #

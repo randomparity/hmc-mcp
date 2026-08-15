@@ -86,6 +86,72 @@ def power_on_outcome(result: LparPowerResult) -> LparPowerOnOutcome:
     return LparPowerOnOutcome(already_running=False, job=job, message=None)
 
 
+def parse_lpar_ownership_owner(description: str) -> str | None:
+    """Return the advisory hmc-mcp owner token embedded in *description*."""
+    match = _OWNERSHIP_TOKEN.search(description)
+    return match.group("owner") if match is not None else None
+
+
+def _audit_lpar_ownership_override(
+    hmc: HMCClient, system_name: str, lpar_name: str
+) -> None:
+    _logger.warning(
+        "LPAR ownership override approved",
+        extra={
+            "hmc_system": system_name,
+            "hmc_lpar": lpar_name,
+            "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
+        },
+    )
+
+
+def _authorize_lpar_ownership_description(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    description: str,
+    *,
+    ownership_override: bool = False,
+) -> str | None:
+    """Authorize a supplied description snapshot and return its parsed owner."""
+    owner = parse_lpar_ownership_owner(description)
+    if ownership_override:
+        _audit_lpar_ownership_override(hmc, system_name, lpar_name)
+        return owner
+    if owner is None:
+        if "[hmc-mcp" in description:
+            raise PermissionError(
+                f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
+                "retry only with ownership_override=true after operator approval"
+            )
+        return None
+    current_owner = hmc.config.agent_id or "hmc-mcp"
+    if owner != current_owner:
+        raise PermissionError(
+            f"LPAR {lpar_name!r} is owned by {owner!r}, not {current_owner!r}; "
+            "retry only with ownership_override=true after operator approval"
+        )
+    return owner
+
+
+async def authorize_decommission_lpar_ownership_snapshot(
+    hmc: HMCClient,
+    system_name: str,
+    lpar_name: str,
+    *,
+    ownership_override: bool,
+) -> str | None:
+    """Read and authorize one ownership snapshot for LPAR decommission."""
+    description = await get_lpar_description(hmc.config, system_name, lpar_name)
+    return _authorize_lpar_ownership_description(
+        hmc,
+        system_name,
+        lpar_name,
+        description,
+        ownership_override=ownership_override,
+    )
+
+
 async def authorize_lpar_mutation(
     hmc: HMCClient,
     system_name: str,
@@ -95,31 +161,10 @@ async def authorize_lpar_mutation(
 ) -> None:
     """Reject mutations of foreign-owned or malformed ownership-stamped LPARs."""
     if ownership_override:
-        _logger.warning(
-            "LPAR ownership override approved",
-            extra={
-                "hmc_system": system_name,
-                "hmc_lpar": lpar_name,
-                "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
-            },
-        )
+        _audit_lpar_ownership_override(hmc, system_name, lpar_name)
         return
     description = await get_lpar_description(hmc.config, system_name, lpar_name)
-    match = _OWNERSHIP_TOKEN.search(description)
-    if match is None:
-        if "[hmc-mcp" in description:
-            raise PermissionError(
-                f"LPAR {lpar_name!r} has a malformed hmc-mcp ownership token; "
-                "retry only with ownership_override=true after operator approval"
-            )
-        return
-    owner = match.group("owner")
-    current_owner = hmc.config.agent_id or "hmc-mcp"
-    if owner != current_owner:
-        raise PermissionError(
-            f"LPAR {lpar_name!r} is owned by {owner!r}, not {current_owner!r}; "
-            "retry only with ownership_override=true after operator approval"
-        )
+    _authorize_lpar_ownership_description(hmc, system_name, lpar_name, description)
 
 
 async def resolve_lpar_ownership_names(

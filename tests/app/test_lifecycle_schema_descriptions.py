@@ -29,6 +29,7 @@ SCOPED_TOOLS = {
     "hmc_delete_lpar",
     "hmc_power_on_lpar",
     "hmc_power_off_lpar",
+    "hmc_decommission_lpar",
     "hmc_create_vios",
     "hmc_delete_vios",
     "hmc_install_vios",
@@ -110,6 +111,22 @@ def test_high_risk_lifecycle_guidance_is_rendered():
         "explicit operator approval"
         in rename.parameters["properties"]["ownership_override"]["description"]
     )
+
+    decommission = tools["hmc_decommission_lpar"]
+    assert "dry_run=True" in decommission.description
+    assert "explicit operator approval" in decommission.parameters["properties"][
+        "ownership_override"
+    ]["description"]
+    for field in (
+        "resource_deleted",
+        "workflow_completed",
+        "lpar_uuid",
+        "dry_run",
+        "steps",
+        "warnings",
+        "blast_radius",
+    ):
+        assert decommission.output_schema["properties"][field]["description"].strip()
 
     provision = tools["hmc_provision_lpar"].output_schema["properties"]
     for field in (
