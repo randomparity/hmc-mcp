@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _DESTRUCTIVE, _READ_ONLY, _run
+from ._app import _DESTRUCTIVE, _READ_ONLY, _run, _run_limited_collection
 from .client_adapters import AdapterType, validate_adapter_type
 from .common import client_from_env
 from .operations_adapters import (
@@ -25,6 +25,7 @@ def hmc_list_adapters(
     lpar_name_or_uuid: str,
     adapter_type: AdapterType = "ClientNetworkAdapter",
     profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List one LPAR's virtual adapters of the selected adapter type.
 
@@ -33,6 +34,9 @@ def hmc_list_adapters(
             ``hmc_list_lpars``.
         adapter_type: Adapter resource type to list.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
     validate_adapter_type(adapter_type)
 
@@ -41,7 +45,7 @@ def hmc_list_adapters(
             _, adapters = await list_adapters(hmc, lpar_name_or_uuid, adapter_type)
             return adapters
 
-    return _run(operation)
+    return _run_limited_collection(operation, limit)
 
 
 @tool

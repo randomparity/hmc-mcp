@@ -10,6 +10,7 @@ from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
     _run,
+    _run_limited_collection,
 )
 
 from .common import build_config, client_from_env
@@ -36,7 +37,9 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_virtual_switches(
-    system_name_or_uuid: str, profile: str | None = None
+    system_name_or_uuid: str,
+    profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSwitches on a managed system (names, SwitchIDs, mode).
 
@@ -46,31 +49,39 @@ def hmc_list_virtual_switches(
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_virtual_switches(hmc, system_name_or_uuid)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_virtual_networks(
-    system_name_or_uuid: str, profile: str | None = None
+    system_name_or_uuid: str,
+    profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List Virtual Networks (VLANs) on a managed system.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_virtual_networks(hmc, system_name_or_uuid)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool
@@ -133,20 +144,25 @@ def hmc_delete_virtual_network(
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_network_bridges(
-    system_name_or_uuid: str, profile: str | None = None
+    system_name_or_uuid: str,
+    profile: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List NetworkBridges (Shared Ethernet Adapters) on a managed system.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries. This client-side cap does not
+            reduce HMC work or network transfer.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             return await list_network_bridges(hmc, system_name_or_uuid)
 
-    return _run(_go)
+    return _run_limited_collection(_go, limit)
 
 
 @tool(annotations=_READ_ONLY)
