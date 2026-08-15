@@ -151,9 +151,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
     justfile = (ROOT / "justfile").read_text()
 
-    assert justfile.count("uv sync --locked") == 1
+    assert justfile.count("uv sync --locked --link-mode copy") == 1
     assert (
-        "setup:\n    uv sync --locked\n    uv run --no-sync prek install\n" in justfile
+        "setup:\n"
+        "    uv sync --locked --link-mode copy\n"
+        "    uv run --no-sync prek install\n"
+        in justfile
     )
     run_lines = [line.strip() for line in justfile.splitlines() if "uv run" in line]
     assert run_lines
