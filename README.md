@@ -135,6 +135,7 @@ hmc-mcp lpars summary mylpar         # one-call summary: state, RMC, memory, CPU
 hmc-mcp lpars create web01 --system <uuid> --mem 8192 --vcpus 2
 hmc-mcp lpars modify web01 --mem 16384 --procs 2.0   # assign resources
 hmc-mcp lpars delete web01           # destroy (must be powered off)
+hmc-mcp lpars decommission web01 --system <uuid> --dry-run   # preview blast radius
 hmc-mcp lpars power-on mylpar        # submits a PowerOn job (asks first)
 hmc-mcp lpars power-off mylpar --immediate
 hmc-mcp adapters list mylpar                    # network adapters (default type)
@@ -150,10 +151,16 @@ hmc-mcp jobs show <job-uuid>
 hmc-mcp raw get /rest/api/uom/VirtualSwitch   # escape hatch, prints XML
 ```
 
-Add `--json` to list commands for machine-readable output. Every entry is the
-parsed uom resource: `{UUID, title, link, ResourceType, Resource}` where
-`Resource` is the flattened XML (namespace-stripped, HMC bookkeeping
-attributes removed).
+Add `--json` to list commands for machine-readable output. Composite workflows
+such as `hmc-mcp lpars decommission` and `hmc-mcp lpars provision` return a
+stable envelope with `workflow_completed`, ordered `steps`, `warnings`, and the
+blast-radius or provisioning summary, which is friendlier for automation than
+raw HMC payloads. Every entry is the parsed uom resource:
+`{UUID, title, link, ResourceType, Resource}` where `Resource` is the flattened
+XML (namespace-stripped, HMC bookkeeping attributes removed).
+
+`hmc-mcp lpars decommission` enforces the ADR 0011 ownership token even for
+`--dry-run`; use `--ownership-override` only after explicit operator approval.
 
 ## MCP server
 
@@ -228,6 +235,7 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | Tool                  | Description |
 |-----------------------|-------------|
 | `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
+| `hmc_decommission_lpar` | **End-to-end LPAR decommission workflow**: inventory the selected system-scoped target, enforce ADR 0011 ownership, report adapters and observed storage mappings, power off, detach adapters, and delete the LPAR; `dry_run=True` previews only. It does not delete storage mappings, backing storage, or perform rollback. |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
 | `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |
 | `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ADR 0011 description ownership (`ownership_override` only with explicit approval) |
