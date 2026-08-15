@@ -6,12 +6,13 @@ import hashlib
 import io
 import shutil
 import stat
+import struct
 import subprocess
 import tarfile
 import re
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import BinaryIO, Callable
 
 import pytest
 
@@ -283,6 +284,180 @@ def test_rejects_declared_archive_limit_overrun(
         monkeypatch.setattr(validator, "MAX_TOTAL_BYTES", 1)
 
     _assert_invalid(artifacts, project, capsys, invariant)
+
+
+def _eocd_offset(payload: bytes | bytearray) -> int:
+    offset = payload.rfind(b"PK\x05\x06")
+    assert offset >= 0
+    return offset
+
+
+def test_rejects_excessive_zip_entry_count_before_member_enumeration(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    eocd = _eocd_offset(payload)
+    payload[eocd + 8 : eocd + 12] = struct.pack("<HH", 1, 1)
+    wheel.write_bytes(payload)
+    monkeypatch.setattr(validator, "MAX_ARCHIVE_MEMBERS", 1)
+
+    def reject_enumeration(_archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+        raise AssertionError("members enumerated before the directory was bounded")
+
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", reject_enumeration)
+
+    with pytest.raises(
+        validator.ValidationError, match="archive contains more than 4096 members"
+    ):
+        validator._read_wheel(wheel)
+
+
+def test_preflight_and_member_enumeration_share_one_open_wheel(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = built_project
+    wheel = next(artifacts.glob("*.whl"))
+    original_preflight = validator._preflight_zip_directory
+    original_zip_file = zipfile.ZipFile
+    preflight_source: object | None = None
+    enumeration_source: object | None = None
+
+    def capture_preflight(source: BinaryIO, artifact: str) -> None:
+        nonlocal preflight_source
+        preflight_source = source
+        original_preflight(source, artifact)
+
+    def capture_zip_file(source: BinaryIO) -> zipfile.ZipFile:
+        nonlocal enumeration_source
+        enumeration_source = source
+        return original_zip_file(source)
+
+    monkeypatch.setattr(validator, "_preflight_zip_directory", capture_preflight)
+    monkeypatch.setattr(zipfile, "ZipFile", capture_zip_file)
+
+    validator._read_wheel(wheel)
+
+    assert preflight_source is enumeration_source
+    assert not isinstance(preflight_source, Path)
+
+
+def test_wheel_input_limit_uses_the_open_stream(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = built_project
+    wheel = next(artifacts.glob("*.whl"))
+
+    def reject_path_size_check(_path: Path) -> None:
+        raise AssertionError("wheel size checked through its replaceable path")
+
+    monkeypatch.setattr(validator, "_check_archive_input", reject_path_size_check)
+
+    validator._read_wheel(wheel)
+
+
+def test_member_enumeration_uses_an_immutable_wheel_snapshot(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    original_preflight = validator._preflight_zip_directory
+
+    def mutate_source_after_preflight(source: BinaryIO, artifact: str) -> None:
+        original_preflight(source, artifact)
+        wheel.write_bytes(b"replaced after preflight")
+
+    monkeypatch.setattr(
+        validator, "_preflight_zip_directory", mutate_source_after_preflight
+    )
+
+    assert validator._read_wheel(wheel)
+
+
+@pytest.mark.parametrize("field_offset", [12, 16])
+def test_rejects_malformed_zip_directory_bounds(
+    tmp_path: Path,
+    built_project: tuple[Path, Path],
+    field_offset: int,
+) -> None:
+    artifacts, _ = _artifact_copy(tmp_path, built_project)
+    wheel = next(artifacts.glob("*.whl"))
+    payload = bytearray(wheel.read_bytes())
+    eocd = _eocd_offset(payload)
+    payload[eocd + field_offset : eocd + field_offset + 4] = struct.pack(
+        "<L", len(payload)
+    )
+    wheel.write_bytes(payload)
+
+    with pytest.raises(
+        validator.ValidationError, match="wheel archive is malformed: central directory"
+    ):
+        validator._read_wheel(wheel)
+
+
+def test_accepts_zip64_entry_count_at_exact_boundary(tmp_path: Path) -> None:
+    directory_record = b"PK\x01\x02" + bytes(42)
+    directory = directory_record * validator.MAX_ARCHIVE_MEMBERS
+    zip64_record = struct.pack(
+        "<4sQ2H2L4Q",
+        b"PK\x06\x06",
+        44,
+        45,
+        45,
+        0,
+        0,
+        validator.MAX_ARCHIVE_MEMBERS,
+        validator.MAX_ARCHIVE_MEMBERS,
+        len(directory),
+        0,
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, len(directory), 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,
+        0xFFFF,
+        0xFFFFFFFF,
+        0xFFFFFFFF,
+        0,
+    )
+    wheel = tmp_path / "boundary.whl"
+    wheel.write_bytes(directory + zip64_record + locator + eocd)
+
+    with wheel.open("rb") as stream:
+        validator._preflight_zip_directory(stream, wheel.name)
+
+
+def test_rejects_malformed_zip64_record_offset(tmp_path: Path) -> None:
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, 1, 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,
+        0xFFFF,
+        0xFFFFFFFF,
+        0xFFFFFFFF,
+        0,
+    )
+    wheel = tmp_path / "malformed.whl"
+    wheel.write_bytes(locator + eocd)
+
+    with pytest.raises(
+        validator.ValidationError, match="wheel archive is malformed: ZIP64 record"
+    ):
+        with wheel.open("rb") as stream:
+            validator._preflight_zip_directory(stream, wheel.name)
 
 
 @pytest.mark.parametrize(
