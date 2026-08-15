@@ -4,8 +4,8 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 RUN ubuntu_snapshot=20260813T000000Z \
     && ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources \
-    && old_uri=http://ports.ubuntu.com/ubuntu-ports \
-    && snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}" \
+    && old_uri=http://ports.ubuntu.com/ubuntu-ports/ \
+    && snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" \
     && test "$(grep -Fxc "URIs: ${old_uri}" "${ubuntu_sources}" || true)" = 1 \
     && sed -i \
         "s|${old_uri}|${snapshot_uri}|" \

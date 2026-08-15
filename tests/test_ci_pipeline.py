@@ -228,7 +228,8 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
     assert "ubuntu_snapshot=20260813T000000Z" in dockerfile
-    assert "https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}" in dockerfile
+    assert "old_uri=http://ports.ubuntu.com/ubuntu-ports/" in dockerfile
+    assert "https://snapshot.ubuntu.com/ubuntu/${ubuntu_snapshot}/" in dockerfile
     assert "ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources" in dockerfile
     assert dockerfile.count("grep -Fxc") == 2
     assert '! grep -Fq "${old_uri}" "${ubuntu_sources}"' in dockerfile
