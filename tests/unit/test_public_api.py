@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+from importlib import import_module
 import inspect
 import json
 import subprocess
 import sys
-from typing import get_args
+from typing import get_args, get_type_hints
 
 from hmc_mcp import api
+from hmc_mcp.client_contracts import PcmClient
+from hmc_mcp.client_templates import TemplatesMixin
 
 
 def test_public_api_exports_the_adr_inventory() -> None:
@@ -99,7 +102,113 @@ def test_public_api_exports_the_adr_inventory() -> None:
 
 
 def test_public_api_reexports_implementation_objects_directly() -> None:
-    assert all(getattr(api, name).__module__ != api.__name__ for name in api.__all__)
+    sources = {
+        "hmc_mcp.client": {"HMCClient"},
+        "hmc_mcp.client_adapters": {"AdapterType"},
+        "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
+        "hmc_mcp.documents": {"LparResources", "PartitionType", "StorageKind"},
+        "hmc_mcp.errors": {"HMCError", "HMCTransportError"},
+        "hmc_mcp.jobs": {"DeviceType", "LuType"},
+        "hmc_mcp.operations_adapters": {
+            "AdapterResult",
+            "add_network_adapter",
+            "add_vios_adapter",
+            "delete_adapter",
+            "list_adapters",
+        },
+        "hmc_mcp.operations_capacity": {"capacity_report", "find_placement"},
+        "hmc_mcp.operations_composite": {"lpar_summary", "system_summary"},
+        "hmc_mcp.operations_decommission": {
+            "DecommissionResult",
+            "decommission_lpar",
+        },
+        "hmc_mcp.operations_health": {"FleetHealthResult", "fleet_health"},
+        "hmc_mcp.operations_lpar": {
+            "LparCreation",
+            "LparCreationResult",
+            "LparPowerResult",
+            "authorize_decommission_lpar_ownership_snapshot",
+            "authorize_lpar_mutation",
+            "create_and_stamp_lpar",
+            "delete_lpar",
+            "power_lpar",
+            "rename_lpar",
+            "resolve_lpar_ownership_names",
+            "stamp_created_lpar_ownership",
+        },
+        "hmc_mcp.operations_lpm": {
+            "LpmResult",
+            "abort_lpar_migration",
+            "migrate_lpar",
+            "recover_lpar_migration",
+            "remote_restart_lpar",
+        },
+        "hmc_mcp.operations_network": {
+            "create_virtual_network",
+            "delete_virtual_network",
+            "list_network_bridges",
+            "list_virtual_networks",
+            "list_virtual_switches",
+        },
+        "hmc_mcp.operations_pcm": {
+            "MetricKind",
+            "PcmCategory",
+            "get_pcm_preferences",
+            "metric_data",
+            "metric_links",
+            "resolve_pcm_resource",
+            "set_pcm_preferences",
+        },
+        "hmc_mcp.operations_provision": {
+            "AttachDiskResult",
+            "ProvisionNetwork",
+            "ProvisionResult",
+            "ProvisionStorage",
+            "attach_disk_to_lpar",
+            "provision_lpar",
+        },
+        "hmc_mcp.operations_ssh_network": {
+            "add_vnic",
+            "list_fc_ports",
+            "list_sea_adapters",
+            "list_vnics",
+            "remove_vnic",
+            "set_sriov_adapter_mode",
+        },
+        "hmc_mcp.operations_storage": {
+            "create_logical_unit",
+            "create_media_repository",
+            "create_optical_media",
+            "create_virtual_disk",
+            "create_volume_group",
+            "delete_logical_unit",
+            "delete_media_repository",
+            "list_volume_groups",
+            "map_storage",
+        },
+        "hmc_mcp.operations_systems": {"power_system"},
+        "hmc_mcp.operations_templates": {
+            "deploy_partition_template",
+            "get_partition_template",
+            "list_partition_templates",
+        },
+        "hmc_mcp.operations_vios": {"power_vios"},
+        "hmc_mcp.ssh": {"HMCCLIError"},
+        "hmc_mcp.ssh_commands": {"SriovMode"},
+    }
+    tested = set()
+    for module_name, names in sources.items():
+        module = import_module(module_name)
+        for name in names:
+            assert getattr(api, name) is getattr(module, name)
+        tested.update(names)
+    assert tested == set(api.__all__)
+
+
+def test_runtime_httpx_annotations_remain_resolvable() -> None:
+    assert get_type_hints(PcmClient)["_http"].__module__ == "httpx"
+    assert get_type_hints(PcmClient._request)["return"].__module__ == "httpx"
+    assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:

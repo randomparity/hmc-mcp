@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
+
+from .config import HMCConfig
 
 if TYPE_CHECKING:
     import httpx
+else:
 
-from .config import HMCConfig
+    class _LazyHttpx:
+        """Load HTTPX when runtime annotation or transport access needs it."""
+
+        _module: ModuleType | None = None
+
+        def __getattr__(self, name: str) -> Any:
+            if self._module is None:
+                self._module = import_module("httpx")
+            return getattr(self._module, name)
+
+    httpx = _LazyHttpx()
 
 
 class LparsClient(Protocol):
