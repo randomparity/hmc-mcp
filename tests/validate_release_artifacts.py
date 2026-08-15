@@ -110,9 +110,13 @@ def _validate_member_name(name: str, artifact: str) -> str:
     return str(PurePosixPath(*parts))
 
 
+def _check_archive_size(size: int, artifact: str) -> None:
+    if size > MAX_ARCHIVE_BYTES:
+        _fail(artifact, "archive input exceeds 256 MiB")
+
+
 def _check_archive_input(path: Path) -> None:
-    if path.stat().st_size > MAX_ARCHIVE_BYTES:
-        _fail(path.name, "archive input exceeds 256 MiB")
+    _check_archive_size(path.stat().st_size, path.name)
 
 
 def _find_zip_eocd(tail: bytes, tail_offset: int, file_size: int, artifact: str) -> int:
@@ -198,6 +202,7 @@ def _scan_zip_directory(
 def _preflight_zip_directory(stream: BinaryIO, artifact: str) -> None:
     stream.seek(0, 2)
     file_size = stream.tell()
+    _check_archive_size(file_size, artifact)
     tail_size = min(file_size, ZIP_EOCD_SEARCH_BYTES)
     try:
         stream.seek(file_size - tail_size)
@@ -256,7 +261,6 @@ def _read_wheel(path: Path) -> dict[str, bytes]:
     declared_total = 0
     total = 0
     try:
-        _check_archive_input(path)
         with path.open("rb") as wheel_stream:
             _preflight_zip_directory(wheel_stream, path.name)
             wheel_stream.seek(0)

@@ -346,6 +346,21 @@ def test_preflight_and_member_enumeration_share_one_open_wheel(
     assert not isinstance(preflight_source, Path)
 
 
+def test_wheel_input_limit_uses_the_open_stream(
+    built_project: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts, _ = built_project
+    wheel = next(artifacts.glob("*.whl"))
+
+    def reject_path_size_check(_path: Path) -> None:
+        raise AssertionError("wheel size checked through its replaceable path")
+
+    monkeypatch.setattr(validator, "_check_archive_input", reject_path_size_check)
+
+    validator._read_wheel(wheel)
+
+
 @pytest.mark.parametrize("field_offset", [12, 16])
 def test_rejects_malformed_zip_directory_bounds(
     tmp_path: Path,
