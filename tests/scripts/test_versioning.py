@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +128,7 @@ def test_git_failure_is_categorical_and_does_not_disclose_paths(
     with pytest.raises(RuntimeError, match=r"Git command failed.*repository integrity") as caught:
         describe_git(project_dir=repository, params={})
     assert sentinel not in str(caught.value)
-    assert sentinel in str(caught.value.__cause__)
+    assert sentinel not in "".join(traceback.format_exception(caught.value))
 
 
 def test_git_spawn_failure_is_categorical_and_does_not_disclose_paths(
@@ -143,7 +144,7 @@ def test_git_spawn_failure_is_categorical_and_does_not_disclose_paths(
     with pytest.raises(RuntimeError, match=r"could not start.*Git installation") as caught:
         describe_git(project_dir=repository, params={})
     assert sentinel not in str(caught.value)
-    assert sentinel in str(caught.value.__cause__)
+    assert sentinel not in "".join(traceback.format_exception(caught.value))
 
 
 def test_git_timeout_is_categorical_and_does_not_disclose_paths(
@@ -159,7 +160,7 @@ def test_git_timeout_is_categorical_and_does_not_disclose_paths(
     with pytest.raises(RuntimeError, match=r"timed out.*repository health") as caught:
         describe_git(project_dir=repository, params={})
     assert sentinel not in str(caught.value)
-    assert sentinel in str(caught.value.__cause__)
+    assert sentinel not in "".join(traceback.format_exception(caught.value))
 
 
 def test_gitless_directory_uses_versioningit_fallback_boundary(tmp_path: Path) -> None:

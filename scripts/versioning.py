@@ -29,24 +29,23 @@ def _run_git(project_dir: Path, *arguments: str) -> subprocess.CompletedProcess[
         raise NotVCSError(
             "Git executable is unavailable; install Git or build from an unpacked sdist"
         ) from error
-    except subprocess.TimeoutExpired as error:
+    except subprocess.TimeoutExpired:
         raise RuntimeError(
             "Git provenance check timed out; verify repository health and retry"
-        ) from error
-    except OSError as error:
+        ) from None
+    except OSError:
         raise RuntimeError(
             "Git provenance check could not start; check the Git installation and "
             "repository access"
-        ) from error
+        ) from None
 
 
 def _raise_git_error(result: subprocess.CompletedProcess[str]) -> None:
-    detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
-    cause = RuntimeError(detail)
+    del result
     raise RuntimeError(
         "Git command failed during provenance check; verify repository integrity and "
         "Git access"
-    ) from cause
+    ) from None
 
 
 def _git(project_dir: Path, *arguments: str) -> str:
