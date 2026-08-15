@@ -23,6 +23,9 @@ subprocess execution. CI composes the commands through `just verify` and uploads
   `UV_NO_SYNC=1 uv run prek run --all-files`.
 - The canonical global `just setup` command uses `uv sync --locked --link-mode copy` so setup is
   reliable when this repository and uv's cache are on different filesystems.
+- Both archive readers reject inputs over 256 MiB, more than 4,096 members, members over 64 MiB
+  uncompressed, or totals over 512 MiB uncompressed, checking declarations before reads and
+  observed bytes during chunked reads.
 
 ## Task 1: Validate existing wheel and sdist artifacts
 
@@ -166,4 +169,4 @@ validator commits remain bisectable.
 
 Branch: `feat/build-validate-artifacts-162`. Base: `main`. Guardrails: `just setup`, `just verify`,
 and `UV_NO_SYNC=1 uv run prek run --all-files`. Assigned ADR: 0024. ADR index coupling: not coupled;
-no index exists. Scope token: `755aad6b-e56d-4c9a-9386-7c6b965c66c9`.
+no index exists. Scope token: `539f7ea4-3329-4845-b246-c55e63ef7159`.

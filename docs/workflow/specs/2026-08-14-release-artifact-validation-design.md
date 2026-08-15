@@ -95,6 +95,9 @@ Construction preserves the version backend's redacted actionable failures for di
 provenance. Validation errors are concise and public-safe: they include a local artifact name and
 the failed invariant, including the specific malformed project field or corrupt/unsupported archive
 operation, never environment variables, credentials, raw Git stderr, or archive content.
+Wheel and sdist inputs larger than 256 MiB, archives with more than 4,096 members, members larger
+than 64 MiB uncompressed, and archives larger than 512 MiB total uncompressed fail closed. Declared
+overruns fail before member reads; chunked reads independently enforce observed uncompressed sizes.
 
 ## Testing
 
@@ -120,7 +123,8 @@ implementation comparison and confirm the focused test fails before the implemen
 The matrix also covers missing, duplicate, malformed, unsupported, or filename-discordant `WHEEL`
 fields; unexpected top-level wheel payloads; every non-regular tar member type and escaping link
 target; duplicate singleton core-metadata headers; and missing or unsupported `Metadata-Version` in
-both metadata documents.
+both metadata documents. Boundary tests cover each archive format just above every declared limit,
+exact-limit acceptance, and observed per-member and total overruns during bounded reads.
 
 The required gates are `just setup`, focused pytest during TDD, `just verify`, and separately
 `UV_NO_SYNC=1 uv run prek run --all-files`. Workflow changes also pass the repository's pinned

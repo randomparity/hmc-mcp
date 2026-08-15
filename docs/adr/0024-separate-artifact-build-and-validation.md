@@ -27,7 +27,11 @@ Provide two canonical commands with distinct ownership:
   from both archives, comparing package members with the clean source checkout without consulting
   Git. The build configuration limits the sdist to the package and inputs required to rebuild it;
   the validator also admits hatchling's automatic root `.gitignore`, making both artifact member
-  sets explicit and reject-by-default.
+sets explicit and reject-by-default.
+
+Validation bounds both archive formats to a 256 MiB input file, 4,096 members, 64 MiB
+uncompressed per member, and 512 MiB total uncompressed. Declared overruns fail before a member is
+read; chunked reads also enforce the uncompressed ceilings when archive declarations are false.
 
 `just verify` composes both commands after the existing source checks. CI runs that canonical
 suite and uploads only the wheel for downstream fresh-environment installation tests. Artifact
