@@ -1,0 +1,134 @@
+{
+  "measurement_utc": "2026-08-15T14:50:32.609459+00:00",
+  "warmup_cycles": 3,
+  "warmup_failures": 0,
+  "measurement_cycles": 20,
+  "successful_cycles": 20,
+  "failed_cycles": 0,
+  "logon_median_ms": 562.67,
+  "logon_p95_ms": 649.26,
+  "logoff_median_ms": 181.98,
+  "logoff_p95_ms": 237.04,
+  "samples": [
+    {
+      "cycle": 1,
+      "logon_ms": 593.6034169862978,
+      "logoff_ms": 220.59124999213964,
+      "status": "ok"
+    },
+    {
+      "cycle": 2,
+      "logon_ms": 627.6362080243416,
+      "logoff_ms": 222.38875000039116,
+      "status": "ok"
+    },
+    {
+      "cycle": 3,
+      "logon_ms": 622.442250023596,
+      "logoff_ms": 196.86324999202043,
+      "status": "ok"
+    },
+    {
+      "cycle": 4,
+      "logon_ms": 647.4458749871701,
+      "logoff_ms": 212.153791973833,
+      "status": "ok"
+    },
+    {
+      "cycle": 5,
+      "logon_ms": 606.178916990757,
+      "logoff_ms": 219.20287498505786,
+      "status": "ok"
+    },
+    {
+      "cycle": 6,
+      "logon_ms": 579.205957998056,
+      "logoff_ms": 199.75887495093048,
+      "status": "ok"
+    },
+    {
+      "cycle": 7,
+      "logon_ms": 602.6570420362987,
+      "logoff_ms": 237.04449995420873,
+      "status": "ok"
+    },
+    {
+      "cycle": 8,
+      "logon_ms": 649.2606250103563,
+      "logoff_ms": 233.90070797177032,
+      "status": "ok"
+    },
+    {
+      "cycle": 9,
+      "logon_ms": 602.9688750277273,
+      "logoff_ms": 217.14062499813735,
+      "status": "ok"
+    },
+    {
+      "cycle": 10,
+      "logon_ms": 580.3369579953142,
+      "logoff_ms": 183.39874997036532,
+      "status": "ok"
+    },
+    {
+      "cycle": 11,
+      "logon_ms": 546.1275830166414,
+      "logoff_ms": 178.40675002662465,
+      "status": "ok"
+    },
+    {
+      "cycle": 12,
+      "logon_ms": 488.099958980456,
+      "logoff_ms": 169.7866669856012,
+      "status": "ok"
+    },
+    {
+      "cycle": 13,
+      "logon_ms": 481.02041601669043,
+      "logoff_ms": 173.429083020892,
+      "status": "ok"
+    },
+    {
+      "cycle": 14,
+      "logon_ms": 478.35329099325463,
+      "logoff_ms": 180.55225000716746,
+      "status": "ok"
+    },
+    {
+      "cycle": 15,
+      "logon_ms": 485.2863749838434,
+      "logoff_ms": 178.37108299136162,
+      "status": "ok"
+    },
+    {
+      "cycle": 16,
+      "logon_ms": 483.55754202930257,
+      "logoff_ms": 164.89429195644334,
+      "status": "ok"
+    },
+    {
+      "cycle": 17,
+      "logon_ms": 480.92945804819465,
+      "logoff_ms": 160.58704198803753,
+      "status": "ok"
+    },
+    {
+      "cycle": 18,
+      "logon_ms": 503.0031250207685,
+      "logoff_ms": 177.26629198295996,
+      "status": "ok"
+    },
+    {
+      "cycle": 19,
+      "logon_ms": 462.08558295620605,
+      "logoff_ms": 162.55862498655915,
+      "status": "ok"
+    },
+    {
+      "cycle": 20,
+      "logon_ms": 467.9447080125101,
+      "logoff_ms": 160.01445899019018,
+      "status": "ok"
+    }
+  ]
+}
