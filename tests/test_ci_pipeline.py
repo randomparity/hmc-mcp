@@ -242,6 +242,7 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
         "    && cat /usr/share/ca-certificates/mozilla/*.crt "
         "> /etc/ssl/certs/ca-certificates.crt \\\n"
         "    && apt-get update \\\n"
+        "    && apt-get install --yes --no-install-recommends --fix-broken \\\n"
     )
     add_pattern = re.compile(f"^{re.escape(bootstrap_add)}", re.MULTILINE)
     assert add_pattern.search(dockerfile)
