@@ -40,8 +40,7 @@ def _run_git(project_dir: Path, *arguments: str) -> subprocess.CompletedProcess[
         ) from None
 
 
-def _raise_git_error(result: subprocess.CompletedProcess[str]) -> None:
-    del result
+def _raise_git_error() -> None:
     raise RuntimeError(
         "Git command failed during provenance check; verify repository integrity and "
         "Git access"
@@ -51,7 +50,7 @@ def _raise_git_error(result: subprocess.CompletedProcess[str]) -> None:
 def _git(project_dir: Path, *arguments: str) -> str:
     result = _run_git(project_dir, *arguments)
     if result.returncode != 0:
-        _raise_git_error(result)
+        _raise_git_error()
     return result.stdout.strip()
 
 
@@ -70,7 +69,7 @@ def _branch(project_dir: Path) -> str | None:
     if result.returncode == 1:
         return None
     if result.returncode != 0:
-        _raise_git_error(result)
+        _raise_git_error()
     return result.stdout.strip()
 
 
@@ -81,7 +80,7 @@ def _validate_repository(project_dir: Path) -> None:
             raise NotVCSError(
                 "not a Git repository; build from Git or an unpacked sdist"
             )
-        _raise_git_error(result)
+        _raise_git_error()
     if result.stdout.strip() != "true":
         raise NotVCSError("not a Git repository; build from Git or an unpacked sdist")
     if _git(project_dir, "rev-parse", "--is-shallow-repository") == "true":
