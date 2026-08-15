@@ -47,10 +47,12 @@ def hmc_list_volume_groups(
 ) -> list[dict[str, Any]]:
     """List Volume Groups on a VIOS.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
     Each Volume Group shows free space (MiB), the physical volumes backing it
     and the virtual disks already carved out.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -69,11 +71,15 @@ def hmc_create_volume_group(
 ) -> dict[str, Any] | None:
     """Create a Volume Group on a VIOS from one or more physical volumes.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
-    physical_volumes is a list of free PV device names (e.g. ['hdisk10']). Use
+    ``physical_volumes`` is a list of free PV device names (e.g. ['hdisk10']). Use
     the GetFreePhysicalVolumes job / VIOS 'lspv' to find unused disks. This
     pools the disks so virtual disks can be carved out for LPARs.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        name: New volume-group name.
+        physical_volumes: One or more unused VIOS physical-volume device names.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -103,6 +109,17 @@ def hmc_attach_disk_to_lpar(
     create disk, add the paired vSCSI client adapter, then map the disk. Set
     dry_run=True to validate only. Expected HMC failures are returned per step;
     completed steps are ``ok`` and unattempted steps are ``skipped``.
+
+    Args:
+        lpar_name_or_uuid: Target partition name or UUID.
+        vios_uuid: UUID of the VIOS that owns the volume group.
+        vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
+        disk_name: Name for the new virtual disk.
+        capacity_mib: New disk capacity in mebibytes.
+        vios_partition_id: Numeric VIOS partition ID from ``hmc_list_vios``.
+        vios_slot: Server-side virtual SCSI slot on the VIOS.
+        dry_run: Validate all selectors and prerequisites without mutating the HMC.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -130,11 +147,16 @@ def hmc_create_virtual_disk(
 ) -> dict[str, Any] | None:
     """Create a Virtual Disk (logical volume) inside a Volume Group.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
-    capacity_mib is the size in MiB. The disk becomes backing storage that you
+    The disk becomes backing storage that you
     then attach to an LPAR with hmc_map_storage_to_lpar (storage_kind
     'VirtualDisk'). Find vg_uuid with hmc_list_volume_groups.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
+        disk_name: Name for the new virtual disk.
+        capacity_mib: New disk capacity in mebibytes.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -157,15 +179,21 @@ def hmc_map_storage_to_lpar(
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
-    lpar_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_lpars). The LPAR must already have a vSCSI adapter
+    The LPAR must already have a vSCSI adapter
     paired to this VIOS — see hmc_add_vscsi_adapter.
-    storage_kind is 'VirtualDisk' (a logical volume created with
+    ``storage_kind`` is 'VirtualDisk' (a logical volume created with
     hmc_create_virtual_disk) or 'PhysicalVolume' (a whole hdisk). storage_name
     is the DiskName / device name. target_device optionally pins the vtscsi
     device name on the VIOS.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        storage_name: Virtual-disk name or physical-volume device name.
+        lpar_name_or_uuid: Target partition name or UUID from ``hmc_list_lpars``.
+        storage_kind: ``VirtualDisk`` for a logical volume or ``PhysicalVolume``
+            for a whole disk.
+        target_device: Optional VIOS virtual-target-device name.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -189,10 +217,14 @@ def hmc_create_media_repository(
 ) -> dict[str, Any] | None:
     """Create the Virtual Media Repository (named VMLibrary) on a Volume Group.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
     The repository holds file-backed ISO images for client partitions; only one
     can exist per VIOS. size_mib is RepositorySize measured in MiB.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
+        size_mib: Repository capacity in mebibytes.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -214,10 +246,15 @@ def hmc_create_optical_media(
 ) -> dict[str, Any] | None:
     """Create a blank VirtualOpticalMedia (ISO container) in the media repository.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
     Only blank media can be created via the API; media_name is the file name
     (e.g. 'aix.iso'), size_mib is MediaSize measured in MiB.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID containing the media repository.
+        media_name: ISO container file name, such as ``aix.iso``.
+        size_mib: Blank media capacity in mebibytes.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -235,10 +272,13 @@ def hmc_delete_media_repository(
 ) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
     This is an immediate (synchronous) delete — it returns a confirmation
     string once the HMC has applied the change; there is no job to poll.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID containing the repository.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -251,7 +291,11 @@ def hmc_delete_media_repository(
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
-    """List Clusters (sets of VIOS nodes sharing a storage pool)."""
+    """List Clusters (sets of VIOS nodes sharing a storage pool).
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -264,7 +308,11 @@ def hmc_list_clusters(profile: str | None = None) -> list[dict[str, Any]]:
 def hmc_list_shared_storage_pools(
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List all Shared Storage Pools with capacity and logical-unit details."""
+    """List all Shared Storage Pools with capacity and logical-unit details.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -277,7 +325,12 @@ def hmc_list_shared_storage_pools(
 def hmc_get_shared_storage_pool(
     ssp_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
-    """Get one Shared Storage Pool by UUID, or None for an empty response."""
+    """Get one Shared Storage Pool by UUID, or None for an empty response.
+
+    Args:
+        ssp_uuid: Shared-storage-pool UUID from ``hmc_list_shared_storage_pools``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -309,6 +362,18 @@ def hmc_create_logical_unit(
     hmc_list_clusters.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        cluster_uuid: Cluster UUID from ``hmc_list_clusters``.
+        lu_name: Name for the new logical unit.
+        lu_size_gib: Logical-unit capacity in gibibytes.
+        lu_type: ``THIN`` for sparse allocation or ``THICK`` for full allocation.
+        device_type: ``VirtualIO_Disk`` or ``VirtualIO_Image``.
+        cloned_from: Optional source logical-unit UDID to clone.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_logical_unit_create(
         lu_type, device_type, wait, timeout_seconds, poll_interval
@@ -347,6 +412,14 @@ def hmc_delete_logical_unit(
     status (an asynchronous delete, unlike the immediate delete tools).
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        cluster_uuid: Cluster UUID from ``hmc_list_clusters``.
+        lu_udid: Logical-unit UDID to permanently delete.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_logical_unit_wait(wait, timeout_seconds, poll_interval)
 

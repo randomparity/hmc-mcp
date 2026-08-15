@@ -45,6 +45,67 @@ def _tools_by_name():
     return {t.name: t for t in asyncio.run(mcp.list_tools())}
 
 
+def _missing_parameter_descriptions(schema: dict) -> list[str]:
+    """Return object-property paths whose schema description is blank."""
+    missing = []
+    seen: set[int] = set()
+
+    def walk(node: object, path: str) -> None:
+        if not isinstance(node, dict) or id(node) in seen:
+            return
+        seen.add(id(node))
+        for name, property_schema in node.get("properties", {}).items():
+            property_path = f"{path}.{name}" if path else name
+            description = property_schema.get("description")
+            if not isinstance(description, str) or not description.strip():
+                missing.append(property_path)
+            walk(property_schema, property_path)
+        for keyword in ("$defs", "anyOf", "oneOf", "allOf"):
+            value = node.get(keyword, {})
+            children = value.values() if isinstance(value, dict) else value
+            if isinstance(children, list) or not isinstance(value, (str, bytes)):
+                for child in children:
+                    walk(child, path)
+        walk(node.get("items"), path)
+
+    walk(schema, "")
+    return missing
+
+
+def test_schema_description_checker_rejects_top_level_and_nested_gaps():
+    schema = {
+        "properties": {"plain": {"type": "string"}},
+        "$defs": {
+            "Nested": {
+                "type": "object",
+                "properties": {"blank": {"type": "integer", "description": " "}},
+            }
+        },
+    }
+    assert _missing_parameter_descriptions(schema) == ["plain", "blank"]
+
+
+@pytest.mark.parametrize("arbitrary_command_enabled", [False, True])
+def test_every_registered_parameter_has_a_description(arbitrary_command_enabled):
+    """Every exposed object property must carry useful rendered guidance."""
+    from hmc_mcp import server_command
+
+    try:
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                arbitrary_command_enabled, mcp
+            )
+        )
+        missing = {
+            tool.name: paths
+            for tool in asyncio.run(mcp.list_tools())
+            if (paths := _missing_parameter_descriptions(tool.parameters))
+        }
+        assert missing == {}
+    finally:
+        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+
+
 def test_classification_sets_are_disjoint():
     assert not (READ_ONLY_TOOLS & DESTRUCTIVE_TOOLS)
 

@@ -153,15 +153,39 @@ class LparResources:
 class PasswordPolicySettings:
     """Password-policy fields shared by create and partial-update requests."""
 
-    pwage: int | None = None
-    min_length: int | None = None
-    min_digits: int | None = None
-    min_uppercase: int | None = None
-    min_lowercase: int | None = None
-    min_special: int | None = None
-    hist_size: int | None = None
-    warn_pwage: int | None = None
-    min_pwage: int | None = None
+    pwage: int | None = field(
+        default=None,
+        metadata={"description": "Maximum password age in days; 0 disables expiry."},
+    )
+    min_length: int | None = field(
+        default=None, metadata={"description": "Minimum password length in characters."}
+    )
+    min_digits: int | None = field(
+        default=None, metadata={"description": "Minimum number of numeric characters."}
+    )
+    min_uppercase: int | None = field(
+        default=None,
+        metadata={"description": "Minimum number of uppercase characters."},
+    )
+    min_lowercase: int | None = field(
+        default=None,
+        metadata={"description": "Minimum number of lowercase characters."},
+    )
+    min_special: int | None = field(
+        default=None, metadata={"description": "Minimum number of special characters."}
+    )
+    hist_size: int | None = field(
+        default=None,
+        metadata={"description": "Number of prior passwords that cannot be reused."},
+    )
+    warn_pwage: int | None = field(
+        default=None,
+        metadata={"description": "Days before expiry when warnings begin."},
+    )
+    min_pwage: int | None = field(
+        default=None,
+        metadata={"description": "Minimum days before a password may be changed."},
+    )
 
 
 PASSWORD_POLICY_CREATION_DEFAULTS = PasswordPolicySettings(

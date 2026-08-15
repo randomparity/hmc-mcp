@@ -24,7 +24,11 @@ tool, register_tools = tool_module()
 
 @tool(annotations=_READ_ONLY)
 def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
-    """List all partition templates in the HMC template library."""
+    """List all partition templates in the HMC template library.
+
+    Args:
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -41,6 +45,10 @@ def hmc_get_partition_template(
 
     Returns None only for an empty successful response. HTTP 404 and other
     REST failures raise HMCError.
+
+    Args:
+        template_uuid: Partition-template UUID from ``hmc_list_partition_templates``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -71,6 +79,16 @@ def hmc_deploy_partition_template(
     before and after the job and stamps the sole new partition automatically.
     Check ownership_stamped and warnings: ambiguous or unavailable snapshots
     require the caller to identify and stamp the partition manually.
+
+    Args:
+        draft_template_uuid: Draft/replica template UUID produced by capture and
+            transformation.
+        target_system_name_or_uuid: Destination system name or UUID.
+        wait: Wait for deployment to reach a terminal state and attempt ownership
+            stamping of the sole newly observed partition.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():

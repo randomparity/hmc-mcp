@@ -59,6 +59,15 @@ def hmc_update_console_software(
     hmc_console_info).
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        console_uuid: Management-console UUID returned by ``hmc_console_info``.
+        repository: NFS, SFTP, or HMC-disk software source configuration.
+        kind: ``update`` for PTFs or ``upgrade`` for a full version upgrade.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     if kind == "update":
         job_xml = update_hmc_job(repository)
@@ -116,6 +125,10 @@ def hmc_get_available_hmc_ptfs(
     Issues a GET to the ManagementConsole resource with the SoftwareUpdate
     group, which returns available PTF information. console_uuid is the
     ManagementConsole UUID (from hmc_console_info). Does not submit a job.
+
+    Args:
+        console_uuid: Management-console UUID returned by ``hmc_console_info``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     async def _go():
@@ -143,14 +156,21 @@ def hmc_vios_update(
 ) -> dict[str, Any] | None:
     """Submit a VIOS software update or upgrade job.
 
-    vios_name_or_uuid: accepts either a PartitionName or a UUID
-    (find it with hmc_list_vios).
     kind='update' installs fixes (PTF level); kind='upgrade' performs a full
     VIOS version upgrade. repository describes the image source (same format as
     hmc_update_console_software). Submits an Update or Upgrade job to VirtualIOServer; poll
     hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        repository: NFS, SFTP, or HMC-disk software source configuration.
+        kind: ``update`` for PTFs or ``upgrade`` for a full version upgrade.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     if kind == "update":
         job_xml = update_vios_job(repository)
@@ -190,13 +210,19 @@ def hmc_update_firmware(
 ) -> dict[str, Any] | None:
     """Submit a managed system firmware update job.
 
-    system_name_or_uuid: accepts either a SystemName or a UUID
-    (find it with hmc_list_systems).
     repository describes the firmware image source (same format as
     hmc_update_console_software). Submits an UpdateFirmware job to ManagedSystem; poll
     hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        repository: NFS, SFTP, or HMC-disk firmware source configuration.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)

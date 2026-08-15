@@ -57,7 +57,13 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
 def hmc_get_lpar_description(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
-    """Return an LPAR's CLI-only description, resolving names or UUIDs."""
+    """Return an LPAR's CLI-only description, resolving names or UUIDs.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_description(
             config, system_name, lpar_name
@@ -83,6 +89,14 @@ def hmc_set_lpar_description(
     only after explicit operator approval.
 
     WARNING: This changes LPAR configuration on the selected HMC.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        description: New printable-ASCII partition description.
+        ownership_override: Permit overwriting a foreign or malformed ownership token
+            only after explicit operator approval.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_lpar_description(description)
 
@@ -108,7 +122,13 @@ def hmc_set_lpar_description(
 def hmc_get_lpar_msp(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> bool:
-    """Return an LPAR's CLI-only Migratable Service Partition flag."""
+    """Return an LPAR's CLI-only Migratable Service Partition flag.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_msp(
             config, system_name, lpar_name
@@ -130,6 +150,12 @@ def hmc_set_lpar_msp(
 
     The command rejects non-VIOS partitions. WARNING: this changes LPAR
     configuration on the selected HMC.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        enabled: Whether to enable the Migratable Service Partition flag.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_msp(
@@ -145,7 +171,13 @@ def hmc_set_lpar_msp(
 def hmc_get_lpar_proc_compat(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, str]:
-    """Return an LPAR's desired and current processor compatibility modes."""
+    """Return an LPAR's desired and current processor compatibility modes.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: get_lpar_proc_compat(
             config, system_name, lpar_name
@@ -166,6 +198,13 @@ def hmc_set_lpar_proc_compat(
     """Set an LPAR's processor compatibility mode.
 
     WARNING: This changes LPAR configuration on the selected HMC.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        mode: Desired mode supported by the system; enumerate legal values with
+            ``hmc_get_proc_compat_modes``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_proc_compat(
