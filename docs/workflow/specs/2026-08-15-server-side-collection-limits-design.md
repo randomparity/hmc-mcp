@@ -24,9 +24,12 @@ operations are excluded because they do not map a public request directly to a
 UOM collection feed. Single-resource fetches and metric documents are also
 excluded. No summary tool or polymorphic detail mode is added.
 
-The Python 3.13 project targets amd64 and arm64. The implementation adds no
-dependency and preserves every result as `list[dict[str, Any]]`. It does not
-modify HMC request URLs or claim reduced network, HMC, or parsing cost.
+The implementation is architecture-independent and follows the rolling Python
+3.11+ support policy in ADR 0020. Pull-request checks exercise amd64 and arm64;
+ppc64le remains supported under ADR 0021 without a required pull-request job.
+The change adds no dependency and preserves every result as
+`list[dict[str, Any]]`. It does not modify HMC request URLs or claim reduced
+network, HMC, or parsing cost.
 
 ## Public contract
 
