@@ -16,10 +16,11 @@ concurrency:
 
 jobs:
   ci:
-    name: ${{ matrix.architecture }} / Python ${{ matrix.python-version }}
+    name: ${{ matrix.architecture }} / Python ${{ matrix.python-version }} / verify
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         include:
           - architecture: amd64
@@ -37,6 +38,15 @@ jobs:
           - architecture: arm64
             runner: ubuntu-24.04-arm
             python-version: "3.11"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.12"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.13"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.14"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -66,6 +76,92 @@ jobs:
           retention-days: 7
       - name: Validate hooks
         run: UV_NO_SYNC=1 uv run prek run --all-files
+
+  wheel-smoke:
+    needs: ci
+    name: ${{ matrix.architecture }} / Python ${{ matrix.python-version }} / wheel smoke
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.11"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.12"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.13"
+          - architecture: amd64
+            runner: ubuntu-24.04
+            python-version: "3.14"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.11"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.12"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.13"
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            python-version: "3.14"
+    steps:
+      - name: Check out smoke harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+          version: "0.12.3"
+      - name: Download validated wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-wheel-${{ matrix.architecture }}-py${{ matrix.python-version }}
+          path: dist
+      - name: Install validated wheel in a fresh environment
+        env:
+          MATRIX_ARCHITECTURE: ${{ matrix.architecture }}
+          MATRIX_PYTHON: ${{ matrix.python-version }}
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )) || [[ ! -f "${wheels[0]:-}" ]]; then
+            printf 'architecture=%s python=%s: expected exactly one wheel\n' \
+              "${MATRIX_ARCHITECTURE}" "${MATRIX_PYTHON}" >&2
+            exit 1
+          fi
+          uv venv --python "${MATRIX_PYTHON}" .wheel-venv
+          uv export --frozen --no-dev --no-emit-project --no-header \
+            --output-file .wheel-requirements.txt
+          uv pip install --python .wheel-venv/bin/python \
+            --requirements .wheel-requirements.txt
+          uv pip install --no-deps --python .wheel-venv/bin/python "${wheels[0]}"
+      - name: Exercise installed CLI and MCP
+        run: |
+          .wheel-venv/bin/python - <<'PY'
+          from pathlib import Path
+
+          import hmc_mcp
+
+          package_path = Path(hmc_mcp.__file__).resolve()
+          environment = Path(".wheel-venv").resolve()
+          assert package_path.is_relative_to(environment), package_path
+          PY
+          .wheel-venv/bin/hmc-mcp --help >/dev/null
+          .wheel-venv/bin/hmc-mcp lpars --help >/dev/null
+          .wheel-venv/bin/hmc-mcp storage --help >/dev/null
+          .wheel-venv/bin/hmc-mcp network --help >/dev/null
+          .wheel-venv/bin/hmc-mcp templates --help >/dev/null
+          .wheel-venv/bin/hmc-mcp metrics --help >/dev/null
+          .wheel-venv/bin/python scripts/smoke_mcp.py
 
   # ppc64le-release-artifact-template: begin
   # ppc64le:
