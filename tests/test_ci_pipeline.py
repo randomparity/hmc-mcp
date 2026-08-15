@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -57,6 +59,21 @@ UV_PPC64LE_SHA256 = (
     "bff188fcf2d867c5595f8db6061a39"  # pragma: allowlist secret
     "e54752ab213eaefc14287f37e85afe9ead"  # pragma: allowlist secret
 )
+
+
+def _copy_tracked_project(destination: Path) -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\0")
+    for relative in filter(None, tracked):
+        source = ROOT / relative
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
@@ -118,7 +135,19 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     assert "\nstatic: lint typecheck secrets workflow-security env-vars\n" in justfile
     assert "\nverify: static test smoke\n" in justfile
     assert "--baseline .secrets.baseline --no-verify --" in justfile
-    assert "uv run hmc-mcp metrics --help" in justfile
+    assert "uv run --no-sync hmc-mcp metrics --help" in justfile
+
+
+def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
+    justfile = (ROOT / "justfile").read_text()
+
+    assert justfile.count("uv sync --locked") == 1
+    assert (
+        "setup:\n    uv sync --locked\n    uv run --no-sync prek install\n" in justfile
+    )
+    run_lines = [line.strip() for line in justfile.splitlines() if "uv run" in line]
+    assert run_lines
+    assert all("uv run --no-sync" in line for line in run_lines)
 
 
 def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
@@ -194,8 +223,88 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert "persist-credentials: false" in workflow
     assert 'version: "0.12.3"' in workflow
     assert 'just-version: "1.58.0"' in workflow
-    for command in ("just setup", "just verify", "uv run prek run --all-files"):
+    for command in (
+        "just setup",
+        "just verify",
+        "UV_NO_SYNC=1 uv run prek run --all-files",
+    ):
         assert f"run: {command}" in workflow
+
+
+def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
+    checkout_settings = re.findall(
+        r"uses: actions/checkout@[^\n]+\n"
+        r"        with:\n"
+        r"(?P<settings>(?:          [^\n]+\n)+)",
+        active_workflow,
+    )
+
+    assert len(checkout_settings) == 2
+    assert active_workflow.count("uv run") >= 2
+    for settings in checkout_settings:
+        assert "fetch-depth: 0\n" in settings
+        assert "persist-credentials: false\n" in settings
+
+
+def test_dirty_project_commands_do_not_rebuild_editable_metadata(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _copy_tracked_project(project)
+    subprocess.run(
+        ["git", "init", "-q", "--initial-branch=main"], cwd=project, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "tests@example.invalid"],
+        cwd=project,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Command Tests"], cwd=project, check=True
+    )
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
+    environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
+    subprocess.run(
+        ["uv", "sync", "--locked"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=180,
+    )
+    with (project / "pyproject.toml").open("a", encoding="utf-8") as file:
+        file.write("\n# dirty command regression\n")
+
+    lint = subprocess.run(
+        ["just", "lint"],
+        cwd=project,
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=180,
+    )
+    hooks = subprocess.run(
+        ["uv", "run", "prek", "run", "--all-files"],
+        cwd=project,
+        check=False,
+        capture_output=True,
+        env={**environment, "UV_NO_SYNC": "1"},
+        text=True,
+        timeout=180,
+    )
+
+    assert lint.returncode == 0, lint.stderr
+    assert "All checks passed" in lint.stdout
+    assert "Building hmc-mcp" not in lint.stderr
+    assert hooks.returncode == 0, hooks.stdout + hooks.stderr
+    assert "Ruff lint" in hooks.stdout
+    assert "Building hmc-mcp" not in hooks.stderr
 
 
 def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:

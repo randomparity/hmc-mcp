@@ -41,6 +41,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
@@ -57,7 +58,7 @@ jobs:
       - name: Run verification suite
         run: just verify
       - name: Validate hooks
-        run: uv run prek run --all-files
+        run: UV_NO_SYNC=1 uv run prek run --all-files
 
   # ppc64le-release-artifact-template: begin
   # ppc64le:
@@ -96,6 +97,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
