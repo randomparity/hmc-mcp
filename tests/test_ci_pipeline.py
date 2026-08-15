@@ -227,11 +227,12 @@ def test_github_ci_runs_ppc64le_in_a_bounded_qemu_container() -> None:
     assert dockerfile.startswith(f"FROM {PPC64LE_BASE}\n")
     assert "uv-powerpc64le-unknown-linux-gnu.tar.gz" in dockerfile
     assert UV_PPC64LE_SHA256 in dockerfile
-    assert "UBUNTU_SNAPSHOT=20260814T000000Z" in dockerfile
-    assert 'APT::Snapshot \\\"${UBUNTU_SNAPSHOT}\\\";' in dockerfile
+    assert "ubuntu_snapshot=20260814T000000Z" in dockerfile
+    assert 'APT::Snapshot \\\"${ubuntu_snapshot}\\\";' in dockerfile
     assert "python3" in dockerfile
-    assert "RUST_VERSION=1.97.1" in dockerfile
-    assert "RUSTUP_SHA256=" in dockerfile
+    assert "rust_version=1.97.1" in dockerfile
+    assert "rustup_sha256=" in dockerfile
+    assert "ARG " not in dockerfile
     assert r'test \"$(uname -m)\" = \"ppc64le\"' in dockerfile
     assert "git config --global --add safe.directory /workspace" in dockerfile
     assert dockerfile.count("just setup") == 1
