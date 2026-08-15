@@ -16,8 +16,9 @@ The native matrix contains exactly five entries: the existing amd64 coverage on 
 unchanged. Issue #161 does not create the full architecture-by-Python Cartesian product; #163 owns
 that expansion.
 
-The inactive ppc64le template runs on `ubuntu-24.04`, installs only the ppc64le binfmt handler through
-`docker/setup-qemu-action`, and builds a digest-pinned Ubuntu 24.04 ppc64le verification image.
+The inactive ppc64le template runs on `ubuntu-24.04` and installs only the ppc64le binfmt handler
+through `docker/setup-qemu-action`. It builds a digest-pinned Ubuntu 24.04 ppc64le verification
+image.
 The action commit, binfmt image, base image, Ubuntu package snapshot, uv version, uv archive
 checksum, and Rust toolchain version are immutable in the repository. Canonical promises at least
 two years of snapshot retention; refreshing the timestamp is reviewed maintenance. Ubuntu's
@@ -85,7 +86,7 @@ host credential mount in its container invocation. Tests also require the ppc64l
 build prerequisites and explicit emulation limits.
 The repository guardrail remains `just verify`.
 
-The retained ppc64le environment synchronizes the locked dependency graph without `prek`, which is used
-only by the separate `just setup` recipe to install local Git hooks. Disabling uv's implicit
+The retained ppc64le environment synchronizes the locked dependency graph without `prek`, which is
+used only by the separate `just setup` recipe to install local Git hooks. Disabling uv's implicit
 resynchronization then runs the canonical `just verify` recipe unchanged. This avoids compiling a
 hook installer under QEMU without removing any command or dependency exercised by the guardrail.
