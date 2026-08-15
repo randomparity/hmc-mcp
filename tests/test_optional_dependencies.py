@@ -28,6 +28,8 @@ def test_presentation_dependencies_are_confined_to_app_extra() -> None:
 def test_core_imports_do_not_load_presentation_packages() -> None:
     script = """
 from importlib.abc import MetaPathFinder
+from importlib import import_module
+from pkgutil import iter_modules
 import sys
 
 
@@ -40,15 +42,22 @@ class BlockPresentationPackages(MetaPathFinder):
 
 sys.meta_path.insert(0, BlockPresentationPackages())
 
+import hmc_mcp
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_capacity import capacity_report
 
 assert HMCClient
 assert HMCConfig
 assert HMCError
-assert capacity_report
+operation_modules = sorted(
+    module.name
+    for module in iter_modules(hmc_mcp.__path__)
+    if module.name.startswith("operations_")
+)
+assert operation_modules
+for module in operation_modules:
+    import_module(f"hmc_mcp.{module}")
 assert not ({"fastmcp", "mcp", "rich", "typer"} & set(sys.modules))
 """
 
