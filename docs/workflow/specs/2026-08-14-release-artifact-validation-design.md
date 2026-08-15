@@ -93,7 +93,7 @@ matrix environments and exercising installed CLI/MCP paths.
 
 Construction preserves the version backend's redacted actionable failures for dirty or incomplete
 provenance. Validation errors are concise and public-safe: they include a local artifact name and
-the failed invariant, including the specific malformed project field or unsupported archive
+the failed invariant, including the specific malformed project field or corrupt/unsupported archive
 operation, never environment variables, credentials, raw Git stderr, or archive content.
 
 ## Testing

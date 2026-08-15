@@ -166,4 +166,4 @@ validator commits remain bisectable.
 
 Branch: `feat/build-validate-artifacts-162`. Base: `main`. Guardrails: `just setup`, `just verify`,
 and `UV_NO_SYNC=1 uv run prek run --all-files`. Assigned ADR: 0024. ADR index coupling: not coupled;
-no index exists. Scope token: `b76e89d7-235c-4c59-8f8d-e27e2ea735b7`.
+no index exists. Scope token: `755aad6b-e56d-4c9a-9386-7c6b965c66c9`.
