@@ -444,7 +444,17 @@ async def test_decommission_stops_after_first_adapter_failure(monkeypatch: pytes
                 "status": "COMPLETED_OK",
             },
         },
-        {"step": "detach_adapters", "status": "error", "result": "adapter delete failed"},
+        {
+            "step": "detach_adapters",
+            "status": "error",
+            "result": {
+                "adapters": (
+                    {"type": "ClientNetworkAdapter", "uuid": "cna-1"},
+                    {"type": "ClientNetworkAdapter", "uuid": "cna-2"},
+                ),
+                "error": "adapter delete failed",
+            },
+        },
         {"step": "delete_lpar", "status": "skipped"},
     )
     assert calls == [

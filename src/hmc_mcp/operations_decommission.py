@@ -344,10 +344,24 @@ async def _power_off(
 
 
 async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> dict[str, Any]:
+    deleted: list[dict[str, str]] = []
     for adapter in inventory.adapters:
-        await hmc.delete_adapter(
-            inventory.lpar_uuid, cast(AdapterType, adapter["type"]), adapter["uuid"]
-        )
+        try:
+            await hmc.delete_adapter(
+                inventory.lpar_uuid,
+                cast(AdapterType, adapter["type"]),
+                adapter["uuid"],
+            )
+        except HMCError as exc:
+            return _step(
+                "detach_adapters",
+                "error",
+                {
+                    "adapters": tuple(deleted),
+                    "error": str(exc),
+                },
+            )
+        deleted.append(adapter)
     return _step(
         "detach_adapters",
         "ok",
@@ -429,10 +443,9 @@ async def decommission_lpar(
             blast_radius=inventory.blast_radius(),
         )
 
-    try:
-        steps.append(await _detach_adapters(hmc, inventory))
-    except HMCError as exc:
-        steps.append(_step("detach_adapters", "error", str(exc)))
+    detach_step = await _detach_adapters(hmc, inventory)
+    steps.append(detach_step)
+    if detach_step["status"] != "ok":
         steps.append(_step("delete_lpar", "skipped"))
         return DecommissionResult(
             resource_deleted=False,
