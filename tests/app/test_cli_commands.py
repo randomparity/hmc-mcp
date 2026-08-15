@@ -1085,6 +1085,23 @@ def test_lpars_decommission_declined_confirmation_aborts(fake_hmc):
     assert fake_hmc.calls == []
 
 
+def test_lpars_decommission_confirmed_prompt_names_target_and_executes(fake_hmc):
+    fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["lpars", "decommission", LPAR_NAME, "--system", SYSTEM_UUID],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
+    assert "decommissioned successfully" in result.stdout
+    names = [name for name, _, _ in fake_hmc.calls]
+    assert "delete_logical_partition" in names
+    assert "Aborted" not in result.stderr
+
+
 def test_lpars_decommission_yes_executes_workflow(fake_hmc):
     fake_hmc.lpar["Resource"]["PartitionState"] = "not activated"
 
