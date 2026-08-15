@@ -21,7 +21,8 @@ are not an accepted vulnerability channel.
 Declare the SPDX license expression and license file in PEP 621 metadata. Publish direct project
 URLs for the repository, contribution guide, and security policy, and link the same canonical
 files from a short README governance section. Focused tests enforce the presence and agreement of
-these files, links, and metadata.
+these files, links, and metadata. Do not add the deprecated MIT Trove classifier alongside the
+unambiguous SPDX expression.
 
 ## Consequences
 

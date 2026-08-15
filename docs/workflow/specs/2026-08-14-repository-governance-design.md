@@ -35,8 +35,8 @@ files. It does not duplicate their instructions.
 
 ## Package metadata
 
-The `[project]` table declares `license = "MIT"`, `license-files = ["LICENSE"]`, an MIT classifier,
-and these direct URLs:
+The `[project]` table declares `license = "MIT"`, `license-files = ["LICENSE"]`, and these direct
+URLs:
 
 - `Repository = "https://github.com/randomparity/hmc-mcp"`
 - `Contributing = "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.md"`
@@ -48,10 +48,11 @@ package index renders repository-relative links.
 ## Validation and failure behavior
 
 `tests/test_project_metadata.py` parses `pyproject.toml` with `tomllib`, checks the exact license
-expression, license-file declaration, MIT classifier, and project URLs, verifies each canonical
-policy file exists, and checks the README links them. It also asserts that `SECURITY.md` names the
-private advisory URL and rejects public issue reporting. Exact values make drift fail with the
-offending contract visible in the assertion.
+expression, license-file declaration, project URLs, and absence of the deprecated
+`License :: OSI Approved :: MIT License` classifier while allowing unrelated classifiers. It
+verifies each canonical policy file exists and checks the README links them. It also asserts that
+`SECURITY.md` names the private advisory URL and rejects public issue reporting. Exact values make
+drift fail with the offending contract visible in the assertion.
 
 The no-publication exclusion is verified against the branch diff: no workflow file may be added or
 modified, and `pyproject.toml` may change only the declared governance metadata. The existing
@@ -93,7 +94,8 @@ public.
 ## Acceptance criteria
 
 1. The canonical MIT license, contribution guide, and private security policy exist and agree.
-2. README navigation and PEP 621 metadata identify the canonical policies.
+2. README navigation and PEP 621 metadata identify the canonical policies without a deprecated
+   license classifier.
 3. Focused tests fail on missing or inconsistent governance metadata and pass on the final files.
 4. `just verify` and `uv run prek run --all-files` pass with zero warnings.
 5. No publication credential or PyPI release workflow is introduced.

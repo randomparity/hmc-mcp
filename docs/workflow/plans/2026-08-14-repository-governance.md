@@ -11,8 +11,8 @@ those files, while one focused test enforces agreement without a new dependency.
 - `LICENSE` uses the MIT License and `Copyright (c) 2026 hmc-mcp contributors`.
 - The only vulnerability channel is GitHub private vulnerability reporting at
   `https://github.com/randomparity/hmc-mcp/security/advisories/new`; public issues are rejected.
-- Metadata uses `license = "MIT"`, `license-files = ["LICENSE"]`, the MIT classifier, and direct
-  Repository, Contributing, and Security URLs from the specification.
+- Metadata uses `license = "MIT"`, `license-files = ["LICENSE"]`, no deprecated license
+  classifier, and direct Repository, Contributing, and Security URLs from the specification.
 - Do not add dependencies, publication credentials, PyPI publication, release workflows, response
   SLAs, or supported-version promises.
 - Host arm64 is included in declared amd64 and arm64 targets; the change is architecture-independent.
@@ -33,7 +33,8 @@ those files, while one focused test enforces agreement without a new dependency.
 canonical files and metadata that README navigation and future package consumers rely on.
 
 1. Create `tests/test_project_metadata.py` with tests that parse `pyproject.toml`, assert the exact
-   license fields, MIT classifier, and three project URLs; assert `LICENSE`, `CONTRIBUTING.md`, and
+   license fields, absence of the deprecated MIT classifier, and three project URLs; assert
+   `LICENSE`, `CONTRIBUTING.md`, and
    `SECURITY.md` exist; assert the README links all three; and assert `SECURITY.md` contains the
    exact advisory URL and says not to use public issues. Assert `CONTRIBUTING.md` names
    `uv sync --locked`, `just verify`, `uv run prek run --all-files`, focused changes with tests,
