@@ -90,6 +90,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "create_virtual_disk",
         "delete_virtual_disk",
         "map_storage",
+        "upload_iso",
         "create_media_repository",
         "create_optical_media",
         "delete_media_repository",
@@ -202,6 +203,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_storage_mappings",
             "list_volume_groups",
             "map_storage",
+            "upload_iso",
         },
         "hmc_mcp.operations_systems": {"power_system"},
         "hmc_mcp.operations_templates": {
@@ -246,8 +248,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "6cb33fad85deb9087f5f9d21ff1d33f7"  # pragma: allowlist secret
-        "5ce5e8dd2b08546cba319114f746b740"  # pragma: allowlist secret
+        "6d5abd4c34116290bc3f807c1274a2816"  # pragma: allowlist secret
+        "bb291d2f44728729ab43dbce204ee51"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
