@@ -29,6 +29,7 @@ from .operations_storage import (
     create_virtual_disk,
     create_volume_group,
     delete_media_repository,
+    delete_optical_media,
     delete_virtual_disk,
     get_media_repository,
     list_optical_media,
@@ -284,6 +285,22 @@ def storage_delete_media_repo(
 
     _with_client(lambda hmc: delete_media_repository(hmc, vios, vg))
     console.print(f"[green]Deleted media repository on {vg}[/green]")
+
+@storage_app.command("delete-media")
+def storage_delete_media(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    media_name: str = typer.Argument(..., help="ISO image name to delete"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete an ISO image from the media repository."""
+    if not yes and not typer.confirm(
+        f"Delete media '{media_name}' on VG {vg} (VIOS {vios})?"
+    ):
+        raise typer.Abort()
+
+    _with_client(lambda hmc: delete_optical_media(hmc, vios, vg, media_name))
+    console.print(f"[green]Deleted media '{media_name}' on {vg}[/green]")
 
 
 @storage_app.command("get-media-repo")

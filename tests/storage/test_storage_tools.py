@@ -332,6 +332,22 @@ def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
 def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
     """hmc_delete_media_repository POSTs the delete doc and confirms."""
     _hmc_env(monkeypatch)
+    # list_optical_media GET must return empty repository (no images, safe to delete)
+    empty_repo_feed = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <content>
+      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <VirtualMediaRepository>
+          <RepositoryName>VMLibrary</RepositoryName>
+        </VirtualMediaRepository>
+      </VolumeGroup>
+    </content>
+  </entry>
+</feed>"""
+    mock_hmc.get(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    ).mock(return_value=httpx.Response(200, text=empty_repo_feed))
     route = mock_hmc.post(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))

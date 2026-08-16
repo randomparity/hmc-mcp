@@ -18,6 +18,7 @@ from .documents import (
     build_virtual_disk_delete_document,
     build_virtual_disk_document,
     build_virtual_optical_mapping_document,
+    build_virtual_optical_media_delete_document,
     build_virtual_optical_media_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
@@ -225,6 +226,18 @@ class StorageMixin:
         return await self._post_volume_group_op(
             vios_uuid, vg_uuid, build_media_repository_delete_document()
         )
+
+    async def delete_optical_media(
+        self: StorageClient, vios_uuid: str, vg_uuid: str, media_name: str
+    ) -> dict[str, Any] | None:
+        """Delete a VirtualOpticalMedia (ISO image) from the media repository."""
+        xml = build_virtual_optical_media_delete_document(media_name)
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        resp = await self._post(
+            path, xml, resource_type="VolumeGroup", include_schema_version=False
+        )
+        entries = _parse_feed(resp, path) if resp else []
+        return entries[0].get("Resource", entries[0]) if entries else None
     async def get_media_repository(
         self: StorageClient, vios_uuid: str, vg_uuid: str
     ) -> dict[str, Any] | None:

@@ -199,6 +199,7 @@ DESTRUCTIVE_TOOLS = frozenset(
         "hmc_delete_adapter",
         "hmc_delete_virtual_network",
         "hmc_delete_media_repository",
+        "hmc_delete_optical_media",
         "hmc_delete_virtual_disk",
         "hmc_delete_logical_unit",
         "hmc_delete_user",

@@ -10,6 +10,7 @@ from typing import Any
 
 
 from .client import HMCClient
+from .errors import HMCError
 from .client_contracts import httpx
 from .common import resolve_lpar_uuid, resolve_vios_uuid
 from .documents import StorageKind
@@ -81,7 +82,6 @@ async def delete_virtual_disk(
             if disk_link in storage_link or storage_link.endswith(f"VirtualDisk/{disk_name}"):
                 lpar = mapping.get("AssociatedLogicalPartition", {})
                 lpar_name = lpar.get("PartitionName", lpar.get("@href", "unknown"))
-                from .errors import HMCError
                 raise HMCError(
                     f"Cannot delete virtual disk '{disk_name}': it is mapped to LPAR '{lpar_name}'. "
                     f"Use detach_storage_mapping first to remove the mapping."
@@ -150,10 +150,63 @@ async def detach_storage_mapping(
     await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
 
 
-async def delete_media_repository(hmc: HMCClient, vios: str, vg_uuid: str) -> str:
+async def delete_media_repository(
+    hmc: HMCClient, vios: str, vg_uuid: str
+) -> str:
+    """Delete the Virtual Media Repository from a Volume Group.
+
+    Refuses deletion if the repository contains any VirtualOpticalMedia
+    entries (ISO images). Delete all media first.
+
+    Raises:
+        HMCError: If the repository is not empty.
+    """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
+    media = await hmc.list_optical_media(vios_uuid, vg_uuid)
+    if media:
+        names = ", ".join(m.get("MediaName", "unknown") for m in media)
+        raise HMCError(
+            f"Cannot delete media repository: it contains {len(media)} "
+            f"image(s): {names}. Delete all images first."
+        )
     await hmc.delete_media_repository(vios_uuid, vg_uuid)
     return vios_uuid
+
+
+async def delete_optical_media(
+    hmc: HMCClient, vios: str, vg_uuid: str, media_name: str
+) -> dict[str, Any] | None:
+    """Delete a VirtualOpticalMedia (ISO image) from the media repository.
+
+    Validates that no optical mapping references the media before deletion.
+    Returns an error listing every blocking mapping when the image is in use.
+
+    Raises:
+        HMCError: If the media is referenced by any optical mapping.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+
+    # Exhaustively check optical mappings for references to this media
+    optical_mappings = await hmc.list_optical_mappings(vios_uuid)
+    blockers = []
+    for mapping in optical_mappings:
+        storage = mapping.get("Storage", {}).get("VirtualOpticalMedia", {})
+        if isinstance(storage, dict):
+            name = storage.get("MediaName", "")
+            if name == media_name:
+                lpar = mapping.get("AssociatedLogicalPartition", {})
+                lpar_id = lpar.get("@href", lpar.get("PartitionName", "unknown"))
+                blockers.append(str(lpar_id))
+
+    if blockers:
+        raise HMCError(
+            f"Cannot delete optical media '{media_name}': it is mounted on "
+            f"{len(blockers)} LPAR(s): {', '.join(blockers)}. "
+            f"Unmount the media first."
+        )
+
+    return await hmc.delete_optical_media(vios_uuid, vg_uuid, media_name)
+
 async def get_media_repository(
     hmc: HMCClient, vios: str, vg_uuid: str
 ) -> dict[str, Any] | None:

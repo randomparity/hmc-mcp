@@ -28,6 +28,7 @@ from .operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    delete_optical_media,
     delete_virtual_disk,
     detach_storage_mapping,
     detach_optical_mapping,
@@ -331,6 +332,32 @@ def hmc_delete_media_repository(
             await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
+
+    return _run(_go)
+
+@tool(annotations=_DESTRUCTIVE)
+def hmc_delete_optical_media(
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    media_name: str,
+    profile: str | None = None,
+) -> str:
+    """Delete a VirtualOpticalMedia (ISO image) from the media repository.
+
+    Refuses deletion if the media is currently mounted to any LPAR. Unmount
+    all references first.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID containing the repository.
+        media_name: Name of the ISO image to delete.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            await delete_optical_media(hmc, vios_name_or_uuid, vg_uuid, media_name)
+        return f"Deleted optical media '{media_name}' from VolumeGroup {vg_uuid}"
 
     return _run(_go)
 
