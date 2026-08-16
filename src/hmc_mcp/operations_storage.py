@@ -36,6 +36,49 @@ async def create_virtual_disk(
     )
 
 
+async def delete_virtual_disk(
+    hmc: HMCClient, vios: str, vg_uuid: str, disk_name: str
+) -> dict[str, Any] | None:
+    """Delete a Virtual Disk from a Volume Group.
+
+    Validates that the disk is not mapped to any LPAR before deletion.
+    Returns an error if the disk is in use; otherwise deletes the disk.
+
+    Args:
+        hmc: HMC client instance.
+        vios: VIOS partition name or UUID.
+        vg_uuid: Volume Group UUID containing the disk.
+        disk_name: Name of the Virtual Disk to delete.
+
+    Returns:
+        The deleted disk metadata, or None if deletion failed.
+
+    Raises:
+        HMCError: If the disk is mapped to an LPAR or deletion fails.
+    """
+    # Check if the disk is currently mapped before deletion
+    mappings = await hmc.list_storage_mappings(await resolve_vios_uuid(hmc, vios))
+    disk_link = f"/rest/api/uom/VirtualIOServer/{await resolve_vios_uuid(hmc, vios)}/VolumeGroup/{vg_uuid}/VirtualDisk/{disk_name}"
+    
+    for mapping in mappings:
+        backing_storage = mapping.get("Storage", {}).get("VirtualDisk", {})
+        if isinstance(backing_storage, dict):
+            storage_link = backing_storage.get("@href", "")
+            if disk_link in storage_link or storage_link.endswith(f"VirtualDisk/{disk_name}"):
+                lpar = mapping.get("AssociatedLogicalPartition", {})
+                lpar_name = lpar.get("PartitionName", lpar.get("@href", "unknown"))
+                from .errors import HMCError
+                raise HMCError(
+                    f"Cannot delete virtual disk '{disk_name}': it is mapped to LPAR '{lpar_name}'. "
+                    f"Use detach_storage_mapping first to remove the mapping."
+                )
+    
+    # Disk is not mapped, safe to delete
+    return await hmc.delete_virtual_disk(
+        await resolve_vios_uuid(hmc, vios), vg_uuid, disk_name
+    )
+
+
 async def map_storage(
     hmc: HMCClient,
     vios: str,

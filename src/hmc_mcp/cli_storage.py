@@ -29,6 +29,7 @@ from .operations_storage import (
     create_virtual_disk,
     create_volume_group,
     delete_media_repository,
+    delete_virtual_disk,
     get_media_repository,
     list_optical_media,
     list_volume_groups,
@@ -106,6 +107,30 @@ def storage_create_disk(
     )
 
     console.print(f"[green]Created virtual disk '{name}' ({capacity_mib} MiB)[/green]")
+    _print_json(disk)
+
+
+@storage_app.command("delete-disk")
+def storage_delete_disk(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
+    name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a Virtual Disk from a Volume Group.
+
+    Validates that the disk is not mapped to any LPAR before deletion.
+    """
+    if not yes and not typer.confirm(
+        f"Delete virtual disk '{name}' from VG {vg}?"
+    ):
+        raise typer.Abort()
+
+    disk = _with_client(
+        lambda hmc: delete_virtual_disk(hmc, vios, vg, name)
+    )
+
+    console.print(f"[green]Deleted virtual disk '{name}'[/green]")
     _print_json(disk)
 
 
