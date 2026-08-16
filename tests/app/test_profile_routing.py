@@ -219,3 +219,49 @@ def test_two_profile_strings_produce_distinct_clients(tmp_path, monkeypatch):
     assert result_a["Resource"]["SystemName"] != result_b["Resource"]["SystemName"], (
         "Concurrent calls returned the same host — state leakage detected"
     )
+
+
+# ---------------------------------------------------------------------- #
+
+
+# ---------------------------------------------------------------------- #
+# T-4: Nickname resolution parity (issue #226)
+# ---------------------------------------------------------------------- #
+
+
+def _toml_with_nickname(tmp_path: Path) -> Path:
+    """Write a TOML config with a profile and a nickname mapping to it."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "default_profile = 'prod'\n"
+        "\n"
+        "[profiles.prod]\n"
+        "host = 'prod-hmc.test'\n"
+        "user = 'hscroot'\n"
+        "password = 'prod-pass'\n"   # pragma: allowlist secret
+        "\n"
+        "[nicknames]\n"
+        "big-iron = 'prod'\n"
+    )
+    return cfg
+
+
+def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
+    """A nickname passed to client_from_env resolves to its target profile host.
+
+    client_from_env is the single client builder shared by the CLI
+    (``cli_app._client``) and every MCP tool (``client_from_env(profile)``), so
+    resolving a nickname here proves the nickname works on both surfaces without
+    a per-tool change.
+    """
+    from hmc_mcp.common import client_from_env
+
+    cfg_path = _toml_with_nickname(tmp_path)
+    monkeypatch.setattr("hmc_mcp.common.resolve_config_path", lambda: cfg_path)
+    monkeypatch.setattr("hmc_mcp.config.resolve_config_path", lambda: cfg_path)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
+
+    client = client_from_env(profile="big-iron")
+
+    assert client.config.host == "prod-hmc.test"
