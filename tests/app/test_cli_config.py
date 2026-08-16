@@ -335,3 +335,19 @@ def test_init_scaffolds_commented_nicknames(tmp_path, monkeypatch):
     content = target.read_text(encoding="utf-8")
     assert "nicknames" in content
     assert "# nicknames = " in content
+
+
+def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
+    """HMC_PROFILE nickname resolves to its target profile, not the default."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HMC_PROFILE", "staging")
+    monkeypatch.delenv("HMC_PROD_PW", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "show", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["profile"] == "stg"
+    assert data["resolved_from"] == "staging"
+    assert data["host"] == "stg-hmc.example.com"
+    assert "prod-hmc.example.com" not in result.output
