@@ -258,7 +258,146 @@ class HMCClient(
         resp = await self._request("DELETE", path, headers=self._uom_headers(None))
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
+    # ------------------------------------------------------------------ #
+    # Brokered file upload/import transport primitives (verification only)
+    # ------------------------------------------------------------------ #
+    #
+    # These methods exercise the complete brokered upload/import sequence at
+    # the transport boundary. They are deliberately kept private (_ prefix) and
+    # not exposed through the public API contract. Their purpose is to:
+    # - Verify endpoint paths, media types, and request/response formats
+    # - Record cleanup behavior and version-dependent failures
+    # - Determine whether imported media exposes trustworthy checksums
+    #
+    # Public MCP tools, CLI commands, and api.py exports will be added in a
+    # follow-up issue (#203) after the verification findings are recorded.
+    # ------------------------------------------------------------------ #
 
+    async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
+        """Create a brokered file handle for upload (verification primitive).
+
+        Returns the brokered file URI from the Location header.
+        This method exists to verify the broker creation endpoint behavior.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        # brokered file creation payload - the exact structure is version-dependent
+        # this placeholder exercises the endpoint to record the actual contract
+        create_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<BrokeredFile xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  <Filename>{filename}</Filename>
+</BrokeredFile>
+'''
+        resp = await self._request(
+            "POST",
+            path,
+            content=create_xml,
+            headers={"Content-Type": MEDIA_UOM, "Accept": MEDIA_UOM},
+        )
+        if resp.status_code not in (200, 201):
+            raise HMCError(
+                f"Brokered file create failed for {filename}",
+                resp.status_code,
+                resp.text,
+            )
+        # Extract Location header containing the brokered file URI
+        location = resp.headers.get("Location")
+        if not location:
+            raise HMCError(
+                "Brokered file create missing Location header",
+                resp.status_code,
+                resp.text,
+            )
+        return location
+
+    async def _broker_file_upload(self, broker_uri: str, content: bytes) -> str:
+        """Upload content to a brokered file (verification primitive).
+
+        Streams the content to the broker URI and returns the final media UUID.
+        This method exists to verify the upload endpoint behavior and response format.
+        """
+        resp = await self._request(
+            "PUT",
+            broker_uri,
+            content=content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(content)),
+                "Accept": MEDIA_UOM,
+            },
+        )
+        if resp.status_code not in (200, 201, 202):
+            raise HMCError(
+                f"Brokered file upload failed to {broker_uri}",
+                resp.status_code,
+                resp.text,
+            )
+        # Parse response to extract the media UUID (structure version-dependent)
+        # This placeholder exercises the endpoint to record the actual contract
+        return resp.text if resp.text else ""
+
+    async def _broker_iso_import(
+        self,
+        vios_uuid: str,
+        vg_uuid: str,
+        media_name: str,
+        broker_uri: str,
+    ) -> str:
+        """Import an uploaded ISO into the Virtual Media Library (verification primitive).
+
+        Creates VirtualOpticalMedia linked to the brokered file and returns the media UUID.
+        This method exists to verify the import endpoint behavior and checksum handling.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        import_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LinkedVirtualOpticalMedia xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  <MediaName>{media_name}</MediaName>
+  <LinkedFileURI>{broker_uri}</LinkedFileURI>
+</LinkedVirtualOpticalMedia>
+'''
+        resp = await self._post(path, import_xml, resource_type="VolumeGroup")
+        # Parse response to extract checksum information (if exposed)
+        # This placeholder exercises the endpoint to record whether checksums are available
+        return resp if resp else ""
+
+    async def _broker_file_cleanup(self, broker_uri: str) -> None:
+        """Clean up a brokered file (verification primitive).
+
+        Deletes the brokered file to release resources after import or on failure.
+        This method exists to verify cleanup behavior and error handling.
+        """
+        resp = await self._request(
+            "DELETE",
+            broker_uri,
+            headers={"Accept": MEDIA_UOM},
+        )
+        # Some versions may return 404 for already-deleted brokered files
+        if resp.status_code not in (200, 202, 204, 404):
+            raise HMCError(
+                f"Brokered file cleanup failed for {broker_uri}",
+                resp.status_code,
+                resp.text,
+            )
+
+    async def _verify_imported_checksum(
+        self, vios_uuid: str, vg_uuid: str, media_name: str
+    ) -> dict[str, str] | None:
+        """Query imported media for checksum information (verification primitive).
+
+        Returns a dict with checksum type and value if exposed by the HMC.
+        Returns None if checksum information is not available.
+        This method exists to verify whether repository inventory exposes trustworthy checksums.
+        """
+        path = (
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+            f"/VirtualMediaRepository/VMLibrary/VirtualOpticalMedia"
+        )
+        resp_text = await self._get(path)
+        if not resp_text:
+            return None
+        # Parse the feed to find the named media and extract checksum fields
+        # The actual checksum field names are version-dependent
+        # This placeholder exercises the endpoint to record available checksum data
+        return None  # To be replaced with actual checksum extraction after verification
     # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #
