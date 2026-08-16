@@ -27,6 +27,7 @@ from .operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    delete_virtual_disk,
     detach_storage_mapping,
     get_media_repository,
     list_optical_media,
@@ -173,6 +174,34 @@ def hmc_create_virtual_disk(
         async with client_from_env(profile) as hmc:
             return await create_virtual_disk(
                 hmc, vios_name_or_uuid, vg_uuid, disk_name, capacity_mib
+            )
+
+    return _run(_go)
+
+
+@tool(annotations=_DESTRUCTIVE)
+def hmc_delete_virtual_disk(
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    disk_name: str,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Delete a Virtual Disk from a Volume Group.
+
+    Validates that the disk is not mapped to any LPAR before deletion.
+    Raises an error if the disk is in use; otherwise deletes the disk.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID from ``hmc_list_volume_groups``.
+        disk_name: Name of the Virtual Disk to delete.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await delete_virtual_disk(
+                hmc, vios_name_or_uuid, vg_uuid, disk_name
             )
 
     return _run(_go)

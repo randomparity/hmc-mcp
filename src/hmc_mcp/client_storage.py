@@ -15,6 +15,7 @@ from .documents import (
     StorageKind,
     build_media_repository_delete_document,
     build_media_repository_document,
+    build_virtual_disk_delete_document,
     build_virtual_disk_document,
     build_virtual_optical_media_document,
     build_volume_group_document,
@@ -81,6 +82,24 @@ class StorageMixin:
         """
 
         xml = build_virtual_disk_document(disk_name, capacity_mib)
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        resp = await self._post(
+            path, xml, resource_type="VolumeGroup", include_schema_version=False
+        )
+        entries = _parse_feed(resp, path) if resp else []
+        return entries[0] if entries else None
+
+    async def delete_virtual_disk(
+        self: StorageClient, vios_uuid: str, vg_uuid: str, disk_name: str
+    ) -> dict[str, Any] | None:
+        """Delete a Virtual Disk (logical volume) from a Volume Group.
+
+        The VolumeGroup POST endpoint returns HTTP 406 when X-HMC-Schema-Version
+        is present on some HMC firmware (same behaviour as the GET), so we omit
+        the schema-version header here.
+        """
+
+        xml = build_virtual_disk_delete_document(disk_name)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
         resp = await self._post(
             path, xml, resource_type="VolumeGroup", include_schema_version=False

@@ -893,6 +893,19 @@ def build_media_repository_delete_document() -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+def build_virtual_disk_delete_document(disk_name: str) -> str:
+    """VolumeGroup document marking a VirtualDisk for deletion (POST)."""
+    body = f"""  <Metadata><Atom/></Metadata>
+  <VirtualDisks schemaVersion="V1_0" kb="CUD">
+    <Metadata><Atom/></Metadata>
+    <VirtualDisk kb="CUD">
+      <Metadata><Atom/></Metadata>
+      <VolumeGroupName kb="CUD" kxe="false">{disk_name}</VolumeGroupName>
+    </VirtualDisk>
+  </VirtualDisks>"""
+    return _document_envelope("VolumeGroup", body)
+
+
 # ====================================================================== #
 # HMC User management (/rest/api/web/HmcUser)
 #

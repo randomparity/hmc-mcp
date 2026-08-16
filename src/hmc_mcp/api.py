@@ -72,7 +72,7 @@ from hmc_mcp.operations_ssh_network import (
     remove_vnic,
     set_sriov_adapter_mode,
 )
-from hmc_mcp.operations_storage import (
+from .operations_storage import (
     create_logical_unit,
     create_media_repository,
     create_optical_media,
@@ -80,6 +80,7 @@ from hmc_mcp.operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    delete_virtual_disk,
     detach_storage_mapping,
     get_media_repository,
     list_optical_media,
@@ -169,6 +170,7 @@ __all__ = [
     "list_volume_groups",
     "create_volume_group",
     "create_virtual_disk",
+    "delete_virtual_disk",
     "map_storage",
     "create_media_repository",
     "create_optical_media",
