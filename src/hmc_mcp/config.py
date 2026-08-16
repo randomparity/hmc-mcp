@@ -337,11 +337,16 @@ def load_profile(
 
     profiles = doc.get("profiles", {})
 
-      # Nickname resolution: one level deep, case-sensitive; a profile key
-      # always wins over a same-named nickname because the branch below
-      # only runs when name is not already a profile key.
+    # Validate the nicknames table structure whenever the key is
+    # present, so a malformed table is a ConfigError regardless of
+    # which profile is selected (ADR 0030). No existing config
+    # carries a nicknames key, so this cannot break current users.
+    nicknames = _coerce_nicknames(doc.get("nicknames"), path)
+
+    # Nickname resolution: one level deep, case-sensitive. A profile
+    # key always wins over a same-named nickname because the branch
+    # below only runs when the name is not already a profile key.
     if name not in profiles:
-        nicknames = _coerce_nicknames(doc.get("nicknames"), path)
         if name in nicknames:
             target = nicknames[name]
             if target in profiles:

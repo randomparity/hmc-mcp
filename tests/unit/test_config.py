@@ -574,6 +574,37 @@ password = "p"      # pragma: allowlist secret
         load_profile(profile="big-iron", config_path=cfg)
 
 
+def test_malformed_nicknames_table_fails_regardless_of_profile(tmp_path, monkeypatch):
+    """A malformed nicknames table raises even when a valid profile is selected.
+
+    Per ADR 0030, load_profile validates the nicknames structure whenever the
+    key is present, not only when a nickname is resolved.
+    """
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+password = "prodpass"     # pragma: allowlist secret
+
+[nicknames]
+big-iron = 42
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError):
+        load_profile(profile="prod", config_path=cfg)
+
+
+def test_well_formed_nicknames_do_not_block_plain_profile(tmp_path, monkeypatch):
+    """A well-formed nicknames table does not block selecting a plain profile."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    result = load_profile(profile="prod", config_path=cfg)
+    assert result.host == "prod-hmc.example.com"
+
+
 def test_list_nicknames_present(tmp_path):
     """list_nicknames returns the nicknames table as dict[str, str]."""
     from hmc_mcp.config import list_nicknames
