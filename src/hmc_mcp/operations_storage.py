@@ -66,6 +66,31 @@ async def create_optical_media(
     return await hmc.create_optical_media(
         await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mib
     )
+async def list_storage_mappings(
+    hmc: HMCClient, vios: str, lpar: str | None = None
+) -> list[dict[str, Any]]:
+    """List VirtualSCSIMappings on a VIOS, optionally scoped to an LPAR.
+
+    Returns mappings with backing storage details and client LPAR information.
+    Use lpar to scope mappings to a single partition by name or UUID.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    lpar_uuid = None
+    if lpar:
+        lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    return await hmc.list_storage_mappings(vios_uuid, lpar_uuid)
+
+
+async def detach_storage_mapping(
+    hmc: HMCClient, vios: str, mapping_uuid: str
+) -> None:
+    """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage).
+
+    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
+    the mapping only; the backing PhysicalVolume or VirtualDisk is not affected.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
 
 
 async def delete_media_repository(hmc: HMCClient, vios: str, vg_uuid: str) -> str:

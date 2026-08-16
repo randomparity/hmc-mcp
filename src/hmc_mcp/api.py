@@ -80,8 +80,10 @@ from hmc_mcp.operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    detach_storage_mapping,
     get_media_repository,
     list_optical_media,
+    list_storage_mappings,
     list_volume_groups,
     map_storage,
 )

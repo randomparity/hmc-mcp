@@ -343,6 +343,43 @@ def hmc_list_optical_media(
     return _run(_go)
 
     return _run(_go)
+@tool(annotations=_READ_ONLY)
+def hmc_list_storage_mappings(
+    vios_name_or_uuid: str,
+    lpar_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR.
+
+    Returns storage mappings with backing storage details (PhysicalVolume or VirtualDisk)
+    and client LPAR information. Use lpar_name_or_uuid to scope mappings to a single LPAR.
+    """
+    async def _go() -> list[dict[str, Any]]:
+        config = load_profile(profile)
+        async with HMCClient(config) as hmc:
+            from hmc_mcp.operations_storage import list_storage_mappings
+            return await list_storage_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+    return _run(_go)
+
+
+@tool(annotations=_DESTRUCTIVE)
+def hmc_detach_storage_mapping(
+    vios_name_or_uuid: str,
+    mapping_uuid: str,
+    profile: str | None = None,
+) -> str:
+    """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+
+    This removes the mapping only; the backing storage (PhysicalVolume or VirtualDisk)
+    is preserved. mapping_uuid is the UUID of the VirtualSCSIMapping to delete.
+    """
+    async def _go() -> str:
+        config = load_profile(profile)
+        async with HMCClient(config) as hmc:
+            from hmc_mcp.operations_storage import detach_storage_mapping
+            await detach_storage_mapping(hmc, vios_name_or_uuid, mapping_uuid)
+            return mapping_uuid
+    return _run(_go)
 
 
 @tool(annotations=_READ_ONLY)

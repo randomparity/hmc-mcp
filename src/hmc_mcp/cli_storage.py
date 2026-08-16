@@ -307,4 +307,69 @@ def storage_list_optical_media(
         console.print(table)
     else:
         console.print("[yellow]No optical media found[/yellow]")
+@storage_app.command("list-mappings")
+def storage_list_mappings(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    lpar: str | None = typer.Option(None, "--lpar", help="Scope to single LPAR by name or UUID"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+) -> None:
+    """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
+    async def _go() -> list[dict[str, Any]]:
+        config = load_profile()
+        async with HMCClient(config) as hmc:
+            from hmc_mcp.operations_storage import list_storage_mappings
+            return await list_storage_mappings(hmc, vios, lpar)
+    mappings = asyncio.run(_run(_go))
+    if as_json:
+        _print_json(mappings)
+    else:
+        table = Table(title=f"Storage Mappings on {vios}")
+        table.add_column("Mapping UUID", style="cyan")
+        table.add_column("Client LPAR", style="green")
+        table.add_column("Backing Storage", style="yellow")
+        table.add_column("Type", style="magenta")
+        for m in mappings:
+            mapping_uuid = m.get("ElementID", "")
+            storage = m.get("Storage", {})
+            client = m.get("AssociatedLogicalPartition", {})
+            client_name = client.get("PartitionName", "")
+            
+            backing = ""
+            stype = ""
+            if storage:
+                if "PhysicalVolume" in storage:
+                    backing = storage["PhysicalVolume"].get("VolumeName", "")
+                    stype = "PhysicalVolume"
+                elif "VirtualDisk" in storage:
+                    backing = storage["VirtualDisk"].get("DiskName", "")
+                    stype = "VirtualDisk"
+            
+            table.add_row(mapping_uuid, client_name, backing, stype)
+        console.print(table)
+
+
+@storage_app.command("detach-mapping")
+def storage_detach_mapping(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    mapping_uuid: str = typer.Argument(..., help="UUID of the VirtualSCSIMapping to delete"),
+    confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
+) -> None:
+    """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage)."""
+    if not confirm:
+        typer.confirm(
+            f"Delete storage mapping {mapping_uuid} on VIOS {vios}? "
+            "The backing storage (PhysicalVolume or VirtualDisk) will be preserved.",
+            abort=True,
+        )
+    async def _go() -> None:
+        config = load_profile()
+        async with HMCClient(config) as hmc:
+            from hmc_mcp.operations_storage import detach_storage_mapping
+            await detach_storage_mapping(hmc, vios, mapping_uuid)
+    try:
+        asyncio.run(_run(_go))
+        console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
+    except Exception as e:
+        console.print(f"[red]Failed to delete storage mapping: {e}[/red]")
+        raise typer.Exit(1)
 
