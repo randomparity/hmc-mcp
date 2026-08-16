@@ -31,8 +31,12 @@ workflow-security:
 env-vars:
     uv run --no-sync python scripts/check_env_vars.py
 
+# verify the committed config fixture has a well-formed nicknames table
+nicknames:
+    uv run --no-sync python scripts/check_nicknames.py
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars
+static: lint typecheck secrets workflow-security env-vars nicknames
 
 # run the full pytest suite
 test:
