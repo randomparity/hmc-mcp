@@ -1052,3 +1052,117 @@ def lpars_provision(
     if result.warnings:
         for w in result.warnings:
             console.print(f"[yellow]Warning: {w}[/yellow]")
+
+
+# ====================================================================== #
+# LPAR Boot Order Commands
+# ====================================================================== #
+
+
+@lpars_app.command("read-boot-order")
+def lpars_read_boot_order(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+) -> None:
+    """Read an LPAR's boot order state (pending and current).
+    
+    Returns the boot device order for the LPAR, including both the pending
+    boot string (next boot) and the current boot device list.
+    
+    Example:
+        lpars read-boot-order system1 aaaa0000-0000-0000-0000-000000000001
+    """
+    from .operations_lpar import read_lpar_boot_order
+
+    result = _with_client(
+        lambda hmc: read_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name,
+            lpar_uuid=lpar_uuid,
+        )
+    )
+    
+    _print_json(result)
+
+
+@lpars_app.command("set-boot-order")
+def lpars_set_boot_order(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+    devices: str = typer.Argument(..., help="Ordered boot device list (comma-separated: cd,disk,network)"),
+    *,
+    ownership_override: bool = typer.Option(False, "--ownership-override", help="Skip ownership token validation"),
+) -> None:
+    """Set an LPAR's boot order to a validated device selector list.
+    
+    Sets the PendingBootString to an ordered list of boot device selectors.
+    Changes take effect on the next LPAR activation (no reboot required).
+    
+    Args:
+        system_name: Managed system name.
+        lpar_uuid: UUID of the logical partition.
+        devices: Ordered list of boot device selectors (cd, disk, network),
+                 comma-separated. The first device is tried first, then the second, etc.
+        ownership_override: If True, skip ownership token validation.
+        
+    Example:
+        lpars set-boot-order system1 lpar-uuid-123 "network,cd,disk"
+    """
+    from .documents import BOOT_DEVICE_SELECTORS
+    from .operations_lpar import set_lpar_boot_order
+
+    # Parse and validate device list
+    device_list = [d.strip() for d in devices.split(",") if d.strip()]
+    
+    for device in device_list:
+        if device not in BOOT_DEVICE_SELECTORS:
+            raise typer.BadParameter(
+                f"Invalid boot device selector: {device!r}. "
+                f"Must be one of: {', '.join(BOOT_DEVICE_SELECTORS)}"
+            )
+    
+    if not device_list:
+        raise typer.BadParameter("Boot order must contain at least one device")
+    
+    result = _with_client(
+        lambda hmc: set_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name,
+            lpar_uuid=lpar_uuid,
+            devices=device_list,
+            ownership_override=ownership_override,
+        )
+    )
+    
+    console.print(f"[green]Boot order set to: {', '.join(device_list)}[/green]")
+    _print_json(result)
+
+
+@lpars_app.command("clear-boot-order")
+def lpars_clear_boot_order(
+    system_name: str = typer.Argument(..., help="Managed system name"),
+    lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
+    *,
+    ownership_override: bool = typer.Option(False, "--ownership-override", help="Skip ownership token validation"),
+) -> None:
+    """Clear an LPAR's boot order (restore HMC defaults).
+    
+    Clears the PendingBootString, restoring the default boot behavior.
+    Changes take effect on the next LPAR activation (no reboot required).
+    
+    Example:
+        lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
+    """
+    from .operations_lpar import clear_lpar_boot_order
+
+    result = _with_client(
+        lambda hmc: clear_lpar_boot_order(
+            hmc,
+            system_name_or_uuid=system_name,
+            lpar_uuid=lpar_uuid,
+            ownership_override=ownership_override,
+        )
+    )
+    
+    console.print("[green]Boot order cleared (restored defaults)[/green]")
+    _print_json(result)

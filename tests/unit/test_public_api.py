@@ -49,6 +49,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
+        "read_lpar_boot_order",
+        "set_lpar_boot_order",
+        "clear_lpar_boot_order",
+        "BootDeviceSelector",
         "migrate_lpar",
         "abort_lpar_migration",
         "recover_lpar_migration",
@@ -108,7 +112,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
         "hmc_mcp.client": {"HMCClient"},
         "hmc_mcp.client_adapters": {"AdapterType"},
         "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
-        "hmc_mcp.documents": {"LparResources", "PartitionType", "StorageKind"},
+        "hmc_mcp.documents": {"BootDeviceSelector", "LparResources", "PartitionType", "StorageKind"},
         "hmc_mcp.errors": {"HMCError", "HMCTransportError"},
         "hmc_mcp.jobs": {"DeviceType", "LuType"},
         "hmc_mcp.operations_adapters": {
@@ -132,10 +136,13 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "authorize_decommission_lpar_ownership_snapshot",
             "authorize_lpar_mutation",
             "create_and_stamp_lpar",
+            "clear_lpar_boot_order",
             "delete_lpar",
             "power_lpar",
+            "read_lpar_boot_order",
             "rename_lpar",
             "resolve_lpar_ownership_names",
+            "set_lpar_boot_order",
             "stamp_created_lpar_ownership",
         },
         "hmc_mcp.operations_lpm": {
@@ -233,8 +240,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "785e7d86690ed3c298ba4400d1b922b2"  # pragma: allowlist secret
-        "f038d0c18e6d7b24cc8c9b7063f5c8d1"  # pragma: allowlist secret
+        "1cf998cf558e7693d0c83cc2af3805cc"  # pragma: allowlist secret
+        "8262804bb258dd6dae5acb7c91328f45"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
