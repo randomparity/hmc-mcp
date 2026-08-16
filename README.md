@@ -96,6 +96,43 @@ password = "devpassword"              # or store inline for non-production  # pr
 Select a profile with `--profile <name>` or `HMC_PROFILE=<name>`.
 `password_env` keeps secrets out of the file; `password` is accepted for convenience.
 
+#### Profile nicknames (friendly names)
+
+When you run more than one HMC, remember the exact `[profiles]` key for every
+`--profile` / `HMC_PROFILE` call. A top-level `nicknames` table maps a friendly
+name to an existing profile key, so a memorable name resolves to a profile:
+
+```toml
+[nicknames]
+big-iron = "prod"
+staging  = "stg-hmc-03"
+```
+
+`big-iron` and `staging` now work anywhere a profile name does — `--profile
+big-iron`, `HMC_PROFILE=staging`, and even `default_profile = "big-iron"` —
+because resolution is a single name-selection step inside the profile loader, so
+the CLI and every MCP tool inherit it with no per-tool change.
+
+Rules:
+
+- **One level deep.** A nickname resolves to a *profile key*; it never resolves
+  to another nickname (no chains, no cycles).
+- **Case-sensitive.** `big-iron` does not match `BIG-IRON`.
+- **Profile key wins on collision.** A name that is both a profile key and a
+  nickname key selects the profile.
+- **Clear failures.** A nickname whose target is not a profile, an unknown name,
+  or a malformed `nicknames` table raises a `ConfigError` naming the available
+  profiles and nicknames.
+
+Nicknames are *surfaced, not hidden*. `config list` prints each nickname as
+`nick -> target` (flagging a dangling target), `config show <nick>` shows the
+resolved profile with a `resolved_from` field naming the nickname, and
+`hmc_list_configured_hosts` reports each nickname and its target-existence — none
+of which resolves a secret. `config init` scaffolds a commented `nicknames`
+example. A guardrail (`just nicknames`, in `just verify`) validates a committed
+fixture: every nickname target exists, no nickname collides with a profile key,
+and no target is itself a nickname.
+
 ### Environment variables (single-HMC / MCP server)
 
 | Setting           | Env var              | CLI flag          | Default   |

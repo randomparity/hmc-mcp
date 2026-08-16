@@ -20,6 +20,7 @@ from .cli_app import _fail, config_app, console
 from .config import (
     ConfigError,
     config_dir,
+    list_nicknames,
     list_profiles_with_default,
     load_profile,
     resolve_config_path,
@@ -35,6 +36,12 @@ user = "admin"
 password_env = "HMC_PASSWORD"  # preferred: secret stays out of the file  # pragma: allowlist secret
 # password = "..."             # alternative: literal password (less secure)
 # verify_ssl = false
+
+# Optional friendly nicknames map a memorable name to an existing profile key.
+# A nickname works anywhere a profile name does (--profile / HMC_PROFILE /
+# default_profile). A profile key always wins on a name collision; resolution
+# is one level deep (no chained nicknames); matching is case-sensitive.
+# nicknames = { "big-iron" = "example" }
 """
 
 
@@ -99,6 +106,17 @@ def config_list() -> None:
         marker = "  (default)" if name == default else ""
         console.print(f"{name}{marker}")
 
+    # Surface nicknames (secret-free): each maps to a profile key, flagged if
+    # its target does not exist.
+    try:
+        nicknames = list_nicknames(config_path=config_path)
+    except ConfigError as exc:
+        _fail(exc)
+
+    for nick, target in nicknames.items():
+        status = "" if target in names else "  (no such profile)"
+        console.print(f"{nick} -> {target}{status}")
+
 
 @config_app.command("show")
 def config_show(
@@ -130,12 +148,28 @@ def config_show(
     except tomllib.TOMLDecodeError as exc:
         _fail(ConfigError(f"{config_path}: TOML parse error: {exc}"))
 
-    # When effective_profile is None, load_profile() will use default_profile
-    # from the TOML. We need to resolve that same name for the raw dict lookup.
-    _resolved_profile = effective_profile or raw.get("default_profile")
-    profile_dict: dict[str, Any] = raw.get("profiles", {}).get(
-        _resolved_profile or "", {}
-    )
+    # When effective_profile is None, load_profile() uses default_profile.
+    # Resolve the same name here so the raw dict lookup and the display agree
+    # with load_profile(), and surface a nickname resolution transparently.
+    requested = effective_profile or raw.get("default_profile")
+    profiles_raw = raw.get("profiles", {})
+
+    try:
+        nicknames = list_nicknames(config_path=config_path)
+    except ConfigError as exc:
+        _fail(exc)
+
+    # One level deep, case-sensitive; a profile key always wins because this
+    # branch only runs when the requested name is not already a profile key.
+    resolved_name = requested
+    resolved_from: str | None = None
+    if requested is not None and requested not in profiles_raw and requested in nicknames:
+        target = nicknames[requested]
+        if target in profiles_raw:
+            resolved_name = target
+            resolved_from = requested
+
+    profile_dict = profiles_raw.get(resolved_name or "", {})
 
     # Gather credential presence booleans from raw dict — safe because we
     # never look at the password value, just whether the key is present.
@@ -154,7 +188,8 @@ def config_show(
 
     # Gather all output fields before emitting anything (no partial output).
     data: dict[str, Any] = {
-        "profile": _resolved_profile or "(default)",
+        "profile": resolved_name or "(default)",
+        "resolved_from": resolved_from,
         "host": cfg.host,
         "port": cfg.port,
         "user": cfg.user,

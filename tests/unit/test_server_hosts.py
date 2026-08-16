@@ -263,3 +263,95 @@ def test_port_verify_ssl_defaults_from_hmcconfig(tmp_path):
     p = result["profiles"][0]
     assert p["port"] == expected_port
     assert p["verify_ssl"] == expected_verify_ssl
+
+
+# ---------------------------------------------------------------------------
+# Nickname surfacing (issue #226)
+# ---------------------------------------------------------------------------
+
+NICKNAME_TOML = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+password_env = "HMC_PROD_PW"     # pragma: allowlist secret
+
+[profiles.stg]
+host = "stg-hmc.example.com"
+user = "admin"
+password = "stgpass"     # pragma: allowlist secret
+
+[nicknames]
+big-iron = "prod"
+staging = "stg"
+ghost = "does-not-exist"
+"""
+
+
+def test_list_configured_hosts_surfaces_nicknames(tmp_path):
+    """hmc_list_configured_hosts reports each nickname + target-existence."""
+    with _patch_config_path(tmp_path, NICKNAME_TOML):
+        result = hmc_list_configured_hosts()
+
+    by_name = {n["name"]: n for n in result["nicknames"]}
+    assert by_name["big-iron"]["target"] == "prod"
+    assert by_name["big-iron"]["target_exists"] is True
+    assert by_name["staging"]["target_exists"] is True
+    assert by_name["ghost"]["target_exists"] is False
+
+
+def test_list_configured_hosts_nicknames_secret_free(tmp_path, monkeypatch):
+    """Nicknames are surfaced without resolving or leaking any credential."""
+    monkeypatch.delenv("HMC_PROD_PW", raising=False)
+    with _patch_config_path(tmp_path, NICKNAME_TOML):
+        result = hmc_list_configured_hosts()
+
+    rendered = str(result)
+    assert "HMC_PROD_PW" not in rendered
+    assert "stgpass" not in rendered   # pragma: allowlist secret
+    assert "nicknames" in result
+
+
+# ---------------------------------------------------------------------------
+# Malformed nicknames table -> ValueError (issue #226, finding #2)
+#
+# A malformed nicknames table must surface as an error, not collapse into an
+# empty nickname inventory that would hide the broken config while
+# nickname-based connections silently fail.
+# ---------------------------------------------------------------------------
+
+NICKNAMES_NOT_TABLE_TOML = """\
+default_profile = "prod"
+nicknames = ["big-iron", "staging"]
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+"""
+
+
+def test_malformed_nicknames_not_table_raises(tmp_path):
+    """A non-table nicknames value raises, not an empty nickname inventory."""
+    with _patch_config_path(tmp_path, NICKNAMES_NOT_TABLE_TOML):
+        with pytest.raises(ValueError, match="must be a table"):
+            hmc_list_configured_hosts()
+
+
+NICKNAMES_NON_STRING_TARGET_TOML = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+
+[nicknames]
+big-iron = 42
+"""
+
+
+def test_malformed_nicknames_non_string_target_raises(tmp_path):
+    """A non-string nickname target raises, not an empty nickname inventory."""
+    with _patch_config_path(tmp_path, NICKNAMES_NON_STRING_TARGET_TOML):
+        with pytest.raises(ValueError, match="must map to a profile-key string"):
+            hmc_list_configured_hosts()

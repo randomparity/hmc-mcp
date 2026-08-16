@@ -246,6 +246,46 @@ def list_profiles(config_path: Path | None = None) -> list[str]:
         raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
     return list(doc.get("profiles", {}).keys())
 
+def _coerce_nicknames(raw: Any, path: str | Path | None) -> dict[str, str]:
+    """Validate and return the ``nicknames`` table as ``dict[str, str]``.
+
+    ``raw`` is the parsed value of the top-level ``nicknames`` key (or None
+    when absent). Raises ``ConfigError`` naming ``path`` when the table is not
+    a mapping or when any target value is not a string, so a malformed table
+    fails loudly instead of silently shadowing profile selection.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"{path}: 'nicknames' must be a table mapping a friendly name to a "
+            f"profile key, got {type(raw).__name__}"
+        )
+    for key, target in raw.items():
+        if not isinstance(target, str):
+            raise ConfigError(
+                f"{path}: nickname {key!r} must map to a profile-key string, "
+                f"got {type(target).__name__}"
+            )
+    return dict(raw)
+
+
+def list_nicknames(config_path: Path | None = None) -> dict[str, str]:
+    """Return the nicknames table as ``dict[str, str]``; empty when absent.
+
+    Never resolves secrets - safe for diagnostics and display.
+    Returns ``{}`` when the file is absent or path is None.
+    Raises ConfigError on TOML parse errors or a malformed nicknames table.
+    """
+    path = config_path if config_path is not None else resolve_config_path()
+    if path is None or not path.exists():
+        return {}
+    try:
+        doc = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    return _coerce_nicknames(doc.get("nicknames"), path)
+
 
 def load_profile(
     profile: str | None = None,
@@ -296,10 +336,37 @@ def load_profile(
         )
 
     profiles = doc.get("profiles", {})
+
+    # Validate the nicknames table structure whenever the key is
+    # present, so a malformed table is a ConfigError regardless of
+    # which profile is selected (ADR 0030). No existing config
+    # carries a nicknames key, so this cannot break current users.
+    nicknames = _coerce_nicknames(doc.get("nicknames"), path)
+
+    # Nickname resolution: one level deep, case-sensitive. A profile
+    # key always wins over a same-named nickname because the branch
+    # below only runs when the name is not already a profile key.
     if name not in profiles:
-        raise ConfigError(
-            f"profile {name!r} not found in {path}; check the [profiles] table"
-        )
+        if name in nicknames:
+            target = nicknames[name]
+            if target in profiles:
+                name = target
+            else:
+                profile_names = ", ".join(sorted(profiles)) or "(none)"
+                nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+                raise ConfigError(
+                    f"nickname {name!r} targets missing profile {target!r} "
+                    f"in {path}; available profiles: {profile_names}; "
+                    f"available nicknames: {nickname_names}"
+                  )
+        else:
+            profile_names = ", ".join(sorted(profiles)) or "(none)"
+            nickname_names = ", ".join(sorted(nicknames)) or "(none)"
+            raise ConfigError(
+                f"profile {name!r} not found in {path}; "
+                f"available profiles: {profile_names}; "
+                f"available nicknames: {nickname_names}"
+              )
 
     entry = dict(profiles[name])
 

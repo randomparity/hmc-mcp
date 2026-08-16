@@ -245,3 +245,109 @@ def test_error_message_on_failure(tmp_path, monkeypatch):
     assert result.exit_code == 1
     # Error message should mention Error and the profile or missing file
     assert "Error" in result.output or "error" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Nickname surfacing (issue #226)
+# ---------------------------------------------------------------------------
+
+NICKNAME_TOML = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+password_env = "HMC_PROD_PW"     # pragma: allowlist secret
+
+[profiles.stg]
+host = "stg-hmc.example.com"
+user = "admin"
+password = "stgpass"     # pragma: allowlist secret
+
+[nicknames]
+big-iron = "prod"
+staging = "stg"
+ghost = "does-not-exist"
+"""
+
+
+def test_list_surfaces_nicknames(tmp_path, monkeypatch):
+    """config list prints each nickname as 'nick -> target'."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 0, result.output
+    assert "big-iron -> prod" in result.output
+    assert "staging -> stg" in result.output
+
+
+def test_list_flags_dangling_nickname_target(tmp_path, monkeypatch):
+    """A nickname whose target is not a profile is flagged in config list."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 0, result.output
+    line = next(ln for ln in result.output.splitlines() if "ghost" in ln)
+    assert "(no such profile)" in line
+
+
+def test_show_resolves_nickname(tmp_path, monkeypatch):
+    """config show <nick> resolves the nickname and reports resolved_from."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["--profile", "big-iron", "config", "show", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["profile"] == "prod"
+    assert data["resolved_from"] == "big-iron"
+    assert data["host"] == "prod-hmc.example.com"
+    assert "dummy-value-for-test" not in result.output   # pragma: allowlist secret
+
+
+def test_show_profile_key_has_null_resolved_from(tmp_path, monkeypatch):
+    """A direct profile key reports resolved_from as null."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.setenv("HMC_PROD_PW", "dummy-value-for-test")   # pragma: allowlist secret
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["profile"] == "prod"
+    assert data["resolved_from"] is None
+
+
+def test_init_scaffolds_commented_nicknames(tmp_path, monkeypatch):
+    """config init writes a commented nicknames example to the starter file."""
+    target = tmp_path / "hmc-mcp" / "config.toml"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "init"])
+    assert result.exit_code == 0, result.output
+    content = target.read_text(encoding="utf-8")
+    assert "nicknames" in content
+    assert "# nicknames = " in content
+
+
+def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
+    """HMC_PROFILE nickname resolves to its target profile, not the default."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HMC_PROFILE", "staging")
+    monkeypatch.delenv("HMC_PROD_PW", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "show", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["profile"] == "stg"
+    assert data["resolved_from"] == "staging"
+    assert data["host"] == "stg-hmc.example.com"
+    assert "prod-hmc.example.com" not in result.output

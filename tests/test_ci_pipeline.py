@@ -139,10 +139,11 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "secrets",
         "workflow-security",
         "env-vars",
+        "nicknames",
         "static",
     ):
         assert f"\n{recipe}:" in justfile
-    assert "\nstatic: lint typecheck secrets workflow-security env-vars\n" in justfile
+    assert "\nstatic: lint typecheck secrets workflow-security env-vars nicknames\n" in justfile
     assert "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
     assert (
         "\nverify-artifacts:\n"
@@ -173,9 +174,16 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
     config = (ROOT / ".pre-commit-config.yaml").read_text()
 
     assert config.count("repo: local") == 1
-    for recipe in ("lint", "typecheck", "secrets", "workflow-security", "env-vars"):
+    for recipe in (
+        "lint",
+        "typecheck",
+        "secrets",
+        "workflow-security",
+        "env-vars",
+        "nicknames",
+    ):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 5
+    assert config.count("pass_filenames: false") == 6
     assert "entry: uv run" not in config
 
 

@@ -14,7 +14,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_PORT` | integer | `12443` | HMC REST API port |
 | `HMC_USER` | string | _(required)_ | HMC user name |
 | `HMC_PASSWORD` | string | _(required)_ | HMC password |
-| `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent). Selects the connection when no explicit `--host`/`HMC_HOST` is set |
+| `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
 | `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
 | `HMC_TIMEOUT` | float | `60.0` | HTTP request timeout in seconds |
@@ -33,6 +33,12 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 - **SSH key file** (`HMC_SSH_KEY_FILE`): only used by SSH-passthrough commands
   (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
   use `HMC_PASSWORD`.
+
+## Profile Nicknames
+
+`--profile`, `HMC_PROFILE`, and `default_profile` all accept a nickname as well as a profile key. When a selected name is not a profile key, it is resolved through the top-level `nicknames` table (a friendly name → an existing profile key) before the not-found error, so the CLI and every MCP tool resolve a nickname identically. Resolution is one level deep (no chains/cycles), case-sensitive, and a profile key wins on a name collision. See the README [Configure](#configure) section and ADR 0030.
+
+## Notes
 
 - **Schema version** (`HMC_SCHEMA_VERSION`): **do not set this for normal
   operation.** `hmc-mcp` omits `X-HMC-Schema-Version` from all write paths
