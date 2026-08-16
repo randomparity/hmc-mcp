@@ -27,6 +27,8 @@ from .operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    get_media_repository,
+    list_optical_media,
     list_volume_groups,
     map_storage,
     validate_logical_unit_create,
@@ -291,6 +293,54 @@ def hmc_delete_media_repository(
         async with client_from_env(profile) as hmc:
             await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
+
+
+    return _run(_go)
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_get_media_repository(
+    vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
+
+    Returns the repository with capacity (RepositorySize) and optionally
+    embedded VirtualOpticalMedia entries if present.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID containing the repository.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await get_media_repository(hmc, vios_name_or_uuid, vg_uuid)
+
+    return _run(_go)
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_list_optical_media(
+    vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
+) -> list[dict[str, Any]]:
+    """List Virtual Optical Media in the Virtual Media Repository.
+
+    Returns a list of optical media entries (ISO containers) with their
+    MediaName, MediaSize, and MediaType. The repository must exist
+    (VMLibrary on the specified Volume Group).
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        vg_uuid: Volume-group UUID containing the repository.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_optical_media(hmc, vios_name_or_uuid, vg_uuid)
+
+    return _run(_go)
 
     return _run(_go)
 

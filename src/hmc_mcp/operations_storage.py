@@ -72,6 +72,32 @@ async def delete_media_repository(hmc: HMCClient, vios: str, vg_uuid: str) -> st
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     await hmc.delete_media_repository(vios_uuid, vg_uuid)
     return vios_uuid
+async def get_media_repository(
+    hmc: HMCClient, vios: str, vg_uuid: str
+) -> dict[str, Any] | None:
+    """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
+
+    Returns the repository with capacity (RepositorySize) and optionally
+    embedded VirtualOpticalMedia entries if present.
+    """
+    return await hmc.get_media_repository(
+        await resolve_vios_uuid(hmc, vios), vg_uuid
+    )
+
+
+async def list_optical_media(
+    hmc: HMCClient, vios: str, vg_uuid: str
+) -> list[dict[str, Any]]:
+    """List Virtual Optical Media in the Virtual Media Repository.
+
+    Returns a list of optical media entries (ISO containers) with their
+    MediaName, MediaSize, and MediaType. The repository must exist
+    (VMLibrary on the specified Volume Group).
+    """
+    return await hmc.list_optical_media(
+        await resolve_vios_uuid(hmc, vios), vg_uuid
+    )
+
 
 
 async def create_logical_unit(
