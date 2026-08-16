@@ -15,6 +15,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
+from hmc_mcp.errors import HMCError
 
 # --------------------------------------------------------------------------- #
 # Brokered file creation fixtures
@@ -291,26 +292,24 @@ async def test_verify_imported_checksum_empty_response(mock_hmc):
 @pytest.mark.asyncio
 async def test_complete_brokered_upload_sequence(mock_hmc):
     """Complete brokered upload/import sequence: create, upload, import, cleanup."""
-    # Setup: brokered file create
-    create_route = mock_hmc.post(
+    # Setup: brokered file create then import (same endpoint, sequential responses)
+    post_route = mock_hmc.post(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
     ).mock(
-        return_value=httpx.Response(
-            201,
-            text=BROKERED_FILE_CREATE_RESPONSE_201,
-            headers={"Location": BROKER_URI},
-        )
+        side_effect=[
+            httpx.Response(
+                201,
+                text=BROKERED_FILE_CREATE_RESPONSE_201,
+                headers={"Location": BROKER_URI},
+            ),
+            httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE),
+        ]
     )
 
     # Setup: upload
     upload_route = mock_hmc.put(BROKER_URI).mock(
         return_value=httpx.Response(200, text=BROKERED_FILE_UPLOAD_RESPONSE_200)
     )
-
-    # Setup: import
-    import_route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE))
 
     # Setup: cleanup
     cleanup_route = mock_hmc.delete(BROKER_URI).mock(
@@ -322,7 +321,6 @@ async def test_complete_brokered_upload_sequence(mock_hmc):
         # Step 1: Create brokered file
         broker_uri = await hmc._broker_file_create(VIOS_UUID, VG_UUID, MEDIA_NAME)
         assert broker_uri == BROKER_URI
-        assert create_route.called
 
         # Step 2: Upload content
         upload_result = await hmc._broker_file_upload(broker_uri, TEST_UPLOAD_CONTENT)
@@ -334,7 +332,7 @@ async def test_complete_brokered_upload_sequence(mock_hmc):
             VIOS_UUID, VG_UUID, MEDIA_NAME, broker_uri
         )
         assert import_result == BROKERED_ISO_IMPORT_RESPONSE
-        assert import_route.called
+        assert post_route.called
 
         # Step 4: Cleanup brokered file
         await hmc._broker_file_cleanup(broker_uri)
