@@ -801,6 +801,43 @@ def build_vscsi_mapping_document(
 """
 
 
+def build_virtual_optical_mapping_document(
+    media_name: str,
+    lpar_link: str,
+    vios_lpar_link: str | None = None,
+    target_device: str | None = None,
+) -> str:
+    """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
+
+    media_name is the MediaName of the VirtualOpticalMedia (ISO container) to mount.
+    lpar_link is the Atom SELF href of the client LPAR the optical media is mapped to.
+    target_device optionally pins the vtscsi name. This creates a read-only optical mapping.
+    """
+    target = ""
+    if target_device:
+        target = (
+            f'      <TargetDevice kb="CUD" kxe="false">{target_device}</TargetDevice>\n'
+        )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VirtualIOServer xmlns="{UOM_NS}" xmlns:atom="{ATOM_NS}" schemaVersion="V1_0">
+  <Metadata><Atom/></Metadata>
+  <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
+    <Metadata><Atom/></Metadata>
+    <VirtualSCSIMapping kb="CUD" kxe="false" schemaVersion="V1_0">
+      <Metadata><Atom/></Metadata>
+      <Storage kb="CUD" kxe="false" schemaVersion="V1_0">
+        <Metadata><Atom/></Metadata>
+        <VirtualOpticalMedia kb="CUD" kxe="false" schemaVersion="V1_0">
+          <Metadata><Atom/></Metadata>
+          <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
+        </VirtualOpticalMedia>
+      </Storage>
+{target}      <AssociatedLogicalPartition xmlns="{ATOM_NS}" rel="related" href="{lpar_link}"/>
+    </VirtualSCSIMapping>
+  </VirtualSCSIMappings>
+</VirtualIOServer>
+"""
+
 # ====================================================================== #
 # Virtual Network (child of ManagedSystem)
 #
