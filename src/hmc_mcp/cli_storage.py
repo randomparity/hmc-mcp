@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 
 import typer
 from dataclasses import asdict
@@ -20,6 +21,8 @@ from .cli_app import (
     console,
     storage_app,
 )
+from .config import load_profile
+from .client import HMCClient
 from .operations_storage import (
     create_media_repository,
     create_optical_media,
@@ -319,7 +322,7 @@ def storage_list_mappings(
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations_storage import list_storage_mappings
             return await list_storage_mappings(hmc, vios, lpar)
-    mappings = asyncio.run(_run(_go))
+    mappings = _run(_go)
     if as_json:
         _print_json(mappings)
     else:
@@ -367,7 +370,7 @@ def storage_detach_mapping(
             from hmc_mcp.operations_storage import detach_storage_mapping
             await detach_storage_mapping(hmc, vios, mapping_uuid)
     try:
-        asyncio.run(_run(_go))
+        _run(_go)
         console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
     except Exception as e:
         console.print(f"[red]Failed to delete storage mapping: {e}[/red]")

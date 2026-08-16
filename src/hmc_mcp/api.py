@@ -175,6 +175,8 @@ __all__ = [
     "delete_media_repository",
     "get_media_repository",
     "list_optical_media",
+    "list_storage_mappings",
+    "detach_storage_mapping",
     "create_logical_unit",
     "delete_logical_unit",
     "StorageKind",
