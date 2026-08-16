@@ -502,3 +502,149 @@ def hmc_power_off_lpar(
             return result.job
 
     return _run(_go)
+
+
+# ====================================================================== #
+# LPAR Boot Order Tools
+# ====================================================================== #
+
+
+@tool
+def hmc_read_lpar_boot_order(
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Read an LPAR's boot order state (pending and current).
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    
+    Returns the boot device order for the LPAR, including both the pending
+    boot string (next boot) and the current boot device list.
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        
+    Returns:
+        Dictionary with boot order information containing:
+        - lpar_uuid: UUID of the LPAR
+        - lpar_name: Name of the LPAR
+        - pending_boot_string: The PendingBootString for the next boot
+        - boot_device_list: The current BootDeviceList
+        - last_booted_device_string: The device used on last boot
+    """
+    from .operations_lpar import read_lpar_boot_order
+
+    async def _go() -> dict[str, Any]:
+        async with client_from_env(profile) as hmc:
+            result = await read_lpar_boot_order(
+                hmc,
+                system_name_or_uuid=system_name_or_uuid,
+                lpar_uuid=lpar_uuid,
+            )
+            return result
+
+    return _run(_go)
+
+
+@tool
+def hmc_set_lpar_boot_order(
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+    devices: list[str],
+    *,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Set an LPAR's boot order to a validated device selector list.
+    
+    Sets the PendingBootString to an ordered list of boot device selectors.
+    Changes take effect on the next LPAR activation (no reboot required).
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        devices: Ordered list of boot device selectors (cd, disk, network).
+                 The first device is tried first, then the second, etc.
+        ownership_override: If True, skip ownership token validation.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        devices: Ordered list of boot device selectors (cd, disk, network).
+                 The first device is tried first, then the second, etc.
+        ownership_override: If True, skip ownership token validation.
+        
+    Returns:
+        Updated LPAR resource if successful, None otherwise.
+        
+    Example:
+        Set boot order to try network first, then CD, then disk:
+        
+        >>> hmc_set_lpar_boot_order(
+        ...     "system1",
+        ...     "lpar-uuid-123",
+        ...     ["network", "cd", "disk"]
+        ... )
+    """
+    from .operations_lpar import set_lpar_boot_order
+
+    async def _go() -> dict[str, Any] | None:
+        async with client_from_env() as hmc:
+            result = await set_lpar_boot_order(
+                hmc,
+                system_name_or_uuid=system_name_or_uuid,
+                lpar_uuid=lpar_uuid,
+                devices=devices,
+                ownership_override=ownership_override,
+            )
+            return result
+
+    return _run(_go)
+
+
+@tool
+def hmc_clear_lpar_boot_order(
+    system_name_or_uuid: str,
+    lpar_uuid: str,
+    *,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Clear an LPAR's boot order (restore HMC defaults).
+    
+    Clears the PendingBootString, restoring the default boot behavior.
+    Changes take effect on the next LPAR activation (no reboot required).
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        ownership_override: If True, skip ownership token validation.
+        profile: Optional configured HMC profile name; uses the default when omitted.
+    
+    Args:
+        system_name_or_uuid: CLI name or UUID of the managed system.
+        lpar_uuid: UUID of the logical partition.
+        ownership_override: If True, skip ownership token validation.
+        
+    Returns:
+        Updated LPAR resource if successful, None otherwise.
+    """
+    from .operations_lpar import clear_lpar_boot_order
+
+    async def _go() -> dict[str, Any] | None:
+        async with client_from_env() as hmc:
+            result = await clear_lpar_boot_order(
+                hmc,
+                system_name_or_uuid=system_name_or_uuid,
+                lpar_uuid=lpar_uuid,
+                ownership_override=ownership_override,
+            )
+            return result
+
+    return _run(_go)

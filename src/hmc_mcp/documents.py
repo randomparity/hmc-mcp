@@ -71,6 +71,19 @@ TASK_ROLES = frozenset(get_args(TaskRole))
 SHARING_MODES = frozenset(get_args(SharingMode))
 
 
+# Boot device selectors for LPAR boot order configuration.
+# These match IBM HMC boot device types and are used to construct
+# PendingBootString values for boot order operations.
+BOOT_DEVICE_SELECTORS: tuple[BootDeviceSelector, ...] = (
+    "cd",      # Optical/CD-ROM device
+    "disk",    # Disk device (SCSI, direct-attached, SAN)
+    "network", # Network boot (PXE, NIM, etc.)
+)
+
+# Type alias for boot device selectors used in PendingBootString construction.
+BootDeviceSelector = Literal["cd", "disk", "network"]
+
+
 @dataclass(frozen=True)
 class LparResources:
     """Memory / processor resource fields shared by LPAR create, modify, DLPAR.
@@ -1041,3 +1054,80 @@ def build_ldap_config_document(
         )
     body = "\n".join(parts)
     return _document_envelope("HmcLdapServer", body, WEB_NS)
+
+
+# ====================================================================== #
+# LPAR Boot Order (PendingBootString / BootListInformation)
+#
+# PendingBootString controls the boot device order for an LPAR's next boot.
+# It's a space-separated list of boot device selectors (cd, disk, network)
+# that determines the priority order. The HMC stores this in the
+# BootListInformation element of a LogicalPartition.
+#
+# Operations:
+# - build_boot_order_document: Set a custom boot order
+# - build_clear_boot_order_document: Clear the boot order (restore defaults)
+# ====================================================================== #
+
+
+def _build_pending_boot_string(devices: list[str]) -> str:
+    """Build a PendingBootString from validated boot device selectors.
+    
+    Args:
+        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
+        
+    Returns:
+        Space-separated string of device selectors.
+    """
+    if not devices:
+        raise ValueError("Boot order must contain at least one device")
+    
+    # Validate all selectors
+    for device in devices:
+        if device not in BOOT_DEVICE_SELECTORS:
+            raise ValueError(
+                f"Invalid boot device selector: {device!r}. "
+                f"Must be one of: {BOOT_DEVICE_SELECTORS}"
+            )
+    
+    return " ".join(devices)
+
+
+def build_boot_order_document(devices: list[str]) -> str:
+    """Build a LogicalPartition document to set LPAR boot order.
+    
+    This document sets the PendingBootString which controls the boot device
+    priority for the next LPAR boot. Changes take effect on the next activation
+    (no reboot is required - this is a profile-only change).
+    
+    Args:
+        devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
+                 The first device is tried first, then the second, etc.
+                 
+    Returns:
+        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
+        
+    Example:
+        >>> xml = build_boot_order_document(["network", "cd", "disk"])
+        >>> "PendingBootString" in xml
+        True
+    """
+    pending_boot_string = _build_pending_boot_string(devices)
+    
+    body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
+    
+    return _lpar_envelope(body)
+
+
+def build_clear_boot_order_document() -> str:
+    """Build a LogicalPartition document to clear LPAR boot order.
+    
+    This document clears the PendingBootString, restoring the HMC default
+    boot behavior. Changes take effect on the next activation.
+    
+    Returns:
+        XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
+    """
+    body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
+    
+    return _lpar_envelope(body)

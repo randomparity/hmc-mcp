@@ -3,7 +3,7 @@
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.documents import LparResources, PartitionType, StorageKind
+from hmc_mcp.documents import BootDeviceSelector, LparResources, PartitionType, StorageKind
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, LuType
 from hmc_mcp.operations_adapters import (
@@ -20,6 +20,9 @@ from hmc_mcp.operations_health import FleetHealthResult, fleet_health
 from hmc_mcp.operations_lpar import (
     LparCreation,
     LparCreationResult,
+    clear_lpar_boot_order,
+    read_lpar_boot_order,
+    set_lpar_boot_order,
     LparPowerResult,
     authorize_decommission_lpar_ownership_snapshot,
     authorize_lpar_mutation,
@@ -123,6 +126,10 @@ __all__ = [
     "LparCreation",
     "LparCreationResult",
     "LparPowerResult",
+    "read_lpar_boot_order",
+    "set_lpar_boot_order",
+    "clear_lpar_boot_order",
+    "BootDeviceSelector",
     "migrate_lpar",
     "abort_lpar_migration",
     "recover_lpar_migration",
