@@ -587,13 +587,13 @@ def hmc_delete_logical_unit(
 
 @tool
 def hmc_upload_iso(
-    vios_name_or_uuid: str,
-    vg_uuid: str,
-    media_name: str,
-    iso_path: str,
-    profile: str | None = None,
+    vios_name_or_uuid: str,  # VIOS name or UUID to target
+    vg_uuid: str,  # Volume Group UUID containing the media repository
+    media_name: str,  # Target name for the ISO in the repository
+    iso_source: str,  # Path to local ISO file or HTTP(S) URL to download
+    profile: str | None = None,  # HMC profile name (uses default if omitted)
 ) -> dict[str, Any]:
-    """Upload a local ISO file to a VIOS media repository via the HMC file broker.
+    """Upload an ISO file to a VIOS media repository via the HMC file broker.
 
     Computes SHA-256 and size before upload, refuses name collisions, and cleans
     up broker resources on every outcome. Returns staged result data including
@@ -603,7 +603,7 @@ def hmc_upload_iso(
         vios_name_or_uuid: VIOS name or UUID to target.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
-        iso_path: Path to the local ISO file to upload.
+        iso_source: Path to local ISO file or HTTP(S) URL to download.
         profile: HMC profile name (uses default if omitted).
 
     Returns:
@@ -616,7 +616,7 @@ def hmc_upload_iso(
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await upload_iso(hmc, vios_name_or_uuid, vg_uuid, media_name, iso_path)
+            return await upload_iso(hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source)
 
     return _run(_go)
 

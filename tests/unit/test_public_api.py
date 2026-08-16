@@ -248,8 +248,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "6d5abd4c34116290bc3f807c1274a2816"  # pragma: allowlist secret
-        "bb291d2f44728729ab43dbce204ee51"  # pragma: allowlist secret
+        "ad070a562a04a6b374588948528357a99"  # pragma: allowlist secret
+        "5ed4ae0cd95b93a5520bd7537bf166a"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
