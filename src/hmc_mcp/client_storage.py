@@ -17,6 +17,7 @@ from .documents import (
     build_media_repository_document,
     build_virtual_disk_delete_document,
     build_virtual_disk_document,
+    build_virtual_optical_mapping_document,
     build_virtual_optical_media_document,
     build_volume_group_document,
     build_vscsi_mapping_document,
@@ -281,3 +282,79 @@ class StorageMixin:
                 optical_media.append(media_list)
 
         return optical_media
+    # ------------------------------------------------------------------ #
+    # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
+    # ------------------------------------------------------------------ #
+    async def list_optical_mappings(
+        self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List VirtualSCSIMappings for optical media on a VIOS, optionally filtered by LPAR.
+
+        Returns only mappings that reference VirtualOpticalMedia backing, with media
+        details and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
+        xml = await self._get(path, "VirtualIOServer")
+        if not xml:
+            return []
+
+        entries = _parse_feed(xml, path)
+        if not entries:
+            return []
+
+        detail = entries[0]
+        mappings = detail.get("VirtualSCSIMappings", {}).get("VirtualSCSIMapping", [])
+        if not isinstance(mappings, list):
+            mappings = [mappings] if mappings else []
+
+        # Filter for optical mappings only (backed by VirtualOpticalMedia)
+        optical_mappings = []
+        for m in mappings:
+            if not isinstance(m, dict):
+                continue
+
+            # Check if backed by VirtualOpticalMedia
+            storage = m.get("Storage", {})
+            if "VirtualOpticalMedia" in storage:
+                optical_mappings.append(m)
+
+        # Filter by LPAR if specified
+        if lpar_uuid:
+            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+            optical_mappings = [
+                m for m in optical_mappings
+                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+            ]
+
+        return optical_mappings if isinstance(optical_mappings, list) else [optical_mappings]
+
+    async def create_optical_mapping(
+        self: StorageClient, vios_uuid: str, media_name: str, lpar_uuid: str,
+        target_device: str | None = None
+    ) -> dict[str, Any] | None:
+        """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
+
+        Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
+        to a client LPAR. The media_name must exist in the VIOS media repository.
+        Returns the created mapping resource.
+        """
+        xml = build_virtual_optical_mapping_document(
+            media_name=media_name,
+            lpar_link=self.get_lpar_link(lpar_uuid),
+            target_device=target_device,
+        )
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+        resp = await self._post(path, xml, resource_type="VirtualIOServer")
+        entries = _parse_feed(resp, path) if resp else []
+        return entries[0] if entries else None
+
+    async def delete_optical_mapping(
+        self: StorageClient, vios_uuid: str, mapping_uuid: str
+    ) -> None:
+        """Delete a VirtualSCSIMapping for optical media (unmount and detach).
+
+        This removes the optical mapping only; the backing VirtualOpticalMedia
+        (ISO container) is preserved and can be remounted later.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VirtualSCSIMapping/{mapping_uuid}"
+        await self._delete(path)

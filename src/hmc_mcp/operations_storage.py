@@ -338,3 +338,62 @@ def validate_logical_unit_wait(
 ) -> None:
     """Validate job polling controls before an adapter opens a connection."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+
+
+async def list_optical_mappings(
+    hmc: HMCClient, vios: str, lpar: str | None = None
+) -> list[dict[str, Any]]:
+    """List VirtualSCSIMappings for optical media on a VIOS, optionally scoped to an LPAR.
+
+    Returns only mappings that reference VirtualOpticalMedia backing, with media
+    details and client LPAR information. Use lpar to scope mappings to a single partition
+    by name or UUID.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    lpar_uuid = None
+    if lpar:
+        lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    return await hmc.list_optical_mappings(vios_uuid, lpar_uuid)
+
+
+async def mount_optical_media(
+    hmc: HMCClient, vios: str, media_name: str, lpar: str,
+    target_device: str | None = None
+) -> dict[str, Any] | None:
+    """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
+
+    Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
+    to a client LPAR. The media_name must exist in the VIOS media repository.
+    target_device optionally pins the vtscsi name. Returns the created mapping resource.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    return await hmc.create_optical_mapping(
+        vios_uuid, media_name, lpar_uuid, target_device
+    )
+
+
+async def unmount_optical_media(
+    hmc: HMCClient, vios: str, mapping_uuid: str
+) -> None:
+    """Delete a VirtualSCSIMapping for optical media (unmount and detach).
+
+    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
+    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
+    preserved and can be remounted later.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    await hmc.delete_optical_mapping(vios_uuid, mapping_uuid)
+
+
+async def detach_optical_mapping(
+    hmc: HMCClient, vios: str, mapping_uuid: str
+) -> None:
+    """Delete a VirtualSCSIMapping for optical media (detach mapping).
+
+    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
+    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
+    preserved and can be remounted later.
+    """
+    vios_uuid = await resolve_vios_uuid(hmc, vios)
+    await hmc.delete_optical_mapping(vios_uuid, mapping_uuid)
