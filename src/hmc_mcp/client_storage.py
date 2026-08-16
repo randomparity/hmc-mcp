@@ -303,7 +303,13 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = detail.get("VirtualSCSIMappings", {}).get("VirtualSCSIMapping", [])
+        mappings = (
+            detail.get("Resource", {})
+            .get("VirtualSCSIMappings", {})
+        )
+        if not isinstance(mappings, dict):
+            return []
+        mappings = mappings.get("VirtualSCSIMapping", [])
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
@@ -346,7 +352,7 @@ class StorageMixin:
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
         resp = await self._post(path, xml, resource_type="VirtualIOServer")
         entries = _parse_feed(resp, path) if resp else []
-        return entries[0] if entries else None
+        return entries[0].get("Resource", entries[0]) if entries else None
 
     async def delete_optical_mapping(
         self: StorageClient, vios_uuid: str, mapping_uuid: str

@@ -213,9 +213,10 @@ DESTRUCTIVE_TOOLS = frozenset(
         "hmc_restore_vios",
         "hmc_restore_lpar_profiles",
         "hmc_backup_lpar_profiles",
-        "hmc_detach_storage_mapping",
+        "hmc_sync_lpar_profile",
         "hmc_unmount_optical_media",
         "hmc_detach_optical_mapping",
+        "hmc_detach_storage_mapping",
     }
 )
 

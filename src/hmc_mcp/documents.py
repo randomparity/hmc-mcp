@@ -55,7 +55,7 @@ Keylock = Literal["normal", "manual", "auto"]
 PowerOffPolicy = Literal[0, 1]
 PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
 MemoryMirroringMode = Literal["none", "sys_firmware_only"]
-StorageKind = Literal["PhysicalVolume", "VirtualDisk", "VirtualOpticalMedia"]
+StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
 TaskRole = Literal["hmcoperator", "hmcviewer", "hmcsuperadmin"]
 SharingMode = Literal[
     "capped",

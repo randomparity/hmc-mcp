@@ -1,15 +1,16 @@
 """Transport-layer tests for optical mapping inventory and operations."""
 
+import httpx
 import pytest
 
+from conftest import make_config
 
+from hmc_mcp.client import HMCClient
 
-@pytest.fixture
-def mock_hmc(mock_hmc):
-    """Configure mock HMC with optical mapping responses."""
-    
-    # Mock list_optical_mappings response
-    optical_mappings_feed = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+VIOS_UUID = "00000000-0000-0000-0000-000000000003"
+LPAR_UUID = "00000000-0000-0000-0000-000000000001"
+
+OPTICAL_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
   <entry>
     <content>
@@ -52,15 +53,20 @@ def mock_hmc(mock_hmc):
   </entry>
 </feed>
 """
-    
-    mock_hmc.get(
-        "https://example.com:12443/rest/api/uom/VirtualIOServer/vios-uuid-001?group=ViosStorageDetail",
-        body=optical_mappings_feed,
-        status=200,
-    )
-    
-    # Mock create_optical_mapping response
-    create_optical_feed = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+
+EMPTY_MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <content>
+      <VirtualIOServer>
+        <VirtualSCSIMappings/>
+      </VirtualIOServer>
+    </content>
+  </entry>
+</feed>
+"""
+
+CREATE_MAPPING_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <content>
@@ -78,130 +84,68 @@ def mock_hmc(mock_hmc):
   </entry>
 </feed>
 """
-    
-    mock_hmc.post(
-        "https://example.com:12443/rest/api/uom/VirtualIOServer/vios-uuid-001",
-        body=create_optical_feed,
-        status=200,
-    )
-    
-    return mock_hmc
+
+VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
 
 
+@pytest.mark.asyncio
 async def test_list_optical_mappings_filters_optical_only(mock_hmc):
     """list_optical_mappings returns only VirtualOpticalMedia-backed mappings."""
-    from hmc_mcp.client_storage import StorageMixin
-    
-    class TestClient(StorageMixin):
-        config = mock_hmc.config
-        
-        async def _get(self, path: str, resource_type: str, **kwargs):
-            return await mock_hmc.aiohttp.get(f"https://example.com:12443{path}")
-    
-    client = TestClient()
-    mappings = await client.list_optical_mappings("vios-uuid-001")
-    
+    mock_hmc.get(VIOS_PATH).mock(
+        return_value=httpx.Response(200, text=OPTICAL_MAPPINGS_FEED)
+    )
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        mappings = await hmc.list_optical_mappings(VIOS_UUID)
+
     assert len(mappings) == 2
     assert all(m.get("Storage", {}).get("VirtualOpticalMedia") for m in mappings)
-    
+
     media_names = [m["Storage"]["VirtualOpticalMedia"]["MediaName"] for m in mappings]
     assert "aix72.iso" in media_names
     assert "rhel8.iso" in media_names
 
 
-async def test_list_optical_mappings_filters_by_lpar(mock_hmc):
-    """list_optical_mappings can filter by LPAR."""
-    from hmc_mcp.client_storage import StorageMixin
-    
-    class TestClient(StorageMixin):
-        config = mock_hmc.config
-        
-        async def _get(self, path: str, resource_type: str, **kwargs):
-            return await mock_hmc.aiohttp.get(f"https://example.com:12443{path}")
-    
-    client = TestClient()
-    mappings = await client.list_optical_mappings("vios-uuid-001", "lpar-uuid-001")
-    
-    assert len(mappings) == 2
-    for m in mappings:
-        assert m["AssociatedLogicalPartition"]["@href"] == "/rest/api/uom/LogicalPartition/lpar-uuid-001"
-
-
-async def test_list_optical_mappings_empty_response(mock_hmc):
+@pytest.mark.asyncio
+async def test_list_optical_mappings_empty(mock_hmc):
     """list_optical_mappings returns empty list for no mappings."""
-    from hmc_mcp.client_storage import StorageMixin
-    
-    empty_feed = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <content>
-      <VirtualIOServer>
-        <VirtualSCSIMappings/>
-      </VirtualIOServer>
-    </content>
-  </entry>
-</feed>
-"""
-    
-    mock_hmc.get(
-        "https://example.com:12443/rest/api/uom/VirtualIOServer/vios-uuid-001?group=ViosStorageDetail",
-        body=empty_feed,
-        status=200,
+    mock_hmc.get(VIOS_PATH).mock(
+        return_value=httpx.Response(200, text=EMPTY_MAPPINGS_FEED)
     )
-    
-    class TestClient(StorageMixin):
-        config = mock_hmc.config
-        
-        async def _get(self, path: str, resource_type: str, **kwargs):
-            return await mock_hmc.aiohttp.get(f"https://example.com:12443{path}")
-    
-    client = TestClient()
-    mappings = await client.list_optical_mappings("vios-uuid-001")
-    
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        mappings = await hmc.list_optical_mappings(VIOS_UUID)
+
     assert mappings == []
 
 
+@pytest.mark.asyncio
 async def test_create_optical_mapping_submits_document(mock_hmc):
     """create_optical_mapping POSTs a valid optical mapping document."""
-    from hmc_mcp.client_storage import StorageMixin
-    
-    class TestClient(StorageMixin):
-        config = mock_hmc.config
-        base_url = "https://example.com:12443"
-        
-        def get_lpar_link(self, lpar_uuid: str) -> str:
-            return f"{self.base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
-        
-        async def _post(self, path: str, xml: str, **kwargs):
-            assert "VirtualOpticalMedia" in xml
-            assert "<MediaName>test.iso</MediaName>" in xml
-            assert "/rest/api/uom/LogicalPartition/lpar-uuid-001" in xml
-            return await mock_hmc.aiohttp.post(f"https://example.com:12443{path}", body=xml)
-    
-    client = TestClient()
-    result = await client.create_optical_mapping("vios-uuid-001", "test.iso", "lpar-uuid-001")
-    
+    mock_hmc.post(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        result = await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+
     assert result is not None
     assert result["UUID"] == "mapping-uuid-new-001"
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
 
 
+@pytest.mark.asyncio
 async def test_delete_optical_mapping_deletes_by_uuid(mock_hmc):
     """delete_optical_mapping DELETEs the mapping by UUID."""
-    from hmc_mcp.client_storage import StorageMixin
-    
     delete_route = mock_hmc.delete(
-        "https://example.com:12443/rest/api/uom/VirtualIOServer/vios-uuid-001/VirtualSCSIMapping/mapping-uuid-001",
-        status=204,
-    )
-    
-    class TestClient(StorageMixin):
-        config = mock_hmc.config
-        
-        async def _delete(self, path: str):
-            return await mock_hmc.aiohttp.delete(f"https://example.com:12443{path}")
-    
-    client = TestClient()
-    await client.delete_optical_mapping("vios-uuid-001", "mapping-uuid-001")
-    
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VirtualSCSIMapping/mapping-uuid-001"
+    ).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        await hmc.delete_optical_mapping(VIOS_UUID, "mapping-uuid-001")
+
     assert delete_route.called

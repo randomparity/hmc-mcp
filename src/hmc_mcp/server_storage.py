@@ -9,6 +9,7 @@ from typing import Any
 from ._app import (
     _DESTRUCTIVE,
     _READ_ONLY,
+    _STATE_CHANGING,
     _run,
     _run_limited_collection,
 )
@@ -630,8 +631,15 @@ def hmc_list_optical_mappings(
     """List VirtualSCSIMappings for optical media on a VIOS, optionally filtered by LPAR.
 
     Returns only mappings that reference VirtualOpticalMedia backing, with media
-    details and client LPAR information. Use lpar_name_or_uuid to scope mappings to a
-    single partition by name or UUID.
+    details and client LPAR information.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        lpar_name_or_uuid: Optional LPAR name or UUID to scope mappings to a
+            single client LPAR.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+        limit: Maximum entries returned after the complete HMC feed is transferred
+            and parsed; omitted returns all entries.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -640,7 +648,7 @@ def hmc_list_optical_mappings(
     return _run(_go)
 
 
-@tool
+@tool(annotations=_STATE_CHANGING)
 def hmc_mount_optical_media(
     vios_name_or_uuid: str,
     media_name: str,
@@ -652,7 +660,13 @@ def hmc_mount_optical_media(
 
     Creates a read-only optical mapping from a VirtualOpticalMedia (ISO container)
     to a client LPAR. The media_name must exist in the VIOS media repository.
-    target_device optionally pins the vtscsi name.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        media_name: Name of the VirtualOpticalMedia (ISO) in the repository.
+        lpar_name_or_uuid: LPAR name or UUID to mount the media to.
+        target_device: Optional vtscsi target device name to pin the mapping.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -668,9 +682,13 @@ def hmc_unmount_optical_media(
 ) -> str:
     """Delete a VirtualSCSIMapping for optical media (unmount and detach).
 
-    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
-    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
-    preserved and can be remounted later.
+    Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
+    container) is preserved and can be remounted later.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -687,9 +705,13 @@ def hmc_detach_optical_mapping(
 ) -> str:
     """Delete a VirtualSCSIMapping for optical media (detach mapping).
 
-    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
-    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
-    preserved and can be remounted later.
+    Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
+    container) is preserved and can be remounted later.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
