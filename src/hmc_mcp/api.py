@@ -87,6 +87,7 @@ from .operations_storage import (
     list_storage_mappings,
     list_volume_groups,
     map_storage,
+    upload_iso,
 )
 from hmc_mcp.operations_systems import power_system
 from hmc_mcp.operations_templates import (
@@ -172,6 +173,7 @@ __all__ = [
     "create_virtual_disk",
     "delete_virtual_disk",
     "map_storage",
+    "upload_iso",
     "create_media_repository",
     "create_optical_media",
     "delete_media_repository",

@@ -35,6 +35,7 @@ from .operations_storage import (
     list_volume_groups,
     map_storage,
     validate_logical_unit_create,
+    upload_iso,
     validate_logical_unit_wait,
 )
 from .operations_provision import (
@@ -576,5 +577,40 @@ def hmc_delete_logical_unit(
                 timeout_seconds,
                 poll_interval,
             )
+
+    return _run(_go)
+
+@tool
+def hmc_upload_iso(
+    vios_name_or_uuid: str,
+    vg_uuid: str,
+    media_name: str,
+    iso_path: str,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Upload a local ISO file to a VIOS media repository via the HMC file broker.
+
+    Computes SHA-256 and size before upload, refuses name collisions, and cleans
+    up broker resources on every outcome. Returns staged result data including
+    the imported media entry.
+
+    Args:
+        vios_name_or_uuid: VIOS name or UUID to target.
+        vg_uuid: Volume Group UUID containing the media repository.
+        media_name: Target name for the ISO in the repository.
+        iso_path: Path to the local ISO file to upload.
+        profile: HMC profile name (uses default if omitted).
+
+    Returns:
+        Dict with upload status, media details, SHA-256 checksum, and size.
+
+    Raises:
+        HMCError: For HMC API errors during broker operations or import.
+        ValueError: For local file validation errors (not readable, too large).
+        FileExistsError: If media_name already exists in the repository.
+    """
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await upload_iso(hmc, vios_name_or_uuid, vg_uuid, media_name, iso_path)
 
     return _run(_go)

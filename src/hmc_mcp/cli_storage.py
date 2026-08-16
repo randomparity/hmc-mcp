@@ -34,6 +34,7 @@ from .operations_storage import (
     list_optical_media,
     list_volume_groups,
     map_storage,
+    upload_iso,
 )
 from .operations_provision import ProvisionStorage, attach_disk_to_lpar
 
@@ -401,3 +402,38 @@ def storage_detach_mapping(
         console.print(f"[red]Failed to delete storage mapping: {e}[/red]")
         raise typer.Exit(1)
 
+
+@storage_app.command("upload-iso")
+def storage_upload_iso(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    media_name: str = typer.Argument(..., help="Target name for the ISO in the repository"),
+    iso_path: str = typer.Argument(..., help="Path to the local ISO file to upload"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+) -> None:
+    """Upload a local ISO file to a VIOS media repository via the HMC file broker.
+
+    Computes SHA-256 and size before upload, refuses name collisions, and cleans
+    up broker resources on every outcome.
+    """
+    async def _go() -> dict[str, Any]:
+        config = load_profile()
+        async with HMCClient(config) as hmc:
+            return await upload_iso(hmc, vios, vg, media_name, iso_path)
+
+    result = _run(_go)
+
+    if as_json:
+        _print_json(result)
+    else:
+        status = result.get("status", "unknown")
+        console.print(f"[green]Upload status: {status}[/green]")
+        console.print(f"  Media name: {result.get('media_name', 'N/A')}")
+        console.print(f"  Size: {result.get('media_size_bytes', 0):,} bytes")
+        console.print(f"  SHA-256: {result.get('sha256', 'N/A')}")
+        if status == "existing" and result.get("existing_name"):
+            console.print(
+                f"  [yellow]Note: Same content already exists under name '{result['existing_name']}'[/yellow]"
+            )
+        if result.get("media"):
+            console.print(f"  Media entry: {result['media'].get('MediaName', 'N/A')}")
