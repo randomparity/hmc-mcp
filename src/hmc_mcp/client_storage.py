@@ -118,6 +118,51 @@ class StorageMixin:
         return entries[0] if entries else None
 
     # ------------------------------------------------------------------ #
+    # Storage Mapping Inventory and Detach
+    # ------------------------------------------------------------------ #
+    async def list_storage_mappings(
+        self: StorageClient, vios_uuid: str, lpar_uuid: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR.
+
+        Returns mappings with backing storage details (PhysicalVolume or VirtualDisk)
+        and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
+        xml = await self._get(path, "VirtualIOServer")
+        if not xml:
+            return []
+
+        entries = _parse_feed(xml, path)
+        if not entries:
+            return []
+
+        detail = entries[0]
+        mappings = detail.get("VirtualSCSIMappings", {}).get("VirtualSCSIMapping", [])
+        if not isinstance(mappings, list):
+            mappings = [mappings] if mappings else []
+
+        if lpar_uuid:
+            expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
+            mappings = [
+                m for m in mappings
+                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+            ]
+
+        return mappings if isinstance(mappings, list) else [mappings]
+
+    async def delete_storage_mapping(
+        self: StorageClient, vios_uuid: str, mapping_uuid: str
+    ) -> None:
+        """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+
+        This removes the mapping only; the backing storage (PhysicalVolume or
+        VirtualDisk) is preserved.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VirtualSCSIMapping/{mapping_uuid}"
+        await self._delete(path)
+
+    # ------------------------------------------------------------------ #
     # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
     # ------------------------------------------------------------------ #
     async def _post_volume_group_op(

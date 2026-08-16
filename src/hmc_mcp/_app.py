@@ -185,6 +185,7 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_list_vnics",
         "hmc_get_media_repository",
         "hmc_list_optical_media",
+        "hmc_list_storage_mappings",
     }
 )
 
@@ -209,8 +210,9 @@ DESTRUCTIVE_TOOLS = frozenset(
         "hmc_remote_restart_lpar",
         "hmc_restore_vios",
         "hmc_restore_lpar_profiles",
-        "hmc_sync_lpar_profile",
         "hmc_backup_lpar_profiles",
+        "hmc_sync_lpar_profile",
+        "hmc_detach_storage_mapping",
     }
 )
 

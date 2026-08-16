@@ -27,8 +27,10 @@ from .operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    detach_storage_mapping,
     get_media_repository,
     list_optical_media,
+    list_storage_mappings,
     list_volume_groups,
     map_storage,
     validate_logical_unit_create,
@@ -341,6 +343,53 @@ def hmc_list_optical_media(
             return await list_optical_media(hmc, vios_name_or_uuid, vg_uuid)
 
     return _run(_go)
+
+@tool(annotations=_READ_ONLY)
+def hmc_list_storage_mappings(
+    vios_name_or_uuid: str,
+    lpar_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR.
+
+    Returns storage mappings with backing storage details (PhysicalVolume or
+    VirtualDisk) and client LPAR information.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        lpar_name_or_uuid: Optional LPAR name or UUID to scope mappings to a
+            single client LPAR.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_storage_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+
+    return _run(_go)
+
+
+@tool(annotations=_DESTRUCTIVE)
+def hmc_detach_storage_mapping(
+    vios_name_or_uuid: str,
+    mapping_uuid: str,
+    profile: str | None = None,
+) -> str:
+    """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+
+    Removes the mapping only; the backing storage (PhysicalVolume or
+    VirtualDisk) is preserved.
+
+    Args:
+        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
+        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+
+    async def _go() -> str:
+        async with client_from_env(profile) as hmc:
+            await detach_storage_mapping(hmc, vios_name_or_uuid, mapping_uuid)
+            return mapping_uuid
 
     return _run(_go)
 
