@@ -929,6 +929,18 @@ def build_media_repository_delete_document() -> str:
   </VirtualMediaRepository>"""
     return _document_envelope("VolumeGroup", body)
 
+def build_virtual_optical_media_delete_document(media_name: str) -> str:
+    """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST)."""
+    body = f"""  <Metadata><Atom/></Metadata>
+  <VirtualMediaRepository schemaVersion="V1_0" kb="CUD">
+    <Metadata><Atom/></Metadata>
+    <VirtualOpticalMedia schemaVersion="V1_0" kb="CUD">
+      <Metadata><Atom/></Metadata>
+      <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
+    </VirtualOpticalMedia>
+  </VirtualMediaRepository>"""
+    return _document_envelope("VolumeGroup", body)
+
 
 def build_virtual_disk_delete_document(disk_name: str) -> str:
     """VolumeGroup document marking a VirtualDisk for deletion (POST)."""

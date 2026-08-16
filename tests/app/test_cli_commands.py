@@ -260,6 +260,9 @@ class FakeHMC:
     async def delete_media_repository(self, vios_uuid, vg_uuid):
         self._record("delete_media_repository", vios_uuid, vg_uuid)
 
+    async def list_optical_media(self, vios_uuid, vg_uuid):
+        return []
+
     async def raw_post(self, path, body, content_type="application/xml"):
         self._record("raw_post", path, body, content_type)
         return "<ok/>"

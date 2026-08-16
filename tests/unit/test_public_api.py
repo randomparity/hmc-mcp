@@ -94,6 +94,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "create_media_repository",
         "create_optical_media",
         "delete_media_repository",
+        "delete_optical_media",
         "get_media_repository",
         "list_optical_media",
         "list_storage_mappings",
@@ -196,6 +197,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "create_volume_group",
             "delete_logical_unit",
             "delete_media_repository",
+            "delete_optical_media",
             "delete_virtual_disk",
             "detach_storage_mapping",
             "get_media_repository",
@@ -248,8 +250,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "ad070a562a04a6b374588948528357a99"  # pragma: allowlist secret
-        "5ed4ae0cd95b93a5520bd7537bf166a"  # pragma: allowlist secret
+        "313d5baf99edc0a3075141c093954f08"  # pragma: allowlist secret
+        "4e5aa1b5e5e58469170e628a981e7370"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
