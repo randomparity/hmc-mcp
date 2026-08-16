@@ -1,0 +1,18 @@
+# Example hmc-mcp config used by the nicknames guardrail.
+# Kept secret-free: credentials come from the environment via password_env.
+# The password_env lines carry a pragma so the detect-secrets guard stays green.
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.invalid"
+user = "admin"
+password_env = "HMC_PROD_PASSWORD"    # pragma: allowlist secret
+
+[profiles.stg]
+host = "stg-hmc.example.invalid"
+user = "admin"
+password_env = "HMC_STG_PASSWORD"    # pragma: allowlist secret
+
+[nicknames]
+big-iron = "prod"
+staging = "stg"

@@ -10,6 +10,7 @@ from typing import Any
 
 from .client_contracts import StorageClient
 from .client_parse import _parse_feed
+from .errors import HMCError
 from .documents import (
     StorageKind,
     build_media_repository_delete_document,
@@ -159,3 +160,60 @@ class StorageMixin:
         return await self._post_volume_group_op(
             vios_uuid, vg_uuid, build_media_repository_delete_document()
         )
+    async def get_media_repository(
+        self: StorageClient, vios_uuid: str, vg_uuid: str
+    ) -> dict[str, Any] | None:
+        """Get the Virtual Media Repository (VMLibrary) from a Volume Group.
+
+        Returns the repository with capacity (RepositorySize) and optionally
+        embedded VirtualOpticalMedia entries if present. Returns None if the
+        Volume Group does not exist or has no media repository.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        try:
+            xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+        except HMCError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        if not xml:
+            return None
+        entries = _parse_feed(xml, path)
+        return entries[0] if entries else None
+
+    async def list_optical_media(
+        self: StorageClient, vios_uuid: str, vg_uuid: str
+    ) -> list[dict[str, Any]]:
+        """List Virtual Optical Media in the Virtual Media Repository.
+
+        Returns a list of optical media entries (ISO containers) with their
+        MediaName, MediaSize, and MediaType. Returns empty list if the
+        Volume Group does not exist or has no media repository.
+        """
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
+        try:
+            xml = await self._get(path, "VolumeGroup", include_schema_version=False)
+        except HMCError as exc:
+            if exc.status_code == 404:
+                return []
+            raise
+        if not xml:
+            return []
+
+        entries = _parse_feed(xml, path)
+        if not entries:
+            return []
+
+        # Extract VirtualOpticalMedia entries from the VolumeGroup response.
+        # VirtualOpticalMedia are nested inside VirtualMediaRepository.
+        optical_media: list[dict[str, Any]] = []
+        for entry in entries:
+            resource = entry.get("Resource", {})
+            repo = resource.get("VirtualMediaRepository", {})
+            media_list = repo.get("VirtualOpticalMedia", [])
+            if isinstance(media_list, list):
+                optical_media.extend(media_list)
+            elif isinstance(media_list, dict):
+                optical_media.append(media_list)
+
+        return optical_media

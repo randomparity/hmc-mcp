@@ -26,3 +26,8 @@ repos:
         entry: just env-vars
         language: system
         pass_filenames: false
+      - id: nicknames
+        name: Nicknames guard
+        entry: just nicknames
+        language: system
+        pass_filenames: false

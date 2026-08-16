@@ -398,3 +398,223 @@ def test_agent_id_from_env(monkeypatch):
     cfg = HMCConfig(_env_file=None)
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
+
+
+# ---------------------------------------------------------------------------
+# Nickname resolution (issue #226)
+# ---------------------------------------------------------------------------
+
+NICKNAME_TOML = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+password = "prodpass"    # pragma: allowlist secret
+
+[profiles.stg]
+host = "stg-hmc.example.com"
+user = "admin"
+password = "stgpass"    # pragma: allowlist secret
+
+[nicknames]
+big-iron = "prod"
+staging = "stg"
+"""
+
+
+def test_nickname_resolves_via_explicit_profile_arg(tmp_path, monkeypatch):
+    """A --profile-style explicit arg that is a nickname resolves to its target."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    result = load_profile(profile="big-iron", config_path=cfg)
+    assert result.host == "prod-hmc.example.com"
+
+
+def test_nickname_resolves_via_hmc_profile_env(tmp_path, monkeypatch):
+    """HMC_PROFILE carrying a nickname resolves to its target profile."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.setenv("HMC_PROFILE", "staging")
+    result = load_profile(profile=None, config_path=cfg)
+    assert result.host == "stg-hmc.example.com"
+
+
+def test_nickname_resolves_via_default_profile(tmp_path, monkeypatch):
+    """A default_profile that is a nickname resolves to its target profile."""
+    toml = NICKNAME_TOML.replace(
+        'default_profile = "prod"', 'default_profile = "big-iron"'
+    )
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    result = load_profile(profile=None, config_path=cfg)
+    assert result.host == "prod-hmc.example.com"
+
+
+def test_profile_key_wins_over_nickname_collision(tmp_path, monkeypatch):
+    """A name that is both a profile key and a nickname key uses the profile."""
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "real-prod.example.com"
+user = "admin"
+password = "p"    # pragma: allowlist secret
+
+[profiles.dev]
+host = "dev.example.com"
+user = "admin"
+password = "d"    # pragma: allowlist secret
+
+[nicknames]
+prod = "dev"
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    result = load_profile(profile="prod", config_path=cfg)
+    assert result.host == "real-prod.example.com"
+
+
+def test_nickname_missing_target_raises_config_error(tmp_path, monkeypatch):
+    """A nickname whose target is not a profile raises ConfigError naming names."""
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "h.example.com"
+user = "admin"
+password = "p"    # pragma: allowlist secret
+
+[nicknames]
+ghost = "does-not-exist"
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError) as exc:
+        load_profile(profile="ghost", config_path=cfg)
+    msg = str(exc.value)
+    assert "ghost" in msg
+    assert "does-not-exist" in msg
+    assert "prod" in msg    # available profiles named
+
+
+def test_unknown_name_config_error_names_nicknames(tmp_path, monkeypatch):
+    """An unknown name (not a profile, not a nickname) names profiles + nicknames."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError) as exc:
+        load_profile(profile="nope", config_path=cfg)
+    msg = str(exc.value)
+    assert "big-iron" in msg    # a nickname is named
+    assert "prod" in msg        # a profile is named
+
+
+def test_nickname_resolution_is_case_sensitive(tmp_path, monkeypatch):
+    """Nickname matching is case-sensitive: BIG-IRON does not match big-iron."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError):
+        load_profile(profile="BIG-IRON", config_path=cfg)
+
+
+def test_nickname_one_level_no_chaining(tmp_path, monkeypatch):
+    """A nickname whose target is another nickname is NOT resolved (one level)."""
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "h.example.com"
+user = "admin"
+password = "p"    # pragma: allowlist secret
+
+[nicknames]
+a = "b"
+b = "prod"
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    # "a" -> "b", but "b" is not a profile key, so resolution fails.
+    with pytest.raises(ConfigError, match="b"):
+        load_profile(profile="a", config_path=cfg)
+
+
+def test_malformed_nicknames_table_raises_config_error(tmp_path, monkeypatch):
+    """A nicknames table with a non-string value raises ConfigError."""
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "h.example.com"
+user = "admin"
+password = "p"    # pragma: allowlist secret
+
+[nicknames]
+big-iron = 42
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError):
+        load_profile(profile="big-iron", config_path=cfg)
+
+
+def test_malformed_nicknames_non_table_raises(tmp_path, monkeypatch):
+    """A top-level nicknames key that is not a table raises ConfigError."""
+    toml = """\
+default_profile = "prod"
+nicknames = "not-a-table"
+
+[profiles.prod]
+host = "h.example.com"
+user = "admin"
+password = "p"      # pragma: allowlist secret
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError):
+        load_profile(profile="big-iron", config_path=cfg)
+
+
+def test_malformed_nicknames_table_fails_regardless_of_profile(tmp_path, monkeypatch):
+    """A malformed nicknames table raises even when a valid profile is selected.
+
+    Per ADR 0030, load_profile validates the nicknames structure whenever the
+    key is present, not only when a nickname is resolved.
+    """
+    toml = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "prod-hmc.example.com"
+user = "admin"
+password = "prodpass"     # pragma: allowlist secret
+
+[nicknames]
+big-iron = 42
+"""
+    cfg = _write_toml(tmp_path / "config.toml", toml)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with pytest.raises(ConfigError):
+        load_profile(profile="prod", config_path=cfg)
+
+
+def test_well_formed_nicknames_do_not_block_plain_profile(tmp_path, monkeypatch):
+    """A well-formed nicknames table does not block selecting a plain profile."""
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    result = load_profile(profile="prod", config_path=cfg)
+    assert result.host == "prod-hmc.example.com"
+
+
+def test_list_nicknames_present(tmp_path):
+    """list_nicknames returns the nicknames table as dict[str, str]."""
+    from hmc_mcp.config import list_nicknames
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    assert list_nicknames(config_path=cfg) == {"big-iron": "prod", "staging": "stg"}
+
+
+def test_list_nicknames_absent(tmp_path):
+    """list_nicknames returns {} when no nicknames table or no file."""
+    from hmc_mcp.config import list_nicknames
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    assert list_nicknames(config_path=cfg) == {}
+    assert list_nicknames(config_path=tmp_path / "nonexistent.toml") == {}

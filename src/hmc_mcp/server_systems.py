@@ -20,7 +20,11 @@ from .common import (
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from .config import HMCConfig, resolve_config_path
+from .config import (
+    HMCConfig,
+    list_nicknames,
+    resolve_config_path,
+)
 from .documents import (
     MemoryMirroringMode,
     PowerOffPolicy,
@@ -171,7 +175,23 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
             }
         )
 
-    return {"profiles": profiles, "config_file": str(config_path)}
+    # Surface nicknames (secret-free): each maps to a profile key, flagging a
+    # dangling target without resolving any credential. A malformed table raises
+    # a ConfigError (a ValueError the MCP boundary surfaces as an error result);
+    # it must NOT be swallowed into an empty inventory, which would hide a broken
+    # config while nickname-based connections silently fail.
+    nicknames = list_nicknames(config_path=config_path)
+    profile_keys = set(profiles_raw)
+    nickname_entries = [
+          {"name": nick, "target": target, "target_exists": target in profile_keys}
+          for nick, target in nicknames.items()
+      ]
+
+    return {
+          "profiles": profiles,
+          "nicknames": nickname_entries,
+          "config_file": str(config_path),
+      }
 
 
 @tool(annotations=_READ_ONLY)

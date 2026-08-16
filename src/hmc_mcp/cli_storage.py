@@ -26,6 +26,8 @@ from .operations_storage import (
     create_virtual_disk,
     create_volume_group,
     delete_media_repository,
+    get_media_repository,
+    list_optical_media,
     list_volume_groups,
     map_storage,
 )
@@ -252,5 +254,57 @@ def storage_delete_media_repo(
         raise typer.Abort()
 
     _with_client(lambda hmc: delete_media_repository(hmc, vios, vg))
-
     console.print(f"[green]Deleted media repository on {vg}[/green]")
+
+
+@storage_app.command("get-media-repo")
+def storage_get_media_repo(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Get the Virtual Media Repository (VMLibrary) from a volume group."""
+    result = _with_client(lambda hmc: get_media_repository(hmc, vios, vg))
+
+    if as_json:
+        _print_json(result)
+    elif result:
+        console.print(f"[green]Media Repository on VG {vg} (VIOS {vios}):[/green]")
+        resource = result.get("Resource", {})
+        repo_name = resource.get("RepositoryName", "N/A")
+        repo_size = resource.get("RepositorySize", "N/A")
+        console.print(f"  Name: {repo_name}")
+        console.print(f"  Size: {repo_size} MiB")
+    else:
+        console.print("[yellow]No media repository found[/yellow]")
+
+
+@storage_app.command("list-optical-media")
+def storage_list_optical_media(
+    vios: str = typer.Argument(..., help="VIOS name or UUID"),
+    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """List Virtual Optical Media in the Virtual Media Repository."""
+    media_list = _with_client(lambda hmc: list_optical_media(hmc, vios, vg))
+
+    if as_json:
+        _print_json(media_list)
+    elif media_list:
+        console.print(
+            f"[green]Optical Media in repository on VG {vg} (VIOS {vios}):[/green]"
+        )
+        table = Table()
+        table.add_column("Media Name", style="cyan")
+        table.add_column("Size (MiB)", style="magenta")
+        table.add_column("Type", style="green")
+        for media in media_list:
+            table.add_row(
+                media.get("MediaName", "N/A"),
+                str(media.get("MediaSize", "N/A")),
+                media.get("MediaType", "N/A"),
+            )
+        console.print(table)
+    else:
+        console.print("[yellow]No optical media found[/yellow]")
+

@@ -80,6 +80,8 @@ from hmc_mcp.operations_storage import (
     create_volume_group,
     delete_logical_unit,
     delete_media_repository,
+    get_media_repository,
+    list_optical_media,
     list_volume_groups,
     map_storage,
 )
@@ -169,6 +171,8 @@ __all__ = [
     "create_media_repository",
     "create_optical_media",
     "delete_media_repository",
+    "get_media_repository",
+    "list_optical_media",
     "create_logical_unit",
     "delete_logical_unit",
     "StorageKind",

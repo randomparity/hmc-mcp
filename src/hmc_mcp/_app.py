@@ -183,6 +183,8 @@ READ_ONLY_TOOLS = frozenset(
         "hmc_list_io_slots",
         "hmc_list_memory_pools",
         "hmc_list_vnics",
+        "hmc_get_media_repository",
+        "hmc_list_optical_media",
     }
 )
 
