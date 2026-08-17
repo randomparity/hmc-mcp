@@ -106,7 +106,7 @@ whether it created the repository so ST22 knows to attempt teardown.
 - Free-space field names vary by HMC firmware: try `FreeSpace`, `FreeSpaceInMBytes`, and
   `free_space` in order
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -149,7 +149,7 @@ repository** before exiting. The 7000 MiB repository must be live when ST17 exit
 - VIOS allows only one VMLibrary per VG — the delete/create cycle is required to test both
   create and delete in sequence
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -205,7 +205,7 @@ the repository holds a single clean copy ready for ST19.
 - SHA-256 deduplication: second upload of identical bytes → `status="existing"`,
   returns prior `media_name` without touching the repository
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -256,7 +256,7 @@ guard blocks media deletion while mounted, then unmount and verify the mapping d
       record(state, 19, "hmc_delete_optical_media (blocked)", st, data)
   ```
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -326,7 +326,7 @@ at the end.
 - The Ubuntu live-server ISO boots to the installer; reaching `Running` state is sufficient
   proof of CD boot
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -358,7 +358,7 @@ path works.
 - `hmc_list_storage_mappings`, `hmc_list_optical_mappings` MCP tools (READ_ONLY)
 - `list_optical_mappings` filters by `BackingDeviceType == "VirtualOpticalMedia"`
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
@@ -401,7 +401,7 @@ ST20 restore step was skipped.
 - `context.vmedia_mapping_uuid` and `context.vmedia_iso_name` are cleared by earlier
   sub-tasks on success; ST22 uses the live list calls rather than relying on context values
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ---
 
