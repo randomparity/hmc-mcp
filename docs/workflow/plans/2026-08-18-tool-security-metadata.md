@@ -30,7 +30,9 @@ Binding on every task below.
 - Guardrail: `just verify` — run **bare**, no pipes, no `|| true`. It expands to `static`
   (lint, typecheck, secrets, workflow-security, env-vars, nicknames), `test`, `smoke`,
   `build`, `verify-artifacts`, plus CLI group help checks. Focused runs during a task use
-  `uv run pytest -q <path>`; `just verify` gates the branch before push.
+  `uv run pytest -q --no-cov <path>` — `pyproject.toml` sets `--cov` with `fail_under = 90`,
+  so a focused run without `--no-cov` exits 1 on coverage and hides the real result.
+  `just verify` gates the branch before push.
 - Non-interactive shells only: `GIT_EDITOR=true`, `git --no-pager`, `gh` always with
   `--title`/`--body`.
 - Conventional commits, imperative mood, ≤72-char subject, one logical change per commit.
@@ -52,6 +54,14 @@ Binding on every task below.
 - The live registry has **128** collector-registered tools across 19 domain modules, plus
   `hmc_run_command`, which registers only when the operator enables it. Post-change census
   with the escape hatch disabled: 54 `read`, 48 `mutate`, 26 `destructive`.
+- **Tasks 1–3 and Task 5 land as one commit.** Replacing the collector signature, declaring
+  every tool, and deleting the frozensets is one atomic change: any split leaves a commit
+  where `import hmc_mcp.server` fails or `tests/app/test_capabilities.py` errors at
+  collection, which is hostile to `git bisect`. Work the tasks in order and keep the TDD
+  rhythm inside them; defer `git commit` until Task 5 is done and the suite is green.
+  Tasks 4 and 6 commit separately.
+- The six prek hooks all declare `pass_filenames: false`, so `prek run --files <paths>` runs
+  them repo-wide regardless. Use `prek run` and read the whole result.
 
 ---
 
@@ -89,11 +99,15 @@ class ToolSecurity:
 
 @dataclass(frozen=True)
 class ToolDefinition:
+    name: str
     handler: Callable[..., Any]
     security: ToolSecurity
 
 def annotations_for(effect: Effect) -> ToolAnnotations: ...
-def build_targets(handler, extra_targets) -> tuple[TargetSelector, ...]: ...
+def build_targets(
+    handler: Callable[..., Any],
+    extra_targets: Iterable[tuple[TargetKind, str]],
+) -> tuple[TargetSelector, ...]: ...
 def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> None: ...
 def tool_module() -> tuple[Callable, Callable[[FastMCP], None], Callable[[], Mapping[str, ToolSecurity]]]: ...
 ```
@@ -104,7 +118,10 @@ def tool_module() -> tuple[Callable, Callable[[FastMCP], None], Callable[[], Map
 tool(*, effect, operation, target_kind, extra_targets=(), connection_argument="profile")
 ```
 
-`extra_targets` is a tuple of `(kind, argument)` 2-tuples.
+`extra_targets` is a tuple of `(kind, argument)` 2-tuples, typed
+`Iterable[tuple[TargetKind, str]]`. The narrow element type is required, not cosmetic: with
+`tuple[str, str]` the repo's `ty` check rejects the `TargetSelector(kind, ...)` construction
+inside `build_targets`.
 
 ### Steps
 
@@ -329,7 +346,7 @@ def test_validate_security_accepts_a_console_declaration_with_no_targets():
 ```
 
 2. **Run it and confirm it fails.**
-   `uv run pytest -q tests/unit/test_tool_registry.py`
+   `uv run pytest -q --no-cov tests/unit/test_tool_registry.py`
    Expect a collection error: `ImportError: cannot import name 'ToolSecurity' from
    'hmc_mcp.tool_registry'`.
 
@@ -431,6 +448,7 @@ class ToolSecurity:
 
 @dataclass(frozen=True)
 class ToolDefinition:
+    name: str
     handler: Callable[..., Any]
     security: ToolSecurity
 
@@ -442,7 +460,7 @@ def annotations_for(effect: Effect) -> ToolAnnotations:
 
 def build_targets(
     handler: Callable[..., Any],
-    extra_targets: Iterable[tuple[str, str]],
+    extra_targets: Iterable[tuple[TargetKind, str]],
 ) -> tuple[TargetSelector, ...]:
     """Build target selectors from the argument table plus explicit extras."""
     parameters = inspect.signature(handler).parameters
@@ -458,20 +476,12 @@ def build_targets(
     return tuple(selectors)
 
 
-def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> None:
-    """Reject a declaration that is malformed or contradicts its handler."""
-    name = getattr(handler, "__name__", "<handler>")
-    if security.effect not in EFFECTS:
-        raise ValueError(f"{name}: unknown effect {security.effect!r}")
-    if not _OPERATION.match(security.operation):
-        raise ValueError(
-            f"{name}: operation {security.operation!r} must be '<domain>.<verb>'"
-        )
-    kinds = {security.target_kind, *(target.kind for target in security.targets)}
-    if unknown := sorted(kinds - TARGET_KINDS):
-        raise ValueError(f"{name}: unknown target_kind {unknown}")
-
-    parameters = inspect.signature(handler).parameters
+def _validate_arguments(
+    security: ToolSecurity,
+    parameters: Mapping[str, inspect.Parameter],
+    name: str,
+) -> None:
+    """Reject a selector or connection argument the handler does not accept."""
     for target in security.targets:
         if target.argument not in parameters:
             raise ValueError(
@@ -486,10 +496,25 @@ def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> No
             f"{name}: connection argument {security.connection_argument!r} is not a "
             f"parameter; handler takes {sorted(parameters)}"
         )
-
     arguments = [target.argument for target in security.targets]
     if len(arguments) != len(set(arguments)):
         raise ValueError(f"{name}: duplicate target argument in {sorted(arguments)}")
+
+
+def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> None:
+    """Reject a declaration that is malformed or contradicts its handler."""
+    name = getattr(handler, "__name__", "<handler>")
+    if security.effect not in EFFECTS:
+        raise ValueError(f"{name}: unknown effect {security.effect!r}")
+    if not _OPERATION.match(security.operation):
+        raise ValueError(
+            f"{name}: operation {security.operation!r} must be '<domain>.<verb>'"
+        )
+    kinds = {security.target_kind, *(target.kind for target in security.targets)}
+    if unknown := sorted(kinds - TARGET_KINDS):
+        raise ValueError(f"{name}: unknown target_kind {unknown}")
+
+    _validate_arguments(security, inspect.signature(handler).parameters, name)
 
     if security.target_kind == "none":
         if security.targets or security.connection_argument is not None:
@@ -535,7 +560,7 @@ def tool_module():
         effect: Effect,
         operation: str,
         target_kind: TargetKind,
-        extra_targets: Iterable[tuple[str, str]] = (),
+        extra_targets: Iterable[tuple[TargetKind, str]] = (),
         connection_argument: str | None = "profile",
     ):
         def collect(fn: Callable[..., Any]):
@@ -547,7 +572,8 @@ def tool_module():
             )
             security = replace(security, targets=build_targets(fn, extra_targets))
             validate_security(security, fn)
-            definitions.append(ToolDefinition(fn, security))
+            name = getattr(fn, "__name__", "<handler>")
+            definitions.append(ToolDefinition(name, fn, security))
             return fn
 
         return collect
@@ -561,22 +587,19 @@ def tool_module():
 
     def tool_security() -> Mapping[str, ToolSecurity]:
         return {
-            definition.handler.__name__: definition.security
-            for definition in definitions
+            definition.name: definition.security for definition in definitions
         }
 
     return tool, register_tools, tool_security
 ```
 
 4. **Run the tests and confirm they pass.**
-   `uv run pytest -q tests/unit/test_tool_registry.py`
+   `uv run pytest -q --no-cov tests/unit/test_tool_registry.py`
    Expect all cases green. Every other suite is still red at this point — the domain
    modules have not been updated — which Task 3 fixes.
 
-5. **Lint the new module.** `prek run --files src/hmc_mcp/tool_registry.py tests/unit/test_tool_registry.py`
-   Expect all six hooks `Passed`.
-
-6. **Commit.** `git commit -m "feat(registry): add enforceable tool security metadata"`
+5. **Do not commit yet.** The repo does not import until Task 3 lands; see the Global
+   Constraints note on commit sequencing.
 
 **Acceptance criteria.** `tests/unit/test_tool_registry.py` passes. `tool()` raises on each of
 V2–V9 with a message naming the tool, and `TypeError` when a mandatory field is missing.
@@ -663,12 +686,12 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
    READ_ONLY_TOOLS` lines from the `_app` re-export block. Leave `create_mcp()` registering
    only — it must not build or mutate the index.
 
-3. **Verify the module imports.** This will still fail until Task 3 lands, because the domain
-   modules have not been updated: `uv run python -c "import hmc_mcp.server"` is expected to
-   raise `TypeError: tool() takes 0 positional arguments`. That is the signal to proceed;
-   do not attempt to fix it here.
-
-4. **Commit.** `git commit -m "feat(server): classify the escape hatch and index tool security"`
+3. **Verify the module imports.** This still fails until Task 3 lands, because the 19 domain
+   modules still unpack a two-tuple: `uv run python -c "import hmc_mcp.server"` raises
+   `ValueError: too many values to unpack (expected 2)` at the first
+   `tool, register_tools = tool_module()`, before any decorator is evaluated. That exact
+   error is the signal to proceed; anything else is a real defect. Do not commit here —
+   see the Global Constraints note on commit sequencing.
 
 **Acceptance criteria.** `HMC_RUN_COMMAND_SECURITY` is validated at import.
 `configure_arbitrary_command_tool` derives its annotation. `server.py` builds `TOOL_SECURITY`
@@ -841,7 +864,11 @@ no longer re-exports the frozensets.
    `hmc_power_on_vios` mutate `vios.power_on` `vios`; `hmc_power_off_vios` destructive
    `vios.power_off` `vios`.
 
-6. **Verify the import and the census.**
+6. **Fold in Task 5 now** — `tests/app/test_capabilities.py` imports the frozensets this
+   task deletes, so it must be fixed before the suite can run. Do Task 5's five steps, then
+   return here.
+
+7. **Verify the import and the census.**
    `uv run python scripts/smoke_mcp.py` — expect it to complete without error.
    Then:
    `uv run python -c "import collections, asyncio; from hmc_mcp.server import mcp,
@@ -849,9 +876,12 @@ no longer re-exports the frozensets.
    print(len(names), collections.Counter(TOOL_SECURITY[n].effect for n in names))"`
    Expect `128 Counter({'read': 54, 'mutate': 48, 'destructive': 26})`.
 
-7. **Lint.** `prek run --all-files`. Expect all six hooks `Passed`.
+8. **Run the whole suite.** `uv run pytest -q` — expect green, including the coverage gate.
 
-8. **Commit.** `git commit -m "feat(tools): declare security metadata on every MCP tool"`
+9. **Lint.** `prek run`. Expect all six hooks `Passed`.
+
+10. **Commit Tasks 1, 2, 3, and 5 together.**
+    `git commit -m "feat(tools): enforce security metadata on every MCP tool"`
 
 **Acceptance criteria.** `hmc_mcp.server` imports cleanly. The smoke path runs. The census is
 54/48/26 over 128 tools. `_app.py` no longer defines the annotation constants or the
@@ -1096,7 +1126,7 @@ def test_legacy_classification_sets_are_gone():
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
 ```
 
-2. **Run it and confirm it passes.** `uv run pytest -q tests/app/test_tool_security.py`
+2. **Run it and confirm it passes.** `uv run pytest -q --no-cov tests/app/test_tool_security.py`
    Expect every case green. If `test_no_classification_regresses_against_the_pre_adr_sets`
    fails, a tool's effect in Task 3 disagrees with what it shipped — fix the declaration, not
    the snapshot.
@@ -1163,10 +1193,10 @@ from hmc_mcp.server import (
    holds the exhaustive registry contract, and these tests cover annotation-adjacent schema
    stability and the destructive-tool precondition guards."
 
-5. **Run the file.** `uv run pytest -q tests/app/test_capabilities.py`
+5. **Run the file.** `uv run pytest -q --no-cov tests/app/test_capabilities.py`
    Expect all remaining cases green.
 
-6. **Commit.** `git commit -m "test: retire capability tests superseded by the registry contract"`
+6. **Return to Task 3 step 7.** This task shares Task 3's commit.
 
 **Acceptance criteria.** `tests/app/test_capabilities.py` imports no frozenset, and every
 retained test passes.
