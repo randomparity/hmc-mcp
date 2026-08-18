@@ -59,7 +59,7 @@ the `fake_hmc` fixture, and the constants `VIOS_UUID`, `VG_UUID`, `LPAR_UUID`. P
 functions only; it defines nothing that later tasks consume.
 
 `src/hmc_mcp/cli_storage.py` is the largest single gap: 110 missed statements of 199 (45%). Its
-commands come in three shapes, and each shape has a different injection point. Getting the
+commands come in four shapes, and each shape has a different injection point. Getting the
 injection point wrong produces a test that passes without executing the command body, so the
 shape table below is load-bearing.
 
@@ -68,10 +68,18 @@ shape table below is load-bearing.
 | A — `_with_client(lambda hmc: op(...))`, operation imported at module top | `list-vgs`, `delete-disk`, `create-media-repo`, `create-media`, `delete-media-repo`, `delete-media`, `get-media-repo`, `list-optical-media` | `hmc_mcp.cli_storage.<operation>` |
 | B — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported **inside** the function | `list-mappings`, `detach-mapping` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, and `hmc_mcp.operations_storage.<operation>` |
 | C — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported at module top | `upload-iso` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, `hmc_mcp.cli_storage.upload_iso` |
+| D — `_run(_go)` with `async with _client()`, operation imported at module top | `map` | `hmc_mcp.cli_storage.map_storage`, with the `fake_hmc` fixture supplying the client |
 
 Shape B imports its operation inside `_go`, so patching `hmc_mcp.cli_storage.list_storage_mappings`
 has no effect — the name does not exist on that module. It must be patched on
 `hmc_mcp.operations_storage`.
+
+Shape D goes through `_client()` rather than `_with_client`, so the `fake_hmc` fixture covers the
+client seam (both funnel through `cli_app.client_from_env`), but the command unpacks its result:
+`lpar_uuid, result = _run(_go)`. A fake returning a dict or a scalar raises `ValueError` *after*
+`_run` returns — outside its `except Exception` handler — so it surfaces through `CliRunner` as an
+unhandled unpacking error that says nothing about the CLI. The fake must return a two-element
+`(lpar_uuid, result)` tuple.
 
 1. Add a shared helper for shapes B and C directly above the storage tests:
 
@@ -166,7 +174,7 @@ has no effect — the name does not exist on that module. It must be patched on
    |---|---|---|
    | `list-vgs` | table render; `--json` | A |
    | `delete-disk` | confirmed delete; declined confirmation aborts with exit 1 and no call | A |
-   | `map` | success path renders "Mapped" and calls `map_storage` | A |
+   | `map` | success path renders "Mapped" and calls `map_storage`; the fake returns `("lpar-uuid", {...})`. An invalid `--kind` already has a test asserting exit 2, so do not duplicate it | D |
    | `create-media-repo` | confirmed create; declined confirmation aborts | A |
    | `create-media` | confirmed create; declined confirmation aborts | A |
    | `delete-media-repo` | confirmed delete; declined confirmation aborts | A |
@@ -209,9 +217,14 @@ focused suite passes; the package total is at or above 90.50% on CPython 3.11; n
 **Interfaces:** Consumes the same `RUNNER`, `FakeHMC`, and `fake_hmc` fixture as Task 1. Produces
 test functions only.
 
-**Trigger:** Run this task only when Task 1 step 6 measured a total **below 90.50%**. If Task 1
-reached the target, skip this task and record the measured total as the reason. Do not run it for
-extra margin; the target is already a chosen safety factor over the observed variance.
+**Trigger:** Run this task whenever any measurement reports below 90.50% — Task 1 step 6, Task 3
+step 6, Task 4 step 1, or any CI leg in Task 4 step 4. If Task 1 already reached the target, skip
+it on the first pass and record the measured total as the reason; a later shortfall re-opens it.
+
+**Bound:** after two remediation rounds that still leave a measurement below 90.50%, stop and
+raise the shortfall with the operator rather than looping. The enforced floor is 90 and the
+half-point margin is a landing target the operator chose, so continuing to chase it is their call
+— and `src/hmc_mcp/` stays off-limits either way.
 
 `src/hmc_mcp/cli_systems.py` has 43 missed statements of 141 (70%), all in render paths reached
 through `_client()` / `_with_client`, so the existing `fake_hmc` fixture intercepts every one —
@@ -251,14 +264,15 @@ no file under `src/hmc_mcp/` modified.
 
 **Files:** Modify `pyproject.toml` and `tests/test_ci_pipeline.py`.
 
-**Interfaces:** Consumes `ROOT` and the `tomllib` import already present at the top of
-`tests/test_ci_pipeline.py`. Produces two test functions and the final gate configuration. Nothing
+**Interfaces:** Consumes `ROOT`, `os`, `re`, `subprocess`, `sys`, `tomllib`, and `Path`, all
+already imported at the top of `tests/test_ci_pipeline.py`. Produces four module-level helpers,
+five test functions, and the final gate configuration. Nothing
 later consumes them.
 
 This task is genuine TDD: the behavioral test fails against the current configuration precisely
 because the gate is broken, and passes once it is fixed.
 
-1. Add both tests to `tests/test_ci_pipeline.py`. Complete code:
+1. Add all five tests to `tests/test_ci_pipeline.py`. Complete code:
 
    ```python
    GATE_STATEMENTS = 1000
@@ -423,21 +437,25 @@ because the gate is broken, and passes once it is fixed.
    verified against the pinned toolchain: `covered=899` reports `TOTAL 1000 101 89.90%` and exits
    `1`, `covered=900` reports `TOTAL 1000 100 90.00%` and exits `0`.
 
-2. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   **five failures** — `test_coverage_gate_declares_one_exact_floor`,
-   `test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor`, and
-   `test_coverage_gate_passes_a_total_exactly_on_the_floor` all raise `KeyError` on
-   `["tool"]["coverage"]` because no `[tool.coverage.report]` section exists yet, and
-   `test_coverage_gate_is_not_defeated_at_the_invocation_sites` is the one that may already pass
-   (it reads only the justfile and workflow). Record which of the four were red. Preserve this
-   result in the forge ledger.
+2. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k "coverage_gate or coverage_configuration_source"`. Expect
+   exactly **five collected, three red, two green**:
+   - red — `test_coverage_gate_declares_one_exact_floor`,
+     `test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor`, and
+     `test_coverage_gate_passes_a_total_exactly_on_the_floor`, all raising `KeyError` on
+     `["tool"]["coverage"]` because no `[tool.coverage.report]` section exists yet;
+   - green — `test_coverage_gate_is_not_defeated_at_the_invocation_sites` and
+     `test_pyproject_is_the_coverage_configuration_source`, which read only the justfile, the
+     workflow, and the filesystem, and are already satisfied.
+
+   Anything other than `3 failed, 2 passed` means the step did not run as designed — stop rather
+   than continue. Preserve this result in the forge ledger.
 
 3. Apply the configuration from *Global constraints* to `pyproject.toml`: delete
    `--cov-fail-under=90` from `addopts`, correct the comment's first sentence, and add the
    `[tool.coverage.report]` section with `fail_under = 90` and `precision = 2`.
 
-4. Re-run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   all five to pass.
+4. Re-run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k "coverage_gate or coverage_configuration_source"`. Expect
+   `5 passed`.
 
 5. Prove each gate test bites, recording every result. Revert each mutation and confirm the tests
    are green again before applying the next:
@@ -458,10 +476,19 @@ because the gate is broken, and passes once it is fixed.
    than an int-parsed flag. Expect a total at or above 90.50%. If it exits non-zero, coverage
    regressed below the floor: return to Task 1 or 2 rather than lowering the floor.
 
-7. Prove the gate now aborts the suite: temporarily set `fail_under = 99` in `pyproject.toml`, run
-   `just verify`, and confirm it exits non-zero **and** that no `smoke` output appears after the
-   coverage failure. Restore `fail_under = 90` and confirm `just verify` is green. Record both
-   results — this is the direct evidence for acceptance criteria 1 and 2.
+7. Prove the gate now aborts the suite. Temporarily set `fail_under = 99` in `pyproject.toml` and
+   run `just verify`. A non-zero exit is **not** sufficient evidence on its own: raising the floor
+   also makes `test_coverage_gate_declares_one_exact_floor` fail its `floor == 90` assertion, and
+   `just verify` aborts on any failing dependency, so both a non-zero exit and an absent `smoke`
+   stage are fully explained without the coverage gate ever firing. Require instead:
+   - the output contains the literal line
+     `ERROR: Coverage failure: total of <n> is less than fail-under=99.00`, which only the gate
+     emits; and
+   - no `smoke` output appears after it.
+
+   `test_coverage_gate_declares_one_exact_floor` is *expected* red for the duration of this probe
+   — that is the probe working, not a defect. Restore `fail_under = 90`, confirm `just verify` is
+   green, and record every result. This is the direct evidence for acceptance criteria 1 and 2.
 
 8. Run `just verify` and `UV_NO_SYNC=1 uv run prek run --all-files`. Expect both green.
 
@@ -486,24 +513,44 @@ pre-push check that the target is plausibly met, so CI is not the first thing to
 shortfall.
 
 1. Run the suite under CPython 3.14:
-   `uv run --python 3.14 --extra app --group dev pytest -q --cov=hmc_mcp --cov-report=term
-   --cov-fail-under=0 2>&1 | tail -3`. Record the TOTAL line. Expect a total at or above 90.50%,
-   within roughly 0.05 points of the 3.11 figure.
+   `uv run --frozen --python 3.14 --extra app --group dev pytest -q --cov-fail-under=0 2>&1 |
+   tail -3`. Record the TOTAL line. Expect a total at or above 90.50%, within roughly 0.05 points
+   of the 3.11 figure.
+
+   `--frozen` is required: without it `uv run` may re-resolve and rewrite `uv.lock` for the
+   requested interpreter, and that churn would ride into the branch under a task that declares it
+   modifies nothing. `just setup` uses `uv sync --locked`, and `just verify` would not catch a
+   lock rewritten to match the current `pyproject.toml`.
+
+   The command deliberately omits `--cov=hmc_mcp --cov-report=term`: `addopts` already supplies
+   both, and pytest appends command-line arguments to it, so passing them again would duplicate
+   the source and the report and measure a differently-configured run than `just test` does. Only
+   `--cov-fail-under=0` is added, to read the total without the gate stopping the run.
+
+   **If CPython 3.14 cannot be obtained on this host** (no interpreter installed and no network
+   for uv's downloads), record that fact and treat the branch CI run in step 4 as the sole margin
+   measurement. Do not block on it — it is a pre-push check, not the binding one.
 
 2. **Restore the project environment before doing anything else:** `uv run --python 3.14` replaces
    `.venv` with a 3.14 environment, which makes every subsequent `--no-sync` recipe run against
    the wrong interpreter. Run `just setup`, then confirm `.venv/bin/python -V` reports 3.11 and
    `just verify` is green. Skipping this step silently invalidates every later guardrail run.
 
-3. If the 3.14 total is below 90.50%, return to Task 1 or 2 and raise coverage further. Do not
-   lower the floor.
+   Then run `git status --short --untracked-files=all` and confirm it reports only the intended
+   test and configuration changes — in particular that `uv.lock` is unmodified. This also catches
+   any residue left by Task 3 step 5's six-mutation battery.
+
+3. If the 3.14 total is below 90.50%, return to Task 1 or 2 and raise coverage further, subject to
+   Task 2's two-round bound. Do not lower the floor.
 
 4. After the pull request opens, read the coverage total from each of the eight CI legs. Every leg
    must be at or above 90.50%. A leg below 90.00% is a red gate and blocks; a leg between 90.00%
    and 90.50% passes CI but has eaten the margin, so raise coverage rather than accept it.
 
-**Acceptance criteria:** the CPython 3.14 total is recorded and at or above 90.50%; `.venv` is
-restored to 3.11; `just verify` green; every CI leg reports at or above 90.50%.
+**Acceptance criteria:** the CPython 3.14 total is recorded and at or above 90.50%, or its
+unavailability on this host is recorded instead; `.venv` is restored to 3.11; `git status` shows
+no unintended change, `uv.lock` included; `just verify` green; every CI leg reports at or above
+90.50%.
 
 ## Self-review against the spec
 
