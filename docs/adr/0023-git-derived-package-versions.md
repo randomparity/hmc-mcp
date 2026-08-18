@@ -4,6 +4,8 @@
 
 Accepted
 
+> **Superseded by [0033](0033-static-package-version.md)** (2026-08-18)
+
 ## Context
 
 `hmc-mcp` declares `0.1.0` independently in package metadata and runtime code. That

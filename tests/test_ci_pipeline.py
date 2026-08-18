@@ -280,7 +280,9 @@ def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
 
     assert len(checkout_settings) == 4
     assert active_workflow.count("uv run") >= 2
-    assert sum("fetch-depth: 0\n" in settings for settings in checkout_settings) == 3
+    # Full history is no longer fetched: the version is declared statically and no
+    # workflow step reads Git history (ADR 0033).
+    assert not any("fetch-depth" in settings for settings in checkout_settings)
     for settings in checkout_settings:
         assert "persist-credentials: false\n" in settings
 
@@ -291,19 +293,19 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     project = tmp_path / "project"
     project.mkdir()
     _copy_tracked_project(project)
+    # No commit: the build reads no Git state (ADR 0033). The repository and the
+    # staged index are still needed, because `prek run --all-files` resolves its file
+    # list through `git ls-files`. The repository-local hooks path keeps prek off an
+    # inherited global core.hooksPath.
     subprocess.run(
         ["git", "init", "-q", "--initial-branch=main"], cwd=project, check=True
     )
     subprocess.run(
-        ["git", "config", "user.email", "tests@example.invalid"],
+        ["git", "config", "--local", "core.hooksPath", str(project / ".git" / "hooks")],
         cwd=project,
         check=True,
     )
-    subprocess.run(
-        ["git", "config", "user.name", "Command Tests"], cwd=project, check=True
-    )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
-    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
     subprocess.run(
         ["uv", "sync", "--locked", "--extra", "app"],
