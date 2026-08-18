@@ -14,6 +14,7 @@ import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any, Literal, get_args
 
 from fastmcp import FastMCP
@@ -53,6 +54,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
     "target_system_name_or_uuid": "managed_system",
     "vios_name_or_uuid": "vios",
     "vios_uuid": "vios",
+    "vios_partition_id": "vios",
     "cluster_uuid": "cluster",
     "ssp_uuid": "shared_storage_pool",
     "console_uuid": "console",
@@ -99,8 +101,13 @@ class ToolDefinition:
 
 
 def annotations_for(effect: Effect) -> ToolAnnotations:
-    """Return the MCP annotations for an effect class."""
-    return _ANNOTATIONS[effect]
+    """Return the MCP annotations for an effect class.
+
+    A fresh copy each call: ``ToolAnnotations`` is a mutable pydantic model, and
+    handing out the shared instance would let one in-place edit re-flag every
+    tool of that class.
+    """
+    return _ANNOTATIONS[effect].model_copy()
 
 
 def build_targets(
@@ -193,7 +200,7 @@ def build_tool_security(
                 )
             index[name] = security
             operations[security.operation] = name
-    return index
+    return MappingProxyType(index)
 
 
 def tool_module():
@@ -209,6 +216,7 @@ def tool_module():
         connection_argument: str | None = "profile",
     ):
         def collect(fn: Callable[..., Any]):
+            name = getattr(fn, "__name__", "<handler>")
             security = ToolSecurity(
                 effect=effect,
                 operation=operation,
@@ -217,7 +225,6 @@ def tool_module():
             )
             security = replace(security, targets=build_targets(fn, extra_targets))
             validate_security(security, fn)
-            name = getattr(fn, "__name__", "<handler>")
             definitions.append(ToolDefinition(name, fn, security))
             return fn
 
@@ -231,6 +238,8 @@ def tool_module():
             )
 
     def tool_security() -> Mapping[str, ToolSecurity]:
-        return {definition.name: definition.security for definition in definitions}
+        return MappingProxyType(
+            {definition.name: definition.security for definition in definitions}
+        )
 
     return tool, register_tools, tool_security

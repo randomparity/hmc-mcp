@@ -189,7 +189,12 @@ def test_multi_kind_tools_declare_every_target():
 
 
 def test_target_declarations_are_internally_consistent():
-    """G6: V7 and V8 hold across the whole live registry."""
+    """G6: V7 and V8 hold for every record in the index.
+
+    tool() validates what it collects, so this restates those rules for records
+    that reach TOOL_SECURITY another way — today the hand-built escape-hatch
+    constant, tomorrow anything registered outside the collector.
+    """
     for name in _tools_by_name(True):
         security = TOOL_SECURITY[name]
         if security.target_kind == "none":
@@ -200,6 +205,57 @@ def test_target_declarations_are_internally_consistent():
             assert any(t.kind == security.target_kind for t in security.targets), name
         arguments = [t.argument for t in security.targets]
         assert len(arguments) == len(set(arguments)), name
+
+
+# Written independently of tool_registry.REQUIRED_TARGET_ARGUMENTS. Deriving the
+# expectation from that table would make the coverage test tautological: deleting
+# a row would silently strip every selector it produced and still pass.
+EXPECTED_TARGET_ARGUMENTS = {
+    "lpar_name_or_uuid": "lpar",
+    "lpar_uuid": "lpar",
+    "system_name_or_uuid": "managed_system",
+    "target_system_name_or_uuid": "managed_system",
+    "vios_name_or_uuid": "vios",
+    "vios_uuid": "vios",
+    "vios_partition_id": "vios",
+    "cluster_uuid": "cluster",
+    "ssp_uuid": "shared_storage_pool",
+    "console_uuid": "console",
+    "job_uuid": "job",
+    "template_uuid": "template",
+    "draft_template_uuid": "template",
+    "policy_name": "password_policy",
+    "resource_name_or_uuid": "metric_resource",
+}
+
+
+def test_the_argument_table_matches_its_independent_expectation():
+    """G6: a deleted table row silently strips selectors; pin the table itself."""
+    assert dict(REQUIRED_TARGET_ARGUMENTS) == EXPECTED_TARGET_ARGUMENTS
+
+
+@pytest.mark.parametrize(
+    "tool_name, expected",
+    [
+        ("hmc_get_available_hmc_ptfs", {("console", "console_uuid")}),
+        ("hmc_update_console_software", {("console", "console_uuid")}),
+        ("hmc_get_job", {("job", "job_uuid")}),
+        ("hmc_get_partition_template", {("template", "template_uuid")}),
+        ("hmc_get_shared_storage_pool", {("shared_storage_pool", "ssp_uuid")}),
+        ("hmc_delete_password_policy", {("password_policy", "policy_name")}),
+        ("hmc_processed_metrics", {("metric_resource", "resource_name_or_uuid")}),
+        ("hmc_create_logical_unit", {("cluster", "cluster_uuid")}),
+        (
+            "hmc_add_vscsi_adapter",
+            {("lpar", "lpar_name_or_uuid"), ("vios", "vios_partition_id")},
+        ),
+        ("hmc_delete_user", {("user", "name")}),
+    ],
+)
+def test_selectors_are_built_for_every_table_kind(tool_name, expected):
+    """G6: one live tool per table kind, pinned literally."""
+    built = {(t.kind, t.argument) for t in TOOL_SECURITY[tool_name].targets}
+    assert expected <= built
 
 
 def test_every_table_argument_becomes_a_target():
@@ -218,11 +274,30 @@ def test_operation_identities_are_unique():
     assert len(operations) == len(set(operations))
 
 
-def test_delete_and_remove_tools_are_destructive():
-    """G7: defence in depth against the likeliest misclassification."""
-    for name, security in TOOL_SECURITY.items():
-        if name.startswith(("hmc_delete_", "hmc_remove_")):
-            assert security.effect == "destructive", name
+DESTRUCTIVE_NAME_PREFIXES = (
+    "hmc_delete_",
+    "hmc_remove_",
+    "hmc_power_off_",
+    "hmc_restore_",
+    "hmc_detach_",
+    "hmc_unmount_",
+    "hmc_sync_",
+    "hmc_decommission_",
+)
+
+
+def test_destructively_named_tools_are_destructive():
+    """G7: defence in depth against the likeliest misclassification.
+
+    A heuristic, not a charter criterion: a tool deliberately named against the
+    convention is a discussion, not a gate failure. It cannot catch a new tool
+    named outside these prefixes, which is why the declared effect stays a
+    reviewed human judgement.
+    """
+    matched = [n for n in TOOL_SECURITY if n.startswith(DESTRUCTIVE_NAME_PREFIXES)]
+    assert len(matched) == 23
+    for name in matched:
+        assert TOOL_SECURITY[name].effect == "destructive", name
 
 
 def test_arbitrary_command_is_absent_by_default_and_maximally_classified():
@@ -257,6 +332,12 @@ def test_no_classification_regresses_against_the_pre_adr_sets():
     for name in LEGACY_DESTRUCTIVE:
         assert TOOL_SECURITY[name].effect == "destructive", name
     assert TOOL_SECURITY["hmc_read_lpar_boot_order"].effect == "read"
+
+
+def test_the_classification_index_is_read_only():
+    """A record any policy layer reads must not be replaceable at runtime."""
+    with pytest.raises(TypeError):
+        TOOL_SECURITY["hmc_delete_lpar"] = TOOL_SECURITY["hmc_get_lpar"]
 
 
 def test_legacy_classification_sets_are_gone():

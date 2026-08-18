@@ -67,9 +67,13 @@ class ToolSecurity:
 in #220–#225 reads it, all of which key on the tool name instead, so it is the one field here
 whose consumer does not yet exist.
 
-`target_kind` names the resource whose state the operation changes — for a creation tool,
-the container that gains the resource, since no argument names a resource that does not exist
-yet. `targets` names every public argument from which an identity is read. The entries whose
+`target_kind` names the resource whose state the operation changes. For a creation tool that
+is the container gaining the resource — `hmc_create_lpar` declares `managed_system` — because
+constraining "may create partitions on system X" is what a policy can actually check. The
+exception is a console-level principal with no intermediate container: `hmc_create_user` and
+the password-policy tools name the created object instead, because their container is the
+console and `console` is too coarse to constrain. The rule is the container where one exists,
+the created object where the console is the only alternative. `targets` names every public argument from which an identity is read. The entries whose
 `kind` equals `target_kind` are the operation's **subjects**; the rest are **scope** — an
 argument that narrows or disambiguates without being what is acted on, such as
 `hmc_power_off_lpar`'s optional `system_name_or_uuid`, which exists only to disambiguate
@@ -195,15 +199,20 @@ asserting coverage.
   addressed through their owning VIOS or LPAR rather than earning their own kinds, because a
   policy constrains "may create a virtual disk on VIOS X", and a finer vocabulary would add
   declaration surface that nothing in #220–#225 evaluates.
-- `hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` act on a local `file_path` that
-  no `TargetKind` expresses; their built targets present the `managed_system` as the subject
-  and say nothing about the file. #223 and #224 must not read a selector set as a complete
-  account of what a tool touches.
+- `hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` act on an HMC-side `file_path`
+  that no `TargetKind` expresses, and `force=True` overwrites it; their built targets present
+  the `managed_system` as the subject and say nothing about the file. Reclassifying them to
+  `console` was considered and rejected — it would trade the enforceable managed-system
+  constraint for a nominal one and still not name the path. #223 and #224 must not read a
+  selector set as a complete account of what a tool touches.
 - `metric_resource` is the one kind that is not a single HMC resource type: the metric tools'
   `resource_name_or_uuid` names a managed system or an LPAR depending on the `category`
   argument. #223 cannot bind an exact per-kind constraint to it without resolving `category`
   first; that is left to #223 with the ambiguity stated here rather than papered over by
-  guessing a kind at declaration time.
+  guessing a kind at declaration time. It matters most for `hmc_set_pcm_preferences`, the one
+  *mutating* tool of the kind: a #223 grant on `metric_resource` spans both real kinds at
+  once, so that grant is coarser than it looks and #223 must either resolve `category` or
+  refuse to treat `metric_resource` as a constrainable kind.
 - This record defines and validates the metadata. It does not read it at call time: nothing
   here filters registration, authorizes a call, or emits an audit event. Those are #221,
   #222, #223, and #224. The residual is that if the epic stalls after this entry, the repo
