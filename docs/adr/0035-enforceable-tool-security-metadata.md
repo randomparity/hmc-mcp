@@ -59,7 +59,7 @@ class ToolSecurity:
     effect: Effect
     operation: str                              # "<domain>.<verb>" identity
     target_kind: TargetKind                      # primary resource kind acted on
-    targets: tuple[TargetSelector, ...] = ()
+    targets: tuple[TargetSelector, ...]          # built by tool(), not declared
     connection_argument: str | None = "profile"  # public HMC-connection selector
 ```
 
@@ -75,14 +75,26 @@ argument that narrows or disambiguates without being what is acted on, such as
 `hmc_power_off_lpar`'s optional `system_name_or_uuid`, which exists only to disambiguate
 duplicate partition names.
 
-`required` is not declared. It is derived from the handler signature: a parameter with no
-default is required, one with a default is not. That distinction is load-bearing and must not
-be hand-written, because four destructive tools (`hmc_power_off_lpar`, `hmc_power_off_vios`,
-`hmc_delete_vios`, `hmc_restore_vios`) take `system_name_or_uuid=None`, and `hmc_list_lpars`
-takes `system_name_or_uuid=None` to mean console-wide. A declaration that could not say the
-argument may be absent would make #223 deny the documented normal call. The normative rule
-#223 inherits: an absent optional selector is not matched against a target constraint and
-does not on its own deny; a required selector is always present and always matched.
+`targets` and `required` are **built, not declared**. `REQUIRED_TARGET_ARGUMENTS` is a fixed
+argument-name-to-kind table; `tool()` intersects it with the handler's signature and emits one
+`TargetSelector` per match, with `required` set from whether that parameter has a default. An
+author who cannot forget a declaration cannot omit a target: `hmc_migrate_lpar` gets its
+`lpar` and its destination `managed_system` because it takes both names, and
+`hmc_attach_disk_to_lpar` gets the `vios_uuid` it writes to. A hand-written `targets` plus a
+rule checking it against the same table would be the machine verifying a copy of its own
+output.
+
+`extra_targets` covers the identities the table cannot name — an argument whose kind depends
+on its tool, which is why `name` is not in the table: it means a user on `hmc_create_user`
+and a new partition on `hmc_create_lpar`. Rule 5 forces the author to supply it wherever the
+subject is not table-derivable.
+
+Deriving `required` is what keeps #223 workable. Four destructive tools
+(`hmc_power_off_lpar`, `hmc_power_off_vios`, `hmc_delete_vios`, `hmc_restore_vios`) take
+`system_name_or_uuid=None` purely to disambiguate duplicate partition names, and
+`hmc_list_lpars` takes `system_name_or_uuid=None` to mean console-wide. The normative rule
+#223 inherits: an absent optional selector is not matched against a target constraint and does
+not on its own deny; a required selector is always present and always matched.
 
 Validation lives in one function, `validate_security(security, handler)`. `tool()` calls it
 at decoration time, and the escape hatch calls it at import on its own constant, so no
@@ -97,16 +109,17 @@ failure in one arm of the suite:
 5. Any other `target_kind` except `"console"` requires at least one `targets` entry whose
    `kind` equals `target_kind`.
 6. `targets` names no argument twice.
-7. Every handler parameter named in `REQUIRED_TARGET_ARGUMENTS`, a fixed argument-to-kind
-   table, appears in `targets` under its mapped kind. Rule 5 forces only the subject, so
-   without this `hmc_migrate_lpar` could declare its LPAR and silently drop
-   `target_system_name_or_uuid` — the omission this record's own motivating example depends
-   on catching. The table is closed and explicit rather than a `*_uuid` naming convention,
-   because sub-resource arguments (`vg_uuid`, `adapter_uuid`, `mapping_uuid`, `network_uuid`,
-   `lu_udid`) are deliberately not targets and a convention would need a waiver on each, and
-   because `name` means a user on `hmc_create_user` and a new LPAR on `hmc_create_lpar`. It
-   holds every argument name that unambiguously identifies a resource of one kind, so a new
-   entry is a deliberate edit.
+7. No `extra_targets` entry names an argument the table already covers, and none duplicates
+   another.
+
+`REQUIRED_TARGET_ARGUMENTS` is closed and explicit rather than a `*_uuid` naming convention,
+because sub-resource arguments (`vg_uuid`, `adapter_uuid`, `mapping_uuid`, `network_uuid`,
+`lu_udid`) are deliberately not targets per the coarse-`target_kind` consequence below, and a
+convention would need a waiver on each. It holds every argument name that unambiguously
+identifies a resource of one kind, so adding a row is a deliberate edit — and an argument
+name outside it contributes no target, which is the residual: a future tool inventing a new
+identity-bearing parameter name gets no target until the table gains a row. Rule 5 catches
+that whenever the new name is the tool's subject; a new *scope* argument would not be caught.
 
 Registry-wide uniqueness cannot be seen from one module. `build_tool_security()` is a pure
 function over the per-module mappings plus the escape hatch's entry; it raises on a duplicate
@@ -140,8 +153,9 @@ asserting coverage.
 
 ## Consequences
 
-- Every tool declaration grows four to five keyword arguments. That is 128 collector-declared
-  tools across 19 domain modules, plus the escape hatch, and every future tool pays the same
+- Every tool declaration grows three required keyword arguments, plus `extra_targets` on the
+  few whose subject the table cannot name. That is 128 collector-declared tools across 19
+  domain modules, plus the escape hatch, and every future tool pays the same
   cost — which is the point: the collector has no bare `@tool` form left to forget the
   declaration in. The collector is not the only way in, though: `mcp.tool(...)` can be called
   directly, as `server_command.py` does, and `register_tools` can be pointed at any
@@ -209,6 +223,13 @@ asserting coverage.
 - **A single `target_kind` plus a flat `target_selectors: tuple[str, ...]`.** Fewer types,
   but it cannot express a tool that names two kinds, and `hmc_migrate_lpar` names an LPAR and
   a destination system. #223 must constrain both independently.
+- **Hand-declare `targets` on every tool, and validate each declaration against
+  `REQUIRED_TARGET_ARGUMENTS`.** More explicit at each call site: a reader of
+  `server_lpars.py` sees the targets without knowing the table. Rejected because the check
+  and the declaration draw on the same table, so the rule verifies a hand-copy of its own
+  output across roughly 250 literal lines — and it still cannot catch an argument name the
+  table does not know, so it buys no coverage over deriving. The inspectable result is
+  `TOOL_SECURITY`, and the contract test asserts the built targets for the multi-kind tools.
 - **Drop `target_kind`; keep `targets` alone.** Rule 5 makes the primary kind nearly
   derivable from the declared set, and #218 requirement 3 speaks only of "the target kinds
   declared by tool metadata". Kept anyway because requirement 1 names target kind as a field

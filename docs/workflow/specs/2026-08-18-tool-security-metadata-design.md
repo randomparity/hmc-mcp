@@ -69,7 +69,7 @@ class ToolSecurity:
     effect: Effect
     operation: str
     target_kind: TargetKind
-    targets: tuple[TargetSelector, ...] = ()
+    targets: tuple[TargetSelector, ...]     # built by tool(), never hand-written
     connection_argument: str | None = "profile"
 
 @dataclass(frozen=True)
@@ -89,32 +89,44 @@ Field meanings, normative:
   creation tool this is the **container** that gains the resource, because no argument names
   a resource that does not exist yet: `hmc_create_lpar` declares `managed_system`.
   `"console"` means the console as a whole; `"none"` means no HMC resource is involved.
-- **`targets`** — one entry per public handler argument that carries a resource identity.
-  Entries whose `kind` equals `target_kind` are the operation's **subjects**; the rest are
-  **scope** — arguments that narrow or disambiguate without being what is acted on.
-- **`required`** — derived from the handler signature by `tool()`, never written by hand: a
-  parameter with no default is required, one with a default is not. The normative rule #223
-  inherits is that an absent optional selector is not matched against a target constraint and
-  does not on its own deny; a required selector is always present and always matched.
+- **`targets`** — one entry per public handler argument that carries a resource identity,
+  **built by `tool()`**, not declared. Entries whose `kind` equals `target_kind` are the
+  operation's **subjects**; the rest are **scope** — arguments that narrow or disambiguate
+  without being what is acted on.
+- **`required`** — built with the selector from the handler signature: a parameter with no
+  default is required, one with a default is not. The normative rule #223 inherits is that an
+  absent optional selector is not matched against a target constraint and does not on its own
+  deny; a required selector is always present and always matched.
 - **`connection_argument`** — the public argument selecting the HMC connection profile, or
   `None` when the tool opens no HMC connection.
 
-`required` is derived rather than declared because it is the field a hand-written
-declaration would get wrong in the dangerous direction. `hmc_power_off_lpar`,
-`hmc_power_off_vios`, `hmc_delete_vios`, and `hmc_restore_vios` all take
-`system_name_or_uuid: str | None = None` purely to disambiguate duplicate partition names,
-and `hmc_list_lpars(system_name_or_uuid=None)` means console-wide. Treating those as
-mandatory targets would make #223 deny the documented normal call on four destructive tools.
+`targets` is built rather than declared because the build is exact and a declaration would be
+a hand-copy of it. `tool()` intersects `REQUIRED_TARGET_ARGUMENTS` (§3.2) with the handler's
+signature and emits one selector per match, in signature order, unioned with any
+`extra_targets` the author passed. An author cannot forget `hmc_migrate_lpar`'s destination
+system or `hmc_attach_disk_to_lpar`'s `vios_uuid`, because not writing them is not an option.
+
+`required` is built for the same reason, and it is the field a hand-written declaration would
+get wrong in the dangerous direction. `hmc_power_off_lpar`, `hmc_power_off_vios`,
+`hmc_delete_vios`, and `hmc_restore_vios` all take `system_name_or_uuid: str | None = None`
+purely to disambiguate duplicate partition names, and `hmc_list_lpars(system_name_or_uuid=
+None)` means console-wide. Treating those as mandatory targets would make #223 deny the
+documented normal call on four destructive tools.
 
 ### 3.2 Declaration and validation
 
 `tool()` loses its bare form and its `annotations=` parameter. Its new signature is
-keyword-only with three required fields, and `targets` is declared as `(kind, argument)`
-pairs whose `required` flag `tool()` fills in from the signature:
+keyword-only with three required fields:
 
 ```python
-def tool(*, effect, operation, target_kind, targets=(), connection_argument="profile"):
+def tool(*, effect, operation, target_kind, extra_targets=(), connection_argument="profile"):
 ```
+
+`extra_targets` is a tuple of `(kind, argument)` pairs for identities
+`REQUIRED_TARGET_ARGUMENTS` cannot name — an argument whose kind depends on its tool. In
+practice that is only the four user tools' `name`, which means a user on `hmc_create_user`
+and a new partition on `hmc_create_lpar`. `tool()` builds the final `targets` tuple as the
+table intersection plus `extra_targets`, filling `required` from each parameter's default.
 
 All validation lives in one function, `validate_security(security, handler) -> None`.
 `tool()` calls it at decoration time; `server_command.py` calls it at import on its own
@@ -126,12 +138,11 @@ constant, so the escape hatch's declaration is checked by the same rules as ever
 | V2 | `effect` is in the `Effect` vocabulary | `ValueError` naming the tool and the bad value |
 | V3 | `target_kind` and every `TargetSelector.kind` are in the `TargetKind` vocabulary | `ValueError` |
 | V4 | `operation` matches `^[a-z0-9_]+\.[a-z0-9_]+$` | `ValueError` |
-| V5 | every `TargetSelector.argument` is a parameter of the handler | `ValueError` naming tool, argument, and the actual parameters |
+| V5 | every `extra_targets` argument is a parameter of the handler | `ValueError` naming tool, argument, and the actual parameters |
 | V6 | a non-`None` `connection_argument` is a parameter of the handler | `ValueError` |
 | V7 | `target_kind == "none"` ⟹ `targets == ()` and `connection_argument is None` | `ValueError` |
-| V8 | `target_kind not in ("none", "console")` ⟹ at least one `targets` entry with `kind == target_kind` | `ValueError` |
-| V9 | no argument appears twice in `targets` | `ValueError` |
-| V10 | every handler parameter named in `REQUIRED_TARGET_ARGUMENTS` appears in `targets` under its mapped kind | `ValueError` naming tool, argument, and kind |
+| V8 | `target_kind not in ("none", "console")` ⟹ at least one built `targets` entry with `kind == target_kind` | `ValueError` |
+| V9 | no argument appears twice in the built `targets` — i.e. `extra_targets` names nothing the table already covers, and nothing twice | `ValueError` |
 
 `REQUIRED_TARGET_ARGUMENTS` is a fixed mapping in `tool_registry.py`:
 
@@ -154,11 +165,11 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
 }
 ```
 
-V8 forces the subject; V10 forces every *additional* identity-bearing argument, which is what
-stops `hmc_migrate_lpar` from declaring its LPAR and silently dropping
-`target_system_name_or_uuid`, and `hmc_attach_disk_to_lpar` from dropping the `vios_uuid` it
-writes to. The mapping holds exactly the argument names that unambiguously identify one kind.
-It deliberately excludes:
+The table is the whole selector convention: every argument it names becomes a target
+automatically, so `hmc_migrate_lpar` cannot lose `target_system_name_or_uuid` and
+`hmc_attach_disk_to_lpar` cannot lose the `vios_uuid` it writes to. V8 then forces the author
+to supply `extra_targets` wherever the subject is not table-derivable. The mapping holds
+exactly the argument names that unambiguously identify one kind. It deliberately excludes:
 
 - sub-resource arguments — `vg_uuid`, `adapter_uuid`, `mapping_uuid`, `network_uuid`,
   `lu_udid`, `pool_name`, `disk_name`, `media_name`, `vnic_id`, `adapter_id`, `drc_index` —
@@ -166,7 +177,9 @@ It deliberately excludes:
 - `name`, which means a user on `hmc_create_user` and a new LPAR on `hmc_create_lpar`;
 - `job_href`, a URL rather than an identity.
 
-`REQUIRED_TARGET_ARGUMENTS` and the §3.5 selector table are the same table; G10 pins that.
+The residual is that a future tool inventing a new identity-bearing parameter name gets no
+target until the table gains a row. V8 catches that whenever the new name is the tool's
+subject; a new *scope* argument would not be caught, and adding the row is the fix.
 
 Every message names the tool (`handler.__name__`) so an import failure identifies the
 declaration to fix.
@@ -261,8 +274,8 @@ Effect assignment preserves today's classification exactly, with one correction:
 Resulting census: 54 `read`, 48 `mutate`, 26 `destructive`, and 1 `arbitrary-command`
 registered only when the operator enables it.
 
-Target declarations use exactly the `REQUIRED_TARGET_ARGUMENTS` table of §3.2 — that mapping
-is the whole selector convention, not a subset of it.
+Target selectors are built from the `REQUIRED_TARGET_ARGUMENTS` table of §3.2, which is the
+whole selector convention; no tool hand-writes them.
 
 `target_kind` is chosen by one rule: **the kind of the resource whose state changes**, and
 for a creation tool, the container that gains the resource. Worked cases, because these are
@@ -287,11 +300,13 @@ sixteen tools it covers are `hmc_console_info`, `hmc_capacity_report`, `hmc_flee
 `hmc_configure_ldap`, `hmc_remove_ldap_config`, `hmc_list_partition_templates`,
 `hmc_list_recent_jobs`, `hmc_list_resources`, and `hmc_list_shared_storage_pools`. Tools
 taking `console_uuid` (`hmc_get_available_hmc_ptfs`, `hmc_update_console_software`) are also
-`target_kind="console"` but carry a `console` selector, which V8 permits and V10 requires.
+`target_kind="console"` but carry a `console` selector, built from their `console_uuid`
+argument.
 
 `hmc_create_user`, `hmc_modify_user`, `hmc_get_user`, and `hmc_delete_user` declare
-`target_kind="user"` with an explicit `TargetSelector("user", "name", required=True)`; V8
-forces the subject even though `name` is outside `REQUIRED_TARGET_ARGUMENTS`.
+`target_kind="user"` and pass `extra_targets=(("user", "name"),)`; V8 forces the author to
+supply it, because `name` is deliberately outside `REQUIRED_TARGET_ARGUMENTS`. They are the
+only tools needing `extra_targets`.
 
 `hmc_list_configured_hosts` takes no arguments and reads the local TOML configuration file,
 never an HMC. It declares `target_kind="none"`, `targets=()`, `connection_argument=None`. It
@@ -327,7 +342,7 @@ requirement 2 requires that ordinary MCP tool arguments never select or widen po
 
 **Control per boundary.**
 
-1. *Declaration → registry*: V1–V10 run in `validate_security` at import, for the collector
+1. *Declaration → registry*: V1–V9 run in `validate_security` at import, for the collector
    and the escape hatch alike; V11–V12 run in `build_tool_security` at module scope. A
    contradiction fails the process, not a request. There is no runtime path that constructs a
    `ToolSecurity` from untrusted input, and `ToolSecurity`, `TargetSelector`, and
@@ -373,8 +388,8 @@ Each is a test in `tests/app/test_tool_security.py` unless stated otherwise.
 | G2 | `build_tool_security` raises `ValueError` on a duplicate operation identity and on a duplicate tool name, including a collision between a domain module and the escape-hatch entry. Called directly with synthetic mappings; no injection into `TOOL_MODULES`. |
 | G3 | For every live tool, every declared `TargetSelector.argument` and every non-`None` `connection_argument` appears in the tool's rendered MCP parameter schema, and every `required` flag matches whether that handler parameter has a default. |
 | G4 | For every live tool, `tool.annotations == annotations_for(TOOL_SECURITY[name].effect)`, and `annotations_for` covers exactly the four effect values. |
-| G5 | `validate_security` rejects each of V2–V10 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. One case per rule. |
-| G6 | V7, V8, and V10 hold across the whole live registry. `hmc_migrate_lpar` declares both its `lpar` subject and its destination `managed_system` scope; `hmc_attach_disk_to_lpar` declares both its `lpar` subject and its `vios` scope. |
+| G5 | `validate_security` rejects each of V2–V9 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. One case per rule. |
+| G6 | V7 and V8 hold across the whole live registry, and every built `targets` tuple equals the table intersection of its handler's signature plus its `extra_targets`. `hmc_migrate_lpar` carries both its `lpar` subject and its destination `managed_system` scope; `hmc_attach_disk_to_lpar` carries both its `lpar` subject and its `vios` scope. |
 | G7 | Every live tool whose name starts with `hmc_delete_` or `hmc_remove_` has `effect == "destructive"`. |
 | G8 | The default application exposes no `arbitrary-command` tool; enabling the escape hatch exposes exactly `hmc_run_command`, classified `arbitrary-command`. `HMC_RUN_COMMAND_SECURITY` passes `validate_security`. |
 | G9 | `READ_ONLY_TOOLS`, `DESTRUCTIVE_TOOLS`, `_READ_ONLY`, `_DESTRUCTIVE`, and `_STATE_CHANGING` are absent from `hmc_mcp._app` and `hmc_mcp.server`. |
