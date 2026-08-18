@@ -49,7 +49,6 @@ SDIST_INPUTS = (
     "pyproject.toml",
     "README.md",
     "LICENSE",
-    "scripts/versioning.py",
 )
 
 

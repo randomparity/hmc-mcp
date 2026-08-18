@@ -1,5 +1,8 @@
 # Git-derived package versions implementation plan
 
+> **Superseded by [ADR 0033](../../adr/0033-static-package-version.md)** (2026-08-18)
+
+
 **Goal:** derive artifact and runtime versions from validated Git provenance under ADR 0023.
 
 **Architecture:** Hatchling 1.32.0 delegates dynamic version metadata to Versioningit 3.3.0.
