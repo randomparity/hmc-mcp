@@ -61,27 +61,33 @@ the `fake_hmc` fixture, and the constants `VIOS_UUID`, `VG_UUID`, `LPAR_UUID`. P
 functions only; it defines nothing that later tasks consume.
 
 `src/hmc_mcp/cli_storage.py` is the largest single gap: 110 missed statements of 199 (45%). Its
-commands come in four shapes, and each shape has a different injection point. Getting the
+commands come in three shapes, and each shape has a different injection point. Getting the
 injection point wrong produces a test that passes without executing the command body, so the
 shape table below is load-bearing.
 
 | Shape | Commands | Patch target |
 |---|---|---|
-| A — `_with_client(lambda hmc: op(...))`, operation imported at module top | `list-vgs`, `delete-disk`, `create-media-repo`, `create-media`, `delete-media-repo`, `delete-media`, `get-media-repo`, `list-optical-media` | `hmc_mcp.cli_storage.<operation>` |
+| A — `_with_client(lambda hmc: op(...))`, operation imported at module top | `list-vgs`, `delete-disk`, `create-media`, `delete-media`, `get-media-repo`, `list-optical-media` | `hmc_mcp.cli_storage.<operation>` |
 | B — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported **inside** the function | `list-mappings`, `detach-mapping` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, and `hmc_mcp.operations_storage.<operation>` |
 | C — `_run(_go)` with `load_profile()` + `HMCClient(config)`, operation imported at module top | `upload-iso` | `hmc_mcp.cli_storage.load_profile`, `hmc_mcp.cli_storage.HMCClient`, `hmc_mcp.cli_storage.upload_iso` |
-| D — `_run(_go)` with `async with _client()`, operation imported at module top | `map` | `hmc_mcp.cli_storage.map_storage`, with the `fake_hmc` fixture supplying the client |
 
 Shape B imports its operation inside `_go`, so patching `hmc_mcp.cli_storage.list_storage_mappings`
 has no effect — the name does not exist on that module. It must be patched on
 `hmc_mcp.operations_storage`.
 
-Shape D goes through `_client()` rather than `_with_client`, so the `fake_hmc` fixture covers the
-client seam (both funnel through `cli_app.client_from_env`), but the command unpacks its result:
-`lpar_uuid, result = _run(_go)`. A fake returning a dict or a scalar raises `ValueError` *after*
-`_run` returns — outside its `except Exception` handler — so it surfaces through `CliRunner` as an
-unhandled unpacking error that says nothing about the CLI. The fake must return a two-element
-`(lpar_uuid, result)` tuple.
+**Check for an existing test before writing each row.** `tests/app/test_cli_commands.py` already
+carries two parametrized tests that cover part of this surface, and they are easy to miss because
+they are table-driven rather than named after the commands they exercise:
+`test_cli_command_wiring_matrix` (`def` at line 587, cases from line 543) and
+`test_destructive_cli_commands_abort_without_confirmation` (`def` at line 633, cases from line
+619). Read both before starting. The coverage table below has already been reconciled against
+them, but a row you are unsure about is answered by grepping those two tables, not by writing a
+second test.
+
+That reconciliation is why `map` has no shape of its own. Its success path is already tested at
+line 549, driving the **real** `map_storage` against `FakeHMC` and asserting the resulting
+`map_storage_to_lpar` client call — a stronger test than any stub could be. Only its declined
+confirmation is uncovered, and that path never reaches the operation.
 
 1. Add a shared helper for shapes B and C directly above the storage tests:
 
@@ -117,8 +123,12 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
    **not** contain stderr. Output written through `console` is on `result.stdout`; output written
    through `err_console`, and click's own `Aborted.`, are on `result.stderr`. The module already
    uses `result.stderr` in 55 places — follow it. Asserting an abort message on `result.stdout`
-   produces a red test with a confusing diagnostic, and `result.output` is not a safe blanket
-   substitute because it is only correct for some of these rows.
+   produces a red test with a confusing diagnostic. `result.output` does not fail that way — from
+   click 8.2 it is a third stream mixing stdout and stderr in write order, so it matches either —
+   but that is exactly why it is the weaker assertion: it cannot tell a message the CLI
+   deliberately routes to stderr from one it routes to stdout. Assert on the precise stream. The
+   existing `result.output` assertions (lines 590, 637, 1077, 1106) are correct as they stand;
+   leave them alone.
 
    **Getting past a confirmation prompt.** Most storage commands take `--yes`/`-y`;
    `detach-mapping` takes `--confirm`/`-y` instead. `map` also prompts, so its success-path test
@@ -188,12 +198,11 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
 
    | Command | Branches to cover | Shape |
    |---|---|---|
-   | `list-vgs` | table render; `--json` | A |
+   | `list-vgs` | table render. `--json` is already covered (line 543) | A |
    | `delete-disk` | confirmed delete; declined confirmation aborts with exit 1 and no call | A |
-   | `map` | success path renders "Mapped" and calls `map_storage`; the fake returns `("lpar-uuid", {...})`. An invalid `--kind` already has a test asserting exit 2, so do not duplicate it | D |
-   | `create-media-repo` | confirmed create; declined confirmation aborts | A |
+   | `map` | declined confirmation aborts with exit 1 and no call. The success path (line 549) and an invalid `--kind` (line 1293) are already covered — do not duplicate either | none — the abort never reaches the operation |
+   | `create-media-repo` | declined confirmation aborts. Confirmed create is already covered (line 570) | none — as above |
    | `create-media` | confirmed create; declined confirmation aborts | A |
-   | `delete-media-repo` | confirmed delete; declined confirmation aborts | A |
    | `delete-media` | confirmed delete; declined confirmation aborts | A |
    | `get-media-repo` | found (renders Name/Size); empty (renders "No media repository found"); `--json` | A |
    | `list-optical-media` | non-empty table; empty ("No optical media found"); `--json` | A |
@@ -244,7 +253,8 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
 
 8. Commit: `test: cover the cli_storage command bodies (#240)`.
 
-**Acceptance criteria:** `tests/app/test_cli_commands.py` gains tests for every row above; the
+**Acceptance criteria:** `tests/app/test_cli_commands.py` gains tests for every row above and no
+test duplicating a case already in the two parametrized tables at lines 543 and 619; the
 focused suite passes; the package total is at or above 90.50% on CPython 3.11; no file under
 `src/hmc_mcp/` is modified; `just verify` is green.
 
@@ -490,14 +500,17 @@ because the gate is broken, and passes once it is fixed.
        recipe or a new workflow that runs pytest is covered too.
 
        --no-cov is held to a weaker rule than the other three, because it is the one
-       flag with a legitimate use here: the addopts comment and this repository's
-       own development guardrail both direct `pytest --no-cov <paths>` for a focused
-       subset. Forbidding it outright would redden this test the first time someone
-       adds a `just test-fast` recipe -- a false alarm whose natural remedy is
-       deleting the assertion. So it is rejected only where no test path accompanies
-       it, which is the package-wide run the gate exists to protect. That is a
-       heuristic on the word "tests"; the other three flags need none, since no
-       invocation in this repository has a reason to carry them.
+       flag with a legitimate use here: the addopts comment directs
+       `pytest --no-cov <paths>` for a focused subset. Forbidding it outright would
+       redden this test the first time someone adds a `just test-fast` recipe -- a
+       false alarm whose natural remedy is deleting the assertion. So it is rejected
+       only where no test path accompanies it.
+
+       That heuristic is deliberately not the whole guard, because it is weakest
+       exactly where it matters most: every test here lives under tests/, so
+       `pytest -q --no-cov tests` in the `test` recipe would satisfy it while
+       disabling the gate on a full-suite run. The recipe that runs the gate is
+       therefore pinned exactly rather than pattern-matched.
        """
        sources = {"justfile": (ROOT / "justfile").read_text()}
        workflows = ROOT / ".github" / "workflows"
@@ -506,6 +519,9 @@ because the gate is broken, and passes once it is fixed.
                sources[path.name] = path.read_text()
 
        assert len(sources) >= 2
+       # Same idiom as test_justfile_exposes_one_composed_verification_graph, which
+       # pins `build` and `verify-artifacts` this way.
+       assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"]
        for name, text in sources.items():
            for flag in ("--cov-fail-under", "--cov-precision", "--cov-config"):
                assert flag not in text, f"{name}: {flag}"
@@ -606,10 +622,13 @@ because the gate is broken, and passes once it is fixed.
    - Append `--cov-fail-under=0` to the justfile `test` recipe →
      `..._is_not_defeated_at_the_invocation_sites` fails.
    - Append `--no-cov` to the justfile `test` recipe →
-     `..._is_not_defeated_at_the_invocation_sites` fails on the line rule. Then instead add a
-     recipe body `uv run --no-sync pytest -q --no-cov tests/app` → the test stays **green**.
-     Both halves are needed: the first proves the rule bites, the second proves it does not
-     redden a legitimate focused-subset recipe. Revert both.
+     `..._is_not_defeated_at_the_invocation_sites` fails on the line rule.
+   - Change the `test` recipe to `uv run --no-sync pytest -q --no-cov tests` → the same test
+     fails, now on the exact-recipe pin. This is the edit the line rule cannot catch, and it is
+     the most likely way the gate gets re-disabled, so prove this one specifically.
+   - Add a *separate* recipe whose body is `uv run --no-sync pytest -q --no-cov tests/app` →
+     the test stays **green**. This proves the rule does not redden a legitimate focused-subset
+     recipe, which is the objection the weaker `--no-cov` rule exists to answer. Revert all three.
    - Create an empty `.coveragerc` at the repository root →
      `test_pyproject_is_the_coverage_configuration_source` fails. Delete it. (This is the vector
      that disarms the gate with `pyproject.toml` unchanged and prints no banner at all.)
@@ -638,7 +657,8 @@ because the gate is broken, and passes once it is fixed.
 9. Commit: `build: enforce the package coverage floor exactly (#240)`.
 
 **Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all five gate
-tests pass; each of the six mutations in step 5 turns the expected test red and is reverted;
+tests pass; each of the nine probes in step 5 behaves as stated — eight turn the named test red,
+and the focused-subset recipe leaves it green — and every one is reverted;
 `fail_under = 99` makes `just verify` exit non-zero before `smoke`; `just test` passes at or above
 90.50%; `just verify` green.
 
