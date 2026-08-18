@@ -789,7 +789,17 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
         "made here too, so the gate cannot be disabled by a recipe change alone"
     )
     for name, text in sources.items():
-        for flag in ("--cov-fail-under", "--cov-precision", "--cov-config"):
+        # COVERAGE_RCFILE is --cov-config delivered as an environment variable: a
+        # committed `env:` on a workflow step or an `export` in a recipe redirects
+        # coverage.py away from pyproject.toml, and fail_under and precision both
+        # fall back to 0. A contributor's own local export is outside this scan and
+        # is accepted; a committed one is exactly what it is here to catch.
+        for flag in (
+            "--cov-fail-under",
+            "--cov-precision",
+            "--cov-config",
+            "COVERAGE_RCFILE",
+        ):
             assert flag not in text, f"{name}: {flag}"
         for number, line in enumerate(text.splitlines(), start=1):
             if "--no-cov" in line:
@@ -797,16 +807,43 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
 
 
 def test_pyproject_is_the_coverage_configuration_source() -> None:
-    """Guard which file coverage.py reads, not just what pyproject.toml says.
+    """Guard which files the gate is configured from -- pytest's and coverage.py's both.
+
+    Two independent search orders have to land on pyproject.toml, and a file
+    that merely exists can win either one.
 
     coverage.py tries .coveragerc, .coveragerc.toml, setup.cfg, tox.ini,
-    pyproject.toml in order and stops at the first that reads; for the two
-    .coveragerc forms merely existing is enough. An empty .coveragerc at the
-    root therefore disarms the gate with pyproject.toml byte-identical, and
-    with no FAIL banner either, because fail_under falls back to 0.
+    pyproject.toml and stops at the first that reads; for the two .coveragerc
+    forms merely existing is enough. An empty .coveragerc at the root disarms
+    the gate with pyproject.toml byte-identical, and prints no FAIL banner
+    either, because fail_under falls back to 0.
+
+    pytest tries pytest.toml, .pytest.toml, pytest.ini, .pytest.ini,
+    pyproject.toml, tox.ini, setup.cfg (_pytest/config/findpaths.py), and the
+    first four win outright even when empty. That is the worse vector of the
+    two: it takes --cov=hmc_mcp out of addopts, so nothing is measured at all,
+    fail_under is never consulted, and the run is indistinguishable from a
+    project with no coverage configured. Verified against this repository --
+    each of the four takes a subset run from exit 1 with a coverage table to
+    exit 0 with none. tox.ini and setup.cfg are not vectors on the pytest side,
+    because pyproject.toml precedes them in that order.
+
+    Adding one of these files is an ordinary thing to do -- a marker, a
+    filterwarnings entry -- which is exactly why the gate cannot rely on nobody
+    doing it.
     """
-    for name in (".coveragerc", ".coveragerc.toml"):
-        assert not (ROOT / name).exists(), name
+    for name in (
+        ".coveragerc",
+        ".coveragerc.toml",
+        "pytest.toml",
+        ".pytest.toml",
+        "pytest.ini",
+        ".pytest.ini",
+    ):
+        assert not (ROOT / name).exists(), (
+            f"{name} at the repository root overrides pyproject.toml and disarms the "
+            f"coverage gate; keep the gate's configuration in pyproject.toml"
+        )
     for name in ("setup.cfg", "tox.ini"):
         candidate = ROOT / name
         if candidate.exists():

@@ -198,9 +198,20 @@ The test therefore asserts:
 - `fail_under` is 90 and `precision` is at least 2;
 - `--cov=hmc_mcp` is present in `addopts`, and none of `--cov-fail-under`, `--no-cov`,
   `--cov-precision`, or `--cov-config` appears in it;
-- no `.coveragerc` or `.coveragerc.toml` exists at the repository root, and `setup.cfg` and
-  `tox.ini`, if either is ever added, declare no `[coverage:*]` section — so `pyproject.toml`
-  stays the file coverage.py actually reads;
+- no `.coveragerc`, `.coveragerc.toml`, `pytest.toml`, `.pytest.toml`, `pytest.ini`, or
+  `.pytest.ini` exists at the repository root, and `setup.cfg` and `tox.ini`, if either is ever
+  added, declare no `[coverage:*]` section — so `pyproject.toml` stays the file **both** tools
+  actually read. Two search orders have to land there, not one. coverage.py's is the
+  `.coveragerc` family; pytest's is `pytest.toml`, `.pytest.toml`, `pytest.ini`, `.pytest.ini`,
+  then `pyproject.toml` (`_pytest/config/findpaths.py`), and the first four win outright even
+  when empty. The pytest side is the worse vector: it removes `--cov=hmc_mcp` from the
+  invocation, so nothing is measured, `fail_under` is never consulted, and the output is
+  indistinguishable from a project with no coverage configured — where the `.coveragerc` route at
+  least still prints a coverage table. Verified against this repository: each of the four takes a
+  subset run from exit `1` with a table to exit `0` with none. `tox.ini` and `setup.cfg` are not
+  vectors on the pytest side, because `pyproject.toml` precedes them in that order. Adding one of
+  these files is an ordinary thing to do — a marker, a `filterwarnings` entry — which is why the
+  gate cannot rest on nobody doing it;
 - `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`, and no
   `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key. The two halves
   are deliberately different rules. `[tool.coverage.run]` is an existing namespace this change
@@ -214,8 +225,13 @@ The test therefore asserts:
   as `show_missing` also has to be added to the test — one line, in the same commit, which is what
   keeping the gate's configuration reviewed means. This mirrors the exact-allowlist idiom the
   module already uses for the secrets baseline;
-- the `justfile` `test` recipe and the CI `just verify` step carry none of those three flags,
-  reusing the justfile/workflow text-reading idiom already in this module.
+- the whole `justfile` and every workflow carry none of `--cov-fail-under`, `--cov-precision`,
+  `--cov-config`, or `COVERAGE_RCFILE`, and no `--no-cov` without a test path beside it; and the
+  `test` recipe body is pinned exactly, because every test here lives under `tests/`, so
+  `pytest -q --no-cov tests` would satisfy the line rule while disabling the gate on a full-suite
+  run. This reuses the justfile/workflow text-reading idiom already in this module.
+  `COVERAGE_RCFILE` is in that list because it is `--cov-config` delivered as an environment
+  variable; see *Failure behavior* for which half of that vector is guarded and which is accepted.
 
 ## Failure behavior
 
@@ -247,13 +263,23 @@ measures, because `--cov=hmc_mcp` comes from `addopts`, but finds no configurati
 `fail_under = 0` and `precision = 0`, and enforces nothing. Verified: the same 502-statement
 package reports `89.84%` and exits `1` from the root, and `90%` and exits `0` from `tests/`.
 
-Two environment variables can disarm the gate for a local run and are outside the repository's
-reach: `COVERAGE_RCFILE` redirects coverage.py to another configuration file, and
-`PYTEST_ADDOPTS` can inject `--no-cov`. Both are accepted rather than defended against. The gate
-test scrubs them from its own subprocess so it cannot be reddened by a stray export, but nothing
-can scrub them from a contributor's `just test`; CI is unaffected because each leg runs
-`just verify` in a fresh runner environment. The residual is developer-facing signal loss, in the
-same class as the working-directory narrowing below.
+Two environment variables can disarm the gate: `COVERAGE_RCFILE` redirects coverage.py to another
+configuration file, and `PYTEST_ADDOPTS` can inject `--no-cov`. This vector has two halves and
+they are treated differently.
+
+A **committed** one — `env: COVERAGE_RCFILE:` on a workflow step, or an `export` in a `justfile`
+recipe — is inside the repository's reach, lands in every CI leg's fresh runner environment, and
+is guarded: the invocation-site scan rejects the `COVERAGE_RCFILE` token in the justfile and in
+every workflow, exactly as it rejects `--cov-config`, which is the same redirect spelled as a
+flag. `PYTEST_ADDOPTS` needs no separate token, because the spellings that disarm the gate
+(`--no-cov`, `--cov-fail-under=0`) are strings the scan already rejects on the line that carries
+them.
+
+A **contributor's own local export** is not reachable by any test in this repository and is
+accepted. The gate test scrubs both variables from its own subprocess so it cannot be reddened by
+a stray export, but nothing can scrub them from that contributor's `just test`. CI is unaffected.
+That residual is developer-facing signal loss, in the same class as the working-directory
+narrowing below.
 
 This is a **narrowing this change introduces**, not a pre-existing property. `--cov-fail-under=90`
 in `addopts` bound from any working directory under the rootdir, because `addopts` itself came
