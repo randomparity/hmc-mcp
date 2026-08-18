@@ -92,9 +92,9 @@ subject is not table-derivable.
 Deriving `required` is what keeps #223 workable. Four destructive tools
 (`hmc_power_off_lpar`, `hmc_power_off_vios`, `hmc_delete_vios`, `hmc_restore_vios`) take
 `system_name_or_uuid=None` purely to disambiguate duplicate partition names, and
-`hmc_list_lpars` takes `system_name_or_uuid=None` to mean console-wide. The normative rule
-#223 inherits: an absent optional selector is not matched against a target constraint and does
-not on its own deny; a required selector is always present and always matched.
+`hmc_list_lpars` takes `system_name_or_uuid=None` to mean console-wide. How an absent optional
+selector is treated at authorization time is #223's decision, not this record's; `required` is
+what lets #223 make it without re-opening 128 declarations.
 
 Validation lives in one function, `validate_security(security, handler)`. `tool()` calls it
 at decoration time, and the escape hatch calls it at import on its own constant, so no

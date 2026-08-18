@@ -96,9 +96,8 @@ Field meanings, normative:
 - **`required`** — built with the selector from the handler signature, as
   `param.default is inspect.Parameter.empty`. Pinning the predicate to *has no default*
   rather than *defaults to None* means a future `system_name_or_uuid="Server-1"` does not
-  silently become optional. The normative rule #223 inherits is that an
-  absent optional selector is not matched against a target constraint and does not on its own
-  deny; a required selector is always present and always matched.
+  silently become optional. What an absent optional selector means at authorization time is
+  #223's decision; this field is what lets #223 make it.
 - **`connection_argument`** — the public argument selecting the HMC connection profile, or
   `None` when the tool opens no HMC connection.
 
@@ -113,7 +112,8 @@ get wrong in the dangerous direction. `hmc_power_off_lpar`, `hmc_power_off_vios`
 `hmc_delete_vios`, and `hmc_restore_vios` all take `system_name_or_uuid: str | None = None`
 purely to disambiguate duplicate partition names, and `hmc_list_lpars(system_name_or_uuid=
 None)` means console-wide. Treating those as mandatory targets would make #223 deny the
-documented normal call on four destructive tools.
+documented normal call on four destructive tools, so the distinction has to survive into
+#223 rather than being flattened here.
 
 ### 3.2 Declaration and validation
 
@@ -396,7 +396,7 @@ Each is a test in `tests/app/test_tool_security.py` unless stated otherwise.
 | G4 | For every live tool, `tool.annotations == annotations_for(TOOL_SECURITY[name].effect)`, and `annotations_for` covers exactly the four effect values. |
 | G5 | `validate_security` rejects each of V2–V9 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. One case per rule. |
 | G6 | V7 and V8 hold across the whole live registry, and every built `targets` tuple equals the table intersection of its handler's signature plus its `extra_targets`. `hmc_migrate_lpar` carries both its `lpar` subject and its destination `managed_system` scope; `hmc_attach_disk_to_lpar` carries both its `lpar` subject and its `vios` scope. |
-| G7 | Every live tool whose name starts with `hmc_delete_` or `hmc_remove_` has `effect == "destructive"`. |
+| G7 | Every live tool whose name starts with `hmc_delete_` or `hmc_remove_` has `effect == "destructive"`. Defence in depth against the likeliest misclassification, not a charter criterion: a future tool that is deliberately named against the convention is a discussion, not a gate failure. |
 | G8 | The default application exposes no `arbitrary-command` tool; enabling the escape hatch exposes exactly `hmc_run_command`, classified `arbitrary-command`. `HMC_RUN_COMMAND_SECURITY` passes `validate_security`. |
 | G9 | `READ_ONLY_TOOLS`, `DESTRUCTIVE_TOOLS`, `_READ_ONLY`, `_DESTRUCTIVE`, and `_STATE_CHANGING` are absent from `hmc_mcp._app` and `hmc_mcp.server`. |
 | G10 | `hmc_list_configured_hosts` declares `target_kind="none"` and `connection_argument=None`; every other live tool declares `connection_argument="profile"`. |
