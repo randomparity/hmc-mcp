@@ -159,8 +159,8 @@ verified to produce exactly that TOTAL line. The temporary project reuses the re
 `[tool.coverage.report]` table, so deleting `precision` from `pyproject.toml` makes this test fail.
 
 **A configuration test** asserts the gate's declared shape. Asserting only that
-`--cov-fail-under` is absent would guard one of four one-token edits that silently disarm the
-gate; all four are verified to exit `0` on a package measuring 89.84%:
+`--cov-fail-under` is absent would guard one of five one-token `addopts` edits that silently
+disarm the gate; all are verified to exit `0` on a package that should fail:
 
 | Edit to `addopts` | Effect |
 |---|---|
@@ -168,6 +168,20 @@ gate; all four are verified to exit `0` on a package measuring 89.84%:
 | remove `--cov=hmc_mcp` | nothing is measured, so `fail_under` is never consulted |
 | add `--no-cov` | same, and it is the flag the retained comment teaches contributors |
 | add `--cov-precision=0` | restores the original defect verbatim — prints `FAIL … not reached` and exits `0` |
+| add `--cov-config=<path>` | coverage.py reads that file instead, so the floor and precision are never seen |
+
+The last row generalises into a second class the content assertions miss entirely: they guard
+what `pyproject.toml` says, not **which file coverage.py reads**. coverage.py tries
+`.coveragerc`, `.coveragerc.toml`, `setup.cfg`, `tox.ini`, `pyproject.toml` in order and stops at
+the first that reads — and for the two `.coveragerc` forms, merely being readable counts, empty
+or not. So an **empty `.coveragerc` at the repository root disarms the gate with `pyproject.toml`
+byte-identical** (verified: exit `0` at a total of 89.90%). A `[coverage:report]` section added to
+`setup.cfg` or `tox.ini` wins the same way. None of those four files exists in this repository
+today.
+
+Every one of these disarmed runs is *more* silent than the original defect: with `fail_under`
+falling back to `0`, pytest-cov suppresses its banner entirely, so not even the misleading `FAIL`
+line appears.
 
 Guarding only `addopts` would repeat the same mistake one level out, because this design *creates*
 a second vector: the table it introduces. `[tool.coverage.report] omit = ["*/uncovered.py"]` on
@@ -182,8 +196,11 @@ invocation site, not just `addopts` — the `justfile` `test` recipe or a CI ste
 The test therefore asserts:
 
 - `fail_under` is 90 and `precision` is at least 2;
-- `--cov=hmc_mcp` is present in `addopts`, and none of `--cov-fail-under`, `--no-cov`, or
-  `--cov-precision` appears in it;
+- `--cov=hmc_mcp` is present in `addopts`, and none of `--cov-fail-under`, `--no-cov`,
+  `--cov-precision`, or `--cov-config` appears in it;
+- no `.coveragerc` or `.coveragerc.toml` exists at the repository root, and `setup.cfg` and
+  `tox.ini`, if either is ever added, declare no `[coverage:*]` section — so `pyproject.toml`
+  stays the file coverage.py actually reads;
 - `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`, and no
   `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key — so a coverage
   option that changes the denominator has to be argued for in review rather than landing
@@ -221,6 +238,14 @@ reads `[tool.coverage.report]` and enforces the floor; `pytest` invoked from a s
 measures, because `--cov=hmc_mcp` comes from `addopts`, but finds no configuration, falls back to
 `fail_under = 0` and `precision = 0`, and enforces nothing. Verified: the same 502-statement
 package reports `89.84%` and exits `1` from the root, and `90%` and exits `0` from `tests/`.
+
+Two environment variables can disarm the gate for a local run and are outside the repository's
+reach: `COVERAGE_RCFILE` redirects coverage.py to another configuration file, and
+`PYTEST_ADDOPTS` can inject `--no-cov`. Both are accepted rather than defended against. The gate
+test scrubs them from its own subprocess so it cannot be reddened by a stray export, but nothing
+can scrub them from a contributor's `just test`; CI is unaffected because each leg runs
+`just verify` in a fresh runner environment. The residual is developer-facing signal loss, in the
+same class as the working-directory narrowing below.
 
 This is a **narrowing this change introduces**, not a pre-existing property. `--cov-fail-under=90`
 in `addopts` bound from any working directory under the rootdir, because `addopts` itself came

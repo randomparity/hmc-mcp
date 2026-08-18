@@ -6,9 +6,11 @@ raise real coverage above that floor so the gate passes on merit rather than on 
 **Architecture:** Two independent changes land in a fixed order. First, characterization tests
 raise measured coverage from 89.78% to a margin above 90%, leaving the existing (lenient) gate
 green throughout. Second, `pyproject.toml` moves the floor and its precision into
-`[tool.coverage.report]`, which makes the comparison exact, and two tests in
-`tests/test_ci_pipeline.py` lock that behavior. The order matters: tightening the gate before
-raising coverage would leave a commit whose guardrails are red.
+`[tool.coverage.report]`, which makes the comparison exact, and five tests in
+`tests/test_ci_pipeline.py` lock that behavior — two behavioral (an under-floor total fails, a
+total exactly on the floor passes) and three guarding the configuration's shape, its invocation
+sites, and which file coverage.py reads. The order matters: tightening the gate before raising
+coverage would leave a commit whose guardrails are red.
 
 **Tech stack:** Python 3.11–3.14, pytest 9.1.1, pytest-cov 7.1.0, coverage 7.15.4, Typer +
 `typer.testing.CliRunner`, `just` recipes, `uv`.
@@ -336,8 +338,9 @@ because the gate is broken, and passes once it is fixed.
        # Without a measured source nothing consults fail_under at all.
        assert "--cov=hmc_mcp" in addopts
        # Each of these silently disarms the gate: a command-line floor or precision
-       # overrides the configured one, and --no-cov switches measurement off.
-       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision"):
+       # overrides the configured one, --no-cov switches measurement off, and
+       # --cov-config sends coverage.py to a different file entirely.
+       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
            assert flag not in addopts, flag
        # An omit/exclude key shrinks the denominator instead: adding
        # omit = ["*/uncovered.py"] to the probe package reports 100.00% and exits 0.
@@ -354,9 +357,26 @@ because the gate is broken, and passes once it is fixed.
        test_recipe = re.search(r"^test:\n(?P<body>(?:    .+\n)+)", justfile, re.MULTILINE)
 
        assert test_recipe
-       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision"):
+       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
            assert flag not in test_recipe["body"], flag
            assert flag not in workflow, flag
+
+
+   def test_pyproject_is_the_coverage_configuration_source() -> None:
+       """Guard which file coverage.py reads, not just what pyproject.toml says.
+
+       coverage.py tries .coveragerc, .coveragerc.toml, setup.cfg, tox.ini,
+       pyproject.toml in order and stops at the first that reads; for the two
+       .coveragerc forms merely existing is enough. An empty .coveragerc at the
+       root therefore disarms the gate with pyproject.toml byte-identical, and
+       with no FAIL banner either, because fail_under falls back to 0.
+       """
+       for name in (".coveragerc", ".coveragerc.toml"):
+           assert not (ROOT / name).exists(), name
+       for name in ("setup.cfg", "tox.ini"):
+           candidate = ROOT / name
+           if candidate.exists():
+               assert "[coverage:" not in candidate.read_text(), name
 
 
    def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(tmp_path: Path) -> None:
@@ -404,7 +424,7 @@ because the gate is broken, and passes once it is fixed.
    `1`, `covered=900` reports `TOTAL 1000 100 90.00%` and exits `0`.
 
 2. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   **four failures** — `test_coverage_gate_declares_one_exact_floor`,
+   **five failures** — `test_coverage_gate_declares_one_exact_floor`,
    `test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor`, and
    `test_coverage_gate_passes_a_total_exactly_on_the_floor` all raise `KeyError` on
    `["tool"]["coverage"]` because no `[tool.coverage.report]` section exists yet, and
@@ -417,7 +437,7 @@ because the gate is broken, and passes once it is fixed.
    `[tool.coverage.report]` section with `fail_under = 90` and `precision = 2`.
 
 4. Re-run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   all four to pass.
+   all five to pass.
 
 5. Prove each gate test bites, recording every result. Revert each mutation and confirm the tests
    are green again before applying the next:
@@ -429,6 +449,9 @@ because the gate is broken, and passes once it is fixed.
      that otherwise reports 100.00% and exits 0.)
    - Append `--cov-fail-under=0` to the justfile `test` recipe →
      `..._is_not_defeated_at_the_invocation_sites` fails.
+   - Create an empty `.coveragerc` at the repository root →
+     `test_pyproject_is_the_coverage_configuration_source` fails. Delete it. (This is the vector
+     that disarms the gate with `pyproject.toml` unchanged and prints no banner at all.)
 
 6. Run `just test`. Expect exit 0 and a `Required test coverage of 90.0% reached` line — note the
    trailing `.0`, which is new: the floor now comes from coverage.py's float-typed config rather
@@ -444,8 +467,8 @@ because the gate is broken, and passes once it is fixed.
 
 9. Commit: `build: enforce the package coverage floor exactly (#240)`.
 
-**Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all four gate
-tests pass; each of the five mutations in step 5 turns the expected test red and is reverted;
+**Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all five gate
+tests pass; each of the six mutations in step 5 turns the expected test red and is reverted;
 `fail_under = 99` makes `just verify` exit non-zero before `smoke`; `just test` passes at or above
 90.50%; `just verify` green.
 
@@ -496,6 +519,7 @@ restored to 3.11; `just verify` green; every CI leg reports at or above 90.50%.
 | Configuration test rejecting all four gate-disabling `addopts` edits | 3 step 1 |
 | Exact `[tool.coverage.report]` key set; no `run` omit/include/exclude keys | 3 step 1 |
 | Invocation-site test over the justfile recipe and CI workflow | 3 step 1 |
+| Config-source test: no `.coveragerc`/`.coveragerc.toml`, no `[coverage:*]` elsewhere | 3 step 1 |
 | Gate subprocess run with `PYTEST_ADDOPTS`/`COVERAGE_*` scrubbed | 3 step 1 |
 | Coverage at or above 90.50% on 3.11 | 1, 2 |
 | Coverage at or above 90.50% on 3.14 (pre-push check) | 4 |
