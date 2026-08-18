@@ -55,12 +55,13 @@ The validator derives no version from Git. It reads each archive and proves:
   package member, so generated cache and tool files in the checkout are excluded deterministically;
   and both
   contain the explicit package-boundary sentinels `hmc_mcp/__init__.py` and
-  `hmc_mcp/server.py`; the clean provenance precondition makes that filesystem set authoritative
-  for a canonical build, while standalone validation reports any dirty source/artifact mismatch;
-- the sdist contains `.gitignore`, `pyproject.toml`, `README.md`, `LICENSE`,
-  `scripts/versioning.py`, and the package members required to rebuild a wheel, with every named
+  `hmc_mcp/server.py`; standalone validation reports any source/artifact mismatch. (The clean
+  provenance precondition this originally relied on was removed with git-derived versioning; see
+  ADR 0033.)
+- the sdist contains `.gitignore`, `pyproject.toml`, `README.md`, `LICENSE`, and the package
+  members required to rebuild a wheel, with every named
   required input byte-for-byte equal to its checkout counterpart and every path confined beneath
-  one top-level directory; its complete regular-file set is exactly those five checkout inputs,
+  one top-level directory; its complete regular-file set is exactly those four checkout inputs,
   `PKG-INFO`, and the expected
   `src/hmc_mcp/**/*.py` members; packaging configuration explicitly limits selected source files,
   while hatchling automatically adds `.gitignore` and `PKG-INFO`;

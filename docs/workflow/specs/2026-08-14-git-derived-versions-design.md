@@ -1,5 +1,8 @@
 # Git-derived package versions design
 
+> **Superseded by [ADR 0033](../../adr/0033-static-package-version.md)** (2026-08-18)
+
+
 Decision: [ADR 0023](../../adr/0023-git-derived-package-versions.md)
 
 ## Scope and guarantees

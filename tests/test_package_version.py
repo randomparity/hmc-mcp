@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tomllib
 import zipfile
 from dataclasses import dataclass
 from email.parser import BytesParser
@@ -15,8 +16,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 COMMAND_TIMEOUT_SECONDS = 180
-# Declared statically in pyproject.toml; see ADR 0033.
-PACKAGE_VERSION = "0.1.0"
+
+
+def declared_version() -> str:
+    """Read the statically declared version (ADR 0033) from pyproject.toml."""
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as handle:
+        return str(tomllib.load(handle)["project"]["version"])
+
+
+PACKAGE_VERSION = declared_version()
 
 
 def run(
@@ -74,6 +82,10 @@ def built_project(tmp_path_factory: pytest.TempPathFactory) -> BuiltProject:
     project = workspace / "project"
     project.mkdir()
     copy_tracked_project(project)
+    # ADR 0033: the build consults no Git state. The absence of a repository here is
+    # the property under test, not an accident of how the fixture is assembled --
+    # adding `git init` for tooling parity would silently retire that coverage.
+    assert not (project / ".git").exists()
     artifacts = workspace / "artifacts"
     run(
         "uv",

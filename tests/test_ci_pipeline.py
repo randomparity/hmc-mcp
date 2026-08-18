@@ -268,7 +268,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert "PYPI" not in workflow.upper()
 
 
-def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
+def test_active_ci_checkouts_with_project_uv_do_not_fetch_full_history() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
     checkout_settings = re.findall(
@@ -293,17 +293,12 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     project = tmp_path / "project"
     project.mkdir()
     _copy_tracked_project(project)
-    # No commit: the build reads no Git state (ADR 0033). The repository and the
-    # staged index are still needed, because `prek run --all-files` resolves its file
-    # list through `git ls-files`. The repository-local hooks path keeps prek off an
-    # inherited global core.hooksPath.
+    # No commit: the build reads no Git state (ADR 0033). The repository and the staged
+    # index are still needed, because `prek run --all-files` resolves its file list
+    # through `git ls-files`. No hooks-path override here -- `prek run` executes the
+    # hooks declared in .pre-commit-config.yaml and never consults core.hooksPath.
     subprocess.run(
         ["git", "init", "-q", "--initial-branch=main"], cwd=project, check=True
-    )
-    subprocess.run(
-        ["git", "config", "--local", "core.hooksPath", str(project / ".git" / "hooks")],
-        cwd=project,
-        check=True,
     )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
