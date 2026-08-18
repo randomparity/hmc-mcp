@@ -26,14 +26,13 @@ the old configuration, exits `1` once `[tool.coverage.report] precision = 2` is 
 `[tool.coverage.report]` carries both `fail_under = 90` and `precision = 2`, and
 `--cov-fail-under` is removed from `addopts`.
 
-A table is chosen over the equivalent pytest flags because the gate's own regression test reads
-it: the test loads `[tool.coverage.report]` and replays it into a synthetic project, which is
-straightforward against a TOML table and awkward against flags embedded in an `addopts` string.
-`addopts` is left saying only what the pytest run does — measure `hmc_mcp`, report term-missing.
+A table is chosen over the equivalent pytest flags on ownership: `fail_under` is coverage.py's
+pass/fail policy and `precision` is the precision that policy is compared at, so both live in
+coverage.py's own table. `addopts` is left saying only what the pytest run does — measure
+`hmc_mcp`, report term-missing.
 
 The floor stays at 90. Package coverage is raised above it by adding tests rather than by lowering
-the declared number, and is held with enough margin to absorb the per-interpreter variance measured
-below.
+the declared number.
 
 ## Consequences
 
@@ -45,8 +44,13 @@ The floor is enforced independently inside each of the eight CI legs `just verif
 3.11 to 3.14 across amd64 and arm64 — and coverage totals differ between them: 611 missed
 statements of 5977 on CPython 3.11, 612 on CPython 3.14. The binding requirement is therefore the
 lowest-scoring interpreter, and a contributor who measures locally on one can pass and still turn
-a leg red that they never ran. The margin exists for that: hold the total at least half a point
-above the floor, the figure this change adopts, rather than clearing 90.00% on one interpreter.
+a leg red that they never ran.
+
+This change lands at least half a point above the floor for that reason. That half point is a
+chosen safety factor covering ordinary coverage churn, not a bound derived from the 0.017-point
+interpreter spread, which is thirty times smaller. It is a landing target this change meets, not
+an invariant the repository holds: the enforced floor after merge is `fail_under = 90`, so a later
+change landing at 90.05% is not objected to by anything here.
 
 The comparison is exact to two decimal places, so the defect's banner/exit mismatch survives in
 miniature: within `[89.995, 90.0)` a run passes while still printing `FAIL … Total coverage:
@@ -56,9 +60,9 @@ specified, and a higher precision would shrink it further if it ever matters.
 
 Because the floor now lives in `[tool.coverage.report]`, every coverage.py reporting subcommand
 honours it — `report`, `html`, `xml`, `json`, and `lcov` each exit `2` below the floor. Anyone
-later adding a `coverage xml` or `coverage html` step inherits that failure. A contributor running
-a focused subset must pass `--no-cov`, as the retained `addopts` comment directs, rather than
-relying on the gate being inert.
+later adding a `coverage xml` or `coverage html` step inherits that failure. A focused subset
+still needs `--no-cov`, as the retained `addopts` comment directs and as it did before, because
+the floor is measured package-wide.
 
 The precedence hazard between a command-line floor and a configured one is relocated, not removed.
 `--cov-fail-under` on the command line still overrides the configured 90 silently, so a CI job or
@@ -81,11 +85,14 @@ is not a guarantee against an override.
   ship `--cov-precision`, it overrides the config value, and it feeds the same comparison that
   sets the exit status; a probe at 89.84% with no `[tool.coverage.report]` section at all exits
   `1`. So this works, and it is the smallest change of any option here — one flag added rather
-  than one removed plus a new table. Rejected because the gate's regression test consumes the
-  configured table directly, which flags inside an `addopts` string would force it to parse. The
-  argument that a directly-invoked `coverage` would also see the table is a bet on a consumer
-  this repository does not have. This is a close call on a small diff, not a defect in the
-  alternative.
+  than one removed plus a new table. Rejected on the ownership ground in the Decision: these are
+  coverage.py's settings, and `addopts` is pytest's invocation string. This is a close call on a
+  small diff, not a defect in the alternative.
+- **Set `fail_under` to the margin — 90.5 rather than 90.** This is the only mechanism that would
+  make the margin an enforced invariant instead of a landing condition that erodes on the next
+  pull request. Not adopted: the issue and the operator decision both fix the declared floor at
+  90, and raising it is a scope change rather than a fix to the gate that could not fail. Worth
+  revisiting if totals repeatedly settle just above 90.00%.
 - **Lower the floor to `--cov-fail-under=89` to match the real total.** Strictly more honest than a
   gate that cannot fail, and explicitly offered by the issue. Rejected by the operator in favour of
   raising coverage; codifying 89 would have made the reported number honest by giving up the
