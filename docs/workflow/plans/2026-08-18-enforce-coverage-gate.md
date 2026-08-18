@@ -307,11 +307,20 @@ because the gate is broken, and passes once it is fixed.
 
 
    def _run_gate_project(root: Path) -> "subprocess.CompletedProcess[str]":
+       # An exported PYTEST_ADDOPTS=--no-cov (or a COVERAGE_RCFILE left over from
+       # debugging) would otherwise decide the child's coverage instead of the
+       # generated project, reddening this test for an unrelated reason.
+       environment = {
+           key: value
+           for key, value in os.environ.items()
+           if key not in {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
+       }
        return subprocess.run(
            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
            cwd=root,
            capture_output=True,
            check=False,
+           env=environment,
            text=True,
            timeout=180,
        )
@@ -319,7 +328,8 @@ because the gate is broken, and passes once it is fixed.
 
    def test_coverage_gate_declares_one_exact_floor() -> None:
        floor, report = _coverage_gate()
-       addopts = _project_toml()["tool"]["pytest"]["ini_options"]["addopts"]
+       project = _project_toml()
+       addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
 
        assert floor == 90
        assert report["precision"] >= 2
@@ -329,6 +339,24 @@ because the gate is broken, and passes once it is fixed.
        # overrides the configured one, and --no-cov switches measurement off.
        for flag in ("--cov-fail-under", "--no-cov", "--cov-precision"):
            assert flag not in addopts, flag
+       # An omit/exclude key shrinks the denominator instead: adding
+       # omit = ["*/uncovered.py"] to the probe package reports 100.00% and exits 0.
+       assert set(report) == {"fail_under", "precision"}
+       run_config = project["tool"]["coverage"].get("run", {})
+       for key in run_config:
+           assert key not in {"omit", "include"} and not key.startswith("exclude"), key
+
+
+   def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
+       """The floor can be overridden from any pytest invocation, not just addopts."""
+       justfile = (ROOT / "justfile").read_text()
+       workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+       test_recipe = re.search(r"^test:\n(?P<body>(?:    .+\n)+)", justfile, re.MULTILINE)
+
+       assert test_recipe
+       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision"):
+           assert flag not in test_recipe["body"], flag
+           assert flag not in workflow, flag
 
 
    def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(tmp_path: Path) -> None:
@@ -348,9 +376,13 @@ because the gate is broken, and passes once it is fixed.
        # every way this harness can break -- so it would prove nothing about the gate.
        assert result.returncode == 1, result.stdout + result.stderr
        # Pins the measured total, the floor, and the precision in one string.
+       # Formatted from the configured precision, not hardcoded: at precision = 3
+       # pytest-cov emits "total of 89.900 is less than fail-under=90.000", and a
+       # hardcoded string would redden this test for a change that strengthened the gate.
+       digits = report["precision"]
        assert (
-           f"Coverage failure: total of {floor - 0.1:.2f} "
-           f"is less than fail-under={floor:.2f}" in result.stdout
+           f"Coverage failure: total of {floor - 0.1:.{digits}f} "
+           f"is less than fail-under={floor:.{digits}f}" in result.stdout
        ), result.stdout
 
 
@@ -372,23 +404,31 @@ because the gate is broken, and passes once it is fixed.
    `1`, `covered=900` reports `TOTAL 1000 100 90.00%` and exits `0`.
 
 2. Run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   **all three to fail** with a `KeyError` on `["tool"]["coverage"]`, because no
-   `[tool.coverage.report]` section exists yet. Preserve this red result in the forge ledger.
+   **four failures** — `test_coverage_gate_declares_one_exact_floor`,
+   `test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor`, and
+   `test_coverage_gate_passes_a_total_exactly_on_the_floor` all raise `KeyError` on
+   `["tool"]["coverage"]` because no `[tool.coverage.report]` section exists yet, and
+   `test_coverage_gate_is_not_defeated_at_the_invocation_sites` is the one that may already pass
+   (it reads only the justfile and workflow). Record which of the four were red. Preserve this
+   result in the forge ledger.
 
 3. Apply the configuration from *Global constraints* to `pyproject.toml`: delete
    `--cov-fail-under=90` from `addopts`, correct the comment's first sentence, and add the
    `[tool.coverage.report]` section with `fail_under = 90` and `precision = 2`.
 
 4. Re-run `uv run --no-sync pytest -q --no-cov tests/test_ci_pipeline.py -k coverage_gate`. Expect
-   all three to pass.
+   all four to pass.
 
-5. Prove each gate test bites, recording every result:
-   - Delete `precision = 2` from `pyproject.toml`; confirm
-     `test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor` fails. Restore it.
-   - Append `--cov-precision=0` to `addopts`; confirm
-     `test_coverage_gate_declares_one_exact_floor` fails. Remove it.
-   - Delete `--cov=hmc_mcp` from `addopts`; confirm the same test fails. Restore it.
-   Each mutation must be reverted and the tests confirmed green again before moving on.
+5. Prove each gate test bites, recording every result. Revert each mutation and confirm the tests
+   are green again before applying the next:
+   - Delete `precision = 2` from `pyproject.toml` → the behavioral test fails.
+   - Append `--cov-precision=0` to `addopts` → `..._declares_one_exact_floor` fails.
+   - Delete `--cov=hmc_mcp` from `addopts` → `..._declares_one_exact_floor` fails.
+   - Add `omit = ["*/cli_storage.py"]` to `[tool.coverage.report]` →
+     `..._declares_one_exact_floor` fails on the exact-key-set assertion. (This is the vector
+     that otherwise reports 100.00% and exits 0.)
+   - Append `--cov-fail-under=0` to the justfile `test` recipe →
+     `..._is_not_defeated_at_the_invocation_sites` fails.
 
 6. Run `just test`. Expect exit 0 and a `Required test coverage of 90.0% reached` line — note the
    trailing `.0`, which is new: the floor now comes from coverage.py's float-typed config rather
@@ -404,8 +444,8 @@ because the gate is broken, and passes once it is fixed.
 
 9. Commit: `build: enforce the package coverage floor exactly (#240)`.
 
-**Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all three gate
-tests pass; each of the three mutations in step 5 turns the expected test red and is reverted;
+**Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all four gate
+tests pass; each of the five mutations in step 5 turns the expected test red and is reverted;
 `fail_under = 99` makes `just verify` exit non-zero before `smoke`; `just test` passes at or above
 90.50%; `just verify` green.
 
@@ -454,6 +494,9 @@ restored to 3.11; `just verify` green; every CI leg reports at or above 90.50%.
 | Behavioral test asserting `returncode == 1` and the literal diagnostic | 3 step 1 |
 | Control test proving the gate passes exactly on the floor | 3 step 1 |
 | Configuration test rejecting all four gate-disabling `addopts` edits | 3 step 1 |
+| Exact `[tool.coverage.report]` key set; no `run` omit/include/exclude keys | 3 step 1 |
+| Invocation-site test over the justfile recipe and CI workflow | 3 step 1 |
+| Gate subprocess run with `PYTEST_ADDOPTS`/`COVERAGE_*` scrubbed | 3 step 1 |
 | Coverage at or above 90.50% on 3.11 | 1, 2 |
 | Coverage at or above 90.50% on 3.14 (pre-push check) | 4 |
 | Every CI leg at or above 90.50% (binding measurement) | 4 step 4 |

@@ -117,6 +117,13 @@ synthetic package in `tmp_path` whose true coverage rounds up to the floor but s
 runs `pytest` there as a subprocess with the 180-second timeout this module already uses for
 subprocesses, so a hung child fails the test rather than stalling `just test`.
 
+The subprocess runs with `PYTEST_ADDOPTS`, `COVERAGE_RCFILE`, and `COVERAGE_FILE` removed from
+the inherited environment, matching the explicit-env idiom the module's existing subprocess test
+uses. Without that, an exported `PYTEST_ADDOPTS=--no-cov` makes the child measure nothing and
+exit `0` (verified), reddening the gate test for a reason unrelated to the gate — and
+`COVERAGE_RCFILE` is the variable the issue itself used to demonstrate the fix, so it is
+plausibly set in exactly the debugging sessions where this test matters.
+
 A non-zero exit is **not** a sufficient assertion, and specifying one would be the defect this
 test exists to prevent. Every way the harness can break also exits non-zero: a syntax error in the
 generated package exits 1 or 2, collecting no tests exits 5, and an interpreter that cannot import
@@ -125,10 +132,20 @@ about `fail_under` or `precision`. It therefore asserts two things:
 
 - `returncode == 1` exactly. pytest-cov reaches a coverage failure through `session.testsfailed`,
   so `EXIT_TESTSFAILED` is the only correct code; `2` or `5` mean the harness broke.
-- coverage.py's literal diagnostic in the captured output —
+- pytest-cov's literal diagnostic in the captured output —
   `Coverage failure: total of 89.90 is less than fail-under=90.00` for the configured floor. That
   one string pins the measured total, the floor, and the precision simultaneously, which is also
   what guards the statement arithmetic below from drifting unnoticed.
+
+  The expected string is **formatted from the configured precision**, not hardcoded to two
+  places, for the same reason the synthetic total is derived rather than fixed: at
+  `precision = 3` the message becomes `total of 89.900 is less than fail-under=90.000` (verified),
+  so a hardcoded string would redden the gate test for a change that strengthened the gate — the
+  false signal this section otherwise exists to avoid.
+
+  The emitter is pytest-cov, not coverage.py: coverage.py's own copy of this message lives in its
+  CLI, which pytest-cov does not go through. The distinction matters for the record because it
+  means a pytest-cov bump, not a coverage.py bump, is what can invalidate the assertion.
 
 A paired control run makes the test able to fail in both directions: the same generator with
 `10 * fail_under` covered produces exactly the floor and must exit `0`. Without it, a permanently
@@ -152,9 +169,28 @@ gate; all four are verified to exit `0` on a package measuring 89.84%:
 | add `--no-cov` | same, and it is the flag the retained comment teaches contributors |
 | add `--cov-precision=0` | restores the original defect verbatim — prints `FAIL … not reached` and exits `0` |
 
-The test therefore asserts `fail_under` is 90, `precision` is at least 2, `--cov=hmc_mcp` is
-present in `addopts`, and none of `--cov-fail-under`, `--no-cov`, or `--cov-precision` appears in
-it.
+Guarding only `addopts` would repeat the same mistake one level out, because this design *creates*
+a second vector: the table it introduces. `[tool.coverage.report] omit = ["*/uncovered.py"]` on
+the probe package takes the total from 89.90% to `TOTAL 898 0 100.00%` and exits `0` (verified) —
+one line, and the gate is not merely disarmed but reports perfection. The behavioral test cannot
+catch it, because it replays the repository's table into a synthetic project whose filenames no
+real `omit` pattern matches, so the added key is inert there. `[tool.coverage.run]`'s
+`omit`/`include`/`exclude*` keys do the same. And the floor can be defeated from any pytest
+invocation site, not just `addopts` — the `justfile` `test` recipe or a CI step carrying
+`--cov-fail-under=0` overrides it exactly as `addopts` would.
+
+The test therefore asserts:
+
+- `fail_under` is 90 and `precision` is at least 2;
+- `--cov=hmc_mcp` is present in `addopts`, and none of `--cov-fail-under`, `--no-cov`, or
+  `--cov-precision` appears in it;
+- `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`, and no
+  `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key — so a coverage
+  option that changes the denominator has to be argued for in review rather than landing
+  silently. This mirrors the exact-allowlist idiom the module already uses for the secrets
+  baseline;
+- the `justfile` `test` recipe and the CI `just verify` step carry none of those three flags,
+  reusing the justfile/workflow text-reading idiom already in this module.
 
 ## Failure behavior
 
@@ -184,9 +220,17 @@ walk. `pytest` invoked from the repository root — which is what `just test` an
 reads `[tool.coverage.report]` and enforces the floor; `pytest` invoked from a subdirectory still
 measures, because `--cov=hmc_mcp` comes from `addopts`, but finds no configuration, falls back to
 `fail_under = 0` and `precision = 0`, and enforces nothing. Verified: the same 502-statement
-package reports `89.84%` and exits `1` from the root, and `90%` and exits `0` from `tests/`. This
-is recorded rather than engineered around; a `.coveragerc`, a `COVERAGE_RCFILE` export, or a
-rootdir-detecting wrapper would each add more machinery than the developer-facing risk warrants.
+package reports `89.84%` and exits `1` from the root, and `90%` and exits `0` from `tests/`.
+
+This is a **narrowing this change introduces**, not a pre-existing property. `--cov-fail-under=90`
+in `addopts` bound from any working directory under the rootdir, because `addopts` itself came
+from the rootdir's ini file; the configured floor binds from the repository root only. It is
+accepted because every path that runs the gate — `just test`, and `just verify` on each CI leg —
+starts at the repository root, so the loss is developer-facing signal rather than a CI hole, and
+a `.coveragerc`, a `COVERAGE_RCFILE` export, or a rootdir-detecting wrapper would each cost more
+than the risk. [ADR 0034](../../adr/0034-exact-coverage-gate.md) records the same asymmetry
+against its `addopts` alternative, which does not have this sensitivity — so that alternative is
+not strictly worse on every axis, and the ownership argument is not the only ground on record.
 
 ## Security model
 

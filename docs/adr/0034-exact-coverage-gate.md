@@ -64,6 +64,13 @@ later adding a `coverage xml` or `coverage html` step inherits that failure. A f
 still needs `--no-cov`, as the retained `addopts` comment directs and as it did before, because
 the floor is measured package-wide.
 
+Where the floor binds narrows. coverage.py opens its configuration relative to the working
+directory and does not walk upward as pytest does for `addopts`, so the previous flag applied
+from any directory under the rootdir while the configured floor applies only from the repository
+root. A `pytest` run from a subdirectory still measures but enforces nothing. Every gate-running
+path — `just test`, and `just verify` on each CI leg — starts at the root, so this is
+developer-facing signal loss rather than a hole in enforcement.
+
 The precedence hazard between a command-line floor and a configured one is relocated, not removed.
 `--cov-fail-under` on the command line still overrides the configured 90 silently, so a CI job or
 an ad-hoc invocation passing it replaces the floor with no warning. The configured value is the
@@ -87,7 +94,11 @@ is not a guarantee against an override.
   `1`. So this works, and it is the smallest change of any option here — one flag added rather
   than one removed plus a new table. Rejected on the ownership ground in the Decision: these are
   coverage.py's settings, and `addopts` is pytest's invocation string. This is a close call on a
-  small diff, not a defect in the alternative.
+  small diff, not a defect in the alternative — and the alternative wins on one axis: `addopts`
+  binds from any working directory under the rootdir, while a configured floor binds only where
+  the process starts, so this alternative would keep the floor applying to a `pytest` run from a
+  subdirectory (see Consequences). That was judged not to outweigh ownership, because every path
+  that runs the gate starts at the repository root.
 - **Set `fail_under` to the margin — 90.5 rather than 90.** This is the only mechanism that would
   make the margin an enforced invariant instead of a landing condition that erodes on the next
   pull request. Not adopted: the issue and the operator decision both fix the declared floor at
