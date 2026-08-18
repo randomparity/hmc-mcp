@@ -202,10 +202,18 @@ The test therefore asserts:
   `tox.ini`, if either is ever added, declare no `[coverage:*]` section — so `pyproject.toml`
   stays the file coverage.py actually reads;
 - `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`, and no
-  `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key — so a coverage
-  option that changes the denominator has to be argued for in review rather than landing
-  silently. This mirrors the exact-allowlist idiom the module already uses for the secrets
-  baseline;
+  `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key. The two halves
+  are deliberately different rules. `[tool.coverage.run]` is an existing namespace this change
+  does not create, so only the denominator-changing keys are rejected there.
+  `[tool.coverage.report]` is a namespace this change *introduces*, and it is frozen to the gate's
+  two keys outright —
+  broader than "no denominator key", because coverage.py accepts seventeen keys in that section
+  and an enumeration of the harmful ones is a bet that the enumeration stays complete across
+  versions. `partial_also` and `partial_branches` already fall outside such an enumeration and
+  start mattering the moment anyone adds `--cov-branch`. The cost is that a display-only key such
+  as `show_missing` also has to be added to the test — one line, in the same commit, which is what
+  keeping the gate's configuration reviewed means. This mirrors the exact-allowlist idiom the
+  module already uses for the secrets baseline;
 - the `justfile` `test` recipe and the CI `just verify` step carry none of those three flags,
   reusing the justfile/workflow text-reading idiom already in this module.
 

@@ -40,6 +40,8 @@ coverage would leave a commit whose guardrails are red.
   statements** of 5977. Baseline is 611 missed (89.78%).
 - No file under `src/hmc_mcp/` is modified. Coverage rises only by exercising shipped code. A
   statement that appears genuinely unreachable is reported in the pull request, not deleted.
+  The single sanctioned exception is Task 1 step 4's bite check, which edits one message string
+  and reverts it in the same step; nothing under `src/hmc_mcp/` may be modified in a commit.
 - **A defect found while characterizing existing behavior is filed as a GitHub issue in the same
   turn — never fixed here**, since `src/hmc_mcp/` is out of scope. Then leave that behavior
   untested under this issue: a test pinning defective behavior is one the fixing issue has to
@@ -230,8 +232,8 @@ confirmation is uncovered, and that path never reaches the operation.
 
    **Do not test the `detach-mapping` failure path — issue #242 owns it.**
    `storage_detach_mapping` wraps `_run(_go)` in `except Exception`, but `_run` already reports the
-   failure through `_fail` and raises `typer.Exit(1)` — and `typer.Exit` subclasses `RuntimeError`,
-   so the handler catches its own framework's exit sentinel and prints
+   failure through `_fail` and raises `typer.Exit(1)` — and `typer.Exit` subclasses
+   `RuntimeError`, so the handler catches its own framework's exit sentinel and prints
    `Failed to delete storage mapping: ` on stdout with an empty value, alongside the real
    `Error: <exc>` on stderr.
 
@@ -512,7 +514,19 @@ because the gate is broken, and passes once it is fixed.
            assert flag not in addopts, flag
        # An omit/exclude key shrinks the denominator instead: adding
        # omit = ["*/uncovered.py"] to the probe package reports 100.00% and exits 0.
-       assert set(report) == {"fail_under", "precision"}
+       #
+       # This freezes the table to exactly the gate's two keys, which is broader
+       # than "no denominator key" and deliberately so. coverage.py accepts
+       # seventeen keys here, and enumerating the harmful ones means betting that
+       # the enumeration stays complete across coverage.py versions -- partial_also
+       # and partial_branches already bite the moment anyone adds --cov-branch.
+       # A display-only key is not a threat, but it is also not free: it is one
+       # line here to add it deliberately. That is the point.
+       assert set(report) == {"fail_under", "precision"}, (
+           f"[tool.coverage.report] is frozen to the coverage gate's two keys; got "
+           f"{sorted(report)}. Adding a key is fine -- add it here too, in the same "
+           f"commit, so the gate's configuration stays reviewed."
+       )
        run_config = project["tool"]["coverage"].get("run", {})
        for key in run_config:
            assert key not in {"omit", "include"} and not key.startswith("exclude"), key
@@ -546,7 +560,11 @@ because the gate is broken, and passes once it is fixed.
        assert len(sources) >= 2
        # Same idiom as test_justfile_exposes_one_composed_verification_graph, which
        # pins `build` and `verify-artifacts` this way.
-       assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"]
+       assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"], (
+           "the `test` recipe body is pinned because it runs the package-wide coverage "
+           "gate; any edit to it -- including one unrelated to coverage -- has to be "
+           "made here too, so the gate cannot be disabled by a recipe change alone"
+       )
        for name, text in sources.items():
            for flag in ("--cov-fail-under", "--cov-precision", "--cov-config"):
                assert flag not in text, f"{name}: {flag}"
@@ -655,9 +673,12 @@ because the gate is broken, and passes once it is fixed.
 
    - Append `--cov-fail-under=0` to the justfile **`smoke`** recipe — not `test` —
      → `..._is_not_defeated_at_the_invocation_sites` fails with `justfile: --cov-fail-under`,
-     which is the flag loop. Repeat once against a `run:` line in `.github/workflows/ci.yml` and
-     confirm the message names `ci.yml`, since the flag loop's whole purpose is the sources the
-     pin does not cover.
+     which is the flag loop. Revert it.
+   - Repeat that probe once against a `run:` line in `.github/workflows/ci.yml` and confirm the
+     message names `ci.yml`, since the flag loop's whole purpose is the sources the pin does not
+     cover. **Revert it immediately, before the next probe** — a stranded `--cov-fail-under=0` on
+     a workflow `run:` line would defeat the gate on every leg, which is the defect this issue
+     exists to close. Task 4 step 2's `git status` check is the backstop, not the plan.
    - Add a *new* recipe whose body is `uv run --no-sync pytest -q --no-cov src` — no `tests`
      token, so the line rule is what catches it → the failure message is
      `justfile:<n>: --no-cov on a package-wide run`.
@@ -666,7 +687,7 @@ because the gate is broken, and passes once it is fixed.
      the most likely way the gate gets re-disabled, so prove this one specifically.
    - Add a *separate* recipe whose body is `uv run --no-sync pytest -q --no-cov tests/app` →
      the test stays **green**. This proves the rule does not redden a legitimate focused-subset
-     recipe, which is the objection the weaker `--no-cov` rule exists to answer. Revert all four.
+     recipe, which is the objection the weaker `--no-cov` rule exists to answer. Revert all three.
    - Create an empty `.coveragerc` at the repository root →
      `test_pyproject_is_the_coverage_configuration_source` fails. Delete it. (This is the vector
      that disarms the gate with `pyproject.toml` unchanged and prints no banner at all.)
