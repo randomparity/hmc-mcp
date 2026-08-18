@@ -1854,8 +1854,6 @@ async def vmedia_bootstrap_and_create_repo(client: Client, state: RunState) -> N
     context = state.context
     print("\n=== ST16: VG Free-Space Check + Repository Create ===")
 
-    _ISO_PATH = str(Path.home() / "Downloads" / "ubuntu-26.04-live-server-ppc64el.iso")
-    _ISO_MEDIA_NAME = "ubuntu-26.04-test.iso"
     _REPO_SIZE_MIB = 7000
 
     # Step 1 — VIOS discovery (skip if already seeded)
@@ -2145,46 +2143,56 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     # Step 5 — HTTP server deduplication test
     _http_server: http.server.HTTPServer | None = None
     try:
-        handler = functools.partial(
-            http.server.SimpleHTTPRequestHandler,
-            directory=str(Path.home() / "Downloads"),
-        )
-        _http_server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
-        thread = threading.Thread(target=_http_server.serve_forever, daemon=True)
-        thread.start()
-
-        iso_url = (
-            f"http://localhost:{_HTTP_PORT}/ubuntu-26.04-live-server-ppc64el.iso"
-        )
-        print(f"  ⏳ Uploading ISO via HTTP ({iso_url}) — expect dedup hit…")
-        st_http, data_http = await call(
-            client,
-            "hmc_upload_iso",
-            vios_name_or_uuid=vios,
-            vg_uuid=vg,
-            media_name="ubuntu-26.04-http-test.iso",
-            iso_source=iso_url,
-        )
-        http_status = (
-            data_http.get("status") if isinstance(data_http, dict) else ""
-        )
-        if st_http == "PASS" and http_status == "existing":
-            record(
-                state,
-                18,
-                "hmc_upload_iso (http dedup)",
-                "PASS",
-                data_http,
-                "status=existing — deduplication fired as expected",
+        try:
+            handler = functools.partial(
+                http.server.SimpleHTTPRequestHandler,
+                directory=str(Path.home() / "Downloads"),
             )
-        else:
+            _http_server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
+            thread = threading.Thread(target=_http_server.serve_forever, daemon=True)
+            thread.start()
+
+            iso_url = (
+                f"http://localhost:{_HTTP_PORT}/ubuntu-26.04-live-server-ppc64el.iso"
+            )
+            print(f"  ⏳ Uploading ISO via HTTP ({iso_url}) — expect dedup hit…")
+            st_http, data_http = await call(
+                client,
+                "hmc_upload_iso",
+                vios_name_or_uuid=vios,
+                vg_uuid=vg,
+                media_name="ubuntu-26.04-http-test.iso",
+                iso_source=iso_url,
+            )
+            http_status = (
+                data_http.get("status") if isinstance(data_http, dict) else ""
+            )
+            if st_http == "PASS" and http_status == "existing":
+                record(
+                    state,
+                    18,
+                    "hmc_upload_iso (http dedup)",
+                    "PASS",
+                    data_http,
+                    "status=existing — deduplication fired as expected",
+                )
+            else:
+                record(
+                    state,
+                    18,
+                    "hmc_upload_iso (http dedup)",
+                    st_http,
+                    data_http,
+                    f"expected status=existing, got status={http_status!r}",
+                )
+        except OSError as exc:
             record(
                 state,
                 18,
                 "hmc_upload_iso (http dedup)",
-                st_http,
-                data_http,
-                f"expected status=existing, got status={http_status!r}",
+                "FAIL",
+                str(exc),
+                f"HTTP server could not bind to port {_HTTP_PORT}",
             )
     finally:
         if _http_server is not None:
@@ -2853,6 +2861,8 @@ def _restore_ctx_from_results(
                 setattr(context, key, saved_ctx[key])
             elif key == "lp3_baseline" and not current and saved_ctx.get(key):
                 context.lp3_baseline = saved_ctx[key]
+            elif key == "vmedia_orig_boot_order" and not current and saved_ctx.get(key):
+                context.vmedia_orig_boot_order = saved_ctx[key]
         print(
             f"  ℹ  Context restored from {results_path} "
             f"(vios_uuid={context.vios_uuid}, "
