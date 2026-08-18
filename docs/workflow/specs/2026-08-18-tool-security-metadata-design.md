@@ -318,9 +318,11 @@ yields empty `targets` because it takes no arguments at all. It is the only tool
 
 Operation identities use the domain prefixes `console`, `config`, `system`, `lpar`,
 `lpar_profile`, `boot_order`, `vios`, `adapter`, `vnic`, `network`, `storage`, `media`,
-`cluster`, `memory_pool`, `io_slot`, `sriov`, `metrics`, `pcm`, `user`, `password_policy`,
+`cluster`, `memory_pool`, `io_slot`, `sriov`, `metrics`, `pcm`, `user`, `policy`,
 `ldap`, `job`, `template`, `update`, `capacity`, `health`, `placement`, `provision`, and
-`command`. The per-tool assignment is enumerated in the implementation plan.
+`command`. The password-policy prefix is `policy` rather than `password_policy` because the
+repository's secret scanner reads `password_policy.<verb>` as a keyword-and-value pair; the
+`TargetKind` of the same name is unaffected. The per-tool assignment is enumerated in the implementation plan.
 
 ## 4. Threat model
 
