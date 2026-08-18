@@ -138,9 +138,14 @@ class LparsMixin:
         Memory/CPU changes to a *running* partition only take effect if the
         partition supports dynamic LPAR (DLPAR) and RMC is up; otherwise the
         change lands in the profile for the next activation.
+
+        Omits X-HMC-Schema-Version header — some HMC firmware versions return
+        HTTP 406 for this POST when the schema-version header is present.
         """
         path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
-        xml = await self._post(path, lpar_xml, resource_type="LogicalPartition")
+        xml = await self._post(
+            path, lpar_xml, resource_type="LogicalPartition", include_schema_version=False
+        )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None
 
