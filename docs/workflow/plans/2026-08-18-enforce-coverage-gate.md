@@ -41,9 +41,11 @@ coverage would leave a commit whose guardrails are red.
 - No file under `src/hmc_mcp/` is modified. Coverage rises only by exercising shipped code. A
   statement that appears genuinely unreachable is reported in the pull request, not deleted.
 - **A defect found while characterizing existing behavior is filed as a GitHub issue in the same
-  turn and referenced from the test's docstring — never fixed here**, since `src/hmc_mcp/` is
-  out of scope. The characterization test pins current behavior, so the issue is what stops a
-  later fix from looking like a regression.
+  turn — never fixed here**, since `src/hmc_mcp/` is out of scope. Then leave that behavior
+  untested under this issue: a test pinning defective behavior is one the fixing issue has to
+  edit, and the assertion loose enough to survive the fix is usually loose enough to pass without
+  executing the branch. Cover the command's correct paths and let the filed issue own the broken
+  one. (Realized once so far, as #242 — see Task 1.)
 - New CLI tests extend `tests/app/test_cli_commands.py` and reuse its `FakeHMC` class and
   `fake_hmc` fixture; no second CLI-testing idiom is introduced.
 - Branch `feat/enforce-coverage-gate-240`; base `main`. Host architecture `arm64`; no target
@@ -207,7 +209,7 @@ confirmation is uncovered, and that path never reaches the operation.
    | `get-media-repo` | found (renders Name/Size); empty (renders "No media repository found"); `--json` | A |
    | `list-optical-media` | non-empty table; empty ("No optical media found"); `--json` | A |
    | `list-mappings` | table with `VirtualDisk`; table with `PhysicalVolume`; `--json` | B |
-   | `detach-mapping` | `--confirm` deletes; a raising operation exits 1 and puts `Failed to delete storage mapping` on **stdout** while the real diagnostic goes to stderr — see the note below | B |
+   | `detach-mapping` | `--confirm` deletes. **The failure path is not a row** — see the note below | B |
    | `upload-iso` | duplicate-existing render; `--json` | C |
    | `attach-disk` | `--json` with an incomplete workflow exits 1 | none — see below |
 
@@ -226,15 +228,20 @@ confirmation is uncovered, and that path never reaches the operation.
    Decline a confirmation by passing `input="n\n"` to `RUNNER.invoke`; `typer.Abort` renders
    `Aborted.` **to stderr** and exits 1, so assert on `result.stderr`.
 
-   **Known defect on the `detach-mapping` failure path — issue #242.** `storage_detach_mapping`
-   wraps `_run(_go)` in `except Exception`, but `_run` already reports the failure through `_fail`
-   and raises `typer.Exit(1)` — and `typer.Exit` subclasses `RuntimeError`, so the handler catches
-   its own framework's exit sentinel. The observed result is
+   **Do not test the `detach-mapping` failure path — issue #242 owns it.**
+   `storage_detach_mapping` wraps `_run(_go)` in `except Exception`, but `_run` already reports the
+   failure through `_fail` and raises `typer.Exit(1)` — and `typer.Exit` subclasses `RuntimeError`,
+   so the handler catches its own framework's exit sentinel and prints
    `Failed to delete storage mapping: ` on stdout with an empty value, alongside the real
-   `Error: <exc>` on stderr. Characterize what it does today: assert the substring
-   `Failed to delete storage mapping` and `exit_code == 1`, and put a docstring line on the test
-   naming issue #242 and stating that the empty trailing value is the defect, not the contract.
-   Do not assert the full line, or the fix for #242 will redden a test that looks protective.
+   `Error: <exc>` on stderr.
+
+   Any assertion #240 writes against that path is one #242 must then edit. Its accepted fix
+   deletes the redundant handler outright, so the string `Failed to delete storage mapping`
+   leaves the codebase entirely — a substring assertion reddens exactly as a full-line assertion
+   would, and asserting only `exit_code == 1` would pass without executing the branch at all.
+   #242's own acceptance criteria already require a test covering this path, so writing one here
+   duplicates that work and couples two issues for two or three statements against a 44-statement
+   requirement. The success path (`--confirm` deletes) is unaffected by #242 and stays.
 
 4. Confirm the new tests bite. Pick `test_storage_get_media_repo_reports_empty`, temporarily change
    `cli_storage.storage_get_media_repo`'s `else` branch message, run the focused suite, and
