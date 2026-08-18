@@ -126,9 +126,9 @@ confirmation is uncovered, and that path never reaches the operation.
    produces a red test with a confusing diagnostic. `result.output` does not fail that way — from
    click 8.2 it is a third stream mixing stdout and stderr in write order, so it matches either —
    but that is exactly why it is the weaker assertion: it cannot tell a message the CLI
-   deliberately routes to stderr from one it routes to stdout. Assert on the precise stream. The
-   existing `result.output` assertions (lines 590, 637, 1077, 1106) are correct as they stand;
-   leave them alone.
+   deliberately routes to stderr from one it routes to stdout. Assert on the precise stream in the
+   tests you add. Existing `result.output` assertions elsewhere in the file are correct as they
+   stand and are out of scope — leave every one of them alone.
 
    **Getting past a confirmation prompt.** Most storage commands take `--yes`/`-y`;
    `detach-mapping` takes `--confirm`/`-y` instead. `map` also prompts, so its success-path test
@@ -303,29 +303,45 @@ Two further traps:
   defines no `search_uom`. Add one to `FakeHMC` returning `[self.system]`; this is the single
   place in Tasks 1–2 where extending `FakeHMC` is the right move rather than patching.
 
-1. Add tests covering:
+**Check for an existing test here too.** These five commands are already partly covered from a
+*different* file, in a second CLI idiom this plan does not otherwise use:
+`tests/app/test_application_boundaries.py:91-165` drives `summary --json`, `health --json`,
+`health` with a warning, `capacity --json` and `find-placement --json` through
+`patch("hmc_mcp.cli_systems._client", ...)` with a `_ClientContext`. Read lines 91–165 before
+writing any row. The table below is what remains after reconciling against it; in particular the
+`health` warnings loop is **not** a row, because
+`test_fleet_health_cli_does_not_claim_healthy_when_telemetry_is_unavailable` (line 118) already
+asserts it on stderr.
+
+1. Add tests covering. The line numbers come from
+   `uv run --no-sync pytest -q --cov=hmc_mcp --cov-report=term-missing --cov-fail-under=0` on
+   `main`, whose missing set for this module is exactly `42, 47-53, 68, 200-215, 233-263,
+   283-297`. **If this task is re-entered after Task 1 has landed, re-derive that set rather than
+   trusting this table** — Task 1 does not touch `cli_systems`, but a re-entry means something
+   about the measurement moved:
 
    | Branch | Lines | Stream |
    |---|---|---|
-   | `health` empty estate — `No fleet health exceptions found` | 41–42 | stdout |
-   | `health` non-empty category table | 43–53 | stdout |
-   | `health` warnings loop | 54–55 | **stderr** |
-   | `list --state` server-side search | 67–69 | stdout |
+   | `health` empty estate — `No fleet health exceptions found` | 42 | stdout |
+   | `health` non-empty category table | 47–53 | stdout |
+   | `list --state` server-side search | 68 | stdout |
    | `summary` table render | 200–215 | stdout |
-   | `capacity` table render | 236–263 | stdout |
    | `capacity` empty report — `No managed systems found` | 233–235 | **stderr** |
-   | `find-placement` table render | 286–297 | stdout |
+   | `capacity` table render | 236–263 | stdout |
    | `find-placement` empty — `No systems with sufficient free capacity` | 283–285 | **stderr** |
+   | `find-placement` table render | 286–297 | stdout |
 
    The two `health` rows are separate tests with different fixture data, not one: line 42 is
    guarded by `if not any(result.values())`, so it fires only when every category is empty, which
-   is mutually exclusive with the table build at 47–53. The warnings loop needs a non-empty
-   `warnings` tuple and is a third data shape.
+   is mutually exclusive with the table build at 47–53.
 
 2. **Task 1's "Assert on the right stream" rule applies here unchanged.** The stream column above
-   is not decoration: `cli_systems.py:55`, `:234` and `:284` write through `err_console`, so those
+   is not decoration: `cli_systems.py:234` and `:284` write through `err_console`, so those
    assertions go on `result.stderr`. Each test invokes through `RUNNER.invoke(cli.app, [...])`,
-   asserts exit code 0, and asserts on a rendered value unique to the branch:
+   asserts exit code 0, and asserts **both** the table title and at least one cell value the fake
+   supplied. The title alone is not enough: `cli_systems.py:236` emits it as soon as `report` is
+   non-empty, whatever the rows contain, so a title-only assertion cannot tell correctly-shaped
+   data from the wrong-shaped data the comment below warns about.
 
    ```python
    def test_systems_capacity_renders_a_table(fake_hmc, monkeypatch):
@@ -346,6 +362,8 @@ Two further traps:
 
        assert result.exit_code == 0
        assert "System Capacity" in result.stdout
+       # The cell value is the half that fails if the row keys are wrong.
+       assert "sys1" in result.stdout
 
 
    def test_systems_capacity_reports_an_empty_estate(fake_hmc, monkeypatch):
@@ -619,16 +637,29 @@ because the gate is broken, and passes once it is fixed.
    - Add `omit = ["*/cli_storage.py"]` to `[tool.coverage.report]` →
      `..._declares_one_exact_floor` fails on the exact-key-set assertion. (This is the vector
      that otherwise reports 100.00% and exits 0.)
-   - Append `--cov-fail-under=0` to the justfile `test` recipe →
-     `..._is_not_defeated_at_the_invocation_sites` fails.
-   - Append `--no-cov` to the justfile `test` recipe →
-     `..._is_not_defeated_at_the_invocation_sites` fails on the line rule.
+   The next four probe `..._is_not_defeated_at_the_invocation_sites`, which carries three
+   independent rules. **Record the assertion message each one produced, not just that the test
+   went red** — the rules fire in a fixed order (`len(sources) >= 2`, then the exact-recipe pin,
+   then the flag loop, then the `--no-cov` line rule), so any mutation of the `test` recipe body
+   trips the pin first and the later rules are never evaluated. Three probes reported as "red"
+   would then be one rule proven three times, with the two rules that guard *other* recipes and
+   the workflows never exercised at all. That is why probes 5 and 6 deliberately mutate somewhere
+   else.
+
+   - Append `--cov-fail-under=0` to the justfile **`smoke`** recipe — not `test` —
+     → `..._is_not_defeated_at_the_invocation_sites` fails with `justfile: --cov-fail-under`,
+     which is the flag loop. Repeat once against a `run:` line in `.github/workflows/ci.yml` and
+     confirm the message names `ci.yml`, since the flag loop's whole purpose is the sources the
+     pin does not cover.
+   - Add a *new* recipe whose body is `uv run --no-sync pytest -q --no-cov src` — no `tests`
+     token, so the line rule is what catches it → the failure message is
+     `justfile:<n>: --no-cov on a package-wide run`.
    - Change the `test` recipe to `uv run --no-sync pytest -q --no-cov tests` → the same test
      fails, now on the exact-recipe pin. This is the edit the line rule cannot catch, and it is
      the most likely way the gate gets re-disabled, so prove this one specifically.
    - Add a *separate* recipe whose body is `uv run --no-sync pytest -q --no-cov tests/app` →
      the test stays **green**. This proves the rule does not redden a legitimate focused-subset
-     recipe, which is the objection the weaker `--no-cov` rule exists to answer. Revert all three.
+     recipe, which is the objection the weaker `--no-cov` rule exists to answer. Revert all four.
    - Create an empty `.coveragerc` at the repository root →
      `test_pyproject_is_the_coverage_configuration_source` fails. Delete it. (This is the vector
      that disarms the gate with `pyproject.toml` unchanged and prints no banner at all.)
@@ -657,8 +688,9 @@ because the gate is broken, and passes once it is fixed.
 9. Commit: `build: enforce the package coverage floor exactly (#240)`.
 
 **Acceptance criteria:** `pyproject.toml` matches *Global constraints* exactly; all five gate
-tests pass; each of the nine probes in step 5 behaves as stated — eight turn the named test red,
-and the focused-subset recipe leaves it green — and every one is reverted;
+tests pass; every probe in step 5 behaves as stated — each turns the named test red except the
+focused-subset recipe, which leaves it green — with the assertion message recorded for each of the
+four invocation-site probes, and every mutation reverted;
 `fail_under = 99` makes `just verify` exit non-zero before `smoke`; `just test` passes at or above
 90.50%; `just verify` green.
 
