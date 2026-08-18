@@ -1481,6 +1481,494 @@ def test_storage_attach_disk_partial_failure_is_visible_and_nonzero(fake_hmc):
     assert "skipped" in result.stdout
 
 
+def test_storage_attach_disk_json_incomplete_workflow_exits_1(fake_hmc):
+    """The --json branch exits 1 without rendering the step table.
+
+    No operation is patched: ``attach_disk_to_lpar`` returns the frozen
+    ``AttachDiskResult`` dataclass, and the command calls ``asdict()`` on it. A
+    stub returning a dict or a namespace would raise ``TypeError`` before the
+    branch ran, which ``CliRunner`` also reports as exit 1 -- so the JSON body,
+    not the exit code, is what proves this branch executed.
+    """
+    fake_hmc.fail_on = "add_vscsi_adapter"
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--capacity-mib",
+            "1024",
+            "--vios-id",
+            "2",
+            "--vios-slot",
+            "10",
+            "--yes",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["workflow_completed"] is False
+    assert payload["lpar_uuid"] == LPAR_UUID
+    assert "Attach-disk steps" not in result.stdout
+
+
+# --------------------------------------------------------------------------- #
+# storage: command bodies (#240)
+#
+# cli_storage's commands come in three shapes with different injection points:
+#   A  _with_client(lambda hmc: op(...))          -> patch hmc_mcp.cli_storage.<op>
+#   B  _run(_go) building its own HMCClient, op   -> patch load_profile/HMCClient here
+#      imported inside the function                 and the op on operations_storage
+#   C  as B, but the op is imported at module top -> patch all three on cli_storage
+# Getting the shape wrong yields a test that passes without running the body.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeClientContext:
+    """Async context manager standing in for HMCClient in cli_storage._go bodies."""
+
+    def __init__(self) -> None:
+        self.entered = False
+
+    async def __aenter__(self):
+        self.entered = True
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        return None
+
+
+@pytest.fixture
+def direct_client(monkeypatch):
+    """Neutralise load_profile()/HMCClient() for the commands that build their own client."""
+    client = _FakeClientContext()
+    monkeypatch.setattr("hmc_mcp.cli_storage.load_profile", lambda: None)
+    monkeypatch.setattr("hmc_mcp.cli_storage.HMCClient", lambda _config: client)
+    return client
+
+
+def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
+    async def fake_list(_hmc, vios):
+        assert vios == VIOS_UUID
+        return [
+            {
+                "UUID": VG_UUID,
+                "Resource": {
+                    "GroupName": "rootvg",
+                    "FreeSpaceInMBytes": "5120",
+                    "GroupCapacity": "102400",
+                },
+            }
+        ]
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.list_volume_groups", fake_list)
+
+    result = RUNNER.invoke(cli.app, ["storage", "list-vgs", VIOS_UUID])
+
+    assert result.exit_code == 0
+    assert "rootvg" in result.stdout
+    assert "Volume Groups" in result.stdout
+
+
+def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
+    seen = {}
+
+    async def fake_delete(_hmc, vios, vg, name):
+        seen.update(vios=vios, vg=vg, name=name)
+        return {"UUID": "disk-1"}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.delete_virtual_disk", fake_delete)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "delete-disk", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    assert "Deleted virtual disk 'bootvol'" in result.stdout
+    assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "name": "bootvol"}
+
+
+def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch):
+    called = []
+
+    async def fake_delete(*args):
+        called.append(args)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.delete_virtual_disk", fake_delete)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "delete-disk", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called == []
+
+
+def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
+    called = []
+
+    async def fake_map(*args):
+        called.append(args)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.map_storage", fake_map)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "map", VIOS_UUID, "--lpar", LPAR_UUID, "--disk", "bootvol"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called == []
+
+
+def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkeypatch):
+    called = []
+
+    async def fake_create(*args):
+        called.append(args)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.create_media_repository", fake_create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "create-media-repo", VIOS_UUID, VG_UUID, "--size-mib", "2048"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called == []
+
+
+def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
+    seen = {}
+
+    async def fake_create(_hmc, vios, vg, name, size_mib):
+        seen.update(vios=vios, vg=vg, name=name, size_mib=size_mib)
+        return {"MediaName": "aix.iso"}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.create_optical_media", fake_create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "create-media",
+            VIOS_UUID,
+            VG_UUID,
+            "--name",
+            "aix.iso",
+            "--size-mib",
+            "4096",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Created media 'aix.iso'" in result.stdout
+    assert seen == {
+        "vios": VIOS_UUID,
+        "vg": VG_UUID,
+        "name": "aix.iso",
+        "size_mib": 4096,
+    }
+
+
+def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch):
+    called = []
+
+    async def fake_create(*args):
+        called.append(args)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.create_optical_media", fake_create)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "create-media",
+            VIOS_UUID,
+            VG_UUID,
+            "--name",
+            "aix.iso",
+            "--size-mib",
+            "4096",
+        ],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called == []
+
+
+def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
+    seen = {}
+
+    async def fake_delete(_hmc, vios, vg, media_name):
+        seen.update(vios=vios, vg=vg, media_name=media_name)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.delete_optical_media", fake_delete)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "delete-media", VIOS_UUID, VG_UUID, "aix.iso", "--yes"],
+    )
+
+    assert result.exit_code == 0
+    assert "Deleted media 'aix.iso'" in result.stdout
+    assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "media_name": "aix.iso"}
+
+
+def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch):
+    called = []
+
+    async def fake_delete(*args):
+        called.append(args)
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.delete_optical_media", fake_delete)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "delete-media", VIOS_UUID, VG_UUID, "aix.iso"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stderr
+    assert called == []
+
+
+def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
+    async def fake_get(_hmc, vios, vg):
+        assert (vios, vg) == (VIOS_UUID, VG_UUID)
+        return {"Resource": {"RepositoryName": "VMLibrary", "RepositorySize": "10240"}}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+
+    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+
+    assert result.exit_code == 0
+    assert "VMLibrary" in result.stdout
+    assert "10240" in result.stdout
+
+
+def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
+    async def fake_get(_hmc, _vios, _vg):
+        return {}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+
+    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+
+    assert result.exit_code == 0
+    assert "No media repository found" in result.stdout
+
+
+def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
+    async def fake_get(_hmc, _vios, _vg):
+        return {"Resource": {"RepositoryName": "VMLibrary"}}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.get_media_repository", fake_get)
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID, "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"Resource": {"RepositoryName": "VMLibrary"}}
+
+
+def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
+    async def fake_list(_hmc, vios, vg):
+        assert (vios, vg) == (VIOS_UUID, VG_UUID)
+        return [{"MediaName": "aix.iso", "MediaSize": 4096, "MediaType": "ISO"}]
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
+    )
+
+    assert result.exit_code == 0
+    assert "aix.iso" in result.stdout
+    assert "4096" in result.stdout
+
+
+def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
+    async def fake_list(_hmc, _vios, _vg):
+        return []
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
+    )
+
+    assert result.exit_code == 0
+    assert "No optical media found" in result.stdout
+
+
+def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
+    async def fake_list(_hmc, _vios, _vg):
+        return [{"MediaName": "aix.iso"}]
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.list_optical_media", fake_list)
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID, "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == [{"MediaName": "aix.iso"}]
+
+
+def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
+    async def fake_mappings(_hmc, vios, lpar):
+        assert (vios, lpar) == (VIOS_UUID, None)
+        return [
+            {
+                "ElementID": "map-1",
+                "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
+                "Storage": {"VirtualDisk": {"DiskName": "bootvol"}},
+            }
+        ]
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+    )
+
+    result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
+
+    assert result.exit_code == 0
+    assert "bootvol" in result.stdout
+    assert "VirtualDisk" in result.stdout
+    assert direct_client.entered
+
+
+def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatch):
+    async def fake_mappings(_hmc, _vios, lpar):
+        assert lpar == LPAR_UUID
+        return [
+            {
+                "ElementID": "map-2",
+                "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
+                "Storage": {"PhysicalVolume": {"VolumeName": "hdisk9"}},
+            }
+        ]
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+    )
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "list-mappings", VIOS_UUID, "--lpar", LPAR_UUID]
+    )
+
+    assert result.exit_code == 0
+    assert "hdisk9" in result.stdout
+    assert "PhysicalVolume" in result.stdout
+
+
+def test_storage_list_mappings_json(direct_client, monkeypatch):
+    async def fake_mappings(_hmc, _vios, _lpar):
+        return [{"ElementID": "map-1"}]
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
+    )
+
+    result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == [{"ElementID": "map-1"}]
+
+
+def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
+    seen = {}
+
+    async def fake_detach(_hmc, vios, mapping_uuid):
+        seen.update(vios=vios, mapping_uuid=mapping_uuid)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.detach_storage_mapping", fake_detach
+    )
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+    )
+
+    assert result.exit_code == 0
+    assert "Deleted storage mapping map-1" in result.stdout
+    assert seen == {"vios": VIOS_UUID, "mapping_uuid": "map-1"}
+    assert direct_client.entered
+
+
+def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeypatch):
+    async def fake_upload(_hmc, vios, vg, media_name, iso_source):
+        assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
+        assert iso_source == "/tmp/aix.iso"
+        return {
+            "status": "existing",
+            "media_name": "aix.iso",
+            "media_size_bytes": 1048576,
+            "sha256": "abc123",
+            "existing_name": "aix-old.iso",
+            "media": {"MediaName": "aix.iso"},
+        }
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.upload_iso", fake_upload)
+
+    result = RUNNER.invoke(
+        cli.app,
+        ["storage", "upload-iso", VIOS_UUID, VG_UUID, "aix.iso", "/tmp/aix.iso"],
+    )
+
+    assert result.exit_code == 0
+    assert "Upload status: existing" in result.stdout
+    assert "aix-old.iso" in result.stdout
+    assert "1,048,576 bytes" in result.stdout
+
+
+def test_storage_upload_iso_json(direct_client, monkeypatch):
+    async def fake_upload(_hmc, _vios, _vg, _media_name, _iso_source):
+        return {"status": "uploaded", "media_name": "aix.iso"}
+
+    monkeypatch.setattr("hmc_mcp.cli_storage.upload_iso", fake_upload)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "upload-iso",
+            VIOS_UUID,
+            VG_UUID,
+            "aix.iso",
+            "/tmp/aix.iso",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"status": "uploaded", "media_name": "aix.iso"}
+
+
 # --------------------------------------------------------------------------- #
 # failure path (_fail)
 # --------------------------------------------------------------------------- #

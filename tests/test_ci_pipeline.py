@@ -268,7 +268,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert "PYPI" not in workflow.upper()
 
 
-def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
+def test_active_ci_checkouts_with_project_uv_do_not_fetch_full_history() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
     checkout_settings = re.findall(
@@ -280,7 +280,9 @@ def test_active_ci_checkouts_with_project_uv_use_full_history() -> None:
 
     assert len(checkout_settings) == 4
     assert active_workflow.count("uv run") >= 2
-    assert sum("fetch-depth: 0\n" in settings for settings in checkout_settings) == 3
+    # Full history is no longer fetched: the version is declared statically and no
+    # workflow step reads Git history (ADR 0033).
+    assert not any("fetch-depth" in settings for settings in checkout_settings)
     for settings in checkout_settings:
         assert "persist-credentials: false\n" in settings
 
@@ -291,24 +293,14 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     project = tmp_path / "project"
     project.mkdir()
     _copy_tracked_project(project)
+    # No commit: the build reads no Git state (ADR 0033). The repository and the staged
+    # index are still needed, because `prek run --all-files` resolves its file list
+    # through `git ls-files`. No hooks-path override here -- `prek run` executes the
+    # hooks declared in .pre-commit-config.yaml and never consults core.hooksPath.
     subprocess.run(
         ["git", "init", "-q", "--initial-branch=main"], cwd=project, check=True
     )
-    subprocess.run(
-        ["git", "config", "user.email", "tests@example.invalid"],
-        cwd=project,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Command Tests"], cwd=project, check=True
-    )
-    # Disable any global pre-commit hooks (e.g. corporate secret-scanners)
-    # for this ephemeral test fixture repo.
-    subprocess.run(
-        ["git", "config", "core.hooksPath", "/dev/null"], cwd=project, check=True
-    )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
-    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
     subprocess.run(
         ["uv", "sync", "--locked", "--extra", "app"],
@@ -640,3 +632,372 @@ def test_scorecard_workflow_pins_actions_and_retains_results() -> None:
     assert "path: results.sarif" in workflow
     assert "retention-days: 5" in workflow
     assert "sarif_file: results.sarif" in workflow
+
+
+# --------------------------------------------------------------------------- #
+# coverage gate (#240)
+#
+# The gate declared 90% but compared the total rounded to coverage.py's default
+# precision of 0, so 89.78% rounded to 90 and passed while pytest-cov printed
+# FAIL from the unrounded total. These tests lock the fixed gate: two drive a
+# generated project through a real pytest run, three guard the configuration
+# that makes the comparison exact.
+# --------------------------------------------------------------------------- #
+
+GATE_STATEMENTS = 1000
+# coverage.py excludes this comment from the denominator with no configuration
+# at all, so it shrinks the measured total without covering anything. Written
+# as a literal rather than read from coverage.config: that module is private
+# (CoverageConfig is not exported from the package), coverage is not a declared
+# dependency here -- it arrives transitively through pytest-cov -- and an import
+# at module scope turns a resolution change into a collection error that takes
+# every test in this file with it.
+NO_COVER_PRAGMA = re.compile(r"#\s*pragma:?\s*no\s*cover", re.IGNORECASE)
+# Lines allowed to carry one anyway. Empty on purpose: the point is that
+# widening it is a reviewed diff, not that it can never happen.
+REVIEWED_NO_COVER: frozenset[str] = frozenset()
+# Anything that runs the package-wide suite, and therefore the gate.
+GATE_INVOCATIONS = ("pytest", "just test", "just verify")
+
+
+def _starts_a_block(line: str) -> bool:
+    """A workflow step (a `- ` list item) or a justfile recipe header (column 0)."""
+    if line.strip().startswith("- "):
+        return True
+    return bool(line) and not line[0].isspace() and not line.startswith("#")
+
+
+def _gate_blocks(text: str) -> list[tuple[int, list[str]]]:
+    """Slice a justfile or workflow into the blocks that run the package-wide suite.
+
+    A block runs from one header to the next: a workflow step and the keys under
+    it, or a justfile recipe and its indented body. Returning the block rather
+    than the whole file is what keeps the relocation rule off edits that have
+    nothing to do with the test suite.
+    """
+    lines = text.splitlines()
+    starts = [index for index, line in enumerate(lines) if _starts_a_block(line)]
+    blocks = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        block = lines[start:end]
+        if any(token in line for line in block for token in GATE_INVOCATIONS):
+            blocks.append((start + 1, block))
+    return blocks
+
+
+def _project_toml() -> dict:
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        return tomllib.load(file)
+
+
+def _coverage_gate() -> tuple[float, dict]:
+    """Return the configured floor and the whole [tool.coverage.report] table.
+
+    float, not int: int(90.9) truncates to 90, which would let the assertions
+    below pass while the real floor -- and the diagnostic the child emits --
+    had moved.
+    """
+    report = _project_toml()["tool"]["coverage"]["report"]
+    return float(report["fail_under"]), report
+
+
+def _write_gate_project(root: Path, report: dict, covered: int) -> None:
+    """Build a package of exactly GATE_STATEMENTS statements, `covered` executed."""
+    total = GATE_STATEMENTS
+    assert 0 < covered < total
+    package = root / "gatepkg"
+    package.mkdir()
+    package.joinpath("covered.py").write_text(
+        "".join(f"v{i} = {i}\n" for i in range(1, covered - 1))
+    )
+    package.joinpath("uncovered.py").write_text(
+        "def never_called():\n"
+        + "".join(f"    w{i} = {i}\n" for i in range(1, total - covered + 1))
+    )
+    package.joinpath("__init__.py").write_text("from . import covered, uncovered\n")
+    tests = root / "tests"
+    tests.mkdir()
+    tests.joinpath("test_gate.py").write_text(
+        "def test_touch():\n    import gatepkg.covered\n    assert gatepkg.covered.v1 == 1\n"
+    )
+    # json.dumps, not repr: repr(True) is "True", which is not valid TOML.
+    report_toml = "\n".join(
+        f"{key} = {json.dumps(value)}" for key, value in sorted(report.items())
+    )
+    root.joinpath("pyproject.toml").write_text(
+        "[project]\n"
+        'name = "gatepkg"\n'
+        'version = "0.0.0"\n'
+        "\n"
+        "[tool.pytest.ini_options]\n"
+        'pythonpath = ["."]\n'
+        'addopts = "--cov=gatepkg --cov-report=term"\n'
+        "\n"
+        "[tool.coverage.report]\n" + report_toml + "\n"
+    )
+
+
+def _run_gate_project(root: Path) -> "subprocess.CompletedProcess[str]":
+    # An exported PYTEST_ADDOPTS=--no-cov (or a COVERAGE_RCFILE left over from
+    # debugging) would otherwise decide the child's coverage instead of the
+    # generated project, reddening this test for an unrelated reason.
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
+    }
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+        env=environment,
+        text=True,
+        timeout=180,
+    )
+
+
+def test_coverage_gate_declares_one_exact_floor() -> None:
+    floor, report = _coverage_gate()
+    project = _project_toml()
+    addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
+
+    assert floor == 90
+    assert report["precision"] >= 2
+    # Without a measured source nothing consults fail_under at all. Token, not
+    # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
+    # narrow the measured source to one file, giving a total near 100%.
+    assert "--cov=hmc_mcp" in addopts.split()
+    # Each of these silently disarms the gate: a command-line floor or precision
+    # overrides the configured one, --no-cov switches measurement off, and
+    # --cov-config sends coverage.py to a different file entirely.
+    for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+        assert flag not in addopts, flag
+    # A denominator key disarms the gate without touching the floor: it drops
+    # statements from the total rather than covering them. Measured on the probe
+    # package at 899/1000 covered, floor 90, each key added on its own:
+    # omit -> 898/898 100.00% exit 0, exclude_also -> 898/898 100.00% exit 0,
+    # include -> 897/897 100.00% exit 0. The same names live in both sections,
+    # so both are rejected by the same rule -- coverage.py accepts omit and
+    # include under [tool.coverage.run] and omit, include, exclude_lines and
+    # exclude_also under [tool.coverage.report].
+    for section in ("run", "report"):
+        for key in project["tool"]["coverage"].get(section, {}):
+            assert key not in {"omit", "include"} and not key.startswith("exclude"), (
+                f"[tool.coverage.{section}] {key} shrinks the measured denominator, "
+                f"so the total can reach 100% with the floor untouched. Widening the "
+                f"freeze below does not admit it either. The source route to the same "
+                f"effect is closed separately, by the no-cover scan."
+            )
+    # The freeze is broader than the rejection above, and deliberately so.
+    # coverage.py accepts seventeen keys in [tool.coverage.report], and
+    # enumerating every harmful one means betting the enumeration stays complete
+    # across versions -- partial_also and partial_branches already bite the
+    # moment anyone adds --cov-branch. A display-only key is not a threat, but
+    # it is also not free: it is one line here to add it deliberately.
+    assert set(report) == {"fail_under", "precision"}, (
+        f"[tool.coverage.report] is frozen to the coverage gate's two keys; got "
+        f"{sorted(report)}. A key the rejection above allows may be added -- add "
+        f"it here too, in the same commit, so the gate's configuration stays "
+        f"reviewed. Widening this set does not admit a denominator key, because "
+        f"the rejection above runs first."
+    )
+
+
+def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
+    """A no-cover pragma shrinks the denominator without touching pyproject.toml.
+
+    The configuration rules above close the config-file route. This closes the
+    source route, which is cheaper and needs no reviewed key: on the probe
+    package at 899/1000 covered, a single `# pragma: no cover` on the uncovered
+    function reports `TOTAL 898 0 100.00%` and exits 0 -- the same disarm
+    `omit` produces, reached with pyproject.toml byte-identical.
+
+    `exclude_lines = []` closes that route too (verified: back to
+    `TOTAL 1000 101 89.90%`, exit 1) and is deliberately not the remedy. It is
+    rejected by the rule above, and it would also unexclude `if TYPE_CHECKING:`
+    and `...` stub bodies, which are excluded because they genuinely cannot run
+    under test. Scanning the source closes the open-ended channel and leaves the
+    two bounded ones alone.
+    """
+    offenders = [
+        location
+        for path in sorted((ROOT / "src" / "hmc_mcp").rglob("*.py"))
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if NO_COVER_PRAGMA.search(line)
+        and (location := f"{path.relative_to(ROOT)}:{number}") not in REVIEWED_NO_COVER
+    ]
+    assert not offenders, (
+        f"{', '.join(offenders)}: `# pragma: no cover` drops these statements "
+        f"from the coverage total instead of covering them, so the reported "
+        f"percentage stops describing the package. If a line genuinely cannot be "
+        f"executed under test, add its `path:line` to REVIEWED_NO_COVER."
+    )
+
+
+def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
+    """The floor can be overridden from any pytest invocation, not just addopts.
+
+    Scans every workflow and the whole justfile rather than one recipe, so a new
+    recipe or a new workflow that runs pytest is covered too.
+
+    --no-cov is held to a weaker rule than the other three, because it is the one
+    flag with a legitimate use here: the addopts comment directs
+    `pytest --no-cov <paths>` for a focused subset. Forbidding it outright would
+    redden this test the first time someone adds a `just test-fast` recipe -- a
+    false alarm whose natural remedy is deleting the assertion. So it is rejected
+    only where no test path accompanies it.
+
+    That heuristic is deliberately not the whole guard, because it is weakest
+    exactly where it matters most: every test here lives under tests/, so
+    `pytest -q --no-cov tests` in the `test` recipe would satisfy it while
+    disabling the gate on a full-suite run. The recipe that runs the gate is
+    therefore pinned exactly rather than pattern-matched.
+    """
+    sources = {"justfile": (ROOT / "justfile").read_text()}
+    workflows = ROOT / ".github" / "workflows"
+    for pattern in ("*.yml", "*.yaml"):
+        for path in sorted(workflows.glob(pattern)):
+            sources[path.name] = path.read_text()
+
+    assert len(sources) >= 2
+    # Same idiom as test_justfile_exposes_one_composed_verification_graph, which
+    # pins `build` and `verify-artifacts` this way.
+    assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"], (
+        "the `test` recipe body is pinned because it runs the package-wide coverage "
+        "gate; any edit to it -- including one unrelated to coverage -- has to be "
+        "made here too, so the gate cannot be disabled by a recipe change alone"
+    )
+    for name, text in sources.items():
+        # COVERAGE_RCFILE is --cov-config delivered as an environment variable: a
+        # committed `env:` on a workflow step or an `export` in a recipe redirects
+        # coverage.py away from pyproject.toml, and fail_under and precision both
+        # fall back to 0. A contributor's own local export is outside this scan and
+        # is accepted; a committed one is exactly what it is here to catch.
+        for flag in (
+            "--cov-fail-under",
+            "--cov-precision",
+            "--cov-config",
+            "COVERAGE_RCFILE",
+        ):
+            assert flag not in text, f"{name}: {flag}"
+        # The one disarm vector that carries no forbidden token at all. coverage.py
+        # opens its configuration relative to the working directory and does not walk
+        # upward as pytest does for addopts, so a step that runs pytest from a
+        # subdirectory still measures the package -- addopts survives -- but reads no
+        # fail_under, falls back to 0, and prints no banner. Verified on this
+        # repository: the same subset run exits 1 with the gate diagnostic from the
+        # root and 0 from tests/.
+        #
+        # Scoped to the blocks that run the suite, not the whole file, and
+        # deliberately so. `working-directory` is an ordinary Actions key -- a docs
+        # build, a container build, a step scoped to a subdirectory -- and rejecting
+        # it everywhere would redden a test named for the coverage gate on edits that
+        # never touch the suite. That is a false alarm whose cheapest remedy is
+        # deleting the assertion, which is how a guard dies. Inside a block that runs
+        # the gate no exception is owed, because relocating it is never legitimate,
+        # so both spellings are rejected outright. The residual is a job-level
+        # `defaults.run.working-directory`, which sits outside any step block; it is
+        # recorded in ADR 0034 rather than guarded here.
+        for line_number, block in _gate_blocks(text):
+            for token in ("working-directory", "cd "):
+                offender = next((line for line in block if token in line), None)
+                assert offender is None, (
+                    f"{name}:{line_number}: `{token.strip()}` relocates a block that "
+                    f"runs the package-wide suite ({offender.strip()}), and coverage.py "
+                    f"reads its configuration relative to the working directory. The "
+                    f"gate would measure the package, enforce no floor, and print no "
+                    f"banner. Run the suite from the repository root."
+                )
+        for number, line in enumerate(text.splitlines(), start=1):
+            if "--no-cov" in line:
+                assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
+
+
+def test_pyproject_is_the_coverage_configuration_source() -> None:
+    """Guard which files the gate is configured from -- pytest's and coverage.py's both.
+
+    Two independent search orders have to land on pyproject.toml, and a file
+    that merely exists can win either one.
+
+    coverage.py tries .coveragerc, .coveragerc.toml, setup.cfg, tox.ini,
+    pyproject.toml and stops at the first that reads; for the two .coveragerc
+    forms merely existing is enough. An empty .coveragerc at the root disarms
+    the gate with pyproject.toml byte-identical, and prints no FAIL banner
+    either, because fail_under falls back to 0.
+
+    pytest tries pytest.toml, .pytest.toml, pytest.ini, .pytest.ini,
+    pyproject.toml, tox.ini, setup.cfg (_pytest/config/findpaths.py), and the
+    first four win outright even when empty. That is the worse vector of the
+    two: it takes --cov=hmc_mcp out of addopts, so nothing is measured at all,
+    fail_under is never consulted, and the run is indistinguishable from a
+    project with no coverage configured. Verified against this repository --
+    each of the four takes a subset run from exit 1 with a coverage table to
+    exit 0 with none. tox.ini and setup.cfg are not vectors on the pytest side,
+    because pyproject.toml precedes them in that order.
+
+    Adding one of these files is an ordinary thing to do -- a marker, a
+    filterwarnings entry -- which is exactly why the gate cannot rely on nobody
+    doing it.
+    """
+    for name in (
+        ".coveragerc",
+        ".coveragerc.toml",
+        "pytest.toml",
+        ".pytest.toml",
+        "pytest.ini",
+        ".pytest.ini",
+    ):
+        assert not (ROOT / name).exists(), (
+            f"{name} at the repository root overrides pyproject.toml and disarms the "
+            f"coverage gate; keep the gate's configuration in pyproject.toml"
+        )
+    for name in ("setup.cfg", "tox.ini"):
+        candidate = ROOT / name
+        if candidate.exists():
+            assert "[coverage:" not in candidate.read_text(), name
+
+
+def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(tmp_path: Path) -> None:
+    """A total just under the floor must fail, not round up into passing.
+
+    Built from the configured floor rather than fixed constants: with 1000
+    statements and 10 * floor - 1 covered, the true total is floor - 0.1 percent,
+    which rounds to the floor at coverage.py's default precision of 0.
+    """
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor) - 1)
+
+    result = _run_gate_project(tmp_path)
+
+    # EXIT_TESTSFAILED exactly. A non-zero check would also pass on a syntax
+    # error (1 or 2), on no tests collected (5), or on an unimportable pytest --
+    # every way this harness can break -- so it would prove nothing about the gate.
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Pins the measured total, the floor, and the precision in one string.
+    # Formatted from the configured precision, not hardcoded: at precision = 3
+    # pytest-cov emits "total of 89.900 is less than fail-under=90.000", and a
+    # hardcoded string would redden this test for a change that strengthened the gate.
+    digits = report["precision"]
+    assert (
+        f"Coverage failure: total of {floor - 0.1:.{digits}f} "
+        f"is less than fail-under={floor:.{digits}f}" in result.stdout
+    ), result.stdout
+
+
+def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> None:
+    """Control: without it, a permanently broken harness reads as a working gate."""
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor))
+
+    result = _run_gate_project(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Coverage failure" not in result.stdout
+    # Acceptance criterion 3, and a different code path from the line above.
+    # pytest-cov decides the exit status on the rounded total and the banner on
+    # the unrounded one, so a run can exit 0 while still printing FAIL -- that
+    # disagreement is the reported defect, and at 89.996% it still reproduces.
+    # Asserting only the absence of the failure-path diagnostic would pass there.
+    assert "FAIL" not in result.stdout, result.stdout

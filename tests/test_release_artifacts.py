@@ -52,15 +52,13 @@ def _clean_project(project: Path) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
 
+    # The build reads no Git state (ADR 0033), so the fixture needs no commit. It
+    # still needs a repository: `just setup` runs `prek install`, which requires one.
+    # The repository-local hooks path keeps that install working on machines whose
+    # global config sets core.hooksPath, which prek otherwise refuses to install over.
     for command in (
-        ("git", "init", "--quiet"),
-        ("git", "config", "user.email", "tests@example.invalid"),
-        ("git", "config", "user.name", "Artifact Tests"),
-        # Disable any global pre-commit hooks (e.g. corporate secret-scanners)
-        # for this ephemeral test fixture repo.
-        ("git", "config", "core.hooksPath", "/dev/null"),
-        ("git", "add", "."),
-        ("git", "commit", "--quiet", "-m", "fixture"),
+        ("git", "init", "--quiet", "--initial-branch=main"),
+        ("git", "config", "--local", "core.hooksPath", str(project / ".git" / "hooks")),
     ):
         result = _run(*command, cwd=project)
         assert result.returncode == 0, result.stderr
@@ -1410,14 +1408,3 @@ def test_clean_checkout_runs_canonical_artifact_commands(tmp_path: Path) -> None
         assert result.returncode == 0, result.stderr
     assert len(list((project / "dist").glob("*.whl"))) == 1
     assert len(list((project / "dist").glob("*.tar.gz"))) == 1
-
-
-def test_dirty_checkout_build_fails_with_actionable_provenance(tmp_path: Path) -> None:
-    project = _clean_project(tmp_path / "project")
-    (project / "dirty.txt").write_text("dirty")
-
-    result = _run("just", "build", cwd=project)
-
-    assert result.returncode != 0
-    assert "Git repository is dirty" in result.stderr
-    assert "commit or clean staged, unstaged, and untracked files" in result.stderr

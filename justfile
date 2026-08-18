@@ -46,7 +46,7 @@ test:
 smoke:
     uv run --no-sync python scripts/smoke_mcp.py
 
-# construct a fresh wheel and source distribution from clean Git provenance
+# construct a fresh wheel and source distribution
 build:
     uv build --clear --wheel --sdist --out-dir dist .
 
