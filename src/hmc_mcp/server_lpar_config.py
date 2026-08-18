@@ -13,14 +13,16 @@ from .ssh_commands import (
     validate_lpar_description,
     get_lpar_description,
     get_lpar_msp,
+    get_lpar_memopt_score,
     get_lpar_proc_compat,
+    list_lpar_memopt_scores,
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
 )
 from .operations_lpar import authorize_lpar_mutation
 from .client import HMCClient
-from typing import Literal
+from typing import Any, Literal
 
 
 tool, register_tools = tool_module()
@@ -209,6 +211,63 @@ def hmc_set_lpar_proc_compat(
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_proc_compat(
             config, system_name, lpar_name, mode
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
+    )
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_get_lpar_memopt_score(
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+) -> dict[str, Any]:
+    """Return an LPAR's current memory-optimization (affinity) score.
+
+    Runs ``lsmemopt -m <system> -r lpar -o currscore --filter
+    lpar_names=<lpar>`` over SSH and returns the reported row with the HMC's
+    own fields ``lpar_name``, ``lpar_id``, and ``curr_lpar_score`` (a 0-100
+    decimal string, or the literal ``none`` when the partition is not
+    subject to memory optimization).
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _ssh_with_client(
+        lambda config, system_name, lpar_name: get_lpar_memopt_score(
+            config, system_name, lpar_name
+        ),
+        system_name_or_uuid=system_name_or_uuid,
+        lpar_name_or_uuid=lpar_name_or_uuid,
+        profile=profile,
+    )
+
+
+@tool(annotations=_READ_ONLY)
+def hmc_list_lpar_memopt_scores(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """List current memory-optimization (affinity) scores for a system's LPARs.
+
+    Runs ``lsmemopt -m <system> -r lpar -o currscore`` over SSH and returns
+    one dict per LPAR with the HMC's own fields ``lpar_name``, ``lpar_id``,
+    and ``curr_lpar_score`` (a 0-100 decimal string, or the literal
+    ``none`` when the partition is not subject to memory optimization).
+    Pass *lpar_name_or_uuid* to restrict the result to a single partition.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Optional partition name or UUID to filter to; all
+            partitions of the system are listed when omitted.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _ssh_with_client(
+        lambda config, system_name, lpar_name: list_lpar_memopt_scores(
+            config, system_name, lpar_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,

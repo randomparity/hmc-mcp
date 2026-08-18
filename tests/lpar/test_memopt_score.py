@@ -9,11 +9,20 @@ import asyncssh
 import pytest
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.server import (
+    hmc_get_lpar_memopt_score,
+    hmc_list_lpar_memopt_scores,
+)
 from hmc_mcp.ssh_commands import (
     HMCCLIError,
     get_lpar_memopt_score,
     list_lpar_memopt_scores,
 )
+
+from conftest import mock_uuid_resolution
+
+SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
+LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 
 SYSTEM_NAME = "p9da10"
 LPAR_NAME = "p9da10v1t"
@@ -207,3 +216,109 @@ def test_list_lpar_memopt_scores_rejects_empty_filter_name():
             asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, "  "))
 
     conn.run.assert_not_called()
+
+
+# ---------------------------------------------------------------------- #
+# hmc_get_lpar_memopt_score / hmc_list_lpar_memopt_scores (public tools)
+# ---------------------------------------------------------------------- #
+
+
+def _hmc_env(monkeypatch) -> None:
+    """Set env vars so HMCConfig() resolves inside the tool."""
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")  # pragma: allowlist secret
+
+
+def test_hmc_get_lpar_memopt_score_resolves_uuids(monkeypatch, mock_hmc):
+    """hmc_get_lpar_memopt_score resolves UUIDs to CLI names over REST."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock(SCORE_ROW)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_get_lpar_memopt_score(SYSTEM_UUID, LPAR_UUID)
+
+    expected_cmd = (
+        f"lsmemopt -m {SYSTEM_NAME} -r lpar -o currscore "
+        f"--filter lpar_names={LPAR_NAME}"
+    )
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    assert result == {
+        "lpar_name": "p9da10v1t",
+        "lpar_id": "1",
+        "curr_lpar_score": "100",
+    }
+
+
+def test_hmc_get_lpar_memopt_score_preserves_none_score(monkeypatch, mock_hmc):
+    """The literal 'none' score from the HMC is returned unchanged."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock(NONE_ROW)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_get_lpar_memopt_score("p9da10", "dalpar2rrd1t")
+
+    assert result["curr_lpar_score"] == "none"
+
+
+def test_hmc_get_lpar_memopt_score_unknown_lpar(monkeypatch, mock_hmc):
+    """An unknown LPAR (non-zero HMC CLI exit) raises HMCCLIError."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock("")
+    conn_mock.run = AsyncMock(
+        side_effect=_not_found_error("The partition named doesnotexist was not found.")
+    )
+    conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
+    conn_mock.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        pytest.raises(HMCCLIError, match="doesnotexist"),
+    ):
+        hmc_get_lpar_memopt_score("p9da10", "doesnotexist")
+
+
+def test_hmc_list_lpar_memopt_scores_all_lpars(monkeypatch, mock_hmc):
+    """Without an LPAR selector every system LPAR score row is returned."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+    conn_mock = _make_ssh_mock(MULTI_ROW)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_lpar_memopt_scores(SYSTEM_UUID)
+
+    expected_cmd = f"lsmemopt -m {SYSTEM_NAME} -r lpar -o currscore"
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    assert [row["lpar_name"] for row in result] == ["p9da10v1t", "dapurea1t"]
+
+
+def test_hmc_list_lpar_memopt_scores_filtered_by_uuid(monkeypatch, mock_hmc):
+    """An LPAR UUID is resolved before the --filter option is built."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
+    conn_mock = _make_ssh_mock(SCORE_ROW)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_lpar_memopt_scores(SYSTEM_UUID, LPAR_UUID)
+
+    expected_cmd = (
+        f"lsmemopt -m {SYSTEM_NAME} -r lpar -o currscore "
+        f"--filter lpar_names={LPAR_NAME}"
+    )
+    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
+    assert len(result) == 1
+
+
+def test_hmc_list_lpar_memopt_scores_empty(monkeypatch, mock_hmc):
+    """A system reporting no scores yields an empty list."""
+    _hmc_env(monkeypatch)
+    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
+    conn_mock = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        result = hmc_list_lpar_memopt_scores(SYSTEM_UUID)
+
+    assert result == []
