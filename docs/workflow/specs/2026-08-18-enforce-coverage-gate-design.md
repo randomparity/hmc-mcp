@@ -47,7 +47,16 @@ demonstrated the fix through `COVERAGE_RCFILE`, leaving open whether pytest-cov 
 The fourth used a package measuring 90.10% with `[tool.coverage.report] fail_under = 95` and
 `addopts` carrying `--cov-fail-under=50`. It reported `Required test coverage of 50% reached` and
 exited `0`: a command-line floor overrides a configured one, and the configured value is discarded
-without a warning. Keeping both would therefore leave the visible configured floor inert.
+without a warning. Keeping both would therefore leave the visible configured floor inert. That
+precedence is symmetric and is relocated rather than removed — a `--cov-fail-under` added later to
+`addopts`, a CI job, or an ad-hoc invocation still overrides the configured 90 silently.
+
+Two further probes settled the remaining alternatives. `--cov-fail-under=90 --cov-precision=2` in
+`addopts` with no `[tool.coverage.report]` section at all also exits `1` at 89.84%, so that
+smaller alternative genuinely works and is rejected on where the settings belong rather than on
+whether they function; ADR 0034 records that. And a package at 89.996% with `fail_under = 90` and
+`precision = 2` exits `0` while printing a `FAIL` banner, which is the residual described under
+*Failure behavior*.
 
 ## Configuration
 
@@ -68,8 +77,10 @@ precision that decides whether the floor means anything. No other coverage optio
 
 The floor is held with margin rather than met precisely, because the measured total varies by
 interpreter. The same suite reports 611 missed statements of 5977 on CPython 3.11 and 612 on
-CPython 3.14 — a spread of one statement, or 0.017 percentage points, across two of the four
-supported interpreters. CI runs all four on two architectures.
+CPython 3.14 — a spread of one statement, or 0.017 percentage points. That sample covers two of
+the eight legs CI runs (four interpreters × two architectures); the other six are unmeasured, so
+the spread is a floor from a partial sample rather than a bound. The margin below is a chosen
+safety factor over it, not a derived number.
 
 The target is a total of **at least 90.50%** on both CPython 3.11 and CPython 3.14, which at the
 current package size of 5977 statements means **no more than 567 missed statements**, down from
@@ -118,9 +129,17 @@ A total below 90.00% fails `just test` with coverage.py's own diagnostic —
 a failing `test` aborts before `smoke` runs; no later stage observes the failure or needs to.
 
 On a successful run no guardrail prints `FAIL`: above the floor, pytest-cov prints
-`Required test coverage of 90% reached`. The misleading case the issue reports — a printed `FAIL`
-on a run reported as successful — cannot recur, because the only total that produces that message
-now also produces a non-zero exit.
+`Required test coverage of 90% reached`.
+
+Acceptance criterion 3 is met for every total the project can realistically hold, but it is
+narrowed rather than closed, and the residual is recorded rather than hidden. pytest-cov composes
+its banner from the unrounded total while the exit status uses the rounded one, so in the window
+`[89.995, 90.0)` a run passes and still prints
+`FAIL Required test coverage of 90% not reached. Total coverage: 90.00%`. A synthetic package at
+89.996% reproduces this. The window is 0.005 points wide against the 0.5 points the original
+defect spanned, and the target margin of 90.50% keeps the project two orders of magnitude away
+from it. Closing it entirely would mean reimplementing pytest-cov's reporting, which is not worth
+the risk it removes; [ADR 0034](../../adr/0034-exact-coverage-gate.md) accepts it explicitly.
 
 The behavioral gate test fails loudly rather than silently skipping if its assumptions break: an
 absent `[tool.coverage.report]` section, a non-integer floor, or a `pytest` subprocess that cannot
