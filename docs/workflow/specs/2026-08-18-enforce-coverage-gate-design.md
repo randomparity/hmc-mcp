@@ -80,13 +80,19 @@ inside each of the eight legs CI runs (four interpreters × two architectures) a
 total varies between them. The same suite reports 611 missed statements of 5977 on CPython 3.11
 and 612 on CPython 3.14 — one statement, or 0.017 percentage points. The binding requirement is
 the lowest-scoring leg, so a total that clears the floor on the interpreter a contributor happens
-to run locally can still fail one they never ran. The margin is a chosen safety factor against
-that, not a derived bound.
+to run locally can still fail one they never ran.
 
-The target is a total of **at least 90.50%** on both CPython 3.11 and CPython 3.14, which at the
-current package size of 5977 statements means **no more than 567 missed statements**, down from
-611. That is a margin of roughly half a point against an observed variance of hundredths, and it
-requires covering at least 44 currently-missed statements.
+The legs vary on two axes, not one. `src/hmc_mcp/config.py` and `src/hmc_mcp/cli_config.py`
+between them carry five `sys.platform` branches, so a developer's darwin machine covers the darwin
+arms and CI's `ubuntu-24.04` and `ubuntu-24.04-arm` runners cover the POSIX arms, and each misses
+what the other covers. That moves roughly four statements — about 0.067 points, four times the
+interpreter spread — and it moves them relative to a 611-missed baseline that was itself measured
+on darwin. The margin is a chosen safety factor sized to cover both axes, not a bound derived from
+either.
+
+The target is a total of **at least 90.50%**, which at the current package size of 5977 statements
+means **no more than 567 missed statements**, down from 611 — a margin of roughly half a point,
+requiring at least 44 currently-missed statements to be covered.
 
 The primary vehicle is `src/hmc_mcp/cli_storage.py`, the largest single gap at 110 missed
 statements of 199 (45%). It is a thin Typer layer over `operations_storage` and
@@ -107,20 +113,48 @@ guardrail-contract tests, cover the gate itself.
 
 **A behavioral test** proves an under-floor total actually fails. It reads the repository's real
 `fail_under` and its real `[tool.coverage.report]` table from `pyproject.toml`, generates a
-synthetic package in `tmp_path` whose true coverage rounds up to the floor but sits below it, runs
-`pytest` there as a subprocess, and asserts a non-zero exit.
+synthetic package in `tmp_path` whose true coverage rounds up to the floor but sits below it, and
+runs `pytest` there as a subprocess with the 180-second timeout this module already uses for
+subprocesses, so a hung child fails the test rather than stalling `just test`.
+
+A non-zero exit is **not** a sufficient assertion, and specifying one would be the defect this
+test exists to prevent. Every way the harness can break also exits non-zero: a syntax error in the
+generated package exits 1 or 2, collecting no tests exits 5, and an interpreter that cannot import
+pytest exits 1. A test asserting only the sign would stay green forever while proving nothing
+about `fail_under` or `precision`. It therefore asserts two things:
+
+- `returncode == 1` exactly. pytest-cov reaches a coverage failure through `session.testsfailed`,
+  so `EXIT_TESTSFAILED` is the only correct code; `2` or `5` mean the harness broke.
+- coverage.py's literal diagnostic in the captured output —
+  `Coverage failure: total of 89.90 is less than fail-under=90.00` for the configured floor. That
+  one string pins the measured total, the floor, and the precision simultaneously, which is also
+  what guards the statement arithmetic below from drifting unnoticed.
+
+A paired control run makes the test able to fail in both directions: the same generator with
+`10 * fail_under` covered produces exactly the floor and must exit `0`. Without it, a permanently
+failing harness would look like a permanently working gate.
 
 The synthetic total is constructed arithmetically from the configured floor rather than from magic
 constants. With a package of exactly 1000 statements and `10 * fail_under - 1` of them covered, the
 true total is `fail_under - 0.1` percent — below the floor for any integer floor, and rounding to
-the floor at precision `0`. For the configured floor of 90 that is 899 covered of 1000, or 89.90%.
-The temporary project reuses the repository's own `[tool.coverage.report]` table, so deleting
-`precision` from `pyproject.toml` makes this test fail.
+the floor at precision `0`. For the configured floor of 90 that is 899 covered of 1000, or 89.90%,
+verified to produce exactly that TOTAL line. The temporary project reuses the repository's own
+`[tool.coverage.report]` table, so deleting `precision` from `pyproject.toml` makes this test fail.
 
-**A configuration test** asserts the gate's declared shape: `[tool.coverage.report].fail_under` is
-90, its `precision` is at least 2, and `--cov-fail-under` does not appear in `addopts`. The last
-assertion prevents the two-mechanism split that concealed the original defect from returning, since
-a command-line `--cov-fail-under` silently overrides the configured value.
+**A configuration test** asserts the gate's declared shape. Asserting only that
+`--cov-fail-under` is absent would guard one of four one-token edits that silently disarm the
+gate; all four are verified to exit `0` on a package measuring 89.84%:
+
+| Edit to `addopts` | Effect |
+|---|---|
+| add `--cov-fail-under=<n>` | overrides the configured floor silently |
+| remove `--cov=hmc_mcp` | nothing is measured, so `fail_under` is never consulted |
+| add `--no-cov` | same, and it is the flag the retained comment teaches contributors |
+| add `--cov-precision=0` | restores the original defect verbatim — prints `FAIL … not reached` and exits `0` |
+
+The test therefore asserts `fail_under` is 90, `precision` is at least 2, `--cov=hmc_mcp` is
+present in `addopts`, and none of `--cov-fail-under`, `--no-cov`, or `--cov-precision` appears in
+it.
 
 ## Failure behavior
 
@@ -130,21 +164,29 @@ A total below 90.00% fails `just test` with coverage.py's own diagnostic —
 a failing `test` aborts before `smoke` runs; no later stage observes the failure or needs to.
 
 On a successful run no guardrail prints `FAIL`: above the floor, pytest-cov prints
-`Required test coverage of 90% reached`.
+`Required test coverage of 90.0% reached`. The trailing `.0` is new and follows from this change:
+the floor is now sourced from coverage.py's float-typed config rather than parsed as an int from
+a command-line flag, and the banner interpolates that value directly.
 
 Acceptance criterion 3 is met for every total the project can realistically hold, but it is
 narrowed rather than closed, and the residual is recorded rather than hidden. pytest-cov composes
 its banner from the unrounded total while the exit status uses the rounded one, so in the window
 `[89.995, 90.0)` a run passes and still prints
-`FAIL Required test coverage of 90% not reached. Total coverage: 90.00%`. A synthetic package at
+`FAIL Required test coverage of 90.0% not reached. Total coverage: 90.00%`. A synthetic package at
 89.996% reproduces this. The window is 0.005 points wide against the 0.5 points the original
 defect spanned, and the target margin of 90.50% keeps the project two orders of magnitude away
 from it. Closing it entirely would mean reimplementing pytest-cov's reporting, which is not worth
 the risk it removes; [ADR 0034](../../adr/0034-exact-coverage-gate.md) accepts it explicitly.
 
-The behavioral gate test fails loudly rather than silently skipping if its assumptions break: an
-absent `[tool.coverage.report]` section, a non-integer floor, or a `pytest` subprocess that cannot
-start each surface as a test failure, not as a passed test that checked nothing.
+The floor binds where the process starts. pytest resolves `addopts` by walking upward to the
+rootdir, but coverage.py opens its configuration relative to the working directory and does not
+walk. `pytest` invoked from the repository root — which is what `just test` and every CI leg do —
+reads `[tool.coverage.report]` and enforces the floor; `pytest` invoked from a subdirectory still
+measures, because `--cov=hmc_mcp` comes from `addopts`, but finds no configuration, falls back to
+`fail_under = 0` and `precision = 0`, and enforces nothing. Verified: the same 502-statement
+package reports `89.84%` and exits `1` from the root, and `90%` and exits `0` from `tests/`. This
+is recorded rather than engineered around; a `.coveragerc`, a `COVERAGE_RCFILE` export, or a
+rootdir-detecting wrapper would each add more machinery than the developer-facing risk warrants.
 
 ## Security model
 
@@ -163,8 +205,13 @@ input reaches it, and the fixture directory is removed by pytest.
 
 - `just test` exits non-zero when the package total is below 90.00%, and zero when it is above.
 - `just verify` stops at `test` on a coverage failure and does not run `smoke`.
-- The full suite reports at least 90.50% on CPython 3.11 and on CPython 3.14, measured locally
-  before the pull request is opened.
+- **The branch's own CI run reports at least 90.50% on every one of the eight legs.** That is the
+  binding measurement, because the legs differ by interpreter and by platform and the requirement
+  is the lowest-scoring one. A local run measures at most two interpreters on an architecture no
+  leg uses, so it is a pre-push check that the target is plausibly met, never the confirmation.
+- Locally, before pushing: the full suite reports at least 90.50% on CPython 3.11 and on
+  CPython 3.14, with `.venv` restored to 3.11 afterwards.
 - Removing `precision` from `[tool.coverage.report]` makes the behavioral gate test fail; this is
   confirmed by mutating the configuration, observing the failure, and reverting.
+- Each of the four gate-disabling `addopts` edits is rejected by the configuration test.
 - `just verify` passes end to end on the branch.
