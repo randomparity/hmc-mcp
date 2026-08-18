@@ -632,3 +632,220 @@ def test_scorecard_workflow_pins_actions_and_retains_results() -> None:
     assert "path: results.sarif" in workflow
     assert "retention-days: 5" in workflow
     assert "sarif_file: results.sarif" in workflow
+
+
+# --------------------------------------------------------------------------- #
+# coverage gate (#240)
+#
+# The gate declared 90% but compared the total rounded to coverage.py's default
+# precision of 0, so 89.78% rounded to 90 and passed while pytest-cov printed
+# FAIL from the unrounded total. These tests lock the fixed gate: two drive a
+# generated project through a real pytest run, three guard the configuration
+# that makes the comparison exact.
+# --------------------------------------------------------------------------- #
+
+GATE_STATEMENTS = 1000
+
+
+def _project_toml() -> dict:
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        return tomllib.load(file)
+
+
+def _coverage_gate() -> tuple[float, dict]:
+    """Return the configured floor and the whole [tool.coverage.report] table.
+
+    float, not int: int(90.9) truncates to 90, which would let the assertions
+    below pass while the real floor -- and the diagnostic the child emits --
+    had moved.
+    """
+    report = _project_toml()["tool"]["coverage"]["report"]
+    return float(report["fail_under"]), report
+
+
+def _write_gate_project(root: Path, report: dict, covered: int) -> None:
+    """Build a package of exactly GATE_STATEMENTS statements, `covered` executed."""
+    total = GATE_STATEMENTS
+    assert 0 < covered < total
+    package = root / "gatepkg"
+    package.mkdir()
+    package.joinpath("covered.py").write_text(
+        "".join(f"v{i} = {i}\n" for i in range(1, covered - 1))
+    )
+    package.joinpath("uncovered.py").write_text(
+        "def never_called():\n"
+        + "".join(f"    w{i} = {i}\n" for i in range(1, total - covered + 1))
+    )
+    package.joinpath("__init__.py").write_text("from . import covered, uncovered\n")
+    tests = root / "tests"
+    tests.mkdir()
+    tests.joinpath("test_gate.py").write_text(
+        "def test_touch():\n    import gatepkg.covered\n    assert gatepkg.covered.v1 == 1\n"
+    )
+    # json.dumps, not repr: repr(True) is "True", which is not valid TOML.
+    report_toml = "\n".join(
+        f"{key} = {json.dumps(value)}" for key, value in sorted(report.items())
+    )
+    root.joinpath("pyproject.toml").write_text(
+        "[project]\n"
+        'name = "gatepkg"\n'
+        'version = "0.0.0"\n'
+        "\n"
+        "[tool.pytest.ini_options]\n"
+        'pythonpath = ["."]\n'
+        'addopts = "--cov=gatepkg --cov-report=term"\n'
+        "\n"
+        "[tool.coverage.report]\n" + report_toml + "\n"
+    )
+
+
+def _run_gate_project(root: Path) -> "subprocess.CompletedProcess[str]":
+    # An exported PYTEST_ADDOPTS=--no-cov (or a COVERAGE_RCFILE left over from
+    # debugging) would otherwise decide the child's coverage instead of the
+    # generated project, reddening this test for an unrelated reason.
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
+    }
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+        env=environment,
+        text=True,
+        timeout=180,
+    )
+
+
+def test_coverage_gate_declares_one_exact_floor() -> None:
+    floor, report = _coverage_gate()
+    project = _project_toml()
+    addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
+
+    assert floor == 90
+    assert report["precision"] >= 2
+    # Without a measured source nothing consults fail_under at all. Token, not
+    # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
+    # narrow the measured source to one file, giving a total near 100%.
+    assert "--cov=hmc_mcp" in addopts.split()
+    # Each of these silently disarms the gate: a command-line floor or precision
+    # overrides the configured one, --no-cov switches measurement off, and
+    # --cov-config sends coverage.py to a different file entirely.
+    for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+        assert flag not in addopts, flag
+    # An omit/exclude key shrinks the denominator instead: adding
+    # omit = ["*/uncovered.py"] to the probe package reports 100.00% and exits 0.
+    #
+    # This freezes the table to exactly the gate's two keys, which is broader
+    # than "no denominator key" and deliberately so. coverage.py accepts
+    # seventeen keys here, and enumerating the harmful ones means betting that
+    # the enumeration stays complete across coverage.py versions -- partial_also
+    # and partial_branches already bite the moment anyone adds --cov-branch.
+    # A display-only key is not a threat, but it is also not free: it is one
+    # line here to add it deliberately. That is the point.
+    assert set(report) == {"fail_under", "precision"}, (
+        f"[tool.coverage.report] is frozen to the coverage gate's two keys; got "
+        f"{sorted(report)}. Adding a key is fine -- add it here too, in the same "
+        f"commit, so the gate's configuration stays reviewed."
+    )
+    run_config = project["tool"]["coverage"].get("run", {})
+    for key in run_config:
+        assert key not in {"omit", "include"} and not key.startswith("exclude"), key
+
+
+def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
+    """The floor can be overridden from any pytest invocation, not just addopts.
+
+    Scans every workflow and the whole justfile rather than one recipe, so a new
+    recipe or a new workflow that runs pytest is covered too.
+
+    --no-cov is held to a weaker rule than the other three, because it is the one
+    flag with a legitimate use here: the addopts comment directs
+    `pytest --no-cov <paths>` for a focused subset. Forbidding it outright would
+    redden this test the first time someone adds a `just test-fast` recipe -- a
+    false alarm whose natural remedy is deleting the assertion. So it is rejected
+    only where no test path accompanies it.
+
+    That heuristic is deliberately not the whole guard, because it is weakest
+    exactly where it matters most: every test here lives under tests/, so
+    `pytest -q --no-cov tests` in the `test` recipe would satisfy it while
+    disabling the gate on a full-suite run. The recipe that runs the gate is
+    therefore pinned exactly rather than pattern-matched.
+    """
+    sources = {"justfile": (ROOT / "justfile").read_text()}
+    workflows = ROOT / ".github" / "workflows"
+    for pattern in ("*.yml", "*.yaml"):
+        for path in sorted(workflows.glob(pattern)):
+            sources[path.name] = path.read_text()
+
+    assert len(sources) >= 2
+    # Same idiom as test_justfile_exposes_one_composed_verification_graph, which
+    # pins `build` and `verify-artifacts` this way.
+    assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"], (
+        "the `test` recipe body is pinned because it runs the package-wide coverage "
+        "gate; any edit to it -- including one unrelated to coverage -- has to be "
+        "made here too, so the gate cannot be disabled by a recipe change alone"
+    )
+    for name, text in sources.items():
+        for flag in ("--cov-fail-under", "--cov-precision", "--cov-config"):
+            assert flag not in text, f"{name}: {flag}"
+        for number, line in enumerate(text.splitlines(), start=1):
+            if "--no-cov" in line:
+                assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
+
+
+def test_pyproject_is_the_coverage_configuration_source() -> None:
+    """Guard which file coverage.py reads, not just what pyproject.toml says.
+
+    coverage.py tries .coveragerc, .coveragerc.toml, setup.cfg, tox.ini,
+    pyproject.toml in order and stops at the first that reads; for the two
+    .coveragerc forms merely existing is enough. An empty .coveragerc at the
+    root therefore disarms the gate with pyproject.toml byte-identical, and
+    with no FAIL banner either, because fail_under falls back to 0.
+    """
+    for name in (".coveragerc", ".coveragerc.toml"):
+        assert not (ROOT / name).exists(), name
+    for name in ("setup.cfg", "tox.ini"):
+        candidate = ROOT / name
+        if candidate.exists():
+            assert "[coverage:" not in candidate.read_text(), name
+
+
+def test_coverage_gate_fails_a_total_that_rounds_up_to_the_floor(tmp_path: Path) -> None:
+    """A total just under the floor must fail, not round up into passing.
+
+    Built from the configured floor rather than fixed constants: with 1000
+    statements and 10 * floor - 1 covered, the true total is floor - 0.1 percent,
+    which rounds to the floor at coverage.py's default precision of 0.
+    """
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor) - 1)
+
+    result = _run_gate_project(tmp_path)
+
+    # EXIT_TESTSFAILED exactly. A non-zero check would also pass on a syntax
+    # error (1 or 2), on no tests collected (5), or on an unimportable pytest --
+    # every way this harness can break -- so it would prove nothing about the gate.
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Pins the measured total, the floor, and the precision in one string.
+    # Formatted from the configured precision, not hardcoded: at precision = 3
+    # pytest-cov emits "total of 89.900 is less than fail-under=90.000", and a
+    # hardcoded string would redden this test for a change that strengthened the gate.
+    digits = report["precision"]
+    assert (
+        f"Coverage failure: total of {floor - 0.1:.{digits}f} "
+        f"is less than fail-under={floor:.{digits}f}" in result.stdout
+    ), result.stdout
+
+
+def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> None:
+    """Control: without it, a permanently broken harness reads as a working gate."""
+    floor, report = _coverage_gate()
+    _write_gate_project(tmp_path, report, covered=round(10 * floor))
+
+    result = _run_gate_project(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Coverage failure" not in result.stdout
