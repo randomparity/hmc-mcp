@@ -56,6 +56,9 @@ def _clean_project(project: Path) -> Path:
         ("git", "init", "--quiet"),
         ("git", "config", "user.email", "tests@example.invalid"),
         ("git", "config", "user.name", "Artifact Tests"),
+        # Disable any global pre-commit hooks (e.g. corporate secret-scanners)
+        # for this ephemeral test fixture repo.
+        ("git", "config", "core.hooksPath", "/dev/null"),
         ("git", "add", "."),
         ("git", "commit", "--quiet", "-m", "fixture"),
     ):

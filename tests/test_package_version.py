@@ -52,6 +52,9 @@ def initialize_repository(project: Path) -> str:
     run("git", "init", "--initial-branch=main", cwd=project)
     run("git", "config", "user.email", "tests@example.invalid", cwd=project)
     run("git", "config", "user.name", "Package Tests", cwd=project)
+    # Disable any global pre-commit hooks (e.g. corporate secret-scanners)
+    # for this ephemeral test fixture repo.
+    run("git", "config", "core.hooksPath", "/dev/null", cwd=project)
     run("git", "add", ".", cwd=project)
     run("git", "commit", "-m", "fixture", cwd=project)
     return run("git", "rev-parse", "--short=7", "HEAD", cwd=project).stdout.strip()

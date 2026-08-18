@@ -302,6 +302,11 @@ def test_dirty_project_commands_do_not_rebuild_editable_metadata(
     subprocess.run(
         ["git", "config", "user.name", "Command Tests"], cwd=project, check=True
     )
+    # Disable any global pre-commit hooks (e.g. corporate secret-scanners)
+    # for this ephemeral test fixture repo.
+    subprocess.run(
+        ["git", "config", "core.hooksPath", "/dev/null"], cwd=project, check=True
+    )
     subprocess.run(["git", "add", "."], cwd=project, check=True)
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
     environment = {**os.environ, "UV_LINK_MODE": "copy", "UV_NO_PROGRESS": "1"}
