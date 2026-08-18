@@ -76,8 +76,9 @@ Field meanings, normative:
 
 - **`effect`** — the strongest effect any path through the tool may have. A tool with a
   `dry_run` argument declares the effect of its non-dry-run path; dry-run refinement is #223.
-- **`operation`** — a stable `<domain>.<verb>` identity, unique across the composed registry,
-  independent of the Python function name and the MCP tool name.
+- **`operation`** — a `<domain>.<verb>` identity, unique across the composed registry,
+  independent of the Python function name. Required by epic #218 requirement 1; no consumer
+  in #220–#225 reads it, all of which key on the tool name.
 - **`target_kind`** — the primary HMC resource kind the operation acts on. `"console"` means
   the console as a whole; `"none"` means no HMC resource is involved.
 - **`targets`** — one entry per public handler argument that carries a target identity, in
@@ -107,21 +108,48 @@ Validation runs inside `tool()`, at import time, against the decorated handler:
 | V7 | `target_kind == "none"` ⟹ `targets == ()` and `connection_argument is None` | `ValueError` |
 | V8 | `target_kind not in ("none", "console")` ⟹ at least one `targets` entry with `kind == target_kind` | `ValueError` |
 | V9 | no argument appears twice in `targets` | `ValueError` |
+| V10 | every handler parameter named in `REQUIRED_TARGET_ARGUMENTS` appears in `targets` under its mapped kind | `ValueError` naming tool, argument, and kind |
+
+`REQUIRED_TARGET_ARGUMENTS` is a fixed mapping in `tool_registry.py`:
+
+```python
+REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
+    "lpar_name_or_uuid": "lpar",
+    "lpar_uuid": "lpar",
+    "system_name_or_uuid": "managed_system",
+    "target_system_name_or_uuid": "managed_system",
+    "vios_name_or_uuid": "vios",
+    "cluster_uuid": "cluster",
+}
+```
+
+V10 exists because V8 alone would let `hmc_migrate_lpar` declare only its LPAR and silently
+drop `target_system_name_or_uuid`, leaving #223 with nothing to constrain the migration
+destination by. The mapping is a closed explicit table rather than a `*_uuid` naming
+convention: sub-resource arguments (`vg_uuid`, `adapter_uuid`, `mapping_uuid`, `lu_udid`,
+`network_uuid`) are deliberately not targets, and a convention would need a waiver on each.
+Adding a tool that introduces a new owner-resource argument means adding a table row —
+a deliberate act, which is the point.
 
 Every message names the tool (`handler.__name__`) so an import failure identifies the
 declaration to fix.
 
-Registry-wide rules cannot be seen from one module. `create_mcp()` in `server.py` builds the
-index while composing:
+Registry-wide rules cannot be seen from one module. `server.create_mcp()` — the composing
+function, not the same-named empty-application factory in `_app.py` — builds the index while
+composing:
 
 | id | rule | failure |
 |---|---|---|
-| V10 | tool names are unique across all domain modules | `ValueError` naming the collision |
-| V11 | `operation` identities are unique across all domain modules | `ValueError` naming both tools |
+| V11 | tool names are unique across all domain modules | `ValueError` naming the collision |
+| V12 | `operation` identities are unique across all domain modules and the escape hatch | `ValueError` naming both tools |
 
 `register_tools(mcp)` returns `Mapping[str, ToolSecurity]` for the module it registered;
-`create_mcp()` merges those, raising on V10/V11, and stores the merged mapping as the
-module-level `TOOL_SECURITY`.
+`create_mcp()` merges those with the escape hatch's entry, raising on V11/V12, and stores the
+merged mapping as the module-level `TOOL_SECURITY`. Composition is deterministic over the
+fixed `TOOL_MODULES` tuple, so every application `create_mcp()` produces carries the same
+classification and a module-level mapping is correct; #221 filters registration against a
+policy, which does not change what a tool is classified as. Readers index it directly, so an
+unknown tool name raises `KeyError` rather than returning a permissive default.
 
 ### 3.3 Derived annotations
 
@@ -141,18 +169,24 @@ are deleted from `_app.py`, and the two frozensets are removed from the `server.
 re-export block.
 
 `mutate` intentionally leaves `destructiveHint` unset — see ADR 0035 consequences. The
-annotation change set is 48 tools gaining `readOnlyHint=False` where they had no annotation,
+annotation change set is 47 tools gaining `readOnlyHint=False` where they had no annotation,
 26 destructive tools gaining an explicit `readOnlyHint=False`, `hmc_run_command` gaining
 `destructiveHint=True`, and `hmc_read_lpar_boot_order` gaining `readOnlyHint=True`.
+`hmc_mount_optical_media` already carries `readOnlyHint=False` and does not change.
 
 ### 3.4 The escape hatch
 
 `server_command.py` defines `HMC_RUN_COMMAND_SECURITY = ToolSecurity(effect=
 "arbitrary-command", operation="command.run", target_kind="console",
 connection_argument="profile")` and registers with `annotations_for("arbitrary-command")`.
-`configure_arbitrary_command_tool` is otherwise unchanged. `server.py` exposes
-`ARBITRARY_COMMAND_SECURITY` alongside `TOOL_SECURITY` so the contract test and #221 can
-reach it without importing a private module attribute.
+`configure_arbitrary_command_tool` is otherwise unchanged.
+
+The escape hatch registers onto an application composition has already finished, so it cannot
+be added to the index by composition. `create_mcp()` therefore seeds its entry into
+`TOOL_SECURITY` **unconditionally**, independent of the operator toggle: the toggle governs
+whether the tool is registered, not what it is classified as, and an entry that appeared only
+when the toggle was on would make a #222 lookup fail open exactly when the highest-risk tool
+is live.
 
 ### 3.5 Classification of the 128 live tools
 
@@ -264,18 +298,19 @@ Each is a test in `tests/app/test_tool_security.py` unless stated otherwise.
 
 | id | criterion |
 |---|---|
-| G1 | The set of live tool names from `mcp.list_tools()` equals `set(TOOL_SECURITY)`, both with the arbitrary-command tool disabled and with it enabled. |
+| G1 | The set of live tool names from `mcp.list_tools()` is a subset of `set(TOOL_SECURITY)` with the arbitrary-command tool disabled, and equals it with the tool enabled. `TOOL_SECURITY` always contains `hmc_run_command`. |
 | G2 | Every `ToolSecurity.operation` is unique across the composed registry, and `create_mcp()` raises `ValueError` when two modules declare the same identity. |
 | G3 | Every declared `TargetSelector.argument` and every non-`None` `connection_argument` is a parameter of its handler, and appears in the tool's rendered MCP parameter schema. |
 | G4 | For every live tool, `tool.annotations == annotations_for(TOOL_SECURITY[name].effect)`, and `annotations_for` covers exactly the four effect values. |
-| G5 | `tool()` rejects each of V2–V9 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. |
-| G6 | `target_kind` and `targets` are internally consistent for every live tool: V7 and V8 hold across the whole registry. |
+| G5 | `tool()` rejects each of V2–V10 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. |
+| G6 | `target_kind` and `targets` are internally consistent for every live tool: V7, V8, and V10 hold across the whole registry. Specifically, `hmc_migrate_lpar` declares both its `lpar` and its destination `managed_system` target. |
 | G7 | Every live tool whose name starts with `hmc_delete_` or `hmc_remove_` has `effect == "destructive"`. |
 | G8 | The default application exposes no `arbitrary-command` tool; enabling the escape hatch exposes exactly `hmc_run_command`, classified `arbitrary-command`. |
 | G9 | `READ_ONLY_TOOLS`, `DESTRUCTIVE_TOOLS`, `_READ_ONLY`, `_DESTRUCTIVE`, and `_STATE_CHANGING` are absent from `hmc_mcp._app` and `hmc_mcp.server`. |
 | G10 | `hmc_list_configured_hosts` declares `target_kind="none"` and `connection_argument=None`; every other live tool declares `connection_argument="profile"`. |
-| G11 | `just verify` passes, including the `scripts/smoke_mcp.py` stdio smoke path. Not a pytest case. |
-| G12 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
+| G11 | Every live tool's `effect` matches its pre-change classification, with the single documented exception of `hmc_read_lpar_boot_order` — pinned by asserting the derived read/mutate/destructive census is 54/48/26 with the escape hatch disabled. |
+| G12 | `just verify` passes, including the `scripts/smoke_mcp.py` stdio smoke path. Not a pytest case. |
+| G13 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
 
 `tests/app/test_capabilities.py` loses `test_classification_sets_are_disjoint`,
 `test_every_registered_tool_matches_its_category`, and the frozenset assertions inside
