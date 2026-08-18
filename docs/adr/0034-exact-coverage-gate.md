@@ -67,9 +67,17 @@ the floor is measured package-wide.
 Where the floor binds narrows. coverage.py opens its configuration relative to the working
 directory and does not walk upward as pytest does for `addopts`, so the previous flag applied
 from any directory under the rootdir while the configured floor applies only from the repository
-root. A `pytest` run from a subdirectory still measures but enforces nothing. Every gate-running
-path — `just test`, and `just verify` on each CI leg — starts at the root, so this is
-developer-facing signal loss rather than a hole in enforcement.
+root. A `pytest` run from a subdirectory still measures but enforces nothing — verified against a
+synthetic package at a true 89.84%: exit `1` reporting `89.84%` from the root, exit `0` reporting
+`90%` from `tests/`. Every gate-running path — `just test`, and `just verify` on each CI leg —
+starts at the root, so this is developer-facing signal loss rather than a hole in enforcement.
+
+That narrowing is not avoidable by keeping the floor in `addopts`, which is the intuitive
+compromise and does not work: `precision` has to live in coverage.py's table either way, so it is
+lost from a subdirectory too and the total rounds back up to the floor. The same probe run with
+`--cov-fail-under=90` in `addopts` and only `precision = 2` in the table exits `0` from `tests/`,
+identically to the decision above. Only the all-flags form avoids it. The operator was shown both
+measurements and confirmed the trade on 2026-08-18, keeping the table.
 
 The precedence hazard between a command-line floor and a configured one is relocated, not removed.
 `--cov-fail-under` on the command line still overrides the configured 90 silently, so a CI job or
@@ -87,7 +95,9 @@ is not a guarantee against an override.
   (verified — configured `95` with `--cov-fail-under=50` reported "50% reached" and exited `0`).
   That override precedence is symmetric and the chosen design is exposed to it too, as
   Consequences records; what this entry rejects is the duplicate-floor state the split invites,
-  not an asymmetry in the hazard.
+  not an asymmetry in the hazard. This option is also no cheaper on the cwd axis than the
+  decision — verified, and recorded in Consequences — because its `precision` still comes from
+  the table.
 - **Put both in `addopts` as `--cov-fail-under=90 --cov-precision=2`.** pytest-cov 7.1.0 does
   ship `--cov-precision`, it overrides the config value, and it feeds the same comparison that
   sets the exit status; a probe at 89.84% with no `[tool.coverage.report]` section at all exits
@@ -97,8 +107,11 @@ is not a guarantee against an override.
   small diff, not a defect in the alternative — and the alternative wins on one axis: `addopts`
   binds from any working directory under the rootdir, while a configured floor binds only where
   the process starts, so this alternative would keep the floor applying to a `pytest` run from a
-  subdirectory (see Consequences). That was judged not to outweigh ownership, because every path
-  that runs the gate starts at the repository root.
+  subdirectory (see Consequences). That is measured, not assumed: the same 89.84% package exits
+  `1` from both the root and `tests/` under this form, and it is the **only** form tried that
+  does. That was judged not to outweigh ownership, because every path that runs the gate starts
+  at the repository root — a trade the operator was shown the measurements for and confirmed on
+  2026-08-18.
 - **Set `fail_under` to the margin — 90.5 rather than 90.** This is the only mechanism that would
   make the margin an enforced invariant instead of a landing condition that erodes on the next
   pull request. Not adopted: the issue and the operator decision both fix the declared floor at

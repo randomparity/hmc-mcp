@@ -249,9 +249,20 @@ same class as the working-directory narrowing below.
 
 This is a **narrowing this change introduces**, not a pre-existing property. `--cov-fail-under=90`
 in `addopts` bound from any working directory under the rootdir, because `addopts` itself came
-from the rootdir's ini file; the configured floor binds from the repository root only. It is
-accepted because every path that runs the gate — `just test`, and `just verify` on each CI leg —
-starts at the repository root, so the loss is developer-facing signal rather than a CI hole, and
+from the rootdir's ini file; the configured floor binds from the repository root only.
+
+Keeping the floor in `addopts` does not avoid it. That is the intuitive compromise and it was
+measured: with `--cov-fail-under=90` in `addopts` and only `precision = 2` in the table, the same
+package exits `0` reporting `90%` from `tests/` — identical to the chosen design, because
+`precision` is read from the table either way and its loss alone is enough to round 89.84% back up
+to the floor. Only `--cov-fail-under=90 --cov-precision=2` in `addopts`, with no table at all,
+enforces from a subdirectory; it exits `1` reporting `89.84%` from both locations. ADR 0034
+rejects that form on settings ownership, and the operator confirmed the trade on 2026-08-18 with
+both measurements in hand.
+
+The narrowing is accepted because every path that runs the gate — `just test`, and `just verify`
+on each CI leg — starts at the repository root, so the loss is developer-facing signal rather than
+a CI hole, and
 a `.coveragerc`, a `COVERAGE_RCFILE` export, or a rootdir-detecting wrapper would each cost more
 than the risk. [ADR 0034](../../adr/0034-exact-coverage-gate.md) records the same asymmetry
 against its `addopts` alternative, which does not have this sensitivity — so that alternative is
