@@ -1613,6 +1613,17 @@ def test_lpars_memopt_scores_missing_system(monkeypatch):
     assert "Missing" in result.stderr
 
 
+def test_lpars_memopt_scores_empty(monkeypatch):
+    async def fake(cfg, cmd):
+        return ""
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores", "sys1"])
+
+    assert result.exit_code == 0
+    assert "No memory-optimization scores reported" in result.stdout
+
+
 @pytest.mark.parametrize(
     ("args", "expected_call"),
     [
