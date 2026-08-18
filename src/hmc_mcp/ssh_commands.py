@@ -383,6 +383,56 @@ async def list_vnics(
     return _parse_lshwres_output(raw)
 
 
+async def list_lpar_memopt_scores(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """List current memory-optimization scores for a system's LPARs via SSH.
+
+    Runs ``lsmemopt -m <system_name> -r lpar -o currscore`` and returns one
+    dict per LPAR with the HMC's own fields ``lpar_name``, ``lpar_id``, and
+    ``curr_lpar_score`` (a 0-100 decimal string, or the literal ``none`` when
+    the partition is not subject to memory optimization).  Pass *lpar_name*
+    to restrict the result to a single partition.
+    """
+    cmd = f"lsmemopt -m {shlex.quote(system_name)} -r lpar -o currscore"
+    if lpar_name is not None:
+        if not lpar_name.strip():
+            raise ValueError("lpar_name must not be empty")
+        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+    raw = await run_hmc_command(config, cmd)
+    if not raw.strip():
+        return []
+    return _parse_lshwres_output(raw)
+
+
+async def get_lpar_memopt_score(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> dict[str, Any]:
+    """Return an LPAR's current memory-optimization (affinity) score via SSH.
+
+    Runs ``lsmemopt -m <system_name> -r lpar -o currscore --filter
+    lpar_names=<lpar_name>`` and returns the reported row with the HMC's own
+    fields ``lpar_name``, ``lpar_id``, and ``curr_lpar_score``.
+
+    Raises:
+        ValueError: If *lpar_name* is empty.
+        HMCCLIError: If the HMC reports no score row for the partition.
+    """
+    if not lpar_name.strip():
+        raise ValueError("lpar_name must not be empty")
+    rows = await list_lpar_memopt_scores(config, system_name, lpar_name)
+    if not rows:
+        raise HMCCLIError(
+            f"lsmemopt reported no memory-optimization score for LPAR "
+            f"{lpar_name!r} on system {system_name!r}"
+        )
+    return rows[0]
+
+
 async def list_memory_pools(
     config: HMCConfig,
     system_name: str,
