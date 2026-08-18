@@ -660,21 +660,23 @@ REVIEWED_NO_COVER: frozenset[str] = frozenset()
 GATE_INVOCATIONS = ("pytest", "just test", "just verify")
 
 
+def _starts_a_block(line: str) -> bool:
+    """A workflow step (a `- ` list item) or a justfile recipe header (column 0)."""
+    if line.strip().startswith("- "):
+        return True
+    return bool(line) and not line[0].isspace() and not line.startswith("#")
+
+
 def _gate_blocks(text: str) -> list[tuple[int, list[str]]]:
     """Slice a justfile or workflow into the blocks that run the package-wide suite.
 
-    A block is a workflow step (a `- ` item and the keys under it) or a justfile
-    recipe (a header at column 0 and its indented body). Returning the block
-    rather than the whole file is what keeps the relocation rule off edits that
-    have nothing to do with the test suite.
+    A block runs from one header to the next: a workflow step and the keys under
+    it, or a justfile recipe and its indented body. Returning the block rather
+    than the whole file is what keeps the relocation rule off edits that have
+    nothing to do with the test suite.
     """
     lines = text.splitlines()
-    starts = [
-        index
-        for index, line in enumerate(lines)
-        if line.strip().startswith("- ")
-        or (line[:1].strip() != "" and not line.startswith("#"))
-    ]
+    starts = [index for index, line in enumerate(lines) if _starts_a_block(line)]
     blocks = []
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
