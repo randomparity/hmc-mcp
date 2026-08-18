@@ -284,6 +284,7 @@ async def test_lpar_mixin_writes_use_schema_compatible_paths():
         "/rest/api/uom/LogicalPartition/lpar-1",
         "<update/>",
         resource_type="LogicalPartition",
+        include_schema_version=False,
     )
     client._delete.assert_awaited_once_with("/rest/api/uom/LogicalPartition/lpar-1")
 
