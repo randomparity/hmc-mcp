@@ -75,12 +75,13 @@ precision that decides whether the floor means anything. No other coverage optio
 
 ## Coverage margin
 
-The floor is held with margin rather than met precisely, because the measured total varies by
-interpreter. The same suite reports 611 missed statements of 5977 on CPython 3.11 and 612 on
-CPython 3.14 — a spread of one statement, or 0.017 percentage points. That sample covers two of
-the eight legs CI runs (four interpreters × two architectures); the other six are unmeasured, so
-the spread is a floor from a partial sample rather than a bound. The margin below is a chosen
-safety factor over it, not a derived number.
+The floor is held with margin rather than met precisely, because it is enforced independently
+inside each of the eight legs CI runs (four interpreters × two architectures) and the measured
+total varies between them. The same suite reports 611 missed statements of 5977 on CPython 3.11
+and 612 on CPython 3.14 — one statement, or 0.017 percentage points. The binding requirement is
+the lowest-scoring leg, so a total that clears the floor on the interpreter a contributor happens
+to run locally can still fail one they never ran. The margin is a chosen safety factor against
+that, not a derived bound.
 
 The target is a total of **at least 90.50%** on both CPython 3.11 and CPython 3.14, which at the
 current package size of 5977 statements means **no more than 567 missed statements**, down from

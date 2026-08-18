@@ -26,12 +26,10 @@ the old configuration, exits `1` once `[tool.coverage.report] precision = 2` is 
 `[tool.coverage.report]` carries both `fail_under = 90` and `precision = 2`, and
 `--cov-fail-under` is removed from `addopts`.
 
-Both settings belong to coverage.py rather than to pytest: `fail_under` is its pass/fail policy
-and `precision` is the reporting precision that policy is compared at. pytest-cov's
-`--cov-fail-under` and `--cov-precision` are overrides of those two settings, so the canonical
-home is coverage.py's own table. `addopts` is left saying only what the pytest run does — measure
-`hmc_mcp`, report term-missing — and the gate's policy and its precision sit adjacent under one
-heading.
+A table is chosen over the equivalent pytest flags because the gate's own regression test reads
+it: the test loads `[tool.coverage.report]` and replays it into a synthetic project, which is
+straightforward against a TOML table and awkward against flags embedded in an `addopts` string.
+`addopts` is left saying only what the pytest run does — measure `hmc_mcp`, report term-missing.
 
 The floor stays at 90. Package coverage is raised above it by adding tests rather than by lowering
 the declared number, and is held with enough margin to absorb the per-interpreter variance measured
@@ -43,20 +41,18 @@ A total below 90.00% now fails `just test`, which aborts `just verify` before `s
 `verify-artifacts` — the composed suite stops at the first red gate as it always claimed to.
 Terminal reports print two decimal places for every file and for the total.
 
-Coverage totals differ by interpreter: 611 missed statements of 5977 on CPython 3.11, 612 on
-CPython 3.14. That is one statement, or 0.017 points, measured on two of the eight legs
-`just verify` runs; the other six are unmeasured, so it is a floor from a partial sample, not a
-bound. The floor is therefore held with margin: treat a total within a tenth of a point of 90.00%
-as unfinished. That tenth is a chosen safety factor over a partial sample, not a derived number,
-and a leg that later disagrees by more is a reason to raise it.
+The floor is enforced independently inside each of the eight CI legs `just verify` runs — CPython
+3.11 to 3.14 across amd64 and arm64 — and coverage totals differ between them: 611 missed
+statements of 5977 on CPython 3.11, 612 on CPython 3.14. The binding requirement is therefore the
+lowest-scoring interpreter, and a contributor who measures locally on one can pass and still turn
+a leg red that they never ran. The margin exists for that: hold the total at least half a point
+above the floor, the figure this change adopts, rather than clearing 90.00% on one interpreter.
 
-The comparison is exact to two decimal places, not perfectly exact, and the original defect's
-banner/exit mismatch survives inside that residue: pytest-cov composes its banner from the
-unrounded total while the exit status uses the rounded one. In the window `[89.995, 90.0)` a run
-passes while printing `FAIL Required test coverage of 90% not reached. Total coverage: 90.00%`,
-verified with a synthetic package at 89.996%. That window is 0.005 points against the 0.5 points
-the defect spanned — narrowed by two orders of magnitude, not closed. It is accepted rather than
-engineered around, since closing it means reimplementing pytest-cov's reporting.
+The comparison is exact to two decimal places, so the defect's banner/exit mismatch survives in
+miniature: within `[89.995, 90.0)` a run passes while still printing `FAIL … Total coverage:
+90.00%`, because the banner uses the unrounded total and the exit status the rounded one. That
+window is 0.005 points against the 0.5 the defect spanned; `precision = 2` is the value the issue
+specified, and a higher precision would shrink it further if it ever matters.
 
 Because the floor now lives in `[tool.coverage.report]`, every coverage.py reporting subcommand
 honours it — `report`, `html`, `xml`, `json`, and `lcov` each exit `2` below the floor. Anyone
@@ -73,22 +69,23 @@ is not a guarantee against an override.
 ## Considered & rejected
 
 - **Set `precision = 2` and leave `--cov-fail-under=90` in `addopts`.** The issue's own suggested
-  fix, and it does work — the probe confirms it. Rejected because it splits the gate across the
-  two mechanisms: the floor stays a pytest flag while its precision becomes a coverage.py setting,
-  so neither location shows the whole gate. The probe also showed the split is actively unsafe
-  rather than merely untidy — with `fail_under = 95` configured and `--cov-fail-under=50` in
-  `addopts`, the run reported "Required test coverage of 50% reached" and exited `0`, discarding
-  the configured floor with no warning. A reader who later adds `fail_under` to the config table
-  would get a floor that looks declared and is inert.
+  fix, and it does work — the probe confirms it. Rejected because it leaves the gate split across
+  a pytest flag and a coverage.py table, so neither location shows the whole gate, and because it
+  invites a duplicate floor: the natural next edit is to move `fail_under` into the table beside
+  `precision`, at which point the `addopts` flag silently wins and the configured floor is inert
+  (verified — configured `95` with `--cov-fail-under=50` reported "50% reached" and exited `0`).
+  That override precedence is symmetric and the chosen design is exposed to it too, as
+  Consequences records; what this entry rejects is the duplicate-floor state the split invites,
+  not an asymmetry in the hazard.
 - **Put both in `addopts` as `--cov-fail-under=90 --cov-precision=2`.** pytest-cov 7.1.0 does
   ship `--cov-precision`, it overrides the config value, and it feeds the same comparison that
   sets the exit status; a probe at 89.84% with no `[tool.coverage.report]` section at all exits
   `1`. So this works, and it is the smallest change of any option here — one flag added rather
-  than one removed plus a new table. Rejected because it puts coverage.py's pass/fail policy and
-  reporting precision in pytest's invocation string, where `coverage` invoked directly cannot see
-  either, and where they sit among flags (`--cov`, `--cov-report`) that are genuinely pytest's.
-  The chosen design pays two extra lines to keep each setting in its owning tool's configuration.
-  This is a close call on a small diff, not a decisive defect in the alternative.
+  than one removed plus a new table. Rejected because the gate's regression test consumes the
+  configured table directly, which flags inside an `addopts` string would force it to parse. The
+  argument that a directly-invoked `coverage` would also see the table is a bet on a consumer
+  this repository does not have. This is a close call on a small diff, not a defect in the
+  alternative.
 - **Lower the floor to `--cov-fail-under=89` to match the real total.** Strictly more honest than a
   gate that cannot fail, and explicitly offered by the issue. Rejected by the operator in favour of
   raising coverage; codifying 89 would have made the reported number honest by giving up the
