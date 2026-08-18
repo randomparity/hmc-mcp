@@ -7,8 +7,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-from coverage.config import CoverageConfig
-
 
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
@@ -647,18 +645,43 @@ def test_scorecard_workflow_pins_actions_and_retains_results() -> None:
 # --------------------------------------------------------------------------- #
 
 GATE_STATEMENTS = 1000
-# What coverage.py drops from the denominator with no configuration at all.
-# Frozen rather than read loosely: each entry is a channel that shrinks the
-# measured total before fail_under sees it, so a fourth one arriving in a
-# coverage.py bump is a change to what the gate measures.
-DEFAULT_LINE_EXCLUSIONS = (
-    r"#\s*(pragma|PRAGMA)[:\s]?\s*(no|NO)\s*(cover|COVER)",
-    r"^\s*(((async )?def .*?)?[\])]+(\s*->.*?)?:\s*)?\.\.\.\s*(#|$)",
-    r"if (typing\.)?TYPE_CHECKING:",
-)
-# The open-ended one: it applies to any line, unlike the two structural entries
-# above. Compiled from coverage.py's own default so the scan and the tool agree.
-NO_COVER_PRAGMA = re.compile(DEFAULT_LINE_EXCLUSIONS[0])
+# coverage.py excludes this comment from the denominator with no configuration
+# at all, so it shrinks the measured total without covering anything. Written
+# as a literal rather than read from coverage.config: that module is private
+# (CoverageConfig is not exported from the package), coverage is not a declared
+# dependency here -- it arrives transitively through pytest-cov -- and an import
+# at module scope turns a resolution change into a collection error that takes
+# every test in this file with it.
+NO_COVER_PRAGMA = re.compile(r"#\s*pragma:?\s*no\s*cover", re.IGNORECASE)
+# Lines allowed to carry one anyway. Empty on purpose: the point is that
+# widening it is a reviewed diff, not that it can never happen.
+REVIEWED_NO_COVER: frozenset[str] = frozenset()
+# Anything that runs the package-wide suite, and therefore the gate.
+GATE_INVOCATIONS = ("pytest", "just test", "just verify")
+
+
+def _gate_blocks(text: str) -> list[tuple[int, list[str]]]:
+    """Slice a justfile or workflow into the blocks that run the package-wide suite.
+
+    A block is a workflow step (a `- ` item and the keys under it) or a justfile
+    recipe (a header at column 0 and its indented body). Returning the block
+    rather than the whole file is what keeps the relocation rule off edits that
+    have nothing to do with the test suite.
+    """
+    lines = text.splitlines()
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip().startswith("- ")
+        or (line[:1].strip() != "" and not line.startswith("#"))
+    ]
+    blocks = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        block = lines[start:end]
+        if any(token in line for line in block for token in GATE_INVOCATIONS):
+            blocks.append((start + 1, block))
+    return blocks
 
 
 def _project_toml() -> dict:
@@ -796,23 +819,18 @@ def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
     under test. Scanning the source closes the open-ended channel and leaves the
     two bounded ones alone.
     """
-    assert tuple(CoverageConfig().exclude_list) == DEFAULT_LINE_EXCLUSIONS, (
-        f"coverage.py's default line exclusions changed to "
-        f"{CoverageConfig().exclude_list}. Every one of them drops statements "
-        f"from the measured total before fail_under sees it, so a new default "
-        f"changes what the gate measures. Review it, then update this tuple."
-    )
     offenders = [
-        f"{path.relative_to(ROOT)}:{number}"
+        location
         for path in sorted((ROOT / "src" / "hmc_mcp").rglob("*.py"))
         for number, line in enumerate(path.read_text().splitlines(), start=1)
         if NO_COVER_PRAGMA.search(line)
+        and (location := f"{path.relative_to(ROOT)}:{number}") not in REVIEWED_NO_COVER
     ]
     assert not offenders, (
         f"{', '.join(offenders)}: `# pragma: no cover` drops these statements "
         f"from the coverage total instead of covering them, so the reported "
         f"percentage stops describing the package. If a line genuinely cannot be "
-        f"executed under test, add a reviewed exception here."
+        f"executed under test, add its `path:line` to REVIEWED_NO_COVER."
     )
 
 
@@ -868,15 +886,28 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
         # subdirectory still measures the package -- addopts survives -- but reads no
         # fail_under, falls back to 0, and prints no banner. Verified on this
         # repository: the same subset run exits 1 with the gate diagnostic from the
-        # root and 0 from tests/. The repository uses this key nowhere today, so a
-        # flat rejection costs nothing; if a step ever needs it for something
-        # unrelated to the test suite, allow it here deliberately.
-        assert "working-directory" not in text, (
-            f"{name}: `working-directory` moves where coverage.py looks for the gate's "
-            f"configuration, so a pytest step beneath it enforces no floor while still "
-            f"reporting a coverage total. Keep test steps at the repository root, or "
-            f"add a reviewed exception here."
-        )
+        # root and 0 from tests/.
+        #
+        # Scoped to the blocks that run the suite, not the whole file, and
+        # deliberately so. `working-directory` is an ordinary Actions key -- a docs
+        # build, a container build, a step scoped to a subdirectory -- and rejecting
+        # it everywhere would redden a test named for the coverage gate on edits that
+        # never touch the suite. That is a false alarm whose cheapest remedy is
+        # deleting the assertion, which is how a guard dies. Inside a block that runs
+        # the gate no exception is owed, because relocating it is never legitimate,
+        # so both spellings are rejected outright. The residual is a job-level
+        # `defaults.run.working-directory`, which sits outside any step block; it is
+        # recorded in ADR 0034 rather than guarded here.
+        for line_number, block in _gate_blocks(text):
+            for token in ("working-directory", "cd "):
+                offender = next((line for line in block if token in line), None)
+                assert offender is None, (
+                    f"{name}:{line_number}: `{token.strip()}` relocates a block that "
+                    f"runs the package-wide suite ({offender.strip()}), and coverage.py "
+                    f"reads its configuration relative to the working directory. The "
+                    f"gate would measure the package, enforce no floor, and print no "
+                    f"banner. Run the suite from the repository root."
+                )
         for number, line in enumerate(text.splitlines(), start=1):
             if "--no-cov" in line:
                 assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
@@ -962,3 +993,9 @@ def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Coverage failure" not in result.stdout
+    # Acceptance criterion 3, and a different code path from the line above.
+    # pytest-cov decides the exit status on the rounded total and the banner on
+    # the unrounded one, so a run can exit 0 while still printing FAIL -- that
+    # disagreement is the reported defect, and at 89.996% it still reproduces.
+    # Asserting only the absence of the failure-path diagnostic would pass there.
+    assert "FAIL" not in result.stdout, result.stdout

@@ -67,10 +67,21 @@ configuration key — `omit`, `include`, or an `exclude*` key, in either `[tool.
 covered, each takes the run from exit `1` at `89.90%` to exit `0` reporting `100.00%`. A
 `# pragma: no cover` comment reaches the same result through coverage.py's *default*
 `exclude_lines`, with `pyproject.toml` byte-identical, so no configuration rule can see it; a
-source scan rejects it instead. Setting `exclude_lines = []` would also close that route and is
-not the choice made here: it is a configuration key the first rule rejects, and it would
-additionally unexclude `if TYPE_CHECKING:` and `...` stub bodies, which are excluded because they
-cannot execute under test. The narrower rule leaves those alone.
+source scan over `src/hmc_mcp` rejects it instead, against an empty reviewed-exception set, so a
+line that genuinely cannot execute under test is a one-line diff rather than a deleted assertion.
+Setting `exclude_lines = []` would also close that route and is not the choice made here: it is a
+configuration key the first rule rejects, and it would additionally unexclude `if TYPE_CHECKING:`
+and `...` stub bodies, which are excluded because they cannot execute under test. The narrower
+rule leaves those alone.
+
+Guards are scoped to what they protect, because a guard that reddens on an unrelated edit gets
+deleted rather than amended. The relocation rule rejects `working-directory` and `cd` only inside
+a workflow step or justfile recipe that runs the package-wide suite: both spellings reach the same
+unenforced state, and neither is legitimate there, but `working-directory` is an ordinary Actions
+key elsewhere. A job-level `defaults.run.working-directory` sits outside any step block and is
+accepted rather than guarded. The no-cover scan reads `src/hmc_mcp` only, and matches the comment
+form rather than the substring `pragma`, so the repository's existing `# pragma: allowlist secret`
+is not a false positive.
 
 Because the floor now lives in `[tool.coverage.report]`, every coverage.py reporting subcommand
 honours it — `report`, `html`, `xml`, `json`, and `lcov` each exit `2` below the floor. Anyone

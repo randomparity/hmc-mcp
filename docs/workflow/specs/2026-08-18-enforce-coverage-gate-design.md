@@ -234,18 +234,21 @@ The test therefore asserts:
   as `show_missing` also has to be added to the test — one line, in the same commit, which is what
   keeping the gate's configuration reviewed means. This mirrors the exact-allowlist idiom the
   module already uses for the secrets baseline;
-- no file under `src/hmc_mcp/` carries a `# pragma: no cover` comment, and coverage.py's default
-  `exclude_lines` is still exactly its three known patterns. Both rules above govern
-  configuration, and configuration is not the only route to a shrunken denominator: coverage.py
-  excludes the no-cover pragma *by default*, so a single comment reaches the same `TOTAL 898 0
-  100.00%` exit `0` that `omit` produces, with `pyproject.toml` byte-identical and every
-  configuration rule green (verified on the probe package). The scan closes that route in source
-  rather than in configuration, because the configuration remedy — `exclude_lines = []` — is
-  rejected by the rule above and would also unexclude `if TYPE_CHECKING:` and `...` stub bodies,
-  which are excluded because they cannot execute under test. Freezing the default list alongside
-  it means a coverage.py bump that adds a fourth default exclusion reddens here rather than
-  quietly changing what the gate measures. The scan matches coverage.py's own default pattern, not
-  the substring `pragma`, so the existing `# pragma: allowlist secret` in `cli_config.py` is not a
+- no file under `src/hmc_mcp/` carries a `# pragma: no cover` comment, outside a reviewed
+  `REVIEWED_NO_COVER` entry. Both rules above govern configuration, and configuration is not the
+  only route to a shrunken denominator: coverage.py excludes the no-cover pragma *by default*, so
+  a single comment reaches the same `TOTAL 898 0 100.00%` exit `0` that `omit` produces, with
+  `pyproject.toml` byte-identical and every configuration rule green (verified on the probe
+  package). The scan closes that route in source rather than in configuration, because the
+  configuration remedy — `exclude_lines = []` — is rejected by the rule above and would also
+  unexclude `if TYPE_CHECKING:` and `...` stub bodies, which are excluded because they cannot
+  execute under test. The pattern is a literal, not one read out of `coverage.config`: that module
+  is private, `coverage` is not a declared dependency of this project — it arrives transitively
+  through `pytest-cov` — and importing it at module scope would turn a resolution change into a
+  collection error taking every test in the file down, against [ADR
+  0001](../../adr/0001-pin-direct-dependencies-and-automate-updates.md). It matches the comment
+  form rather than the
+  substring `pragma`, so the existing `# pragma: allowlist secret` in `cli_config.py` is not a
   false positive;
 - the whole `justfile` and every workflow carry none of `--cov-fail-under`, `--cov-precision`,
   `--cov-config`, or `COVERAGE_RCFILE`, and no `--no-cov` without a test path beside it; and the
@@ -320,9 +323,19 @@ The narrowing is accepted because every path that runs the gate — `just test`,
 on each CI leg — starts at the repository root. That is a fact about the repository today, not an
 invariant, and the difference matters: a CI step carrying `working-directory: tests` would run the
 suite, measure the whole package, enforce nothing, and print no banner saying so. So the CI half
-is not left resting on nobody writing that key — the invocation-site test rejects
-`working-directory` across the justfile and every workflow, which is the only guard that catches
-this vector, since the edit contains no coverage flag at all. What remains developer-facing is a
+is not left resting on nobody writing that key — the invocation-site test rejects both spellings,
+`working-directory` and a `cd` into a subdirectory, and it is the only guard that catches either,
+since neither edit contains a coverage flag at all.
+
+The rejection is scoped to the blocks that run the suite — a workflow step, a justfile recipe —
+rather than applied to whole files. A blanket substring ban was the first form and was wrong in
+both directions: `working-directory` is an ordinary Actions key, so the ban reddened a test named
+for the coverage gate on edits that never touch the suite, and a contributor's cheapest way out of
+that false alarm is deleting the assertion; meanwhile `cd tests && pytest` reaches the identical
+unenforced state and carries no banned token. Scoping fixes both — inside a gate-running block no
+exception is owed, because relocating it is never legitimate. The residual is a job-level
+`defaults.run.working-directory`, which sits outside any step block and is accepted rather than
+guarded. What remains developer-facing is a
 contributor's own `pytest` run from a subdirectory, which no test can reach. With the CI half
 guarded the residual is signal loss rather than a hole, and
 a `.coveragerc`, a `COVERAGE_RCFILE` export, or a rootdir-detecting wrapper would each cost more
