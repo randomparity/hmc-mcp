@@ -19,11 +19,13 @@ coverage would leave a commit whose guardrails are red.
 
 - The declared floor is `90`. It is not lowered. [ADR 0034](../../adr/0034-exact-coverage-gate.md)
   governs this and the configuration shape below.
-- The gate's final configuration is exactly:
+- The gate's final configuration is exactly this — comment included, since the existing comment's
+  first sentence ("Keep the package-wide gate at the rounded full-suite baseline") describes the
+  defect and stops being true here:
   ```toml
   [tool.pytest.ini_options]
   pythonpath = ["tests"]
-  # Keep the package-wide gate at the rounded full-suite baseline. Run a focused
+  # Package-wide coverage gate lives in [tool.coverage.report]. Run a focused
   # subset with `--no-cov` when package-wide coverage is not meaningful.
   addopts = "--cov=hmc_mcp --cov-report=term-missing"
 
@@ -34,10 +36,6 @@ coverage would leave a commit whose guardrails are red.
   `--cov-fail-under` must not appear in `addopts`: a command-line floor silently overrides a
   configured one (verified — configured `95` with `--cov-fail-under=50` reports "Required test
   coverage of 50% reached" and exits `0`).
-- The `addopts` comment is retained but its first sentence is corrected, since the gate is no
-  longer "at the rounded baseline". Replace it with: `# Package-wide coverage gate lives in
-  [tool.coverage.report]. Run a focused subset with` / `# --no-cov when package-wide coverage is
-  not meaningful.`
 - Target coverage is **at least 90.50%** on CPython 3.11, i.e. **no more than 567 missed
   statements** of 5977. Baseline is 611 missed (89.78%).
 - No file under `src/hmc_mcp/` is modified. Coverage rises only by exercising shipped code. A
@@ -202,7 +200,19 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
    | `list-mappings` | table with `VirtualDisk`; table with `PhysicalVolume`; `--json` | B |
    | `detach-mapping` | `--confirm` deletes; a raising operation exits 1 and puts `Failed to delete storage mapping` on **stdout** while the real diagnostic goes to stderr — see the note below | B |
    | `upload-iso` | duplicate-existing render; `--json` | C |
-   | `attach-disk` | `--json` with an incomplete workflow exits 1 | A |
+   | `attach-disk` | `--json` with an incomplete workflow exits 1 | none — see below |
+
+   **`attach-disk` patches nothing.** It is not a shape-A command. Its `--json` branch
+   (`cli_storage.py:175-179`) calls `dataclasses.asdict(result)`, and the real return type is the
+   frozen dataclass `AttachDiskResult` (`operations_provision.py:96-103`). A fake returning a dict
+   or a `SimpleNamespace` makes `asdict()` raise `TypeError` before line 176 runs; `CliRunner`
+   catches it and reports `exit_code == 1`, so an exit-code-only assertion passes while the
+   branch stays uncovered. Instead reuse the setup of the existing
+   `test_storage_attach_disk_partial_failure_is_visible_and_nonzero`
+   (`tests/app/test_cli_commands.py:1450`) — `fake_hmc.fail_on = "add_vscsi_adapter"`, the real
+   `attach_disk_to_lpar` running against `FakeHMC` — with `--json` added. Assert on the JSON
+   content, not only the exit code: `json.loads(result.stdout)["workflow_completed"] is False`.
+   A `TypeError` cannot satisfy that.
 
    Decline a confirmation by passing `input="n\n"` to `RUNNER.invoke`; `typer.Abort` renders
    `Aborted.` **to stderr** and exits 1, so assert on `result.stderr`.
@@ -242,8 +252,9 @@ focused suite passes; the package total is at or above 90.50% on CPython 3.11; n
 
 **Files:** Modify `tests/app/test_cli_commands.py`.
 
-**Interfaces:** Consumes the same `RUNNER`, `FakeHMC`, and `fake_hmc` fixture as Task 1. Produces
-test functions only.
+**Interfaces:** Consumes the same `RUNNER`, `FakeHMC`, `fake_hmc` fixture, and the `SYSTEM_UUID`
+constant as Task 1. Produces test functions, plus one new `search_uom` method on `FakeHMC` — the
+only change this plan makes to that class.
 
 **Trigger:** Run this task whenever any measurement reports below 90.50% — Task 1 step 6, Task 3
 step 6, Task 4 step 1, or any CI leg in Task 4 step 4. If Task 1 already reached the target, skip
@@ -254,28 +265,98 @@ raise the shortfall with the operator rather than looping. The enforced floor is
 half-point margin is a landing target the operator chose, so continuing to chase it is their call
 — and `src/hmc_mcp/` stays off-limits either way.
 
-`src/hmc_mcp/cli_systems.py` has 43 missed statements of 141 (70%), all in render paths reached
-through `_client()` / `_with_client`, so the existing `fake_hmc` fixture intercepts every one —
-no shape table is needed here.
+`src/hmc_mcp/cli_systems.py` has 43 missed statements of 141 (70%), all in render paths. Every one
+of them is reached through `_client()` / `_with_client`, so the `fake_hmc` fixture does cover the
+*client* seam — but that does not make `hmc_mcp.cli_systems` the patch target. Three of these five
+commands import their operation **inside** the command body, exactly as Task 1's shape B, and one
+does not go through an operation at all:
 
-1. Add tests covering: `health` non-empty table render and its warnings loop (lines 42, 47–53);
-   `list --state` server-side search branch (line 68); `summary` table render (200–215);
-   `capacity` table render and its empty-report branch (233–263); `find-placement` table render
-   and its empty branch (283–297).
+| Command | Import site | Patch target |
+|---|---|---|
+| `health` | module top (`cli_systems.py:22`) | `hmc_mcp.cli_systems.fleet_health` |
+| `list --state` | none — calls a **client method** | no operation exists; extend `FakeHMC` (below) |
+| `summary` | inside the body (`cli_systems.py:189`) | `hmc_mcp.operations_composite.system_summary` |
+| `capacity` | inside the body (`cli_systems.py:223`) | `hmc_mcp.operations_capacity.capacity_report` |
+| `find-placement` | inside the body (`cli_systems.py:273`) | `hmc_mcp.operations_capacity.find_placement` |
 
-2. Each test invokes through `RUNNER.invoke(cli.app, [...])`, asserts exit code 0, and asserts on
-   a rendered value unique to the branch — for example, for `capacity`:
+`monkeypatch.setattr("hmc_mcp.cli_systems.capacity_report", ...)` raises
+`AttributeError: module 'hmc_mcp.cli_systems' has no attribute 'capacity_report'` — monkeypatch
+raises on a missing attribute by default, so this fails loudly rather than silently, but it fails.
+
+Two further traps:
+
+- **`health` must be faked with a dataclass.** `cli_systems.py:37` is `asdict(_run(_go))`, so the
+  fake must return a `FleetHealthResult` (`operations_health.py:26-34`; fields `systems`, `vios`,
+  `lpars`, `failed_jobs`, `warnings`) — construct the real one, do not hand back a dict.
+- **`list --state` has no operation to patch.** `cli_systems.py:67-69` is
+  `_with_client(lambda hmc: hmc.search_uom("ManagedSystem", "State", state))`, and `FakeHMC`
+  defines no `search_uom`. Add one to `FakeHMC` returning `[self.system]`; this is the single
+  place in Tasks 1–2 where extending `FakeHMC` is the right move rather than patching.
+
+1. Add tests covering:
+
+   | Branch | Lines | Stream |
+   |---|---|---|
+   | `health` empty estate — `No fleet health exceptions found` | 41–42 | stdout |
+   | `health` non-empty category table | 43–53 | stdout |
+   | `health` warnings loop | 54–55 | **stderr** |
+   | `list --state` server-side search | 67–69 | stdout |
+   | `summary` table render | 200–215 | stdout |
+   | `capacity` table render | 236–263 | stdout |
+   | `capacity` empty report — `No managed systems found` | 233–235 | **stderr** |
+   | `find-placement` table render | 286–297 | stdout |
+   | `find-placement` empty — `No systems with sufficient free capacity` | 283–285 | **stderr** |
+
+   The two `health` rows are separate tests with different fixture data, not one: line 42 is
+   guarded by `if not any(result.values())`, so it fires only when every category is empty, which
+   is mutually exclusive with the table build at 47–53. The warnings loop needs a non-empty
+   `warnings` tuple and is a third data shape.
+
+2. **Task 1's "Assert on the right stream" rule applies here unchanged.** The stream column above
+   is not decoration: `cli_systems.py:55`, `:234` and `:284` write through `err_console`, so those
+   assertions go on `result.stderr`. Each test invokes through `RUNNER.invoke(cli.app, [...])`,
+   asserts exit code 0, and asserts on a rendered value unique to the branch:
 
    ```python
-   def test_systems_capacity_renders_a_table(fake_hmc):
+   def test_systems_capacity_renders_a_table(fake_hmc, monkeypatch):
+       async def fake_report(_hmc):
+           # snake_case keys, not the column titles: cli_systems.py:252-261 reads
+           # r.get("system_name"), r.get("free_memory_mb"), and so on. A row keyed
+           # by the displayed headings renders "-" and "0" in every cell, so the
+           # assertion below would still pass while proving nothing about the data.
+           return [{"system_name": "sys1", "system_uuid": SYSTEM_UUID,
+                    "total_memory_mb": 8192, "assigned_memory_mb": 4096,
+                    "free_memory_mb": 4096, "total_proc_units": 4.0,
+                    "assigned_proc_units": 1.5, "free_proc_units": 2.5,
+                    "running_lpars": 2, "total_lpars": 3}]
+
+       monkeypatch.setattr("hmc_mcp.operations_capacity.capacity_report", fake_report)
+
        result = RUNNER.invoke(cli.app, ["systems", "capacity"])
 
        assert result.exit_code == 0
        assert "System Capacity" in result.stdout
+
+
+   def test_systems_capacity_reports_an_empty_estate(fake_hmc, monkeypatch):
+       async def fake_report(_hmc):
+           return []
+
+       monkeypatch.setattr("hmc_mcp.operations_capacity.capacity_report", fake_report)
+
+       result = RUNNER.invoke(cli.app, ["systems", "capacity"])
+
+       assert result.exit_code == 0
+       assert "No managed systems found" in result.stderr
    ```
 
-   Where `FakeHMC` does not already return data shaped for the operation under test, patch the
-   operation on `hmc_mcp.cli_systems` rather than extending `FakeHMC`, matching Task 1 shape A.
+   Match the fake's return shape to what the render path reads; where the rendered column set is
+   derived from the data (as in `health`), a single representative entry is enough.
+
+   **Assert on the table title and a short cell value, never a UUID.** Under `CliRunner` stdout is
+   not a terminal, so rich renders at its 80-column default; `capacity` puts ten columns in that
+   width, and a 36-character UUID is truncated with an ellipsis. `"System Capacity"` and `"sys1"`
+   survive; `SYSTEM_UUID` does not.
 
 3. Run `uv run --no-sync pytest -q --no-cov tests/app/test_cli_commands.py`. Expect all pass.
 
@@ -407,15 +488,30 @@ because the gate is broken, and passes once it is fixed.
 
        Scans every workflow and the whole justfile rather than one recipe, so a new
        recipe or a new workflow that runs pytest is covered too.
+
+       --no-cov is held to a weaker rule than the other three, because it is the one
+       flag with a legitimate use here: the addopts comment and this repository's
+       own development guardrail both direct `pytest --no-cov <paths>` for a focused
+       subset. Forbidding it outright would redden this test the first time someone
+       adds a `just test-fast` recipe -- a false alarm whose natural remedy is
+       deleting the assertion. So it is rejected only where no test path accompanies
+       it, which is the package-wide run the gate exists to protect. That is a
+       heuristic on the word "tests"; the other three flags need none, since no
+       invocation in this repository has a reason to carry them.
        """
        sources = {"justfile": (ROOT / "justfile").read_text()}
-       for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
-           sources[path.name] = path.read_text()
+       workflows = ROOT / ".github" / "workflows"
+       for pattern in ("*.yml", "*.yaml"):
+           for path in sorted(workflows.glob(pattern)):
+               sources[path.name] = path.read_text()
 
        assert len(sources) >= 2
        for name, text in sources.items():
-           for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+           for flag in ("--cov-fail-under", "--cov-precision", "--cov-config"):
                assert flag not in text, f"{name}: {flag}"
+           for number, line in enumerate(text.splitlines(), start=1):
+               if "--no-cov" in line:
+                   assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
 
 
    def test_pyproject_is_the_coverage_configuration_source() -> None:
@@ -509,6 +605,11 @@ because the gate is broken, and passes once it is fixed.
      that otherwise reports 100.00% and exits 0.)
    - Append `--cov-fail-under=0` to the justfile `test` recipe →
      `..._is_not_defeated_at_the_invocation_sites` fails.
+   - Append `--no-cov` to the justfile `test` recipe →
+     `..._is_not_defeated_at_the_invocation_sites` fails on the line rule. Then instead add a
+     recipe body `uv run --no-sync pytest -q --no-cov tests/app` → the test stays **green**.
+     Both halves are needed: the first proves the rule bites, the second proves it does not
+     redden a legitimate focused-subset recipe. Revert both.
    - Create an empty `.coveragerc` at the repository root →
      `test_pyproject_is_the_coverage_configuration_source` fails. Delete it. (This is the vector
      that disarms the gate with `pyproject.toml` unchanged and prints no banner at all.)
@@ -585,14 +686,20 @@ shortfall.
 3. If the 3.14 total is below 90.50%, return to Task 1 or 2 and raise coverage further, subject to
    Task 2's two-round bound. Do not lower the floor.
 
-4. After the pull request opens, read the coverage total from each of the eight CI legs. Every leg
-   must be at or above 90.50%. A leg below 90.00% is a red gate and blocks; a leg between 90.00%
-   and 90.50% passes CI but has eaten the margin, so raise coverage rather than accept it.
+4. After the pull request opens, read the coverage total from each of the eight CI legs. A leg
+   below 90.00% is a red gate and blocks — return to Task 1 or 2. A leg between 90.00% and 90.50%
+   passes CI but has eaten the margin, so raise coverage rather than accept it.
+
+   If Task 2's two-round bound is exhausted and a leg still sits between 90.00% and 90.50%, the
+   branch is not blocked: the merge gate is `fail_under = 90` and that leg is green. Record the
+   shortfall in the pull request and let the operator decide whether to accept the reduced margin.
+   The half point is a landing target the operator chose, not an enforced invariant — ADR 0034
+   says so, and `src/hmc_mcp/` stays off-limits either way, so there is nothing further to try.
 
 **Acceptance criteria:** the CPython 3.14 total is recorded and at or above 90.50%, or its
 unavailability on this host is recorded instead; `.venv` is restored to 3.11; `git status` shows
 no unintended change, `uv.lock` included; `just verify` green; every CI leg reports at or above
-90.50%.
+90.00%, and at or above 90.50% unless the shortfall is recorded and accepted by the operator.
 
 ## Self-review against the spec
 
@@ -607,11 +714,11 @@ no unintended change, `uv.lock` included; `just verify` green; every CI leg repo
 | Control test proving the gate passes exactly on the floor | 3 step 1 |
 | Configuration test rejecting all four gate-disabling `addopts` edits | 3 step 1 |
 | Exact `[tool.coverage.report]` key set; no `run` omit/include/exclude keys | 3 step 1 |
-| Invocation-site test over the justfile recipe and CI workflow | 3 step 1 |
+| Invocation-site test over the whole justfile and every workflow | 3 step 1 |
 | Config-source test: no `.coveragerc`/`.coveragerc.toml`, no `[coverage:*]` elsewhere | 3 step 1 |
 | Gate subprocess run with `PYTEST_ADDOPTS`/`COVERAGE_*` scrubbed | 3 step 1 |
 | Coverage at or above 90.50% on 3.11 | 1, 2 |
 | Coverage at or above 90.50% on 3.14 (pre-push check) | 4 |
-| Every CI leg at or above 90.50% (binding measurement) | 4 step 4 |
+| Every CI leg at or above 90.00%, and 90.50% unless the operator accepts less | 4 step 4 |
 | `cli_storage` as the primary vehicle | 1 |
 | No `src/hmc_mcp/` runtime change | 1, 2 constraints |
