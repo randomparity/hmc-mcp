@@ -87,10 +87,17 @@ to run locally can still fail one they never ran.
 The legs vary on two axes, not one. `src/hmc_mcp/config.py` and `src/hmc_mcp/cli_config.py`
 between them carry five `sys.platform` branches, so a developer's darwin machine covers the darwin
 arms and CI's `ubuntu-24.04` and `ubuntu-24.04-arm` runners cover the POSIX arms, and each misses
-what the other covers. That moves roughly four statements — about 0.067 points, four times the
-interpreter spread — and it moves them relative to a 611-missed baseline that was itself measured
-on darwin. The margin is a chosen safety factor sized to cover both axes, not a bound derived from
-either.
+what the other covers.
+
+This section predicted that axis would move roughly four statements. Measured on all eight legs of
+PR #245, it moves **none**: every leg reports 5977 statements with 509 missed on CPython 3.11 and
+510 on 3.12, 3.13, and 3.14, identically on `amd64` and `arm64`, and the darwin figures taken
+locally match leg for leg. The platform axis changes *which* statements are missed, not how many —
+each side misses what the other covers, and here the two sides happen to be the same size. So the
+only spread the legs actually show is the one-statement interpreter difference, 0.017 points. The
+margin remains a chosen safety factor covering ordinary coverage churn, which is what it was always
+sized for; it is not a bound derived from either axis, and the platform half of the original
+justification did not survive measurement.
 
 The target is a total of **at least 90.50%**, which at the current package size of 5977 statements
 means **no more than 567 missed statements**, down from 611 — a margin of roughly half a point,
@@ -364,6 +371,9 @@ input reaches it, and the fixture directory is removed by pytest.
   binding measurement, because the legs differ by interpreter and by platform and the requirement
   is the lowest-scoring one. A local run measures at most two interpreters on an architecture no
   leg uses, so it is a pre-push check that the target is plausibly met, never the confirmation.
+  **Met on PR #245:** 5977 statements on every leg, 509 missed (91.48%) on CPython 3.11 and 510
+  (91.47%) on 3.12, 3.13, and 3.14, identically on `amd64` and `arm64`. The lowest leg is 91.47%,
+  1.47 points above the enforced floor and 0.97 above the 90.50% target. No leg printed `FAIL`.
 - Locally, before pushing: the full suite reports at least 90.50% on CPython 3.11 and on
   CPython 3.14, with `.venv` restored to 3.11 afterwards.
 - Removing `precision` from `[tool.coverage.report]` makes the behavioral gate test fail; this is
