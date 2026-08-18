@@ -41,8 +41,10 @@ A total below 90.00% now fails `just test`, which aborts `just verify` before `s
 Terminal reports print two decimal places for every file and for the total.
 
 The floor is enforced independently inside each of the eight CI legs `just verify` runs — CPython
-3.11 to 3.14 across amd64 and arm64 — and coverage totals differ between them: 611 missed
-statements of 5977 on CPython 3.11, 612 on CPython 3.14. The binding requirement is therefore the
+3.11 to 3.14 across amd64 and arm64 — and coverage totals differ between them: the pre-change
+suite reported 611 missed statements of 5977 on CPython 3.11 and 612 on CPython 3.14, a spread of
+one statement. Those are the baseline figures this record's Context describes, not the merged
+total; what carries forward is the spread. The binding requirement is therefore the
 lowest-scoring interpreter, and a contributor who measures locally on one can pass and still turn
 a leg red that they never ran.
 

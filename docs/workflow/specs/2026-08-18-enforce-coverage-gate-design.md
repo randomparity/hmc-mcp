@@ -77,8 +77,10 @@ precision that decides whether the floor means anything. No other coverage optio
 
 The floor is held with margin rather than met precisely, because it is enforced independently
 inside each of the eight legs CI runs (four interpreters × two architectures) and the measured
-total varies between them. The same suite reports 611 missed statements of 5977 on CPython 3.11
-and 612 on CPython 3.14 — one statement, or 0.017 percentage points. The binding requirement is
+total varies between them. The pre-change suite reported 611 missed statements of 5977 on CPython
+3.11 and 612 on CPython 3.14 — one statement, or 0.017 percentage points. Those are this section's
+baseline figures throughout; the merged total is lower and the spread is what carries forward. The
+binding requirement is
 the lowest-scoring leg, so a total that clears the floor on the interpreter a contributor happens
 to run locally can still fail one they never ran.
 
@@ -188,8 +190,10 @@ a second vector: the table it introduces. `[tool.coverage.report] omit = ["*/unc
 the probe package takes the total from 89.90% to `TOTAL 898 0 100.00%` and exits `0` (verified) —
 one line, and the gate is not merely disarmed but reports perfection. The behavioral test cannot
 catch it, because it replays the repository's table into a synthetic project whose filenames no
-real `omit` pattern matches, so the added key is inert there. `[tool.coverage.run]`'s
-`omit`/`include`/`exclude*` keys do the same. And the floor can be defeated from any pytest
+real `omit` pattern matches, so the added key is inert there. `include` and `exclude_also` reach
+the same place by different routes — `TOTAL 897 0 100.00%` and `TOTAL 898 0 100.00%`, both exit
+`0` (verified) — and `[tool.coverage.run]`'s `omit` and `include` do it too. And the floor can be
+defeated from any pytest
 invocation site, not just `addopts` — the `justfile` `test` recipe or a CI step carrying
 `--cov-fail-under=0` overrides it exactly as `addopts` would.
 
@@ -212,12 +216,17 @@ The test therefore asserts:
   vectors on the pytest side, because `pyproject.toml` precedes them in that order. Adding one of
   these files is an ordinary thing to do — a marker, a `filterwarnings` entry — which is why the
   gate cannot rest on nobody doing it;
-- `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`, and no
-  `[tool.coverage.run]` section declares `omit`, `include`, or an `exclude*` key. The two halves
-  are deliberately different rules. `[tool.coverage.run]` is an existing namespace this change
-  does not create, so only the denominator-changing keys are rejected there.
-  `[tool.coverage.report]` is a namespace this change *introduces*, and it is frozen to the gate's
-  two keys outright —
+- neither `[tool.coverage.run]` nor `[tool.coverage.report]` declares `omit`, `include`, or an
+  `exclude*` key, and `[tool.coverage.report]`'s key set is exactly `{fail_under, precision}`.
+  These are two rules over the same section, in that order, and the order is the point. The
+  denominator keys live in *both* namespaces — coverage.py accepts `omit` and `include` under
+  `run`, and `omit`, `include`, `exclude_lines`, and `exclude_also` under `report`
+  (`CoverageConfig.CONFIG_FILE_OPTIONS`, verified against the pinned 7.15.4) — so one rejection
+  covers both. It is unconditional rather than part of the freeze because the freeze is designed
+  to be widened: its failure message tells a contributor to add their new key to the test, and for
+  a denominator key that instruction would hand over a green suite reporting 100%. The rejection is
+  what a widened freeze cannot admit. Above it, `[tool.coverage.report]` is a namespace this change
+  *introduces*, and it is frozen to the gate's two keys outright —
   broader than "no denominator key", because coverage.py accepts seventeen keys in that section
   and an enumeration of the harmful ones is a bet that the enumeration stays complete across
   versions. `partial_also` and `partial_branches` already fall outside such an enumeration and

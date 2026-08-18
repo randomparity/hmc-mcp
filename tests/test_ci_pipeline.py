@@ -735,24 +735,33 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     # --cov-config sends coverage.py to a different file entirely.
     for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
         assert flag not in addopts, flag
-    # An omit/exclude key shrinks the denominator instead: adding
-    # omit = ["*/uncovered.py"] to the probe package reports 100.00% and exits 0.
-    #
-    # This freezes the table to exactly the gate's two keys, which is broader
-    # than "no denominator key" and deliberately so. coverage.py accepts
-    # seventeen keys here, and enumerating the harmful ones means betting that
-    # the enumeration stays complete across coverage.py versions -- partial_also
-    # and partial_branches already bite the moment anyone adds --cov-branch.
-    # A display-only key is not a threat, but it is also not free: it is one
-    # line here to add it deliberately. That is the point.
+    # A denominator key disarms the gate without touching the floor: it drops
+    # statements from the total rather than covering them. Measured on the probe
+    # package at 899/1000 covered, floor 90, each key added on its own:
+    # omit -> 898/898 100.00% exit 0, exclude_also -> 898/898 100.00% exit 0,
+    # include -> 897/897 100.00% exit 0. The same names live in both sections,
+    # so both are rejected by the same rule -- coverage.py accepts omit and
+    # include under [tool.coverage.run] and omit, include, exclude_lines and
+    # exclude_also under [tool.coverage.report].
+    for section in ("run", "report"):
+        for key in project["tool"]["coverage"].get(section, {}):
+            assert key not in {"omit", "include"} and not key.startswith("exclude"), (
+                f"[tool.coverage.{section}] {key} shrinks the measured denominator, "
+                f"so the total can reach 100% with the floor untouched. This key can "
+                f"never be added -- not here, and not by widening the freeze below."
+            )
+    # The freeze is broader than the rejection above, and deliberately so.
+    # coverage.py accepts seventeen keys in [tool.coverage.report], and
+    # enumerating every harmful one means betting the enumeration stays complete
+    # across versions -- partial_also and partial_branches already bite the
+    # moment anyone adds --cov-branch. A display-only key is not a threat, but
+    # it is also not free: it is one line here to add it deliberately.
     assert set(report) == {"fail_under", "precision"}, (
         f"[tool.coverage.report] is frozen to the coverage gate's two keys; got "
-        f"{sorted(report)}. Adding a key is fine -- add it here too, in the same "
-        f"commit, so the gate's configuration stays reviewed."
+        f"{sorted(report)}. A key the rejection above allows may be added -- add "
+        f"it here too, in the same commit, so the gate's configuration stays "
+        f"reviewed. Widening this set never admits a denominator key."
     )
-    run_config = project["tool"]["coverage"].get("run", {})
-    for key in run_config:
-        assert key not in {"omit", "include"} and not key.startswith("exclude"), key
 
 
 def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
