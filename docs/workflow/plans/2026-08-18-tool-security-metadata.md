@@ -53,7 +53,8 @@ Binding on every task below.
   not *defaults to None*.
 - The live registry has **128** collector-registered tools across 19 domain modules, plus
   `hmc_run_command`, which registers only when the operator enables it. Post-change census
-  with the escape hatch disabled: 54 `read`, 48 `mutate`, 26 `destructive`.
+  with the escape hatch disabled: 54 `read`, 46 `mutate`, 28 `destructive` (the two install
+  tools were reclassified from `mutate` during branch review; see ADR 0035).
 - **Tasks 1–3 and Task 5 land as one commit.** Replacing the collector signature, declaring
   every tool, and deleting the frozensets is one atomic change: any split leaves a commit
   where `import hmc_mcp.server` fails or `tests/app/test_capabilities.py` errors at

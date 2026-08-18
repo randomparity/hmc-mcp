@@ -236,9 +236,10 @@ are deleted from `_app.py`, and the two frozensets are removed from the `server.
 re-export block.
 
 `mutate` intentionally leaves `destructiveHint` unset — see ADR 0035 consequences. The
-annotation change set is 47 tools gaining `readOnlyHint=False` where they had no annotation,
-26 destructive tools gaining an explicit `readOnlyHint=False`, `hmc_run_command` gaining
-`destructiveHint=True`, and `hmc_read_lpar_boot_order` gaining `readOnlyHint=True`.
+annotation change set, measured against `main`, is 45 tools gaining `readOnlyHint=False`
+where they had no annotation, 26 destructive tools gaining an explicit `readOnlyHint=False`,
+two install tools going from no annotation to explicit `destructive`, `hmc_run_command`
+gaining `destructiveHint=True`, and `hmc_read_lpar_boot_order` gaining `readOnlyHint=True`.
 `hmc_mount_optical_media` already carries `readOnlyHint=False` and does not change.
 
 ### 3.4 The escape hatch
@@ -270,10 +271,12 @@ Effect assignment preserves today's classification exactly, with one correction:
 - the 53 tools carrying `readOnlyHint=True` become `read`;
 - the 26 carrying `destructiveHint=True` become `destructive`;
 - the 49 carrying neither become `mutate`, except `hmc_read_lpar_boot_order`, which becomes
-  `read` (it performs one GET and returns boot-order state; see ADR 0035);
+  `read` (one GET returning boot-order state), and `hmc_install_vios` / `hmc_install_lpar_os`,
+  which become `destructive` (they overwrite an existing partition's OS and boot disk — the
+  same irreversible overwrite that already made `hmc_restore_vios` destructive). See ADR 0035;
 - `hmc_run_command` becomes `arbitrary-command`.
 
-Resulting census: 54 `read`, 48 `mutate`, 26 `destructive`, and 1 `arbitrary-command`
+Resulting census: 54 `read`, 46 `mutate`, 28 `destructive`, and 1 `arbitrary-command`
 registered only when the operator enables it.
 
 Target selectors are built from the `REQUIRED_TARGET_ARGUMENTS` table of §3.2, which is the
@@ -400,7 +403,7 @@ Each is a test in `tests/app/test_tool_security.py` unless stated otherwise.
 | G8 | The default application exposes no `arbitrary-command` tool; enabling the escape hatch exposes exactly `hmc_run_command`, classified `arbitrary-command`. `HMC_RUN_COMMAND_SECURITY` passes `validate_security`. |
 | G9 | `READ_ONLY_TOOLS`, `DESTRUCTIVE_TOOLS`, `_READ_ONLY`, `_DESTRUCTIVE`, and `_STATE_CHANGING` are absent from `hmc_mcp._app` and `hmc_mcp.server`. |
 | G10 | `hmc_list_configured_hosts` declares `target_kind="none"` and `connection_argument=None`; every other live tool declares `connection_argument="profile"`. |
-| G11 | No classification regresses. The 53 pre-change `READ_ONLY_TOOLS` names and the 26 `DESTRUCTIVE_TOOLS` names are snapshotted literally in the test file as `LEGACY_READ_ONLY` / `LEGACY_DESTRUCTIVE`; for each name, the derived effect is `read` / `destructive` respectively. `hmc_read_lpar_boot_order` is asserted `read` as the one named upgrade. A census count is deliberately *not* used — it is invariant under permutation. |
+| G11 | No classification regresses (a downgrade; the two install tools are deliberately upgraded). The 53 pre-change `READ_ONLY_TOOLS` names and the 26 `DESTRUCTIVE_TOOLS` names are snapshotted literally in the test file as `LEGACY_READ_ONLY` / `LEGACY_DESTRUCTIVE`; for each name, the derived effect is `read` / `destructive` respectively. `hmc_read_lpar_boot_order` is asserted `read` as the one named upgrade. A census count is deliberately *not* used — it is invariant under permutation. |
 | G12 | `just verify` passes, including the `scripts/smoke_mcp.py` stdio smoke path. Not a pytest case. |
 | G13 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
 

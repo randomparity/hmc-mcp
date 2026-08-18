@@ -245,6 +245,41 @@ def test_build_tool_security_merges_modules_and_extras():
     assert index == {"one": first, "two": second}
 
 
+def test_module_classifications_are_read_only():
+    tool, _register, security = tool_module()
+
+    @tool(
+        effect="read",
+        operation="probe.read",
+        target_kind="console",
+        connection_argument=None,
+    )
+    def probe() -> str:
+        return "ok"
+
+    with pytest.raises(TypeError):
+        security()["probe"] = ToolSecurity(
+            effect="destructive", operation="probe.wipe", target_kind="console"
+        )
+
+
+def test_a_handler_whose_signature_cannot_be_read_is_named_in_the_error():
+    tool, _register, _security = tool_module()
+
+    class Unreadable:
+        __name__ = "hmc_unreadable_tool"
+
+        @property
+        def __signature__(self):
+            raise RuntimeError("signature unavailable")
+
+        def __call__(self, profile: str | None = None) -> str:
+            return "ok"
+
+    with pytest.raises(RuntimeError, match="hmc_unreadable_tool"):
+        tool(effect="read", operation="a.b", target_kind="console")(Unreadable())
+
+
 def test_validate_security_accepts_a_console_declaration_with_no_targets():
     def handler(profile: str | None = None) -> str:
         return "ok"

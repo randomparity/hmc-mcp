@@ -67,6 +67,13 @@ class ToolSecurity:
 in #220–#225 reads it, all of which key on the tool name instead, so it is the one field here
 whose consumer does not yet exist.
 
+The `mutate`/`destructive` line is drawn as: **destructive** when the operation can destroy
+or irreversibly overwrite existing state the operation did not itself create — a delete, a
+power-off, a restore over a live resource, an OS reinstall. **mutate** when it creates a new
+resource or changes configuration that can be changed back. The criterion has to be written
+down because #221's capability ceiling is expressed in these terms, and 48 tools were
+classified against it; without it the boundary is whatever the last author assumed.
+
 `target_kind` names the resource whose state the operation changes. For a creation tool that
 is the container gaining the resource — `hmc_create_lpar` declares `managed_system` — because
 constraining "may create partitions on system X" is what a policy can actually check. The
@@ -172,16 +179,17 @@ asserting coverage.
   — rather than the collector. FastMCP silently replaces a duplicate tool name with a log
   warning, which is why the duplicate-name check is in `build_tool_security` rather than left
   to registration.
-- The wire annotation changes for 74 tools. 47 `mutate` tools go from no annotation to
-  `readOnlyHint=False` and 26 `destructive` tools gain an explicit `readOnlyHint=False`; both
-  are identical to a client applying MCP's documented defaults (`readOnlyHint` false,
-  `destructiveHint` true). `hmc_run_command` gains `destructiveHint=True`, a tightening.
-  `hmc_mount_optical_media` already carried `readOnlyHint=False` and does not change. One
-  tool does become less restricted — `hmc_read_lpar_boot_order`, below — and that is a
-  correction rather than a relaxation.
+- The wire annotation changes for 74 registered tools, measured against `main`: 45 `mutate`
+  tools go from no annotation to `readOnlyHint=False`, 26 `destructive` tools gain an
+  explicit `readOnlyHint=False`, and the two install tools go from no annotation to explicit
+  `destructive`. All of those are identical to, or stricter than, a client applying MCP's
+  documented defaults (`readOnlyHint` false, `destructiveHint` true). `hmc_run_command`, which
+  is not registered by default, gains `destructiveHint=True`. `hmc_mount_optical_media`
+  already carried `readOnlyHint=False` and does not change. Exactly one tool becomes less
+  restricted — `hmc_read_lpar_boot_order`, below — and that is a correction.
 - `mutate` deliberately does **not** derive `destructiveHint=False`, even though the effect
   vocabulary distinguishes the two. MCP's `destructiveHint` defaults to true, so stating
-  `False` would newly invite a cautious client to auto-approve 48 mutating tools. The
+  `False` would newly invite a cautious client to auto-approve 46 mutating tools. The
   `mutate`/`destructive` distinction is carried by `ToolSecurity` for server-side use in
   #221–#224, not pushed into a client-side hint that would loosen behavior.
 - `READ_ONLY_TOOLS` and `DESTRUCTIVE_TOOLS` are deleted from `_app.py` and from the
@@ -191,6 +199,13 @@ asserting coverage.
   `TOOL_SECURITY`. ADRs 0003, 0004, 0005, and 0010 mention the frozensets in their
   consequences; those are historical records of decisions this one does not supersede, and
   they are left untouched.
+- `hmc_install_vios` and `hmc_install_lpar_os` are classified `destructive`, not `mutate`:
+  they PXE-boot an existing partition and overwrite its OS and boot disk, which is the same
+  irreversible overwrite that already made `hmc_restore_vios` destructive. Both were untagged
+  before, so a cautious client already treated them as destructive under MCP's defaults and
+  the wire annotation only becomes explicit. The three firmware and software update tools sit
+  on the same line and are deliberately left `mutate` pending a human decision, tracked
+  separately.
 - `hmc_read_lpar_boot_order` is reclassified from untagged/state-changing to `read`. It
   issues one GET and returns boot-order state; leaving it `mutate` would be exactly the
   contradiction this record exists to make impossible. Its annotation changes from none to
@@ -199,6 +214,19 @@ asserting coverage.
   addressed through their owning VIOS or LPAR rather than earning their own kinds, because a
   policy constrains "may create a virtual disk on VIOS X", and a finer vocabulary would add
   declaration surface that nothing in #220–#225 evaluates.
+- Two `vios` selectors are in different identifier namespaces: `vios_name_or_uuid` and
+  `vios_uuid` carry a name or UUID, `vios_partition_id` carries an integer partition ID, and
+  `hmc_attach_disk_to_lpar` declares both forms without anything asserting they name the same
+  VIOS. #223 cannot match an exact allowlist across both namespaces without resolving one to
+  the other; it must either resolve partition IDs or refuse them as a selector form. Recorded
+  rather than solved here, because an identifier-form field on `TargetSelector` is only
+  meaningful once something evaluates it.
+- The argument table intersects **top-level** handler parameters only. `hmc_provision_lpar`
+  is the one tool carrying an identity below that level — `network.vios_partition_id` and
+  `storage.vios_uuid`, nested inside structured parameters — so its record names only the
+  `managed_system` it provisions on and no VIOS. Expressing a nested selector means defining
+  how a value is extracted from a structured argument, which is #223's business; until then
+  this is a known, single-tool gap rather than a guarantee the record silently breaks.
 - `hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` act on an HMC-side `file_path`
   that no `TargetKind` expresses, and `force=True` overwrites it; their built targets present
   the `managed_system` as the subject and say nothing about the file. Reclassifying them to

@@ -119,7 +119,7 @@ def hmc_delete_vios(
     return _run(_go)
 
 
-@tool(effect="mutate", operation="vios.install", target_kind="vios")
+@tool(effect="destructive", operation="vios.install", target_kind="vios")
 def hmc_install_vios(
     vios_name_or_uuid: str,
     nim_ip: str,
@@ -185,7 +185,7 @@ def hmc_install_vios(
     return _run(_go)
 
 
-@tool(effect="mutate", operation="lpar.install_os", target_kind="lpar")
+@tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
 def hmc_install_lpar_os(
     lpar_name_or_uuid: str,
     nim_ip: str,

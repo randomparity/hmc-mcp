@@ -47,7 +47,7 @@ _OPERATION = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 # a tool cannot omit a target it accepts an identity for. Deliberately excludes
 # `name` (a user on hmc_create_user, a new partition on hmc_create_lpar) and
 # sub-resource arguments, which are addressed through their owning resource.
-REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
+REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "lpar_name_or_uuid": "lpar",
     "lpar_uuid": "lpar",
     "system_name_or_uuid": "managed_system",
@@ -63,14 +63,14 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = {
     "draft_template_uuid": "template",
     "policy_name": "password_policy",
     "resource_name_or_uuid": "metric_resource",
-}
+})
 
-_ANNOTATIONS: Mapping[str, ToolAnnotations] = {
+_ANNOTATIONS: Mapping[str, ToolAnnotations] = MappingProxyType({
     "read": ToolAnnotations(readOnlyHint=True),
     "mutate": ToolAnnotations(readOnlyHint=False),
     "destructive": ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     "arbitrary-command": ToolAnnotations(readOnlyHint=False, destructiveHint=True),
-}
+})
 
 
 @dataclass(frozen=True)
@@ -223,7 +223,11 @@ def tool_module():
                 target_kind=target_kind,
                 connection_argument=connection_argument,
             )
-            security = replace(security, targets=build_targets(fn, extra_targets))
+            try:
+                targets = build_targets(fn, extra_targets)
+            except Exception as error:  # noqa: BLE001 - re-raised with the tool named
+                raise type(error)(f"{name}: {error}") from error
+            security = replace(security, targets=targets)
             validate_security(security, fn)
             definitions.append(ToolDefinition(name, fn, security))
             return fn

@@ -283,6 +283,18 @@ DESTRUCTIVE_NAME_PREFIXES = (
     "hmc_unmount_",
     "hmc_sync_",
     "hmc_decommission_",
+    "hmc_install_",
+)
+
+# Destructive tools whose names carry no such prefix. Listed so the matched set
+# below can be asserted exactly, which names the offending tool on failure
+# instead of reporting a count that moved.
+DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
+    {
+        "hmc_backup_lpar_profiles",
+        "hmc_migrate_abort_lpar",
+        "hmc_remote_restart_lpar",
+    }
 )
 
 
@@ -294,10 +306,12 @@ def test_destructively_named_tools_are_destructive():
     named outside these prefixes, which is why the declared effect stays a
     reviewed human judgement.
     """
-    matched = [n for n in TOOL_SECURITY if n.startswith(DESTRUCTIVE_NAME_PREFIXES)]
-    assert len(matched) == 23
-    for name in matched:
-        assert TOOL_SECURITY[name].effect == "destructive", name
+    matched = {n for n in TOOL_SECURITY if n.startswith(DESTRUCTIVE_NAME_PREFIXES)}
+    misclassified = {n for n in matched if TOOL_SECURITY[n].effect != "destructive"}
+    assert misclassified == set()
+
+    declared = {n for n, s in TOOL_SECURITY.items() if s.effect == "destructive"}
+    assert declared == matched | DESTRUCTIVE_WITHOUT_PREFIX
 
 
 def test_arbitrary_command_is_absent_by_default_and_maximally_classified():
@@ -332,6 +346,27 @@ def test_no_classification_regresses_against_the_pre_adr_sets():
     for name in LEGACY_DESTRUCTIVE:
         assert TOOL_SECURITY[name].effect == "destructive", name
     assert TOOL_SECURITY["hmc_read_lpar_boot_order"].effect == "read"
+
+
+def test_the_derivation_tables_are_read_only():
+    """The two tables producing every hint and every selector must not be edited."""
+    from hmc_mcp import tool_registry
+
+    with pytest.raises(TypeError):
+        tool_registry.REQUIRED_TARGET_ARGUMENTS["lpar_name_or_uuid"] = "vios"
+    with pytest.raises(TypeError):
+        tool_registry._ANNOTATIONS["read"] = annotations_for("destructive")
+
+
+def test_annotations_for_hands_out_an_independent_copy():
+    """A shared instance would let one in-place edit re-flag a whole effect class."""
+    first = annotations_for("read")
+    second = annotations_for("read")
+    assert first == second
+    assert first is not second
+
+    first.readOnlyHint = False
+    assert annotations_for("read").readOnlyHint is True
 
 
 def test_the_classification_index_is_read_only():
