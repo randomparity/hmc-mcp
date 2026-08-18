@@ -53,12 +53,15 @@ from .documents import (
 from .ssh_commands import (
     get_lpar_description,
     get_lpar_msp,
+    get_lpar_memopt_score,
     get_lpar_proc_compat,
     get_proc_compat_modes,
+    list_lpar_memopt_scores,
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
 )
+from .ssh_selectors import resolve_ssh_names
 
 
 @lpars_app.command("summary")
@@ -915,6 +918,63 @@ def lpars_set_proc_compat(
     )
     if result.strip():
         console.print(result.strip())
+
+
+@lpars_app.command("memopt-score")
+def lpars_memopt_score(
+    lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get an LPAR's current memory-optimization (affinity) score (HMC CLI via SSH)."""
+
+    async def _go():
+        config = _ssh_config()
+        sys_name, lpar = await resolve_ssh_names(config, system_name, lpar_name)
+        return await get_lpar_memopt_score(config, cast(str, sys_name), cast(str, lpar))
+
+    score = _run(_go)
+    if as_json:
+        _print_json(score)
+    else:
+        console.print(
+            f"{score['lpar_name']} (id {score['lpar_id']}): "
+            f"curr_lpar_score={score['curr_lpar_score']}"
+        )
+
+
+@lpars_app.command("memopt-scores")
+def lpars_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar_name: str | None = typer.Option(
+        None, "--lpar", help="Filter by LPAR name or UUID"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """List current memory-optimization (affinity) scores for a system's LPARs (HMC CLI via SSH)."""
+
+    async def _go():
+        config = _ssh_config()
+        sys_name, lpar = await resolve_ssh_names(config, system_name, lpar_name)
+        return await list_lpar_memopt_scores(config, cast(str, sys_name), lpar)
+
+    scores = _run(_go)
+    if as_json:
+        _print_json(scores)
+        return
+    if not scores:
+        console.print("[yellow]No memory-optimization scores reported[/yellow]")
+        return
+    table = Table(title=f"Memory-optimization scores on {system_name}")
+    for column in ("lpar_name", "lpar_id", "curr_lpar_score"):
+        table.add_column(column)
+    for row in scores:
+        table.add_row(
+            row.get("lpar_name", ""),
+            row.get("lpar_id", ""),
+            row.get("curr_lpar_score", ""),
+        )
+    console.print(table)
 
 
 @lpars_app.command("provision")

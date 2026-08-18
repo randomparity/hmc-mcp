@@ -503,6 +503,8 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_set_lpar_description`  | Set an LPAR's description field |
 | `hmc_get_lpar_msp`          | Get the Migratable Service Partition flag |
 | `hmc_set_lpar_msp`          | Set the MSP flag |
+| `hmc_get_lpar_memopt_score` | Get an LPAR's current memory-optimization score (`lsmemopt -o currscore`) |
+| `hmc_list_lpar_memopt_scores` | List memory-optimization scores for a system's LPARs |
 | `hmc_get_proc_compat_modes` | List processor compatibility modes a system supports |
 | `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
 | `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |

@@ -1522,6 +1522,97 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
     assert result.stdout.strip() == "enabled"
 
 
+def test_lpars_memopt_score_via_ssh(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-score", "lpar1", "sys1"])
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == (
+        "lsmemopt -m sys1 -r lpar -o currscore --filter lpar_names=lpar1"
+    )
+    assert "100" in result.stdout
+
+
+def test_lpars_memopt_score_json(monkeypatch):
+    async def fake(cfg, cmd):
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=none\n"
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "memopt-score", "lpar1", "sys1", "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "lpar_name": "lpar1",
+        "lpar_id": "1",
+        "curr_lpar_score": "none",
+    }
+
+
+def test_lpars_memopt_score_error(monkeypatch):
+    async def fake(cfg, cmd):
+        raise ssh_commands.HMCCLIError("The partition named lpar1 was not found.")
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-score", "lpar1", "sys1"])
+
+    assert result.exit_code == 1
+    assert "Error:" in result.stderr
+
+
+def test_lpars_memopt_scores_via_ssh(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return (
+            "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+            "lpar_name=lpar2,lpar_id=2,curr_lpar_score=95\n"
+        )
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores", "sys1"])
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == "lsmemopt -m sys1 -r lpar -o currscore"
+    assert "lpar2" in result.stdout
+
+
+def test_lpars_memopt_scores_with_lpar_filter(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake(cfg, cmd):
+        captured["cmd"] = cmd
+        return "lpar_name=lpar1,lpar_id=1,curr_lpar_score=100\n"
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", fake)
+    result = RUNNER.invoke(
+        cli.app, ["lpars", "memopt-scores", "sys1", "--lpar", "lpar1", "--json"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["cmd"] == (
+        "lsmemopt -m sys1 -r lpar -o currscore --filter lpar_names=lpar1"
+    )
+    data = json.loads(result.stdout)
+    assert len(data) == 1
+    assert data[0]["lpar_name"] == "lpar1"
+
+
+def test_lpars_memopt_scores_missing_system(monkeypatch):
+    result = RUNNER.invoke(cli.app, ["lpars", "memopt-scores"])
+
+    assert result.exit_code == 2
+    assert "Missing" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "expected_call"),
     [
