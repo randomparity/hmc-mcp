@@ -295,8 +295,14 @@ rejects that form on settings ownership, and the operator confirmed the trade on
 both measurements in hand.
 
 The narrowing is accepted because every path that runs the gate — `just test`, and `just verify`
-on each CI leg — starts at the repository root, so the loss is developer-facing signal rather than
-a CI hole, and
+on each CI leg — starts at the repository root. That is a fact about the repository today, not an
+invariant, and the difference matters: a CI step carrying `working-directory: tests` would run the
+suite, measure the whole package, enforce nothing, and print no banner saying so. So the CI half
+is not left resting on nobody writing that key — the invocation-site test rejects
+`working-directory` across the justfile and every workflow, which is the only guard that catches
+this vector, since the edit contains no coverage flag at all. What remains developer-facing is a
+contributor's own `pytest` run from a subdirectory, which no test can reach. With the CI half
+guarded the residual is signal loss rather than a hole, and
 a `.coveragerc`, a `COVERAGE_RCFILE` export, or a rootdir-detecting wrapper would each cost more
 than the risk. [ADR 0034](../../adr/0034-exact-coverage-gate.md) records the same asymmetry
 against its `addopts` alternative, which does not have this sensitivity — so that alternative is

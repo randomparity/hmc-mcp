@@ -801,6 +801,21 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
             "COVERAGE_RCFILE",
         ):
             assert flag not in text, f"{name}: {flag}"
+        # The one disarm vector that carries no forbidden token at all. coverage.py
+        # opens its configuration relative to the working directory and does not walk
+        # upward as pytest does for addopts, so a step that runs pytest from a
+        # subdirectory still measures the package -- addopts survives -- but reads no
+        # fail_under, falls back to 0, and prints no banner. Verified on this
+        # repository: the same subset run exits 1 with the gate diagnostic from the
+        # root and 0 from tests/. The repository uses this key nowhere today, so a
+        # flat rejection costs nothing; if a step ever needs it for something
+        # unrelated to the test suite, allow it here deliberately.
+        assert "working-directory" not in text, (
+            f"{name}: `working-directory` moves where coverage.py looks for the gate's "
+            f"configuration, so a pytest step beneath it enforces no floor while still "
+            f"reporting a coverage total. Keep test steps at the repository root, or "
+            f"add a reviewed exception here."
+        )
         for number, line in enumerate(text.splitlines(), start=1):
             if "--no-cov" in line:
                 assert "tests" in line, f"{name}:{number}: --no-cov on a package-wide run"
