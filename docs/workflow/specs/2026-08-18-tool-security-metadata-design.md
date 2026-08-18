@@ -69,7 +69,7 @@ class ToolSecurity:
     effect: Effect
     operation: str
     target_kind: TargetKind
-    targets: tuple[TargetSelector, ...]     # built by tool(), never hand-written
+    targets: tuple[TargetSelector, ...] = ()   # built by tool(), never hand-written
     connection_argument: str | None = "profile"
 
 @dataclass(frozen=True)
@@ -93,8 +93,10 @@ Field meanings, normative:
   **built by `tool()`**, not declared. Entries whose `kind` equals `target_kind` are the
   operation's **subjects**; the rest are **scope** — arguments that narrow or disambiguate
   without being what is acted on.
-- **`required`** — built with the selector from the handler signature: a parameter with no
-  default is required, one with a default is not. The normative rule #223 inherits is that an
+- **`required`** — built with the selector from the handler signature, as
+  `param.default is inspect.Parameter.empty`. Pinning the predicate to *has no default*
+  rather than *defaults to None* means a future `system_name_or_uuid="Server-1"` does not
+  silently become optional. The normative rule #223 inherits is that an
   absent optional selector is not matched against a target constraint and does not on its own
   deny; a required selector is always present and always matched.
 - **`connection_argument`** — the public argument selecting the HMC connection profile, or
@@ -188,12 +190,12 @@ Registry-wide rules cannot be seen from one module:
 
 | id | rule | failure |
 |---|---|---|
-| V11 | tool names are unique across all domain modules and the escape hatch | `ValueError` naming the collision |
-| V12 | `operation` identities are unique across all domain modules and the escape hatch | `ValueError` naming both tools |
+| V10 | tool names are unique across all domain modules and the escape hatch | `ValueError` naming the collision |
+| V11 | `operation` identities are unique across all domain modules and the escape hatch | `ValueError` naming both tools |
 
 `tool_module()` returns a three-tuple `(tool, register_tools, tool_security)`, where
 `tool_security()` yields that module's `Mapping[str, ToolSecurity]`.
-`build_tool_security(module_mappings, extra)` is a pure function enforcing V11 and V12 and
+`build_tool_security(module_mappings, extra)` is a pure function enforcing V10 and V11 and
 returning the merged index; `server.py` calls it once at module scope:
 
 ```python
@@ -210,7 +212,7 @@ called repeatedly — at import (`server.py:256`) and again per test
 (`tests/app/test_application_boundaries.py`) — so an index accumulated as a registration side
 effect would raise its own duplicate-name error on the second call. Registration and
 classification are two separate passes over the same declarations, and `build_tool_security`
-being a pure function is also what makes V11/V12 testable without injecting a fake module
+being a pure function is also what makes V10/V11 testable without injecting a fake module
 into `TOOL_MODULES`.
 
 Readers index `TOOL_SECURITY` directly, so an unknown tool name raises `KeyError` rather than
@@ -288,12 +290,13 @@ the ones with more than one defensible answer:
 | `hmc_deploy_partition_template` | `managed_system` | the system gains a partition; the template is read |
 | `hmc_map_storage_to_lpar`, `hmc_mount_optical_media` | `vios` | the mapping is created on the VIOS; the LPAR is scope |
 | `hmc_attach_disk_to_lpar` | `lpar` | the LPAR gains the disk; the VIOS is scope |
+| `hmc_create_logical_unit`, `hmc_delete_logical_unit` | `cluster` | the LU lives in the cluster's SSP, but `cluster_uuid` is the only identity argument — `shared_storage_pool` would be an unsatisfiable V8 |
 | `hmc_read_lpar_boot_order`, `hmc_set_lpar_boot_order` | `lpar` | the boot order belongs to the LPAR |
 | `hmc_list_lpars`, `hmc_list_vios` | `managed_system` | scoped by an optional system; console-wide when omitted |
-| `hmc_list_fc_ports`, `hmc_list_sea_adapters`, `hmc_list_storage_mappings`, `hmc_list_optical_mappings` | the required owner (`managed_system` or `vios`) | the optional `lpar_name_or_uuid` is a result filter |
+| `hmc_list_fc_ports`, `hmc_list_sea_adapters`, `hmc_list_storage_mappings`, `hmc_list_optical_mappings` | the required owner (`managed_system` or `vios`) | the optional `lpar_name_or_uuid` is a result filter, and becomes an optional `lpar` scope selector that #223 matches only when supplied |
 
 Every tool taking no argument from `REQUIRED_TARGET_ARGUMENTS` and no other resource
-identity declares `target_kind="console"` with empty `targets`. That rule governs; the
+identity has `target_kind="console"` and builds empty `targets`. That rule governs; the
 sixteen tools it covers are `hmc_console_info`, `hmc_capacity_report`, `hmc_fleet_health`,
 `hmc_find_placement`, `hmc_list_systems`, `hmc_list_clusters`, `hmc_list_users`,
 `hmc_list_password_policies`, `hmc_list_password_policy_status`, `hmc_get_ldap_config`,
@@ -309,8 +312,9 @@ supply it, because `name` is deliberately outside `REQUIRED_TARGET_ARGUMENTS`. T
 only tools needing `extra_targets`.
 
 `hmc_list_configured_hosts` takes no arguments and reads the local TOML configuration file,
-never an HMC. It declares `target_kind="none"`, `targets=()`, `connection_argument=None`. It
-is the only tool with `connection_argument=None`.
+never an HMC. It declares `target_kind="none"` and `connection_argument=None`; the build
+yields empty `targets` because it takes no arguments at all. It is the only tool with
+`connection_argument=None`.
 
 Operation identities use the domain prefixes `console`, `config`, `system`, `lpar`,
 `lpar_profile`, `boot_order`, `vios`, `adapter`, `vnic`, `network`, `storage`, `media`,
@@ -343,7 +347,7 @@ requirement 2 requires that ordinary MCP tool arguments never select or widen po
 **Control per boundary.**
 
 1. *Declaration → registry*: V1–V9 run in `validate_security` at import, for the collector
-   and the escape hatch alike; V11–V12 run in `build_tool_security` at module scope. A
+   and the escape hatch alike; V10–V11 run in `build_tool_security` at module scope. A
    contradiction fails the process, not a request. There is no runtime path that constructs a
    `ToolSecurity` from untrusted input, and `ToolSecurity`, `TargetSelector`, and
    `ToolDefinition` are frozen dataclasses, so the index cannot be mutated after
@@ -386,7 +390,7 @@ Each is a test in `tests/app/test_tool_security.py` unless stated otherwise.
 |---|---|
 | G1 | The set of live tool names from `mcp.list_tools()` is a subset of `set(TOOL_SECURITY)` with the arbitrary-command tool disabled, and equals it with the tool enabled. `TOOL_SECURITY` contains `hmc_run_command` in both states. |
 | G2 | `build_tool_security` raises `ValueError` on a duplicate operation identity and on a duplicate tool name, including a collision between a domain module and the escape-hatch entry. Called directly with synthetic mappings; no injection into `TOOL_MODULES`. |
-| G3 | For every live tool, every declared `TargetSelector.argument` and every non-`None` `connection_argument` appears in the tool's rendered MCP parameter schema, and every `required` flag matches whether that handler parameter has a default. |
+| G3 | For every live tool, every built `TargetSelector.argument` and every non-`None` `connection_argument` appears in the tool's rendered MCP parameter schema. Because a generic `required` assertion would re-implement the build and pass on a wrong predicate, `required` is pinned by literal anchors: `False` on the `system_name_or_uuid` selector of `hmc_power_off_lpar`, `hmc_power_off_vios`, `hmc_delete_vios`, `hmc_restore_vios`, and `hmc_list_lpars`; `True` on `hmc_delete_lpar`'s `lpar_name_or_uuid` and `hmc_migrate_lpar`'s `target_system_name_or_uuid`. |
 | G4 | For every live tool, `tool.annotations == annotations_for(TOOL_SECURITY[name].effect)`, and `annotations_for` covers exactly the four effect values. |
 | G5 | `validate_security` rejects each of V2–V9 with a `ValueError` naming the offending tool; the required-argument cases (V1) raise `TypeError`. One case per rule. |
 | G6 | V7 and V8 hold across the whole live registry, and every built `targets` tuple equals the table intersection of its handler's signature plus its `extra_targets`. `hmc_migrate_lpar` carries both its `lpar` subject and its destination `managed_system` scope; `hmc_attach_disk_to_lpar` carries both its `lpar` subject and its `vios` scope. |
@@ -418,7 +422,7 @@ re-expressed against the required keywords, since both the bare `@tool` form and
 | `src/hmc_mcp/_app.py` | delete the three annotation constants, both frozensets, and the stale comment block |
 | `src/hmc_mcp/server.py` | drop the two re-exports; unpack the three-tuple from each domain module; build `TOOL_SECURITY` at module scope |
 | `src/hmc_mcp/server_command.py` | declare and validate `HMC_RUN_COMMAND_SECURITY`; register with the derived annotation |
-| 19 `src/hmc_mcp/server_*.py` domain modules | declare security metadata on all 128 collected tools; unpack the three-tuple; drop the `_READ_ONLY` / `_DESTRUCTIVE` / `_STATE_CHANGING` imports |
+| 19 `src/hmc_mcp/server_*.py` domain modules | declare `effect`, `operation`, `target_kind` on all 128 collected tools, plus `extra_targets=(("user", "name"),)` on the four user tools and `connection_argument=None` on `hmc_list_configured_hosts`; unpack the three-tuple; drop the `_READ_ONLY` / `_DESTRUCTIVE` / `_STATE_CHANGING` imports |
 | `tests/app/test_tool_security.py` | new — G1–G11 |
 | `tests/app/test_capabilities.py` | remove the superseded category tests; re-point three assertions at `TOOL_SECURITY` |
 | `tests/unit/test_tool_registry.py` | re-express all three tests against the new collector signature |

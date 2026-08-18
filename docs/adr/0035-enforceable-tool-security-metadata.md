@@ -59,7 +59,7 @@ class ToolSecurity:
     effect: Effect
     operation: str                              # "<domain>.<verb>" identity
     target_kind: TargetKind                      # primary resource kind acted on
-    targets: tuple[TargetSelector, ...]          # built by tool(), not declared
+    targets: tuple[TargetSelector, ...] = ()     # built by tool(), not declared
     connection_argument: str | None = "profile"  # public HMC-connection selector
 ```
 
@@ -77,7 +77,7 @@ duplicate partition names.
 
 `targets` and `required` are **built, not declared**. `REQUIRED_TARGET_ARGUMENTS` is a fixed
 argument-name-to-kind table; `tool()` intersects it with the handler's signature and emits one
-`TargetSelector` per match, with `required` set from whether that parameter has a default. An
+`TargetSelector` per match, with `required` set from `param.default is inspect.Parameter.empty`. An
 author who cannot forget a declaration cannot omit a target: `hmc_migrate_lpar` gets its
 `lpar` and its destination `managed_system` because it takes both names, and
 `hmc_attach_disk_to_lpar` gets the `vios_uuid` it writes to. A hand-written `targets` plus a
@@ -86,7 +86,7 @@ output.
 
 `extra_targets` covers the identities the table cannot name — an argument whose kind depends
 on its tool, which is why `name` is not in the table: it means a user on `hmc_create_user`
-and a new partition on `hmc_create_lpar`. Rule 5 forces the author to supply it wherever the
+and a new partition on `hmc_create_lpar`. Rule 6 forces the author to supply it wherever the
 subject is not table-derivable.
 
 Deriving `required` is what keeps #223 workable. Four destructive tools
@@ -102,15 +102,19 @@ declaration in the repo is unchecked. A contradiction is an `ImportError` rather
 failure in one arm of the suite:
 
 1. `effect`, `operation`, and `target_kind` have no defaults; omitting one is a `TypeError`.
-2. `operation` matches `^[a-z0-9_]+\.[a-z0-9_]+$`.
-3. Every `TargetSelector.argument` and a non-`None` `connection_argument` names a parameter
-   of the decorated handler, checked with `inspect.signature`.
-4. `target_kind == "none"` requires empty `targets` and `connection_argument is None`.
-5. Any other `target_kind` except `"console"` requires at least one `targets` entry whose
-   `kind` equals `target_kind`.
-6. `targets` names no argument twice.
-7. No `extra_targets` entry names an argument the table already covers, and none duplicates
-   another.
+2. `effect` is in the `Effect` vocabulary, and `target_kind` and every `extra_targets` kind
+   are in `TargetKind`.
+3. `operation` matches `^[a-z0-9_]+\.[a-z0-9_]+$`.
+4. Every `extra_targets` argument, and a non-`None` `connection_argument`, names a parameter
+   of the decorated handler, checked with `inspect.signature`. Table-derived arguments are
+   parameters by construction.
+5. `target_kind == "none"` requires empty built `targets` and `connection_argument is None`.
+6. Any other `target_kind` except `"console"` requires at least one built `targets` entry
+   whose `kind` equals `target_kind`.
+7. No `extra_targets` entry names an argument the table already covers, and none names an
+   argument twice.
+
+The specification carries these as the numbered rules V1–V9.
 
 `REQUIRED_TARGET_ARGUMENTS` is closed and explicit rather than a `*_uuid` naming convention,
 because sub-resource arguments (`vg_uuid`, `adapter_uuid`, `mapping_uuid`, `network_uuid`,
@@ -118,7 +122,7 @@ because sub-resource arguments (`vg_uuid`, `adapter_uuid`, `mapping_uuid`, `netw
 convention would need a waiver on each. It holds every argument name that unambiguously
 identifies a resource of one kind, so adding a row is a deliberate edit — and an argument
 name outside it contributes no target, which is the residual: a future tool inventing a new
-identity-bearing parameter name gets no target until the table gains a row. Rule 5 catches
+identity-bearing parameter name gets no target until the table gains a row. Rule 6 catches
 that whenever the new name is the tool's subject; a new *scope* argument would not be caught.
 
 Registry-wide uniqueness cannot be seen from one module. `build_tool_security()` is a pure
@@ -191,6 +195,10 @@ asserting coverage.
   addressed through their owning VIOS or LPAR rather than earning their own kinds, because a
   policy constrains "may create a virtual disk on VIOS X", and a finer vocabulary would add
   declaration surface that nothing in #220–#225 evaluates.
+- `hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` act on a local `file_path` that
+  no `TargetKind` expresses; their built targets present the `managed_system` as the subject
+  and say nothing about the file. #223 and #224 must not read a selector set as a complete
+  account of what a tool touches.
 - `metric_resource` is the one kind that is not a single HMC resource type: the metric tools'
   `resource_name_or_uuid` names a managed system or an LPAR depending on the `category`
   argument. #223 cannot bind an exact per-kind constraint to it without resolving `category`
