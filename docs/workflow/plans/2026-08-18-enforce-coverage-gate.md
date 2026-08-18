@@ -42,6 +42,10 @@ coverage would leave a commit whose guardrails are red.
   statements** of 5977. Baseline is 611 missed (89.78%).
 - No file under `src/hmc_mcp/` is modified. Coverage rises only by exercising shipped code. A
   statement that appears genuinely unreachable is reported in the pull request, not deleted.
+- **A defect found while characterizing existing behavior is filed as a GitHub issue in the same
+  turn and referenced from the test's docstring — never fixed here**, since `src/hmc_mcp/` is
+  out of scope. The characterization test pins current behavior, so the issue is what stops a
+  later fix from looking like a regression.
 - New CLI tests extend `tests/app/test_cli_commands.py` and reuse its `FakeHMC` class and
   `fake_hmc` fixture; no second CLI-testing idiom is introduced.
 - Branch `feat/enforce-coverage-gate-240`; base `main`. Host architecture `arm64`; no target
@@ -109,7 +113,21 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
 
 2. Write one test per row of the coverage table below. Each asserts the exit code, at least one
    rendered string unique to that branch, and — where the command mutates — that the patched
-   operation received the arguments the CLI parsed. Complete code for one test of each shape:
+   operation received the arguments the CLI parsed.
+
+   **Assert on the right stream.** click 8.4.2 removed `mix_stderr`, so `result.stdout` does
+   **not** contain stderr. Output written through `console` is on `result.stdout`; output written
+   through `err_console`, and click's own `Aborted.`, are on `result.stderr`. The module already
+   uses `result.stderr` in 55 places — follow it. Asserting an abort message on `result.stdout`
+   produces a red test with a confusing diagnostic, and `result.output` is not a safe blanket
+   substitute because it is only correct for some of these rows.
+
+   **Getting past a confirmation prompt.** Most storage commands take `--yes`/`-y`;
+   `detach-mapping` takes `--confirm`/`-y` instead. `map` also prompts, so its success-path test
+   needs `--yes`. To exercise a *decline* instead, pass `input="n\n"` and assert
+   `result.exit_code == 1` with `"Aborted."` in `result.stderr`.
+
+   Complete code for one test of each shape:
 
    ```python
    def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
@@ -182,12 +200,22 @@ unhandled unpacking error that says nothing about the CLI. The fake must return 
    | `get-media-repo` | found (renders Name/Size); empty (renders "No media repository found"); `--json` | A |
    | `list-optical-media` | non-empty table; empty ("No optical media found"); `--json` | A |
    | `list-mappings` | table with `VirtualDisk`; table with `PhysicalVolume`; `--json` | B |
-   | `detach-mapping` | `--confirm` deletes; operation raising renders "Failed to delete" and exits 1 | B |
+   | `detach-mapping` | `--confirm` deletes; a raising operation exits 1 and puts `Failed to delete storage mapping` on **stdout** while the real diagnostic goes to stderr — see the note below | B |
    | `upload-iso` | duplicate-existing render; `--json` | C |
    | `attach-disk` | `--json` with an incomplete workflow exits 1 | A |
 
    Decline a confirmation by passing `input="n\n"` to `RUNNER.invoke`; `typer.Abort` renders
-   "Aborted." and exits 1.
+   `Aborted.` **to stderr** and exits 1, so assert on `result.stderr`.
+
+   **Known defect on the `detach-mapping` failure path — issue #242.** `storage_detach_mapping`
+   wraps `_run(_go)` in `except Exception`, but `_run` already reports the failure through `_fail`
+   and raises `typer.Exit(1)` — and `typer.Exit` subclasses `RuntimeError`, so the handler catches
+   its own framework's exit sentinel. The observed result is
+   `Failed to delete storage mapping: ` on stdout with an empty value, alongside the real
+   `Error: <exc>` on stderr. Characterize what it does today: assert the substring
+   `Failed to delete storage mapping` and `exit_code == 1`, and put a docstring line on the test
+   naming issue #242 and stating that the empty trailing value is the defect, not the contract.
+   Do not assert the full line, or the fix for #242 will redden a test that looks protective.
 
 4. Confirm the new tests bite. Pick `test_storage_get_media_repo_reports_empty`, temporarily change
    `cli_storage.storage_get_media_repo`'s `else` branch message, run the focused suite, and
@@ -264,7 +292,7 @@ no file under `src/hmc_mcp/` modified.
 
 **Files:** Modify `pyproject.toml` and `tests/test_ci_pipeline.py`.
 
-**Interfaces:** Consumes `ROOT`, `os`, `re`, `subprocess`, `sys`, `tomllib`, and `Path`, all
+**Interfaces:** Consumes `ROOT`, `json`, `os`, `subprocess`, `sys`, `tomllib`, and `Path`, all
 already imported at the top of `tests/test_ci_pipeline.py`. Produces four module-level helpers,
 five test functions, and the final gate configuration. Nothing
 later consumes them.
@@ -283,10 +311,15 @@ because the gate is broken, and passes once it is fixed.
            return tomllib.load(file)
 
 
-   def _coverage_gate() -> tuple[int, dict]:
-       """Return the configured floor and the whole [tool.coverage.report] table."""
+   def _coverage_gate() -> tuple[float, dict]:
+       """Return the configured floor and the whole [tool.coverage.report] table.
+
+       float, not int: int(90.9) truncates to 90, which would let the assertions
+       below pass while the real floor -- and the diagnostic the child emits --
+       had moved.
+       """
        report = _project_toml()["tool"]["coverage"]["report"]
-       return int(report["fail_under"]), report
+       return float(report["fail_under"]), report
 
 
    def _write_gate_project(root: Path, report: dict, covered: int) -> None:
@@ -308,7 +341,10 @@ because the gate is broken, and passes once it is fixed.
        tests.joinpath("test_gate.py").write_text(
            "def test_touch():\n    import gatepkg.covered\n    assert gatepkg.covered.v1 == 1\n"
        )
-       report_toml = "\n".join(f"{key} = {value!r}" for key, value in sorted(report.items()))
+       # json.dumps, not repr: repr(True) is "True", which is not valid TOML.
+       report_toml = "\n".join(
+           f"{key} = {json.dumps(value)}" for key, value in sorted(report.items())
+       )
        root.joinpath("pyproject.toml").write_text(
            "[project]\n"
            'name = "gatepkg"\n'
@@ -349,8 +385,10 @@ because the gate is broken, and passes once it is fixed.
 
        assert floor == 90
        assert report["precision"] >= 2
-       # Without a measured source nothing consults fail_under at all.
-       assert "--cov=hmc_mcp" in addopts
+       # Without a measured source nothing consults fail_under at all. Token, not
+       # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
+       # narrow the measured source to one file, giving a total near 100%.
+       assert "--cov=hmc_mcp" in addopts.split()
        # Each of these silently disarms the gate: a command-line floor or precision
        # overrides the configured one, --no-cov switches measurement off, and
        # --cov-config sends coverage.py to a different file entirely.
@@ -365,15 +403,19 @@ because the gate is broken, and passes once it is fixed.
 
 
    def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
-       """The floor can be overridden from any pytest invocation, not just addopts."""
-       justfile = (ROOT / "justfile").read_text()
-       workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-       test_recipe = re.search(r"^test:\n(?P<body>(?:    .+\n)+)", justfile, re.MULTILINE)
+       """The floor can be overridden from any pytest invocation, not just addopts.
 
-       assert test_recipe
-       for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
-           assert flag not in test_recipe["body"], flag
-           assert flag not in workflow, flag
+       Scans every workflow and the whole justfile rather than one recipe, so a new
+       recipe or a new workflow that runs pytest is covered too.
+       """
+       sources = {"justfile": (ROOT / "justfile").read_text()}
+       for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+           sources[path.name] = path.read_text()
+
+       assert len(sources) >= 2
+       for name, text in sources.items():
+           for flag in ("--cov-fail-under", "--no-cov", "--cov-precision", "--cov-config"):
+               assert flag not in text, f"{name}: {flag}"
 
 
    def test_pyproject_is_the_coverage_configuration_source() -> None:
@@ -401,7 +443,7 @@ because the gate is broken, and passes once it is fixed.
        which rounds to the floor at coverage.py's default precision of 0.
        """
        floor, report = _coverage_gate()
-       _write_gate_project(tmp_path, report, covered=10 * floor - 1)
+       _write_gate_project(tmp_path, report, covered=round(10 * floor) - 1)
 
        result = _run_gate_project(tmp_path)
 
@@ -423,7 +465,7 @@ because the gate is broken, and passes once it is fixed.
    def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> None:
        """Control: without it, a permanently broken harness reads as a working gate."""
        floor, report = _coverage_gate()
-       _write_gate_project(tmp_path, report, covered=10 * floor)
+       _write_gate_project(tmp_path, report, covered=round(10 * floor))
 
        result = _run_gate_project(tmp_path)
 
