@@ -234,6 +234,19 @@ The test therefore asserts:
   as `show_missing` also has to be added to the test — one line, in the same commit, which is what
   keeping the gate's configuration reviewed means. This mirrors the exact-allowlist idiom the
   module already uses for the secrets baseline;
+- no file under `src/hmc_mcp/` carries a `# pragma: no cover` comment, and coverage.py's default
+  `exclude_lines` is still exactly its three known patterns. Both rules above govern
+  configuration, and configuration is not the only route to a shrunken denominator: coverage.py
+  excludes the no-cover pragma *by default*, so a single comment reaches the same `TOTAL 898 0
+  100.00%` exit `0` that `omit` produces, with `pyproject.toml` byte-identical and every
+  configuration rule green (verified on the probe package). The scan closes that route in source
+  rather than in configuration, because the configuration remedy — `exclude_lines = []` — is
+  rejected by the rule above and would also unexclude `if TYPE_CHECKING:` and `...` stub bodies,
+  which are excluded because they cannot execute under test. Freezing the default list alongside
+  it means a coverage.py bump that adds a fourth default exclusion reddens here rather than
+  quietly changing what the gate measures. The scan matches coverage.py's own default pattern, not
+  the substring `pragma`, so the existing `# pragma: allowlist secret` in `cli_config.py` is not a
+  false positive;
 - the whole `justfile` and every workflow carry none of `--cov-fail-under`, `--cov-precision`,
   `--cov-config`, or `COVERAGE_RCFILE`, and no `--no-cov` without a test path beside it; and the
   `test` recipe body is pinned exactly, because every test here lives under `tests/`, so

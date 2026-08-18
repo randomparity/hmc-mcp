@@ -7,6 +7,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from coverage.config import CoverageConfig
+
 
 ROOT = Path(__file__).parents[1]
 TOOL_PINS = {
@@ -645,6 +647,18 @@ def test_scorecard_workflow_pins_actions_and_retains_results() -> None:
 # --------------------------------------------------------------------------- #
 
 GATE_STATEMENTS = 1000
+# What coverage.py drops from the denominator with no configuration at all.
+# Frozen rather than read loosely: each entry is a channel that shrinks the
+# measured total before fail_under sees it, so a fourth one arriving in a
+# coverage.py bump is a change to what the gate measures.
+DEFAULT_LINE_EXCLUSIONS = (
+    r"#\s*(pragma|PRAGMA)[:\s]?\s*(no|NO)\s*(cover|COVER)",
+    r"^\s*(((async )?def .*?)?[\])]+(\s*->.*?)?:\s*)?\.\.\.\s*(#|$)",
+    r"if (typing\.)?TYPE_CHECKING:",
+)
+# The open-ended one: it applies to any line, unlike the two structural entries
+# above. Compiled from coverage.py's own default so the scan and the tool agree.
+NO_COVER_PRAGMA = re.compile(DEFAULT_LINE_EXCLUSIONS[0])
 
 
 def _project_toml() -> dict:
@@ -747,8 +761,9 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
         for key in project["tool"]["coverage"].get(section, {}):
             assert key not in {"omit", "include"} and not key.startswith("exclude"), (
                 f"[tool.coverage.{section}] {key} shrinks the measured denominator, "
-                f"so the total can reach 100% with the floor untouched. This key can "
-                f"never be added -- not here, and not by widening the freeze below."
+                f"so the total can reach 100% with the floor untouched. Widening the "
+                f"freeze below does not admit it either. The source route to the same "
+                f"effect is closed separately, by the no-cover scan."
             )
     # The freeze is broader than the rejection above, and deliberately so.
     # coverage.py accepts seventeen keys in [tool.coverage.report], and
@@ -760,7 +775,44 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
         f"[tool.coverage.report] is frozen to the coverage gate's two keys; got "
         f"{sorted(report)}. A key the rejection above allows may be added -- add "
         f"it here too, in the same commit, so the gate's configuration stays "
-        f"reviewed. Widening this set never admits a denominator key."
+        f"reviewed. Widening this set does not admit a denominator key, because "
+        f"the rejection above runs first."
+    )
+
+
+def test_coverage_gate_denominator_is_not_shrunk_in_source() -> None:
+    """A no-cover pragma shrinks the denominator without touching pyproject.toml.
+
+    The configuration rules above close the config-file route. This closes the
+    source route, which is cheaper and needs no reviewed key: on the probe
+    package at 899/1000 covered, a single `# pragma: no cover` on the uncovered
+    function reports `TOTAL 898 0 100.00%` and exits 0 -- the same disarm
+    `omit` produces, reached with pyproject.toml byte-identical.
+
+    `exclude_lines = []` closes that route too (verified: back to
+    `TOTAL 1000 101 89.90%`, exit 1) and is deliberately not the remedy. It is
+    rejected by the rule above, and it would also unexclude `if TYPE_CHECKING:`
+    and `...` stub bodies, which are excluded because they genuinely cannot run
+    under test. Scanning the source closes the open-ended channel and leaves the
+    two bounded ones alone.
+    """
+    assert tuple(CoverageConfig().exclude_list) == DEFAULT_LINE_EXCLUSIONS, (
+        f"coverage.py's default line exclusions changed to "
+        f"{CoverageConfig().exclude_list}. Every one of them drops statements "
+        f"from the measured total before fail_under sees it, so a new default "
+        f"changes what the gate measures. Review it, then update this tuple."
+    )
+    offenders = [
+        f"{path.relative_to(ROOT)}:{number}"
+        for path in sorted((ROOT / "src" / "hmc_mcp").rglob("*.py"))
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if NO_COVER_PRAGMA.search(line)
+    ]
+    assert not offenders, (
+        f"{', '.join(offenders)}: `# pragma: no cover` drops these statements "
+        f"from the coverage total instead of covering them, so the reported "
+        f"percentage stops describing the package. If a line genuinely cannot be "
+        f"executed under test, add a reviewed exception here."
     )
 
 

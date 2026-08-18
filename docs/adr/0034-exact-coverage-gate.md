@@ -60,6 +60,18 @@ miniature: within `[89.995, 90.0)` a run passes while still printing `FAIL … T
 window is 0.005 points against the 0.5 the defect spanned; `precision = 2` is the value the issue
 specified, and a higher precision would shrink it further if it ever matters.
 
+The floor governs a percentage, so what counts as the denominator matters as much as the number.
+Two channels shrink it without covering anything, and the guard closes both by different means. A
+configuration key — `omit`, `include`, or an `exclude*` key, in either `[tool.coverage.run]` or
+`[tool.coverage.report]` — is rejected outright; on a probe package at 899 of 1000 statements
+covered, each takes the run from exit `1` at `89.90%` to exit `0` reporting `100.00%`. A
+`# pragma: no cover` comment reaches the same result through coverage.py's *default*
+`exclude_lines`, with `pyproject.toml` byte-identical, so no configuration rule can see it; a
+source scan rejects it instead. Setting `exclude_lines = []` would also close that route and is
+not the choice made here: it is a configuration key the first rule rejects, and it would
+additionally unexclude `if TYPE_CHECKING:` and `...` stub bodies, which are excluded because they
+cannot execute under test. The narrower rule leaves those alone.
+
 Because the floor now lives in `[tool.coverage.report]`, every coverage.py reporting subcommand
 honours it — `report`, `html`, `xml`, `json`, and `lcov` each exit `2` below the floor. Anyone
 later adding a `coverage xml` or `coverage html` step inherits that failure. A focused subset
