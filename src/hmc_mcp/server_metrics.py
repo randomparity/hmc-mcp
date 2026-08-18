@@ -7,7 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _READ_ONLY,
     _run,
 )
 
@@ -23,10 +22,10 @@ from .operations_pcm import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="pcm.get_preferences", target_kind="metric_resource")
 def hmc_get_pcm_preferences(
     category: PcmCategory, resource_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any]:
@@ -51,7 +50,7 @@ def hmc_get_pcm_preferences(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="pcm.set_preferences", target_kind="metric_resource")
 def hmc_set_pcm_preferences(
     category: PcmCategory,
     resource_name_or_uuid: str,
@@ -103,7 +102,7 @@ def hmc_set_pcm_preferences(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="metrics.processed", target_kind="metric_resource")
 def hmc_processed_metrics(
     category: PcmCategory,
     resource_name_or_uuid: str,
@@ -142,7 +141,7 @@ def hmc_processed_metrics(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="metrics.processed_links", target_kind="metric_resource")
 def hmc_processed_metric_links(
     category: PcmCategory,
     resource_name_or_uuid: str,
@@ -172,7 +171,7 @@ def hmc_processed_metric_links(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="metrics.aggregated", target_kind="metric_resource")
 def hmc_aggregated_metrics(
     category: PcmCategory,
     resource_name_or_uuid: str,
@@ -212,7 +211,7 @@ def hmc_aggregated_metrics(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="metrics.aggregated_links", target_kind="metric_resource")
 def hmc_aggregated_metric_links(
     category: PcmCategory,
     resource_name_or_uuid: str,

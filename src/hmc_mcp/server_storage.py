@@ -7,9 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
-    _STATE_CHANGING,
     _run,
     _run_limited_collection,
 )
@@ -51,10 +48,10 @@ from .operations_provision import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="storage.list_volume_groups", target_kind="vios")
 def hmc_list_volume_groups(
     vios_name_or_uuid: str,
     profile: str | None = None,
@@ -80,7 +77,7 @@ def hmc_list_volume_groups(
     return _run_limited_collection(_go, limit)
 
 
-@tool
+@tool(effect="mutate", operation="storage.create_volume_group", target_kind="vios")
 def hmc_create_volume_group(
     vios_name_or_uuid: str,
     name: str,
@@ -109,7 +106,7 @@ def hmc_create_volume_group(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="storage.attach_disk", target_kind="lpar")
 def hmc_attach_disk_to_lpar(
     lpar_name_or_uuid: str,
     vios_uuid: str,
@@ -155,7 +152,7 @@ def hmc_attach_disk_to_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="storage.create_disk", target_kind="vios")
 def hmc_create_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -186,7 +183,7 @@ def hmc_create_virtual_disk(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="storage.delete_disk", target_kind="vios")
 def hmc_delete_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -214,7 +211,7 @@ def hmc_delete_virtual_disk(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="storage.map", target_kind="vios")
 def hmc_map_storage_to_lpar(
     vios_name_or_uuid: str,
     storage_name: str,
@@ -257,7 +254,7 @@ def hmc_map_storage_to_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="media.create_repository", target_kind="vios")
 def hmc_create_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, size_mib: int, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -282,7 +279,7 @@ def hmc_create_media_repository(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="media.create", target_kind="vios")
 def hmc_create_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -312,7 +309,7 @@ def hmc_create_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.delete_repository", target_kind="vios")
 def hmc_delete_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> str:
@@ -335,7 +332,7 @@ def hmc_delete_media_repository(
 
     return _run(_go)
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.delete", target_kind="vios")
 def hmc_delete_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -362,7 +359,7 @@ def hmc_delete_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.get_repository", target_kind="vios")
 def hmc_get_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -384,7 +381,7 @@ def hmc_get_media_repository(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.list", target_kind="vios")
 def hmc_list_optical_media(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -406,7 +403,7 @@ def hmc_list_optical_media(
 
     return _run(_go)
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="storage.list_mappings", target_kind="vios")
 def hmc_list_storage_mappings(
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -431,7 +428,7 @@ def hmc_list_storage_mappings(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
 def hmc_detach_storage_mapping(
     vios_name_or_uuid: str,
     mapping_uuid: str,
@@ -456,7 +453,7 @@ def hmc_detach_storage_mapping(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.list", target_kind="console")
 def hmc_list_clusters(
     profile: str | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
@@ -476,7 +473,7 @@ def hmc_list_clusters(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.list_pools", target_kind="console")
 def hmc_list_shared_storage_pools(
     profile: str | None = None,
     limit: int | None = None,
@@ -497,7 +494,7 @@ def hmc_list_shared_storage_pools(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.get_pool", target_kind="shared_storage_pool")
 def hmc_get_shared_storage_pool(
     ssp_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -515,7 +512,7 @@ def hmc_get_shared_storage_pool(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")
 def hmc_create_logical_unit(
     cluster_uuid: str,
     lu_name: str,
@@ -573,7 +570,7 @@ def hmc_create_logical_unit(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster")
 def hmc_delete_logical_unit(
     cluster_uuid: str,
     lu_udid: str,
@@ -612,7 +609,7 @@ def hmc_delete_logical_unit(
 
     return _run(_go)
 
-@tool
+@tool(effect="mutate", operation="media.upload_iso", target_kind="vios")
 def hmc_upload_iso(
     vios_name_or_uuid: str,  # VIOS name or UUID to target
     vg_uuid: str,  # Volume Group UUID containing the media repository
@@ -648,7 +645,7 @@ def hmc_upload_iso(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.list_mappings", target_kind="vios")
 def hmc_list_optical_mappings(
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -675,7 +672,7 @@ def hmc_list_optical_mappings(
     return _run(_go)
 
 
-@tool(annotations=_STATE_CHANGING)
+@tool(effect="mutate", operation="media.mount", target_kind="vios")
 def hmc_mount_optical_media(
     vios_name_or_uuid: str,
     media_name: str,
@@ -701,7 +698,7 @@ def hmc_mount_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.unmount", target_kind="vios")
 def hmc_unmount_optical_media(
     vios_name_or_uuid: str,
     mapping_uuid: str,
@@ -724,7 +721,7 @@ def hmc_unmount_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.detach_mapping", target_kind="vios")
 def hmc_detach_optical_mapping(
     vios_name_or_uuid: str,
     mapping_uuid: str,

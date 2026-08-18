@@ -2,11 +2,11 @@
 
 The MCP server tags every tool with ToolAnnotations (readOnlyHint /
 destructiveHint) so clients and gateways can gate on capability instead of
-treating every tool equally. The classification lives in server.py's
-READ_ONLY_TOOLS / DESTRUCTIVE_TOOLS sets; these tests pin the live registry to
-that spec so a new tool must pick a category and be tagged. They also cover the
-precondition guards on hmc_delete_lpar / hmc_delete_vios (refuse to delete a
-partition that is not powered off), the pattern established by
+treating every tool equally. The classification lives on each tool's
+ToolSecurity record; tests/app/test_tool_security.py holds the exhaustive
+registry contract, and these tests cover annotation-adjacent schema stability
+and the precondition guards on hmc_delete_lpar / hmc_delete_vios (refuse to
+delete a partition that is not powered off), the pattern established by
 hmc_remove_memory_pool.
 """
 
@@ -19,8 +19,7 @@ import pytest
 
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
-    DESTRUCTIVE_TOOLS,
-    READ_ONLY_TOOLS,
+    TOOL_SECURITY,
     hmc_decommission_lpar,
     hmc_delete_lpar,
     hmc_delete_vios,
@@ -137,36 +136,12 @@ def test_every_registered_parameter_has_a_description(arbitrary_command_enabled)
         asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
 
 
-def test_classification_sets_are_disjoint():
-    assert not (READ_ONLY_TOOLS & DESTRUCTIVE_TOOLS)
-
-
-def test_every_registered_tool_matches_its_category():
-    """The live registry must carry exactly the documented annotations."""
-    by_name = _tools_by_name()
-    assert READ_ONLY_TOOLS | DESTRUCTIVE_TOOLS <= set(by_name)
-    for name, tool in by_name.items():
-        ann = tool.annotations
-        if name in READ_ONLY_TOOLS:
-            assert ann is not None and ann.readOnlyHint is True, name
-            assert ann.destructiveHint is not True, name
-        elif name in DESTRUCTIVE_TOOLS:
-            assert ann is not None and ann.destructiveHint is True, name
-            assert ann.readOnlyHint is not True, name
-        else:
-            # Untagged tools are state-changing lifecycle/admin operations.
-            assert ann is None or (
-                ann.readOnlyHint is not True and ann.destructiveHint is not True
-            ), name
-
-
 def test_arbitrary_command_tool_is_disabled_by_default():
     assert "hmc_run_command" not in _tools_by_name()
 
 
 def test_attach_disk_is_state_changing_not_destructive():
-    assert "hmc_attach_disk_to_lpar" not in READ_ONLY_TOOLS
-    assert "hmc_attach_disk_to_lpar" not in DESTRUCTIVE_TOOLS
+    assert TOOL_SECURITY["hmc_attach_disk_to_lpar"].effect == "mutate"
     annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
     assert annotations is None or (
         annotations.readOnlyHint is not True and annotations.destructiveHint is not True
@@ -174,7 +149,7 @@ def test_attach_disk_is_state_changing_not_destructive():
 
 
 def test_fleet_health_is_read_only():
-    assert "hmc_fleet_health" in READ_ONLY_TOOLS
+    assert TOOL_SECURITY["hmc_fleet_health"].effect == "read"
     annotations = _tools_by_name()["hmc_fleet_health"].annotations
     assert annotations is not None and annotations.readOnlyHint is True
 
@@ -347,7 +322,7 @@ def test_decommission_lpar_is_public_destructive_and_schema_stable():
     assert callable(hmc_decommission_lpar)
 
     tool = _tools_by_name()["hmc_decommission_lpar"]
-    assert "hmc_decommission_lpar" in DESTRUCTIVE_TOOLS
+    assert TOOL_SECURITY["hmc_decommission_lpar"].effect == "destructive"
     assert tool.annotations is not None and tool.annotations.destructiveHint is True
     assert tool.annotations.readOnlyHint is not True
 

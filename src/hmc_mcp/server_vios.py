@@ -10,8 +10,6 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
     _run,
 )
 
@@ -35,10 +33,10 @@ from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="vios.create", target_kind="managed_system")
 def hmc_create_vios(
     system_name_or_uuid: str,
     name: str,
@@ -69,7 +67,7 @@ def hmc_create_vios(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="vios.delete", target_kind="vios")
 def hmc_delete_vios(
     vios_name_or_uuid: str,
     profile: str | None = None,
@@ -121,7 +119,7 @@ def hmc_delete_vios(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="vios.install", target_kind="vios")
 def hmc_install_vios(
     vios_name_or_uuid: str,
     nim_ip: str,
@@ -187,7 +185,7 @@ def hmc_install_vios(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.install_os", target_kind="lpar")
 def hmc_install_lpar_os(
     lpar_name_or_uuid: str,
     nim_ip: str,
@@ -297,7 +295,7 @@ async def _run_vios_backup_command(
     return await run_hmc_cli(build_command(vios_uuid), build_config(profile=profile))
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vios.list_backups", target_kind="vios")
 def hmc_list_vios_backups(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, str]]:
@@ -322,7 +320,7 @@ def hmc_list_vios_backups(
     return _parse_lsviosbackup_output(output)
 
 
-@tool
+@tool(effect="mutate", operation="vios.backup", target_kind="vios")
 def hmc_backup_vios(
     vios_name_or_uuid: str,
     backup_type: BackupType = "vios",
@@ -363,7 +361,7 @@ def hmc_backup_vios(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="vios.restore", target_kind="vios")
 def hmc_restore_vios(
     vios_name_or_uuid: str,
     backup_name: str,
@@ -403,7 +401,7 @@ def hmc_restore_vios(
     )
 
 
-@tool
+@tool(effect="mutate", operation="vios.power_on", target_kind="vios")
 def hmc_power_on_vios(
     vios_name_or_uuid: str,
     wait: bool = False,
@@ -439,7 +437,7 @@ def hmc_power_on_vios(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="vios.power_off", target_kind="vios")
 def hmc_power_off_vios(
     vios_name_or_uuid: str,
     immediate: bool = False,

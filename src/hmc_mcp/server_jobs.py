@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _READ_ONLY, _run, _run_limited_collection
+from ._app import _run, _run_limited_collection
 from .common import client_from_env
 from .errors import HMCError
 from .jobs import JobOutcome, job_outcome
@@ -21,10 +21,10 @@ def _is_unsupported_job_listing(exc: HMCError) -> bool:
     )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="job.get", target_kind="job")
 def hmc_get_job(
     job_uuid: str,
     job_href: str | None = None,
@@ -45,7 +45,7 @@ def hmc_get_job(
     return _run(operation)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="job.list", target_kind="console")
 def hmc_list_recent_jobs(
     limit: int = 20,
     profile: str | None = None,
@@ -78,7 +78,7 @@ def hmc_list_recent_jobs(
         ) from exc
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="job.wait", target_kind="job")
 def hmc_wait_for_job(
     job_uuid: str,
     timeout_seconds: int = 300,

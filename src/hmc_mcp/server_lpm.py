@@ -5,7 +5,6 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _DESTRUCTIVE,
     _run,
 )
 
@@ -21,10 +20,10 @@ from .operations_lpm import (
 from typing import cast
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate", target_kind="lpar")
 def hmc_migrate_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
@@ -77,7 +76,7 @@ def hmc_migrate_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate_validate", target_kind="lpar")
 def hmc_migrate_validate_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
@@ -123,7 +122,7 @@ def hmc_migrate_validate_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.migrate_abort", target_kind="lpar")
 def hmc_migrate_abort_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
@@ -160,7 +159,7 @@ def hmc_migrate_abort_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate_recover", target_kind="lpar")
 def hmc_migrate_recover_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
@@ -197,7 +196,7 @@ def hmc_migrate_recover_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.remote_restart", target_kind="lpar")
 def hmc_remote_restart_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,

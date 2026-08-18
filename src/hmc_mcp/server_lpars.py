@@ -7,7 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
     _run,
 )
 from .errors import HMCError
@@ -49,10 +48,10 @@ def _check_lpar_write_error(exc: HMCError) -> None:
         ) from exc
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="lpar.create", target_kind="managed_system")
 def hmc_create_lpar(
     system_name_or_uuid: str,
     name: str,
@@ -139,7 +138,7 @@ def hmc_create_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.modify", target_kind="lpar")
 def hmc_modify_lpar(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -181,7 +180,7 @@ def hmc_modify_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.rename", target_kind="lpar")
 def hmc_rename_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -221,7 +220,7 @@ def hmc_rename_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.dlpar_proc", target_kind="lpar")
 def hmc_dlpar_proc(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -258,7 +257,7 @@ def hmc_dlpar_proc(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.dlpar_mem", target_kind="lpar")
 def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -292,7 +291,7 @@ def hmc_dlpar_mem(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.delete", target_kind="lpar")
 def hmc_delete_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -339,7 +338,7 @@ def hmc_delete_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.decommission", target_kind="lpar")
 def hmc_decommission_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -404,7 +403,7 @@ def hmc_decommission_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.power_on", target_kind="lpar")
 def hmc_power_on_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
@@ -455,7 +454,7 @@ def hmc_power_on_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.power_off", target_kind="lpar")
 def hmc_power_off_lpar(
     lpar_name_or_uuid: str,
     immediate: bool = False,
@@ -509,7 +508,7 @@ def hmc_power_off_lpar(
 # ====================================================================== #
 
 
-@tool
+@tool(effect="read", operation="boot_order.read", target_kind="lpar")
 def hmc_read_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
@@ -551,7 +550,7 @@ def hmc_read_lpar_boot_order(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
 def hmc_set_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
@@ -608,7 +607,7 @@ def hmc_set_lpar_boot_order(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
 def hmc_clear_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,

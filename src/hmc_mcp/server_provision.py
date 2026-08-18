@@ -15,10 +15,10 @@ from .operations_provision import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="provision.lpar", target_kind="managed_system")
 def hmc_provision_lpar(
     system_name_or_uuid: str,
     name: str,
