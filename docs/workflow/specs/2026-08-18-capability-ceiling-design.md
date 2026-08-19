@@ -78,15 +78,19 @@ withholds `hmc_run_command` yields a served application whose registry does not 
 `target_kind="none"`, `targets=()`, `connection_argument=None`. It takes no arguments and
 its MCP annotations are `annotations_for("read")`.
 
-**R10a — An empty composed surface is visible, however it arose.** `serve` warns when the
-application it composed registers zero tools, keyed on the composed result rather than on
-the policy's shape. Two documents reach that state: `grants = []`, a valid deny-everything
-policy under ADR 0036 and #220's rule P2; and a policy whose whole ceiling is
-`tools = ["hmc_run_command"]`, since `create_mcp` never registers that tool and the same
-ceiling withholds the inspection tool. Neither is an error — both are the operator's stated
-intent — so neither is rejected at selection. An empty surface already implies the
-inspection tool is absent, so this warning **replaces** R18's rather than firing beside it;
-exactly one of the two is printed.
+**R10a — An empty served surface is visible, however it arose.** `main_stdio` and
+`main_http` warn when the application they are about to serve registers zero tools. The
+check is made *after* `configure_arbitrary_command_tool` has run, so it reports the surface
+actually served, and it lives in the entry points because they are the only components that
+hold a composed application — `serve` never does. Two documents reach an empty surface:
+`grants = []`, a valid deny-everything policy under ADR 0036 and #220's rule P2; and a
+policy whose whole ceiling is `tools = ["hmc_run_command"]`, since `create_mcp` never
+registers that tool and the same ceiling withholds the inspection tool. That second policy
+*with* `--enable-arbitrary-command` serves exactly one tool — the escape hatch — so the
+warning must not fire there, which is why the check follows the toggle rather than
+composition. Neither document is an error, so neither is rejected at selection. R18's
+warning is suppressed when this one fires: an empty surface already implies the inspection
+tool is absent, and one diagnosis is enough.
 
 **R11 — The inspection tool is subject to the ceiling.** A policy that does not permit
 `hmc_effective_permissions` yields an application without it. A policy granting
@@ -97,7 +101,12 @@ application `app` composed by `create_mcp(policy)`, and after any sequence of
 `configure_arbitrary_command_tool` calls on it, the `name` values in the tool's `tools`
 field equal the names in `app.list_tools()`, as sets and as a sorted sequence. The handler
 reads `app.local_provider.list_tools()`, a different accessor, so the two sides are not the
-same call. The reported set is *also* asserted against the policy-derived expectation —
+same call. The equality holds under the conditions this repository composes under: no tool
+is disabled, none carries a per-tool `auth` check, and no session transform is installed.
+Outside them the provider is the wider set — it includes disabled tools, where
+`FastMCP.list_tools()` filters on enabled, app-visibility, and auth — so inspection would
+over-report relative to `tools/list`. That is the same "inspection inherits the registry"
+property ADR 0037 records, and nothing in this change creates such a tool. The reported set is *also* asserted against the policy-derived expectation —
 `{n for n in TOOL_SECURITY if policy is None or policy.permits_tool(n)}`, minus
 `hmc_run_command` unless the arbitrary-command tool is currently registered — so one
 implementation defect cannot satisfy both checks.
@@ -117,9 +126,11 @@ not raise when the surface changes.
 selected **and** every currently registered tool is permitted by it — it is checked against
 the registry being reported, not inferred from selection. A registry that has drifted past
 its ceiling therefore reports `ceiling_enforced is False` with a non-null `policy_name`,
-which is the honest reading of that state. Drift is reachable: `configure_arbitrary_command_tool(True, app)`
-with its default `permits=None` registers `hmc_run_command` on an application whose ceiling
-excluded it, which is the call shape in `scripts/live_test_runner.py`.
+which is the honest reading of that state. Drift is reachable by construction:
+`configure_arbitrary_command_tool(True, app)` with its default `permits=None` registers
+`hmc_run_command` on an application whose ceiling excluded it. No current caller exhibits
+it — `scripts/live_test_runner.py:2911` uses that two-positional call shape, but against
+the unfiltered module-level `mcp` (`:37`), which has no ceiling to exceed.
 
 **R15 — Inspection reports grants individually.** `declared_grants` has one entry per
 grant in document order, each carrying that grant's sorted tool names, sorted connection
@@ -131,7 +142,8 @@ Connections and targets from different grants are never merged.
 `enforced_dimensions == ("tools",)` and `declared_only_dimensions == ("connections",
 "targets")` exactly when `ceiling_enforced` is `True`; both are `()` otherwise. They are
 derived from `ceiling_enforced` and share its verification, so no output can pair a claim
-of tool enforcement with a registry that exceeds the ceiling.
+of tool enforcement with a registry that exceeds the ceiling. ADR 0037 records the same
+derivation.
 
 **R17 — Inspection carries no credential, stated as a closed allowlist.** The output
 contains exactly the fields of `EffectivePermissions` and nothing else, and every string
@@ -175,7 +187,10 @@ domain module, and applies no ceiling check of its own.
 
 **R22 — Documentation matches.** `README.md` documents `serve --access-policy NAME`, the
 four stderr warnings (R10a, R18, R19, R19a), and `hmc_effective_permissions` in its
-read-only tool table. `just verify` does not check this, so it is a requirement rather than
+read-only tool table. Where it documents that tool it states the disclosure: the tool
+returns the policy name, its absolute path, every connection token, and every target
+selector to any MCP client that can call it, and only a `tools`-only policy omitting it can
+withhold it. `just verify` does not check this, so it is a requirement rather than
 a gate.
 
 **R21 — Guardrails.** `just verify` passes bare, including the 90.00% coverage floor and
@@ -339,6 +354,15 @@ operator who starts the process and writes `access-policy.toml` is trusted — t
 sits at the same trust level as `config.toml`, and anyone who can write it can widen the
 ceiling. The HMC is a trusted downstream service. This design places no trust in the
 client and does not change what the operator is trusted with.
+
+One assumption this model makes explicit, because the design leans on it: the four stderr
+warnings reach the operator only where stderr is observed. `serve`'s default and documented
+transport is stdio, launched as a subprocess by an agent host, so stderr is that host's log
+file rather than a terminal anyone is watching. Under stdio the warnings are an audit trail
+to be read after the fact, not an interactive prompt, and a policy that withholds
+`hmc_effective_permissions` leaves no runtime evidence of the ceiling at all until #224
+adds audit events. Under `--http` the operator started the process directly and stderr is
+theirs.
 
 **Control per boundary.**
 

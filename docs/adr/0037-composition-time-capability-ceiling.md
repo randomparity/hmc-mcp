@@ -86,10 +86,12 @@ union of connections across grants would misstate the policy. Each grant is repo
 its own tools, connections (with `None` rendered back as `"<default>"`), and targets. Two
 fields say what those dimensions currently mean: with a policy selected,
 `enforced_dimensions` is `("tools",)` and `declared_only_dimensions` is
-`("connections", "targets")`; with none selected both are empty. They are derived from
-whether a policy is in effect — not from re-verifying the registry beside them — so the
-permissive default cannot claim an enforcement it is not performing. #222 and #223 move a
-string from the second tuple to the first.
+`("connections", "targets")`; otherwise both are empty. They derive from
+`ceiling_enforced`, which is *checked* rather than inferred — a policy must be selected and
+every name in the read registry must satisfy `permits_tool` — so no output can pair a claim
+of tool enforcement with a registry that has drifted past its ceiling, and the permissive
+default cannot claim an enforcement it is not performing. #222 and #223 move a string from
+the second tuple to the first.
 
 **The arbitrary-command flag and the ceiling compose conjunctively**, as ADR 0036
 recorded. `configure_arbitrary_command_tool(enabled, mcp, permits=None)` registers
@@ -158,10 +160,11 @@ and this intersection reads only the compiled result.
   tests and `scripts/` import; it is no longer mutated by the serve path.
 - **Inspection reports a registry, so it inherits whatever the registry does.** If a
   future change disables rather than removes a tool, inspection reports what the provider
-  reports, without a second opinion. `enforced_dimensions` describes composition, not a
-  re-verification of the registry beside it, so any registration site added after
-  `create_mcp` returns must take `permits` for that label to stay true —
-  `configure_arbitrary_command_tool` is the one that exists, and it does.
+  reports, without a second opinion. `enforced_dimensions` does carry a second opinion: it
+  re-checks every reported name against the policy, so a registration site added after
+  `create_mcp` returns that skips `permits` degrades the label to "not enforced" rather than
+  leaving it falsely true. `configure_arbitrary_command_tool` is the one that exists, and it
+  takes `permits`.
 - **`hmc_effective_permissions` is the second tool with no connection argument**, after
   `hmc_list_configured_hosts`. Rule G10 in `tests/app/test_tool_security.py` — "only the
   local config tool opens no HMC connection" — becomes an allowance of two, and both
