@@ -77,9 +77,12 @@ def test_strings_pass_through_in_declaration_order():
 def test_an_int_selector_renders_rather_than_denying():
     """`vios_partition_id` is the surface's one non-string selector.
 
-    Denying it would make three live `mutate` tools un-narrowable on a type
-    quirk. `str()` over `int` is total and injective, so the rendering adds no
-    ambiguity the comparison could exploit.
+    The arm is load-bearing, not convenient: UNREADABLE denies even under
+    `all-targets`, so without it #225's legacy-equivalent policy would stop
+    covering three live `mutate` tools. It does not make the *comparison*
+    unambiguous — a `vios` allowlist holds partition IDs and VIOS names in one
+    set — which is why ADR 0039 refuses `vios_partition_id` as a bounding
+    identity outright rather than trusting the rendering.
     """
     extracted = selected_targets(
         ADD_VFC, {"lpar_name_or_uuid": "db-01", "vios_partition_id": 3}
@@ -114,6 +117,22 @@ def test_every_other_type_is_unreadable_uninspected(value):
         {"lpar_name_or_uuid": value, "system_name_or_uuid": "sys-a"},
     )
     assert extracted[0][2] is UNREADABLE
+
+
+def test_the_empty_string_is_a_string_not_an_omission():
+    """`""` denies under any table by construction, and is deliberately not ABSENT.
+
+    `access_policy._check_entries` already rejects an empty allowlist entry, so no
+    table can contain it. Note the asymmetry with `selected_connection`, where
+    `""` *is* the default connection because `load_profile` treats it that way.
+    """
+    extracted = selected_targets(
+        POWER_OFF_LPAR, {"lpar_name_or_uuid": "", "system_name_or_uuid": "sys-a"}
+    )
+    assert extracted[0] == ("lpar", "lpar_name_or_uuid", "")
+    table = _table(lpar=["db-01"], managed_system=["sys-a"])
+    assert targets_permitted(table, POWER_OFF_LPAR, extracted) is False
+    assert targets_permitted(ALL_TARGETS, POWER_OFF_LPAR, extracted) is True
 
 
 def test_a_selector_less_tool_extracts_nothing():
