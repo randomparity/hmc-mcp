@@ -98,16 +98,18 @@ source, the policy name, the grant index, and the offending value.
 | P5 | No array contains a duplicate entry — `effects`, `tools`, `connections`, and every target-kind selector array. No string entry in any of them is empty or whitespace-only. |
 | P6 | A grant names at least one tool: `effects` and `tools` are not both empty. |
 | P7 | Every name in `tools` is a key of the tool index. |
-| P8 | No name in `tools` is already covered by the same grant's `effects`. |
-| P9 | Every key of a `targets` table is a `TargetKind` other than `"none"`, and is declared by at least one tool the grant resolves to (as `target_kind` or as the `kind` of one of its `targets` entries). |
-| P10 | For every tool the grant resolves to, every **required** `TargetSelector` kind is covered — either `targets` is `"all-targets"`, or the kind is a key of the `targets` table. Optional selectors need no coverage; #223 owns their call-time treatment. |
-| P11 | No two grants in a policy are identical after compilation. |
-| P12 | No grant is subsumed by a sibling grant that carries `targets = "all-targets"`, a superset of its resolved tools, and a superset of its connections. |
-| P13 | `load_access_policy` raises `AccessPolicyError` when the file is absent, unreadable, or unparseable, and when the named policy is not in the file; the not-found message lists the available policy names. |
+| P8 | Every key of a `targets` table is a `TargetKind` other than `"none"`, and is declared by at least one tool the grant resolves to (as `target_kind` or as the `kind` of one of its `targets` entries). |
+| P9 | For every tool the grant resolves to, every **required** `TargetSelector` kind is covered — either `targets` is `"all-targets"`, or the kind is a key of the `targets` table. Optional selectors need no coverage; #223 owns their call-time treatment. |
+| P10 | No two grants in a policy are identical after compilation. |
+| P11 | No grant is subsumed by a sibling grant that carries `targets = "all-targets"`, a superset of its resolved tools, and a superset of its connections. |
+| P12 | `load_access_policy` raises `AccessPolicyError` when the file is absent, unreadable, or unparseable, and when the named policy is not in the file; the not-found message lists the available policy names. |
 
-P8 and P10 are decisions rather than mechanics; ADR 0036's Decision section records why.
+Naming a tool the same grant's `effects` already covers is inert, not an error; ADR 0036
+records why an earlier draft's rule against it was dropped. P9 is a decision rather than
+mechanics, and ADR 0036's Decision section records why it fails the load where the
+unknown-connection case does not.
 
-P10 is deliberately aggressive on effect-class grants. `effects = ["read"]` with a
+P9 is deliberately aggressive on effect-class grants. `effects = ["read"]` with a
 `targets` table constraining only `lpar` is rejected, because the read tools that
 require a `managed_system`, `vios`, or `job` selector would all be denied at call time —
 the grant would look broad and behave narrow. The error names the first uncovered tool
@@ -118,8 +120,8 @@ In practice this makes `targets = "all-targets"` the only expressible form for a
 values: `job`/`job_uuid` on `hmc_get_job` and `hmc_wait_for_job`, and
 `console`/`console_uuid` on `hmc_get_available_hmc_ptfs` and
 `hmc_update_console_software`. Target-scoped reads remain expressible by naming tools
-instead of an effect class. ADR 0036 records this; narrowing P10 to enumerable kinds is
-#223's decision.
+instead of an effect class. ADR 0036 records this and records why narrowing P9 to
+enumerable kinds was rejected.
 
 ### 3.3 Compiled form
 
@@ -229,7 +231,7 @@ rests on.
 
 1. *Policy file → process*: P1 rejects unknown keys, so a misspelled key never silently
    becomes a wider policy; P4 and P7 reject values outside the closed vocabularies; P2,
-   P6, and P10 fail closed on omission rather than defaulting to permissive; P11 and P12
+   P6, and P9 fail closed on omission rather than defaulting to permissive; P10 and P11
    reject grants whose narrowness is illusory. Parsing is `tomllib` — stdlib, no code
    execution, no object construction from the document. A parse error, an unreadable
    file, and an absent file are all `AccessPolicyError`, never a silently empty policy.
@@ -251,6 +253,14 @@ rests on.
   already replace the credential file.
 - Connection-profile names are not cross-checked against `config.toml` (ADR 0036
   consequences). A typo fails closed at call time under #222, not at load.
+- `"<default>"` is a late-bound alias. It denotes whatever HMC the process environment
+  selects at call time — via `HMC_PROFILE`, `default_profile`, or bare `HMC_*` variables —
+  which may be a named profile the same policy withholds elsewhere. Whether #222 compares
+  the literal token or the resolved profile identity is #222's decision; deciding it here
+  would mean reading `config.toml` at authorization time. Recorded in ADR 0036.
+- Selector strings are form-ambiguous: `lpar_name_or_uuid` and its four siblings accept a
+  name or a UUID interchangeably, so an allowlist binds only the form the caller sends
+  until #223 canonicalizes. Recorded in ADR 0036.
 - Target-selector *matching*, the `vios_uuid`/`vios_partition_id` namespace split,
   `metric_resource`'s dependence on `category`, composite tools, and `dry_run` are #223's.
   The compiled `Grant` exposes the allowlists and no matcher.
@@ -273,14 +283,14 @@ Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
 | A3 | `effects = ["arbitrary-command"]` raises `AccessPolicyError` whose message names `hmc_run_command` (P4). `effects = ["read", "mutate", "destructive"]` produces a ceiling that excludes `hmc_run_command`, and `tools = ["hmc_run_command"]` includes it. |
 | A4 | `"<default>"` in `connections` compiles to `None` in `Grant.connections`; a named profile compiles to its own string; both may appear in one grant. |
 | A5 | The legacy-equivalent shape — one grant with `effects = ["read", "mutate", "destructive"]`, two connections, and `targets = "all-targets"` — validates and compiles to a ceiling of exactly the 128 collector-declared tools, proving epic #218's claim that legacy exposure is expressible without a wildcard language. |
-| A6 | Each of P1–P12 raises `AccessPolicyError` (or, for pydantic shape rules, an `AccessPolicyError` wrapping the validation failure) whose message names the policy and the grant index. One case per rule, including: an unknown top-level key, an unknown grant key, a missing `connections`, an empty `connections`, `targets` given as a bare list, a duplicate tool name in one array, an empty selector string, a grant with neither `effects` nor `tools`, an unknown tool name, a tool already covered by the grant's `effects`, a `targets` key of `"none"`, a `targets` kind no granted tool declares, an uncovered required selector kind, two identical grants, and a grant subsumed by an `all-targets` sibling. |
-| A7 | P10 does not fire for optional selectors: a grant of `tools = ["hmc_power_off_lpar"]` with `targets = { lpar = ["db-01"] }` validates even though that tool also declares an optional `managed_system` selector. |
-| A8 | P10 does not fire for tools with no selectors: a grant of `tools = ["hmc_list_systems"]` (a `console` tool) with `targets = "all-targets"` validates, and the same grant with `targets = { managed_system = ["S1"] }` is rejected by P9. |
+| A6 | Each of P1–P11 raises `AccessPolicyError` (or, for pydantic shape rules, an `AccessPolicyError` wrapping the validation failure) whose message names the policy and the grant index. One case per rule, including: an unknown top-level key, an unknown grant key, a missing `connections`, an empty `connections`, `targets` given as a bare list, a duplicate tool name in one array, an empty selector string, a grant with neither `effects` nor `tools`, an unknown tool name, a `targets` key of `"none"`, a `targets` kind no granted tool declares, an uncovered required selector kind, two identical grants, and a grant subsumed by an `all-targets` sibling. |
+| A7 | P9 does not fire for optional selectors: a grant of `tools = ["hmc_power_off_lpar"]` with `targets = { lpar = ["db-01"] }` validates even though that tool also declares an optional `managed_system` selector. |
+| A8 | P9 does not fire for tools with no selectors: a grant of `tools = ["hmc_list_systems"]` (a `console` tool) with `targets = "all-targets"` validates, and the same grant with `targets = { managed_system = ["S1"] }` is rejected by P8. |
 | A9 | `AccessPolicy` and `Grant` reject attribute assignment with `FrozenInstanceError`; `AccessPolicy.tools` and `Grant.connections` are `frozenset`; a `targets` table compiles to a `MappingProxyType` that rejects item assignment. No module-level name in `hmc_mcp.access_policy` is a `dict`, `list`, or `set` — every module-level container is an immutable type, so there is no mutable policy state to reach. |
 | A10 | `load_access_policy` on a missing file, on a file with a TOML syntax error, and on an absent policy name each raise `AccessPolicyError`; the absent-name message lists the available names. Round-trip: a written temp file loads to the same `AccessPolicy` as `compile_access_policy` over the parsed document. |
 | A11 | `grants = []` compiles to a policy that permits no tool at all. |
 | A12 | A subprocess that imports only `hmc_mcp.access_policy` finds `hmc_mcp.server` absent from `sys.modules` — the module is importable without the `app` extra, and the dependency runs one way. `api.__all__` is unchanged. |
-| A13 | A grant of `effects = ["read"]` with any `targets` table is rejected by P10 with a message naming a job tool and the `job` kind; the same grant with `targets = "all-targets"` validates. This pins ADR 0036's recorded consequence that the sentinel is mandatory for effect-class read grants. |
+| A13 | A grant of `effects = ["read"]` with any `targets` table is rejected by P9 with a message naming a job tool and the `job` kind; the same grant with `targets = "all-targets"` validates. This pins ADR 0036's recorded consequence that the sentinel is mandatory for effect-class read grants. |
 | A14 | `grants_for` returns whole grants, not merged dimensions: for a policy whose first grant is `effects = ["read"]` on connection `prod` with `all-targets` and whose second is `tools = ["hmc_delete_lpar"]` on connection `lab` with `targets = { lpar = ["scratch-01"] }`, `grants_for("hmc_delete_lpar")` returns only the second grant, and no `Grant` in the result carries `prod` or `ALL_TARGETS`. |
 | A15 | `just verify` passes, including `scripts/smoke_mcp.py`. Not a pytest case. |
 | A16 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
@@ -289,7 +299,7 @@ Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
 
 | file | change |
 |---|---|
-| `src/hmc_mcp/access_policy.py` | new — models, validation P1–P13, compiled `AccessPolicy`/`Grant`, `load_access_policy` |
+| `src/hmc_mcp/access_policy.py` | new — models, validation P1–P12, compiled `AccessPolicy`/`Grant`, `load_access_policy` |
 | `tests/unit/test_access_policy.py` | new — A1–A12 |
 | `docs/adr/0036-server-access-policy-model.md` | new |
 | `docs/workflow/specs/2026-08-18-server-access-policy-design.md` | new — this file |
