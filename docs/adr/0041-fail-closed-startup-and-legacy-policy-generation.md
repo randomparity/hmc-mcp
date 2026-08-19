@@ -66,6 +66,10 @@ deployment meets it. So an absent policy file gets the same migration text as th
 at exit code 1, because the command line was right and the environment was not. The codes split
 on whose problem it is: 2 for "you have not chosen", 1 for everything about the policy itself.
 
+Both messages name the documented read-only and limited-mutation examples beside the generator.
+Nothing at the point of refusal distinguishes an upgrade from a first run, so a message offering
+only the generator would send every new deployment to the widest policy the system can express.
+
 **`hmc-mcp config init-access-policy` generates the legacy-equivalent policy.** It writes the
 platform-native `access-policy.toml` by default, creates the file with `O_EXCL` at mode `0o600`,
 refuses to overwrite whatever path it is given, prints the path it wrote, and activates nothing.
@@ -153,25 +157,26 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   and cannot trip either rule, which is what makes the escape's removal survivable — and it is
   why generator correctness is a release blocker rather than a convenience.
 - **Every deployment now emits one audit record per authorization decision.** ADR 0040's
-  documented contract was that without a policy there is no authorizer and so no record. That
-  sentence stops being true here. The direct consequence is issue #269: `audit._AuditHandler`
-  writes synchronously to `sys.stderr`, and an open-but-undrained pipe blocks a write rather than
-  raising, so none of the three guards `_warn` and the handler share fires. A record measured on
-  this branch is 386 bytes for a denial carrying no targets and 563 for a permit carrying two, so
-  a client that never drains fd 2 can wedge the server after on the order of 120-170 calls on a
-  64 KiB pipe — no timeout and no diagnostic. Before ADR 0040 that
-  was unreachable in practice; after it, reachable for policy-using deployments; after this
-  record, reachable for all of them, and reachable by an ungranted caller, because ADR 0040
-  emits the record before the denial. #269 is not resolved here. It is stated here so the
-  requirement — something must drain fd 2 — is a documented precondition of the fail-closed
-  default rather than a field discovery. The precondition binds honestly only for the HTTP
-  transport and for a stdio server whose launcher the operator controls: under the stdio
-  transport an MCP client spawns the server and owns fd 2, so for the deployment shape this
-  record makes the default, the residual is "choose a client that drains its child's stderr"
-  rather than "configure the host". With #270 open there is no in-process lever either —
-  `install_audit_sink` takes no argument and reads no environment variable, so an operator
-  meeting a non-draining client can neither reduce record volume nor redirect it. #267 (a routine
-  denial renders a traceback) is on every deployment's path for the same reason.
+  documented contract — no policy, no authorizer, no record — stops being true here, and that
+  makes issue #269 universally reachable: the audit sink writes synchronously to `sys.stderr`, an
+  undrained pipe blocks rather than raising, and no guard fires. #269 carries the mechanism and
+  the arithmetic; what this record decides is that **something must drain fd 2** becomes a
+  precondition of the default rather than a property of the deployments that opted in. The
+  precondition binds the operator only for the HTTP transport and for a stdio launcher they
+  control: under stdio an MCP client spawns the server and owns fd 2, so for the shape this
+  record makes the default the residual is "choose a client that drains its child's stderr". It
+  is reachable by an ungranted caller too, since ADR 0040 emits the record before the denial. And
+  with #270 open there is no in-process lever — `install_audit_sink` takes no argument and reads
+  no environment variable — so an operator meeting a non-draining client can neither reduce
+  record volume nor redirect it. #267 (a routine denial renders a traceback) is on every
+  deployment's path for the same reason.
+- **The generator is the onboarding path for fresh installs too, and its output is the widest
+  policy this system expresses.** A first run reaches the same refusal an upgrade does, and
+  `legacy-equivalent` names a history a new deployment does not have: 129 tools including every
+  destructive one, every connection, `all-targets`. That is why both refusal messages point at
+  the narrower documented examples as well, and why the generated file's own header says the
+  grant is a migration aid rather than a recommended posture. The paved road for a new
+  deployment is the read-only example, not this file.
 - **Legacy-equivalent is not legacy.** Under the generated policy every connection-bearing tool
   is wrapped by `tool_registry.authorized`, every call runs the full `dispatch_scope` conjunction,
   and every decision is recorded. For every tool the file names the outcome is the same as before
@@ -205,11 +210,22 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   `Path.home()` — and on macOS `Path.home()` alone, with no override. Generating as a login user
   and serving as a systemd `User=` or a container uid produces a policy the server never reads;
   `--output` is how that deployment writes to the right path.
+- **A uid with no passwd entry, no `HOME`, and no `XDG_CONFIG_HOME` can no longer serve at all.**
+  `Path.home()` raises there, `--access-policy` selects a *name* at the platform-native path
+  rather than a file, and `--output` moves only where the generator writes — so the load fails
+  and omitting the option is now a refusal. Today such a deployment serves unbounded; after this
+  it does not serve. The remedy is one environment variable in the unit or image, and it is
+  stated in the README rather than answered with an `--access-policy-file` option, which would
+  reintroduce a second place a policy can come from.
 - **Statements in earlier records are retired.** ADR 0037's "`create_mcp(policy=None)` registers
   every tool" and ADR 0038's section "Without a policy, nothing is authorized" each describe a
   composition that no longer exists, as do R14 of the connection-scope design spec and R20 of the
   target-scope design spec. ADR 0039 is not among them: it expressly leaves `create_mcp`'s
-  no-policy default undecided.
+  no-policy default undecided. Removing the module-level application retires more: ADR 0037's
+  "the module-level `mcp` remains the unfiltered composition that tests and `scripts/` import" is
+  a positive statement about an object that no longer exists, and ADR 0035, ADR 0036, and
+  ADR 0037 each describe `create_mcp()` as called "at import and again per test", of which only
+  the second half survives.
   Those records are otherwise unaffected and are not superseded; the tests asserting the retired
   behaviour are inverted rather than deleted, as ADR 0039 inverted ADR 0036's A7 test. The code
   they describe goes with them: `server._unselected_policy_file` and the no-policy branch of

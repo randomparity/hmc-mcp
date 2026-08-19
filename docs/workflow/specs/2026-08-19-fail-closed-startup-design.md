@@ -64,8 +64,10 @@ access_policy)` have no default for `access_policy`, and `_serve_application` ta
 
 **R5 — `serve` refuses without `--access-policy`.** With the option omitted the command
 exits **2**, starts no server, composes no application, and writes to stderr a message
-naming `hmc-mcp config init-access-policy`, the path
-`resolve_access_policy_path()` would use, and `--access-policy NAME`. A policy that is
+naming `hmc-mcp config init-access-policy`, the path `resolve_access_policy_path()` would
+use, `--access-policy NAME`, and the README's narrower policy examples — nothing at the
+point of refusal distinguishes an upgrade from a first run, and a message offering only the
+generator would send every fresh install to the widest policy expressible. A policy that is
 selected but cannot be read, parsed, or compiled keeps ADR 0036's existing behaviour: exit
 **1** through `_fail`, with the `AccessPolicyError` text. The codes distinguish "you have
 not chosen" from anything about the policy itself.
@@ -196,8 +198,10 @@ TOML, so the emitted document's parse is R9's to prove and not smoke's.
 **R16 — Documentation states the new default and its precondition.** `README.md` gains a
 migration section covering the refusal, the generator, the two exit codes, the `--output`
 regeneration-and-diff procedure, the requirement that the generator run as the identity
-`serve` runs under, and the loss of `hmc_run_command` for a deployment that ran with
-`--enable-arbitrary-command`; keeps a
+`serve` runs under, the resolvable-`HOME`-or-`XDG_CONFIG_HOME` requirement for a container
+or systemd unit, and the loss of `hmc_run_command` for a deployment that ran with
+`--enable-arbitrary-command`; says plainly that the legacy-equivalent policy is a migration
+aid rather than a recommended posture for a fresh install; keeps a
 minimal read-only example; keeps a limited-mutation example; adds an abbreviated
 legacy-equivalent example; drops the removed startup-warning row; and states that a
 deployment must drain the server's fd 2, naming #269. `README.md`'s "Without
@@ -313,6 +317,11 @@ is trusted input to the loader.
   every deployment and by an ungranted caller, since ADR 0040 emits the record before the
   denial. Not closed here; stated in ADR 0041 and in the README as a deployment
   precondition. This is the one accepted risk this entry knowingly widens.
+- *A uid with no passwd entry, no `HOME`, and no `XDG_CONFIG_HOME` can no longer serve.*
+  `config_dir()` raises there and `--access-policy` names a policy at the platform-native
+  path rather than a file. Accepted; the remedy is one environment variable in the unit or
+  image, stated in the README. An `--access-policy-file` option was not added, because a
+  second place a policy can come from is a second thing to get wrong.
 - *An operator who never regenerates loses new tools silently.* Accepted and documented.
   It is the fail-closed direction, and nothing inside the running server surfaces it —
   `hmc_effective_permissions` reports the registered set, which is exactly what the policy
