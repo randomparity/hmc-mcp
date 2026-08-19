@@ -353,8 +353,10 @@ is #270.
   that the lever and the consequence do not reach the same operator: a CLI-launched server has the
   volume and not the lever (#270).
 - An `HMC_HOST` collapse of a call that *named* a connection is visible in the record without
-  being a field: `state: "present"` with `resolved: "<default>"` can arise no other way, since a
-  non-empty string token reaches rule 3 unless rule 1 fired first. A collapse of a call that
+  being a field: `state: "present"` with `resolved: "<default>"` arises no other way, since a
+  non-empty string token reaches rule 3 unless rule 1 fired first — *unless* a profile is
+  literally named `<default>`, which nothing forbids and which the reserved-rendering collision
+  above already covers. A collapse of a call that
   *omitted* the argument is not visible — it renders `"absent"` with `"<default>"`, exactly like
   an omitted argument on a machine with no `HMC_HOST` — and that is the case where the caller
   expressed no expectation for the collapse to violate.

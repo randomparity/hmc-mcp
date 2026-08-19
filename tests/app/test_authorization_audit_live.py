@@ -26,10 +26,12 @@ from __future__ import annotations
 
 import json
 import os
-import select
+import queue
 import shlex
 import shutil
 import subprocess
+import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -118,8 +120,21 @@ def child_env(fixture_home):
 
 @pytest.fixture
 def server_binary():
+    """The ``hmc-mcp`` console script — and specifically *this* checkout's.
+
+    "On PATH" and "the code on this branch" are different claims. A pipx- or
+    uv-tool-installed `hmc-mcp` earlier on PATH, or a bare `pytest` outside the
+    project venv, would otherwise give this proof a green run against foreign
+    code — the plausible-looking wrong answer the fixture above exists to avoid.
+    """
     path = shutil.which("hmc-mcp")
     assert path is not None, "the hmc-mcp console script must be on PATH"
+    prefix = Path(sys.prefix).resolve()
+    resolved = Path(path).resolve()
+    assert resolved.is_relative_to(prefix), (
+        f"{resolved} is not inside this interpreter's environment ({prefix}); "
+        "the live proof would run against a different build of hmc-mcp"
+    )
     return path
 
 
@@ -130,6 +145,8 @@ class _Server:
         self.process = process
         self.log = log
         self._next_id = 0
+        self._frames: queue.Queue = queue.Queue()
+        threading.Thread(target=self._pump, daemon=True).start()
 
     def _diagnosis(self) -> str:
         """The child's own stderr, so a failure here names its cause."""
@@ -148,21 +165,42 @@ class _Server:
         assert self.process.stdin is not None
         self.process.stdin.write(json.dumps(frame) + "\n")
         self.process.stdin.flush()
-        return None if notify else self._read()
+        return None if notify else self._read(frame["id"])
 
-    def _read(self) -> dict:
-        """One frame, or fail with the child's stderr rather than hanging."""
+    def _pump(self) -> None:
+        """Read frames on a daemon thread, so the deadline is wall-clock.
+
+        Not ``select`` on the pipe: reads through a ``TextIOWrapper`` are block
+        buffered whatever ``bufsize`` does for writes, so a read that pulls two
+        frames leaves the second in Python's buffer where ``select`` cannot see
+        it — and the next wait would then time out and report a harness stall as
+        a server hang, inside ``just verify``.
+        """
         assert self.process.stdout is not None
-        ready, _, _ = select.select([self.process.stdout], [], [], DEADLINE)
-        if not ready:
-            self.process.kill()
-            raise AssertionError(
-                f"no JSON-RPC frame within {DEADLINE}s; the server is not answering "
-                f"{self._diagnosis()}"
+        for line in self.process.stdout:
+            self._frames.put(line)
+        self._frames.put(None)
+
+    def _read(self, expect_id: int) -> dict:
+        """The reply to *expect_id*, or fail with the child's stderr."""
+        while True:
+            try:
+                line = self._frames.get(timeout=DEADLINE)
+            except queue.Empty:
+                self.process.kill()
+                raise AssertionError(
+                    f"no JSON-RPC frame within {DEADLINE}s; the server is not "
+                    f"answering {self._diagnosis()}"
+                ) from None
+            assert line is not None, (
+                f"the server closed stdout without answering {self._diagnosis()}"
             )
-        line = self.process.stdout.readline()
-        assert line, f"the server closed stdout without answering {self._diagnosis()}"
-        return json.loads(line)
+            frame = json.loads(line)
+            # Match the reply to the request rather than assuming strict
+            # alternation: a notification or an out-of-order frame would
+            # otherwise be returned as the answer to the wrong call.
+            if frame.get("id") == expect_id:
+                return frame
 
     def initialize(self) -> None:
         self.send(

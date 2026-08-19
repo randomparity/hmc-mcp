@@ -17,7 +17,7 @@ is the only place in the package that iterates ``AccessPolicy.grants_for``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from . import audit
 from .access_policy import AccessPolicy
@@ -64,18 +64,23 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         token = arguments[argument]
 
         def record(
-            decision: str,
-            reason: str,
+            decision: Literal["allow", "deny"],
+            reason: audit.Reason,
             resolved: str | None,
             targets: tuple[audit.AuditTarget, ...] | None,
         ) -> None:
-            """One emission point, closed over what every record shares."""
+            """One emission point, closed over what every record shares.
+
+            Typed to the closed vocabularies rather than to ``str``: this is the
+            only place they are enforced, and widening here would erase the check
+            at exactly the four call sites that can be checked exactly.
+            """
             audit.record_authorization(
                 policy=policy.name,
                 tool=name,
                 effect=security.effect,
-                decision=decision,  # ty: ignore[invalid-argument-type]
-                reason=reason,  # ty: ignore[invalid-argument-type]
+                decision=decision,
+                reason=reason,
                 token=token,
                 resolved=resolved,
                 targets=targets,

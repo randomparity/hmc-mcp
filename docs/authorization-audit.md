@@ -59,13 +59,15 @@ caller's own string, or `null` in the other two states.
 names nothing configured, or `null` when the configuration could not be read at all.
 
 > **`<default>` and `<unresolved>` are reserved renderings that share a string space
-> with legal profile keys.** A `config.toml` profile literally named `<unresolved>`
-> renders identically to a token that resolved to nothing, so a filter on that value
-> would collect both. Rename such a profile if you have one.
+> with legal profile keys.** Profile names are TOML keys and are not validated, so
+> `[profiles."<unresolved>"]` and `[profiles."<default>"]` are both legal — and a call
+> naming one renders identically to the sentinel it collides with. A filter on either
+> value would collect both cases. Rename such a profile if you have one.
 
 > **An `HMC_HOST` collapse is visible only when the caller named a connection.**
-> `state: "present"` with `resolved: "<default>"` can arise no other way. A caller that
-> omitted the argument renders `absent`/`"<default>"` whether or not `HMC_HOST` is set.
+> `state: "present"` with `resolved: "<default>"` arises no other way — unless you have a
+> profile literally named `<default>`, per the collision above. A caller that omitted the
+> argument renders `absent`/`"<default>"` whether or not `HMC_HOST` is set.
 
 `targets` is `null` only in the `configuration-unreadable` case, where selectors were
 never extracted; `[]` means the tool declares none. An integer selector —

@@ -276,12 +276,16 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
         def emit(self, record: logging.LogRecord) -> None:
             root_lines.append(record.getMessage())
 
-    logging.root.addHandler(_Collect())
-    audit.install_audit_sink()
-    assert logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate is False
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
-    capsys.readouterr()
-    assert root_lines == [], "a root handler must not receive audit records"
+    collector = _Collect()
+    logging.root.addHandler(collector)
+    try:
+        audit.install_audit_sink()
+        assert logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate is False
+        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        capsys.readouterr()
+        assert root_lines == [], "a root handler must not receive audit records"
+    finally:
+        logging.root.removeHandler(collector)
 
 
 def test_a_none_stderr_writes_nothing_and_raises_nothing(monkeypatch, capsys):

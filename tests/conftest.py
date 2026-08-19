@@ -28,6 +28,14 @@ def isolate_audit_logging():
     per-file, because the files that merely *emit* a record — every test driving an
     ADR 0011 ownership override — are as able to leak state as the ones that read
     records, and any enumeration of them goes stale.
+
+    It also snapshots and restores ``logging.root.handlers``, which it never
+    modifies itself. That is a deliberate belt-and-braces sweep, not dead code:
+    several audit tests clear or add root handlers to observe
+    ``logging.lastResort``, which ``callHandlers`` consults only after an ancestor
+    walk finds none. Each of those cleans up after itself; this is the backstop for
+    one that forgets, since a stray root handler silently changes what every later
+    test captures.
     """
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     saved_handlers = list(logger.handlers)
