@@ -129,11 +129,16 @@ nothing from the package, so no policy, config file, or application is needed.
 
 ### Steps
 
-1. Write the isolation fixture as a **shared helper** — `tests/audit_isolation.py`, exporting
-   `isolate_audit_logging()` — and import it as an autouse fixture from every file that touches the
-   audit logger: `tests/unit/test_audit.py` (Task 1), `tests/app/test_authorization_audit.py`
-   (Task 3) and `tests/unit/test_ownership.py` (Task 4). Three files, one definition; a per-file
-   copy is how the third one gets forgotten. Write it before any test — it is the precondition for
+1. Add the isolation fixture to **`tests/conftest.py`** as `autouse=True`, covering the whole
+   suite. Not a per-file import: `from audit_isolation import isolate_audit_logging` binds a name
+   the module never references, which is ruff `F401` — this checkout has no `[tool.ruff]` section,
+   so the default rule set applies and `just lint` fails in all three files. And not three files
+   either: once Task 4 converges the override, **six** further test files emit an audit record by
+   driving `ownership_override=True` (`tests/lpar/test_decommission_tool.py`,
+   `tests/lpar/test_lpar_description.py`, `tests/app/test_server_tools.py`,
+   `tests/app/test_capabilities.py`, `tests/unit/test_destructive_scope.py` among them), so any
+   enumeration of "files that need it" is a list that goes stale. One autouse definition in
+   `conftest.py` needs no enumeration. Write it before any test — it is the precondition for
    everything else:
 
    ```python
@@ -164,17 +169,21 @@ nothing from the package, so no policy, config file, or application is needed.
    assertion would then capture nothing and pass vacuously. Resetting at setup is what makes each
    audit test start from the pristine tree the spec's isolation section describes.
 
-2. Write spec tests 1–8, **6a, 6b**, 8a, **8b**, 9–13, 14, 14a, 14b and 15 as failing tests.
+2. Write spec tests 1–6, **6b**, 7, 8, 8a, **8b**, 9–13, 14, 14a, 14b and 15 as failing tests.
    **14c is Task 3's**, not this task's: it asserts that a raising renderer and a raising logger
    leave `dispatch_scope.authorize`'s outcome and exception type unchanged, which is unobservable
-   until Task 3 wires emission into `authorize`. What belongs here is only its audit-local half —
-   a raising renderer or logger leaves `record_authorization` returning `None` — written as part of
-   test 14b.
+   until Task 3 wires emission into `authorize`.
+
+   **Test 14b asserts record *content*, never the absence of an exception.** Step 7's guard
+   deliberately swallows everything, so "`record_authorization` returned `None`" is true of the
+   correct code *and* of code mutated by M7 — the record simply vanishes. 14b must emit a record
+   whose selectors are `ABSENT` and `UNREADABLE`, capture the emitted line, and assert it parses
+   and carries `state` of `"absent"`/`"unreadable"` with `value: null`. That is the only form M7
+   can redden. The same reasoning applies to any test written against a guarded path: a totality
+   guard turns "did not raise" into a claim about nothing.
    6b and 8b are called out because an earlier draft of this plan lost them between the task
    lists: 6b pins the `<unresolved>` profile-name collision, and 8b is the scan that makes A4 an
-   invariant rather than a three-value sample. **6a is Task 2's, not this task's** — the claim that
-   `target_scope._value`'s int and bool arms were never covered is false;
-   `tests/unit/test_target_scope.py:77,93` already cover them. Run
+   invariant rather than a three-value sample. 6a is **Task 2's** — it needs `audit_state`, which Task 2 adds. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_audit.py -q`. **Expect: collection error, `No module named
    'hmc_mcp.audit'`.** That is the confirm-it-fails step.
 3. Create `src/hmc_mcp/audit.py` with the constants, `Reason`, `REASONS`, `State`, `AuditTarget`,
@@ -261,7 +270,8 @@ nothing from the package, so no policy, config file, or application is needed.
 
 ### Acceptance
 
-Spec tests 1–8, 6a, 6b, 8a, 8b, 9–13, 14, 14a, 14b, 15 pass. `audit.py` contains no `from .`
+Spec tests 1–6, 6b, 7, 8, 8a, 8b, 9–13, 14, 14a, 14b, 15 pass — **not 6a, which is Task 2's**.
+`audit.py` contains no `from .`
 or `from hmc_mcp` import — assert it in test 8a's file by reading the source.
 
 **Inventory check before moving on:** the union of the task lists must cover every numbered item
@@ -330,13 +340,24 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
    drive it as a subprocess. Run
    `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py -q`. **Expect: failures asserting a record
    that is never emitted.**
-2. Add the imports the fragments below need — `dispatch_scope` today imports only `AccessPolicy`;
-   `connection_denial`/`connection_permitted`/`selected_connection`;
-   `selected_targets`/`target_denial`/`targets_permitted`; and `Authorize`/`ToolSecurity`. Add
-   `from . import audit`, extend the `connection_scope` import with `ConnectionScopeError` (easy to
-   miss — `selected_connection` already comes from that module but the exception does not), and
-   extend the `target_scope` import with `ABSENT` and `denial_reason`. Then wrap only the
-   `selected_connection` call:
+2. Set `dispatch_scope`'s imports to exactly this — the final set, not a delta, so an unused name
+   cannot survive as a ruff `F401` and a missing one cannot survive as a `NameError`:
+
+   ```python
+   from . import audit
+   from .access_policy import AccessPolicy
+   from .connection_scope import (
+       ConnectionScopeError, connection_denial, connection_permitted, selected_connection,
+   )
+   from .target_scope import (
+       audit_state, denial_reason, selected_targets, target_denial, targets_permitted,
+   )
+   from .tool_registry import Authorize, ToolSecurity
+   ```
+
+   `ConnectionScopeError` is the easy one to miss: `selected_connection` already comes from that
+   module but the exception does not. `ABSENT` is deliberately **not** imported — step 3's
+   generator calls `audit_state` instead. Then wrap only the `selected_connection` call:
 
    ```python
    try:
@@ -462,6 +483,13 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
    `hmc_mcp.config.config_dir()` **after** redirecting `HOME`, deletes `HMC_HOST`, `HMC_PROFILE`,
    `XDG_CONFIG_HOME` and `APPDATA` from the child environment, and asserts both files exist and
    those four variables are absent before the first frame.
+
+   **Child environment and executable, settled here because the spec's wording invites two
+   readings.** Copy `os.environ`, delete the four names, set `HOME` — a copy, not a from-scratch
+   mapping. An explicitly built environment carries no `PATH`, and the child is the `hmc-mcp`
+   console script (this package ships no `__main__.py`), so it would not be found at all. Resolve
+   it once with `shutil.which("hmc-mcp")` and assert it is not `None` in the same setup block that
+   asserts the two config files exist and the four variables are gone.
 
    **Mark the whole module POSIX-only** — `pytestmark = pytest.mark.skipif(os.name != "posix", ...)`
    — not just Run B. Both halves of the fixture are POSIX assumptions: `config_dir()` on win32

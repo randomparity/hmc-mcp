@@ -299,12 +299,17 @@ calls it too, and four existing tests drive that function in-process —
 `tests/app/test_capability_ceiling.py:489,504,553` and
 `tests/app/test_connection_authorization.py:418` — none of which is an audit test.
 
-So: an **autouse fixture in `tests/unit/test_audit.py` and `tests/app/test_authorization_audit.py`
-that resets `hmc_mcp.audit` at setup (no handlers, `NOTSET`, `propagate = True`) and restores the
-snapshot at teardown**, covering `handlers`, `level` and `propagate` on `hmc_mcp.audit` and
-`handlers` on `logging.root`. Reset *and* restore: a fixture that only restored would faithfully
-restore whatever contamination an earlier non-audit test left, which is the failure it exists to
-prevent. Nothing in those files may leak sink state, and nothing outside them may leak into them.
+Nor is it only the files that *read* records. Once the override is converged, six further test
+files emit one by driving `ownership_override=True`. Any list of "files that need isolation" goes
+stale, so there is no list.
+
+So: **one `autouse=True` fixture in `tests/conftest.py`**, covering the whole suite. It resets
+`hmc_mcp.audit` at setup (no handlers, `NOTSET`, `propagate = True`) and restores the snapshot at
+teardown, over `handlers`, `level` and `propagate` on `hmc_mcp.audit` and `handlers` on
+`logging.root`. Reset *and* restore: a fixture that only restored would faithfully restore
+whatever contamination an earlier non-audit test left, which is the failure it exists to prevent.
+In `conftest.py` rather than a helper module each file imports, because that import binds a name
+the module never references — ruff `F401`, and this checkout runs ruff's default rule set.
 
 And a precondition on the redaction tests specifically: tests 22-26 and 26a-26b assert that a
 sentinel is *absent*, which is trivially true of an empty capture. Each must first assert that at
@@ -544,7 +549,9 @@ outcome for a proof whose purpose is to be re-run by someone else. Both files ar
 exist at the resolved path before the first frame is sent, so a misplaced fixture fails setup
 rather than changing the verdict.
 
-**The child's environment is built explicitly, never inherited.** `selected_connection` gates its
+**The child's environment is `os.environ` copied with four names deleted** — a copy, not a
+from-scratch mapping, which would carry no `PATH` and so could not find the `hmc-mcp` console
+script at all. `selected_connection` gates its
 entire TOML branch on `HMC_HOST` and returns the `<default>` connection for *any* token when it is
 set — before the config file is read at all — and the grant names `connections = ["lab"]`, which
 never contains that. So a developer with `HMC_HOST` exported in their shell gets L1 back as
