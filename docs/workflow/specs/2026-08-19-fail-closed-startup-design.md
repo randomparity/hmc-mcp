@@ -83,8 +83,13 @@ remedy.
 **R5b — Both refusals resolve the policy path through a guard.** `serve` obtains the path
 for R5's message and for R5a's existence check through one helper that catches
 `RuntimeError`, `OSError`, and `ValueError` and returns `None` — the guard
-`server._unselected_policy_file` carried and whose removal must not take it with it, and
-the same three `load_access_policy` catches. `config_dir()` calls `Path.home()`, which
+`server._unselected_policy_file` carried, and whose removal must not take it with it. That
+set is its, not `load_access_policy`'s: the latter guards path *resolution* against
+`RuntimeError` and `ValueError` only, and catches `OSError` on `read_text`, in a later try
+block reached only once resolution succeeded. `OSError` is in this set because the helper
+also calls `.exists()`, and because an `OSError` escaping resolution would be the traceback
+this requirement exists to prevent rather than something the load would convert.
+`config_dir()` calls `Path.home()`, which
 raises under a uid with no passwd entry and no `HOME`; unguarded, R5 would raise while
 rendering its own usage error and R5a would raise before the load's guard was reached,
 turning a refusal into a traceback in the deployment least able to read one. With `None`,
@@ -115,14 +120,21 @@ after `configure_arbitrary_command_tool(True, ...)`, whose registration is gated
 `permits("hmc_run_command")`.
 
 **R8 — Connections are the deployment's own, plus the default token.**
-`legacy_connections() -> tuple[str, ...]` returns `("<default>", *sorted(profile keys))`
+`legacy_connections() -> tuple[str, ...]` returns
+`("<default>", *sorted(k for k in profile_keys if k != DEFAULT_CONNECTION_TOKEN))`
 read from the platform-native `config.toml` through `config.list_profiles_and_nicknames`,
 whose nicknames half is discarded. That reader rather than `config.list_profiles`: only the
 former converts every failure into a `ConfigError` — an unresolvable home, an unreadable or
 non-UTF-8 or unparseable file, a malformed table — which is the contract this requirement
 depends on and `connection_scope` already relies on. With no config file it returns
 `("<default>",)`. A `ConfigError` propagates to the caller rather than being swallowed into
-a shorter list. Nicknames are excluded: ADR 0030 resolves a nickname
+a shorter list. The sentinel is filtered out of the profile half because `[profiles.
+"<default>"]` is a legal TOML key: without the filter the generator would manufacture the
+duplicate `_check_entries` refuses, and that deployment could never generate a policy at
+all — an unconditional prepend colliding with the operator's own data is the generator's
+defect, not theirs. With the filter, `profiles` keys are unique by TOML's own rules, so a
+duplicate `connections` entry is unreachable; an empty or padded key remains possible and
+`_check_entries` names the offending value when R9b's pre-write load rejects it. Nicknames are excluded: ADR 0030 resolves a nickname
 to its target before ADR 0038 compares it, so a granted nickname never matches.
 `"<default>"` is always present because `connection_scope.selected_connection` collapses
 every token to it under `HMC_HOST`, and because an omitted `profile` argument means it.
@@ -149,8 +161,9 @@ a key containing a double quote, a backslash, and a newline, then parsing the re
 **R9b — The generator loads what it rendered before it writes.** Escaping makes the document
 parse; it does not make it *load*. `_check_entries` rejects an empty, whitespace-padded, or
 duplicated `connections` entry, and `[profiles.""]`, `[profiles." prod"]`, and
-`[profiles."<default>"]` are legal TOML keys that produce exactly those — the last colliding
-with the `<default>` the generator always appends. So `config init-access-policy` parses and
+`[profiles."<default>"]` are all legal TOML keys; the first two produce exactly those, and
+R8's filter is what keeps the third from becoming a duplicate the generator inflicted on
+itself. So `config init-access-policy` parses and
 compiles the rendered text through `compile_access_policy` before creating any file; a
 document that would not load is reported through `_fail` at exit **1** with the
 `AccessPolicyError` text, and no file is created. Enumerating illegal key shapes in the
@@ -175,7 +188,8 @@ path to stdout and one activation hint to stderr, and it does not start a server
 only the destination: the same document, the same `O_EXCL` create, the same `0o600`, the
 same refusal to overwrite, the same stdout path line. It exists because the command cannot
 overwrite, which otherwise leaves no way to regenerate for a diff — the only detection path
-for a tool an upgrade added (see R16). It does not help a split-identity deployment on its
+for a tool an upgrade added, or a connection the operator added (see R16). It does not help
+a split-identity deployment on its
 own: R8's connections list is still read from the invoking identity's `config.toml`, so
 that deployment must run the generator under the serving identity's `HOME` or
 `XDG_CONFIG_HOME`, which places the default path correctly as well.
@@ -210,17 +224,35 @@ TOML, so the emitted document's parse is R9's to prove and not smoke's.
 
 **R16 — Documentation states the new default and its precondition.** `README.md` gains a
 migration section covering the refusal, the generator, the two exit codes, the `--output`
-regeneration-and-diff procedure, the requirement that the generator run as the identity
+regeneration-and-diff procedure over both the `tools` and `connections` arrays, the
+requirement that the generator run as the identity
 `serve` runs under, the resolvable-`HOME`-or-`XDG_CONFIG_HOME` requirement for a container
 or systemd unit, and the loss of `hmc_run_command` for a deployment that ran with
 `--enable-arbitrary-command`; says plainly that the legacy-equivalent policy is a migration
 aid rather than a recommended posture for a fresh install; keeps a
 minimal read-only example; keeps a limited-mutation example; adds an abbreviated
-legacy-equivalent example; drops the removed startup-warning row; and states that a
-deployment must drain the server's fd 2, naming #269. `README.md`'s "Without
-`--access-policy NAME` there is no authorizer, so no *authorization* record is written" and
-the same claim in `docs/authorization-audit.md` are corrected: every deployment now writes
-one record per decision.
+legacy-equivalent example; drops the removed startup-warning row; and states that something
+must drain the server's fd 2 — the MCP client under stdio — naming #269. `README.md`'s
+"Without `--access-policy NAME` there is no authorizer, so no *authorization* record is
+written" and the same claim in `docs/authorization-audit.md` are corrected: every deployment
+now writes one record per decision.
+
+**R16a — Every runnable `serve` command in the docs still runs.** `README.md` carries four
+`hmc-mcp serve` invocations that exit 2 and start nothing after this entry: the three in the
+MCP-server quick-start block, and the `hermes mcp add` client-registration line, which is
+the one that matters most — a client launching it sees a non-zero exit and reports "server
+failed to start" rather than surfacing R5's carefully written stderr. Each gains
+`--access-policy NAME`, and the quick-start block is ordered so the generator command
+precedes the first `serve` line. A command that fails when followed is a defect in the
+change that broke it, not a stale example.
+
+**R16b — The docs keep the two files distinct by name.** The migration section states in one
+sentence that `config.toml` holds HMC *connection profiles*, `access-policy.toml` holds
+*server access policies*, they are separate files with separate lifecycles, and a grant's
+`connections` entries are profile **keys** rather than profile contents. Charter criterion
+(5)'s second half, and the conflation this entry invites more than any other: the generator
+sits in the same `config` command group as `config init`, writes into the same directory
+with the same `O_EXCL` refusal, and fills `connections` with `config.toml`'s own keys.
 
 **R17 — Nothing accepts a request-supplied grant.** No MCP tool argument, request field,
 header, or environment variable selects, widens, or supplies an access policy or a grant.
@@ -335,10 +367,16 @@ is trusted input to the loader.
   path rather than a file. Accepted; the remedy is one environment variable in the unit or
   image, stated in the README. An `--access-policy-file` option was not added, because a
   second place a policy can come from is a second thing to get wrong.
-- *An operator who never regenerates loses new tools silently.* Accepted and documented.
-  It is the fail-closed direction, and nothing inside the running server surfaces it —
-  `hmc_effective_permissions` reports the registered set, which is exactly what the policy
-  produced. Detection is `--output` to a scratch path plus a diff of the `tools` array.
+- *An operator who never regenerates loses new tools **and new connections** silently.*
+  Accepted and documented. Both arms of the grant are generation-time snapshots, and the
+  connections arm is the more frequent one: adding a profile to `config.toml` is routine,
+  while a tool-adding release is on cadence. After a profile is added, every call routed to
+  it is denied at dispatch by a policy the operator was told is "legacy-equivalent". The
+  denial names the tool, the connection, and the policy (ADR 0038), so the diagnosis is
+  reachable, but nothing points at the generator. It is the fail-closed direction, and
+  nothing inside the running server surfaces either arm — `hmc_effective_permissions`
+  reports the registered set, which is exactly what the policy produced. Detection is
+  `--output` to a scratch path plus a diff of the `tools` **and** `connections` arrays.
 - *The permit/deny oracle* (ADR 0038) and *policy-content disclosure through
   `hmc_effective_permissions`* (ADR 0037) are unchanged and remain as those records state.
 - *A local user who can already write the operator's config directory* can author any
