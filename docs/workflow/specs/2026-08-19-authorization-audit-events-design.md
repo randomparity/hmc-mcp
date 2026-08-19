@@ -222,10 +222,14 @@ at emit time rather than binding it at install time, matching `server._warn`.
 
 Two preconditions bound what the trail contains, and both are stated rather than assumed:
 
-- **No policy, no records.** `server._gates` returns `(None, None)` without a selected policy and
-  `tool_registry.authorized` then leaves every handler unwrapped, so no authorizer runs. A default
-  `hmc-mcp serve` installs the sink and emits nothing, for the same reason it enforces nothing.
-  #225 changes that default.
+- **No policy, no *authorization* records.** `server._gates` returns `(None, None)` without a
+  selected policy and `tool_registry.authorized` then leaves every handler unwrapped, so no
+  authorizer runs. A default `hmc-mcp serve` installs the sink and emits no authorization record,
+  for the same reason it enforces nothing. #225 changes that default. **The ownership-override
+  record is not policy-gated** — it comes from the ADR 0011 check inside the handler, and from the
+  CLI and Python API paths where no policy exists at all — so an unpolicied server still produces
+  those, and only those. Line 217's error-handling row already had this right; this bullet did
+  not.
 - **No level lever from the CLI.** `hmc-mcp serve` exposes no logging option and hands control to
   `.run()`, so only an in-process caller of `main_stdio`/`main_http` can set the level before
   `install_audit_sink` runs. Filed as #270.
