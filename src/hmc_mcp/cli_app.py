@@ -300,7 +300,14 @@ def _policy_file() -> tuple[str, bool] | None:
 
     try:
         path = resolve_access_policy_path()
-        return str(path), path.exists()
+        # `is_symlink()` as well as `exists()`: `exists()` follows the link, so a
+        # dangling symlink — the natural way to point a container or unit at a mounted
+        # policy, since `--access-policy` takes a NAME and not a path — reads as absent
+        # here while the generator's O_EXCL create fails EEXIST on it. That pair would
+        # tell the operator to run a generator that then tells them the file already
+        # exists, with neither message mentioning a symlink. Reporting it as present
+        # lets the load path speak instead, and its error names the resolved target.
+        return str(path), path.exists() or path.is_symlink()
     except (RuntimeError, OSError, ValueError):
         return None
 

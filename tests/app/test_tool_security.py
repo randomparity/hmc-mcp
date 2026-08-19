@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from hmc_mcp import server_command, server_permissions
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import (
@@ -37,7 +38,17 @@ from hmc_mcp.tool_registry import (
 # surface the unpolicied composition used to (pinned by G2 in
 # tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
 # so every assertion below reads the same registry it always did.
-mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
+_LEGACY = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+mcp = create_mcp(_LEGACY)
+
+# The escape hatch's gates come from a policy that *grants* it. Since ADR 0041
+# `configure_arbitrary_command_tool` requires both gates, and the flag and the grant
+# compose conjunctively (ADR 0036) — so a toggle test asserting "enabled means
+# registered" has to supply the grant as well as the flag, which is what an operator
+# enabling it actually does.
+_HATCH = compile_legacy_policy(
+    TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+)
 
 
 # Every module a live tool handler is defined in. `server_command` and
@@ -139,13 +150,19 @@ LEGACY_DESTRUCTIVE = frozenset(
 
 def _tools_by_name(enable_arbitrary_command: bool = False):
     asyncio.run(
-        server_command.configure_arbitrary_command_tool(enable_arbitrary_command, mcp)
+        server_command.configure_arbitrary_command_tool(
+            enable_arbitrary_command, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
+        )
     )
     try:
         return {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
     finally:
         if enable_arbitrary_command:
-            asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+            asyncio.run(
+                server_command.configure_arbitrary_command_tool(
+                    False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
+                )
+            )
 
 
 def test_every_live_tool_has_security_metadata():

@@ -329,6 +329,15 @@ policy file that exists is a policy file that can be selected by name without re
 inverts "generation does not activate it" — and because the correct connection list is the
 deployment's own, which a packaged file cannot know.
 
+**`server_command.configure_arbitrary_command_tool` is the exception, and its gates are
+required.** It is the one registration site that runs *outside* `create_mcp`, so a mandatory
+policy at the composer does not reach it: while its `permits` and `authorize` defaulted to
+`None`, calling it on an application composed from a read-only policy registered
+`hmc_run_command` with no ceiling check and no authorizer — the fail-open this record claims
+to remove, surviving at the highest-risk tool in the package. ADR 0038 left them optional on
+the cost of updating a dozen call sites; every non-test caller now passes both, so the cost
+is gone and the claim can be made true rather than narrowed.
+
 **Narrow `tool_registry.register_tools` and `tool_registry.authorized` to require the gates.**
 Their `None` arms become unreachable from production once `create_mcp` requires a policy, and
 removing a dead branch is ordinarily right. Rejected because they are the mechanism ADR 0037 and

@@ -11,6 +11,7 @@ Spec item -> node id:
   R5   test_serve_without_a_policy_exits_2
   R5a  test_serve_with_an_absent_policy_file_exits_1
   R5b  test_an_unresolvable_config_home_refuses_without_a_traceback
+  R5b  test_a_dangling_symlink_is_not_reported_as_an_absent_file
   R6   test_the_unselected_policy_warning_is_gone
   R12  test_the_generated_policy_authorizes_an_omitted_optional_selector
   R13  test_the_generated_policy_authorizes_a_vios_partition_id_call
@@ -351,6 +352,29 @@ def test_an_unresolvable_config_home_refuses_without_a_traceback(monkeypatch):
 
     assert result.exit_code == 2
     assert "config init-access-policy" in _unstyle(result.output)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink semantics are POSIX here")
+def test_a_dangling_symlink_is_not_reported_as_an_absent_file(steer_config):
+    """R5b: `exists()` follows the link; `O_EXCL` does not.
+
+    Symlinking the platform-native path at a mounted or packaged policy is the natural
+    workaround for a container or unit, because `--access-policy` takes a NAME and no
+    option takes a path. If the target is absent or not yet mounted, treating the link
+    as an absent file sends the operator to a generator that then refuses with "already
+    exists" — two refusals, neither mentioning a symlink and neither remedy applying.
+    Reporting it as present hands the case to the load path, whose error names the
+    resolved target and the errno.
+    """
+    link = steer_config / "access-policy.toml"
+    link.symlink_to(steer_config / "nowhere" / "access-policy.toml")
+
+    result = CliRunner().invoke(app, ["serve", "--access-policy", LEGACY_POLICY_NAME])
+
+    assert result.exit_code == 1
+    output = _unstyle(result.output)
+    assert "no access-policy file at" not in output
+    assert "cannot be read" in output
 
 
 # ---------------------------------------------------------------------------

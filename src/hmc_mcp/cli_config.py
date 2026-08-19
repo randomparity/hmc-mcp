@@ -90,7 +90,10 @@ def config_init() -> None:
     except FileExistsError:
         _fail(FileExistsError(f"Config file already exists: {target}"))
 
-    console.print(str(target))
+    # Same treatment as `init-access-policy` below, and for the same two reasons: this
+    # line is the command's machine-readable output, and the path comes from
+    # Path.home()/XDG_CONFIG_HOME/APPDATA, any of which may legally contain brackets.
+    console.print(escape(str(target)), soft_wrap=True)
 
 
 @config_app.command("list")
@@ -231,9 +234,17 @@ def _write_exclusive(target: Path, text: str) -> None:
     anything after the create fails, the destination is unlinked before the error is
     reported.
 
-    A signal or an OOM kill between the create and the flush can still leave one; no
-    handler runs there. The README's migration section carries that recovery — delete
-    the file and re-run.
+    The contents are ``fsync``-ed before the descriptor closes. Closing alone flushes
+    only to the page cache, and on a delayed-allocation filesystem the metadata — the
+    file exists — commits ahead of the data more often than the reverse, so a power
+    loss after this command *reported success* could leave exactly the truncated file
+    the unlink above exists to prevent, with no visible interruption to explain it.
+
+    Two residuals, named rather than implied closed. The parent directory is not
+    synced, so the new directory entry itself is not durable against the same event.
+    And a signal or an OOM kill between the create and the flush leaves a partial file
+    with no handler to run. The README's migration section carries the recovery for
+    both — delete the file and re-run.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform != "win32":
@@ -243,6 +254,8 @@ def _write_exclusive(target: Path, text: str) -> None:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
         except BaseException:
             target.unlink(missing_ok=True)
             raise

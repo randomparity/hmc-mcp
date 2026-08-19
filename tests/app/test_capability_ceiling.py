@@ -16,9 +16,14 @@ from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 
-def _legacy():
+def _legacy(*, include_arbitrary_command: bool = False):
     """The policy that replaced the unfiltered default composition (ADR 0041)."""
-    return compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+    return compile_legacy_policy(
+        TOOL_SECURITY,
+        (DEFAULT_CONNECTION_TOKEN,),
+        include_arbitrary_command=include_arbitrary_command,
+    )
+
 
 SOURCE = "test-access-policy.toml"
 
@@ -265,10 +270,27 @@ def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
         assert sentinel not in rendered
 
 
-def _configure(application, enabled, permits=None):
+def _configure(application, enabled, permits=None, policy=None):
+    """Drive the escape-hatch toggle the way `_serve_application` drives it.
+
+    Both gates are required since ADR 0041: this is the one registration site outside
+    `create_mcp`, and while they defaulted to None a call here registered
+    `hmc_run_command` with no ceiling and no authorizer whatever the policy said.
+    `permits` stays a separate parameter because these tests vary the ceiling
+    independently of the authorizer to isolate which gate withheld the tool.
+    """
+    from hmc_mcp.dispatch_scope import dispatch_authorizer
     from hmc_mcp.server_command import configure_arbitrary_command_tool
 
-    asyncio.run(configure_arbitrary_command_tool(enabled, application, permits=permits))
+    effective = policy if policy is not None else _legacy(include_arbitrary_command=True)
+    asyncio.run(
+        configure_arbitrary_command_tool(
+            enabled,
+            application,
+            permits=permits if permits is not None else effective.permits_tool,
+            authorize=dispatch_authorizer(effective),
+        )
+    )
 
 
 # Reaches the escape hatch by name (ADR 0036 forbids granting it by effect
