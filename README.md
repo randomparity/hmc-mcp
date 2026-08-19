@@ -260,9 +260,39 @@ Without the flag no ceiling is applied and every tool is exposed — authoring t
 file is not enough on its own. A policy that cannot be read, parsed, or compiled
 exits non-zero and starts nothing.
 
-Only the tool dimension is enforced today. A policy's `connections` and `targets`
-entries are recorded and reported but constrain nothing at call time; call
-`hmc_effective_permissions` on a running server to see which is which.
+The tool and connection dimensions are enforced. A granted tool called with a
+connection the same grant does not name is refused before the server opens any
+connection to an HMC. A policy's `targets` entries are still recorded and
+reported but constrain nothing at call time; call `hmc_effective_permissions` on
+a running server to see which is which.
+
+Connection scope is decided on the connection the call will *actually* select,
+not on the `profile` string the caller passes, so a nickname is resolved to the
+profile it targets before the check. Two consequences are worth knowing before
+you author a policy:
+
+- **`connections` entries must be profile keys**, not nicknames. A nickname is
+  resolved away before the comparison, so granting one never matches.
+- **When `HMC_HOST` is set, the server can reach exactly one HMC and the
+  `profile` argument is ignored** — that is how `build_config` has always
+  resolved. Every call is therefore evaluated as `<default>`, so grant
+  `connections = ["<default>"]`; a policy naming profile keys denies everything
+  in that deployment, and says so in the denial.
+
+Omitting `profile` means `<default>`, which is *not* covered by a grant naming
+the profile that happens to be the deployment default — grant both if callers
+may omit the argument.
+
+### What the policy does not bound
+
+The access policy bounds **this MCP server**. It does not bound `hmc-mcp`
+commands run at a shell, and it does not bound a Python program importing the
+supported reusable API — both reach the HMC directly under the operator's own
+credentials, and
+[ADR 0029](docs/adr/0029-supported-reusable-python-api-contract.md) places MCP
+tools, CLI commands, and the server composition modules outside that API's
+contract for the same reason. If you need a constraint that binds a human at a
+shell, use HMC-side user roles.
 
 Policies live in `access-policy.toml`, beside `config.toml` in the same
 platform-native directory. A minimal read-only policy:
