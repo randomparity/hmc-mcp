@@ -84,7 +84,14 @@ app.add_typer(raw_app, name="raw")
 memory_pools_app = typer.Typer(help="Shared memory pools.", no_args_is_help=True)
 app.add_typer(memory_pools_app, name="memory-pools")
 
-config_app = typer.Typer(help="Profile configuration commands.", no_args_is_help=True)
+config_app = typer.Typer(
+    # Not "profile configuration": this group writes two different files. Naming
+    # only profiles here would assert the conflation the docs work to refuse, in
+    # the surface an operator reaches straight from `serve`'s refusal.
+    help="Connection profiles (config.toml) and server access policies "
+    "(access-policy.toml).",
+    no_args_is_help=True,
+)
 app.add_typer(config_app, name="config")
 
 
