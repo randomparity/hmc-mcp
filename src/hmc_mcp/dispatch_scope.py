@@ -19,13 +19,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from . import audit
 from .access_policy import AccessPolicy
 from .connection_scope import (
+    ConnectionScopeError,
     connection_denial,
     connection_permitted,
     selected_connection,
 )
-from .target_scope import selected_targets, target_denial, targets_permitted
+from .target_scope import (
+    audit_state,
+    denial_reason,
+    selected_targets,
+    target_denial,
+    targets_permitted,
+)
 from .tool_registry import Authorize, ToolSecurity
 
 
@@ -45,18 +53,55 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
             # scope — and the target dimension cannot reach such a tool either,
             # since `authorized` declines to wrap it. Withholding it is the tool
             # dimension's job (ADR 0037). An authorizer must still be safe to
-            # call on any tool.
+            # call on any tool. No record either: no decision was reached, and a
+            # per-call record for a per-process decision would record nothing.
             return
         # Indexed, not `.get`: `authorized` applies the handler's defaults and
         # `validate_security` guarantees the parameter exists, so an absent key is
         # a malformed call, and treating it as an omitted argument would silently
-        # make it the default connection.
+        # make it the default connection. A KeyError here is a registration-path
+        # defect rather than an authorization outcome, so it too goes unrecorded.
         token = arguments[argument]
+
+        def record(
+            decision: str,
+            reason: str,
+            resolved: str | None,
+            targets: tuple[audit.AuditTarget, ...] | None,
+        ) -> None:
+            """One emission point, closed over what every record shares."""
+            audit.record_authorization(
+                policy=policy.name,
+                tool=name,
+                effect=security.effect,
+                decision=decision,  # ty: ignore[invalid-argument-type]
+                reason=reason,  # ty: ignore[invalid-argument-type]
+                token=token,
+                resolved=resolved,
+                targets=targets,
+            )
+
         # May raise ConnectionScopeError when the configuration cannot be read at
         # all — before any grant is examined, which is ADR 0038's behaviour
-        # preserved by ordering rather than by a clause.
-        connection = selected_connection(token, tool=name)
+        # preserved by ordering rather than by a clause. The record is emitted and
+        # the original error re-raised unchanged; `targets` and `resolved` are both
+        # null because nothing was extracted and nothing was resolved.
+        try:
+            connection = selected_connection(token, tool=name)
+        except ConnectionScopeError:
+            record("deny", "configuration-unreadable", None, None)
+            raise
         extracted = selected_targets(security, arguments)
+        resolved = audit.resolved_connection(connection)
+        audited = tuple(
+            audit.AuditTarget(
+                kind=kind,
+                argument=selector,
+                state=audit_state(value),
+                value=value if isinstance(value, str) else None,
+            )
+            for kind, selector, value in extracted
+        )
 
         connection_matched = False
         # One conjunction per grant, never a union across them. Both conditions
@@ -69,6 +114,7 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
                 continue
             connection_matched = True
             if targets_permitted(grant.targets, security, extracted):
+                record("allow", "permitted", resolved, audited)
                 return
 
         # Assigned inside the loop and read only after it: the message says which
@@ -77,7 +123,9 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         # blocked it, and this is the only place in the design where grants are
         # considered together — for the message, never for the decision.
         if connection_matched:
+            record("deny", denial_reason(security, extracted), resolved, audited)
             raise target_denial(name, policy.name, security, extracted)
+        record("deny", "connection-not-granted", resolved, audited)
         raise connection_denial(name, policy.name, argument, token, connection)
 
     return authorize
