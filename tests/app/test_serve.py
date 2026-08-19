@@ -164,14 +164,14 @@ def test_serve_passes_arbitrary_command_opt_in(http):
 def test_stdio_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
     calls = []
 
-    async def _record(flag, application, *, permits=None):
-        calls.append((flag, permits))
+    async def _record(flag, application, *, permits=None, authorize=None):
+        calls.append((flag, permits, authorize))
 
     monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
     with patch.object(type(server_app.mcp), "run") as run:
         server_app.main_stdio(enable_arbitrary_command=enabled)
 
-    assert calls == [(enabled, None)]
+    assert calls == [(enabled, None, None)]
     run.assert_called_once_with()
 
 
@@ -179,8 +179,8 @@ def test_stdio_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
 def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
     calls = []
 
-    async def _record(flag, application, *, permits=None):
-        calls.append((flag, permits))
+    async def _record(flag, application, *, permits=None, authorize=None):
+        calls.append((flag, permits, authorize))
 
     monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
     with patch.object(type(server_app.mcp), "run") as run:
@@ -188,7 +188,7 @@ def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
             host="127.0.0.1", port=9000, enable_arbitrary_command=enabled
         )
 
-    assert calls == [(enabled, None)]
+    assert calls == [(enabled, None, None)]
     run.assert_called_once_with(
         transport="streamable-http", host="127.0.0.1", port=9000
     )

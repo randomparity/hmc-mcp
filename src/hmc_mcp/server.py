@@ -45,6 +45,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, resolve_access_policy_path
+from .connection_scope import connection_authorizer
 from .tool_registry import ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -263,18 +264,22 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 
 
 def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
-    """Compose a fresh MCP application bounded by *policy*'s capability ceiling.
+    """Compose a fresh MCP application bounded by *policy*.
 
-    ``None`` applies no ceiling and registers every tool — the behaviour before
-    ADR 0037, and what every deployment gets until #225 makes startup fail
-    closed. The predicate is passed to each registration site rather than
-    checked here, so no site can be given a ceiling it does not apply.
+    ``None`` applies no ceiling, authorizes no connection, and registers every
+    tool — the behaviour before ADR 0037, and what every deployment gets until
+    #225 makes startup fail closed. Both gates are passed to each registration
+    site rather than checked here, so no site can be given a policy it does not
+    apply; ADR 0038's registry assertion is what checks that it did.
     """
     permits = None if policy is None else policy.permits_tool
+    authorize = None if policy is None else connection_authorizer(policy)
     application = _create_base_mcp()
     for module in TOOL_MODULES:
-        module.register_tools(application, permits=permits)
-    register_permissions_tool(application, policy, TOOL_SECURITY, permits=permits)
+        module.register_tools(application, permits=permits, authorize=authorize)
+    register_permissions_tool(
+        application, policy, TOOL_SECURITY, permits=permits, authorize=authorize
+    )
     return application
 
 
@@ -369,10 +374,14 @@ def _serve_application(
     """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
     permits = None if access_policy is None else access_policy.permits_tool
+    authorize = None if access_policy is None else connection_authorizer(access_policy)
 
     async def _prepare() -> int:
         await configure_arbitrary_command_tool(
-            enable_arbitrary_command, application, permits=permits
+            enable_arbitrary_command,
+            application,
+            permits=permits,
+            authorize=authorize,
         )
         return len(await application.local_provider.list_tools())
 

@@ -3,8 +3,9 @@
 Reports the live permissions of one composed MCP application: the tools its
 registry holds, their effect classes, and what the selected access policy
 declares. It reports a registry rather than recomputing a ceiling, and it
-distinguishes the one dimension this server enforces from the two it only
-records; see docs/adr/0037-composition-time-capability-ceiling.md.
+distinguishes the dimensions this server enforces from the one it only
+records; see docs/adr/0037-composition-time-capability-ceiling.md and
+docs/adr/0038-dispatch-time-connection-scope.md.
 
 This module must not import ``server``: ``server`` imports it, and the
 authoritative tool index arrives as a parameter for that reason.
@@ -18,7 +19,13 @@ from dataclasses import dataclass
 from fastmcp import FastMCP
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy, AllTargets, Grant
-from .tool_registry import ToolSecurity, annotations_for, validate_security
+from .tool_registry import (
+    Authorize,
+    ToolSecurity,
+    annotations_for,
+    authorized,
+    validate_security,
+)
 
 TOOL_NAME = "hmc_effective_permissions"
 
@@ -28,9 +35,9 @@ TOOL_NAME = "hmc_effective_permissions"
 UNKNOWN = "unknown"
 
 # The dimensions of an access policy this server evaluates today, and those it
-# only records. #222 moves "connections" and #223 moves "targets" across.
-ENFORCED_DIMENSIONS: tuple[str, ...] = ("tools",)
-DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ("connections", "targets")
+# only records. #223 moves "targets" across; ADR 0038 moved "connections".
+ENFORCED_DIMENSIONS: tuple[str, ...] = ("tools", "connections")
+DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ("targets",)
 
 
 @dataclass(frozen=True)
@@ -155,6 +162,7 @@ def register_permissions_tool(
     tool_security: Mapping[str, ToolSecurity],
     *,
     permits: Callable[[str], bool] | None = None,
+    authorize: Authorize | None = None,
 ) -> None:
     """Register the inspection tool on *mcp*, unless the ceiling withholds it.
 
@@ -182,15 +190,21 @@ def register_permissions_tool(
 
         Returns the tools this server exposes with their effect classes, the
         selected access policy's name and file, and the connection and target
-        constraints each of its grants declares. Only the tool dimension is
-        enforced today: `enforced_dimensions` and `declared_only_dimensions` say
-        which is which. Contains no credentials.
+        constraints each of its grants declares. The tool and connection
+        dimensions are enforced; targets are not yet:
+        `enforced_dimensions` and `declared_only_dimensions` say which is which.
+        Contains no credentials.
         """
         names = sorted(tool.name for tool in await mcp.local_provider.list_tools())
         return describe(names, policy, tool_security)
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
     mcp.tool(
-        hmc_effective_permissions,
+        authorized(
+            TOOL_NAME,
+            EFFECTIVE_PERMISSIONS_SECURITY,
+            hmc_effective_permissions,
+            authorize,
+        ),
         annotations=annotations_for(EFFECTIVE_PERMISSIONS_SECURITY.effect),
     )
