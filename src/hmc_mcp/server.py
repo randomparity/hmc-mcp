@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+import sys
 from collections.abc import Mapping
 
 from fastmcp import FastMCP
@@ -43,7 +44,7 @@ from fastmcp import FastMCP
 from ._app import (
     create_mcp as _create_base_mcp,
 )
-from .access_policy import AccessPolicy
+from .access_policy import AccessPolicy, resolve_access_policy_path
 from .tool_registry import ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -99,6 +100,7 @@ from .server_jobs import (
 from .server_health import hmc_fleet_health as hmc_fleet_health
 from .server_permissions import (
     EFFECTIVE_PERMISSIONS_SECURITY,
+    TOOL_NAME as PERMISSIONS_TOOL_NAME,
     register_permissions_tool,
 )
 
@@ -279,19 +281,81 @@ def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
 mcp = create_mcp()
 
 
+def _unselected_policy_file() -> str | None:
+    """The platform-native policy file's path when one exists, else ``None``.
+
+    Reads nothing and never raises: ``resolve_access_policy_path`` reaches
+    ``Path.home()``, which raises under a uid with no passwd entry and no HOME,
+    and a diagnostic that can abort a start nobody asked to constrain is worse
+    than no diagnostic.
+    """
+    try:
+        path = resolve_access_policy_path()
+        return str(path) if path.exists() else None
+    except (RuntimeError, OSError, ValueError):
+        return None
+
+
+def _startup_warnings(
+    tool_count: int,
+    access_policy: AccessPolicy | None,
+    enable_arbitrary_command: bool,
+) -> tuple[str, ...]:
+    """The stderr lines describing what this server will and will not expose.
+
+    Every input exists only here — the served registry, the policy, and the
+    escape-hatch flag — which is why the four warnings share one function. An
+    empty surface already implies the inspection tool is absent, so it replaces
+    that line rather than printing beside it.
+    """
+    lines: list[str] = []
+    if tool_count == 0:
+        lines.append(
+            "warning: this server exposes no tools. Nothing it is asked to do will "
+            "succeed."
+        )
+    elif access_policy is not None and not access_policy.permits_tool(
+        PERMISSIONS_TOOL_NAME
+    ):
+        lines.append(
+            f"warning: access policy {access_policy.name!r} withholds "
+            f"{PERMISSIONS_TOOL_NAME}, so this server cannot report its own "
+            "effective permissions to a client."
+        )
+    if access_policy is None and (path := _unselected_policy_file()) is not None:
+        lines.append(
+            f"warning: {path} exists but no access policy was selected, so no "
+            "capability ceiling is applied. Pass --access-policy NAME to enforce one."
+        )
+    if (
+        enable_arbitrary_command
+        and access_policy is not None
+        and not access_policy.permits_tool("hmc_run_command")
+    ):
+        lines.append(
+            "warning: --enable-arbitrary-command was requested, but access policy "
+            f"{access_policy.name!r} does not grant hmc_run_command, so it is not "
+            "exposed. Name it in a grant's tools to allow it."
+        )
+    return tuple(lines)
+
+
 def _serve_application(
     enable_arbitrary_command: bool, access_policy: AccessPolicy | None
 ) -> FastMCP:
-    """Compose and gate the application about to be served."""
+    """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
     permits = None if access_policy is None else access_policy.permits_tool
 
-    async def _prepare() -> None:
+    async def _prepare() -> int:
         await configure_arbitrary_command_tool(
             enable_arbitrary_command, application, permits=permits
         )
+        return len(await application.local_provider.list_tools())
 
-    asyncio.run(_prepare())
+    tool_count = asyncio.run(_prepare())
+    for line in _startup_warnings(tool_count, access_policy, enable_arbitrary_command):
+        print(line, file=sys.stderr)
     return application
 
 

@@ -323,3 +323,186 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
     assert served["app"] is not server_module.mcp
     assert "hmc_run_command" not in served["names"]
     assert "hmc_delete_lpar" in served["names"]
+
+
+def _warnings(tool_count, policy, enable_arbitrary_command=False):
+    from hmc_mcp.server import _startup_warnings
+
+    return _startup_warnings(tool_count, policy, enable_arbitrary_command)
+
+
+DENY_EVERYTHING: list[dict] = []
+
+
+def test_an_empty_served_surface_is_warned_and_suppresses_the_other_line():
+    """R10a: keyed on the served registry, and it replaces R18's line."""
+    policy = _policy(DENY_EVERYTHING, name="locked")
+    assert len(policy.tools) == 0
+    assert _names(create_mcp(policy)) == set()
+
+    lines = _warnings(0, policy)
+
+    assert len(lines) == 1
+    assert "no tools" in lines[0]
+    # Cause-neutral: R10a covers an empty surface however it arose, and the
+    # withheld-inspection line is suppressed rather than printed beside it.
+    assert "hmc_effective_permissions" not in lines[0]
+
+
+def test_a_withheld_inspection_tool_is_warned():
+    """R18: named, with the policy that withheld it."""
+    policy = _policy(
+        [{"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}]
+    )
+
+    lines = _warnings(1, policy)
+
+    assert any("hmc_effective_permissions" in line and "test" in line for line in lines)
+
+
+def test_an_authored_but_unselected_policy_file_is_warned(tmp_path, monkeypatch):
+    """R19: fires only when the file exists and no policy was selected."""
+    import hmc_mcp.server as server_app
+
+    present = tmp_path / "access-policy.toml"
+    present.write_text("", encoding="utf-8")
+    monkeypatch.setattr(server_app, "resolve_access_policy_path", lambda: present)
+    assert any("access-policy.toml" in line for line in _warnings(129, None))
+
+    monkeypatch.setattr(
+        server_app, "resolve_access_policy_path", lambda: tmp_path / "absent.toml"
+    )
+    assert _warnings(129, None) == ()
+
+
+def test_an_unresolvable_policy_path_never_fails_the_start(monkeypatch):
+    """R19: Path.home() with no home directory must not propagate."""
+    import hmc_mcp.server as server_app
+
+    def _boom():
+        raise RuntimeError("Could not determine home directory")
+
+    monkeypatch.setattr(server_app, "resolve_access_policy_path", _boom)
+
+    assert _warnings(129, None) == ()
+
+
+def test_a_withheld_escape_hatch_is_warned_only_when_requested():
+    """R19a: the explicit request answered with silence gets a line."""
+    policy = _policy(READ_ONLY_GRANT)
+
+    requested = _warnings(90, policy, enable_arbitrary_command=True)
+    assert any("hmc_run_command" in line for line in requested)
+
+    assert not any(
+        "hmc_run_command" in line for line in _warnings(90, policy)
+    )
+
+
+POLICY_FILE = """
+[[policies.lab.grants]]
+effects = ["read"]
+connections = ["<default>"]
+targets = "all-targets"
+"""
+
+
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (["serve"], "main_stdio"),
+        (["serve", "--http"], "main_http"),
+    ],
+)
+def test_serve_forwards_the_compiled_policy_to_the_entry_point(
+    argv, target, tmp_path, monkeypatch
+):
+    """R7: the selected policy reaches the server, not just the loader."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    import hmc_mcp.access_policy as access_policy_module
+    from hmc_mcp.access_policy import AccessPolicy
+    from hmc_mcp.cli import app
+
+    path = tmp_path / "access-policy.toml"
+    path.write_text(POLICY_FILE, encoding="utf-8")
+    monkeypatch.setattr(
+        access_policy_module, "resolve_access_policy_path", lambda: path
+    )
+
+    with patch(f"hmc_mcp.server.{target}") as entry_point:
+        result = CliRunner().invoke(app, [*argv, "--access-policy", "lab"])
+
+    assert result.exit_code == 0, result.output
+    forwarded = entry_point.call_args.kwargs["access_policy"]
+    assert isinstance(forwarded, AccessPolicy)
+    assert forwarded.name == "lab"
+    assert forwarded.permits_tool("hmc_list_systems")
+    assert not forwarded.permits_tool("hmc_delete_lpar")
+
+
+ESCAPE_HATCH_ONLY = [
+    {
+        "tools": ["hmc_run_command"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys):
+    """R10a: ordering, suppression, and the stdout constraint, in one test.
+
+    A ceiling of only ``hmc_run_command`` composes zero tools, so counting
+    before the toggle would emit a false empty-surface line. Started with the
+    flag, the served surface is exactly the escape hatch.
+    """
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(True, policy)
+
+    assert _names(application) == {"hmc_run_command"}
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" not in captured.err
+    assert "hmc_effective_permissions" in captured.err
+
+
+def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
+    """R10a: the empty-surface line suppresses the withheld-inspection line."""
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(False, policy)
+
+    assert _names(application) == set()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" in captured.err
+    assert "hmc_effective_permissions" not in captured.err
+
+
+def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
+    """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
+    from typer.testing import CliRunner
+
+    import hmc_mcp.access_policy as access_policy_module
+    from hmc_mcp.cli import app
+
+    monkeypatch.setattr(
+        access_policy_module,
+        "resolve_access_policy_path",
+        lambda: tmp_path / "absent.toml",
+    )
+    result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
+
+    # `_fail` renders through a rich Console, which hard-folds a non-tty line at
+    # 80 columns with no spaces to break on, so a tmp_path substring can fold
+    # mid-word between runs. Assert on wrap-proof text instead.
+    assert result.exit_code == 1
+    assert "cannot be read" in result.output

@@ -72,6 +72,7 @@ def test_serve_http_loopback_bind_is_allowed():
         port=8000,
         enable_arbitrary_command=False,
         allow_remote=False,
+        access_policy=None,
     )
 
 
@@ -100,6 +101,7 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
         port=8000,
         enable_arbitrary_command=False,
         allow_remote=True,
+        access_policy=None,
     )
 
 
@@ -128,7 +130,9 @@ def test_serve_allows_environment_hmc_options(monkeypatch):
         result = CliRunner().invoke(app, ["serve"])
 
     assert result.exit_code == 0
-    main_stdio.assert_called_once_with(enable_arbitrary_command=False)
+    main_stdio.assert_called_once_with(
+        enable_arbitrary_command=False, access_policy=None
+    )
 
 
 @pytest.mark.parametrize("http", [False, True])
@@ -148,9 +152,12 @@ def test_serve_passes_arbitrary_command_opt_in(http):
             port=8000,
             enable_arbitrary_command=True,
             allow_remote=False,
+            access_policy=None,
         )
     else:
-        entrypoint.assert_called_once_with(enable_arbitrary_command=True)
+        entrypoint.assert_called_once_with(
+            enable_arbitrary_command=True, access_policy=None
+        )
 
 
 @pytest.mark.parametrize("enabled", [False, True])
