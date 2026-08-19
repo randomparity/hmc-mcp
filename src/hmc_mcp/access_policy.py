@@ -195,16 +195,30 @@ def _render_error(source: str, error: Mapping[str, Any]) -> str:
     """
     loc = tuple(error["loc"])
     parts = [source]
+    consumed = 0
     if len(loc) >= 2 and loc[0] == "policies":
         parts.append(f"policy {loc[1]!r}")
+        consumed = 2
         if len(loc) >= 4 and loc[2] == "grants" and isinstance(loc[3], int):
             parts.append(f"grant {loc[3]}")
+            consumed = 4
     if error["type"] == "extra_forbidden":
         parts.append(f"unknown key {loc[-1]!r}")
     elif error["type"] == "missing":
         parts.append(f"missing required key {loc[-1]!r}")
     else:
-        parts.append(str(error["msg"]).removeprefix("Value error, "))
+        message = str(error["msg"]).removeprefix("Value error, ")
+        # A pydantic type error ("Input should be a valid tuple") names no key, so
+        # `connections = "lab"` and `effects = "read"` would render identically.
+        # Recover the field from the loc. Messages from this module's own
+        # validators already name their field, so they are left alone.
+        if error["type"] != "value_error":
+            key = next(
+                (item for item in loc[consumed:] if isinstance(item, str)), None
+            )
+            if key is not None:
+                message = f"{key!r}: {message}"
+        parts.append(message)
     return ": ".join(parts)
 
 
@@ -359,7 +373,10 @@ def compile_access_policy(
     parsed = _parse_document(document, source)
     policy = parsed.policies.get(name)
     if policy is None:
-        available = ", ".join(sorted(parsed.policies)) or "(none)"
+        # repr each name, as every other operator-authored string in this module
+        # is rendered, so a policy name carrying a control character cannot forge
+        # a line in whatever startup log surfaces this message.
+        available = ", ".join(repr(name) for name in sorted(parsed.policies)) or "(none)"
         raise AccessPolicyError(
             f"{source}: policy {name!r} not found; available policies: {available}"
         )
@@ -425,4 +442,11 @@ def load_access_policy(
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise AccessPolicyError(f"{source}: TOML parse error: {error}") from error
+    except RecursionError as error:
+        # tomllib recurses on nested arrays and inline tables, so a deeply nested
+        # document exhausts the stack before it can report a syntax error. A
+        # RecursionError carries no message, hence the fixed clause.
+        raise AccessPolicyError(
+            f"{source}: TOML parse error: document nesting is too deep"
+        ) from error
     return compile_access_policy(document, name, tool_security, source)

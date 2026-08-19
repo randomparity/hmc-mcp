@@ -180,6 +180,16 @@ def test_parse_document_accepts_a_minimal_policy() -> None:
             "must contain only selector strings",
             id="selector-not-a-string",
         ),
+        pytest.param(
+            _document(effects=["read"], connections="lab", targets="all-targets"),
+            "'connections': Input should be a valid tuple",
+            id="connections-not-an-array",
+        ),
+        pytest.param(
+            _document(effects="read", connections=["lab"], targets="all-targets"),
+            "'effects': Input should be a valid tuple",
+            id="effects-not-an-array",
+        ),
     ],
 )
 def test_shape_tier_rejects(document: dict[str, object], expected: str) -> None:
@@ -390,7 +400,7 @@ def test_missing_policy_names_the_available_ones() -> None:
         compile_access_policy(document, "typo", TOOL_SECURITY, "access-policy.toml")
 
     assert "policy 'typo' not found" in str(raised.value)
-    assert "lab, read-only" in str(raised.value)
+    assert "'lab', 'read-only'" in str(raised.value)
 
 
 def test_index_dependent_rules_bind_only_the_selected_policy() -> None:
@@ -603,6 +613,16 @@ def test_toml_syntax_error_is_an_access_policy_error(tmp_path) -> None:
     path.write_text("[policies.lab\n", encoding="utf-8")
 
     with pytest.raises(AccessPolicyError, match="TOML parse error"):
+        load_access_policy("lab", TOOL_SECURITY, path=path)
+
+
+def test_deeply_nested_document_is_an_access_policy_error(tmp_path) -> None:
+    """tomllib recurses, so a nested document exhausts the stack before parsing."""
+    path = tmp_path / ACCESS_POLICY_FILENAME
+    depth = 6000
+    path.write_text("x = " + "[" * depth + "]" * depth, encoding="utf-8")
+
+    with pytest.raises(AccessPolicyError, match="nesting is too deep"):
         load_access_policy("lab", TOOL_SECURITY, path=path)
 
 
