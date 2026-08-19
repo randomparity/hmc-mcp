@@ -486,8 +486,10 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     the call does not make. That is a fail-open, and it is what
     ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
 
-    The check is static and follows module-private helpers one call chain deep,
-    which is how the metrics and composite tools reach their client.
+    The check is static and follows same-module helpers down the call chain,
+    which is how the metrics, vios, and composite tools reach their client. It
+    does not follow a helper imported from another module, a ``functools.partial``,
+    or a callable held in a variable; ADR 0038 records that residual.
     """
     root = Path(server_command.__file__).parent
     connection_bearing = {
@@ -504,9 +506,10 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        helpers = {
-            name: node for name, node in functions.items() if name.startswith("_")
-        }
+        # Every top-level function in the file, not only the private ones: a
+        # public same-module helper that drops the profile is exactly as
+        # fail-open as a private one, and was not caught while this filtered.
+        helpers = dict(functions)
         for name in sorted(functions.keys() & connection_bearing):
             argument = TOOL_SECURITY[name].connection_argument
             reached = _assert_routes(

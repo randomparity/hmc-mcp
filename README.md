@@ -279,6 +279,14 @@ you author a policy:
   `connections = ["<default>"]`; a policy naming profile keys denies everything
   in that deployment, and says so in the denial.
 
+- **`<default>` binds late, and it binds to whatever the deployment resolves.**
+  It is not a fixed HMC: absent `HMC_HOST` it follows `HMC_PROFILE`, then
+  `default_profile` — which may itself be a nickname, so the granted connection
+  can be two hops from anything written in the policy. Granting `<default>`
+  beside a narrow profile list therefore also grants the current default, even
+  when that is a profile the policy deliberately withholds. Do not grant it
+  unless the deployment's default is a connection you mean to allow.
+
 Omitting `profile` means `<default>`, which is *not* covered by a grant naming
 the profile that happens to be the deployment default — grant both if callers
 may omit the argument.
@@ -293,6 +301,14 @@ credentials, and
 tools, CLI commands, and the server composition modules outside that API's
 contract for the same reason. If you need a constraint that binds a human at a
 shell, use HMC-side user roles.
+
+It also does not bound a tool that opens no HMC connection at all.
+`hmc_list_configured_hosts` returns every configured profile's name, host, user,
+and default flag, and `hmc_effective_permissions` returns the policy's own
+grants; neither takes a `profile` argument, so `connections` cannot narrow
+either. A `connections = ["lab"]` read grant still discloses the `prod`
+inventory. Withhold them by name — a grant listing `tools` and no `read` effect
+class — when the configuration or the policy is itself sensitive.
 
 Policies live in `access-policy.toml`, beside `config.toml` in the same
 platform-native directory. A minimal read-only policy:

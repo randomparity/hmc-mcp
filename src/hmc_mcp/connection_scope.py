@@ -26,19 +26,20 @@ from .tool_registry import Authorize, ToolSecurity
 class ConnectionScopeError(Exception):
     """An MCP call selected an HMC connection the access policy does not grant.
 
-    Also raised when no connection can be selected at all, which is denial for
-    the same reason: the server cannot show that the call reaches a granted HMC.
+    Also raised when the configured connections cannot be read at all, which is
+    denial for the same reason: the server cannot show that the call reaches a
+    granted HMC.
     """
 
 
 # Both messages are closed templates. Only the tool name, the policy name, the
-# caller's own token, and one clause from the fixed pair below are substituted,
-# so "carries no secret" is a property of the text rather than a claim about it.
-# In particular the ConfigError's own message — which names the config path — is
-# chained as __cause__ and never interpolated.
-_UNSELECTABLE = (
+# caller's own token, the declared selector's name, and the one clause below are
+# substituted, so "carries no secret" is a property of the text rather than a
+# claim about it. In particular the ConfigError's own message — which names the
+# config path — is chained as __cause__ and never interpolated.
+_UNREADABLE = (
     "{tool} cannot be authorized: the configured HMC connections could not be "
-    "read, or the requested connection does not name one."
+    "read."
 )
 _DENIED = (
     "{tool} is not permitted on connection {connection} by access policy "
@@ -46,30 +47,40 @@ _DENIED = (
     "names {tool}, or call {tool} with a connection the policy grants."
 )
 _HMC_HOST_CLAUSE = (
-    "HMC_HOST is set, so the 'profile' argument is ignored and the call was "
-    f"evaluated as the {DEFAULT_CONNECTION_TOKEN!r} connection. "
+    "HMC_HOST is set, so the {argument!r} argument is ignored and the call was "
+    "evaluated as the {default!r} connection. "
 )
-_NICKNAME_CLAUSE = (
-    "The token resolves through the configured nickname table to a connection "
-    "this policy does not grant. "
-)
+
+# The value a token that names no configured connection normalizes to. It can
+# never appear in a compiled grant — `access_policy` rejects an empty connection
+# entry — so it always denies, and it denies through the *same* template as a
+# resolvable-but-withheld token. Two distinguishable messages would be a
+# membership oracle over `config.toml`, disclosed through a channel no policy can
+# withhold, one entry after ADR 0037 made that inventory withholdable.
+UNRESOLVED = ""
 
 
 def selected_connection(token: Any, *, tool: str) -> str | None:
     """The connection ``build_config`` will select for *token*, in policy terms.
 
-    Returns a profile key, or ``None`` for the environment/default connection —
-    the value ``access_policy`` compiles ``"<default>"`` to. Raises
-    :class:`ConnectionScopeError` when nothing can be selected. *tool* names the
-    denial; it is not part of the resolution.
+    Returns a profile key; ``None`` for the environment/default connection — the
+    value ``access_policy`` compiles ``"<default>"`` to; or :data:`UNRESOLVED`
+    when the token names no configured connection, which no grant can contain
+    and which therefore denies through the ordinary denial message. Raises
+    :class:`ConnectionScopeError` only when the configuration cannot be read at
+    all. *tool* names that error; it is not part of the resolution.
 
     The four rules mirror ``build_config`` and ``load_profile`` in their order:
 
-    0. a token that is not ``str | None`` denies, uninspected and uncoerced;
+    0. a token that is not ``str | None`` names no connection, uninspected and
+       uncoerced;
     1. ``HMC_HOST`` set and non-empty collapses every token to the environment
        connection, because ``build_config`` gates its whole TOML branch on it;
-    2. a falsy token is the default connection, matching ``load_profile``'s
-       ``name = profile or os.environ.get("HMC_PROFILE")``;
+    2. a falsy token is the default connection. ``HMC_PROFILE`` and
+       ``default_profile`` are deliberately *not* consulted: ADR 0036 fixed
+       ``<default>`` as the denotation of the omitted argument and recorded its
+       late binding as an operator-facing property, and ADR 0038's third
+       rejected alternative records what substituting them would cost;
     3. otherwise the token is a profile key, or a nickname whose target is one.
        Profiles are consulted first, as ``load_profile`` consults ``nicknames``
        only inside ``if name not in profiles:``; reading the nickname table
@@ -77,36 +88,40 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
        connection, which is a fail-open.
     """
     if token is not None and not isinstance(token, str):
-        raise ConnectionScopeError(_UNSELECTABLE.format(tool=tool))
+        return UNRESOLVED
     if os.environ.get("HMC_HOST"):
         return None
     if not token:
         return None
     try:
         profiles, nicknames = list_profiles_and_nicknames()
-    except ConfigError as error:
-        raise ConnectionScopeError(_UNSELECTABLE.format(tool=tool)) from error
+    except (ConfigError, OSError, ValueError) as error:
+        # ConfigError is what the reader raises for every failure it knows; the
+        # other two are the belt to its braces, so a configuration this server
+        # cannot read can never reach the client as a raw path or errno.
+        raise ConnectionScopeError(_UNREADABLE.format(tool=tool)) from error
     if token in profiles:
         return token
     target = nicknames.get(token)
     if target is not None and target in profiles:
         return target
-    # A dangling nickname and an unknown name both make load_profile raise, so
-    # denying here reaches the same outcome earlier and without the config path.
-    raise ConnectionScopeError(_UNSELECTABLE.format(tool=tool))
+    # An unknown name and a dangling nickname both make load_profile raise, so
+    # refusing here reaches the same outcome earlier and without the config path.
+    return UNRESOLVED
 
 
-def _clause(token: str | None, connection: str | None) -> str:
+def _clause(argument: str) -> str:
     """The one explanatory sentence a denial carries, or none.
 
-    Takes the already-resolved *connection* rather than re-resolving it, so a
-    denial costs one read of the selection tables and cannot report a different
-    resolution from the one it denied.
+    Only the ``HMC_HOST`` collapse gets one. A nickname that resolved to a
+    withheld profile deliberately gets none: saying so would confirm the token
+    is in the operator's nickname table, which is the disclosure the single
+    denial template exists to prevent.
     """
     if os.environ.get("HMC_HOST"):
-        return _HMC_HOST_CLAUSE
-    if token and connection != token:
-        return _NICKNAME_CLAUSE
+        return _HMC_HOST_CLAUSE.format(
+            argument=argument, default=DEFAULT_CONNECTION_TOKEN
+        )
     return ""
 
 
@@ -137,9 +152,13 @@ def connection_authorizer(policy: AccessPolicy) -> Authorize:
         raise ConnectionScopeError(
             _DENIED.format(
                 tool=name,
+                # The caller's own token, never the normalized value: under rule
+                # 3 that value is a profile key read from config.toml, and a
+                # denial is one probe. repr() also neutralizes any control
+                # character a caller puts in it.
                 connection=repr(token if token else DEFAULT_CONNECTION_TOKEN),
                 policy=repr(policy.name),
-                clause=_clause(token, connection),
+                clause=_clause(argument),
             )
         )
 

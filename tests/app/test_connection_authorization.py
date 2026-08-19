@@ -89,35 +89,94 @@ def _registered(application) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_a_denied_call_never_opens_an_hmc_client(monkeypatch):
-    """The proof the issue asks for: assert on the constructors, not the error."""
+# Every name a handler could reach an HMC through, patched at *every* module
+# that rebound it at import. Patching only `hmc_mcp.common.build_config` proves
+# nothing: `server_vios`, `server_command`, and `_app` each hold their own
+# reference, so a call through one of those would sail past an unpatched source
+# module and the test would still be green.
+_OUTBOUND_NAMES = ("build_config", "client_from_env", "run_hmc_cli", "run_hmc_command")
+
+
+def _seal_every_outbound_path(monkeypatch, opened: list[str]):
+    """Make any attempt to reach an HMC record itself and fail loudly."""
+    import importlib
+    import pkgutil
+
+    import hmc_mcp
     from hmc_mcp import client as client_module
 
+    def _forbidden(label):
+        def _call(*args, **kwargs):
+            opened.append(label)
+            raise AssertionError(f"a denied call reached {label}")
+
+        return _call
+
+    monkeypatch.setattr(client_module.HMCClient, "__init__", _forbidden("HMCClient"))
+    monkeypatch.setattr(
+        "httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient")
+    )
+
+    sealed = 0
+    for info in pkgutil.iter_modules(hmc_mcp.__path__):
+        module = importlib.import_module(f"hmc_mcp.{info.name}")
+        for name in _OUTBOUND_NAMES:
+            if callable(getattr(module, name, None)):
+                monkeypatch.setattr(module, name, _forbidden(f"{info.name}.{name}"))
+                sealed += 1
+    assert sealed > 10, f"only {sealed} outbound bindings sealed; the sweep missed"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        pytest.param(
+            "hmc_delete_lpar",
+            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim"},
+            id="rest",
+        ),
+        pytest.param(
+            "hmc_backup_vios",
+            {"vios_name_or_uuid": "vios-1"},
+            id="ssh-passthrough",
+        ),
+    ],
+)
+def test_a_denied_call_never_opens_an_hmc_client(monkeypatch, tool_name, arguments):
+    """The proof the issue asks for: assert on the constructors, not the error.
+
+    Both transports, because the REST and SSH paths reach their connection
+    through different module bindings.
+    """
     opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
 
-    def _forbidden(*args, **kwargs):
-        opened.append("client")
-        raise AssertionError("a denied call constructed an HMC client")
+    application = create_mcp(_policy(LAB_ONLY))
+    with pytest.raises(ToolError) as error:
+        _call(application, tool_name, {**arguments, "profile": "prod"})
 
-    monkeypatch.setattr(client_module.HMCClient, "__init__", _forbidden)
-    monkeypatch.setattr(
-        "hmc_mcp.ssh.run_hmc_cli",
-        lambda *a, **k: opened.append("ssh"),
-    )
-    monkeypatch.setattr(
-        "hmc_mcp.common.build_config",
-        lambda *a, **k: opened.append("config"),
-    )
+    assert opened == []
+    assert "is not permitted on connection 'prod'" in str(error.value)
+
+
+def test_the_seal_itself_bites(monkeypatch):
+    """A permitted call trips every wire the denial test asserts is untouched."""
+    opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
 
     application = create_mcp(_policy(LAB_ONLY))
     with pytest.raises(ToolError):
         _call(
             application,
             "hmc_delete_lpar",
-            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim", "profile": "prod"},
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_name_or_uuid": "victim",
+                "profile": "lab",
+            },
         )
 
-    assert opened == []
+    assert opened
 
 
 def test_a_permitted_call_reaches_the_handler(monkeypatch):
@@ -345,3 +404,54 @@ def test_the_authorizer_denies_a_tool_no_grant_covers():
             TOOL_SECURITY["hmc_run_command"],
             {"profile": "lab"},
         )
+
+
+# ---------------------------------------------------------------------------
+# R17 — the served path, which is the only path a deployment takes
+# ---------------------------------------------------------------------------
+
+
+def _serve(policy, *, enable_arbitrary_command=True):
+    """Compose exactly as `hmc-mcp serve --access-policy NAME` composes."""
+    from hmc_mcp import server
+
+    return server._serve_application(enable_arbitrary_command, policy)
+
+
+ESCAPE_HATCH_GRANT = [
+    {"tools": ["hmc_run_command"], "connections": ["lab"], "targets": "all-targets"}
+]
+
+
+def test_the_served_application_wraps_every_connection_bearing_tool():
+    """The gate must be on the application `serve` builds, not one a test builds.
+
+    Asserting against a self-composed application cannot observe whether
+    `_serve_application` threads the authorizer at all, which leaves the
+    arbitrary-command registration site — the highest-risk one — unpinned.
+    """
+    application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
+    registered = _registered(application)
+
+    assert "hmc_run_command" in registered
+    for name, tool in registered.items():
+        wrapped = getattr(tool.fn, "__wrapped__", None) is not None
+        assert wrapped == (TOOL_SECURITY[name].connection_argument is not None), name
+
+
+def test_the_served_escape_hatch_denies_a_withheld_connection():
+    """`hmc_run_command` runs an arbitrary HMC CLI command; it must be scoped."""
+    application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
+
+    with pytest.raises(ToolError) as error:
+        _call(application, "hmc_run_command", {"cmd": "lssyscfg", "profile": "prod"})
+    assert "hmc_run_command is not permitted on connection 'prod'" in str(error.value)
+
+
+def test_the_served_application_without_a_policy_wraps_nothing():
+    """R14 on the served path: no policy is still no denial."""
+    registered = _registered(_serve(None))
+
+    assert "hmc_run_command" in registered
+    for name, tool in registered.items():
+        assert getattr(tool.fn, "__wrapped__", None) is None, name

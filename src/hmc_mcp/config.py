@@ -298,16 +298,36 @@ def list_profiles_and_nicknames(
     single decision cannot be taken from two different versions of the file.
 
     Returns ``([], {})`` when the file is absent or *config_path* is None.
-    Raises ConfigError on TOML parse errors or a malformed nicknames table.
+    Every other failure is a ConfigError: this feeds ADR 0038's authorization
+    decision, whose denial message must interpolate no path and no raw exception
+    text, so an unreadable file, a non-UTF-8 one, and a malformed table must all
+    arrive as one recognizable type rather than as an OSError or an
+    AttributeError from the middle of a dict access.
     """
     path = config_path if config_path is not None else resolve_config_path()
     if path is None or not path.exists():
         return [], {}
     try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        # The exists() check above is a TOCTOU, and a directory, an unreadable
+        # mode, or a path string carrying a null byte all land here.
+        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
+    try:
+        doc = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    return list(doc.get("profiles", {}).keys()), _coerce_nicknames(
+    profiles = doc.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ConfigError(
+            f"{path}: 'profiles' must be a table of profile name to settings, "
+            f"got {type(profiles).__name__}"
+        )
+    # TOML keys are always strings; str() states that for the type checker, which
+    # sees only the untyped mapping the isinstance check above narrowed to.
+    return [str(name) for name in profiles], _coerce_nicknames(
         doc.get("nicknames"), path
     )
 

@@ -66,7 +66,8 @@ A call `bind` rejects raises `TypeError` before the authorizer and therefore bef
 handler.
 
 **R6 — Normalization rule 0: a non-string token denies.** A `connection_argument` value
-that is not `str | None` is denied without being inspected or coerced.
+that is not `str | None` normalizes to `connection_scope.UNRESOLVED` without being
+inspected or coerced.
 
 **R7 — Normalization rule 1: `HMC_HOST` collapses the token space.** When `HMC_HOST` is
 set and non-empty in the process environment, `connection_scope.selected_connection(token)`
@@ -87,30 +88,40 @@ profile. A profile key therefore wins over a same-named nickname, mirroring
 `config.load_profile`'s `if name not in profiles:` gate.
 
 **R10 — Normalization fails closed on anything else.** A token that names neither a
-profile nor a nickname, a nickname dangling on a missing profile, and a `ConfigError`
-raised while reading the tables each deny. In every one of those cases `load_profile`
-would itself have raised; denying reaches the same outcome earlier and without the config
-path in the message.
+profile nor a nickname, and a nickname dangling on a missing profile, normalize to
+`connection_scope.UNRESOLVED` — a value `access_policy` forbids in a compiled grant, so
+it always denies, through the *same* message as a resolvable-but-withheld token. A
+configuration that cannot be read at all raises `ConnectionScopeError` with its own fixed
+sentence. `config.list_profiles_and_nicknames` raises `ConfigError` for every failure it
+can meet — an unreadable file, a non-UTF-8 one, an unparseable one, and a malformed
+`profiles` or `nicknames` table — so no `OSError` or `AttributeError` carrying the config
+path escapes to the caller.
 
 **R11 — Evaluation is one predicate per grant.** A call on tool `T` with normalized
-connection `C` is permitted iff
-`any(C in grant.connections and _targets_permit(grant) for grant in policy.grants_for(T))`,
-where `_targets_permit` returns `True` until #223 replaces it. The conjunction is inside
-the loop, never across grants, per ADR 0036's combination rule. A registered tool no
-grant covers is denied.
+connection `C` is permitted iff some single grant in `policy.grants_for(T)` holds `C` in
+its `connections`. It is written as an early-return loop over grants rather than a
+dimension-wise expression, so #223 adds its target condition *inside* the loop body and a
+grant-crossing union — the misreading ADR 0036's combination rule exists to prevent —
+cannot be written by accident. A registered tool no grant covers is denied.
 
 **R12 — A denied call performs no outbound operation.** `ConnectionScopeError` is raised
 before the handler body runs, so no `HMCClient` is constructed, no HTTP transport is
 opened, and no SSH command is issued. Tests assert on the client and transport
 constructors, not only on the exception.
 
-**R13 — The denial message is a closed template.** It is the fixed skeleton below with
-exactly three substituted values — the tool name, `policy.name`, and the connection **as
-the caller named it** (`None` rendered `<default>`) — plus one clause chosen from a fixed
-set. Nothing else is interpolated; in particular no `ConfigError` text, filesystem path,
-host, port, user, credential, resolved endpoint, normalized profile key, or enumeration
-of the connections the policy grants. The test asserts string equality against the
-rendered template, not the absence of fixture values.
+**R13 — There is one denial message, and it is a closed template.** It is the fixed
+skeleton below with exactly three substituted values — the tool name, `policy.name`, and
+the connection **as the caller named it**, `repr`-rendered (`None` and `""` rendered
+`<default>`) — plus the one `HMC_HOST` clause, which interpolates the declared selector's
+name rather than hardcoding `profile`. Nothing else is interpolated; in particular no
+`ConfigError` text, filesystem path, host, port, user, credential, resolved endpoint,
+normalized profile key, or enumeration of the connections the policy grants.
+
+A token that names no configured connection is denied by **this same message**: a second,
+distinguishable message would let a caller enumerate `config.toml`'s profile and nickname
+keys one probe at a time, through a channel no policy can withhold. The test asserts
+string equality against the rendered template, and asserts that a known nickname and an
+unknown name produce denials that differ only in the echoed token.
 
 **R14 — No policy means no authorization.** `server.create_mcp()` with no policy supplies
 no authorizer, registers 129 tools, and every handler is registered unwrapped. Behaviour
@@ -275,22 +286,33 @@ list.
 - `tests/unit/test_connection_scope.py` — normalization R6–R10 against a real
   `config.toml` written under a monkeypatched `HOME`, including the two cases a
   nicknames-only implementation gets wrong: a nickname that shadows a profile key, and a
-  nickname dangling on a missing profile. Whole-grant evaluation (R11), and the denial
-  templates asserted by string equality (R13).
+  nickname dangling on a missing profile. Five corrupt-configuration shapes and an
+  unreadable file, each asserting the fixed sentence and the absence of the path.
+  Whole-grant evaluation (R11), the denial template asserted by string equality, and the
+  known-nickname/unknown-name indistinguishability (R13).
 - `tests/app/test_connection_authorization.py` — the three registration sites (R1),
   schema transparency (R3), argument binding including positional and defaulted selectors
   and a `bind` failure (R5), no-policy behaviour (R14), independence (R15), unwrapped
-  module-level handlers (R16), the wrapped-registry assertion (R17), and the fail-closed
-  proof (R12): a denied call with `HMCClient.__init__`, the HTTP transport, and the SSH
-  entry point patched to raise, asserting the `ConnectionScopeError` surfaces and none of
-  them was called.
+  module-level handlers (R16), and the fail-closed proof (R12): a denied REST call and a
+  denied SSH-passthrough call with `HMCClient.__init__`, `httpx.AsyncClient.__init__`, and
+  every module-level rebinding of `build_config` / `client_from_env` / `run_hmc_cli` /
+  `run_hmc_command` patched to raise — patching only the defining module proves nothing,
+  since `server_vios`, `server_command`, and `_app` each hold their own reference. A
+  companion test shows a permitted call trips those same wires.
+- R17 is asserted on the application `server._serve_application` returns, not one the test
+  composes — that is the only path a deployment takes, and it is what pins the
+  arbitrary-command registration site. It covers both directions: with a policy every
+  connection-bearing tool carries `__wrapped__` and the two local-only tools do not;
+  without one, nothing does. A served denial of `hmc_run_command` is asserted alongside.
 - `tests/app/test_tool_security.py` — R18's static guardrail, beside the existing G-rules.
-- `tests/unit/test_ssh_profile_routing.py` — the two corrected boot-order handlers reach
-  the profile they are given, matching the existing per-tool routing tests.
+- `tests/app/test_profile_routing.py` — the two corrected boot-order handlers reach the
+  profile they are given, matching the existing per-tool routing tests.
 - `tests/app/test_capability_ceiling.py` — R19.
-- A live stdio server exercise: compose a policy granting one connection, run the packaged
-  server over stdio, call a granted tool with a withheld connection, and confirm the
-  denial reaches the client as a tool error.
+- A live stdio exercise, run once against the packaged server rather than kept in the
+  suite (`just smoke` already covers the stdio handshake): a real `hmc-mcp serve
+  --access-policy` subprocess under a throwaway `HOME`, denying a withheld connection,
+  admitting a granted one, evaluating an omitted argument as `<default>`, and reporting
+  `enforced_dimensions == ["tools", "connections"]`. Its result is recorded on the PR.
 
 ## Threat model
 

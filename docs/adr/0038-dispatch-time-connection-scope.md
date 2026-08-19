@@ -120,7 +120,9 @@ each mirroring a line of `build_config`/`load_profile`:
 3. **Otherwise, resolve against `config.toml`'s `profiles` and `nicknames` tables, in
    that order.** A token that names a profile is that profile key. A token that does not,
    but names a nickname whose target is a profile, is that target. Anything else —
-   including a nickname dangling on a missing profile — denies.
+   including a nickname dangling on a missing profile — normalizes to a value no grant
+   can contain, and so denies through the ordinary denial message rather than a
+   distinguishable one; see *Denials* below.
 
    The order is not cosmetic. `load_profile` consults `nicknames` only inside
    `if name not in profiles:`, so a profile key always wins over a same-named nickname.
@@ -131,9 +133,12 @@ each mirroring a line of `build_config`/`load_profile`:
    Both tables come from **one** read, so the two halves of a single decision cannot
    disagree with each other.
 
-A `ConfigError` while reading either table denies, as does an unresolvable token: in every
-one of those cases `load_profile` would itself have raised, so denying is the same outcome
-reached earlier and without the config path in the message.
+A configuration that cannot be read at all denies too — every failure of the reader is a
+`ConfigError`, so an unreadable file, a non-UTF-8 one, and a malformed `profiles` or
+`nicknames` table cannot escape as an `OSError` or an `AttributeError` carrying the config
+path into a client-visible message. An unresolvable token and a read failure are both
+outcomes `load_profile` would have reached by raising; denying earlier reaches the same
+place without the path.
 
 The line between rules 2 and 3 is deliberate and is the one a reviewer should press on.
 Rule 3 canonicalizes a selector the **caller supplied**; that is disambiguation, and
@@ -224,15 +229,27 @@ oracle through the same "channel no policy can withhold" this section rejects
 enumeration for, one entry after ADR 0037 made `hmc_list_configured_hosts` withholdable.
 The distinction is not the *class* of the identifier — the granted connections are the
 same class — it is that the caller already holds its own token and does not already hold
-the table. So the token is echoed and the clause carries the diagnosis without a value:
+the table.
 
-- under rule 1, that `HMC_HOST` is set, the `profile` argument is ignored, and the call
-  was evaluated as `<default>` — deployment shape, naming no host and conferring no
-  reach, and without it the denial is unactionable in exactly the deployment where it is
-  most surprising, while `<default>` is a policy token rather than anything read from
-  `config.toml`;
-- under rule 3, that the token resolves through the configured nickname table to a
-  connection this policy does not grant — actionable, and naming nothing.
+**And there is exactly one denial message, whether or not the token names a configured
+connection.** An earlier draft used a second, distinguishable message for a token that
+resolved to nothing, and a clause saying when a token had come through the nickname
+table. Both are withdrawn: either one turns a denial into a *membership* oracle over
+`config.toml`, recoverable one probe at a time, and the asset being disclosed is the
+operator's configuration rather than the policy's own connection dimension — a strictly
+worse leak than the permit/deny bit conceded below, and the one ADR 0037 made
+withholdable on purpose. An unresolvable token therefore normalizes to a value no
+compiled grant can hold (`access_policy` rejects an empty connection entry) and is
+refused by the same template as a resolvable-but-withheld one.
+
+The single surviving clause is rule 1's, and it names the declared selector rather than
+the literal string `profile`, since `ToolSecurity.connection_argument` is what the
+decision reads: that `HMC_HOST` is set, the selector is ignored, and the call was
+evaluated as `<default>`. It is deployment shape — naming no host, conferring no reach,
+and `<default>` is a policy token rather than anything read from `config.toml` — and
+without it the denial is unactionable in exactly the deployment where it is most
+surprising. A configuration that cannot be read gets its own fixed sentence, which is not
+an oracle because it fires identically for every token.
 
 What no message can hide is the permit/deny bit itself. An agent holding one granted tool
 can probe candidate tokens and recover that tool's connection dimension one bit at a
@@ -420,8 +437,10 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   reintroducing the coupling the next entry rejects. Residual: nothing at *runtime*
   verifies that the connection a handler resolves is the one authorized for it, so the
   guardrail's static reach — the `server_*` modules' own call sites — is the extent of the
-  guarantee. A handler resolving a connection through a helper the parser does not follow
-  would pass the guard.
+  guarantee. The guard follows every top-level function in the handler's own module down
+  the call chain; a helper imported from another module, a `functools.partial`, or a
+  callable held in a variable is not followed, and a handler reaching a connection that
+  way would pass it.
 - **Authorize inside `common.build_config`.** The narrowest possible waist — every path
   to an HMC goes through it, so nothing could be missed. Rejected because `build_config`
   is on the CLI and library paths too, so it would extend the server policy over the
@@ -444,6 +463,15 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   for an operator debugging a policy. Rejected because it turns every denial into a
   disclosure of the policy's connection dimension, through a path no policy can withhold,
   one entry after ADR 0037 made that disclosure withholdable on purpose.
+- **Distinguish "that connection is not granted" from "that token names no connection".**
+  Two messages, each precisely diagnostic, and the natural shape once normalization can
+  fail. Rejected in the Decision: the pair is a membership oracle over `config.toml`, and
+  the same objection retires the nickname clause that would have said a token *was* in the
+  table. Residual: an operator whose policy names a profile that no longer exists in
+  `config.toml` meets a denial that does not say so, and must compare the two files
+  themselves. That is the cost of not answering "does this name exist?" for an untrusted
+  caller, and #224's audit event is where the operator-side answer belongs — the server
+  knows which of the two happened and can record it where the caller cannot read it.
 - **Deny by returning a structured result rather than raising.** It would let #224 record
   a denial without exception handling. Rejected as #224's decision to make: an exception
   is what every other failure on this path already is, and a tool that returns "denied" as
