@@ -115,14 +115,11 @@ class _GrantModel(BaseModel):
     @field_validator("targets")
     @classmethod
     def _validate_targets(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            if value != ALL_TARGETS_TOKEN:
-                raise ValueError(
-                    "'targets' must be the string \"all-targets\" or a table of "
-                    f"target kind to selector strings; got {value!r}"
-                )
+        if value == ALL_TARGETS_TOKEN:
             return value
         if not isinstance(value, dict):
+            # A misspelled sentinel falls through to here, so one message covers
+            # both "wrong string" and "wrong type".
             raise ValueError(
                 "'targets' must be the string \"all-targets\" or a table of target "
                 f"kind to selector strings; got {value!r}"
