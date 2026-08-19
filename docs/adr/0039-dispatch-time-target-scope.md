@@ -552,14 +552,23 @@ operator would otherwise discover as an unexplained denial.
 - **Enforcement holds for the request *path*; the request *body* is a second boundary this
   record does not close.** `documents.py` performs no XML escaping — there is no `escape` or
   `quoteattr` anywhere in `src/hmc_mcp/` — and every builder is an f-string. Two consequences,
-  both verified in this checkout rather than reasoned about.
+  both verified in this checkout rather than reasoned about. `jobs.py` belongs beside
+  `documents.py` here: it builds its XML from module-level `.format()` templates rather than
+  f-strings, so a scan for f-string interpolation misses it entirely, and
+  `build_job_request` raises the same parse error on a `RepositorySource` value containing
+  `&` — reached from `hmc_update_console_software`, `hmc_vios_update`, and
+  `hmc_update_firmware`.
 
-  The first is a plain functional defect needing no attacker: `build_ldap_config_document`
-  raises a parse error on `search_filter="(&(objectClass=person)(uid=*))"`, which is ordinary
-  LDAP conjunction syntax, and `build_hmc_user_document` does the same for a password or a
-  description containing `&` or `<`.
+  The first consequence is a plain functional defect needing no attacker:
+  `build_ldap_config_document` raises a parse error on
+  `search_filter="(&(objectClass=person)(uid=*))"`, which is ordinary LDAP conjunction
+  syntax, and `build_hmc_user_document` does the same for a password or a description
+  containing `&` or `<`.
 
-  The second crosses *this* dimension. `build_vscsi_mapping_document` emits `target_device`
+  The second crosses *this* dimension, and the mapping builders are its sharpest case
+  because they take `lpar_link` and `vios_lpar_link` as free strings — so the body carries
+  the whole target identity rather than merely duplicating it.
+  `build_vscsi_mapping_document` emits `target_device`
   immediately before the `AssociatedLogicalPartition` href built from the authorized `lpar`
   selector, so a `target_device` value can close its element and emit a second
   `AssociatedLogicalPartition` naming a different partition — the resulting document is
@@ -574,7 +583,12 @@ operator would otherwise discover as an unexplained denial.
   round-trip test — a different control from target scope, in modules this record does not
   touch, and no `ToolSecurity` change fixes it (marking `hmc_create_user` non-exhaustive would
   force it under `all-targets` and leave both the parse errors and the primitive intact). It is
-  owned separately. Note also that issue #143 closed this class as a single instance — it
+  owned separately. One datum worth keeping: of the string-taking builders, exactly one is
+  safe, and it is safe because it validates against a `Literal` — the #143 remedy. That
+  approach demonstrably works and demonstrably does not generalize, since `search_filter`,
+  `description`, `password`, `media_name`, `storage_name`, and `target_device` have no
+  vocabulary to constrain them to. Note also that issue #143 closed this class as a single
+  instance — it
   constrained `LparResources.sharing_mode` to a `Literal` and called it "the one free-string
   parameter that reaches generated XML unvalidated" — and the evidence above falsifies that
   closing claim.
