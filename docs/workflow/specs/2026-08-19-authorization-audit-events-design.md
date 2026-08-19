@@ -36,12 +36,17 @@ One source file is added, three change, and one operator document is added.
 | `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
 | `src/hmc_mcp/operations_lpar.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
+| `tests/unit/test_ownership.py` | `test_authorize_lpar_ownership_override_is_audited` asserts `record.getMessage() == "LPAR ownership override approved"` and reads `record.hmc_system` / `hmc_lpar` / `hmc_agent_id` off the `extra=` payload on logger `hmc_mcp.operations_lpar` — exactly what convergence removes, so it is **replaced** by test 26a rather than left to fail. Its sibling `…_normal_access_has_no_override_audit` still asserts the right thing but would pass vacuously against the old logger name, so it is repointed too. |
 | `docs/authorization-audit.md` (new) | the operator-facing contract for both records: field sets, reason-code table, logger name, level split, how to route or silence them, the merged-descriptor caveat, the `<default>`/`<unresolved>` reserved-rendering collision, and the instruction to skip a non-parsing line rather than fail (the reservation is checked inside this package only). |
 | `README.md` | one caveat beside the existing "never stdout" sentence in the startup-warnings section, which has the same descriptor-merge limit, plus a pointer to the new document. |
 
 `audit.py` importing nothing from `hmc_mcp` is a hard constraint, not an accident: `target_scope`
 imports the reason-code type from it, so any import back would be a cycle. Every value reaches
-`audit.record` as a primitive.
+`audit.record` as a primitive, with exactly one exception: **`attribution.claim` is read by
+`audit` itself**, as `os.environ.get("HMC_AGENT_ID")`. It has to be. Test 8b forbids every module
+on the decision path from naming that variable, so `dispatch_scope` cannot pass it in, and reading
+it through `HMCConfig` would apply validators that reject exactly the malformed values worth
+recording (test 4). This is the one place `audit` reaches outside its arguments.
 
 ### Data flow
 
@@ -279,6 +284,25 @@ argument, flag, environment variable, or file.
 
 Every criterion below is falsifiable and gets a test.
 
+### Logging isolation — a precondition of every test below
+
+`install_audit_sink()` mutates process-global state: it sets `propagate = False` on
+`hmc_mcp.audit` unconditionally, attaches a handler, and sets a level. Tests 9, 10, 14 and 14a
+call it, test 10 attaches a `StreamHandler(sys.stdout)` to the **root** logger, and 14a
+pre-attaches one to `hmc_mcp.audit`. `just verify` runs `pytest -q` in a single process and
+`tests/conftest.py` has no logging fixture, so without a contract the first of those tests to run
+leaves `propagate = False` for the rest of the session — and every later test that reads records
+through `caplog` (which attaches at the root) sees nothing and passes vacuously.
+
+So: an **autouse fixture in `tests/unit/test_audit.py` and `tests/app/test_authorization_audit.py`
+snapshots and restores `handlers`, `level` and `propagate` on `hmc_mcp.audit`, and `handlers` on
+`logging.root`, around every test item.** Nothing in those files may leak sink state.
+
+And a precondition on the redaction tests specifically: tests 22-26 and 26a-26b assert that a
+sentinel is *absent*, which is trivially true of an empty capture. Each must first assert that at
+least one record was captured, or it proves nothing on a session where isolation has silently
+removed the records it was meant to search.
+
 ### Mutation verification, per test, with the mutation named
 
 "Break the redaction and watch it redden" is not a procedure here, because most of what these
@@ -362,7 +386,9 @@ structure holds (test 8b below).
 14a. The deferral is deliberate, not accidental: with a `StreamHandler(sys.stdout)` pre-attached
     to `hmc_mcp.audit`, `install_audit_sink()` adds no second handler **and** a record does reach
     that stdout handler. Pins the documented hazard as a chosen behaviour.
-14c. Emission is total: a renderer forced to raise, and a logger forced to raise, both leave
+14c. Emission is total, asserted **on the rendered payload** rather than only on the absence of
+    an exception — a totality guard that swallows M7 would otherwise make this pass while the
+    record silently vanished. A renderer forced to raise, and a logger forced to raise, both leave
     `dispatch_scope.authorize`'s outcome and its exception type unchanged. A non-string connection
     token also renders `state="unreadable"` with `reason="connection-not-granted"` — the
     asymmetry with the target dimension, asserted so it cannot drift silently.
@@ -409,7 +435,11 @@ structure holds (test 8b below).
     written before the handler runs.
 26. **File paths.** Neither the `config.toml` path nor the resolved `access-policy.toml` path
     appears in any record — both, because they are different paths reached by different failures
-    and M2 and M10 leak them independently.
+    and M2 and M10 leak them independently. Two construction requirements, without which the
+    mutations cannot bite: the test must include a `configuration-unreadable` record produced
+    from a genuinely unreadable config file (the only arm where M2's `ConfigError` message
+    exists), and it must load its policy through `load_access_policy` on a real path, so
+    `policy.source` is a filesystem path M10 has something to leak.
 
 ### Ownership-override convergence — `tests/unit/test_ownership.py`, `tests/unit/test_audit.py`
 
@@ -441,15 +471,12 @@ structure holds (test 8b below).
     `HMC_AGENT_ID`, under a value naming the policy, and under a value naming a granted connection
     yields the identical decision and reason.
 
-### Stdio transport — `tests/app/test_authorization_audit.py`
+### Stdio transport
 
-29. A real subprocess server driven over stdio through `fastmcp.client.transports.StdioTransport`,
-    with the child's stderr captured to a file via that transport's `log_file`: a denied call and
-    a permitted call both complete over the protocol — which they cannot if stdout is corrupted —
-    and the captured stderr contains both audit records.
-30. The same server started through `sh -c '… 2>&-'`, so fd 2 is closed at interpreter start and
-    `sys.stderr` is `None`: the denied call still completes over the protocol and the process
-    exits normally. POSIX only, skipped elsewhere, since `2>&-` is a POSIX shell redirection.
+Numbers 29 and 30 are **retired**. They specified a real stdio subprocess and an `sh -c '… 2>&-'`
+subprocess with weaker assertions than the live proof's Run A and Run B, which drive the same two
+shapes. Keeping both would be two mechanisms for one job. The live proof below is the stdio
+transport coverage; nothing cites 29 or 30.
 
 ### Claims ADR 0040 makes about this checkout — `tests/app/test_authorization_audit.py`
 
@@ -477,7 +504,13 @@ durable record quietly wrong. All five were verified by execution before being w
     why the handler writes its own newline. Asserted directly, because it is the premise M5 and
     test 15 depend on.
 
-### Live proof — a precondition of the PR, not a nice-to-have
+### Live proof — `tests/app/test_authorization_audit_live.py`
+
+Pytest items under `tests/app/`, so `just verify` runs them and A13 is re-runnable by anyone;
+Run B is POSIX-only — `2>&-` is a POSIX shell redirection — and skipped elsewhere. These items
+**replace** the retired tests 29 and 30, which were specified before this section existed and
+drove the same two subprocess shapes with weaker assertions; Runs A and B are those shapes with
+the assertions written out.
 
 This record's entire contract is a *sink*. A unit test against a mock logger proves the payload
 and almost nothing about delivery, so a real `hmc-mcp serve` stdio subprocess with a policy
@@ -579,7 +612,9 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
   closed — under the stdio transport. A handler the operator attaches to `hmc_mcp.audit` is
   theirs to keep off stdout; that deferral is deliberate, documented in
   `docs/authorization-audit.md`, and pinned by test 14a rather than left as an unexercised claim.
-  (tests 9–13, 14a, L3, L5)
+  Totality covers both sides — building a record and writing one — so a failure in either drops
+  the record and leaves the authorization outcome and its exception unchanged.
+  (tests 9–13, 14a, 14c, 15, L1–L5)
 - A7. Caller-supplied values are bounded at 128 characters and cannot inject a control character
   or a line break. (tests 2, 3, 4, 5)
 - A8. ADR 0040 records the decision, the two no-record cases, and the residuals.
