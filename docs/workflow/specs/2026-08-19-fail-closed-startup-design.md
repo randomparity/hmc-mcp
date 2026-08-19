@@ -174,7 +174,12 @@ policy named `legacy-equivalent` whose `tools` equals the R7 set and whose `conn
 equals the sequence given, entry for entry. The text carries a comment header stating what
 the policy grants, how to add `hmc_run_command`, and the regeneration procedure —
 `--output` to a scratch path, diff, merge by hand — since R11's command refuses to
-overwrite and there is no `--force`.
+overwrite and there is no `--force`. It also states that a hand-added `hmc_run_command`
+entry will appear as a deletion in every regenerated document and is expected: R7a
+guarantees the renderer can never emit that name, so the one edit the header itself tells
+the operator to make is a permanent false positive in the procedure R11a makes the only
+detection path. Saying so is cheaper than a generator flag, and an unexplained recurring
+hunk is how an operator learns to skim the diff.
 
 **R9a — Rendering escapes every operator-supplied key.** The emitter is hand-written; no
 TOML-writing dependency is added (epic requirement 11). Each `connections` entry is emitted
@@ -220,7 +225,13 @@ unresolvable path is reported through `_fail` at exit **1** naming the
 `HOME`/`XDG_CONFIG_HOME` remedy rather than raising. Whether `legacy_connections()` happens
 to convert that failure first is an evaluation order this does not rely on. An existing file
 is never overwritten, truncated, or read: the command exits **1** with a `FileExistsError`
-naming the path. A write or close failure *after* the
+naming the path **and the remedy** — regenerate to a scratch path with `--output` and merge
+by hand. R5's message points at this command unconditionally, because nothing at that point
+distinguishes an upgrade from a first run, so the deployment that already has an
+authored-but-unselected `access-policy.toml` is routed straight here; R6 removes the startup
+warning that used to flag exactly that population. R5a holds `serve` to naming a remedy
+rather than only a problem, and this holds the generator to the same rule. L2's second-run
+check asserts the remedy clause, not only the exit code. A write or close failure *after* the
 descriptor exists — ENOSPC, EDQUOT, EIO — unlinks the destination before reporting.
 `O_EXCL` alone gives "no partial file" only for failures at `os.open`, and a truncated file
 here is worse than elsewhere: it exists, so the command's own no-overwrite rule refuses to
@@ -329,6 +340,14 @@ contradiction in the same terminal that just produced the refusal. Both describe
 as required and name `hmc-mcp config init-access-policy`; `README.md`'s matching sentence is
 corrected with them. R16a's principle, applied to help text rather than to a command.
 
+**R16d — The `config` group stops calling itself profile-only.** `config_app` is declared
+`help="Profile configuration commands."`, and `cli_config.py`'s module docstring enumerates
+the three existing commands. `hmc-mcp config --help` is what an operator runs the moment
+R5's message points them at `hmc-mcp config init-access-policy`, and it would list a
+server-access-policy generator under a heading asserting the exact conflation R16b refuses —
+in a surface the README cannot reach. The group help names both kinds of configuration, and
+the module docstring gains the new command.
+
 **R16b — The docs keep the two files distinct by name.** The migration section states in one
 sentence that `config.toml` holds HMC *connection profiles*, `access-policy.toml` holds
 *server access policies*, they are separate files with separate lifecycles, and a grant's
@@ -336,6 +355,20 @@ sentence that `config.toml` holds HMC *connection profiles*, `access-policy.toml
 (5)'s second half, and the conflation this entry invites more than any other: the generator
 sits in the same `config` command group as `config init`, writes into the same directory
 with the same `O_EXCL` refusal, and fills `connections` with `config.toml`'s own keys.
+
+**R16e — CLI error text stops being parsed as rich markup.** `cli_app._fail` and
+`_usage_error` render `f"[red]Error:[/red] {exc}"` through a rich `Console` with markup
+enabled, so square brackets in the interpolated text are parsed. Verified in this checkout:
+`the entry came from a [profiles." prod"] key in config.toml` prints with the
+`[profiles."..."]` token **silently deleted**, and a message carrying a repr'd key of the
+shape `'[/prod]'` raises `rich.errors.MarkupError`, replacing the exit-1 refusal with a
+traceback. R9b's whole point is to name the operator's profile key, and R5/R5a/R11
+interpolate resolved paths, so this entry makes a latent defect load-bearing. Both helpers
+wrap the interpolated value in `rich.markup.escape`, keeping the styled `Error:` prefix.
+Fixed at the helper rather than per message: every `AccessPolicyError` and `ConfigError` in
+the CLI already flows through them, so a per-call-site fix would leave the same defect one
+message away. Proved by a test asserting a bracketed exception message survives both
+helpers intact.
 
 **R17 — Nothing accepts a request-supplied grant.** No MCP tool argument, request field,
 header, or environment variable selects, widens, or supplies an access policy or a grant.
@@ -454,8 +487,17 @@ is trusted input to the loader.
 
 - *An undrained fd 2 wedges the server.* Issue #269. This entry makes it reachable for
   every deployment and by an ungranted caller, since ADR 0040 emits the record before the
-  denial. Not closed here; stated in ADR 0041 and in the README as a deployment
-  precondition. This is the one accepted risk this entry knowingly widens.
+  denial. The precondition binds on **both** transports, not only stdio: under `serve --http`
+  there is no MCP client on fd 2, so whatever the supervisor or journal provides is what
+  drains it, and a unit whose stderr goes nowhere has the same exposure. And the mitigation
+  set shrinks here. `docs/authorization-audit.md` documents two levers — attach a handler to
+  `hmc_mcp.audit` before calling `main_stdio`/`main_http`, and set the logger level — both
+  available only to an in-process caller, and the same file records that the level is
+  unreachable from `hmc-mcp serve` (#270). A CLI operator had a third route until now: omit
+  `--access-policy`, and no authorizer, no decision, and no record existed. R5 removes it.
+  Not closed here; stated in ADR 0041 and in the README as a deployment precondition. This
+  is the one accepted risk this entry knowingly widens, and it widens it further than the
+  transport-specific reading suggests.
 - *A uid with no passwd entry, no `HOME`, and no `XDG_CONFIG_HOME` can no longer serve.*
   `config_dir()` raises there and `--access-policy` names a policy at the platform-native
   path rather than a file. Accepted; the remedy is one environment variable in the unit or
