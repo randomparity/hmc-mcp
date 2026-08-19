@@ -1022,3 +1022,66 @@ def hmc_probe(system_name_or_uuid: str):
 """,
             None,
         )
+
+
+# Written out rather than derived, for the reason the selector-coverage
+# expectation is: a set computed from `security.targets` would agree with any
+# registry, including one in which a composite silently became narrowable.
+# ADR 0039 grants every name below only under `targets = "all-targets"`.
+_NOT_EXHAUSTIVE = frozenset({
+    # No selector at all, so a `targets` table has nothing to bind on.
+    "hmc_capacity_report",
+    "hmc_configure_ldap",
+    "hmc_console_info",
+    "hmc_effective_permissions",
+    "hmc_find_placement",
+    "hmc_fleet_health",
+    "hmc_get_ldap_config",
+    "hmc_list_clusters",
+    "hmc_list_configured_hosts",
+    "hmc_list_partition_templates",
+    "hmc_list_password_policies",
+    "hmc_list_password_policy_status",
+    "hmc_list_recent_jobs",
+    "hmc_list_resources",
+    "hmc_list_shared_storage_pools",
+    "hmc_list_systems",
+    "hmc_list_users",
+    "hmc_remove_ldap_config",
+    "hmc_run_command",
+    # Selectors, but they do not name every resource the call acts on.
+    "hmc_backup_lpar_profiles",
+    "hmc_restore_lpar_profiles",
+    "hmc_provision_lpar",
+})
+
+
+def test_the_tools_a_targets_table_cannot_bound_are_exactly_these():
+    """G13: `exhaustive_targets` is pinned, not merely present.
+
+    A tool moving into this set loses every narrow grant an operator wrote for
+    it; a tool moving out gains the ability to be narrowed by a table that
+    cannot see everything it touches. Both are decisions, and neither should be
+    reachable by editing a signature.
+    """
+    actual = {
+        name
+        for name, security in TOOL_SECURITY.items()
+        if not security.exhaustive_targets
+    }
+    assert actual == _NOT_EXHAUSTIVE
+
+
+def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
+    """G13: the two halves of the set have different causes, and both must hold."""
+    for name, security in TOOL_SECURITY.items():
+        if not security.targets:
+            assert security.exhaustive_targets is False, name
+    declared = _NOT_EXHAUSTIVE - {
+        name for name, s in TOOL_SECURITY.items() if not s.targets
+    }
+    assert declared == {
+        "hmc_backup_lpar_profiles",
+        "hmc_provision_lpar",
+        "hmc_restore_lpar_profiles",
+    }
