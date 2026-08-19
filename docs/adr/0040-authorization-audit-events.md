@@ -79,11 +79,10 @@ mutations can still do so; an operator cannot recover a record that was never wr
 The message *is* the record — a single line produced by `json.dumps(..., ensure_ascii=True)`,
 with no prefix and no separate structured payload. One mechanism, not two.
 
-`ensure_ascii=True` is load-bearing rather than cosmetic. Every caller-supplied value in the
-record is escaped to `\uXXXX`, so a newline, a carriage return, an ANSI escape, a bidirectional
-override, or U+2028 in an LPAR name cannot forge a line, move a cursor, or reorder the rendering
-of one. That is the same property ADR 0038's `repr()` buys for the denial message, obtained here
-by the encoder rather than by argument.
+`ensure_ascii=True` is the control, not a default worth keeping: it escapes every caller-supplied
+value to `\uXXXX`, so a newline, an ANSI escape, or a bidirectional override in an LPAR name
+cannot forge a line or reorder one. ADR 0038 buys the same property for the denial message with
+`repr()`.
 
 The fields, always present and always in this order:
 
@@ -109,8 +108,16 @@ an arbitrary `repr()` is not the caller's token in any useful sense and can carr
 
 `targets` is `null` — distinct from `[]` — when the decision was reached before the selectors were
 extracted, which is exactly the `connections-unreadable` case. `[]` means the tool declares no
-selector. Each entry's `state` and `value` come from what `target_scope.selected_targets` already
-computed, so the record cannot disagree with the decision about what the call named.
+selector.
+
+Each entry's `state` and `value` come from what `target_scope.selected_targets` already computed,
+so the record cannot disagree with the decision about what the call named. That function returns,
+per selector, either a `str` or one of two singletons, so the vocabulary is total by construction
+and matches `connection`'s: `"present"` with the truncated string as `value`, `"absent"` with a
+`null` value for the `ABSENT` singleton, `"unreadable"` with a `null` value for `UNREADABLE`. The
+singletons are never rendered — for the reason `target_scope.target_denial` already declines to
+render an unreadable value, and because they are not JSON values at all, so passing one through
+would turn a routine denial into a `TypeError` raised inside authorization.
 
 The seven reason codes:
 
@@ -136,10 +143,9 @@ code, effect class, target kind, selector argument name, attribution source); th
 the resolved connection, both operator-authored; or a value the caller itself supplied. Only the
 last class is unbounded, and each such value is truncated to 128 characters.
 
-No truncation marker is appended. A marker is forgeable — a caller can name an LPAR after it — so
-it would put a claim into an audit record that the caller controls, in exchange for
-distinguishing a 128-character value from a longer one, which is a distinction no operator acts
-on. The bound is documented instead.
+No truncation marker is appended: a marker is forgeable, and the distinction it buys — a
+128-character value from a longer one — is not one an operator acts on. The bound is documented
+instead.
 
 ### `resolved` records the normalized connection; the message still does not
 
@@ -194,7 +200,13 @@ logging state. It:
 - sets `propagate = False` on the `hmc_mcp.audit` logger, **always**;
 - attaches a handler writing to `sys.stderr`, **only** when that logger carries no handler
   already;
-- sets the logger's level to `INFO`.
+- sets the logger's level to `INFO`, **only** when its level is `NOTSET`.
+
+One rule covers the last two: what the operator configured wins, and what they left unconfigured
+gets a default. An unconditional level would defeat the only volume lever this record offers,
+because `install_audit_sink` runs inside `_serve_application` and the process goes straight into
+`.run()` afterwards — an operator's `setLevel` can only run before that, so overwriting it leaves
+them nowhere to set it from.
 
 `propagate = False` is unconditional because propagation to an unknown ancestor handler is the
 stdio hazard itself: an operator or a dependency that puts a `StreamHandler(sys.stdout)` on the
@@ -233,20 +245,21 @@ the level on `hmc_mcp.audit` and needs no new configuration key.
   deployment's — rotation, journal limits — because the alternative is rate limiting, which this
   charter excludes and which would aim a denial-of-service surface at the operator's own agents.
   An unrecorded probe is worse than a recorded one, which is why the trade is taken this way.
-- Under an `HMC_HOST` collapse, `connection.resolved` reads `"<default>"`, which is byte-identical
-  to what an ordinary omitted-argument call produces on a machine with no `HMC_HOST` set. The
-  record does not distinguish the two, where `connection_scope`'s denial *message* does through
-  its explicit `HMC_HOST is set` clause. An operator asking "did this call reach the connection
-  the caller named" gets an answer from the record under a nickname and does not get one under a
-  collapse.
+- An `HMC_HOST` collapse of a call that *named* a connection is visible in the record without
+  being a field: `state: "present"` with `resolved: "<default>"` can arise no other way, since a
+  non-empty string token reaches rule 3 unless rule 1 fired first. A collapse of a call that
+  *omitted* the argument is not visible — it renders `"absent"` with `"<default>"`, exactly like
+  an omitted argument on a machine with no `HMC_HOST` — and that is the case where the caller
+  expressed no expectation for the collapse to violate.
 - `target_scope` gains a public `denial_reason`, and `target_denial` is refactored to read it.
   Behaviour is unchanged; the case selection now has one owner.
 - `audit.py` imports nothing from the package. Every value reaches it as a primitive, so it can be
   tested without a policy, a config file, or an application, and no import cycle is possible.
-- Records are dropped rather than raised when the destination is unavailable. A server whose
-  stderr is closed authorizes calls it does not record, which is the deliberate trade: #221
-  established that a diagnostic must not abort a start, and the same reasoning binds a diagnostic
-  that must not abort a call.
+- Records are dropped rather than raised when the destination *raises* — absent, broken, or
+  closed. A server whose stderr is closed authorizes calls it does not record, which is the
+  deliberate trade: #221 established that a diagnostic must not abort a start, and the same
+  reasoning binds a diagnostic that must not abort a call. A destination that neither raises nor
+  returns is a different case; see the residual below.
 - Because `propagate` is set unconditionally, an operator who had attached an audit handler to the
   root logger before this change stops receiving records and must attach to `hmc_mcp.audit`. There
   is no prior release in which audit records existed, so nothing in the field breaks.
@@ -279,6 +292,18 @@ the operator documentation. No in-process detection is proposed: a process canno
 own fd 2 and fd 1 are the same pipe without probing the descriptor, and a probe that guesses
 wrong would silence the audit trail.
 
+**An undrained stderr blocks the write, and therefore the call.** The handler's guards cover a
+destination that raises. They do not cover one that is open, healthy, and not being read: under
+the stdio transport the client usually owns fd 2 as a pipe, and a full pipe makes `write()` block
+rather than fail. Nothing in the process detects that, and the block sits inside
+`dispatch_scope.authorize`, ahead of the denial and the handler, so every queued call waits behind
+it. `server._warn` has the same dependency for four lines at startup; this record makes it
+per-call, and — because the record precedes the denial — an ungranted caller can drive it
+deliberately. The remedies are a bounded queue or a non-blocking descriptor, both of which are
+machinery with their own failure modes and neither of which #218 asks for, so this ships as
+option one: the deployment keeps fd 2 drained. Filed as #269 so the other two are decided rather
+than never considered.
+
 **The package has a second audit emitter.** `operations_lpar._audit_lpar_ownership_override`
 logs an approved ADR 0011 ownership override under `hmc_mcp.operations_lpar` through `extra=`. It
 propagates to the root logger, its fields are invisible under a formatter that does not name
@@ -309,15 +334,12 @@ so under this checkout's default configuration — no handler, no formatter — 
 reach a sink carrying only its message and would silently lose every field that makes it an audit
 record. Carrying the fields *and* a rendered message is two mechanisms for one job.
 
-**Key-value text rather than JSON.** Cheaper to read unaided, and it is what the existing denial
-messages look like. Rejected because escaping is then hand-rolled: quoting, embedded delimiters,
-and control characters each become a rule this ADR would have to state and a test would have to
-defend, where `json.dumps(ensure_ascii=True)` settles all three in the standard library.
-
-**Give the audit sink its own environment variable or CLI flag** — a destination, a level, an
-on/off switch. Rejected as configuration nobody has asked for: `logging` already provides all
-three through the `hmc_mcp.audit` logger, and a second mechanism would have to be kept in
-agreement with it.
+**Key-value text rather than JSON**, and **a dedicated environment variable or CLI flag for the
+sink's destination, level, and on/off switch.** Both rejected for the same reason: the standard
+library already settles them. `json.dumps(ensure_ascii=True)` handles quoting, delimiters, and
+control characters that hand-rolled text would make this ADR's rules to state and a test's to
+defend; `logging` provides all three controls through the `hmc_mcp.audit` logger, and a second
+mechanism would have to be kept in agreement with it.
 
 **Install the sink in `create_mcp`, or at import.** Rejected because both mutate global logging
 state for a caller that only composed an application — the in-process path every test and the
@@ -339,15 +361,9 @@ do", which is the question an audit trail exists for. Requirement 7 names both.
 ADR 0038's rule for the *message*. Rejected because the sink and the tool result are different
 channels with different readers, and the operator-facing one is where "which HMC did this call
 reach" is answerable at all — under an ADR 0030 nickname the caller's token does not answer it,
-and the resolved profile key does. It does not answer it under an `HMC_HOST` collapse; that
-limit is recorded in Consequences rather than claimed away here.
+and the resolved profile key does.
 
-**Derive the `HMC_HOST` collapse in the record from what it already carries.** The inference is
-exact today: `selected_connection` returns `None` under rule 1 (`HMC_HOST` set) and under rule 2
-(a falsy token), and a falsy token renders `state: "absent"`, so `state: "present"` with a `null`
-resolution can only be a collapse. Rejected because its exactness is a property of the *ordering*
-of another module's rules, held nowhere and checked by nothing: ADR 0038 kept
-`connection_scope`'s contract to the resolved value precisely so callers would not depend on how
-it was reached, and re-deriving a fact one module computed inside another is the drift ADR 0039
-spent a design on avoiding. If the collapse is worth recording, `selected_connection` should
-report it, which is a change to #222's contract and not this issue's.
+**Add a field naming the `HMC_HOST` collapse.** Unnecessary for a call that named a connection,
+which `state`/`resolved` already distinguish, and unavailable for one that did not:
+`selected_connection` returns `None` for a collapse and for a falsy token alike, so reporting the
+difference is a change to that function's contract — #222's, not this issue's.

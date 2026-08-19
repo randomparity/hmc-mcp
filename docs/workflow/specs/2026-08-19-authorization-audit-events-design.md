@@ -94,8 +94,11 @@ environment/default connection, `"<unresolved>"` when the token names nothing co
 `targets` is `null` when the decision was reached before selectors were extracted (the
 `connections-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
 selector. Each entry's `state` ∈ `{"present", "absent", "unreadable"}` is taken from what
-`target_scope.selected_targets` already computed, and `value` is the caller's string when present
-and `null` otherwise.
+`target_scope.selected_targets` already computed — a `str`, the `ABSENT` singleton, or the
+`UNREADABLE` singleton respectively — and `value` is the truncated caller string when present and
+`null` in both singleton cases. The singletons are never passed to `json.dumps`; they are not JSON
+values, so doing so would raise `TypeError` inside authorization on the two routine
+selector denials.
 
 `attribution` is always `{"claim": <str|null>, "source": "environment:HMC_AGENT_ID",
 "verified": false}`.
@@ -128,8 +131,9 @@ the largest in this checkout is 3.
 ### Levels and routing
 
 - deny → `WARNING`; allow → `INFO`; logger name `hmc_mcp.audit`.
-- `audit.install_audit_sink()` sets `propagate = False` unconditionally, sets the level to `INFO`,
-  and attaches its handler only when the logger carries none.
+- `audit.install_audit_sink()` sets `propagate = False` unconditionally; attaches its handler only
+  when the logger carries none; and sets the level to `INFO` only when the level is `NOTSET`. What
+  the operator configured wins, what they left unconfigured gets a default.
 - `server._serve_application` calls it; `create_mcp` does not, and neither does import.
 
 ## Error handling
@@ -139,6 +143,7 @@ the largest in this checkout is 3.
 | `sys.stderr is None` (fd 2 closed at interpreter start) | the handler returns without writing; nothing raises |
 | write raises `OSError` (broken pipe) | caught; the record is dropped |
 | write raises `ValueError` (closed stream) | caught; the record is dropped |
+| stderr is open but undrained (a full pipe) | `write` blocks; not covered, and not detectable in-process. Residual in ADR 0040, filed as #269 |
 | a tool declares `connection_argument = None` | no record; the authorizer is not on its dispatch path |
 | a malformed call raises `KeyError` on a declared argument | no record; no decision was reached |
 | the sink is not installed (library, CLI, in-process composition) | records are emitted to a logger with no handler and dropped by level; nothing raises |
@@ -235,7 +240,10 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 12. A stream whose `write` raises `ValueError` → emitting raises nothing.
 13. A stream whose `write` raises `OSError` → emitting raises nothing.
 14. Calling `install_audit_sink()` twice attaches one handler; a pre-attached handler is left in
-    place and not duplicated.
+    place and not duplicated; and a level the operator set before the call survives it, while an
+    unset (`NOTSET`) level becomes `INFO`.
+14a. A record whose target selector is `ABSENT` or `UNREADABLE` renders without raising —
+    `json.dumps` never sees a singleton.
 15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly.
 
 ### Boundary — `tests/app/test_authorization_audit.py`
