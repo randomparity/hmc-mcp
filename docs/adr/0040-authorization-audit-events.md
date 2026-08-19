@@ -91,13 +91,16 @@ mutations can still do so; an operator cannot recover a record that was never wr
 The message *is* the record — a single line produced by `json.dumps(..., ensure_ascii=True)`,
 with no prefix and no separate structured payload. One mechanism, not two.
 
-JSON string encoding escapes newlines and C0 control characters — an ANSI escape's `ESC` included
-— whatever `ensure_ascii` says. `ensure_ascii=True` adds the other half: a bidirectional override
-or U+2028 in an LPAR name becomes `‮` / ` ` rather than passing through raw to a
-line-oriented reader that may treat it as text direction or as a line break. Both halves together
-are what ADR 0038's `repr()` buys for the denial message.
+Output is ASCII-only. JSON encoding already escapes newlines and C0 control characters, `ESC`
+included; `ensure_ascii=True` is what stops a bidirectional override or U+2028 in an LPAR name
+passing through raw to a line-oriented reader. Together they are what ADR 0038's `repr()` buys
+for the denial message.
 
-The fields, always present and always in this order:
+The fields, always present and always in this order. "Stable" has a rule, because operators are
+told to filter on these values and a later ADR needs to know what it may not do: a field may be
+added, never renamed, removed, or retyped; a reason code may be added, never repurposed; and a
+consumer must ignore fields and codes it does not know. No version field — a written rule settles
+it, and a version field would be a second mechanism to keep in agreement.
 
 | field | value |
 |---|---|
@@ -120,7 +123,7 @@ rendered, for the reason `target_scope.target_denial` already refuses to render 
 an arbitrary `repr()` is not the caller's token in any useful sense and can carry anything.
 
 `targets` is `null` — distinct from `[]` — when the decision was reached before the selectors were
-extracted, which is exactly the `connections-unreadable` case. `[]` means the tool declares no
+extracted, which is exactly the `configuration-unreadable` case. `[]` means the tool declares no
 selector.
 
 Each entry's `state` and `value` come from what `target_scope.selected_targets` already computed,
@@ -136,7 +139,7 @@ The seven reason codes:
 | code | decision | meaning |
 |---|---|---|
 | `permitted` | allow | a single grant covered the tool, connection, and targets together |
-| `connections-unreadable` | deny | the configured connections could not be read at all |
+| `configuration-unreadable` | deny | the configured connections could not be read at all |
 | `connection-not-granted` | deny | no grant naming the tool allows the selected connection |
 | `target-selector-unreadable` | deny | a declared selector carried a value the boundary declines to read |
 | `target-unboundable` | deny | the tool's selectors cannot bound it, so no `targets` table can |
@@ -148,13 +151,10 @@ its order. To keep the record and the message from drifting apart, that selectio
 `target_scope.denial_reason`, and `target_denial` reads it rather than repeating it: one function
 decides which case applies, and the message and the reason code are both derived from the answer.
 
-`reason` names the *decision*, and the `state` fields name the *input*. That is why there is no
-`connection-selector-unreadable` beside `target-selector-unreadable`, which reads as an asymmetry
-and is not one: `target_denial` genuinely selects a different branch for a malformed selector,
-with different advice, while `connection_scope` deliberately funnels a malformed token through
-`UNRESOLVED` into the single denial template ADR 0038 wrote to avoid a membership oracle. There is
-one connection denial, so there is one connection reason code. An operator looking for malformed
-calls reads `connection.state == "unreadable"`, which the record carries for exactly that.
+`reason` names the *decision* and the `state` fields name the *input*, which is why there is no
+`connection-selector-unreadable`: ADR 0038 gave the connection dimension one denial template on
+purpose, so there is one code, and a malformed token is reported by
+`connection.state == "unreadable"`.
 
 ### Caller-supplied values are truncated to 128 characters, unmarked
 
@@ -163,11 +163,9 @@ code, effect class, target kind, selector argument name, attribution source); th
 the resolved connection, both operator-authored; or a value the caller itself supplied. Only the
 last class is unbounded, and each such value is truncated to 128 characters.
 
-No truncation marker is appended. In-band, a marker is forgeable: a caller can end its own value
-with it. Out of band — a per-value boolean the caller cannot influence — it is honest but
-redundant, because a truncated value is exactly 128 characters and an operator who wants the
-signal can measure it. Either way it is a field on every record for something already derivable,
-so the bound is documented instead.
+No truncation marker is appended: in band it is forgeable, since a caller can end its own value
+with it, and out of band it is a field on every record for something a reader can already measure
+— a truncated value is exactly 128 characters. The bound is documented instead.
 
 ### `resolved` records the normalized connection; the message still does not
 
@@ -176,7 +174,7 @@ because under its rule 3 that value is a profile key read from `config.toml` and
 one probe. The audit record carries both: `connection.selector` is the caller's token and
 `connection.resolved` is the profile key the call would have used, `"<default>"` for the
 environment connection, `"<unresolved>"` when the token names nothing configured, or `null` when
-nothing was resolved at all — the `connections-unreadable` case, where `selected_connection`
+nothing was resolved at all — the `configuration-unreadable` case, where `selected_connection`
 raises before any of the other three arms is reached. `null` there rather than `"<unresolved>"`,
 for the reason `targets` is `null` in the same case: a token that could not be checked has not
 been found absent, and an operator filtering on `"<unresolved>"` to find callers naming
@@ -206,6 +204,10 @@ above are what make safe.
 It is passed to the renderer, never to a decision at this boundary. `dispatch_scope.authorize`
 reads no environment identity at all; the value reaches `audit.record` and stops there. The
 constant `false` is what makes an operator able to filter on it without knowing this ADR exists.
+Both `source` and `verified` are constants today, which is the standard the truncation marker was
+refused under — the difference is that these two are the fields that let this stream be merged
+with a differently-sourced or actually-verified attribution and still be told apart, so the
+marker's rejection turns on its cost, not on constancy alone.
 
 The claim identifies the *server process*, not the calling agent. Under stdio, where one process
 serves one client, those coincide and the field means what it appears to mean. Under streamable
@@ -240,7 +242,15 @@ them nowhere to set it from.
 stdio hazard itself: an operator or a dependency that puts a `StreamHandler(sys.stdout)` on the
 root logger would, without it, corrupt the protocol stream once per authorized call.
 `hmc_mcp.audit` is the documented attachment point, and an operator routing audit elsewhere
-attaches a handler there.
+attaches a handler there. Two constraints come with that, both stated because nothing enforces
+them. The logger is **reserved for `audit.record`**: no other code in the package logs to it or
+below it, which is what makes "the message is the record" an invariant of the logger rather than
+only of the emitter — a stray `logging.getLogger("hmc_mcp.audit").info("rotating")` would put an
+unmarked non-JSON line into a stream this record invites operators to parse line by line. And a
+handler an operator attaches there **must not write to `sys.stdout`** under the stdio transport:
+`install_audit_sink` defers to an existing handler without inspecting it, so the shortest route to
+the protocol stream is the attachment point itself, not the ancestor route `propagate = False`
+closes.
 
 What that buys is bounded, and the bound is stated rather than left to be discovered: removing
 the in-process route to an ancestor handler is a property of this code. Whether `sys.stderr` is a
@@ -401,12 +411,12 @@ anywhere in the process would put a record into the JSON-RPC stream on every aut
 attempt", which is the question an audit trail exists for. Requirement 7 names both.
 
 **Add a completion record, or an outcome field written after the handler returns**, so the trail
-distinguishes attempted from performed. Rejected because this is an authorization boundary: it
-runs before the handler and knows nothing of what follows, so recording an outcome means a second
-emission point somewhere else — the per-tool instrumentation the first rejection above rules out
-— and it doubles a volume this record already calls dominant. #218 requirement 7 asks for a record
-of the decision. The consequence is stated above rather than designed around: a permitted call is
-recorded as authorized, not as succeeded.
+distinguishes attempted from performed. There is a place to put it — `tool_registry.authorized`'s
+`guarded` closure is a single shared site that calls `authorize` and then the handler, so this
+would be one emission point and not 128. Rejected on the other two grounds: it doubles a volume
+this record already calls dominant, and #218 requirement 7 asks for a record of the *decision*.
+The consequence is stated above rather than designed around: a permitted call is recorded as
+authorized, not as succeeded.
 
 **Omit `connection.resolved`.** Would keep the record to values the caller already holds, which is
 ADR 0038's rule for the *message*. Rejected because the sink and the tool result are different

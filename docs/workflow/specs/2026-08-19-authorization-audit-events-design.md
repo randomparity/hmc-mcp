@@ -91,10 +91,10 @@ absent, any other type is unreadable. `connection.selector` is the caller's own 
 present and `null` otherwise — a value of an unexpected type is never rendered.
 `connection.resolved` is the profile key the call would use, `"<default>"` for the
 environment/default connection, `"<unresolved>"` when the token names nothing configured, or
-`null` in the `connections-unreadable` case, where nothing was resolved at all.
+`null` in the `configuration-unreadable` case, where nothing was resolved at all.
 
 `targets` is `null` when the decision was reached before selectors were extracted (the
-`connections-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
+`configuration-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
 selector. Each entry's `state` ∈ `{"present", "absent", "unreadable"}` is taken from what
 `target_scope.selected_targets` already computed — a `str`, the `ABSENT` singleton, or the
 `UNREADABLE` singleton respectively — and `value` is the truncated caller string when present and
@@ -111,7 +111,7 @@ under streamable HTTP it is every client, so the field carries no per-caller inf
 | code | decision | raised by |
 |---|---|---|
 | `permitted` | allow | — |
-| `connections-unreadable` | deny | `ConnectionScopeError` from `selected_connection` |
+| `configuration-unreadable` | deny | `ConnectionScopeError` from `selected_connection` |
 | `connection-not-granted` | deny | `connection_denial` |
 | `target-selector-unreadable` | deny | `target_denial` case 1 |
 | `target-unboundable` | deny | `target_denial` case 2 |
@@ -138,7 +138,12 @@ the largest in this checkout is 3.
 
 ### Levels and routing
 
-- deny → `WARNING`; allow → `INFO`; logger name `hmc_mcp.audit`.
+- deny → `WARNING`; allow → `INFO`; logger name `hmc_mcp.audit`, reserved for `audit.record` —
+  nothing else in the package logs to it or below it, so every message on it is a complete record.
+- A handler an operator attaches to `hmc_mcp.audit` must not write to `sys.stdout` under stdio:
+  `install_audit_sink` defers to an existing handler without inspecting it.
+- Compatibility rule for the record: a field may be added, never renamed, removed, or retyped; a
+  reason code may be added, never repurposed; consumers ignore what they do not know.
 - `audit.install_audit_sink()` sets `propagate = False` unconditionally; attaches its handler only
   when the logger carries none; and sets the level to `INFO` only when the level is `NOTSET`. What
   the operator configured wins, what they left unconfigured gets a default.
@@ -242,12 +247,15 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 4. A 500-character `HMC_AGENT_ID` is truncated to exactly 128 characters.
 5. A non-string connection token renders `state="unreadable"`, `selector=null`, and the token's
    `repr()` appears nowhere in the output.
-6. `targets` and `connection.resolved` are both `null` for `connections-unreadable`; `targets` is
+6. `targets` and `connection.resolved` are both `null` for `configuration-unreadable`; `targets` is
    `[]` for a tool declaring no selector; `connection.resolved` is `"<unresolved>"` for a token
    naming nothing configured and `"<default>"` for an omitted one.
 7. `attribution` is `{"claim": null, "source": "environment:HMC_AGENT_ID", "verified": false}`
    when `HMC_AGENT_ID` is unset.
 8. `REASONS` equals the `Literal`'s arguments, and every code the boundary can emit is in it.
+8a. No module in `src/hmc_mcp` other than `audit` calls `logging.getLogger` with a name equal to
+    or below `hmc_mcp.audit` — asserted by scanning the package, so the reservation is a checked
+    invariant rather than a convention.
 
 ### Sink — `tests/unit/test_audit.py`
 
