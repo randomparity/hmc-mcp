@@ -43,6 +43,7 @@ from fastmcp import FastMCP
 from ._app import (
     create_mcp as _create_base_mcp,
 )
+from .access_policy import AccessPolicy
 from .tool_registry import ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -252,11 +253,18 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 )
 
 
-def create_mcp() -> FastMCP:
-    """Compose every domain into a fresh, complete MCP application."""
+def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
+    """Compose a fresh MCP application bounded by *policy*'s capability ceiling.
+
+    ``None`` applies no ceiling and registers every tool — the behaviour before
+    ADR 0037, and what every deployment gets until #225 makes startup fail
+    closed. The predicate is passed to each registration site rather than
+    checked here, so no site can be given a ceiling it does not apply.
+    """
+    permits = None if policy is None else policy.permits_tool
     application = _create_base_mcp()
     for module in TOOL_MODULES:
-        module.register_tools(application)
+        module.register_tools(application, permits=permits)
     return application
 
 
