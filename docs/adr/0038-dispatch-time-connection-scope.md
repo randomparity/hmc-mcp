@@ -173,10 +173,15 @@ It also never enumerates the connections the policy *does* grant. ADR 0037 made
 disclose the policy; a denial that listed the allowed connections would be that
 disclosure through a channel no policy can withhold.
 
-Naming the normalized connection is deliberate even under rule 1, where it reveals that
-this deployment resolves its HMC from the environment. That is deployment shape, not a
-secret — it names no host and confers no reach — and without it the denial is
-unactionable in exactly the deployment where the denial is most surprising.
+The connection it names is the **normalized** one, not the caller's token, because that
+is the value the decision was made on and a denial naming something else is not a
+diagnosis. Two cases make that choice visible. Under rule 1 it reveals that this
+deployment resolves its HMC from the environment — deployment shape, not a secret: it
+names no host and confers no reach, and without it the denial is unactionable in exactly
+the deployment where it is most surprising. Under rule 3 it names the profile key a
+nickname targets, which is an operator-authored identifier of the same class as the
+policy's own connection tokens; ADR 0037 already argued that class carries no credential,
+and nothing about a host, user, or password follows from the key.
 
 ### Without a policy, nothing is authorized
 
