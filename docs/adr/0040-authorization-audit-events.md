@@ -86,6 +86,45 @@ run through `read` tools, so restricting the record to mutations would leave unr
 the calls an agent would probe with. The effect class is a field, so an operator filtering to
 mutations can still do so; an operator cannot recover a record that was never written.
 
+### The ownership override is converged onto the same logger
+
+`operations_lpar._audit_lpar_ownership_override` is the package's only other audit emitter: it
+logs an approved ADR 0011 override through `extra=` on `hmc_mcp.operations_lpar`. Leaving it there
+would make this record incoherent — it rejects `extra=` emission in *Considered & rejected* while
+the one live instance keeps running, and it tells operators to attach a handler to
+`hmc_mcp.audit` while the higher-consequence event does not arrive there. So it moves.
+
+`event` becomes a two-value vocabulary rather than a constant, which the stability rule above
+already permits:
+
+| `event` | fields after `time` and `event` |
+|---|---|
+| `authorization` | `policy`, `tool`, `effect`, `decision`, `reason`, `connection`, `targets`, `attribution` |
+| `ownership-override` | `system`, `lpar`, `attribution` |
+
+What the two share is the *grammar*, not the field set: one physical line, ASCII JSON, every
+caller-supplied value truncated to 128 characters, `time` and `event` first. A consumer selecting
+on `event == "authorization"` is unaffected by the second shape existing.
+
+`ownership-override` carries no `policy`, `decision`, `reason`, `connection`, or `targets`, and
+deliberately not as nulls: none of them exists for this event, and rendering them empty would
+suggest an access-policy decision was taken when the override is an ADR 0011 ownership check on a
+token parsed from an LPAR description. `system` and `lpar` are the caller's own names.
+
+`attribution.source` therefore becomes a two-value vocabulary too, and the honesty is the point:
+the authorization record reads `os.environ`, while this one reads `hmc.config.agent_id` — the
+effective value the ownership check actually compared, including its `"hmc-mcp"` default — so the
+sources are named `environment:HMC_AGENT_ID` and `config:agent_id` rather than conflated.
+`verified` is `false` for both, because neither is authenticated.
+
+Emitted at `WARNING`, which is what it is today. `operations_lpar` calls `audit`; it does not
+reach the logger itself, so the reservation below stays an invariant of one module.
+
+This path is reachable from the CLI and the reusable Python API, where `install_audit_sink` was
+never called. There the record propagates to a root logger with no handler and reaches
+`logging.lastResort` at `WARNING` — stderr — which is exactly where it goes today. Converging it
+changes its shape and its escaping, not whether a CLI user sees it.
+
 ### The record is one line of ASCII JSON
 
 The message *is* the record — a single line produced by `json.dumps(..., ensure_ascii=True)`,
@@ -243,10 +282,11 @@ stdio hazard itself: an operator or a dependency that puts a `StreamHandler(sys.
 root logger would, without it, corrupt the protocol stream once per authorized call.
 `hmc_mcp.audit` is the documented attachment point, and an operator routing audit elsewhere
 attaches a handler there. Two constraints come with that, both stated because nothing enforces
-them. The logger is **reserved for `audit.record`**: no other code in the package logs to it or
-below it, which is what makes "the message is the record" an invariant of the logger rather than
-only of the emitter — a stray `logging.getLogger("hmc_mcp.audit").info("rotating")` would put an
-unmarked non-JSON line into a stream this record invites operators to parse line by line. And a
+them. The logger is **reserved for `audit`**: that module is the only one in the package that
+resolves it, and every record on it comes from one of its two emitters. That is what makes "the
+message is the record" an invariant of the logger rather than only of the emitter — a stray
+`logging.getLogger("hmc_mcp.audit").info("rotating")` would put an unmarked non-JSON line into a
+stream this record invites operators to parse line by line. And a
 handler an operator attaches there **must not write to `sys.stdout`** under the stdio transport:
 `install_audit_sink` defers to an existing handler without inspecting it, so the shortest route to
 the protocol stream is the attachment point itself, not the ancestor route `propagate = False`
@@ -358,14 +398,6 @@ machinery with their own failure modes and neither of which #218 asks for, so th
 option one: the deployment keeps fd 2 drained. Filed as #269 so the other two are decided rather
 than never considered.
 
-**The package has a second audit emitter.** `operations_lpar._audit_lpar_ownership_override`
-logs an approved ADR 0011 ownership override under `hmc_mcp.operations_lpar` through `extra=`. It
-propagates to the root logger, its fields are invisible under a formatter that does not name
-them, and its `hmc_agent_id` carries no `verified` marker, no length bound, and no escaping. It is
-also the higher-consequence of the two events. An operator who attaches a handler to
-`hmc_mcp.audit` on this record's advice will not receive it. `operations_lpar.py` is outside this
-issue's surface, so converging or retiring it is filed as #268.
-
 **Retention, integrity, and export are the deployment's.** The record is written to a process
 logging sink and is neither persisted, sequenced, nor signed. #218's open questions already place
 those outside this saga; nothing here should be read as promising them.
@@ -383,10 +415,11 @@ record whatsoever of a permitted call. An access-control layer whose only output
 the party it denied has no observability at all.
 
 **Emit through `extra=` on a normal log record**, as `operations_lpar._audit_lpar_ownership_override`
-does. Fields passed through `extra` are invisible unless the operator's formatter names each one,
+did. Fields passed through `extra` are invisible unless the operator's formatter names each one,
 so under this checkout's default configuration — no handler, no formatter — the record would
 reach a sink carrying only its message and would silently lose every field that makes it an audit
-record. Carrying the fields *and* a rendered message is two mechanisms for one job.
+record. Carrying the fields *and* a rendered message is two mechanisms for one job. That emitter
+is converged onto this record here rather than left as the counter-example to its own ADR.
 
 **Key-value text rather than JSON**, and **a dedicated environment variable or CLI flag for the
 sink's destination, level, and on/off switch.** Both rejected for the same reason: the standard

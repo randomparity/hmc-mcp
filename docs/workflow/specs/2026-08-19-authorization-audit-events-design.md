@@ -35,6 +35,7 @@ One source file is added, three change, and one operator document is added.
 | `src/hmc_mcp/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
 | `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
+| `src/hmc_mcp/operations_lpar.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
 | `docs/authorization-audit.md` (new) | the operator-facing record contract: field set, reason-code table, logger name, level split, how to route or silence it, and the merged-descriptor caveat. |
 | `README.md` | one caveat beside the existing "never stdout" sentence in the startup-warnings section, which has the same descriptor-merge limit, plus a pointer to the new document. |
 
@@ -69,6 +70,22 @@ One log record per decision. Its message is the complete record: a single line o
 `Formatter` applied by the sink this package installs. The handler writes that message followed by
 a single `"\n"` and flushes — a custom `emit` does not inherit `StreamHandler.terminator`, so the
 terminator is explicit.
+
+Two event types share that grammar and differ in their fields. `time` and `event` come first on
+both; every caller-supplied value is truncated to 128 characters on both.
+
+| `event` | emitted by | level | fields after `time`, `event` |
+|---|---|---|---|
+| `authorization` | `dispatch_scope.authorize` | deny `WARNING`, allow `INFO` | `policy`, `tool`, `effect`, `decision`, `reason`, `connection`, `targets`, `attribution` |
+| `ownership-override` | `operations_lpar`, via `audit` | `WARNING` | `system`, `lpar`, `attribution` |
+
+`ownership-override` omits the authorization fields rather than nulling them: an ADR 0011
+ownership override is not an access-policy decision, and empty fields would read as one. Its
+`attribution.source` is `"config:agent_id"` — `hmc.config.agent_id or "hmc-mcp"`, the effective
+value the ownership check compared — against `"environment:HMC_AGENT_ID"` for the authorization
+record. `verified` is `false` on both.
+
+### The `authorization` record
 
 Fields, always present, in this order:
 
@@ -228,9 +245,7 @@ argument, flag, environment variable, or file.
 - **A launcher that merges fd 2 into fd 1.** Recorded as an ADR 0040 residual and stated in the
   operator documentation and beside README's existing "never stdout" sentence, which has the same
   limit for the four startup warnings today.
-- **The package's second audit emitter**, `operations_lpar._audit_lpar_ownership_override`, which
-  propagates to the root logger and carries none of this record's escaping, bounding, or
-  provenance guarantees. `operations_lpar.py` is outside this surface; filed as #268.
+- **The audit level split from the CLI** (#270) and **retention or integrity** of either record.
 
 ## Testing
 
@@ -307,6 +322,21 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
     written before the handler runs.
 26. **Policy source path.** The policy file's path does not appear in any record.
 
+### Ownership-override convergence — `tests/unit/test_ownership.py`, `tests/unit/test_audit.py`
+
+26a. An approved override emits one `ownership-override` record on `hmc_mcp.audit` carrying the
+    system, the LPAR, and `attribution.source == "config:agent_id"`, and emits nothing on
+    `hmc_mcp.operations_lpar`.
+26b. Its caller-supplied `system` and `lpar` are truncated to 128 characters and ASCII-escaped,
+    like the authorization record's values.
+26c. `operations_lpar` does not resolve the audit logger itself — `audit` is the only module in
+    `src/hmc_mcp` that names `hmc_mcp.audit` (the same scan as test 8a).
+26d. The override still reaches stderr on a CLI-shaped path where `install_audit_sink` was never
+    called, at `WARNING`, so a CLI user does not silently lose it.
+26e. Both call sites in `authorize_lpar_mutation` and
+    `_authorize_lpar_ownership_description` still emit, and neither emits when
+    `ownership_override` is false.
+
 ### Attribution — `tests/app/test_authorization_audit.py`
 
 27. `HMC_AGENT_ID=<value>` is recorded as `attribution.claim` with `verified: false`.
@@ -323,6 +353,28 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 30. The same server started through `sh -c '… 2>&-'`, so fd 2 is closed at interpreter start and
     `sys.stderr` is `None`: the denied call still completes over the protocol and the process
     exits normally. POSIX only, skipped elsewhere, since `2>&-` is a POSIX shell redirection.
+
+### Live proof — a precondition of the PR, not a nice-to-have
+
+This record's entire contract is a *sink*. A unit test against a mock logger proves the payload
+and almost nothing about delivery, so a real `hmc-mcp serve` stdio subprocess with a policy
+selected must demonstrate all five of these before the PR is called ready. Driven over raw
+newline-delimited JSON-RPC rather than a client library, so that anything printed outside the
+protocol shows up as an unparseable line:
+
+L1. A record arrives on stderr as **one physical line** that parses as JSON and carries the
+    documented fields for its `event`.
+L2. **Two back-to-back records do not share a line** — the `StreamHandler.terminator` claim,
+    which is the one that fails silently only under volume.
+L3. **stdout carries no non-JSON line**, matching the #223 baseline this must not regress.
+L4. A caller value **over 128 characters arrives truncated** to 128.
+L5. An **emission failure leaves the authorization outcome and its error unchanged** — the same
+    denial type, the same message, with the sink made to fail.
+
+Reproduced independently rather than taken on report. `config_dir()` on darwin is
+`Path.home()/"Library"/"Application Support"/"hmc-mcp"` with no environment override, so the
+subprocess's `HOME` is redirected to a fixture home holding `config.toml` and
+`access-policy.toml`.
 
 ### Guardrails
 
@@ -345,6 +397,13 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 - A7. Caller-supplied values are bounded at 128 characters and cannot inject a control character
   or a line break. (tests 2, 3, 4, 5)
 - A8. ADR 0040 records the decision, the two no-record cases, and the residuals.
-- A9. Operator documentation describes the record, the reason codes, the logger name, and how to
-  route or silence it.
+- A9. Operator documentation describes both records, the reason codes, the logger name, and how to
+  route or silence them.
 - A10. `just verify` passes bare on the branch head.
+- A11. The package has exactly one audit emitter module. `operations_lpar`'s override record is
+  produced by `audit`, in the same grammar, and no longer through `extra=`. (tests 26a–26e)
+- A12. The five claims ADR 0040 makes about this checkout are pinned by tests, not by assertion:
+  the three logging-tree facts, `_gates(None) == (None, None)`, `authorized` leaving the two
+  `connection_argument=None` handlers unwrapped, `_startup_warnings` gating its no-policy line on
+  an existing file, and a custom `emit` not inheriting `StreamHandler.terminator`.
+- A13. The live proof L1–L5 runs and passes on the branch head.
