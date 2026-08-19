@@ -156,10 +156,12 @@ def test_applications_composed_with_different_policies_are_independent():
 uv run --no-sync pytest -q tests/app/test_capability_ceiling.py --no-cov
 ```
 
-Expect a collection error or failures: `create_mcp()` does not yet accept an argument, and
-`hmc_effective_permissions` is not yet in `TOOL_SECURITY` (so `test_no_policy_applies_no_ceiling`
-compares against a 128-name index while the registry has 128 — that one may pass; the first
-and third must fail with `TypeError: create_mcp() takes 0 positional arguments but 1 was given`).
+Expect the first and third tests to fail with
+`TypeError: create_mcp() takes 0 positional arguments but 1 was given`.
+`test_no_policy_applies_no_ceiling` passes at this point and is meant to: `TOOL_SECURITY`
+holds **129** entries on this tree (128 collector-declared plus the hand-built
+`hmc_run_command` record), so `set(TOOL_SECURITY) - {"hmc_run_command"}` is 128 names against
+a 128-tool registry. Task 2 takes both sides up by one.
 
 ### Step 1.3 — Add the gate to `tool_registry.py`
 
@@ -446,9 +448,9 @@ def test_inspection_carries_only_allowlisted_value_sources():
         assert forbidden not in rendered
 ```
 
-Also tighten `test_no_policy_applies_no_ceiling` — it already reads
-`set(TOOL_SECURITY) - {"hmc_run_command"}`, so it now asserts 129 index entries against 128
-registered plus the inspection tool with no edit.
+`test_no_policy_applies_no_ceiling` needs no edit: it already reads
+`set(TOOL_SECURITY) - {"hmc_run_command"}`, which becomes **130** index entries minus one =
+129 names, against the 128 domain tools plus the inspection tool.
 
 ### Step 2.2 — Confirm they fail
 
@@ -782,9 +784,13 @@ def _configure(application, enabled, permits=None):
     asyncio.run(configure_arbitrary_command_tool(enabled, application, permits=permits))
 
 
+# Reaches the escape hatch by name (ADR 0036 forbids granting it by effect
+# class) and the rest of the read class by effect — including
+# hmc_effective_permissions, without which _inspect has no tool to call.
 GRANT_RUN_COMMAND = [
     {
-        "tools": ["hmc_run_command", "hmc_list_systems"],
+        "effects": ["read"],
+        "tools": ["hmc_run_command"],
         "connections": ["<default>"],
         "targets": "all-targets",
     }
@@ -940,11 +946,7 @@ def _serve_application(
         )
         return len(await application.local_provider.list_tools())
 
-    tool_count = asyncio.run(_prepare())
-    for line in _startup_warnings(
-        tool_count, access_policy, enable_arbitrary_command
-    ):
-        print(line, file=sys.stderr)
+    asyncio.run(_prepare())
     return application
 
 
@@ -976,22 +978,20 @@ def main_http(
     )
 ```
 
-Add `import sys` to the module imports.
-
-`_startup_warnings` does not exist yet — it arrives whole in Task 4, with its tests. **Do
-not commit a stub for it.** In this task, `_serve_application` ends at `return application`
-with no warning loop:
-
-```python
-    tool_count = asyncio.run(_prepare())
-    del tool_count  # consumed by the startup warnings added in Task 4
-    return application
-```
-
-Simpler still, and what to write: drop `_prepare`'s return value in Task 3 and restore it in
-Task 4.
+`_startup_warnings` does not exist yet — it arrives whole in Task 4, with its tests and its
+call site, so no commit on this branch carries a serve path that silently discards its
+diagnostics. **Do not commit a stub for it**, and do not add `import sys` here: nothing in
+Task 3 writes to stderr, and ruff's default `F401` would reject the unused import at the
+pre-commit hook. Write `_serve_application` in exactly this form for now:
 
 ```python
+def _serve_application(
+    enable_arbitrary_command: bool, access_policy: AccessPolicy | None
+) -> FastMCP:
+    """Compose and gate the application about to be served."""
+    application = create_mcp(access_policy)
+    permits = None if access_policy is None else access_policy.permits_tool
+
     async def _prepare() -> None:
         await configure_arbitrary_command_tool(
             enable_arbitrary_command, application, permits=permits
@@ -1001,9 +1001,7 @@ Task 4.
     return application
 ```
 
-Task 4 replaces `_prepare` with the counting form and adds the warning loop in the same
-commit that adds `_startup_warnings`, so no commit on this branch carries a serve path that
-silently discards its diagnostics.
+Task 4 turns `_prepare` into the counting form and adds the warning loop.
 
 ### Step 3.5 — Confirm the tests pass, and repair `test_serve.py`
 
@@ -1214,6 +1212,50 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
     assert not forwarded.permits_tool("hmc_delete_lpar")
 
 
+ESCAPE_HATCH_ONLY = [
+    {
+        "tools": ["hmc_run_command"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys):
+    """R10a: ordering, suppression, and the stdout constraint, in one test.
+
+    A ceiling of only ``hmc_run_command`` composes zero tools, so counting
+    before the toggle would emit a false empty-surface line. Started with the
+    flag, the served surface is exactly the escape hatch.
+    """
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(True, policy)
+
+    assert _names(application) == {"hmc_run_command"}
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" not in captured.err
+    assert "hmc_effective_permissions" in captured.err
+
+
+def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
+    """R10a: the empty-surface line suppresses the withheld-inspection line."""
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(False, policy)
+
+    assert _names(application) == set()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" in captured.err
+    assert "hmc_effective_permissions" not in captured.err
+
+
 def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
     """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
     from typer.testing import CliRunner
@@ -1241,12 +1283,14 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
 uv run --no-sync pytest -q tests/app/test_capability_ceiling.py -k "warn or serve_reports" --no-cov
 ```
 
-Expect the warning tests to fail on the Task 3 stub returning `()`, and the CLI test to fail
-because `--access-policy` is not an option yet (typer exit code 2).
+Expect the warning tests to fail with
+`ImportError: cannot import name '_startup_warnings' from 'hmc_mcp.server'`, and the two CLI
+tests to fail because `--access-policy` is not an option yet (typer exit code 2).
 
 ### Step 4.3 — Write `_startup_warnings`
 
-In `src/hmc_mcp/server.py`, replace the Task 3 stub. Add
+In `src/hmc_mcp/server.py`, add the function — Task 3 deliberately left no stub. Add
+`import sys` to the module imports (Step 4.3a is what uses it), and add
 `from .access_policy import AccessPolicy, resolve_access_policy_path` to the imports and
 `from .server_permissions import TOOL_NAME as PERMISSIONS_TOOL_NAME`.
 
@@ -1313,7 +1357,7 @@ def _startup_warnings(
 ### Step 4.3a — Restore the tool count and emit the warnings
 
 In `_serve_application`, replace Task 3's `_prepare` with the counting form and add the
-warning loop, so the function and its call land in one commit:
+warning loop, so the function, its call site, and `import sys` land in one commit:
 
 ```python
     async def _prepare() -> int:
