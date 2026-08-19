@@ -90,13 +90,27 @@ class TargetSelector:
 
 @dataclass(frozen=True)
 class ToolSecurity:
-    """The authoritative security classification of one MCP tool."""
+    """The authoritative security classification of one MCP tool.
+
+    ``exhaustive_targets`` answers one question for the access policy: do the
+    declared selectors name every resource this tool acts on, so a ``targets``
+    table can bound the call? When false, only the ``all-targets`` sentinel can
+    grant the tool — a table has either nothing to bind on (no selectors) or
+    something it cannot see (a composite reaching an identity nested below the
+    signature). See docs/adr/0039-dispatch-time-target-scope.md.
+
+    Its default is the fail-closed value, so a record built by hand — as
+    ``server_command`` and ``server_permissions`` build theirs — is safe without
+    naming the field. Only :func:`tool_module`'s decorator, which has inspected a
+    signature and found selectors, raises it.
+    """
 
     effect: Effect
     operation: str
     target_kind: TargetKind
     targets: tuple[TargetSelector, ...] = ()
     connection_argument: str | None = "profile"
+    exhaustive_targets: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,6 +221,11 @@ def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> No
     kinds = {security.target_kind, *(target.kind for target in security.targets)}
     if unknown := sorted(kinds - TARGET_KINDS):
         raise ValueError(f"{name}: unknown target_kind {unknown}")
+    if security.exhaustive_targets and not security.targets:
+        raise ValueError(
+            f"{name}: exhaustive_targets requires at least one target selector; a "
+            "policy targets table would have nothing to bind on"
+        )
 
     _validate_arguments(security, inspect.signature(handler).parameters, name)
 
@@ -256,6 +275,7 @@ def tool_module():
         target_kind: TargetKind,
         extra_targets: Iterable[tuple[TargetKind, str]] = (),
         connection_argument: str | None = "profile",
+        exhaustive_targets: bool = True,
     ):
         def collect(fn: Callable[..., Any]):
             name = getattr(fn, "__name__", "<handler>")
@@ -271,7 +291,14 @@ def tool_module():
                 raise ValueError(
                     f"{name}: cannot inspect signature: {error!r}"
                 ) from error
-            security = replace(security, targets=targets)
+            # A tool that declares no selector can never be exhaustive, whatever
+            # it claims: the conjunction is what makes the selector-less case a
+            # degenerate instance of the composite rule rather than a second one.
+            security = replace(
+                security,
+                targets=targets,
+                exhaustive_targets=exhaustive_targets and bool(targets),
+            )
             validate_security(security, fn)
             definitions.append(ToolDefinition(name, fn, security))
             return fn
