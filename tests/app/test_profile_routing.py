@@ -25,6 +25,7 @@ from hmc_mcp.server import mcp
 _NO_NETWORK_TOOLS = frozenset(
     {
         "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
+        "hmc_effective_permissions",  # reads this application's own registry
     }
 )
 

@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+import sys
 from collections.abc import Mapping
 
 from fastmcp import FastMCP
@@ -43,6 +44,7 @@ from fastmcp import FastMCP
 from ._app import (
     create_mcp as _create_base_mcp,
 )
+from .access_policy import AccessPolicy, resolve_access_policy_path
 from .tool_registry import ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -96,6 +98,11 @@ from .server_jobs import (
     hmc_wait_for_job as hmc_wait_for_job,
 )
 from .server_health import hmc_fleet_health as hmc_fleet_health
+from .server_permissions import (
+    EFFECTIVE_PERMISSIONS_SECURITY,
+    TOOL_NAME as PERMISSIONS_TOOL_NAME,
+    register_permissions_tool,
+)
 
 from .server_lpars import (
     hmc_create_lpar as hmc_create_lpar,
@@ -248,25 +255,138 @@ TOOL_MODULES = (
 
 TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
     [module.tool_security() for module in TOOL_MODULES],
-    {"hmc_run_command": HMC_RUN_COMMAND_SECURITY},
+    {
+        "hmc_run_command": HMC_RUN_COMMAND_SECURITY,
+        "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
+    },
 )
 
 
-def create_mcp() -> FastMCP:
-    """Compose every domain into a fresh, complete MCP application."""
+def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
+    """Compose a fresh MCP application bounded by *policy*'s capability ceiling.
+
+    ``None`` applies no ceiling and registers every tool — the behaviour before
+    ADR 0037, and what every deployment gets until #225 makes startup fail
+    closed. The predicate is passed to each registration site rather than
+    checked here, so no site can be given a ceiling it does not apply.
+    """
+    permits = None if policy is None else policy.permits_tool
     application = _create_base_mcp()
     for module in TOOL_MODULES:
-        module.register_tools(application)
+        module.register_tools(application, permits=permits)
+    register_permissions_tool(application, policy, TOOL_SECURITY, permits=permits)
     return application
 
 
 mcp = create_mcp()
 
 
-def main_stdio(enable_arbitrary_command: bool = False) -> None:
-    """Start the fully composed MCP server over stdio."""
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
-    mcp.run()
+def _unselected_policy_file() -> str | None:
+    """The platform-native policy file's path when one exists, else ``None``.
+
+    Reads nothing and never raises: ``resolve_access_policy_path`` reaches
+    ``Path.home()``, which raises under a uid with no passwd entry and no HOME,
+    and a diagnostic that can abort a start nobody asked to constrain is worse
+    than no diagnostic.
+    """
+    try:
+        path = resolve_access_policy_path()
+        return str(path) if path.exists() else None
+    except (RuntimeError, OSError, ValueError):
+        return None
+
+
+def _startup_warnings(
+    tool_count: int,
+    access_policy: AccessPolicy | None,
+    enable_arbitrary_command: bool,
+) -> tuple[str, ...]:
+    """The stderr lines describing what this server will and will not expose.
+
+    Every input exists only here — the served registry, the policy, and the
+    escape-hatch flag — which is why the four warnings share one function. An
+    empty surface already implies the inspection tool is absent, so it replaces
+    that line rather than printing beside it.
+    """
+    lines: list[str] = []
+    if tool_count == 0:
+        lines.append(
+            "warning: this server exposes no tools. Nothing it is asked to do will "
+            "succeed."
+        )
+    elif access_policy is not None and not access_policy.permits_tool(
+        PERMISSIONS_TOOL_NAME
+    ):
+        lines.append(
+            f"warning: access policy {access_policy.name!r} withholds "
+            f"{PERMISSIONS_TOOL_NAME}, so this server cannot report its own "
+            "effective permissions to a client."
+        )
+    if access_policy is None and (path := _unselected_policy_file()) is not None:
+        lines.append(
+            f"warning: {path} exists but no access policy was selected, so no "
+            "capability ceiling is applied. Pass --access-policy NAME to enforce one."
+        )
+    if (
+        enable_arbitrary_command
+        and access_policy is not None
+        and not access_policy.permits_tool("hmc_run_command")
+    ):
+        lines.append(
+            "warning: --enable-arbitrary-command was requested, but access policy "
+            f"{access_policy.name!r} does not grant hmc_run_command, so it is not "
+            "exposed. Name it in a grant's tools to allow it."
+        )
+    return tuple(lines)
+
+
+def _warn(lines: tuple[str, ...]) -> None:
+    """Write startup diagnostics to stderr, or to nowhere at all.
+
+    Never to stdout, which carries JSON-RPC framing under the stdio transport.
+    ``print(file=None)`` falls back to ``sys.stdout``, and CPython sets
+    ``sys.stderr`` to ``None`` when fd 2 is not open at interpreter start — a
+    launcher closing it (``serve 2>&-``) would otherwise inject warning text
+    into the protocol stream — so an absent stream drops the lines instead.
+
+    Nor may emitting one abort a start, which is what ``_unselected_policy_file``
+    already refuses for resolving one. A broken stream raises ``OSError`` and a
+    closed one raises ``ValueError``, so both are caught.
+    """
+    stream = sys.stderr
+    if stream is None:
+        return
+    try:
+        for line in lines:
+            print(line, file=stream)
+    except (OSError, ValueError):
+        pass
+
+
+def _serve_application(
+    enable_arbitrary_command: bool, access_policy: AccessPolicy | None
+) -> FastMCP:
+    """Compose, gate, and diagnose the application about to be served."""
+    application = create_mcp(access_policy)
+    permits = None if access_policy is None else access_policy.permits_tool
+
+    async def _prepare() -> int:
+        await configure_arbitrary_command_tool(
+            enable_arbitrary_command, application, permits=permits
+        )
+        return len(await application.local_provider.list_tools())
+
+    tool_count = asyncio.run(_prepare())
+    _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
+    return application
+
+
+def main_stdio(
+    enable_arbitrary_command: bool = False,
+    access_policy: AccessPolicy | None = None,
+) -> None:
+    """Start an MCP server over stdio, bounded by *access_policy*."""
+    _serve_application(enable_arbitrary_command, access_policy).run()
 
 
 def main_http(
@@ -274,8 +394,9 @@ def main_http(
     port: int = 8000,
     enable_arbitrary_command: bool = False,
     allow_remote: bool = False,
+    access_policy: AccessPolicy | None = None,
 ) -> None:
-    """Start the fully composed MCP server over streamable HTTP."""
+    """Start an MCP server over streamable HTTP, bounded by *access_policy*."""
     if not allow_remote and not _is_loopback(host):
         raise ValueError(
             f"listen host {host!r} binds beyond loopback, but the streamable HTTP "
@@ -283,8 +404,9 @@ def main_http(
             "(including user administration). Refusing to start. Explicitly "
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
-    mcp.run(transport="streamable-http", host=host, port=port)
+    _serve_application(enable_arbitrary_command, access_policy).run(
+        transport="streamable-http", host=host, port=port
+    )
 
 
 def _is_loopback(host: str) -> bool:

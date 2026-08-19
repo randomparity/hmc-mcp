@@ -329,10 +329,11 @@ def test_arbitrary_command_is_absent_by_default_and_maximally_classified():
     )
 
 
-def test_only_the_local_config_tool_opens_no_hmc_connection():
+def test_only_local_tools_open_no_hmc_connection():
     """G10: every tool that reaches an HMC declares how its connection is chosen."""
+    local_only = {"hmc_list_configured_hosts", "hmc_effective_permissions"}
     for name, security in TOOL_SECURITY.items():
-        if name == "hmc_list_configured_hosts":
+        if name in local_only:
             assert security.target_kind == "none", name
             assert security.connection_argument is None, name
         else:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastmcp import FastMCP
 
 from ._app import _run
@@ -32,13 +34,24 @@ HMC_RUN_COMMAND_SECURITY = ToolSecurity(
 validate_security(HMC_RUN_COMMAND_SECURITY, hmc_run_command)
 
 
-async def configure_arbitrary_command_tool(enabled: bool, mcp: FastMCP) -> None:
-    """Make escape-hatch registration match the requested capability state."""
+async def configure_arbitrary_command_tool(
+    enabled: bool,
+    mcp: FastMCP,
+    *,
+    permits: Callable[[str], bool] | None = None,
+) -> None:
+    """Make escape-hatch registration match the requested capability state.
+
+    The ``--enable-arbitrary-command`` flag is the outer gate and *permits* is
+    the access policy's ceiling; per ADR 0036 they compose conjunctively, so the
+    tool is registered only when both admit it. ``None`` means no ceiling.
+    """
+    permitted = enabled and (permits is None or permits("hmc_run_command"))
     registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
-    if enabled and not registered:
+    if permitted and not registered:
         mcp.tool(
             hmc_run_command,
             annotations=annotations_for(HMC_RUN_COMMAND_SECURITY.effect),
         )
-    elif not enabled and registered:
+    elif not permitted and registered:
         mcp.local_provider.remove_tool("hmc_run_command")

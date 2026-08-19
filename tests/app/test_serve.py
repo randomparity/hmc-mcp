@@ -6,7 +6,7 @@ operator explicitly opts in with --allow-remote.
 """
 
 import socket
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from click import unstyle
@@ -51,7 +51,7 @@ def test_serve_http_mixed_address_refuses_without_allow_remote():
     addresses = [_address_info("127.0.0.1"), _address_info("203.0.113.5")]
     with (
         patch("hmc_mcp.server.socket.getaddrinfo", return_value=addresses),
-        patch.object(server_app.mcp, "run") as run,
+        patch.object(type(server_app.mcp), "run") as run,
     ):
         result = CliRunner().invoke(
             app, ["serve", "--http", "--listen-host", "localhost"]
@@ -72,11 +72,12 @@ def test_serve_http_loopback_bind_is_allowed():
         port=8000,
         enable_arbitrary_command=False,
         allow_remote=False,
+        access_policy=None,
     )
 
 
 def test_serve_http_non_loopback_refuses_without_allow_remote():
-    with patch.object(server_app.mcp, "run") as run:
+    with patch.object(type(server_app.mcp), "run") as run:
         result = CliRunner().invoke(
             app, ["serve", "--http", "--listen-host", "0.0.0.0"]
         )
@@ -100,6 +101,7 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
         port=8000,
         enable_arbitrary_command=False,
         allow_remote=True,
+        access_policy=None,
     )
 
 
@@ -128,7 +130,9 @@ def test_serve_allows_environment_hmc_options(monkeypatch):
         result = CliRunner().invoke(app, ["serve"])
 
     assert result.exit_code == 0
-    main_stdio.assert_called_once_with(enable_arbitrary_command=False)
+    main_stdio.assert_called_once_with(
+        enable_arbitrary_command=False, access_policy=None
+    )
 
 
 @pytest.mark.parametrize("http", [False, True])
@@ -148,45 +152,50 @@ def test_serve_passes_arbitrary_command_opt_in(http):
             port=8000,
             enable_arbitrary_command=True,
             allow_remote=False,
+            access_policy=None,
         )
     else:
-        entrypoint.assert_called_once_with(enable_arbitrary_command=True)
+        entrypoint.assert_called_once_with(
+            enable_arbitrary_command=True, access_policy=None
+        )
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_stdio_entrypoint_configures_arbitrary_command(enabled):
-    with (
-        patch(
-            "hmc_mcp.server.configure_arbitrary_command_tool", new_callable=AsyncMock
-        ) as configure,
-        patch.object(server_app.mcp, "run") as run,
-    ):
+def test_stdio_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
+    calls = []
+
+    async def _record(flag, application, *, permits=None):
+        calls.append((flag, permits))
+
+    monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
+    with patch.object(type(server_app.mcp), "run") as run:
         server_app.main_stdio(enable_arbitrary_command=enabled)
 
-    configure.assert_called_once_with(enabled, server_app.mcp)
+    assert calls == [(enabled, None)]
     run.assert_called_once_with()
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_http_entrypoint_configures_arbitrary_command(enabled):
-    with (
-        patch(
-            "hmc_mcp.server.configure_arbitrary_command_tool", new_callable=AsyncMock
-        ) as configure,
-        patch.object(server_app.mcp, "run") as run,
-    ):
+def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
+    calls = []
+
+    async def _record(flag, application, *, permits=None):
+        calls.append((flag, permits))
+
+    monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
+    with patch.object(type(server_app.mcp), "run") as run:
         server_app.main_http(
             host="127.0.0.1", port=9000, enable_arbitrary_command=enabled
         )
 
-    configure.assert_called_once_with(enabled, server_app.mcp)
+    assert calls == [(enabled, None)]
     run.assert_called_once_with(
         transport="streamable-http", host="127.0.0.1", port=9000
     )
 
 
 def test_http_entrypoint_refuses_remote_bind_without_authorization():
-    with patch.object(server_app.mcp, "run") as run:
+    with patch.object(type(server_app.mcp), "run") as run:
         with pytest.raises(ValueError, match="binds beyond loopback"):
             server_app.main_http(host="0.0.0.0")
 
@@ -194,7 +203,7 @@ def test_http_entrypoint_refuses_remote_bind_without_authorization():
 
 
 def test_http_entrypoint_accepts_remote_bind_with_authorization():
-    with patch.object(server_app.mcp, "run") as run:
+    with patch.object(type(server_app.mcp), "run") as run:
         server_app.main_http(host="0.0.0.0", allow_remote=True)
 
     run.assert_called_once_with(transport="streamable-http", host="0.0.0.0", port=8000)

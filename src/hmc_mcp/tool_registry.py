@@ -237,8 +237,19 @@ def tool_module():
 
         return collect
 
-    def register_tools(mcp: FastMCP) -> None:
+    def register_tools(
+        mcp: FastMCP, *, permits: Callable[[str], bool] | None = None
+    ) -> None:
+        """Register this module's tools, skipping any the ceiling withholds.
+
+        *permits* is the access policy's ceiling question. ``None`` means no
+        ceiling, which is what a caller composing without a policy passes. The
+        predicate is taken rather than the policy object because
+        ``access_policy`` imports this module; see ADR 0037.
+        """
         for definition in definitions:
+            if permits is not None and not permits(definition.name):
+                continue
             mcp.tool(
                 definition.handler,
                 annotations=annotations_for(definition.security.effect),

@@ -1,0 +1,577 @@
+"""Composition-time capability ceiling and effective-permission inspection.
+
+Covers docs/workflow/specs/2026-08-18-capability-ceiling-design.md; the decision
+record is docs/adr/0037-composition-time-capability-ceiling.md.
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from hmc_mcp.access_policy import compile_access_policy
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+
+SOURCE = "test-access-policy.toml"
+
+
+def _policy(grants: list[dict], name: str = "test"):
+    """Compile one named policy from grant tables, against the live tool index."""
+    return compile_access_policy(
+        {"policies": {name: {"grants": grants}}}, name, TOOL_SECURITY, SOURCE
+    )
+
+
+def _names(application) -> set[str]:
+    return {tool.name for tool in asyncio.run(application.list_tools())}
+
+
+READ_ONLY_GRANT = [
+    {"effects": ["read"], "connections": ["<default>"], "targets": "all-targets"}
+]
+
+
+def test_a_read_only_policy_registers_only_read_tools():
+    """R1: the registry is exactly the ceiling, minus the escape hatch."""
+    policy = _policy(READ_ONLY_GRANT)
+    names = _names(create_mcp(policy))
+
+    assert names == {
+        name for name in TOOL_SECURITY if policy.permits_tool(name)
+    } - {"hmc_run_command"}
+    assert names
+    assert all(TOOL_SECURITY[name].effect == "read" for name in names)
+    assert "hmc_delete_lpar" not in names
+
+
+def test_a_withheld_tool_cannot_be_called_by_name():
+    """R1: absence is the control — unlisted is not enough, it must not dispatch.
+
+    Listing and dispatch read the same registry today, so this holds by
+    construction. #222 adds authorization at the dispatch boundary, which is the
+    change that could filter the listing while leaving dispatch open; this is the
+    invariant it has to preserve.
+    """
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    application = create_mcp(_policy(READ_ONLY_GRANT))
+
+    async def _call():
+        async with Client(application) as client:
+            return await client.call_tool(
+                "hmc_delete_lpar", {"lpar_name_or_uuid": "victim"}
+            )
+
+    with pytest.raises(ToolError, match="Unknown tool"):
+        asyncio.run(_call())
+
+
+def test_no_policy_applies_no_ceiling():
+    """R2: the default composition is unfiltered."""
+    names = _names(create_mcp())
+
+    assert names == set(TOOL_SECURITY) - {"hmc_run_command"}
+
+
+def test_applications_composed_with_different_policies_are_independent():
+    """R3: a restrictive composition does not leak into a later one."""
+    restricted = _names(create_mcp(_policy(READ_ONLY_GRANT)))
+    unrestricted = _names(create_mcp())
+    restricted_again = _names(create_mcp(_policy(READ_ONLY_GRANT)))
+
+    assert restricted == restricted_again
+    assert restricted < unrestricted
+
+
+def _inspect(application):
+    """Call the registered inspection tool through the application.
+
+    Reads ``structured_content`` (a plain dict), not ``data`` — on
+    fastmcp 3.4.7 ``data`` is a pydantic model reconstructed from the output
+    schema, which is neither subscriptable nor iterable.
+    """
+    from fastmcp import Client
+
+    async def _go():
+        async with Client(application) as client:
+            result = await client.call_tool("hmc_effective_permissions", {})
+            return result.structured_content
+
+    return asyncio.run(_go())
+
+
+def test_inspection_is_registered_and_classified():
+    """R10: an ordinary read-effect record with no connection argument."""
+    security = TOOL_SECURITY["hmc_effective_permissions"]
+
+    assert security.effect == "read"
+    assert security.operation == "permissions.describe"
+    assert security.target_kind == "none"
+    assert security.targets == ()
+    assert security.connection_argument is None
+    assert "hmc_effective_permissions" in _names(create_mcp())
+
+
+def test_inspection_is_subject_to_the_ceiling():
+    """R11: an effects grant reaches it; a tools-only grant can withhold it."""
+    assert "hmc_effective_permissions" in _names(create_mcp(_policy(READ_ONLY_GRANT)))
+
+    withheld = _policy(
+        [{"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}]
+    )
+    assert "hmc_effective_permissions" not in _names(create_mcp(withheld))
+
+
+def test_inspection_matches_the_registry_and_the_policy():
+    """R12: equal to the live registry, and to the policy-derived expectation."""
+    policy = _policy(READ_ONLY_GRANT)
+    application = create_mcp(policy)
+
+    reported = [tool["name"] for tool in _inspect(application)["tools"]]
+    live = sorted(tool.name for tool in asyncio.run(application.list_tools()))
+    expected = sorted(
+        {name for name in TOOL_SECURITY if policy.permits_tool(name)} - {"hmc_run_command"}
+    )
+
+    assert reported == live == expected
+
+
+def test_inspection_reports_effects_source_and_dimensions():
+    """R13, R14, R15, R16: what the payload says about the policy."""
+    policy = _policy(READ_ONLY_GRANT)
+    result = _inspect(create_mcp(policy))
+
+    assert result["effects"] == ["read"]
+    assert result["policy_name"] == "test"
+    assert result["policy_source"] == SOURCE
+    assert result["ceiling_enforced"] is True
+    assert result["enforced_dimensions"] == ["tools"]
+    assert result["declared_only_dimensions"] == ["connections", "targets"]
+
+    grant = result["declared_grants"][0]
+    assert grant["connections"] == ["<default>"]
+    assert grant["all_targets"] is True
+    assert grant["targets"] == {}
+    assert "hmc_list_systems" in grant["tools"]
+
+
+def test_inspection_reports_no_policy_honestly():
+    """R14, R16: nothing is enforced and nothing is declared."""
+    result = _inspect(create_mcp())
+
+    assert result["policy_name"] is None
+    assert result["policy_source"] is None
+    assert result["ceiling_enforced"] is False
+    assert result["enforced_dimensions"] == []
+    assert result["declared_only_dimensions"] == []
+    assert result["declared_grants"] == []
+
+
+def test_inspection_reports_grants_separately_without_merging():
+    """R15: one entry per grant, in document order, never unioned."""
+    policy = _policy([
+        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
+        {
+            "tools": ["hmc_delete_lpar"],
+            "connections": ["scratch"],
+            "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
+        },
+    ])
+    grants = _inspect(create_mcp(policy))["declared_grants"]
+
+    assert [grant["connections"] for grant in grants] == [["lab"], ["scratch"]]
+    assert grants[1]["all_targets"] is False
+    assert grants[1]["targets"] == {"lpar": ["db-01"], "managed_system": ["sys-a"]}
+
+
+def test_inspection_does_not_raise_on_a_tool_outside_the_index():
+    """R13: an unindexed registered name is reported, not fatal."""
+    application = create_mcp()
+
+    def hmc_not_in_the_index() -> str:
+        """A tool registered outside the authoritative index."""
+        return "ok"
+
+    application.tool(hmc_not_in_the_index)
+    result = _inspect(application)
+    reported = {tool["name"]: tool for tool in result["tools"]}
+
+    assert reported["hmc_not_in_the_index"]["effect"] == "unknown"
+    assert reported["hmc_not_in_the_index"]["operation"] == "unknown"
+    assert reported["hmc_not_in_the_index"]["target_kind"] == "unknown"
+    assert "unknown" not in result["effects"]
+
+
+def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
+    """R17: no config.toml value and no HMC_* environment value reaches the payload.
+
+    The sentinels must exist in the process for their absence to mean anything —
+    an unset variable is absent from every payload, correct or leaking — and they
+    are checked as *values*, since a leak of HMC_PASSWORD carries its value and
+    not its name.
+    """
+    monkeypatch.setenv("HMC_HOST", "sentinel-host-do-not-leak")
+    monkeypatch.setenv("HMC_USER", "sentinel-user-do-not-leak")
+    monkeypatch.setenv("HMC_PASSWORD", "sentinel-password-do-not-leak")
+
+    policy = _policy(READ_ONLY_GRANT)
+    result = _inspect(create_mcp(policy))
+
+    assert set(result) == {
+        "policy_name",
+        "policy_source",
+        "ceiling_enforced",
+        "effects",
+        "tools",
+        "declared_grants",
+        "enforced_dimensions",
+        "declared_only_dimensions",
+    }
+    rendered = repr(result)
+    for sentinel in (
+        "sentinel-host-do-not-leak",
+        "sentinel-user-do-not-leak",
+        "sentinel-password-do-not-leak",
+    ):
+        assert sentinel not in rendered
+
+
+def _configure(application, enabled, permits=None):
+    from hmc_mcp.server_command import configure_arbitrary_command_tool
+
+    asyncio.run(configure_arbitrary_command_tool(enabled, application, permits=permits))
+
+
+# Reaches the escape hatch by name (ADR 0036 forbids granting it by effect
+# class) and the rest of the read class by effect — including
+# hmc_effective_permissions, without which _inspect has no tool to call.
+GRANT_RUN_COMMAND = [
+    {
+        "effects": ["read"],
+        "tools": ["hmc_run_command"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_escape_hatch_needs_both_the_flag_and_the_grant():
+    """R5: the flag and the ceiling compose conjunctively."""
+    granted = _policy(GRANT_RUN_COMMAND)
+    application = create_mcp(granted)
+
+    _configure(application, True, granted.permits_tool)
+    assert "hmc_run_command" in _names(application)
+
+    _configure(application, False, granted.permits_tool)
+    assert "hmc_run_command" not in _names(application)
+
+
+def test_escape_hatch_is_withheld_when_the_policy_omits_it():
+    """R5, R6: an effect-class policy cannot reach it, flag or no flag."""
+    every_effect = _policy([
+        {
+            "effects": ["read", "mutate", "destructive"],
+            "connections": ["<default>"],
+            "targets": "all-targets",
+        }
+    ])
+    assert every_effect.permits_tool("hmc_run_command") is False
+
+    application = create_mcp(every_effect)
+    _configure(application, True, every_effect.permits_tool)
+
+    assert "hmc_run_command" not in _names(application)
+
+
+def test_inspection_tracks_the_arbitrary_command_toggle():
+    """R12, R13: the report follows the registry across a post-composition change."""
+    granted = _policy(GRANT_RUN_COMMAND)
+    application = create_mcp(granted)
+    _configure(application, True, granted.permits_tool)
+
+    result = _inspect(application)
+    reported = [tool["name"] for tool in result["tools"]]
+
+    assert reported == sorted(tool.name for tool in asyncio.run(application.list_tools()))
+    assert "hmc_run_command" in reported
+    assert "arbitrary-command" in result["effects"]
+    assert result["ceiling_enforced"] is True
+
+
+def test_a_registry_that_drifted_past_its_ceiling_claims_no_enforcement():
+    """R14, R16: a policy name with no enforcement claim is the honest reading."""
+    policy = _policy(READ_ONLY_GRANT)
+    application = create_mcp(policy)
+    _configure(application, True)  # no predicate: the fail-open call shape
+
+    result = _inspect(application)
+
+    assert "hmc_run_command" in [tool["name"] for tool in result["tools"]]
+    assert result["policy_name"] == "test"
+    assert result["ceiling_enforced"] is False
+    assert result["enforced_dimensions"] == []
+    assert result["declared_only_dimensions"] == []
+
+
+@pytest.mark.parametrize("entry_point", ["main_stdio", "main_http"])
+def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point):
+    """R9, R9a: main_stdio serves its own application, wired to the ceiling."""
+    from unittest.mock import patch
+
+    import hmc_mcp.server as server_module
+
+    every_effect = _policy([
+        {
+            "effects": ["read", "mutate", "destructive"],
+            "connections": ["<default>"],
+            "targets": "all-targets",
+        }
+    ])
+    served = {}
+
+    def _capture(self, **_kwargs):
+        served["app"] = self
+        served["names"] = {tool.name for tool in asyncio.run(self.list_tools())}
+
+    with patch.object(type(server_module.mcp), "run", _capture):
+        getattr(server_module, entry_point)(
+            enable_arbitrary_command=True, access_policy=every_effect
+        )
+
+    # R9 is object identity, not set difference: an all-three-effects grant
+    # resolves to every tool but hmc_run_command, which create_mcp never
+    # registers anyway, so the two name sets are deliberately equal here.
+    assert served["app"] is not server_module.mcp
+    assert "hmc_run_command" not in served["names"]
+    assert "hmc_delete_lpar" in served["names"]
+
+
+def _warnings(tool_count, policy, enable_arbitrary_command=False):
+    from hmc_mcp.server import _startup_warnings
+
+    return _startup_warnings(tool_count, policy, enable_arbitrary_command)
+
+
+DENY_EVERYTHING: list[dict] = []
+
+
+def test_an_empty_served_surface_is_warned_and_suppresses_the_other_line():
+    """R10a: keyed on the served registry, and it replaces R18's line."""
+    policy = _policy(DENY_EVERYTHING, name="locked")
+    assert len(policy.tools) == 0
+    assert _names(create_mcp(policy)) == set()
+
+    lines = _warnings(0, policy)
+
+    assert len(lines) == 1
+    assert "no tools" in lines[0]
+    # Cause-neutral: R10a covers an empty surface however it arose, and the
+    # withheld-inspection line is suppressed rather than printed beside it.
+    assert "hmc_effective_permissions" not in lines[0]
+
+
+def test_a_withheld_inspection_tool_is_warned():
+    """R18: named, with the policy that withheld it."""
+    policy = _policy(
+        [{"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}]
+    )
+
+    lines = _warnings(1, policy)
+
+    assert any("hmc_effective_permissions" in line and "test" in line for line in lines)
+
+
+def test_an_authored_but_unselected_policy_file_is_warned(tmp_path, monkeypatch):
+    """R19: fires only when the file exists and no policy was selected."""
+    import hmc_mcp.server as server_app
+
+    present = tmp_path / "access-policy.toml"
+    present.write_text("", encoding="utf-8")
+    monkeypatch.setattr(server_app, "resolve_access_policy_path", lambda: present)
+    assert any("access-policy.toml" in line for line in _warnings(129, None))
+
+    monkeypatch.setattr(
+        server_app, "resolve_access_policy_path", lambda: tmp_path / "absent.toml"
+    )
+    assert _warnings(129, None) == ()
+
+
+def test_an_unresolvable_policy_path_never_fails_the_start(monkeypatch):
+    """R19: Path.home() with no home directory must not propagate."""
+    import hmc_mcp.server as server_app
+
+    def _boom():
+        raise RuntimeError("Could not determine home directory")
+
+    monkeypatch.setattr(server_app, "resolve_access_policy_path", _boom)
+
+    assert _warnings(129, None) == ()
+
+
+def test_a_withheld_escape_hatch_is_warned_only_when_requested():
+    """R19a: the explicit request answered with silence gets a line."""
+    policy = _policy(READ_ONLY_GRANT)
+
+    requested = _warnings(90, policy, enable_arbitrary_command=True)
+    assert any("hmc_run_command" in line for line in requested)
+
+    assert not any(
+        "hmc_run_command" in line for line in _warnings(90, policy)
+    )
+
+
+POLICY_FILE = """
+[[policies.lab.grants]]
+effects = ["read"]
+connections = ["<default>"]
+targets = "all-targets"
+"""
+
+
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (["serve"], "main_stdio"),
+        (["serve", "--http"], "main_http"),
+    ],
+)
+def test_serve_forwards_the_compiled_policy_to_the_entry_point(
+    argv, target, tmp_path, monkeypatch
+):
+    """R7: the selected policy reaches the server, not just the loader."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    import hmc_mcp.access_policy as access_policy_module
+    from hmc_mcp.access_policy import AccessPolicy
+    from hmc_mcp.cli import app
+
+    path = tmp_path / "access-policy.toml"
+    path.write_text(POLICY_FILE, encoding="utf-8")
+    monkeypatch.setattr(
+        access_policy_module, "resolve_access_policy_path", lambda: path
+    )
+
+    with patch(f"hmc_mcp.server.{target}") as entry_point:
+        result = CliRunner().invoke(app, [*argv, "--access-policy", "lab"])
+
+    assert result.exit_code == 0, result.output
+    forwarded = entry_point.call_args.kwargs["access_policy"]
+    assert isinstance(forwarded, AccessPolicy)
+    assert forwarded.name == "lab"
+    assert forwarded.permits_tool("hmc_list_systems")
+    assert not forwarded.permits_tool("hmc_delete_lpar")
+
+
+ESCAPE_HATCH_ONLY = [
+    {
+        "tools": ["hmc_run_command"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys):
+    """R10a: ordering, suppression, and the stdout constraint, in one test.
+
+    A ceiling of only ``hmc_run_command`` composes zero tools, so counting
+    before the toggle would emit a false empty-surface line. Started with the
+    flag, the served surface is exactly the escape hatch.
+    """
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(True, policy)
+
+    assert _names(application) == {"hmc_run_command"}
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" not in captured.err
+    assert "hmc_effective_permissions" in captured.err
+
+
+def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
+    """R10a: the empty-surface line suppresses the withheld-inspection line."""
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    application = server_app._serve_application(False, policy)
+
+    assert _names(application) == set()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no tools" in captured.err
+    assert "hmc_effective_permissions" not in captured.err
+
+
+class _BrokenStderr:
+    """A stream whose every write raises, as a closed pipe's does."""
+
+    def write(self, _text):
+        raise BrokenPipeError("stderr is gone")
+
+    def flush(self):
+        raise BrokenPipeError("stderr is gone")
+
+
+def _unusable_stderr(state, tmp_path):
+    """One of the three ways stderr is unusable when the server starts."""
+    if state == "broken":
+        return _BrokenStderr()
+    if state == "none":
+        # CPython sets sys.stderr to None when fd 2 is not open at interpreter
+        # start, which is what `serve 2>&-` produces.
+        return None
+    handle = (tmp_path / "closed").open("w", encoding="utf-8")
+    handle.close()
+    return handle
+
+
+@pytest.mark.parametrize("state", ["broken", "none", "closed"])
+def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
+    state, tmp_path, monkeypatch, capsys
+):
+    """R10a: a diagnostic nobody asked for must not abort a start.
+
+    Nor may it land on stdout, which carries JSON-RPC under stdio. Each state
+    raises differently — BrokenPipeError is an OSError, a closed file raises
+    ValueError, and ``print(file=None)`` does not raise at all but writes to
+    stdout — so asserting only "did not raise" would miss the one that leaks.
+    """
+    import hmc_mcp.server as server_app
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    monkeypatch.setattr(server_app.sys, "stderr", _unusable_stderr(state, tmp_path))
+
+    application = server_app._serve_application(False, policy)
+
+    assert _names(application) == set()
+    assert capsys.readouterr().out == ""
+
+
+def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
+    """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
+    from typer.testing import CliRunner
+
+    import hmc_mcp.access_policy as access_policy_module
+    from hmc_mcp.cli import app
+
+    monkeypatch.setattr(
+        access_policy_module,
+        "resolve_access_policy_path",
+        lambda: tmp_path / "absent.toml",
+    )
+    result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
+
+    # `_fail` renders through a rich Console, which hard-folds a non-tty line at
+    # 80 columns with no spaces to break on, so a tmp_path substring can fold
+    # mid-word between runs. Assert on wrap-proof text instead.
+    assert result.exit_code == 1
+    assert "cannot be read" in result.output

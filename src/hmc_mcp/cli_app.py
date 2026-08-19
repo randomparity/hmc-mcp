@@ -295,6 +295,13 @@ def serve(
         "--enable-arbitrary-command",
         help="Expose hmc_run_command, which can execute any HMC CLI command.",
     ),
+    access_policy: str | None = typer.Option(
+        None,
+        "--access-policy",
+        metavar="NAME",
+        help="Enforce the named access policy from access-policy.toml. Without it, "
+        "no capability ceiling is applied and every tool is exposed.",
+    ),
 ) -> None:
     """Run the MCP server (stdio by default — what agents expect).
 
@@ -303,6 +310,11 @@ def serve(
     arbitrary HMC CLI execution. Bind only to loopback (the default). To reach the server
     beyond localhost you must pass ``--allow-remote`` AND put an authenticated
     reverse proxy (MCP gateway or HTTPS proxy with bearer-token auth) in front.
+
+    Pass ``--access-policy NAME`` to enforce a capability ceiling from
+    ``access-policy.toml``: the server then registers only the tools that policy
+    permits. Without it no ceiling is applied. Call ``hmc_effective_permissions``
+    to see what a running server actually exposes.
     """
     from . import server
 
@@ -316,6 +328,15 @@ def serve(
             "configure the server with HMC_* environment variables or a configured HMC_PROFILE"
         )
 
+    from .access_policy import AccessPolicyError, load_access_policy
+
+    policy = None
+    if access_policy is not None:
+        try:
+            policy = load_access_policy(access_policy, server.TOOL_SECURITY)
+        except AccessPolicyError as exc:
+            _fail(exc)
+
     if http:
         try:
             server.main_http(
@@ -323,13 +344,16 @@ def serve(
                 port=port,
                 enable_arbitrary_command=enable_arbitrary_command,
                 allow_remote=allow_remote,
+                access_policy=policy,
             )
         except ValueError as exc:
             raise typer.BadParameter(
                 f"{exc} Re-run with --allow-remote if you understand the risk."
             ) from exc
     else:
-        server.main_stdio(enable_arbitrary_command=enable_arbitrary_command)
+        server.main_stdio(
+            enable_arbitrary_command=enable_arbitrary_command, access_policy=policy
+        )
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
