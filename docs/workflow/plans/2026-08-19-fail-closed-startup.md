@@ -38,6 +38,15 @@ compiles the legacy-equivalent document; `cli_config` writes it; `cli_app.serve`
   3.11-3.14. There is no macOS or Windows leg, so a POSIX-only test still runs on every leg.
 - **`tests/conftest.py`'s `isolate_audit_logging` is autouse** and resets the `hmc_mcp.audit`
   logger at setup and teardown. Work around it; do not modify it casually.
+- **Config-directory isolation, for every test that reads or writes one.** Needed by Tasks 1,
+  3, 4 and 6 — not only by L2. `config_dir()` resolves `XDG_CONFIG_HOME` on Linux and
+  `Path.home()/Library/Application Support` on darwin **with no environment override**, so a
+  test that touches the real path can read the developer's profiles or create a real
+  `access-policy.toml`. The recipe: set `HOME` to a `tmp_path`, delete `XDG_CONFIG_HOME` and
+  `APPDATA` from the process environment (and from any child's), patch `pathlib.Path.home`,
+  and derive the target from `config_dir()` **after** that steering rather than by joining
+  `tmp_path` by hand. L2 is the only check that spawns a **subprocess** that writes; Task 4
+  writes in-process and needs the same isolation.
 - **Never squash-merge**; conventional commits; never write "closes/fixes/resolves" adjacent to a
   `#NNN` reference in a **commit message** — GitHub parses commit messages and would close the
   issue named. Write "the change addressing #NNN".
@@ -56,7 +65,8 @@ compiles the legacy-equivalent document; `cli_config` writes it; `cli_app.serve`
 | `tests/unit/test_legacy_policy.py` | **new** | R7-R10, R9a, R9b |
 | `tests/app/test_fail_closed_startup.py` | **new** | R1-R5b, G1-G3, R12-R14, R16e, L1, L2 + the inventory guard |
 | `tests/app/test_cli_config.py` | modified | R11, R11a |
-| `tests/app/test_serve.py`, `test_capability_ceiling.py`, `test_connection_authorization.py`, `test_capabilities.py`, `test_tool_security.py`, `test_collection_limits.py`, `test_profile_routing.py`, `test_lifecycle_schema_descriptions.py`, `tests/test_live_runner.py` | modified | R2a, R2b, R2c and the three retired tests |
+| `tests/app/test_serve.py`, `test_capability_ceiling.py`, `test_connection_authorization.py`, `test_capabilities.py`, `test_tool_security.py`, `test_collection_limits.py`, `test_profile_routing.py`, `test_lifecycle_schema_descriptions.py`, `test_application_boundaries.py`, `tests/test_live_runner.py` | modified | R2a-R2e and the three retired tests |
+| `tests/app/test_cli*.py` and any module asserting on `Error:` text | inspected | R2e — `_fail`'s rendering change reaches every `cli_*` module |
 
 ## Task 1 — `hmc_mcp.legacy_policy`
 
@@ -98,7 +108,7 @@ Steps, in TDD order:
 4. Write `test_connections_put_the_default_first_and_drop_a_colliding_key` (R8): with a
    `config.toml` holding `[profiles.lab]`, `[profiles.prod]`, and `[profiles."<default>"]`,
    `legacy_connections()` returns `("<default>", "lab", "prod")` — the sentinel appears exactly
-   once. Steer `config_dir()` per the isolation recipe in Task 6. Implement
+   once. Steer `config_dir()` per the isolation recipe in *Global constraints*. Implement
    `legacy_connections` over `config.list_profiles_and_nicknames()[0]`, filtering
    `DEFAULT_CONNECTION_TOKEN` out of the profile half.
 5. Write `test_rendering_round_trips_through_the_real_loader` (R9): render, `tomllib.loads`,
@@ -113,14 +123,19 @@ Steps, in TDD order:
 7. Write `test_compile_legacy_policy_needs_no_filesystem` (R10): assert
    `compile_legacy_policy(TOOL_SECURITY, ("<default>",)).source == GENERATED_SOURCE` and that it
    holds no path separator.
-8. Add the header comment to `render_legacy_policy`'s output (R9): what the policy grants; that
-   it is a migration aid rather than a recommended posture; how to add `hmc_run_command`; the
-   `--output`, diff, merge-by-hand regeneration procedure; and that a hand-added
-   `hmc_run_command` line always shows as a deletion on regeneration.
+8. Write `test_the_header_carries_the_five_things_the_operator_needs` first, asserting the
+   rendered comment lines contain `hmc_run_command`, `--output`, and a phrase pinning "migration
+   aid" — the round-trip test in step 5 passes identically on a header-free document, so without
+   this the header can be truncated or dropped with the suite green while R11a's regeneration
+   story and R16's fresh-install guidance both rest on it. Then add the header to
+   `render_legacy_policy`'s output (R9): what the policy grants; that it is a migration aid
+   rather than a recommended posture; how to add `hmc_run_command`; the `--output`, diff,
+   merge-by-hand regeneration procedure; and that a hand-added `hmc_run_command` line always
+   shows as a deletion on regeneration.
 
 **Acceptance:** `legacy_tools`, `legacy_connections`, `render_legacy_policy` and
 `compile_legacy_policy` exist with the signatures above; the rendered document loads through the
-real loader; a profile key holding a quote, a backslash, a newline, or U+007F round-trips.
+real loader; a profile key holding a quote, a backslash, a newline, or U+007F round-trips; the header carries its five load-bearing tokens.
 
 ## Task 2 — fail-closed composition in `server.py`
 
@@ -141,7 +156,13 @@ real loader; a profile key holding a quote, a backslash, a newline, or U+007F ro
    no default (R4).
 5. Delete `_unselected_policy_file` and the `access_policy is None` branch of
    `_startup_warnings`; retype its parameter to `AccessPolicy` and drop the two `is not None`
-   guards that are now dead (R6).
+   guards that are now dead (R6). This breaks
+   `tests/app/test_capability_ceiling.py::test_an_authored_but_unselected_policy_file_is_warned`,
+   whose condition is now unreachable — invert it to assert the warning set no longer carries
+   that line, rather than deleting it. The same file reaches the removed application twice, at
+   `patch.object(type(server_module.mcp), "run", _capture)` and
+   `served["app"] is not server_module.mcp`: the patch target becomes `FastMCP` and the identity
+   assertion compares against the application the entry point composed (R2d).
 6. Update the module docstring's `Run:` block so both invocations carry `--access-policy NAME`
    (R16c).
 7. Write `test_the_legacy_policy_composes_the_registry_the_default_used_to` (G2):
@@ -204,8 +225,17 @@ the generator; a bracketed exception message reaches stderr intact.
 1. Write `test_generating_writes_a_loadable_policy_at_0600`,
    `test_generating_twice_refuses_and_leaves_the_file_byte_identical`, and
    `test_output_redirects_the_write` (R11, R11a).
-2. Implement `config_init_access_policy` with one option, `--output PATH`. Order: resolve the
-   destination through the same guard as Task 3 (R11); read connections (R8); render (R9);
+2. Implement `config_init_access_policy` with one option, `--output PATH`. Resolve the
+   destination first, by this table — the guard discards the exception text, so the `None`
+   branch synthesizes its own message:
+
+   | condition | destination |
+   |---|---|
+   | `--output PATH` given | `Path(PATH)`; the guard is never called |
+   | guard returns `(path, _)` | `path` |
+   | guard returns `None` | `_fail` at exit 1, naming the `HOME`/`XDG_CONFIG_HOME` remedy |
+
+   Then: read connections (R8); render (R9);
    **parse and compile the rendered text before creating anything** (R9b), catching
    `AccessPolicyError` and re-raising with a clause naming `config.toml`, the offending key, and
    the two remedies; then `mkdir(parents=True, exist_ok=True)` and the `O_EXCL`/`0o600` create,
@@ -233,15 +263,37 @@ file map.
    `authorize` derived from that policy into `configure_arbitrary_command_tool` (R15a) — today it
    calls `(True, mcp)`, so `permits=None` registers regardless of policy and `authorize=None`
    leaves the handler unwrapped.
-3. Update `tests/test_live_runner.py`'s `configure` double for the new call signature (R2b).
+3. `tests/test_live_runner.py`'s `configure` double breaks twice, not once: it takes
+   `(enabled, application)` and its body asserts `application is runner.mcp`. The signature
+   gains `permits=`/`authorize=` keywords, and the identity assertion has no replacement once
+   `runner.mcp` is gone — assert instead that the passed `permits` permits `hmc_run_command`,
+   which is the property R15a actually needs and which the old identity check never made
+   (R2b).
 4. The five `server.mcp` importers each bind a module-level
    `create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))` (R2a). No
    assertion changes: all five use it only for `list_tools()`, which the wrapper leaves
    untouched.
-5. The five bare `create_mcp()` call sites compose through the legacy-equivalent policy (R2c).
-6. `tests/app/test_serve.py`: invert every assertion to the new contract — a real `AccessPolicy`
-   forwarded rather than `None`, the gate pair non-`None`, and new exit-code assertions for the
-   two refusals (R2b).
+5. The **six** bare `create_mcp()` call sites compose through the legacy-equivalent policy
+   (R2c). Five are in `test_capability_ceiling.py` and `test_connection_authorization.py`; the
+   sixth is `test_create_mcp_returns_independent_complete_applications` in
+   `tests/app/test_application_boundaries.py`, whose *function-local*
+   `from hmc_mcp.server import create_mcp` is masked by that module's file-scope
+   `hmc_mcp._app` import. Its two `create_mcp()` calls and its `== 129` assertions survive
+   unchanged once the policy is supplied, because G2 pins that number.
+6. `tests/app/test_serve.py`, by breakage class (R2b):
+   1. six `patch.object(type(server_app.mcp), "run", ...)` targets become `FastMCP`;
+   2. five `access_policy=None` forwarding assertions become a real `AccessPolicy`;
+   3. two `assert calls == [(enabled, None, None)]` become non-`None` gate assertions;
+   4. four bare `main_stdio(...)` / `main_http(...)` calls gain an `access_policy` argument;
+   5. every `CliRunner().invoke(app, [..., "serve"])` that expects a *successful* start gains
+      `--access-policy NAME` and a policy file;
+   6. new cases asserting exit 2 for the omitted option and exit 1 for the absent file.
+
+   `test_serve_rejects_command_line_hmc_options` needs **no** change, and that fixes an
+   ordering question: it invokes `serve` with an HMC option and no `--access-policy`, and
+   asserts the HMC-options message at exit 2. So `serve` keeps the existing
+   `command_line_options` check **before** the new policy check. Both exit 2, so only the
+   order is observable — and this test is what observes it.
 7. Invert the three retired tests named in the spec's *Retired tests* section rather than
    deleting them.
 
@@ -258,19 +310,29 @@ the tool count.
    `all-targets` covers `target_scope.ABSENT` and no `targets` table does.
 2. `test_the_generated_policy_authorizes_a_vios_partition_id_call` (R13) — the surface's only
    `int` selector, carried by three live tools, all non-exhaustive.
-3. **L1** — `subprocess.run([sys.executable, "-m", "hmc_mcp", "serve"])` (or the console script)
-   asserting exit 2 and that stderr names the generator. Portable: no shell redirection, no
-   `HOME` steering.
-4. **L2** — the migration end to end, POSIX-only. Isolation, stated because L2 is the only check
-   that **writes**: set `HOME` to a `tmp_path`, **remove `XDG_CONFIG_HOME` and `APPDATA` from
-   both this process and the child environment**, patch `pathlib.Path.home`, and derive the
-   target from `config_dir()` after that steering. Setting `HOME` alone does not steer
-   `config_dir()` on Linux — it reads `XDG_CONFIG_HOME` first — and the failure mode is writing
-   a real `access-policy.toml` into the developer's own config directory.
-5. Add `test_every_spec_numbered_test_named_in_the_header_still_exists`, copying the inventory
-   guard in `tests/unit/test_audit.py`: the module header maps each R/G/L identifier to a node
-   id, and the guard fails when one stops existing. On #224 a slice-replacement refactor deleted
-   the only test that could see a regression and left 2011 tests green.
+3. **L1** — spawn the **console script**, not `python -m hmc_mcp`: there is no
+   `src/hmc_mcp/__main__.py`, so the module form exits 1 with "No module named
+   `hmc_mcp.__main__`" and would satisfy a non-zero-exit intuition while proving nothing.
+   Resolve it as `tests/app/test_authorization_audit_live.py` already does —
+   `shutil.which("hmc-mcp")` plus its same-checkout assertion, so the proof cannot silently run
+   against another build — then assert exit 2 and that stderr names the generator. Portable: no
+   shell redirection and no `HOME` steering, since the refusal precedes any path read.
+4. **L2** — the migration end to end, POSIX-only. Apply the isolation recipe from *Global
+   constraints* to both this process and the child environment. L2 is the only check whose
+   **subprocess** writes; Task 4 writes in-process under the same recipe. POSIX-only because on
+   win32 `config_dir()` reads `APPDATA` while `Path.home()` reads `USERPROFILE`, so the steering
+   does not hold.
+5. Add the inventory guard **per module**, not once. The pattern in `tests/unit/test_audit.py`
+   is single-module by construction: it reads `Path(__file__).read_text()`, regexes `^def
+   (test_...)` out of that same file, and asserts the header's names are a subset. The
+   identifiers here span three modules, so each of `tests/unit/test_legacy_policy.py`,
+   `tests/app/test_cli_config.py`, and `tests/app/test_fail_closed_startup.py` carries its own
+   header and its own guard over its own identifiers. State in each header which identifiers it
+   owns, and record here the ones that are **documentation-only and test-backed by no node id** —
+   R16, R16a-R16e, R17 — so a reader does not hunt for tests that were never meant to exist.
+   R16e is the exception among them and does have a test. On #224 a slice-replacement refactor
+   deleted the only test that could see a regression and left 2011 tests green; this is the
+   guard against that.
 6. **Mutation-check every pinned claim**, both directions: break the production line, run the
    named test, confirm it reddens, restore, confirm it passes. A mutation that reddens nothing is
    a finding about the test, not a pass. At minimum: the `create_mcp` `None` guard, the

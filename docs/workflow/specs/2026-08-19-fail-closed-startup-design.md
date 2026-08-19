@@ -87,11 +87,31 @@ are_independent`, `test_inspection_is_registered_and_classified`, and
 `test_inspection_does_not_raise_on_a_tool_outside_the_index` in
 `tests/app/test_capability_ceiling.py`, and `test_the_wrapper_changes_no_tool_schema` and
 `test_compositions_authorize_independently` in `tests/app/test_connection_authorization.py`.
+A sixth is
+`test_create_mcp_returns_independent_complete_applications` in
+`tests/app/test_application_boundaries.py`, whose *function-local*
+`from hmc_mcp.server import create_mcp` is easy to miss because the same module imports
+`hmc_mcp._app.create_mcp` at file scope. `hmc_mcp._app.create_mcp` takes no policy and is
+unaffected wherever it is the one in play — which is the rest of that module and all of
+`tests/unit/test_tool_registry.py`.
+
 Each composes through the legacy-equivalent policy instead, which is the composition whose
 registry G2 pins equal to the one `create_mcp()` used to produce — so every assertion about
-the unfiltered surface stays meaningful rather than being weakened to fit. Note that
-`tests/app/test_application_boundaries.py` and `tests/unit/test_tool_registry.py` import
-`create_mcp` from `hmc_mcp._app`, which takes no policy and is unaffected.
+the unfiltered surface stays meaningful rather than being weakened to fit, including the
+129-tool count that module already asserts.
+
+**R2d — `tests/app/test_capability_ceiling.py` breaks in two further ways.** It reaches the
+removed application as a module attribute (`patch.object(type(server_module.mcp), "run",
+...)` and `served["app"] is not server_module.mcp`), which becomes `AttributeError`; the
+patch target becomes `FastMCP` and the identity assertion compares against the application
+the entry point composed. And `test_an_authored_but_unselected_policy_file_is_warned` asserts
+the warning R6 deletes — inverted, not deleted, since the condition is now unreachable.
+
+**R2e — `_fail`'s blast radius is the whole CLI.** R16e changes error rendering for every
+`cli_*` module that imports `_fail`, so the test modules asserting on `Error:` text are
+re-run and inspected as part of that change rather than assumed unaffected. `unstyle()` is
+already how those assertions read the output, and escaping alters the text only when it
+carries square brackets.
 
 **R3 — Both gates are non-optional and still derived together.** `server._gates(policy:
 AccessPolicy) -> tuple[Callable[[str], bool], Authorize]` returns `policy.permits_tool` and
