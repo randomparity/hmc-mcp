@@ -66,16 +66,27 @@ non-zero with the error's own message on stderr and starts no server.
 `server.main_http` compose the application they serve through `create_mcp(policy)`; they
 do not serve or mutate the module-level `server.mcp`.
 
+**R9a — The entry points wire the ceiling into the escape hatch.** `main_stdio` and
+`main_http` derive `permits` from the policy they serve and pass it to
+`configure_arbitrary_command_tool`; neither relies on its `permits=None` default, which
+means *no ceiling* and would fail open. The observable outcome, asserted at the entry point
+and not only on the function: `--enable-arbitrary-command` together with a policy that
+withholds `hmc_run_command` yields a served application whose registry does not contain it.
+
 **R10 — The inspection tool exists and is classified.** `hmc_effective_permissions` is in
 `server.TOOL_SECURITY` with `effect="read"`, `operation="permissions.describe"`,
 `target_kind="none"`, `targets=()`, `connection_argument=None`. It takes no arguments and
 its MCP annotations are `annotations_for("read")`.
 
-**R10a — A deny-everything policy composes an empty application.** `grants = []` is a
-valid policy under ADR 0036 and #220's rule P2, compiling to a ceiling of zero tools.
-`create_mcp` with it registers nothing; `serve` writes one stderr line saying the policy
-permits no tool and the server will expose none, then starts. This is the operator's
-stated intent, not an error, so it is not rejected at selection.
+**R10a — An empty composed surface is visible, however it arose.** `serve` warns when the
+application it composed registers zero tools, keyed on the composed result rather than on
+the policy's shape. Two documents reach that state: `grants = []`, a valid deny-everything
+policy under ADR 0036 and #220's rule P2; and a policy whose whole ceiling is
+`tools = ["hmc_run_command"]`, since `create_mcp` never registers that tool and the same
+ceiling withholds the inspection tool. Neither is an error — both are the operator's stated
+intent — so neither is rejected at selection. An empty surface already implies the
+inspection tool is absent, so this warning **replaces** R18's rather than firing beside it;
+exactly one of the two is printed.
 
 **R11 — The inspection tool is subject to the ceiling.** A policy that does not permit
 `hmc_effective_permissions` yields an application without it. A policy granting
@@ -100,9 +111,15 @@ on it — is reported with `effect`, `operation`, and `target_kind` all set to `
 and is excluded from the `effects` set. The tool whose job is describing the surface does
 not raise when the surface changes.
 
-**R14 — Inspection reports the policy source.** `policy_name` and `policy_source` are the
-selected policy's `name` and `source`, or both `None` when no policy is selected.
-`ceiling_enforced` is `True` exactly when a policy is selected.
+**R14 — Inspection reports the policy source, and verifies the ceiling it claims.**
+`policy_name` and `policy_source` are the selected policy's `name` and `source`, or both
+`None` when no policy is selected. `ceiling_enforced` is `True` only when a policy is
+selected **and** every currently registered tool is permitted by it — it is checked against
+the registry being reported, not inferred from selection. A registry that has drifted past
+its ceiling therefore reports `ceiling_enforced is False` with a non-null `policy_name`,
+which is the honest reading of that state. Drift is reachable: `configure_arbitrary_command_tool(True, app)`
+with its default `permits=None` registers `hmc_run_command` on an application whose ceiling
+excluded it, which is the call shape in `scripts/live_test_runner.py`.
 
 **R15 — Inspection reports grants individually.** `declared_grants` has one entry per
 grant in document order, each carrying that grant's sorted tool names, sorted connection
@@ -110,19 +127,25 @@ tokens with `None` rendered as `"<default>"`, an `all_targets` boolean, and a `t
 mapping of target kind to sorted selector strings — empty when `all_targets` is true.
 Connections and targets from different grants are never merged.
 
-**R16 — Inspection states what is enforced, and does not overstate it.** With a policy
-selected, `enforced_dimensions == ("tools",)` and
-`declared_only_dimensions == ("connections", "targets")`. With no policy selected both are
-`()`, matching `ceiling_enforced is False`: a server with no ceiling enforces no dimension
-and declares none.
+**R16 — Inspection states what is enforced, and does not overstate it.**
+`enforced_dimensions == ("tools",)` and `declared_only_dimensions == ("connections",
+"targets")` exactly when `ceiling_enforced` is `True`; both are `()` otherwise. They are
+derived from `ceiling_enforced` and share its verification, so no output can pair a claim
+of tool enforcement with a registry that exceeds the ceiling.
 
 **R17 — Inspection carries no credential, stated as a closed allowlist.** The output
 contains exactly the fields of `EffectivePermissions` and nothing else, and every string
-value in it is drawn from one of three sources: a tool name, operation, effect, or target
-kind read from the compiled-in `TOOL_SECURITY` index; an operator-authored identifier in
-the selected policy document (its name, a connection token, a target selector); or the
-resolved policy path. A new field, or a value from a fourth source, fails this
-requirement. Concretely and negatively: no value is read from `config.toml`, from an
+value in it is drawn from one of five sources: (a) a tool name, operation, effect, or
+target kind read from the compiled-in `TOOL_SECURITY` index; (b) an operator-authored
+identifier in the selected policy document (its name, a connection token, a target
+selector); (c) the resolved policy path; (d) a fixed literal defined in
+`server_permissions.py` or `access_policy.py` — the two dimension labels `"tools"`,
+`"connections"`, `"targets"`, the `"unknown"` classification fallback, and
+`DEFAULT_CONNECTION_TOKEN` (`"<default>"`), which is synthesised for a compiled `None`; and
+(e) a tool name read from the live registry. (e) is the only unbounded source — a name
+reaches it only by someone calling `mcp.tool(...)` on the composed application, so it is
+bounded by who holds that object, not by this design. A new field, or a value from a sixth
+source, fails this requirement. Concretely and negatively: no value is read from `config.toml`, from an
 `HMC_*` environment variable, or from the HMC. The policy path is *not* claimed to be
 environment-free — `config_dir()` builds it from `XDG_CONFIG_HOME` on Linux and `APPDATA`
 on Windows, so on those platforms it embeds an environment value by construction, and it
@@ -232,11 +255,18 @@ the policy's compiled grants.
 the tool index arrives as a parameter — the same one-way dependency ADR 0036 fixed for
 `load_access_policy`.
 
-Both dimension tuples are derived from whether a policy is selected, not module constants:
-empty with no policy, and the fixed pair above with one. A constant `("tools",)` would
-report an enforcement the permissive default is not performing. They describe composition
-rather than a re-verification of the registry reported beside them. Their *contents* are
+`ceiling_enforced` is computed, not inferred: a policy must be selected *and* every name in
+the read registry must satisfy `policy.permits_tool`. Both dimension tuples derive from it,
+so a constant `("tools",)` can never accompany a registry that exceeds its ceiling, and the
+permissive default cannot claim an enforcement it is not performing. Their *contents* are
 literals in this module and change when #222 and #223 land.
+
+`DeclaredGrant.tools` carries the compiled grant's *resolved* tool set, so a grant authored
+as `effects = ["read"]` and one authored as a ninety-name `tools` list render identically
+and the authored `effects` list is not recoverable from the output. Retaining it would mean
+adding a field to `access_policy.Grant`, which this change lists as read-not-changed. The
+omission is accepted here and filed as follow-up work; it costs an operator comparing the
+file against the tool's output a hand re-derivation of the effect expansion.
 
 ### Startup selection
 
@@ -262,7 +292,7 @@ constrain.
 | `--access-policy` names a policy the file lacks | `AccessPolicyError` from `compile_access_policy` → exit 1, message names the file and available policies |
 | `access-policy.toml` absent | `AccessPolicyError` "cannot be read" → exit 1 |
 | Policy invalid (any ADR 0036 rule) | `AccessPolicyError` with the module's rendered message → exit 1 |
-| Policy permits no tool at all (`grants = []`) | Composes an application with zero tools; `serve` warns that the ceiling is empty and starts |
+| Composed application registers zero tools (`grants = []`, or a ceiling of only `hmc_run_command`) | `serve` warns the surface is empty and starts; this warning replaces the withheld-inspection-tool one |
 | Policy withholds `hmc_effective_permissions` | Warning on stderr; server starts |
 | No `--access-policy`, no policy file on disk | No ceiling, no output; unchanged behaviour |
 | No `--access-policy`, policy file present | Warning on stderr; server starts with no ceiling |
@@ -278,8 +308,13 @@ registries. R12 is asserted by calling the registered inspection handler through
 application and comparing against `app.list_tools()` — including after toggling the
 arbitrary-command tool, which is the case a recomputed answer would get wrong.
 
-A deny-everything policy (`grants = []`) gets its own case: composition yields zero tools,
-and `serve` warns. `README.md` is updated in the same change (R22).
+Two empty-surface cases get their own tests — `grants = []` and a ceiling of only
+`hmc_run_command` — each asserting zero registered tools and the single empty-surface
+warning. R9a is asserted at the entry point: `main_stdio` with
+`--enable-arbitrary-command` and a policy withholding `hmc_run_command` serves an
+application whose registry lacks it. R14's drift case is asserted directly:
+`configure_arbitrary_command_tool(True, app)` with no predicate, then
+`ceiling_enforced is False` with a non-null `policy_name` and empty dimension tuples. `README.md` is updated in the same change (R22).
 
 Existing tests that change: `tests/app/test_application_boundaries.py` (128 → 129),
 `tests/app/test_tool_security.py` (G10 becomes a two-name allowance),
@@ -347,8 +382,12 @@ client and does not change what the operator is trusted with.
 - The policy file's permissions are not checked. ADR 0036 decided this: checking one
   credential-adjacent file and not the other is theatre.
 - Denial-of-service through repeated `hmc_effective_permissions` calls is not bounded.
-  The handler does no I/O and allocates a result proportional to the registry, which is
-  fixed at composition; it is cheaper than every other tool on the surface.
+  The handler does no I/O and no HMC call. Its result is proportional to the registry plus
+  the sum of each grant's *resolved* tool set — an `effects = ["read"]` grant expands to
+  roughly ninety names, and two grants differing by one connection token are distinct, so
+  the size is operator-controlled rather than registry-bounded. Both terms are fixed for
+  the process lifetime once the policy is compiled, and the handler remains cheaper than
+  every tool that reaches the HMC.
 
 ## Open questions
 
