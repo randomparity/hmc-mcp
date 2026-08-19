@@ -116,16 +116,27 @@ template on purpose. To find malformed calls, filter
 
 ## Attribution is never identity
 
-`attribution.claim` is `HMC_AGENT_ID` read from the **server process's** environment.
-`verified` is always `false`, and the value never influences an authorization decision
-at this boundary.
+`verified` is always `false` on both records, and neither value influences an
+authorization decision at the dispatch boundary. Where they come from differs, and the
+`source` field is what tells you which you are reading.
 
-Two things follow that are easy to get wrong:
+**`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
+from the server process's environment at emission.
+
+**`source: "config:agent_id"`** — on the `ownership-override` record. This is
+`HMCConfig.agent_id`, the effective value the ADR 0011 check compared, and it differs
+from the other in three ways worth knowing: it may come from a `config.toml` profile
+rather than the environment, it *is* validated by `validate_agent_id`, and it renders
+the literal `hmc-mcp` when no identity is configured at all rather than `null`.
+
+Two things follow for the `authorization` record that are easy to get wrong:
 
 - **It identifies the process, not the caller.** Under stdio one process serves one
   client and the two coincide. Under streamable HTTP one process serves many clients,
   so every record carries the same claim and the field tells you nothing per-caller.
-- **It is the raw environment value.** `docs/environment-variables.md` documents
+- **It is the raw environment value, unvalidated.** This applies to the `authorization`
+  record only — the ownership-override claim goes through `validate_agent_id`.
+  `docs/environment-variables.md` documents
   `HMC_AGENT_ID` as 1–64 printable ASCII with a forbidden-character set; that is the
   rule for *configuration*, and this record deliberately bypasses it so a malformed
   value is still reportable. A recorded claim may therefore be wider and stranger than

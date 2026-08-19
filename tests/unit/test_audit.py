@@ -264,6 +264,20 @@ def test_reasons_matches_the_literal():
     }
 
 
+def test_events_matches_the_literal_and_both_emitters_use_it():
+    """The `event` vocabulary is two values, and a checker can see that."""
+    from typing import get_args
+
+    assert audit.EVENTS == frozenset(get_args(audit.Event))
+    assert audit.EVENTS == {"authorization", "ownership-override"}
+
+    lines = _capture()
+    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    emitted = {json.loads(lines[0])["event"]}
+    emitted.add(_authorization()["event"])
+    assert emitted == audit.EVENTS, "every declared event must be reachable"
+
+
 def test_only_audit_resolves_the_audit_logger():
     """Spec 8a. The logger is reserved, and `audit` imports nothing from us."""
     package = Path(audit.__file__).parent

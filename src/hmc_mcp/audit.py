@@ -73,6 +73,11 @@ REASONS: frozenset[str] = frozenset(get_args(Reason))
 
 Event = Literal["authorization", "ownership-override"]
 
+#: Derived, as REASONS is, so the two-value vocabulary is something a checker and
+#: a test can consult rather than a claim in a docstring. Both builders bind their
+#: literal through ``Event``, so a typo in either is a type error.
+EVENTS: frozenset[str] = frozenset(get_args(Event))
+
 #: What a caller supplied for one selector: a value, nothing, or something the
 #: boundary declines to read. ``reason`` names the *decision*; these name the *input*,
 #: which is why there is no ``connection-selector-unreadable`` reason code.
@@ -192,9 +197,10 @@ def record_authorization(
     """
 
     def build() -> dict[str, Any]:
+        event: Event = "authorization"
         return {
             "time": datetime.now(timezone.utc).isoformat(),
-            "event": "authorization",
+            "event": event,
             "policy": policy,
             "tool": tool,
             "effect": effect,
@@ -234,9 +240,10 @@ def record_ownership_override(*, system: str, lpar: str, agent_id: str) -> None:
     """
 
     def build() -> dict[str, Any]:
+        event: Event = "ownership-override"
         return {
             "time": datetime.now(timezone.utc).isoformat(),
-            "event": "ownership-override",
+            "event": event,
             "system": _value(system),
             "lpar": _value(lpar),
             "attribution": _attribution(agent_id, "config:agent_id"),
