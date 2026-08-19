@@ -6,26 +6,36 @@ decision record is docs/adr/0040-authorization-audit-events.md.
 Logging isolation comes from the autouse ``isolate_audit_logging`` fixture in
 ``tests/conftest.py``. Nothing here may install a sink without it.
 
-Spec test -> node id:
-  1  test_a_permitted_record_carries_every_field_in_order
-  2  test_output_is_one_ascii_line_whatever_the_caller_sends
-  3  test_a_long_selector_value_is_truncated_to_the_bound
-  4  test_a_long_agent_id_is_truncated_to_the_bound
-  5  test_a_non_string_connection_token_is_never_rendered
-  6  test_targets_and_resolved_are_null_when_nothing_was_resolved
-  6b test_a_profile_named_unresolved_is_indistinguishable_from_the_sentinel
-  7  test_attribution_is_unverified_and_sourced_when_the_env_is_unset
-  8  test_reasons_matches_the_literal
-  8a test_only_audit_resolves_the_audit_logger
-  9  test_a_record_reaches_stderr_and_not_stdout
-  10 test_the_sink_does_not_propagate_to_an_ancestor_handler
-  11 test_a_none_stderr_writes_nothing_and_raises_nothing
-  12 test_a_closed_stream_is_survived
-  13 test_a_broken_pipe_is_survived
-  14 test_install_is_idempotent_and_defers_to_what_the_operator_set
+Spec test -> node id. This map is checked by
+``test_every_spec_numbered_test_named_in_the_header_still_exists`` — keep it true.
+
+  1   test_a_permitted_record_carries_every_field_in_order
+  2   test_output_is_one_ascii_line_whatever_the_caller_sends
+  3   test_a_long_selector_value_is_truncated_to_the_bound
+  4   test_a_long_agent_id_is_truncated_to_the_bound
+  5   test_a_non_string_connection_token_is_never_rendered
+  6   test_targets_and_resolved_are_null_when_nothing_was_resolved
+  6b  test_a_profile_named_unresolved_is_indistinguishable_from_the_sentinel
+  7   test_attribution_is_unverified_and_sourced_when_the_env_is_unset
+  8   test_reasons_matches_the_literal
+  8a  test_only_audit_resolves_the_audit_logger
+  9   test_a_record_reaches_stderr_and_not_stdout
+  10  test_the_sink_does_not_propagate_to_an_ancestor_handler
+  11  test_a_none_stderr_writes_nothing_and_raises_nothing
+  12,13 test_a_broken_or_closed_stream_is_survived  (parametrized over both)
+  14  test_install_is_idempotent_and_defers_to_what_the_operator_set
   14a test_a_preattached_stdout_handler_is_deferred_to
   14b test_the_singletons_render_as_states_rather_than_raising
-  15 test_the_line_equals_the_message_and_records_do_not_share_a_line
+  15  test_the_line_equals_the_message_and_records_do_not_share_a_line
+  15  test_the_handler_issues_one_write_per_record
+
+Not spec-numbered, each pinning something a review round found:
+
+  test_resolved_connection_is_bound_to_the_sentinel_that_owns_it
+  test_events_matches_the_literal_and_both_emitters_use_it
+  test_the_module_closes_propagation_at_import          (#272, fresh interpreter)
+  test_an_unconfigured_logger_still_reaches_last_resort (#272's other half)
+  test_a_foreign_writers_bad_record_does_not_raise_into_them
 """
 
 from __future__ import annotations
@@ -33,6 +43,8 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import get_args
@@ -84,6 +96,29 @@ def _authorization(**overrides) -> dict:
     kwargs.update(overrides)
     audit.record_authorization(**kwargs)
     return _one(lines)
+
+
+def test_every_spec_numbered_test_named_in_the_header_still_exists():
+    """The header maps spec numbers to node ids; this makes that map load-bearing.
+
+    Added because it was not. A slice replacement in `22ee201` — rewriting the
+    span between two functions — silently swallowed three tests that sat between
+    them, including the only pin on #272's import-time ``propagate = False``. The
+    suite stayed green at 2011 passed, so deleting a security fix reddened
+    nothing, and the loss reached a PR before the orchestrator caught it by
+    mutation.
+
+    A deletion is invisible to every other test by construction: nothing fails
+    when an assertion simply stops existing. So the header is the inventory and
+    this compares it against reality.
+    """
+    source = Path(__file__).read_text()
+    header = source.split('"""')[1]
+    named = set(re.findall(r"\b(test_[a-z_0-9]+)", header))
+    defined = set(re.findall(r"^def (test_[a-z_0-9]+)", source, re.M))
+    assert named, "the header must map spec numbers to node ids"
+    missing = named - defined
+    assert not missing, f"named in the header but no longer defined: {sorted(missing)}"
 
 
 def test_a_permitted_record_carries_every_field_in_order():
@@ -384,6 +419,55 @@ def test_a_broken_or_closed_stream_is_survived(monkeypatch, error):
 
     audit.install_audit_sink()
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+
+
+def test_the_module_closes_propagation_at_import(tmp_path):
+    """#272. Asserted in a *fresh interpreter*, because the autouse isolation
+    fixture resets `propagate` to True for every test in this session — so an
+    in-process assertion would read the fixture's value, not the shipped one."""
+    probe = (
+        "import logging, hmc_mcp.audit as a; "
+        "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "False", (
+        "importing hmc_mcp.audit must close the route to an ancestor handler, "
+        "which under stdio may be pointed at the JSON-RPC stream"
+    )
+
+def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
+    """The other half of #272's fix: closing propagation must not cost a CLI user
+    the record. `callHandlers` consults `lastResort` when the walk finds zero
+    handlers, which `propagate` does not affect."""
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.handlers.clear()
+    logger.propagate = False
+    saved = list(logging.root.handlers)
+    logging.root.handlers.clear()
+    try:
+        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        captured = capsys.readouterr()
+    finally:
+        logging.root.handlers[:] = saved
+    assert captured.out == ""
+    assert json.loads(captured.err.strip())["event"] == "ownership-override"
+
+def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
+    """A stdlib handler never raises into its caller, and this is an attachment
+    point the operator documentation invites others to use."""
+    audit.install_audit_sink()
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+
+    class Hostile:
+        def __str__(self) -> str:
+            raise RuntimeError("this record cannot be rendered")
+
+    # Raised while the handler renders the message, not while audit builds it, so
+    # audit._emit's guard is not what saves the caller here.
+    logger.warning("%s", Hostile())
+    capsys.readouterr()
 
 
 def test_install_is_idempotent_and_defers_to_what_the_operator_set():
