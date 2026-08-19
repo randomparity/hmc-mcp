@@ -130,7 +130,14 @@ def _connection(token: Any, resolved: str | None) -> dict[str, Any]:
         state = "present"
     else:
         state = "unreadable"
-    return {"state": state, "selector": _value(token), "resolved": resolved}
+    # Rendered only in the "present" state, so "the selector is the caller's own
+    # string, or null otherwise" is true of the field rather than of two of its
+    # three states: `_value("")` is `""`, not None, and an empty token is absent.
+    return {
+        "state": state,
+        "selector": _value(token) if state == "present" else None,
+        "resolved": resolved,
+    }
 
 
 def _attribution(claim: Any, source: str) -> dict[str, Any]:

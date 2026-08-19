@@ -74,7 +74,25 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
             Typed to the closed vocabularies rather than to ``str``: this is the
             only place they are enforced, and widening here would erase the check
             at exactly the four call sites that can be checked exactly.
+
+            Guarded here as well as inside ``audit._emit``, and not redundantly:
+            ``resolved`` and ``targets`` are *built* by this module, above and
+            outside that guard, so without this one ADR 0040's "building one and
+            writing one are both total" would hold for the payload ``audit``
+            assembles and not for the part assembled here. Two boundaries, two
+            guards; ``audit``'s still protects its other caller.
             """
+            try:
+                _record(decision, reason, resolved, targets)
+            except Exception:  # noqa: BLE001 - a diagnostic must not fail a call
+                pass
+
+        def _record(
+            decision: Literal["allow", "deny"],
+            reason: audit.Reason,
+            resolved: str | None,
+            targets: tuple[audit.AuditTarget, ...] | None,
+        ) -> None:
             audit.record_authorization(
                 policy=policy.name,
                 tool=name,
@@ -97,16 +115,23 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
             record("deny", "configuration-unreadable", None, None)
             raise
         extracted = selected_targets(security, arguments)
-        resolved = audit.resolved_connection(connection)
-        audited = tuple(
-            audit.AuditTarget(
-                kind=kind,
-                argument=selector,
-                state=audit_state(value),
-                value=value if isinstance(value, str) else None,
+        # Built inside the guard, not beside it: these are the half of the record
+        # this module assembles, and ADR 0040's totality rule covers building as
+        # well as writing. A failure here degrades the record to nulls rather than
+        # dropping it, and cannot touch the decision below either way.
+        try:
+            resolved = audit.resolved_connection(connection)
+            audited: tuple[audit.AuditTarget, ...] | None = tuple(
+                audit.AuditTarget(
+                    kind=kind,
+                    argument=selector,
+                    state=audit_state(value),
+                    value=value if isinstance(value, str) else None,
+                )
+                for kind, selector, value in extracted
             )
-            for kind, selector, value in extracted
-        )
+        except Exception:  # noqa: BLE001 - a diagnostic must not fail a call
+            resolved, audited = None, None
 
         connection_matched = False
         # One conjunction per grant, never a union across them. Both conditions

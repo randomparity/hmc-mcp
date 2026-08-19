@@ -197,9 +197,12 @@ def test_targets_and_resolved_are_null_when_nothing_was_resolved():
     selectorless = _authorization(targets=())
     assert selectorless["targets"] == []
 
-    assert _authorization(token=None, resolved=audit.resolved_connection(None))[
-        "connection"
-    ] == {"state": "absent", "selector": None, "resolved": "<default>"}
+    for empty in (None, ""):
+        assert _authorization(
+            token=empty, resolved=audit.resolved_connection(None)
+        )["connection"] == {
+            "state": "absent", "selector": None, "resolved": "<default>"
+        }, f"an absent token must render a null selector, got {empty!r}"
     assert (
         _authorization(token="nope", resolved=audit.resolved_connection(""))[
             "connection"

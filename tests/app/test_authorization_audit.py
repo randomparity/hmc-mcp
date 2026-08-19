@@ -226,24 +226,46 @@ def test_a_malformed_call_emits_nothing_and_still_raises(records):
     assert records == []
 
 
-def test_a_failing_sink_leaves_the_outcome_and_its_error_unchanged(monkeypatch):
-    """Spec 14c. Emission is total on both sides — build and write."""
+def test_a_failing_sink_leaves_the_outcome_and_its_error_unchanged():
+    """Spec 14c. Emission is total on both sides — building and writing.
+
+    Each arm uses its own ``monkeypatch.context()`` rather than a shared
+    ``monkeypatch`` with ``undo()``: ``undo()`` reverts *every* patch on that
+    instance, including the autouse ``lab_profile`` fixture's HOME redirection,
+    which would leave later arms authorizing against the developer's real
+    configuration and passing for a reason unrelated to the sink.
+    """
     clean = _authorize(profile="prod")
     assert isinstance(clean, ConnectionScopeError)
 
     def explode(*_args, **_kwargs):
-        raise RuntimeError("renderer is broken")
+        raise RuntimeError("the audit path is broken")
 
-    monkeypatch.setattr(audit, "_connection", explode)
-    broken = _authorize(profile="prod")
-    assert isinstance(broken, ConnectionScopeError)
-    assert str(broken) == str(clean)
+    # Inside audit._emit's guard: the payload audit itself assembles, and the
+    # logger call.
+    for target in ("_connection", "_attribution"):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(audit, target, explode)
+            assert str(_authorize(profile="prod")) == str(clean)
 
-    monkeypatch.undo()
-    monkeypatch.setattr(logging.Logger, "log", explode)
-    still = _authorize(profile="prod")
-    assert isinstance(still, ConnectionScopeError)
-    assert str(still) == str(clean)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(logging.Logger, "log", explode)
+        assert str(_authorize(profile="prod")) == str(clean)
+
+    # Above that guard: the half of the record dispatch_scope builds itself.
+    # Without its own guard these would escape into authorize and replace
+    # ADR 0038's and ADR 0039's client-facing errors with a RuntimeError.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(audit, "resolved_connection", explode)
+        assert str(_authorize(profile="prod")) == str(clean)
+
+    denied_clean = _authorize(lpar_name_or_uuid="other-01")
+    assert isinstance(denied_clean, TargetScopeError)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(audit, "AuditTarget", explode)
+        degraded = _authorize(lpar_name_or_uuid="other-01")
+        assert isinstance(degraded, TargetScopeError)
+        assert str(degraded) == str(denied_clean)
 
 
 def _all_text(records: list[dict]) -> str:

@@ -110,11 +110,18 @@ def child_env(fixture_home):
     for name in ("HMC_HOST", "HMC_PROFILE", "XDG_CONFIG_HOME", "APPDATA"):
         env.pop(name, None)
     env["HOME"] = str(home)
+    # Set rather than popped. A permitted call emits its record and then runs the
+    # real handler against `lab.invalid`, and the reply frame only arrives once
+    # that transport attempt finishes — so the child's own timeout must be well
+    # inside DEADLINE whatever the developer or CI runner exports. HMCConfig
+    # defaults to 60s, twice the deadline; popping it would only restore that.
+    env["HMC_TIMEOUT"] = "5"
 
     assert (directory / "config.toml").exists(), directory
     assert (directory / "access-policy.toml").exists(), directory
     for name in ("HMC_HOST", "HMC_PROFILE", "XDG_CONFIG_HOME", "APPDATA"):
         assert name not in env
+    assert env["HMC_TIMEOUT"] == "5"
     return env
 
 
