@@ -58,9 +58,11 @@ policy cannot withhold is a hole in the ceiling, and this one discloses the poli
 is a pure additive allowlist with no deny form, so only a `tools`-only grant that omits it
 withholds it; an `effects = ["read"]` grant reaches it and *cannot* exclude it without
 abandoning effect-class grants entirely. To keep that from being a silent debuggability
-trap, `serve` prints one stderr line when the selected policy withholds it — the operator
-learns it at the moment they chose the policy, and the warning lives in the CLI rather
-than in `create_mcp`, which is a library function called at import and once per test.
+trap, the serve path prints one stderr line when the selected policy withholds it. That
+warning, and the three others this record adds, live in `main_stdio` / `main_http` rather
+than in `create_mcp`: composition is a library function called at import and once per test,
+while the entry points run only when a server actually starts and are the single point
+where the served registry, the policy, and the arbitrary-command flag all exist at once.
 
 **Both registration sites take the same `permits` gate.** The inspection tool needs the
 application object, which does not exist at import, so it cannot be one of the collector's

@@ -78,8 +78,8 @@ withholds `hmc_run_command` yields a served application whose registry does not 
 `target_kind="none"`, `targets=()`, `connection_argument=None`. It takes no arguments and
 its MCP annotations are `annotations_for("read")`.
 
-**R10a — An empty served surface is visible, however it arose.** `main_stdio` and
-`main_http` warn when the application they are about to serve registers zero tools. The
+**R10a — An empty served surface is visible, however it arose.** A warning is written when
+the application about to be served registers zero tools. The
 check is made *after* `configure_arbitrary_command_tool` has run, so it reports the surface
 actually served, and it lives in the entry points because they are the only components that
 hold a composed application — `serve` never does. Two documents reach an empty surface:
@@ -163,22 +163,22 @@ environment-free — `config_dir()` builds it from `XDG_CONFIG_HOME` on Linux an
 on Windows, so on those platforms it embeds an environment value by construction, and it
 is disclosed deliberately.
 
-**R18 — Withholding the inspection tool is visible.** When `--access-policy` selects a
-policy that does not permit `hmc_effective_permissions`, `serve` writes one warning line
-to stderr naming the tool and the policy, then starts normally.
+**R18 — Withholding the inspection tool is visible.** When the served policy does not
+permit `hmc_effective_permissions`, one warning line naming the tool and the policy is
+written to stderr, then the server starts normally. Suppressed when R10a fires.
 
 **R19 — An authored but unselected policy file is visible, and the check cannot fail the
-start.** When `--access-policy` is *not* passed and `resolve_access_policy_path()` names a
-file that exists, `serve` writes one warning line to stderr saying the file is present, no
-policy was selected, and no ceiling is applied, then starts normally. When the file does
-not exist, `serve` writes nothing. When `resolve_access_policy_path()` raises
-`RuntimeError` or `OSError` — `Path.home()` under a uid with no passwd entry and no `HOME`
-— `serve` skips the warning and starts normally; it never propagates.
+start.** When no policy is selected and `resolve_access_policy_path()` names a file that
+exists, one warning line is written to stderr saying the file is present, no policy was
+selected, and no ceiling is applied; then the server starts normally. When the file does
+not exist, nothing is written. When `resolve_access_policy_path()` raises `RuntimeError` or
+`OSError` — `Path.home()` under a uid with no passwd entry and no `HOME` — the warning is
+skipped and the server starts normally; it never propagates.
 
 **R19a — An explicitly requested escape hatch the policy withholds is visible.** When
-`--enable-arbitrary-command` is passed and the selected policy does not permit
-`hmc_run_command`, `serve` writes one warning line to stderr naming the flag and the
-policy, then starts normally. The mirror case — the policy permits it and the flag is
+`--enable-arbitrary-command` is passed and the served policy does not permit
+`hmc_run_command`, one warning line naming the flag and the policy is written to stderr,
+then the server starts normally. The mirror case — the policy permits it and the flag is
 absent — produces no warning.
 
 **R20 — Both registration sites apply the same gate.** `register_permissions_tool` takes
@@ -285,20 +285,25 @@ file against the tool's output a hand re-derivation of the effect expansion.
 
 ### Startup selection
 
-`serve` gains `--access-policy NAME`. It loads the policy before touching the server,
-converts `AccessPolicyError` into the CLI's standard `_fail` path (stderr + exit 1), warns
-when the policy withholds the inspection tool, and passes the compiled object to
-`main_stdio` / `main_http` as `access_policy`. Both entry points compose
-`create_mcp(access_policy)` and run that application, passing `permits` on to
-`configure_arbitrary_command_tool`.
+`serve` gains `--access-policy NAME`. It loads the policy, converts `AccessPolicyError`
+into the CLI's standard `_fail` path (stderr + exit 1), and passes the compiled object to
+`main_stdio` / `main_http` as `access_policy`. Loading and error reporting are all `serve`
+does with the policy.
 
-With no `--access-policy`, `serve` checks whether `resolve_access_policy_path()` names an
-existing file and warns once if it does — the authored-but-unselected state. No file is
-read, so a malformed policy cannot make an unselected start fail, and the resolution itself
-is wrapped: `resolve_access_policy_path()` reaches `Path.home()`, which raises
-`RuntimeError` where no home directory can be determined, so `serve` catches
-`RuntimeError`/`OSError` and skips the warning rather than aborting a start nobody asked to
-constrain.
+**All four warnings live in one function**, `server._startup_warnings`, called by both entry
+points after `create_mcp` and after `configure_arbitrary_command_tool`. That is the only
+point at which every input exists at once — the served registry, the policy, and the
+arbitrary-command flag — so keeping them together is what makes R10a's suppression of R18 a
+single ordered decision rather than a coordination between two modules. It returns the
+lines to write, so it is testable without capturing stderr; the entry points write them to
+`sys.stderr` (never stdout, which carries JSON-RPC under stdio). The order is: empty surface
+(suppressing the withheld-inspection-tool line), otherwise withheld inspection tool;
+then authored-but-unselected; then withheld escape hatch.
+
+The authored-but-unselected check reads no file — `resolve_access_policy_path()` plus
+`Path.exists()` — and the resolution is wrapped in `try`, because it reaches `Path.home()`,
+which raises `RuntimeError` where no home directory can be determined. A diagnostic that
+can abort a start nobody asked to constrain is worse than no diagnostic.
 
 ### Errors
 
