@@ -75,24 +75,12 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
             only place they are enforced, and widening here would erase the check
             at exactly the four call sites that can be checked exactly.
 
-            Guarded here as well as inside ``audit._emit``, and not redundantly:
-            ``resolved`` and ``targets`` are *built* by this module, above and
-            outside that guard, so without this one ADR 0040's "building one and
-            writing one are both total" would hold for the payload ``audit``
-            assembles and not for the part assembled here. Two boundaries, two
-            guards; ``audit``'s still protects its other caller.
+            No guard here. ``audit.record_authorization`` is total by construction
+            — ``audit._emit`` takes a builder and catches around both the build and
+            the log call — and everything above is a frozen-dataclass attribute
+            read. The part this module builds for itself is guarded where it is
+            built, below.
             """
-            try:
-                _record(decision, reason, resolved, targets)
-            except Exception:  # noqa: BLE001 - a diagnostic must not fail a call
-                pass
-
-        def _record(
-            decision: Literal["allow", "deny"],
-            reason: audit.Reason,
-            resolved: str | None,
-            targets: tuple[audit.AuditTarget, ...] | None,
-        ) -> None:
             audit.record_authorization(
                 policy=policy.name,
                 tool=name,

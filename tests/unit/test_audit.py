@@ -211,6 +211,25 @@ def test_targets_and_resolved_are_null_when_nothing_was_resolved():
     )
 
 
+def test_resolved_connection_is_bound_to_the_sentinel_that_owns_it():
+    """`audit` restates `""` as a literal; `connection_scope` owns the value.
+
+    `audit.py` may import nothing from the package, so the coupling cannot be an
+    import — but this test may, and without it a change to `UNRESOLVED` would
+    silently make every unresolved token render as a profile key instead. The
+    target half avoids the same drift by putting `audit_state` in `target_scope`;
+    this is the connection half's equivalent, paid for in a test rather than a
+    dependency.
+    """
+    from hmc_mcp import connection_scope
+
+    assert audit.resolved_connection(connection_scope.UNRESOLVED) == (
+        audit.UNRESOLVED_RENDERING
+    )
+    assert audit.resolved_connection(None) == audit.DEFAULT_RENDERING
+    assert audit.resolved_connection("lab") == "lab"
+
+
 def test_a_profile_named_unresolved_is_indistinguishable_from_the_sentinel():
     """Spec 6b. A reserved rendering shares a string space with legal keys."""
     named = audit.resolved_connection(audit.UNRESOLVED_RENDERING)
