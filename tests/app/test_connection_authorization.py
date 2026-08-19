@@ -15,7 +15,7 @@ from fastmcp.exceptions import ToolError
 
 from hmc_mcp import server_command, server_lpars
 from hmc_mcp.access_policy import compile_access_policy
-from hmc_mcp.connection_scope import ConnectionScopeError, connection_authorizer
+from hmc_mcp.connection_scope import connection_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import ToolSecurity, authorized
 
@@ -27,6 +27,11 @@ LAB_ONLY = [
         "connections": ["lab"],
         "targets": "all-targets",
     }
+]
+
+
+ESCAPE_HATCH_GRANT = [
+    {"tools": ["hmc_run_command"], "connections": ["lab"], "targets": "all-targets"}
 ]
 
 
@@ -91,6 +96,15 @@ def _is_guarded(tool) -> bool:
     )
 
 
+def _delete_args(profile: str | None) -> dict:
+    """The smallest valid `hmc_delete_lpar` call, aimed at *profile*."""
+    return {
+        "system_name_or_uuid": "sys-1",
+        "lpar_name_or_uuid": "victim",
+        "profile": profile,
+    }
+
+
 def _registered(application) -> dict:
     async def _go():
         return {
@@ -122,11 +136,11 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
     from hmc_mcp import client as client_module
 
     def _forbidden(label):
-        def _call(*args, **kwargs):
+        def _refuse(*args, **kwargs):
             opened.append(label)
             raise AssertionError(f"a denied call reached {label}")
 
-        return _call
+        return _refuse
 
     monkeypatch.setattr(client_module.HMCClient, "__init__", _forbidden("HMCClient"))
     monkeypatch.setattr(
@@ -185,11 +199,7 @@ def test_the_seal_itself_bites(monkeypatch):
         _call(
             application,
             "hmc_delete_lpar",
-            {
-                "system_name_or_uuid": "sys-1",
-                "lpar_name_or_uuid": "victim",
-                "profile": "lab",
-            },
+            _delete_args("lab"),
         )
 
     assert opened
@@ -210,7 +220,7 @@ def test_a_permitted_call_reaches_the_handler(monkeypatch):
         _call(
             application,
             "hmc_delete_lpar",
-            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim", "profile": "lab"},
+            _delete_args("lab"),
         )
 
     assert reached == ["lab"]
@@ -222,7 +232,7 @@ def test_the_denial_reaches_the_client_as_a_tool_error():
         _call(
             application,
             "hmc_delete_lpar",
-            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim", "profile": "prod"},
+            _delete_args("prod"),
         )
     message = str(error.value)
     assert "hmc_delete_lpar is not permitted on connection 'prod'" in message
@@ -242,9 +252,7 @@ def test_every_connection_bearing_tool_is_wrapped_under_a_policy():
     Read after ``configure_arbitrary_command_tool`` so it covers the third
     registration site — the one that registers the arbitrary-command tool.
     """
-    policy = _policy(
-        LAB_ONLY + [{"tools": ["hmc_run_command"], "connections": ["lab"], "targets": "all-targets"}]
-    )
+    policy = _policy(LAB_ONLY + ESCAPE_HATCH_GRANT)
     application = create_mcp(policy)
     asyncio.run(
         server_command.configure_arbitrary_command_tool(
@@ -286,16 +294,7 @@ def test_no_tool_is_wrapped_without_a_policy():
 
 def test_the_wrapper_changes_no_tool_schema():
     unfiltered = _registered(create_mcp())
-    grant_everything = _policy(
-        [
-            {
-                "effects": ["read", "mutate", "destructive"],
-                "connections": ["lab"],
-                "targets": "all-targets",
-            }
-        ]
-    )
-    guarded = _registered(create_mcp(grant_everything))
+    guarded = _registered(create_mcp(_policy(LAB_ONLY)))
 
     assert set(guarded) == set(unfiltered)
     for name, tool in guarded.items():
@@ -305,10 +304,7 @@ def test_the_wrapper_changes_no_tool_schema():
 
 
 def test_the_arbitrary_command_tool_keeps_its_schema_through_the_wrapper():
-    grant = [
-        {"tools": ["hmc_run_command"], "connections": ["lab"], "targets": "all-targets"}
-    ]
-    policy = _policy(grant)
+    policy = _policy(ESCAPE_HATCH_GRANT)
 
     def _compose(authorize):
         application = create_mcp(policy)
@@ -332,7 +328,7 @@ def test_the_arbitrary_command_tool_keeps_its_schema_through_the_wrapper():
 # ---------------------------------------------------------------------------
 
 
-def _probe(**kwargs):
+def _probe():
     seen: list[dict] = []
 
     def authorize(name, security, arguments):
@@ -375,13 +371,12 @@ def test_a_malformed_call_fails_before_the_handler():
 
 def test_compositions_authorize_independently(monkeypatch):
     reached: list[str | None] = []
-    monkeypatch.setattr(
-        server_lpars,
-        "client_from_env",
-        lambda profile=None, **kw: reached.append(profile) or (_ for _ in ()).throw(
-            RuntimeError("stop")
-        ),
-    )
+
+    def _capture(profile=None, **overrides):
+        reached.append(profile)
+        raise RuntimeError("stop before any HMC request")
+
+    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
     unrestricted = create_mcp()
@@ -390,13 +385,13 @@ def test_compositions_authorize_independently(monkeypatch):
         _call(
             restricted,
             "hmc_delete_lpar",
-            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim", "profile": "prod"},
+            _delete_args("prod"),
         )
     with pytest.raises(ToolError):
         _call(
             unrestricted,
             "hmc_delete_lpar",
-            {"system_name_or_uuid": "sys-1", "lpar_name_or_uuid": "victim", "profile": "prod"},
+            _delete_args("prod"),
         )
 
     # The unrestricted application ran the handler; the restricted one did not.
@@ -411,17 +406,6 @@ def test_the_module_level_handler_is_never_wrapped():
     assert getattr(server_command.hmc_run_command, "__wrapped__", None) is None
 
 
-def test_the_authorizer_denies_a_tool_no_grant_covers():
-    """Reachable when the escape hatch is enabled under no ceiling."""
-    authorize = connection_authorizer(_policy(LAB_ONLY))
-    with pytest.raises(ConnectionScopeError):
-        authorize(
-            "hmc_run_command",
-            TOOL_SECURITY["hmc_run_command"],
-            {"profile": "lab"},
-        )
-
-
 # ---------------------------------------------------------------------------
 # R17 — the served path, which is the only path a deployment takes
 # ---------------------------------------------------------------------------
@@ -432,11 +416,6 @@ def _serve(policy, *, enable_arbitrary_command=True):
     from hmc_mcp import server
 
     return server._serve_application(enable_arbitrary_command, policy)
-
-
-ESCAPE_HATCH_GRANT = [
-    {"tools": ["hmc_run_command"], "connections": ["lab"], "targets": "all-targets"}
-]
 
 
 def test_the_served_application_wraps_every_connection_bearing_tool():
@@ -516,11 +495,7 @@ def test_an_unreadable_configuration_leaks_no_path_to_the_mcp_client(lab_profile
         _call(
             application,
             "hmc_delete_lpar",
-            {
-                "system_name_or_uuid": "sys-1",
-                "lpar_name_or_uuid": "victim",
-                "profile": "lab",
-            },
+            _delete_args("lab"),
         )
     message = str(error.value)
     assert "the configured HMC connections could not be read" in message

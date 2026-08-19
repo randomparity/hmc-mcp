@@ -50,23 +50,13 @@ SECURITY = ToolSecurity(effect="mutate", operation="lpar.delete", target_kind="c
 
 
 @pytest.fixture
-def config(tmp_path, monkeypatch):
-    """Write CONFIG_TOML at the platform-native path under a temporary home."""
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)
-    monkeypatch.delenv("HMC_HOST", raising=False)
-    monkeypatch.delenv("HMC_PROFILE", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    path = config_dir() / "config.toml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(CONFIG_TOML, encoding="utf-8")
-    return path
-
-
-@pytest.fixture
 def no_config(tmp_path, monkeypatch):
-    """A home directory holding no config.toml at all."""
+    """A home directory holding no config.toml at all.
+
+    The real platform resolution runs against it — ``config_dir()``'s own
+    branching — rather than ``resolve_config_path`` being patched away, so the
+    selection order these tests pin is the one a deployment actually gets.
+    """
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.delenv("HMC_HOST", raising=False)
@@ -74,6 +64,15 @@ def no_config(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     return tmp_path
+
+
+@pytest.fixture
+def config(no_config):
+    """The same isolated home, holding CONFIG_TOML at the platform-native path."""
+    path = config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(CONFIG_TOML, encoding="utf-8")
+    return path
 
 
 def _policy(*connections: str, tools=("hmc_delete_lpar",), name="test"):
@@ -192,9 +191,14 @@ def test_the_unresolved_sentinel_can_never_appear_in_a_grant(config):
 @pytest.mark.parametrize(
     "corrupt",
     [
-        pytest.param(lambda text: text.replace('big-iron = "lab"', "big-iron = 7"), id="nicknames-not-a-string"),
+        pytest.param(
+            lambda text: text.replace('big-iron = "lab"', "big-iron = 7"),
+            id="nicknames-not-a-string",
+        ),
         pytest.param(lambda text: "nicknames = 3\n", id="nicknames-not-a-table"),
-        pytest.param(lambda text: "profiles = 'not-a-table'\n", id="profiles-not-a-table"),
+        pytest.param(
+            lambda text: "profiles = 'not-a-table'\n", id="profiles-not-a-table"
+        ),
         pytest.param(lambda text: "this is [not valid toml ][[[", id="unparseable"),
         pytest.param(lambda text: "\udcff", id="not-utf-8"),
     ],

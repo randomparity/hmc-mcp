@@ -8,8 +8,9 @@ classification. See docs/adr/0035-enforceable-tool-security-metadata.md.
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -409,9 +410,7 @@ _CONNECTION_BUILDERS = frozenset(
 _CONNECTION_OVERRIDES = frozenset({"host"})
 
 _Def = ast.FunctionDef | ast.AsyncFunctionDef
-
-
-_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_Scope = _Def | ast.Lambda
 
 
 def _call_name(call: ast.Call) -> str | None:
@@ -428,14 +427,10 @@ def _module_functions(tree: ast.Module) -> dict[str, _Def]:
     ``dropped-by-a-public-helper`` case is what keeps this from silently
     narrowing back.
     """
-    return {
-        node.name: node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    return {node.name: node for node in tree.body if isinstance(node, _Def)}
 
 
-def _own_scope(function: _Def | ast.Lambda):
+def _own_scope(function: _Scope) -> Iterator[ast.AST]:
     """Every node in *function*'s own scope, stopping at a nested one.
 
     A nested ``def`` or ``lambda`` is a separate frame: its parameters may shadow
@@ -456,11 +451,11 @@ def _own_scope(function: _Def | ast.Lambda):
         yield node
         # A nested frame is yielded so the caller can recurse into it as its own
         # scope, but never descended into from here.
-        if not isinstance(node, _SCOPES):
+        if not isinstance(node, _Scope):
             stack.extend(ast.iter_child_nodes(node))
 
 
-def _nested_selector(function: _Def | ast.Lambda, argument: str) -> str | None:
+def _nested_selector(function: _Scope, argument: str) -> str | None:
     """What *argument* is called inside *function*, or None when it is shadowed.
 
     A nested frame closes over the enclosing selector unless its own parameter
@@ -483,7 +478,7 @@ def _nested_selector(function: _Def | ast.Lambda, argument: str) -> str | None:
     return None if any(parameter.arg == argument for parameter, _ in pairs) else argument
 
 
-def _bound_names(function: _Def | ast.Lambda) -> set[str]:
+def _bound_names(function: _Scope) -> set[str]:
     """Every name *function*'s own scope binds after its parameters.
 
     Store-context ``Name`` nodes cover assignment, augmented assignment,
@@ -557,7 +552,7 @@ def _assert_builder_call(call: ast.Call, argument: str | None, where: str) -> No
 
 
 def _assert_routes(
-    function: _Def | ast.Lambda,
+    function: _Scope,
     argument: str | None,
     helpers: dict[str, _Def],
     tool: str,
@@ -580,7 +575,7 @@ def _assert_routes(
         )
     reached = 0
     for node in _own_scope(function):
-        if isinstance(node, _SCOPES):
+        if isinstance(node, _Scope):
             # A nested frame: its parameters shadow the enclosing selector, so a
             # builder inside one that redeclares the name gets no selector at all.
             reached += _assert_routes(
@@ -615,6 +610,20 @@ def _assert_routes(
     return reached
 
 
+def _assert_no_config_construction(function: _Def, tool: str) -> None:
+    """Refuse a handler that builds its own HMCConfig.
+
+    It would hand that config straight to ``HMCClient``, reaching an HMC through
+    no builder this walk knows. None does today; refusing the construction is
+    what keeps the builder set closed.
+    """
+    assert "HMCConfig" not in {
+        _call_name(node)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+    }, f"{tool}: constructs its own HMCConfig, bypassing profile resolution"
+
+
 def _assert_handler_routes(
     function: _Def, argument: str | None, helpers: dict[str, _Def], tool: str
 ) -> int:
@@ -625,6 +634,7 @@ def _assert_handler_routes(
     is refused for receiving nothing — which is the correct verdict, since a
     connection nothing selects is a connection no access policy can scope.
     """
+    _assert_no_config_construction(function, tool)
     reached = _assert_routes(function, argument, helpers, tool, {tool})
     if argument is not None:
         assert reached, f"{tool}: declares {argument!r} but opens no HMC connection"
@@ -662,14 +672,6 @@ def test_every_handler_routes_the_connection_argument_it_declares():
                 functions,
                 name,
             )
-            # A handler that builds its own HMCConfig hands it straight to
-            # HMCClient, reaching an HMC through no builder this walk knows.
-            # None does today; refusing the construction keeps the set closed.
-            assert "HMCConfig" not in {
-                _call_name(node)
-                for node in ast.walk(functions[name])
-                if isinstance(node, ast.Call)
-            }, f"{name}: constructs its own HMCConfig, bypassing profile resolution"
             checked.add(name)
 
     # `hmc_effective_permissions` is defined inside a factory rather than at
@@ -839,6 +841,41 @@ def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
     return client_from_env(profile)
 """,
     ),
+    "connection-opened-in-a-return-annotation": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None) -> client_from_env():
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-by-a-match-capture": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    match system_name_or_uuid:
+        case profile:
+            pass
+    return client_from_env(profile)
+""",
+    ),
+    "shadowed-by-a-nested-star-parameter": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    def _go(*profile):
+        return client_from_env(profile)
+
+    return _go()
+""",
+    ),
+    "handler-builds-its-own-config": (
+        "constructs its own HMCConfig",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    config = HMCConfig()
+    return client_from_env(profile)
+""",
+    ),
     "dropped-at-the-helper-hop": (
         "does not receive the value",
         """
@@ -901,7 +938,7 @@ def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
     client.chosen = profile
     return client
 """,
-    "a-nested-helper-may-use-the-name-for-its-own-parameter": """
+    "an-uncalled-module-helper-is-never-walked": """
 def _fmt(profile):
     profile = profile.upper()
     return profile

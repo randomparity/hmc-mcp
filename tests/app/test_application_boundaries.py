@@ -94,16 +94,16 @@ def test_tool_registry_does_not_import_the_policy_modules():
 
     path = package / "tool_registry.py"
     tree = ast.parse(path.read_text(), filename=str(path))
-    modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    } | {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            # `from . import access_policy` carries no module, which is the form
+            # server.py uses for its own tool modules — collect both halves.
+            if node.module is not None:
+                modules.add(node.module)
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
     assert not modules & forbidden, sorted(modules & forbidden)
 
 
