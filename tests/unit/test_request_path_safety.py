@@ -34,6 +34,23 @@ def _client() -> HMCClient:
 # ---------------------------------------------------------------------------
 
 
+def test_httpx_leaves_percent_encoded_dot_segments_untouched():
+    """The other half of the empirical fact, and the half that is *not* a reason
+    to allow them.
+
+    httpx normalizes literal dot-segments and leaves encoded ones alone. An
+    earlier version of the guard concluded from that they could pass, because
+    they would "address nothing" — a claim about whether the HMC decodes before
+    routing, which nothing here can establish. This pins the library behaviour
+    only; the guard refuses both forms regardless.
+    """
+    client = httpx.AsyncClient(base_url="https://hmc.test:12443")
+    encoded = client.build_request(
+        "DELETE", "/rest/api/uom/VirtualIOServer/v1/VolumeGroup/%2e%2e/%2e%2e/x"
+    )
+    assert "%2e%2e" in str(encoded.url)
+
+
 def test_httpx_resolves_dot_segments_against_the_base_url():
     """The empirical fact the guard exists for, pinned against the real library.
 
@@ -71,6 +88,11 @@ def test_httpx_resolves_dot_segments_against_the_base_url():
         "/rest/api/uom/Job/%2e%2e/%2e%2e/web/HmcUser/root",
         "/rest/api/uom/Job/..%2f..%2fweb%2fHmcUser%2froot",
         "/rest/api/uom/VirtualIOServer/v1/VolumeGroup/%2E%2E/%2E%2E/LogicalPartition/x",
+        # Mixed encoding: httpx leaves this alone, but a literal "../" survives
+        # in it, so the *raw* arm should already catch it. The case a
+        # hand-written guard usually misses, pinned so it cannot regress to
+        # being caught only by the decoded arm.
+        "/rest/api/uom/VirtualIOServer/v1/VolumeGroup/..%2f../LogicalPartition/x",
     ],
 )
 def test_a_dot_segment_is_refused(path):

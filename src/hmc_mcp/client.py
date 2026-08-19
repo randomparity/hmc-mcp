@@ -271,9 +271,17 @@ class HMCClient(
         the thirteen interpolation sites or at the authorization boundary only
         two of them reach.
 
-        Percent-encoded dot-segments are deliberately *not* decoded before the
-        check: httpx does not resolve them either, so they reach the HMC as
-        literal path text and address nothing.
+        Percent-encoded dot-segments are refused too. An earlier version of this
+        docstring said they were deliberately allowed through because "httpx does
+        not resolve them either, so they reach the HMC as literal path text and
+        address nothing". Only the first half of that is verified: httpx 0.28.1
+        leaves ``%2e%2e`` and ``..%2f`` untouched, confirmed here. The second half
+        is a claim about whether the *HMC's* server decodes a path before routing
+        it, which nothing in this repository can establish and which many HTTP
+        servers do. So the check reads the raw and the once-decoded form, and the
+        claim it makes is one this checkout can actually support: no dot-segment
+        reaches the transport in any encoding. No legitimate identifier in this
+        API contains a percent sign, so the refusal costs nothing.
         """
         _reject_dot_segments(method, path)
         try:

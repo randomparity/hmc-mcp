@@ -344,11 +344,20 @@ omissions:
 
   What that guard does **not** do is require these arguments to be UUID-shaped, which
   `common.is_uuid` already does for the `*_name_or_uuid` resolvers and issue #262 proposes here.
-  Measured rather than assumed: with dot-segments refused, the remaining shapes an attacker
-  controls — an absolute path, a protocol-relative `//host`, a deeper path segment, a query or
-  matrix parameter, a backslash, a percent-encoded separator — were each built against httpx
-  0.28.1 and **none changes the host or escapes the declared VIOS prefix**; they address
-  something at or below the resource the selector names, which is what containment claims.
+  Measured rather than assumed: with dot-segments refused **in both the raw and the
+  percent-decoded form**, the remaining shapes an attacker controls — an absolute path, a
+  protocol-relative `//host`, a deeper path segment, a query or matrix parameter, a backslash
+  — were each built against httpx 0.28.1 and **none changes the host or escapes the declared
+  VIOS prefix**; they address something at or below the resource the selector names, which is
+  what containment claims.
+
+  The decoded arm is there because the first version of this guard did not have it. It
+  checked only literal dot-segments, on the reasoning that httpx leaves `%2e%2e` untouched
+  "so it addresses nothing" — half verified, half a claim about whether the HMC's own server
+  decodes before routing, which nothing here can establish and many HTTP servers do. That is
+  the same substitution this record has now made three times: an assumption about a system
+  we cannot observe, written in the grammar of a fact about code we can. It is worth more as
+  a recorded pattern than as three separate corrections.
   So UUID-shape validation is strictly stronger than this record needs and is left to #262,
   where it can be weighed against a compatibility risk this checkout cannot settle: whether
   every HMC build's volume-group, mapping, and adapter identifiers are canonical 8-4-4-4-12
