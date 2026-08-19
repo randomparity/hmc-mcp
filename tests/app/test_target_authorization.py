@@ -1,0 +1,448 @@
+"""Dispatch-boundary target-scope authorization on a composed application.
+
+Covers docs/workflow/specs/2026-08-19-target-scope-dispatch-design.md; the
+decision record is docs/adr/0039-dispatch-time-target-scope.md.
+
+The outbound-sealing fixture and the config fixture are imported from the #222
+module rather than rebuilt: a second copy of "every name a handler could reach an
+HMC through" would drift from the first, and the first is the one that was
+reviewed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
+
+from hmc_mcp.config import config_dir
+from hmc_mcp.connection_scope import ConnectionScopeError
+from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.target_scope import TargetScopeError
+
+# `lab_profile` is autouse in its own module, so importing it applies it here
+# too — no test in this module names it, and doing so would shadow the import.
+from test_connection_authorization import (  # noqa: F401 - imported for autouse
+    SOURCE,
+    _policy,
+    _seal_every_outbound_path,
+    lab_profile,
+)
+
+# Two grants that are individually narrow and, combined, would authorize a
+# deletion neither of them describes. This is the fail-open ADR 0036 named and
+# ADR 0039's module split exists to make structurally unavailable.
+SPLIT_GRANTS = [
+    {
+        "tools": ["hmc_delete_lpar"],
+        "connections": ["lab"],
+        "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+    },
+    {
+        "tools": ["hmc_delete_lpar"],
+        "connections": ["prod"],
+        "targets": {"managed_system": ["sys-2"], "lpar": ["other"]},
+    },
+]
+
+LAB_NARROW = [
+    {
+        "tools": ["hmc_delete_lpar"],
+        "connections": ["lab"],
+        "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+    }
+]
+
+
+def _call(application, tool: str, arguments: dict):
+    async def _go():
+        async with Client(application) as client:
+            return await client.call_tool(tool, arguments)
+
+    return asyncio.run(_go())
+
+
+def _authorize(grants, tool: str, arguments: dict, name: str = "lab-only"):
+    """Run the real authorizer over the real classification for one call."""
+    policy = _policy(grants, name)
+    return dispatch_authorizer(policy)(tool, TOOL_SECURITY[tool], arguments)
+
+
+def _delete(profile="lab", system="sys-1", lpar="victim") -> dict:
+    return {
+        "system_name_or_uuid": system,
+        "lpar_name_or_uuid": lpar,
+        "profile": profile,
+        "ownership_override": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# R1 — the conjunction is per grant, never a union across grants
+# ---------------------------------------------------------------------------
+
+
+def test_one_grants_connection_cannot_combine_with_anothers_targets():
+    """The fail-open this whole change is shaped around.
+
+    Grant 0 permits `lab` on sys-1/victim. Grant 1 permits `prod` on
+    sys-2/other. A call naming `lab` *and* sys-2/other satisfies one dimension
+    from each and must be refused: no single grant describes it, and ADR 0036
+    fixed that a grant is evaluated conjunctively.
+
+    With one enforced dimension this test could not exist — a union across
+    grants and a conjunction inside one give the same answer for a single
+    condition. It is the second dimension that makes them differ, which is why
+    the loop moved into its own module.
+    """
+    with pytest.raises(TargetScopeError):
+        _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete(system="sys-2", lpar="other"))
+
+
+def test_the_mirror_direction_is_refused_too():
+    """Grant 1's connection with grant 0's targets, so the loop is not merely
+    order-dependent."""
+    with pytest.raises(TargetScopeError):
+        _authorize(
+            SPLIT_GRANTS, "hmc_delete_lpar", _delete(profile="prod", system="sys-1")
+        )
+
+
+def test_each_grant_still_permits_the_call_it_describes():
+    """The split grants are not simply inert: both halves work whole."""
+    assert (
+        _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete())
+        is None
+    )
+    assert (
+        _authorize(
+            SPLIT_GRANTS,
+            "hmc_delete_lpar",
+            _delete(profile="prod", system="sys-2", lpar="other"),
+        )
+        is None
+    )
+
+
+# ---------------------------------------------------------------------------
+# R5, R6 — matching on the real classification
+# ---------------------------------------------------------------------------
+
+
+def test_a_matching_table_permits():
+    assert _authorize(LAB_NARROW, "hmc_delete_lpar", _delete()) is None
+
+
+@pytest.mark.parametrize(
+    ("system", "lpar"),
+    [("sys-2", "victim"), ("sys-1", "other"), ("sys-2", "other")],
+)
+def test_any_selector_outside_the_table_denies(system, lpar):
+    with pytest.raises(TargetScopeError):
+        _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system=system, lpar=lpar))
+
+
+def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
+    """`hmc_power_off_lpar` is the carry-forward's live instance.
+
+    Its `managed_system` selector is optional, so before this change a grant
+    reading `lpar = ["victim"]` authorized powering off a partition of that name
+    on every system the connection reached.
+    """
+    grants = [
+        {
+            "tools": ["hmc_power_off_lpar"],
+            "connections": ["lab"],
+            "targets": {"lpar": ["victim"], "managed_system": ["sys-1"]},
+        }
+    ]
+    arguments = {
+        "lpar_name_or_uuid": "victim",
+        "system_name_or_uuid": None,
+        "immediate": False,
+        "profile": "lab",
+    }
+    with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
+        _authorize(grants, "hmc_power_off_lpar", arguments)
+
+    assert (
+        _authorize(grants, "hmc_power_off_lpar", {**arguments, "system_name_or_uuid": "sys-1"})
+        is None
+    )
+
+
+def test_a_table_grant_never_reaches_a_selector_less_destructive_tool():
+    """Reading (i) — the silent fail-open — refused on the real index.
+
+    The grant reads as "may destroy victim on sys-1 in the lab". Without this
+    rule it would also delete the lab console's entire LDAP configuration.
+    """
+    grants = [
+        {
+            "effects": ["destructive"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+        }
+    ]
+    assert TOOL_SECURITY["hmc_remove_ldap_config"].targets == ()
+    with pytest.raises(TargetScopeError, match="all-targets"):
+        _authorize(
+            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+        )
+    # The same grant still authorizes the tool it does describe.
+    assert _authorize(grants, "hmc_delete_lpar", _delete()) is None
+
+
+def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound():
+    grants = [
+        {
+            "effects": ["mutate"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"]},
+        }
+    ]
+    with pytest.raises(TargetScopeError, match="all-targets"):
+        _authorize(
+            grants,
+            "hmc_provision_lpar",
+            {
+                "system_name_or_uuid": "sys-1",
+                "name": "new-lpar",
+                "network": None,
+                "storage": None,
+                "profile": "lab",
+            },
+        )
+
+
+def test_all_targets_reaches_everything_the_table_could_not():
+    """#225's legacy-equivalent exposure must stay expressible."""
+    grants = [
+        {
+            "effects": ["read", "mutate", "destructive"],
+            "connections": ["lab"],
+            "targets": "all-targets",
+        }
+    ]
+    assert (
+        _authorize(
+            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+        )
+        is None
+    )
+    assert (
+        _authorize(
+            grants,
+            "hmc_power_off_lpar",
+            {
+                "lpar_name_or_uuid": "anything",
+                "system_name_or_uuid": None,
+                "immediate": False,
+                "profile": "lab",
+            },
+        )
+        is None
+    )
+
+
+# ---------------------------------------------------------------------------
+# R14 — a target denial performs no outbound operation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "grants"),
+    [
+        pytest.param(
+            "hmc_delete_lpar",
+            {"system_name_or_uuid": "sys-2", "lpar_name_or_uuid": "other"},
+            LAB_NARROW,
+            id="value-outside-the-table",
+        ),
+        pytest.param(
+            "hmc_power_off_lpar",
+            {"lpar_name_or_uuid": "victim"},
+            [
+                {
+                    "tools": ["hmc_power_off_lpar"],
+                    "connections": ["lab"],
+                    "targets": {"lpar": ["victim"], "managed_system": ["sys-1"]},
+                }
+            ],
+            id="omitted-optional-selector",
+        ),
+        pytest.param(
+            "hmc_remove_ldap_config",
+            {"resource": "ldap"},
+            [
+                {
+                    "effects": ["destructive"],
+                    "connections": ["lab"],
+                    "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+                }
+            ],
+            id="tool-a-table-cannot-bound",
+        ),
+    ],
+)
+def test_a_target_denial_opens_no_hmc_connection(
+    monkeypatch, tool_name, arguments, grants
+):
+    """Asserted on client construction, not on the return value.
+
+    A denial that returned the right error while still resolving an HMCConfig,
+    opening a socket, or running an SSH command would satisfy the type signature
+    and defeat the purpose. Every binding a handler could reach an HMC through is
+    sealed first, including the copies each `server_*` module rebound at import.
+    """
+    opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
+
+    application = create_mcp(_policy(grants))
+    with pytest.raises(ToolError):
+        _call(application, tool_name, {**arguments, "profile": "lab"})
+
+    assert opened == []
+
+
+# ---------------------------------------------------------------------------
+# R15 — the denial names the dimension that blocked
+# ---------------------------------------------------------------------------
+
+
+def test_a_withheld_connection_still_raises_the_connection_error():
+    """ADR 0038's behaviour is unchanged when no grant matches the connection."""
+    with pytest.raises(ConnectionScopeError):
+        _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(profile="prod"))
+
+
+def test_a_matching_connection_with_a_withheld_target_raises_the_target_error():
+    with pytest.raises(TargetScopeError):
+        _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system="sys-2"))
+
+
+def test_the_message_selection_cannot_change_the_decision():
+    """A call the split grants *do* cover is permitted, not merely mis-labelled.
+
+    `connection_matched` is assigned inside the loop and read only after it. If
+    it were consulted as part of the decision, this call — which grant 0 covers
+    whole — could not still be permitted while the two tests above deny.
+    """
+    assert _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete()) is None
+
+
+# ---------------------------------------------------------------------------
+# R16 — the denial discloses nothing
+# ---------------------------------------------------------------------------
+
+
+def test_a_target_denial_leaks_nothing_to_the_mcp_client():
+    """On the real transport, since whether `__cause__` reaches the client is
+    fastmcp's decision and a dependency bump could change it."""
+    configuration = config_dir() / "config.toml"
+    application = create_mcp(_policy(LAB_NARROW))
+    with pytest.raises(ToolError) as error:
+        _call(
+            application,
+            "hmc_delete_lpar",
+            {
+                "system_name_or_uuid": "sys-2",
+                "lpar_name_or_uuid": "other",
+                "profile": "lab",
+            },
+        )
+    message = str(error.value)
+
+    assert "hmc_delete_lpar" in message
+    assert "'lab-only'" in message
+    # The caller's own values come back; nothing else does.
+    assert "sys-2" in message and "other" in message
+    for secret in (
+        "lab-pass",
+        "prod-pass",
+        "lab-hmc.test",
+        "prod-hmc.test",
+        "hscroot",
+        str(configuration),
+        str(configuration.parent),
+        "sys-1",
+        "victim",
+        SOURCE,
+    ):
+        assert secret not in message, secret
+
+
+def test_a_denial_message_is_one_line():
+    """A control character in a selector cannot forge a line in an operator log."""
+    application = create_mcp(_policy(LAB_NARROW))
+    with pytest.raises(ToolError) as error:
+        _call(
+            application,
+            "hmc_delete_lpar",
+            {
+                "system_name_or_uuid": "sys-1\nALLOWED: everything",
+                "lpar_name_or_uuid": "victim",
+                "profile": "lab",
+            },
+        )
+    assert "\n" not in str(error.value)
+
+
+# ---------------------------------------------------------------------------
+# R17 — dry_run is never an authorization input
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+@pytest.mark.parametrize("system", ["sys-1", "sys-2"])
+def test_dry_run_changes_no_authorization_decision(dry_run, system):
+    """The flag is a client claim. It never widens a grant and never narrows one.
+
+    Epic #218 goal 7: an ordinary tool argument must never select or widen the
+    server's access policy. A `dry_run` that downgraded the effect class would be
+    exactly that, and the server could only verify the claim by running the
+    handler it is deciding whether to run.
+    """
+    grants = [
+        {
+            "tools": ["hmc_decommission_lpar"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+        }
+    ]
+    arguments = {
+        "system_name_or_uuid": system,
+        "lpar_name_or_uuid": "victim",
+        "dry_run": dry_run,
+        "profile": "lab",
+    }
+    if system == "sys-1":
+        assert _authorize(grants, "hmc_decommission_lpar", arguments) is None
+    else:
+        with pytest.raises(TargetScopeError):
+            _authorize(grants, "hmc_decommission_lpar", arguments)
+
+
+def test_the_decision_modules_never_mention_dry_run():
+    """R17 structurally: the three modules that decide contain no such reference.
+
+    A grep rather than a behaviour test, because the property is "this is never
+    read", and no call can demonstrate the absence of a branch.
+    """
+    from pathlib import Path
+
+    from hmc_mcp import connection_scope, dispatch_scope, target_scope
+
+    for module in (dispatch_scope, target_scope, connection_scope):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        # The word appears in prose explaining why it is not read; the check is
+        # that no *code* line references it.
+        code = [
+            line
+            for line in source.splitlines()
+            if "dry_run" in line and not line.lstrip().startswith("#")
+        ]
+        assert not code, f"{module.__name__}: {code}"

@@ -385,3 +385,15 @@ def test_the_unreadable_arm_wins_over_the_others():
         {"lpar_name_or_uuid": object(), "system_name_or_uuid": None},
     )
     assert "readable" in message
+
+
+def test_the_sentinels_name_themselves():
+    """They appear in assertion output and debugger frames, never in a message.
+
+    `_DENIED` is the only template that renders a value, and both sentinels are
+    handled by earlier arms, so neither can reach it — which is why this is a
+    legibility contract rather than a disclosure one.
+    """
+    assert repr(ABSENT) == "ABSENT"
+    assert repr(UNREADABLE) == "UNREADABLE"
+    assert ABSENT is not UNREADABLE
