@@ -71,9 +71,12 @@ applies it itself, exactly as `tool_module()`'s `register_tools` does: two sites
 contract, and no caller that decides for either of them.
 
 **Inspection reports the application it is registered on, read live.** The factory closes
-over the `FastMCP` instance and the policy, and the handler reads that application's
-registry at call time rather than recomputing the permitted set from `TOOL_SECURITY` and
-the policy. The two would agree at composition and diverge the moment anything else
+over the `FastMCP` instance and the policy, and the handler reads that application's local
+provider at call time rather than recomputing the permitted set from `TOOL_SECURITY` and
+the policy. The provider, not `FastMCP.list_tools()`: the provider is what
+`configure_arbitrary_command_tool` mutates, and the server-level call runs the `tools/list`
+middleware chain, so reading it from inside a `tools/call` would emit a phantom `tools/list`
+into whatever #224 hangs there and make the answer session-dependent. The two would agree at composition and diverge the moment anything else
 changes the registry — `configure_arbitrary_command_tool` already does, after `create_mcp`
 has returned — and "the registry" is what #221 is asked to report.
 
@@ -141,7 +144,11 @@ and this intersection reads only the compiled result.
   into a policy name or a selector string publishes it, which is the same exposure as
   writing it into an LPAR name. The already-shipping `hmc_list_configured_hosts` returns each
   profile's host and user to the same client, so this is not the widest disclosure on the
-  surface — but it is a new one, and only a `tools`-only policy can withhold it.
+  surface — but that comparison assumes an unfiltered surface, and this change is what
+  makes `hmc_list_configured_hosts` withholdable. Under a `tools`-only policy that withholds
+  it, inspection becomes the widest configuration disclosure on the surface; under an
+  `effects = ["read"]` policy it cannot be withheld at all. Only a `tools`-only policy can
+  withhold it.
 - **The registered tool count is 129, not 128**, in the unfiltered default composition, and
   `hmc_effective_permissions` joins the `read` effect class — the first instance of the
   index drift ADR 0036 recorded, so an existing `effects = ["read"]` grant gains it on

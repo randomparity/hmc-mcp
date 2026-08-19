@@ -71,19 +71,34 @@ do not serve or mutate the module-level `server.mcp`.
 `target_kind="none"`, `targets=()`, `connection_argument=None`. It takes no arguments and
 its MCP annotations are `annotations_for("read")`.
 
+**R10a — A deny-everything policy composes an empty application.** `grants = []` is a
+valid policy under ADR 0036 and #220's rule P2, compiling to a ceiling of zero tools.
+`create_mcp` with it registers nothing; `serve` writes one stderr line saying the policy
+permits no tool and the server will expose none, then starts. This is the operator's
+stated intent, not an error, so it is not rejected at selection.
+
 **R11 — The inspection tool is subject to the ceiling.** A policy that does not permit
 `hmc_effective_permissions` yields an application without it. A policy granting
 `effects = ["read"]` yields an application with it.
 
-**R12 — Inspection output matches the registry exactly.** For any application `app`
-composed by `create_mcp(policy)`, and after any sequence of
+**R12 — Inspection output matches the registry exactly, checked two ways.** For any
+application `app` composed by `create_mcp(policy)`, and after any sequence of
 `configure_arbitrary_command_tool` calls on it, the `name` values in the tool's `tools`
-field equal the names in `app.list_tools()`, as sets and as a sorted sequence.
+field equal the names in `app.list_tools()`, as sets and as a sorted sequence. The handler
+reads `app.local_provider.list_tools()`, a different accessor, so the two sides are not the
+same call. The reported set is *also* asserted against the policy-derived expectation —
+`{n for n in TOOL_SECURITY if policy is None or policy.permits_tool(n)}`, minus
+`hmc_run_command` unless the arbitrary-command tool is currently registered — so one
+implementation defect cannot satisfy both checks.
 
-**R13 — Inspection reports live effect classes.** The `effects` field is the sorted set of
-`TOOL_SECURITY[name].effect` over the reported tools — so a read-only policy reports
-`("read",)`, and an application with the arbitrary-command tool registered reports
-`arbitrary-command` among them.
+**R13 — Inspection reports live effect classes, and never raises on an unknown tool.** The
+`effects` field is the sorted set of `TOOL_SECURITY[name].effect` over the reported tools —
+so a read-only policy reports `("read",)`, and an application with the arbitrary-command
+tool registered reports `arbitrary-command` among them. A registered name the index does
+not carry — reachable because callers hold the live application and may call `mcp.tool(...)`
+on it — is reported with `effect`, `operation`, and `target_kind` all set to `"unknown"`
+and is excluded from the `effects` set. The tool whose job is describing the surface does
+not raise when the surface changes.
 
 **R14 — Inspection reports the policy source.** `policy_name` and `policy_source` are the
 selected policy's `name` and `source`, or both `None` when no policy is selected.
@@ -101,9 +116,17 @@ selected, `enforced_dimensions == ("tools",)` and
 `()`, matching `ceiling_enforced is False`: a server with no ceiling enforces no dimension
 and declares none.
 
-**R17 — Inspection carries no credential.** The output contains no value read from
-`config.toml` and no environment variable value. The only path it contains is the policy
-file's own path.
+**R17 — Inspection carries no credential, stated as a closed allowlist.** The output
+contains exactly the fields of `EffectivePermissions` and nothing else, and every string
+value in it is drawn from one of three sources: a tool name, operation, effect, or target
+kind read from the compiled-in `TOOL_SECURITY` index; an operator-authored identifier in
+the selected policy document (its name, a connection token, a target selector); or the
+resolved policy path. A new field, or a value from a fourth source, fails this
+requirement. Concretely and negatively: no value is read from `config.toml`, from an
+`HMC_*` environment variable, or from the HMC. The policy path is *not* claimed to be
+environment-free — `config_dir()` builds it from `XDG_CONFIG_HOME` on Linux and `APPDATA`
+on Windows, so on those platforms it embeds an environment value by construction, and it
+is disclosed deliberately.
 
 **R18 — Withholding the inspection tool is visible.** When `--access-policy` selects a
 policy that does not permit `hmc_effective_permissions`, `serve` writes one warning line
@@ -126,6 +149,11 @@ absent — produces no warning.
 **R20 — Both registration sites apply the same gate.** `register_permissions_tool` takes
 `permits` and applies it itself. `create_mcp` passes the same predicate to it and to every
 domain module, and applies no ceiling check of its own.
+
+**R22 — Documentation matches.** `README.md` documents `serve --access-policy NAME`, the
+four stderr warnings (R10a, R18, R19, R19a), and `hmc_effective_permissions` in its
+read-only tool table. `just verify` does not check this, so it is a requirement rather than
+a gate.
 
 **R21 — Guardrails.** `just verify` passes bare, including the 90.00% coverage floor and
 the no-`# pragma: no cover` rule in `tests/test_ci_pipeline.py`.
@@ -189,8 +217,16 @@ def register_permissions_tool(
 `hmc_effective_permissions` — the gate lives here, not in `create_mcp`. Otherwise it builds
 an async, argument-free handler named `hmc_effective_permissions` closing over `mcp`,
 `policy`, and `tool_security`, and registers it with `annotations_for("read")`. The handler
-reads the live registry through `await mcp.list_tools()`, maps each name through
-`tool_security`, and renders the policy's compiled grants.
+reads the live registry through `await mcp.local_provider.list_tools()` — the provider, not
+`FastMCP.list_tools()`. Three reasons: the provider is what `configure_arbitrary_command_tool`
+mutates, so it is the registry the design actually reasons about; `FastMCP.list_tools()`
+runs the `tools/list` middleware chain, session transforms, and per-session auth filtering,
+so calling it from inside a `tools/call` would emit a phantom `tools/list` event into
+whatever #224 hangs there and make the output session-dependent while `ceiling_enforced`
+stayed policy-derived; and reading a different accessor than the test asserts against keeps
+R12 from being a tautology. It maps each name through `tool_security`, falling back to
+`"unknown"` for all three classification fields rather than raising on a miss, and renders
+the policy's compiled grants.
 
 `server_permissions.py` must not import `server.py` (`server.py` imports it), which is why
 the tool index arrives as a parameter — the same one-way dependency ADR 0036 fixed for
@@ -226,7 +262,7 @@ constrain.
 | `--access-policy` names a policy the file lacks | `AccessPolicyError` from `compile_access_policy` → exit 1, message names the file and available policies |
 | `access-policy.toml` absent | `AccessPolicyError` "cannot be read" → exit 1 |
 | Policy invalid (any ADR 0036 rule) | `AccessPolicyError` with the module's rendered message → exit 1 |
-| Policy permits no tool at all | Impossible: ADR 0036 rule P6 rejects a grant naming no tool, and a policy with zero grants fails the `grants` requirement |
+| Policy permits no tool at all (`grants = []`) | Composes an application with zero tools; `serve` warns that the ceiling is empty and starts |
 | Policy withholds `hmc_effective_permissions` | Warning on stderr; server starts |
 | No `--access-policy`, no policy file on disk | No ceiling, no output; unchanged behaviour |
 | No `--access-policy`, policy file present | Warning on stderr; server starts with no ceiling |
@@ -241,6 +277,9 @@ R1–R3, R5–R6, R11–R17 by composing applications from policies built with
 registries. R12 is asserted by calling the registered inspection handler through the
 application and comparing against `app.list_tools()` — including after toggling the
 arbitrary-command tool, which is the case a recomputed answer would get wrong.
+
+A deny-everything policy (`grants = []`) gets its own case: composition yields zero tools,
+and `serve` warns. `README.md` is updated in the same change (R22).
 
 Existing tests that change: `tests/app/test_application_boundaries.py` (128 → 129),
 `tests/app/test_tool_security.py` (G10 becomes a two-name allowance),
@@ -278,7 +317,16 @@ client and does not change what the operator is trusted with.
   `TOOL_SECURITY` (compiled-in), the live registry, and the compiled `AccessPolicy`, and
   the policy document's grammar (`extra="forbid"`, four known keys) admits no field a
   credential could occupy. The policy file's absolute path is disclosed deliberately;
-  ADR 0037 records why.
+  ADR 0037 records why. Stated positively rather than by comparison: the tool discloses to
+  the MCP client the policy name and absolute path, every connection-profile *token* the
+  policy names — the same keys `config.toml` defines — and every target selector string,
+  which are LPAR, managed-system, VIOS, cluster, and user names. It is tempting to bound
+  that by noting `hmc_list_configured_hosts` already returns each profile's host and user
+  to the same client, but this change is what makes that tool withholdable: under a
+  `tools`-only policy that withholds it, inspection becomes the *widest* configuration
+  disclosure on the surface, and under an `effects = ["read"]` policy the inspection tool
+  cannot be withheld at all. An operator who considers the policy's contents sensitive must
+  write a `tools`-only policy that omits `hmc_effective_permissions`.
 - *`--access-policy NAME`.* The value is operator-supplied and used only as a dictionary
   key inside the parsed document. It is never a path, never interpolated into a command,
   and `compile_access_policy` already `repr()`s it in the not-found message so a name
