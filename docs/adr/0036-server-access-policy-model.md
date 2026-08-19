@@ -148,91 +148,82 @@ global costs.
 
 - Nothing enforces this policy. After this change the repository can load and reject
   policy files and answer "does this policy permit this tool", and no caller's reach
-  changes. That is the sequenced risk of entry 2 of seven, and it is larger here than
-  in ADR 0035: a policy file that exists and validates looks like a control until
-  #221 lands.
-- Reads are connection-scoped in the model, but #222 as written authorizes *mutations*
-  at the dispatch boundary. A policy that lists `connections = ["lab"]` on a read grant
-  therefore expresses a constraint nothing currently enforces. Recorded on #222 rather
-  than resolved here; the alternative — omitting `connections` from read grants — would
-  bake #222's scope into the file format and make it unfixable later.
+  changes. That is the sequenced risk of entry 2 of seven, and it is larger here than in
+  ADR 0035: a policy file that exists and validates looks like a control until #221 lands.
 - An effect-class grant's `targets` table is only ever partial, and nothing at load says
   which tools it leaves uncovered. `effects = ["destructive"]` reaches required selectors
   of six kinds (`cluster`, `lpar`, `managed_system`, `password_policy`, `user`, `vios`);
   a table naming only `lpar` grants the rest nothing, and #223 denies them at call time.
-  The grant reads broader than it behaves. That is fail-closed and therefore the safe
-  direction, but it is a real usability cliff, and the place to surface it is #221's
-  effective-permission inspection, which can show the tools a policy actually reaches.
-  `"all-targets"` remains the only form that covers an effect class completely, because
-  `hmc_get_job`, `hmc_wait_for_job`, and `hmc_update_console_software` carry required
-  selectors the HMC mints at runtime.
-- A policy's meaning is coupled to the shipping tool index. `effects = ["read"]` silently
-  gains any tool a later release adds to that class, with no edit to the file the operator
-  reviewed, and reclassifying a tool moves it between grants the same way. An operator
-  wanting a ceiling stable across upgrades must enumerate `tools`. Load-time validation is
-  deliberately arranged so that no index change alone can make an unedited file stop
-  loading: every rule that can fail on the index binds only what the operator wrote by
-  name.
-- The compiled `Grant` exposes `tools`, `connections`, and `targets` and stops there. It
-  carries no `matches()` method, because exact-selector matching, the
-  `vios_uuid`/`vios_partition_id` namespace split, `metric_resource`'s dependence on
-  `category`, composite tools, and `dry_run` are all #223's, and a matcher written now
-  would decide them silently.
-- Policy validation does not read `config.toml`. A grant may name a connection profile
-  that does not exist, and load succeeds. Cross-checking would make policy loading fail
-  when a profile is renamed and would couple an authorization artifact to a credential
-  file; #221's permission inspection is the better place to surface the mismatch.
-  The consequence is that a typo in a connection name fails closed at call time rather
-  than at load.
-- `"<default>"` denotes whatever HMC the deployment selects, by design — it is an alias,
-  not a connection identity. `build_config(profile=None)` resolves through `HMC_PROFILE`,
-  then `default_profile` in `config.toml`, then bare `HMC_*` variables, so a policy
-  granting `["lab"]` on one grant and `["<default>"]` on another also reaches `prod`
-  whenever the deployment's `default_profile` is `prod` — and at #222's boundary that
-  reach is obtained by *omitting* the `profile` argument rather than supplying it. This
-  record takes the by-design reading rather than resolving the token, and the operator
-  consequence is the rule to write down: **a policy that withholds a connection must not
-  grant `<default>` unless the deployment's default is one it means to allow.** An
-  operator who needs a fixed identity names the profile. The lesser residual: a profile
-  keyed `"<default>"` in `config.toml` — which requires a quoted TOML key — cannot be
-  granted at all.
-- Selector strings are form-ambiguous. `lpar_name_or_uuid`, `system_name_or_uuid`,
-  `target_system_name_or_uuid`, `vios_name_or_uuid`, and `resource_name_or_uuid` each map
-  to one `TargetKind`, and `common.py`'s resolvers accept a name or a UUID
-  interchangeably. So `targets = { lpar = ["db-01"] }` binds a caller who sends the name
-  and not one who sends that partition's UUID. The file is meant to carry the exact
-  argument value the caller sends, so an operator must list every form they intend to
-  allow until #223 canonicalizes — and canonicalizing later may be a breaking change to
-  an operator-visible file. This affects more selectors than ADR 0035's
-  `vios_uuid`/`vios_partition_id` note, which is one case of the same problem.
-- One allowlist per kind spans both roles ADR 0035 distinguishes. `managed_system` is the
-  kind of `system_name_or_uuid`, the system acted on, *and* of
-  `target_system_name_or_uuid`, the migration destination on `hmc_migrate_lpar` and three
-  siblings; `template` and `lpar` each carry two arguments the same way. So listing the
-  systems an operator may create partitions on also authorizes those systems as migration
-  destinations for any migrate tool in the same grant, and "may migrate out of prod-A only
-  into lab-B" is not expressible. Keying `targets` by argument instead of kind would fix
-  it and would tie an operator-visible file to Python parameter names; requirement 3 asks
-  for kinds. The `(kind, argument)` role distinction is handed to #223.
-- `connections` binds only tools that carry a connection argument.
-  `hmc_list_configured_hosts` declares `connection_argument=None`, is effect `read`, and
-  returns every configured profile's name, host, user, and default flag — so it lands
-  inside any effect-class read grant and a `connections = ["lab"]` grant still discloses
-  the `prod` inventory. #222 must decide what a connection-less tool means; until it does,
-  an operator who cares should not grant that tool by effect class.
-- Subsumption detection is partial. The subsumption rule rejects a grant subsumed by a sibling that
-  carries `"all-targets"`, which is the case that needs no matching semantics. General
-  subsumption between two target *tables* would require deciding what a narrower kind
-  set means, which is #223's; a check written now would be an unverified claim about
-  semantics that do not exist yet.
+  The grant reads broader than it behaves — fail-closed, and a real usability cliff. The
+  remedies are to split the grant (each named tool with the table its own kinds need) or
+  to accept `"all-targets"`; #221's effective-permission inspection is where the gap
+  becomes visible. `"all-targets"` is the only *complete* form for an effect class,
+  because `hmc_get_job`, `hmc_wait_for_job`, and `hmc_update_console_software` carry
+  required selectors the HMC mints at runtime. It is also boilerplate on any grant of the
+  18 selector-less tools, so its presence is not by itself an audit signal.
+- **An index change alone can make an unedited policy file stop loading**, and under
+  #225's fail-closed startup that is a server that does not start after an upgrade. Two
+  rules reach the index on both sides. Subsumption compares *resolved* tool sets, so
+  reclassifying one tool — as ADR 0035 did to `hmc_read_lpar_boot_order` — can newly make
+  a narrow grant subsumed by an all-targets sibling. Coverage reads `required`, which
+  ADR 0035 derives from the handler signature and expects to grow rows, so a named tool
+  can gain a required kind an unedited grant does not cover. Scoping coverage to
+  explicitly named tools shrinks that surface; it does not close it. The duplicate-grant
+  and subsumption rules were weighed against the same lint test that dropped the
+  redundant-tool rule and kept anyway: they catch a grant whose narrowness is *illusory*,
+  which is a misread permission rather than inert noise. Making the resulting load failure
+  diagnosable at startup is #225's.
+  In the other direction, `effects = ["read"]` silently gains any tool a later release
+  adds to that class. An operator wanting a ceiling stable across upgrades enumerates
+  `tools` — and thereby accepts the coverage rule.
+- **`connections` allowlists the `profile` argument token, not an HMC endpoint.**
+  `build_config` gates the whole profile branch on `if not explicit_host and not
+  os.environ.get("HMC_HOST")`: bare `HMC_HOST` preempts profile selection entirely, and
+  the `profile` argument — even a name no profile carries — is silently discarded. So in
+  an env-var-only deployment, which is the shape the README documents first, every granted
+  connection name resolves to the same HMC and a policy that withholds every other
+  connection still reaches it. Naming a profile does not pin an identity. The mirror case
+  is fail-closed and equally unobvious: a policy naming only `prod` does not cover a caller
+  who *omits* `profile`, which compiles to `None`.
+- `"<default>"` denotes whatever HMC the deployment selects, by design. Absent `HMC_HOST`,
+  `build_config(profile=None)` resolves through `HMC_PROFILE` then `default_profile`, so a
+  policy granting `["lab"]` on one grant and `["<default>"]` on another also reaches `prod`
+  whenever the deployment's default is `prod` — reach obtained by *omitting* the `profile`
+  argument. The operator rule: **do not grant `<default>` unless the deployment's default
+  is a connection the policy means to allow.** Compiling the token to `None` makes literal
+  comparison the path of least resistance at #222, and literal comparison is the reading
+  under which both this and the mirror case above bite; #222 owns that choice. A profile
+  keyed `"<default>"` in `config.toml` — a quoted TOML key — cannot be granted at all.
+- A `targets` table does not bound reach; it bounds the identities ADR 0035's selectors
+  name. Selector strings are also form-ambiguous — `lpar_name_or_uuid` and its four
+  siblings accept a name or a UUID interchangeably, so an allowlist binds only the form
+  the caller sends until #223 canonicalizes, and canonicalizing may then break an
+  operator-visible file. One allowlist per kind spans both of ADR 0035's roles:
+  `managed_system` covers the system acted on *and* `hmc_migrate_lpar`'s migration
+  destination, so "may migrate out of prod-A only into lab-B" is inexpressible and listing
+  systems for one role authorizes the other. And per ADR 0035's own instruction to the
+  entries downstream of it, a selector set is not a complete account of what a tool
+  touches: `hmc_provision_lpar`'s nested VIOS and storage identities and the profile
+  backup/restore `file_path` sit outside every grant. Keying `targets` by argument instead
+  of kind would fix the role collision and would tie the file to Python parameter names;
+  requirement 3 asks for kinds. All of this is handed to #223.
+- `connections` is inert on `hmc_list_configured_hosts`, which carries no connection
+  argument and returns every configured profile's name, host, user, and default flag — so
+  a `connections = ["lab"]` read grant still discloses the `prod` inventory. Reads are
+  connection-scoped in the model at all, but #222 as written authorizes *mutations*;
+  a read grant's connection list is expressible and, for now, unenforced. Both are #222's.
+- Policy validation does not read `config.toml`, so a grant may name a profile that does
+  not exist and load succeeds. The compiled `Grant` likewise carries no matcher: exact
+  matching, the `vios_uuid`/`vios_partition_id` split, `metric_resource`'s dependence on
+  `category`, composites, and `dry_run` are #223's, and a matcher written now would decide
+  them silently. Subsumption detection is partial for the same reason — only the
+  `"all-targets"` case needs no matching semantics.
 - The module adds no runtime dependency: `tomllib` is stdlib and `pydantic` is already a
   core dependency. It is deliberately absent from `api.__all__` — ADR 0029 places the
-  server policy boundary outside the supported reusable Python API, and the CLI and that
-  API keep their existing HMC authorization boundary.
-- The policy file is operator-controlled and sits at the same trust level as
-  `config.toml`. Anyone who can write it can widen the ceiling. The module does not
-  check file modes; that is filesystem policy, and adding a check here and not on the
-  credential file would be theatre.
+  server policy boundary outside the supported reusable Python API.
+- The policy file is operator-controlled and sits at the same trust level as `config.toml`.
+  Anyone who can write it can widen the ceiling. The module does not check file modes;
+  adding a check here and not on the credential file would be theatre.
 
 ## Considered & rejected
 
@@ -258,6 +249,18 @@ global costs.
   bypass waiting for a renamed LPAR. The single `"all-targets"` literal covers the cases
   that motivated wildcards — legacy-equivalent exposure, and the runtime-minted selector
   values noted in the consequences — with one form that has no partial reading.
+- **A per-kind widening form, `targets = { job = "all", lpar = ["db-01"] }`.** Not a glob,
+  and it would let one grant name a runtime-minted-selector tool beside an exactly-scoped
+  one without widening both. Rejected because it is a second sentinel to reason about and
+  splitting the grant already expresses it exactly — at the cost of one more grant, which
+  is the cost of saying two different things.
+- **Defer the `targets` key itself to #223, landing only `effects`, `tools`, and
+  `connections` now.** This would remove the coverage rule, the partial-table cliff, and
+  the role and form residuals in one stroke, and #223 is where the matching semantics that
+  give the key meaning are written. Rejected for the reason ADR 0035 rejected its own
+  analogous split: #220's acceptance criteria name target allowlists as this entry's
+  deliverable, and adding the key after operators have written policy files re-opens the
+  file format rather than avoiding a break.
 - **Deny rules alongside allow rules.** Order-dependent and it makes "contradictory
   grants" a genuinely hard question. An allowlist with no denies has one reading.
 - **Reject a tool named in `tools` that the grant's own `effects` already covers.** This

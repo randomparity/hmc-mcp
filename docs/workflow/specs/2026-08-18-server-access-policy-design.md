@@ -254,17 +254,28 @@ rests on.
   already replace the credential file.
 - Connection-profile names are not cross-checked against `config.toml` (ADR 0036
   consequences). A typo fails closed at call time under #222, not at load.
-- `"<default>"` is a late-bound alias. It denotes whatever HMC the process environment
-  selects at call time — via `HMC_PROFILE`, `default_profile`, or bare `HMC_*` variables —
-  which may be a named profile the same policy withholds elsewhere. Whether #222 compares
-  the literal token or the resolved profile identity is #222's decision; deciding it here
-  would mean reading `config.toml` at authorization time. Recorded in ADR 0036.
+- `connections` allowlists the `profile` argument token, not an HMC endpoint.
+  `build_config` skips profile resolution entirely when `HMC_HOST` is set and discards the
+  `profile` argument, so in an env-var-only deployment every granted connection name
+  resolves to the same HMC. `"<default>"` is a late-bound alias for whatever the
+  deployment selects, which may be a named profile the same policy withholds elsewhere;
+  and a policy naming only profiles does not cover a caller who omits `profile`. Whether
+  #222 compares the literal token or a resolved identity is #222's decision. Recorded in
+  ADR 0036.
 - Selector strings are form-ambiguous: `lpar_name_or_uuid` and its four siblings accept a
   name or a UUID interchangeably, so an allowlist binds only the form the caller sends
   until #223 canonicalizes. Recorded in ADR 0036.
 - One allowlist per kind spans both of ADR 0035's roles: `managed_system` covers the
   system acted on and `hmc_migrate_lpar`'s migration *destination*, so a grant listing
   systems for one role authorizes the other. The `(kind, argument)` distinction is #223's.
+- A `targets` table bounds only the identities ADR 0035's selectors name, per that
+  record's own instruction to its downstream entries: `hmc_provision_lpar`'s nested VIOS
+  and storage identities and the profile backup/restore `file_path` sit outside every
+  grant.
+- An index change alone can make an unedited policy file stop loading — the subsumption
+  rule compares resolved tool sets, and P9 reads a `required` flag ADR 0035 derives from
+  the handler signature. Under #225's fail-closed startup that is a failed start after an
+  upgrade; making it diagnosable is #225's. Recorded in ADR 0036.
 - `connections` is inert on `hmc_list_configured_hosts`, which carries no connection
   argument and returns every configured profile's name, host, user, and default flag. It
   is effect `read`, so it falls inside any effect-class read grant and a
