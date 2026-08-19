@@ -291,7 +291,7 @@ mechanism. The decorator takes `exhaustive_targets: bool = True` and `tool()` co
 value as `declared and bool(targets)`, so all 19 selector-less tools get `False` with no per-tool
 churn and only the genuine composites carry an explicit declaration.
 
-Six tools declare `exhaustive_targets=False`:
+Eight tools declare `exhaustive_targets=False`:
 
 - **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionNetwork.vios_partition_id`.
 - **`hmc_backup_lpar_profiles`** and **`hmc_restore_lpar_profiles`** — both act on an arbitrary
@@ -307,6 +307,12 @@ Six tools declare `exhaustive_targets=False`:
   agree, so the partition ID is a second, unverified identity beside the one that *can* be bounded.
   These are the tools an earlier draft of this record silently authorized under a table; the
   guardrail below is what found them.
+- **`hmc_get_job`** and **`hmc_wait_for_job`** — both declare a required `job` selector on
+  `job_uuid` and then accept `job_href`, whose *path* replaces it outright: `client.get_job`
+  fetches `urlparse(job_href).path` and never reads `job_uuid`. A table would authorize one
+  job identity while the server read another. These two were found by the threat scan rather
+  than by the guardrail, for the reason the next paragraph gives, and they are the concrete
+  instance of its stated limit.
 
 Two categories are deliberately **not** made non-exhaustive, and both are decisions rather than
 omissions:
@@ -343,7 +349,8 @@ declared selector, and none may name an identity the format cannot bound (`file_
 check runs at suite time, costs nothing per call, and fails the author rather than an operator. It
 is what catches the next `hmc_provision_lpar`.
 
-**What that check does and does not prove.** An earlier draft of this record ran it over all 130
+**What that check does and does not prove.** This is the section a reader should trust
+least, and it has already been wrong twice. An earlier draft of this record ran it over all 130
 tools, observed that it flagged exactly the tools already declared, and reported "zero false
 positives" as evidence the declarations were mechanical rather than judgements. That was circular:
 `UNBOUNDED_ARGUMENTS` had been written *from* the known cases, so it could not have flagged anything
@@ -351,7 +358,10 @@ else, and the direction that matters for a fail-open is false *negatives* — wh
 says nothing about.
 
 Looking for those instead is what produced the `vios_partition_id` entry above and the
-remote-endpoint decision beside it. The honest statement is therefore the weaker one: the check
+payload-source decision beside it — and a subsequent threat scan found a third the name
+list still did not hold, `job_href`, live in shipping code under any `effects = ["read"]`
+grant. The guardrail was green throughout, exactly as this paragraph predicts a
+name-matching check would be. The honest statement is therefore the weaker one: the check
 turns a per-tool judgement into a per-*argument-name* judgement, which is a much smaller thing to
 get wrong and a much easier thing to review, and it makes any future tool accepting one of those
 names fail the suite rather than ship. It does not prove the name list is complete. Extending that
@@ -447,7 +457,16 @@ operator would otherwise discover as an unexplained denial.
   against #221's or #222's semantics can start seeing denials on calls that worked yesterday. That
   is the point of the entry, and the denial names the tool, the policy, and the selector kind, so
   the diagnosis is one message long — but it is a behaviour change and not only a new failure mode.
-- **The 17 selector-less console tools, and six more, require their own grant.** Any policy
+- **Some policies that loaded yesterday now fail to compile, which is a different and
+  louder failure than a denial.** The bullet above describes call-time denials; R12 and R13
+  also refuse a *load*. A grant naming `hmc_power_off_lpar` beside
+  `targets = { lpar = ["db-01"] }` was valid under ADR 0036's criterion A7 and is now
+  rejected, as is any table grant explicitly naming a tool no table can bound. Under
+  `--access-policy` that is a non-zero exit with no server started, and it is the failure an
+  operator meets first — before any denial, at the moment they upgrade. The message names
+  the tool, the kind, and the remedy, and both rules stay bound to explicitly named tools so
+  an index change alone still cannot cause it.
+- **The 17 selector-less console tools, and eight more, require their own grant.** Any policy
   narrowing targets must now be written as at least two grants: one with a table for the tools it
   can bound, one with `all-targets` for the ones it cannot. #225's legacy-equivalent generator
   emits `all-targets` throughout and is unaffected.
@@ -455,7 +474,7 @@ operator would otherwise discover as an unexplained denial.
   structurally cannot see targets: `permits_tool` tests membership of the union of the grants'
   tool sets, and a tool may sit in a table grant and an `all-targets` grant at once, so there is no
   well-defined "this tool is unreachable" question for the registration filter to ask. A policy
-  whose only grant carries a table therefore *registers* `hmc_remove_ldap_config` and the other 22
+  whose only grant carries a table therefore *registers* `hmc_remove_ldap_config` and the other 24
   non-exhaustive tools, advertises them in `tools/list`, and denies every call to them. The agent
   discovers that by calling one. `exhaustive_targets` in the effective-permissions report is the
   only signal an operator gets, which is why R19 adds it. Moving the ceiling to drop non-exhaustive

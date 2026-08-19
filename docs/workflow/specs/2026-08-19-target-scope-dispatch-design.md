@@ -97,19 +97,20 @@ selector-less tool is always `False`. `validate_security` rejects
 `exhaustive_targets=True` with an empty `targets` tuple. `HMC_RUN_COMMAND_SECURITY` and
 `EFFECTIVE_PERMISSIONS_SECURITY` are constructed directly and both carry `False`.
 
-**R8 — Exactly six tools declare `exhaustive_targets=False` explicitly**:
+**R8 — Exactly eight tools declare `exhaustive_targets=False` explicitly**:
 `hmc_provision_lpar`, `hmc_backup_lpar_profiles`, `hmc_restore_lpar_profiles`,
-`hmc_add_vfc_adapter`, `hmc_add_vscsi_adapter`, `hmc_attach_disk_to_lpar`. A test pins the
-full set of `False` tools (those six plus the 19 selector-less ones) so a change is
-deliberate, and a second test pins the five tools whose remote-endpoint arguments are
-outside the target dimension **by decision** rather than by omission.
+`hmc_add_vfc_adapter`, `hmc_add_vscsi_adapter`, `hmc_attach_disk_to_lpar`, `hmc_get_job`,
+`hmc_wait_for_job`. A test pins the full set of `False` tools (those eight plus the 19
+selector-less ones) so a change is deliberate, and a second test pins the six tools whose
+payload-source arguments are outside the target dimension **by decision** rather than by
+omission.
 
 **R9 — Guardrail: no unbounded identity argument on an exhaustive tool.** A static check
 over the parsed `src/hmc_mcp/server_*.py` sources fails when a tool declaring
 `exhaustive_targets=True` has a handler parameter, or a field of a dataclass/pydantic-model
 parameter one level down, whose name is in `REQUIRED_TARGET_ARGUMENTS` but is not a declared
 selector, or whose name is in
-`UNBOUNDED_ARGUMENTS = {"cmd", "file_path", "vios_partition_id"}`. The check is proven to
+`UNBOUNDED_ARGUMENTS = {"cmd", "file_path", "job_href", "vios_partition_id"}`. The check is proven to
 bite on three fixture sources: a nested identity, an undeclared top-level identity, and an
 argument no `TargetKind` can express. A further test asserts the check's output equals the
 declared `exhaustive_targets=False` set exactly, in both directions.
@@ -195,7 +196,8 @@ if security.exhaustive_targets and not security.targets:
 ```
 
 `REQUIRED_TARGET_ARGUMENTS` is unchanged. A new module-level
-`UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({"file_path", "cmd"})` names the argument
+`UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({"cmd", "file_path", "job_href",
+"vios_partition_id"})` names the argument
 names that carry an identity no `TargetKind` can bound; it is data for R9's guardrail and is
 read by nothing at runtime.
 
@@ -266,10 +268,12 @@ exports the loop calls per grant:
 
 ```
 def connection_permitted(connection, grant_connections) -> bool
-def connection_denial(name, policy_name, security, token, connection) -> ConnectionScopeError
+def connection_denial(tool, policy_name, argument, token, connection) -> ConnectionScopeError
 ```
 
-`connection_denial` carries the `HMC_HOST` clause logic verbatim, including reading
+`connection_denial` takes the declared selector's *name* rather than the whole
+`ToolSecurity`, since the clause is the only thing that needs it. It carries the
+`HMC_HOST` clause logic verbatim, including reading
 `os.environ` only after the decision and gating it on the decision's own result.
 
 ### `dispatch_scope.py` (new)
@@ -295,7 +299,7 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
                 return
         if connection_matched:
             raise target_denial(name, policy.name, security, extracted)
-        raise connection_denial(name, policy.name, security, token, connection)
+        raise connection_denial(name, policy.name, argument, token, connection)
     return authorize
 ```
 
@@ -383,7 +387,7 @@ directly and is **inverted**, keeping the same fixture and asserting the new fai
 use the shape incidentally and are re-pointed at a fully covered grant.
 
 Existing dry-run tests in `tests/lpar/test_provision_tool.py`,
-`tests/lpar/test_decommission_tool.py`, and `tests/storage/test_storage_tools.py` are
+`tests/lpar/test_decommission_tool.py`, and `tests/lpar/test_attach_disk.py` are
 extended to assert zero mutating requests rather than only a `dry_run=True` result (R18).
 
 `tests/app/test_connection_authorization.py` is updated for R2: it imports
@@ -397,8 +401,13 @@ argument, including every target selector, and may call any registered tool any 
 times.
 
 - **Selector confusion.** Exact string matching with no normalization means the boundary
-  compares what the caller sent. The one rendering rule (`int` → `str`) is total and
-  injective. `bool` is excluded so `True` cannot render as a resource name.
+  compares what the caller sent, and each selector is compared against **its own kind's**
+  allowlist — a value permitted for `managed_system` is not thereby permitted for `lpar`.
+  `bool` is excluded from the `int` arm so `True` cannot render as a resource name. The
+  `int` → `str` rendering is *not* offered as a safety argument: ADR 0039 withdraws that
+  framing, because the map that would have to be injective is the one from all selectors
+  of a kind into one `frozenset[str]`, and it is not — which is exactly why
+  `vios_partition_id` is refused as a bounding identity rather than trusted.
 - **Omission as widening.** An optional selector left out is the cheapest widening attack —
   it turns "this partition" into "whichever partition has this name" or "every system". R5.2
   denies it under a table.

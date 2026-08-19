@@ -305,8 +305,9 @@ shell, use HMC-side user roles.
 It also does not bound a tool that opens no HMC connection at all.
 `hmc_list_configured_hosts` returns every configured profile's name, host, user,
 and default flag, and `hmc_effective_permissions` returns the policy's own
-grants; neither takes a `profile` argument, so `connections` cannot narrow
-either. A `connections = ["lab"]` read grant still discloses the `prod`
+grants; neither takes a `profile` argument, so neither `connections` nor
+`targets` can narrow either — the dispatch-time check runs only on tools that
+select a connection, and these two select none. A `connections = ["lab"]` read grant still discloses the `prod`
 inventory. Withhold them by name — a grant listing `tools` and no `read` effect
 class — when the configuration or the policy is itself sensitive.
 
@@ -364,11 +365,14 @@ Four rules explain why:
   connection). Others act on something the selectors do not name:
   `hmc_provision_lpar` mutates a VIOS chosen inside its `storage` argument, the
   LPAR-profile backup and restore pair write an arbitrary path on the HMC's own
-  filesystem, and three adapter tools take a VIOS *partition ID*, a slot number
-  reused on every system in the fleet. Each of those needs a grant whose targets
-  are `"all-targets"`. `hmc_effective_permissions` reports
+  filesystem, three adapter tools take a VIOS *partition ID* (a slot number
+  reused on every system in the fleet), and the two job tools accept a
+  `job_href` whose path replaces the job UUID outright. Each of those needs a
+  grant whose targets are `"all-targets"`. `hmc_effective_permissions` reports
   `exhaustive_targets: false` for every one of them. Naming such a tool in a
-  grant's `tools` beside a table is refused at startup.
+  grant's `tools` beside a table is refused at startup — except
+  `hmc_effective_permissions` and `hmc_list_configured_hosts`, which open no HMC
+  connection and so are never reached by this check at all.
 - **An LPAR name is unique within a system, not across the fleet.** For the
   tools that also take a `system_name_or_uuid` the rule above pins it. For those
   that do not — and for the migration tools, which name only the *destination*
