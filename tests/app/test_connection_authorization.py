@@ -75,6 +75,21 @@ def _call(application, tool: str, arguments: dict):
     return asyncio.run(_go())
 
 
+def _is_guarded(tool) -> bool:
+    """True when the registered callable is `authorized`'s wrapper.
+
+    ``__wrapped__`` alone is a weak witness — any ``functools.wraps`` decorator
+    sets it — so the code object's own name is checked too. ``functools.wraps``
+    copies ``__name__`` and ``__qualname__`` from the handler but never
+    ``__code__``, so this reads the wrapper's real identity.
+    """
+    return (
+        getattr(tool.fn, "__wrapped__", None) is not None
+        and getattr(tool.fn, "__code__", None) is not None
+        and tool.fn.__code__.co_name == "guarded"
+    )
+
+
 def _registered(application) -> dict:
     async def _go():
         return {
@@ -248,11 +263,11 @@ def test_every_connection_bearing_tool_is_wrapped_under_a_policy():
     ]
     assert connection_bearing
     for name in connection_bearing:
-        assert getattr(registered[name].fn, "__wrapped__", None) is not None, name
+        assert _is_guarded(registered[name]), name
 
     for name in registered:
         if TOOL_SECURITY[name].connection_argument is None:
-            assert getattr(registered[name].fn, "__wrapped__", None) is None, name
+            assert not _is_guarded(registered[name]), name
 
 
 def test_no_tool_is_wrapped_without_a_policy():
@@ -260,7 +275,7 @@ def test_no_tool_is_wrapped_without_a_policy():
     registered = _registered(create_mcp())
     assert registered
     for name, tool in registered.items():
-        assert getattr(tool.fn, "__wrapped__", None) is None, name
+        assert not _is_guarded(tool), name
 
 
 # ---------------------------------------------------------------------------
@@ -435,8 +450,8 @@ def test_the_served_application_wraps_every_connection_bearing_tool():
 
     assert "hmc_run_command" in registered
     for name, tool in registered.items():
-        wrapped = getattr(tool.fn, "__wrapped__", None) is not None
-        assert wrapped == (TOOL_SECURITY[name].connection_argument is not None), name
+        expected = TOOL_SECURITY[name].connection_argument is not None
+        assert _is_guarded(tool) == expected, name
 
 
 def test_the_served_escape_hatch_denies_a_withheld_connection():
@@ -454,4 +469,30 @@ def test_the_served_application_without_a_policy_wraps_nothing():
 
     assert "hmc_run_command" in registered
     for name, tool in registered.items():
-        assert getattr(tool.fn, "__wrapped__", None) is None, name
+        assert not _is_guarded(tool), name
+
+
+def test_an_unreadable_configuration_leaks_no_path_to_the_mcp_client(lab_profile):
+    """R10/R13 through the transport, not only at the function boundary.
+
+    Whether `__cause__` reaches the client is fastmcp's decision, so a dependency
+    bump is exactly what could turn this property off without any code change.
+    """
+    lab_profile.write_text("profiles = 'not-a-table'\n", encoding="utf-8")
+
+    application = create_mcp(_policy(LAB_ONLY))
+    with pytest.raises(ToolError) as error:
+        _call(
+            application,
+            "hmc_delete_lpar",
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_name_or_uuid": "victim",
+                "profile": "lab",
+            },
+        )
+    message = str(error.value)
+    assert "the configured HMC connections could not be read" in message
+    assert str(lab_profile) not in message
+    assert str(lab_profile.parent) not in message
+    assert "not-a-table" not in message

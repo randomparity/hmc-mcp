@@ -293,8 +293,14 @@ def test_a_tool_no_grant_covers_is_denied(config):
         authorize("hmc_run_command", SECURITY, {"profile": "lab"})
 
 
-def test_grants_are_never_unioned_across_the_connection_dimension(config):
-    """ADR 0036: one grant must cover the tool and the connection together."""
+def test_a_grant_for_another_tool_does_not_supply_the_connection(config):
+    """ADR 0036: one grant must cover the tool and the connection together.
+
+    With one dimension evaluated, the per-grant loop and a cross-grant union of
+    connections are extensionally identical, so this cannot witness the loop
+    shape — only that `grants_for` filters by tool first. #223's target
+    dimension is what makes the difference observable.
+    """
     document = {
         "policies": {
             "split": {

@@ -409,6 +409,8 @@ _CONNECTION_BUILDERS = frozenset(
 _CONNECTION_OVERRIDES = frozenset({"host"})
 
 _Def = ast.FunctionDef | ast.AsyncFunctionDef
+
+
 def _call_name(call: ast.Call) -> str | None:
     return getattr(call.func, "id", None) or getattr(call.func, "attr", None)
 
@@ -418,11 +420,62 @@ def _bound_parameter(helper: _Def, call: ast.Call, argument: str) -> str | None:
     for keyword in call.keywords:
         if isinstance(keyword.value, ast.Name) and keyword.value.id == argument:
             return keyword.arg
-    positional = [parameter.arg for parameter in helper.args.args]
+    positional = [
+        parameter.arg
+        for parameter in [*helper.args.posonlyargs, *helper.args.args]
+    ]
     for index, node in enumerate(call.args):
         if isinstance(node, ast.Name) and node.id == argument and index < len(positional):
             return positional[index]
     return None
+
+
+def _module_functions(tree: ast.Module) -> dict[str, _Def]:
+    """Every top-level function in a module, keyed by name.
+
+    Every one of them, not only the ``_``-prefixed ones: a public same-module
+    helper that drops the selector is exactly as fail-open as a private one. No
+    handler in ``src/`` routes that way today, so the synthetic
+    ``dropped-by-a-public-helper`` case is what keeps this from silently
+    narrowing back.
+    """
+    return {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _rebinding_targets(function: _Def) -> list[ast.expr]:
+    """Every expression *function* assigns a value to, in any binding form."""
+    targets: list[ast.expr] = []
+    for node in ast.walk(function):
+        if isinstance(node, (ast.Assign, ast.For, ast.AsyncFor)):
+            targets.extend(node.targets if isinstance(node, ast.Assign) else [node.target])
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)):
+            targets.append(node.target)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            targets.extend(item.optional_vars for item in node.items if item.optional_vars)
+    return targets
+
+
+def _assert_not_rebound(function: _Def, argument: str, tool: str) -> None:
+    """Refuse a handler that reassigns its declared connection argument.
+
+    The routing check below is name identity in the AST, not value flow, so
+    ``profile = "prod"`` before the client is opened would satisfy it while
+    routing somewhere the authorization never decided about. Rather than model
+    dataflow, refuse the shape: nothing in the package needs to rebind its own
+    selector, and a handler that wants a different connection should say so with
+    a different name the check can see.
+    """
+    for target in _rebinding_targets(function):
+        for node in ast.walk(target):
+            assert not (isinstance(node, ast.Name) and node.id == argument), (
+                f"{tool}: {function.name} rebinds {argument!r} at line "
+                f"{node.lineno}; the connection the access policy authorized is "
+                "the one the handler must use"
+            )
 
 
 def _assert_routes(
@@ -442,6 +495,8 @@ def _assert_routes(
     none at all is caught by the caller rather than passing vacuously.
     """
     reached = 0
+    if argument is not None:
+        _assert_not_rebound(function, argument, tool)
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
             continue
@@ -512,22 +567,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     checked: set[str] = set()
 
     for path in sorted(root.glob("server_*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        functions = {
-            node.name: node
-            for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        # Every top-level function in the file, not only the private ones. No
-        # handler routes through a public same-module helper today, so this
-        # widens nothing now; it keeps one from becoming a hole later, since a
-        # public helper that drops the selector is exactly as fail-open as a
-        # private one. test_the_walk_descends_into_a_public_helper pins it.
-        helpers = dict(functions)
+        functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
         for name in sorted(functions.keys() & connection_bearing):
             argument = TOOL_SECURITY[name].connection_argument
             reached = _assert_routes(
-                functions[name], argument, helpers, name, {name}
+                functions[name], argument, functions, name, {name}
             )
             assert reached, f"{name}: declares {argument!r} but opens no HMC connection"
             checked.add(name)
@@ -535,45 +579,166 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     assert checked == connection_bearing, sorted(connection_bearing - checked)
 
 
-_PUBLIC_HELPER_MODULE = """
-def open_client(profile=None):
+def _walk(source: str, argument: str = "profile") -> int:
+    """Run the G12 walk over a synthetic module, as it runs over a real one."""
+    functions = _module_functions(ast.parse(source))
+    return _assert_routes(
+        functions["hmc_probe"], argument, functions, "hmc_probe", {"hmc_probe"}
+    )
+
+
+# Each source is a shape no handler in `src/` exhibits, so without these the
+# corresponding assertion in `_assert_routes` could be deleted and the suite
+# would stay green — which is exactly what happened to three of them.
+_REFUSED = {
+    "no-argument-at-all": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env()
+""",
+    ),
+    "hardcoded-keyword": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile="prod")
+""",
+    ),
+    "another-parameter-as-the-keyword": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile=system_name_or_uuid)
+""",
+    ),
+    "mapping-splat": (
+        "splats a mapping",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile, **{"host": "attacker"})
+""",
+    ),
+    "host-override": (
+        "connection override",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile, host="attacker")
+""",
+    ),
+    "rebound-to-a-literal": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    profile = "prod"
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-in-a-loop": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    for profile in ["prod"]:
+        pass
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-inside-a-helper": (
+        "rebinds 'chosen'",
+        """
+def open_client(chosen=None):
+    chosen = "prod"
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client(profile)
+""",
+    ),
+    "dropped-by-a-public-helper": (
+        "does not receive the value",
+        """
+def open_client(chosen=None):
     return client_from_env()
 
 
 def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
-    with open_client(profile) as hmc:
-        return hmc
-"""
+    return open_client(profile)
+""",
+    ),
+    "dropped-at-the-helper-hop": (
+        "does not receive the value",
+        """
+def open_client(chosen=None):
+    return client_from_env(chosen)
 
 
-def test_the_walk_descends_into_a_public_helper():
-    """The widening in G12, pinned: a public helper is followed like a private one.
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client()
+""",
+    ),
+}
 
-    No handler in `src/` routes this way, so without a synthetic module nothing
-    would fail if the walk went back to following only `_`-prefixed helpers.
+_ACCEPTED = {
+    "direct-positional": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile)
+""",
+    "direct-keyword": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return build_config(profile=profile)
+""",
+    "keyword-only-hop": """
+def _open(system, *, chosen=None):
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return _open(system_name_or_uuid, chosen=profile)
+""",
+    "positional-only-hop": """
+def open_client(chosen=None, /):
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client(profile)
+""",
+    "renamed-across-two-hops": """
+def _outer(picked=None):
+    return _inner(picked)
+
+
+def _inner(final=None):
+    return client_from_env(final)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return _outer(profile)
+""",
+    "nested-async-body": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+}
+
+
+@pytest.mark.parametrize(("expected", "source"), _REFUSED.values(), ids=_REFUSED)
+def test_the_routing_guardrail_refuses_every_unrouted_shape(expected, source):
+    """Each assertion in the G12 walk, pinned against a synthetic handler.
+
+    No handler in ``src/`` exhibits any of these, so this is the only thing
+    standing between the guardrail and a silent regression.
     """
-    tree = ast.parse(_PUBLIC_HELPER_MODULE)
-    functions = {
-        node.name: node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    with pytest.raises(AssertionError, match=expected):
+        _walk(source)
 
-    with pytest.raises(AssertionError, match="does not receive the value"):
-        _assert_routes(
-            functions["hmc_probe"], "profile", functions, "hmc_probe", {"hmc_probe"}
-        )
 
-    private_only = {
-        name: node for name, node in functions.items() if name.startswith("_")
-    }
-    assert (
-        _assert_routes(
-            functions["hmc_probe"],
-            "profile",
-            private_only,
-            "hmc_probe",
-            {"hmc_probe"},
-        )
-        == 0
-    ), "the private-only walk reaches no builder, which is why it must not be used"
+@pytest.mark.parametrize("source", _ACCEPTED.values(), ids=_ACCEPTED)
+def test_the_routing_guardrail_accepts_every_correct_shape(source):
+    """The other half: a guard that refused these would fail on correct code."""
+    assert _walk(source) == 1

@@ -37,7 +37,7 @@ import asyncio
 import ipaddress
 import socket
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from fastmcp import FastMCP
 
@@ -46,7 +46,7 @@ from ._app import (
 )
 from .access_policy import AccessPolicy, resolve_access_policy_path
 from .connection_scope import connection_authorizer
-from .tool_registry import ToolSecurity, build_tool_security
+from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
     server_adapters,
     server_capacity,
@@ -263,6 +263,20 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 )
 
 
+def _gates(
+    policy: AccessPolicy | None,
+) -> tuple[Callable[[str], bool] | None, Authorize | None]:
+    """The registration-time and dispatch-time questions *policy* answers.
+
+    Derived together and always passed together: a site given one without the
+    other registers tools it does not authorize, which is the drift ADR 0038's
+    registry assertion exists to catch.
+    """
+    if policy is None:
+        return None, None
+    return policy.permits_tool, connection_authorizer(policy)
+
+
 def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
     """Compose a fresh MCP application bounded by *policy*.
 
@@ -272,8 +286,7 @@ def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
     site rather than checked here, so no site can be given a policy it does not
     apply; ADR 0038's registry assertion is what checks that it did.
     """
-    permits = None if policy is None else policy.permits_tool
-    authorize = None if policy is None else connection_authorizer(policy)
+    permits, authorize = _gates(policy)
     application = _create_base_mcp()
     for module in TOOL_MODULES:
         module.register_tools(application, permits=permits, authorize=authorize)
@@ -373,8 +386,7 @@ def _serve_application(
 ) -> FastMCP:
     """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
-    permits = None if access_policy is None else access_policy.permits_tool
-    authorize = None if access_policy is None else connection_authorizer(access_policy)
+    permits, authorize = _gates(access_policy)
 
     async def _prepare() -> int:
         await configure_arbitrary_command_tool(

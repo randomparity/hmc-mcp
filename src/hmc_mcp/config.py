@@ -318,8 +318,9 @@ def list_profiles_and_nicknames(
     except UnicodeDecodeError as exc:
         raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
     except (OSError, ValueError) as exc:
-        # The exists() check above is a TOCTOU, and a directory, an unreadable
-        # mode, or a path string carrying a null byte all land here.
+        # The exists() check above is a TOCTOU, and a directory or an unreadable
+        # mode lands here. ValueError mirrors load_access_policy's identical
+        # guard rather than being separately reachable.
         raise ConfigError(f"{path}: cannot be read: {exc}") from exc
     try:
         doc = tomllib.loads(text)

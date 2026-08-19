@@ -46,7 +46,8 @@ security, handler, authorize)` returns `handler` unchanged when `authorize is No
 `Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]`: tool name,
 authoritative classification, bound arguments; returns `None` to permit and raises to
 deny. `tool_registry.py` imports nothing from `access_policy.py` or
-`connection_scope.py`.
+`connection_scope.py` — pinned by the module-boundary test, since the whole
+"the policy travels as a callable" design rests on that direction.
 
 **R3 — Registration is signature-transparent.** For every tool registered by
 `server.create_mcp(policy)`, and for `hmc_run_command` after
@@ -70,12 +71,12 @@ that is not `str | None` normalizes to `connection_scope.UNRESOLVED` without bei
 inspected or coerced.
 
 **R7 — Normalization rule 1: `HMC_HOST` collapses the token space.** When `HMC_HOST` is
-set and non-empty in the process environment, `connection_scope.selected_connection(token)`
+set and non-empty in the process environment, `connection_scope.selected_connection(token, tool=...)`
 returns `None` for every `token`, because `build_config` gates its TOML branch on that
 value being truthy and discards the argument.
 
 **R8 — Normalization rule 2: a falsy token is the default connection.**
-`selected_connection(None)` and `selected_connection("")` both return `None`, mirroring
+`selected_connection(None, tool=...)` and `selected_connection("", tool=...)` both return `None`, mirroring
 `load_profile`'s `name = profile or os.environ.get("HMC_PROFILE")`. `HMC_PROFILE` and
 `default_profile` are not consulted: ADR 0036 fixed `<default>` as the denotation of the
 omitted argument.
@@ -97,12 +98,15 @@ can meet — an unreadable file, a non-UTF-8 one, an unparseable one, and a malf
 `profiles` or `nicknames` table — so no `OSError` or `AttributeError` carrying the config
 path escapes to the caller.
 
-**R11 — Evaluation is one predicate per grant.** A call on tool `T` with normalized
-connection `C` is permitted iff some single grant in `policy.grants_for(T)` holds `C` in
-its `connections`. It is written as an early-return loop over grants rather than a
-dimension-wise expression, so #223 adds its target condition *inside* the loop body and a
-grant-crossing union — the misreading ADR 0036's combination rule exists to prevent —
-cannot be written by accident. A registered tool no grant covers is denied.
+**R11 — Evaluation selects grants by tool, then tests the connection.** A call on tool
+`T` with normalized connection `C` is permitted iff some single grant in
+`policy.grants_for(T)` holds `C` in its `connections`; a grant covering a different tool
+never supplies the connection, and a registered tool no grant covers is denied. With one
+dimension evaluated, that is extensionally identical to a cross-grant union of
+connections, so the *testable* claim is the tool filtering. The code is nonetheless
+written as an early-return loop over grants, with a comment saying so, because #223 adds
+its target condition inside the loop body and only then does the difference become
+observable — ADR 0036's combination rule is what it must not violate.
 
 **R12 — A denied call performs no outbound operation.** `ConnectionScopeError` is raised
 before the handler body runs, so no `HMCClient` is constructed, no HTTP transport is
@@ -154,7 +158,7 @@ which would make `build_config` skip profile resolution exactly as `HMC_HOST` do
 `DECLARED_ONLY_DIMENSIONS == ("targets",)`. The `ceiling_enforced` gate on both tuples is
 unchanged; #254 owns it.
 
-**R20 — The boundary is documented.** `README.md` states that the access policy bounds
+**R20 — The boundary is documented** (prose, asserted by review rather than by a test). `README.md` states that the access policy bounds
 the MCP server only, that `hmc-mcp` CLI commands and the supported reusable Python API
 (ADR 0029) run outside it, and that HMC-side user roles are the control that binds them.
 
@@ -184,7 +188,7 @@ A new module, imported by `server.py` and by nothing in `tool_registry.py`.
 class ConnectionScopeError(Exception):
     """An MCP call selected an HMC connection the access policy does not grant."""
 
-def selected_connection(token: str | None) -> str | None:
+def selected_connection(token: Any, *, tool: str) -> str | None:
     """The connection ``build_config`` will select, in the policy's vocabulary."""
 
 def connection_authorizer(policy: AccessPolicy) -> Authorize:
@@ -318,9 +322,14 @@ list.
 - `tests/app/test_capability_ceiling.py` — R19.
 - A live stdio exercise, run once against the packaged server rather than kept in the
   suite (`just smoke` already covers the stdio handshake): a real `hmc-mcp serve
-  --access-policy` subprocess under a throwaway `HOME`, denying a withheld connection,
-  admitting a granted one, evaluating an omitted argument as `<default>`, and reporting
-  `enforced_dimensions == ["tools", "connections"]`. Its result is recorded on the PR.
+  --access-policy lab-only` subprocess under a throwaway `HOME` holding a `lab`/`prod`
+  `config.toml` and a policy granting `lab` only. Result, on this branch: 129 tools
+  exposed; `profile="prod"` refused with `hmc_delete_lpar is not permitted on connection
+  'prod' by access policy 'lab-only'` and no host, credential, or path in the text;
+  `profile="lab"` admitted, reaching the HMC and failing at DNS resolution as expected
+  for a fixture host; the argument omitted, refused as `connection '<default>'`; and
+  `hmc_effective_permissions` reporting `enforced_dimensions == ["tools", "connections"]`
+  with `declared_only_dimensions == ["targets"]`.
 
 ## Threat model
 

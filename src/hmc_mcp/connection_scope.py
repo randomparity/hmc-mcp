@@ -95,10 +95,12 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
         return None
     try:
         profiles, nicknames = list_profiles_and_nicknames()
-    except (ConfigError, OSError, RuntimeError, ValueError) as error:
-        # ConfigError is what the reader raises for every failure it knows; the
-        # rest are the belt to its braces, so a configuration this server cannot
-        # read can never reach the client as a raw path, errno, or traceback.
+    except ConfigError as error:
+        # One arm, because the reader converts every failure it can meet — an
+        # unresolvable home, an unreadable or non-UTF-8 or unparseable file, a
+        # malformed profiles or nicknames table — into a ConfigError. That total
+        # conversion is the contract this catch depends on, and
+        # tests/unit/test_config.py exercises each of its arms directly.
         raise ConnectionScopeError(_UNREADABLE.format(tool=tool)) from error
     if token in profiles:
         return token

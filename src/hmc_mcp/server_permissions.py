@@ -199,6 +199,12 @@ def register_permissions_tool(
         return describe(names, policy, tool_security)
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
+    # Inert by construction, and deliberately still routed through the shared
+    # helper so this site cannot decide for itself: `validate_security` forbids a
+    # connection argument on `target_kind="none"`, so `authorized` always returns
+    # the handler here. It would have to, in fact — this is the package's only
+    # coroutine handler and the wrapper is synchronous, so a tool that was both
+    # async and connection-bearing would need an async branch in `authorized`.
     mcp.tool(
         authorized(
             TOOL_NAME,

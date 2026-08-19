@@ -76,6 +76,37 @@ def test_operations_do_not_import_application_modules():
         assert not imports & forbidden, path
 
 
+def test_tool_registry_does_not_import_the_policy_modules():
+    """The dependency runs one way, which is why both gates travel as callables.
+
+    ``access_policy`` imports ``tool_registry`` for its ``ToolSecurity`` index and
+    ``connection_scope`` imports both, so an import in the other direction is a
+    cycle — and the reason ``permits`` (ADR 0037) and ``authorize`` (ADR 0038) are
+    parameters rather than the policy object.
+    """
+    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
+    forbidden = {
+        "access_policy",
+        "connection_scope",
+        "hmc_mcp.access_policy",
+        "hmc_mcp.connection_scope",
+    }
+
+    path = package / "tool_registry.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    } | {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert not modules & forbidden, sorted(modules & forbidden)
+
+
 def test_lpar_summary_cli_delegates_to_neutral_operation():
     client = object()
     summary = AsyncMock(return_value={"name": "aix1"})
