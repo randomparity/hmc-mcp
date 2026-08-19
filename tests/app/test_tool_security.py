@@ -9,6 +9,8 @@ classification. See docs/adr/0035-enforceable-tool-security-metadata.md.
 from __future__ import annotations
 
 import asyncio
+import ast
+from pathlib import Path
 
 import pytest
 
@@ -391,3 +393,126 @@ def test_legacy_classification_sets_are_gone():
             "_STATE_CHANGING",
         ):
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
+
+
+# A handler's connection routes through exactly these three helpers. Every one
+# of them resolves an HMCConfig from `common.build_config`, so a call that omits
+# the handler's declared connection argument reaches the deployment default
+# whatever the caller — and the access policy — named.
+_CONNECTION_BUILDERS = frozenset(
+    {"build_config", "client_from_env", "_ssh_with_client"}
+)
+
+# `host` is deliberately singled out: `build_config` skips the whole profile
+# branch when an explicit host is given, exactly as HMC_HOST does, so a handler
+# passing one would route around ADR 0038's normalization entirely.
+_CONNECTION_OVERRIDES = frozenset({"host"})
+
+_Def = ast.FunctionDef | ast.AsyncFunctionDef
+def _call_name(call: ast.Call) -> str | None:
+    return getattr(call.func, "id", None) or getattr(call.func, "attr", None)
+
+
+def _bound_parameter(helper: _Def, call: ast.Call, argument: str) -> str | None:
+    """The parameter *helper* binds the caller's connection argument to, if any."""
+    for keyword in call.keywords:
+        if isinstance(keyword.value, ast.Name) and keyword.value.id == argument:
+            return keyword.arg
+    positional = [parameter.arg for parameter in helper.args.args]
+    for index, node in enumerate(call.args):
+        if isinstance(node, ast.Name) and node.id == argument and index < len(positional):
+            return positional[index]
+    return None
+
+
+def _assert_routes(
+    function: _Def,
+    argument: str | None,
+    helpers: dict[str, _Def],
+    tool: str,
+    seen: set[str],
+) -> int:
+    """Check *function*'s connection builders, following module-private helpers.
+
+    *argument* is the name currently holding the caller's connection selector, or
+    None when the call chain did not pass one — in which case any connection
+    builder below is routing to the deployment default and fails.
+
+    Returns the number of connection builders reached, so a handler that reaches
+    none at all is caught by the caller rather than passing vacuously.
+    """
+    reached = 0
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node)
+        if name in _CONNECTION_BUILDERS:
+            reached += 1
+            keywords = {keyword.arg for keyword in node.keywords}
+            passed = argument is not None and (
+                argument in keywords
+                or any(
+                    isinstance(arg, ast.Name) and arg.id == argument
+                    for arg in node.args
+                )
+            )
+            assert passed, (
+                f"{tool}: {name}() at {function.name}:{node.lineno} does not receive "
+                "the declared connection argument, so it routes to the deployment "
+                "default whatever the caller and the access policy named"
+            )
+            assert not keywords & _CONNECTION_OVERRIDES, (
+                f"{tool}: {name}() at {function.name}:{node.lineno} passes a "
+                "connection override that skips profile resolution"
+            )
+        elif name in helpers and name not in seen:
+            helper = helpers[name]
+            bound = (
+                _bound_parameter(helper, node, argument)
+                if argument is not None
+                else None
+            )
+            reached += _assert_routes(
+                helper, bound, helpers, tool, seen | {name}
+            )
+    return reached
+
+
+def test_every_handler_routes_the_connection_argument_it_declares():
+    """G12: a declared connection argument is used, not merely accepted.
+
+    Authorization decides on the value of ``connection_argument``; a handler that
+    then resolves its client without it makes the decision be about a connection
+    the call does not make. That is a fail-open, and it is what
+    ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
+
+    The check is static and follows module-private helpers one call chain deep,
+    which is how the metrics and composite tools reach their client.
+    """
+    root = Path(server_command.__file__).parent
+    connection_bearing = {
+        name
+        for name, security in TOOL_SECURITY.items()
+        if security.connection_argument is not None
+    }
+    checked: set[str] = set()
+
+    for path in sorted(root.glob("server_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        helpers = {
+            name: node for name, node in functions.items() if name.startswith("_")
+        }
+        for name in sorted(functions.keys() & connection_bearing):
+            argument = TOOL_SECURITY[name].connection_argument
+            reached = _assert_routes(
+                functions[name], argument, helpers, name, {name}
+            )
+            assert reached, f"{name}: declares {argument!r} but opens no HMC connection"
+            checked.add(name)
+
+    assert checked == connection_bearing, sorted(connection_bearing - checked)

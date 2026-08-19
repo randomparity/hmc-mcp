@@ -594,7 +594,7 @@ def hmc_set_lpar_boot_order(
     from .operations_lpar import set_lpar_boot_order
 
     async def _go() -> dict[str, Any] | None:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             result = await set_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
@@ -637,7 +637,7 @@ def hmc_clear_lpar_boot_order(
     from .operations_lpar import clear_lpar_boot_order
 
     async def _go() -> dict[str, Any] | None:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             result = await clear_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
