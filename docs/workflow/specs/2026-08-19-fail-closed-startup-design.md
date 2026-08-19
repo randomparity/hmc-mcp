@@ -52,6 +52,22 @@ and `None` would otherwise compose an unbounded application.
 `from hmc_mcp.server import mcp` raises `ImportError`. Nothing in `src/` or `scripts/`
 holds a composed application at import time.
 
+**R2a — The five test modules importing `server.mcp` compose their own.**
+`tests/app/test_capabilities.py`, `tests/app/test_tool_security.py`,
+`tests/app/test_collection_limits.py`, `tests/app/test_profile_routing.py`, and
+`tests/app/test_lifecycle_schema_descriptions.py` import the module-level application and
+fail at collection once R2 removes it. G3 does not catch them — it guards `src/` and
+`scripts/` — so they are named here rather than discovered as five collection errors. Each
+binds a module-level
+`create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))`. No
+assertion changes: all five use the application only for registry and schema inspection
+through `list_tools()`, which the dispatch wrapper leaves untouched — `functools.wraps` sets
+`__wrapped__`, and the existing schema-transparency test in
+`tests/app/test_connection_authorization.py` is what holds that. The two that drive
+`configure_arbitrary_command_tool(True, mcp)` and reset it afterwards keep working, and
+gain isolation rather than losing it: the toggled application is now per-module rather than
+process-wide.
+
 **R3 — Both gates are non-optional and still derived together.** `server._gates(policy:
 AccessPolicy) -> tuple[Callable[[str], bool], Authorize]` returns `policy.permits_tool` and
 `dispatch_authorizer(policy)`. It keeps its ADR 0038 contract: a site given one without the
@@ -150,9 +166,12 @@ overwrite and there is no `--force`.
 
 **R9a — Rendering escapes every operator-supplied key.** The emitter is hand-written; no
 TOML-writing dependency is added (epic requirement 11). Each `connections` entry is emitted
-as a TOML basic string with `"`, `\`, and every C0/C1 control character escaped per the TOML
-basic-string rules, so no profile key can terminate the string, inject a key, or open a
-`[[policies...grants]]` table. `config.list_profiles` returns raw TOML keys with no charset
+as a TOML basic string with `"`, `\`, U+0000-U+001F, and U+007F escaped, so no profile key
+can terminate the string, inject a key, or open a `[[policies...grants]]` table. That set is
+TOML's own and was checked against this checkout's `tomllib`: a raw U+007F in a basic string
+is rejected (`Illegal character '\x7f'`) while a raw U+0085 parses, so C1 needs no escaping
+and DEL does. A key holding a raw U+007F is reachable — `[profiles."a\u007Fb"]` is legal TOML
+and decodes to one — which is why the boundary is stated rather than approximated. `config.list_profiles` returns raw TOML keys with no charset
 validation, so this is the only thing standing between an odd key and either an unparseable
 generated file or an injected grant. Proved by rendering a policy whose connections include
 a key containing a double quote, a backslash, and a newline, then parsing the result with
@@ -164,9 +183,14 @@ duplicated `connections` entry, and `[profiles.""]`, `[profiles." prod"]`, and
 `[profiles."<default>"]` are all legal TOML keys; the first two produce exactly those, and
 R8's filter is what keeps the third from becoming a duplicate the generator inflicted on
 itself. So `config init-access-policy` parses and
-compiles the rendered text through `compile_access_policy` before creating any file; a
-document that would not load is reported through `_fail` at exit **1** with the
-`AccessPolicyError` text, and no file is created. Enumerating illegal key shapes in the
+compiles the rendered text through `compile_access_policy` before creating any file, passing
+R10's fixed non-path label as `source`; a document that would not load is reported through
+`_fail` at exit **1** and no file is created. The generator catches that `AccessPolicyError`
+and re-raises it with one added clause naming `config.toml` as the origin, because every
+noun in `_check_entries`'s text — the policy name, the grant index, the connections field —
+belongs to a document that was never written, and the operator's actual edit is a profile
+key. `[profiles." prod"]` is legal TOML that `load_profile` resolves today, so this is a
+working deployment that meets the message at upgrade. Enumerating illegal key shapes in the
 generator was rejected: the rules live in `access_policy` and a copy would drift from them.
 
 **R10 — The same document compiles without a filesystem.**
@@ -179,7 +203,12 @@ message rendering it discloses no filesystem path.
 `resolve_access_policy_path()`, creating parent directories, using `O_WRONLY|O_CREAT|O_EXCL`
 at mode `0o600` on POSIX and `open(..., "x")` on win32 — the same two-branch pattern
 `config init` uses. An existing file is never overwritten, truncated, or read: the command
-exits **1** with a `FileExistsError` naming the path. A `ConfigError` from R8 is reported
+exits **1** with a `FileExistsError` naming the path. A write or close failure *after* the
+descriptor exists — ENOSPC, EDQUOT, EIO — unlinks the destination before reporting.
+`O_EXCL` alone gives "no partial file" only for failures at `os.open`, and a truncated file
+here is worse than elsewhere: it exists, so the command's own no-overwrite rule refuses to
+regenerate over it, and it does not compile, so `serve` refuses too — leaving a deployment
+that cannot start and cannot regenerate without a manual delete nothing documents. A `ConfigError` from R8 is reported
 the same way — exit **1** through `_fail`, with no file written. On success it prints the
 path to stdout and one activation hint to stderr, and it does not start a server, modify
 `config.toml`, or make the policy active.
@@ -246,6 +275,15 @@ failed to start" rather than surfacing R5's carefully written stderr. Each gains
 precedes the first `serve` line. A command that fails when followed is a defect in the
 change that broke it, not a stale example.
 
+**R16c — `serve --help` stops advertising the mode it now refuses.**
+`src/hmc_mcp/cli_app.py`'s `--access-policy` option help ("Without it, no capability ceiling
+is applied and every tool is exposed") and the `serve` docstring ("Without the option no
+policy applies") both describe omitting the option as a supported mode. `hmc-mcp serve
+--help` is the first thing an operator runs after R5 refuses them, so they would read that
+contradiction in the same terminal that just produced the refusal. Both describe the option
+as required and name `hmc-mcp config init-access-policy`; `README.md`'s matching sentence is
+corrected with them. R16a's principle, applied to help text rather than to a command.
+
 **R16b — The docs keep the two files distinct by name.** The migration section states in one
 sentence that `config.toml` holds HMC *connection profiles*, `access-policy.toml` holds
 *server access policies*, they are separate files with separate lifecycles, and a grant's
@@ -285,13 +323,24 @@ code an operator sees. They run on every CI leg (`amd64`/`ubuntu-24.04` and
 terminates on its own; its stderr names the generator command. Portable — no shell
 redirection and no `HOME` steering — so it runs on every platform the suite runs on.
 
-**L2 — the documented migration works end to end.** In a temporary `HOME`: run
+**L2 — the documented migration works end to end.** Run
 `hmc-mcp config init-access-policy`, assert the file exists at mode `0o600`, run the
 command a second time and assert exit 1 with the file unchanged byte-for-byte, then start
 `hmc-mcp serve --access-policy legacy-equivalent` and complete an MCP `initialize` and
-`tools/list` handshake over stdio. POSIX-only for the reason
-`tests/app/test_authorization_audit_live.py` gives: the fixture steers `config_dir()`
-through `HOME`, which on win32 would write over the developer's real file.
+`tools/list` handshake over stdio.
+
+Its isolation is stated here rather than by reference, because L2 is the only check in
+this spec that **writes** into a resolved config directory. Setting `HOME` alone does not
+steer `config_dir()`: on Linux it reads `XDG_CONFIG_HOME` first and only then falls back to
+`Path.home()`. Followed literally on a machine with `XDG_CONFIG_HOME` exported, the command
+would create a real `access-policy.toml` at `0o600` in the developer's own config
+directory, silently changing what `--access-policy` resolves to for them afterwards. So the
+fixture sets `HOME` to the temporary path, removes `XDG_CONFIG_HOME` and `APPDATA` from
+both the test process and the child environment, patches `pathlib.Path.home`, and derives
+its assertion target from `config_dir()` after that steering rather than by joining the
+temporary path by hand — the same shape `tests/app/test_authorization_audit_live.py`
+already uses, and the reason it is POSIX-only: on win32 `config_dir()` reads `APPDATA`
+while `Path.home()` reads `USERPROFILE`, so the steering does not hold.
 
 ## Retired tests
 
