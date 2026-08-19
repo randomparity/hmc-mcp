@@ -244,21 +244,28 @@ XML (namespace-stripped, HMC bookkeeping attributes removed).
 
 ## MCP server
 
+**`--access-policy NAME` is required.** The server refuses to start without one
+rather than serving unbounded. If you are upgrading, generate a policy matching what
+your server exposed before, read it, then select it — see
+[Migrating to a required access policy](#migrating-to-a-required-access-policy).
+
 ```bash
-hmc-mcp serve            # stdio — what MCP clients/agents expect
-hmc-mcp serve --http --listen-host 127.0.0.1 --port 8000
-# Explicitly enable the arbitrary-command MCP escape hatch when required:
-hmc-mcp serve --enable-arbitrary-command
-# Enforce a capability ceiling from access-policy.toml:
-hmc-mcp serve --access-policy lab
+# Once: write a policy for review. It activates nothing and never overwrites.
+hmc-mcp config init-access-policy
+
+hmc-mcp serve --access-policy lab            # stdio — what MCP clients/agents expect
+hmc-mcp serve --access-policy lab --http --listen-host 127.0.0.1 --port 8000
+# Explicitly enable the arbitrary-command MCP escape hatch when required. The policy
+# must also grant hmc_run_command by name; the flag alone is not enough:
+hmc-mcp serve --access-policy lab --enable-arbitrary-command
 ```
 
 `--access-policy NAME` enforces the named policy from the platform-native
 `access-policy.toml`: the server registers only the tools that policy permits, so
-a withheld tool never appears in `tools/list` and cannot be called by name.
-Without the flag no ceiling is applied and every tool is exposed — authoring the
-file is not enough on its own. A policy that cannot be read, parsed, or compiled
-exits non-zero and starts nothing.
+a withheld tool never appears in `tools/list` and cannot be called by name. Omitting
+it is a usage error (exit 2) that starts nothing; a policy that is selected but
+cannot be read, parsed, or compiled — or whose file does not exist — exits 1 and
+starts nothing. Both refusals name the generator and the file they looked for.
 
 All three dimensions — tools, connections, and targets — are enforced, and a
 call is permitted only when a **single** grant covers all three together. A
@@ -312,6 +319,64 @@ grant still discloses the `prod` inventory. Withhold them by name — a grant
 listing `tools` and no `read` effect class — when the configuration or the
 policy is itself sensitive.
 
+### Migrating to a required access policy
+
+An access policy used to be optional; a server started without one exposed every tool on
+every configured connection. It is now required, so an existing deployment that upgrades
+without one stops serving. Two commands and a read:
+
+```bash
+# 1. Write it. This activates nothing, and prints the path it wrote to stdout.
+hmc-mcp config init-access-policy
+
+# 2. Read it. It is one grant, and the tools array is the whole of your exposure.
+$EDITOR ~/.config/hmc-mcp/access-policy.toml   # macOS: ~/Library/Application Support/hmc-mcp/
+
+# 3. Select it, in whatever launches your server.
+hmc-mcp serve --access-policy legacy-equivalent
+```
+
+The generated `legacy-equivalent` policy grants exactly what the unpolicied server granted:
+every ordinary tool, every configured connection plus `<default>`, and
+`targets = "all-targets"`. **It is a migration aid, not a recommended posture.** A new
+deployment should start from the read-only example below and add what it needs — the
+generated policy is the widest one this system can express.
+
+Six things are worth knowing before you run it.
+
+- **`hmc_run_command` is not in it.** The escape hatch stays a separate decision:
+  `--enable-arbitrary-command` alone never exposed it, and a generated grant that named it
+  would undo that. If you ran with the flag, add `hmc_run_command` to the grant's `tools`
+  by hand — and note it will show as a deletion in every future regeneration diff, because
+  the generator cannot emit it.
+- **Run it as the identity, and with the environment, that `serve` runs under.** Both
+  resolve `access-policy.toml` through the same config directory, and the connection list
+  is read from that identity's `config.toml`. Generating as your login user and serving as
+  a systemd `User=` or a container uid writes a policy the server never reads, naming
+  profiles it does not have.
+- **A container or unit needs a resolvable `HOME` or `XDG_CONFIG_HOME`.** Under a uid with
+  no passwd entry and neither variable set, the path cannot be resolved and the server
+  cannot start at any setting.
+- **It never overwrites.** To regenerate after an upgrade, write elsewhere and merge:
+
+  ```bash
+  hmc-mcp config init-access-policy --output /tmp/access-policy.new
+  diff /tmp/access-policy.new ~/.config/hmc-mcp/access-policy.toml
+  ```
+
+  Compare **both** the `tools` and the `connections` arrays. The policy is a snapshot of
+  each: a tool a later release adds, and a profile you add to `config.toml`, are both
+  ungranted until you add them here. Nothing in a running server surfaces either gap —
+  `hmc_effective_permissions` reports what was registered, which is exactly what the policy
+  produced — so this diff is the detection path.
+- **If `serve` reports a policy that will not compile and the generator reports the file
+  already exists**, the file is truncated or corrupt. Delete it and re-run the generator.
+- **`config.toml` and `access-policy.toml` are different files with different jobs.**
+  `config.toml` holds **HMC connection profiles** — which consoles you can reach, and how.
+  `access-policy.toml` holds **server access policies** — what an MCP server may do with
+  them. They have separate lifecycles, and a grant's `connections` entries are profile
+  *keys* from `config.toml`, never profile contents.
+
 Policies live in `access-policy.toml`, beside `config.toml` in the same
 platform-native directory. A minimal read-only policy:
 
@@ -329,6 +394,39 @@ rejected. `hmc_run_command` cannot be reached by effect class: name it in a
 grant's `tools` to grant it, start the server with `--enable-arbitrary-command`
 as well, and grant it under `"all-targets"`, since it declares no target
 selector. All three are required, and they compose conjunctively.
+
+A limited-mutation policy — read anywhere the deployment reaches, but change only the
+lab, and never destroy anything:
+
+```toml
+[[policies.limited.grants]]
+effects = ["read"]
+connections = ["lab", "prod", "<default>"]
+targets = "all-targets"
+
+[[policies.limited.grants]]
+effects = ["mutate"]         # "destructive" is deliberately absent
+connections = ["lab"]
+targets = "all-targets"
+```
+
+And the legacy-equivalent policy, which `hmc-mcp config init-access-policy` writes in full
+— every ordinary tool named explicitly, which is why it is generated rather than typed:
+
+```toml
+[[policies.legacy-equivalent.grants]]
+tools = [
+    "hmc_add_network_adapter",
+    "hmc_add_vfc_adapter",
+    # ... 129 names, every ordinary tool. hmc_run_command is not among them.
+]
+connections = ["<default>", "lab", "prod"]   # every profile key in config.toml
+targets = "all-targets"
+```
+
+It names tools rather than granting `effects` deliberately: an effect-class grant would
+silently confer every tool a later release adds, which is the silent privilege retention
+the generator exists to replace.
 
 ### Narrowing `targets`
 
@@ -392,7 +490,6 @@ JSON-RPC channel, and nothing inside the process can detect that.
 |-----------|---------------|
 | The served surface has no tools | The policy withholds everything reachable; nothing the server is asked to do will succeed. Suppresses the next line. |
 | The policy withholds `hmc_effective_permissions` | The server cannot report its own permissions to a client. Any policy that neither grants the `read` effect class nor names the tool in a grant's `tools` causes this. |
-| `access-policy.toml` exists but `--access-policy` was not passed | The file was authored but never selected, so no ceiling is applied. |
 | `--enable-arbitrary-command` was passed but the policy does not grant `hmc_run_command` | The flag and the ceiling compose conjunctively, so the escape hatch is not exposed. Name it in a grant's `tools` to allow it. |
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
@@ -466,8 +563,14 @@ code, the connection selector, and the declared target selectors. Denials are `W
 and permits are `INFO`. Credentials, whole argument sets, command text, and response
 bodies are absent by construction.
 
-Without `--access-policy NAME` there is no authorizer, so no *authorization* record is
-written. ADR 0011 ownership-override records are not policy-gated and still are.
+Every deployment writes these, because every deployment now selects a policy. That has a
+deployment requirement attached: **something must drain the server's stderr.** The sink
+writes synchronously, and an open-but-undrained pipe blocks rather than raising, so a
+client that never reads its child's stderr can wedge the server — see
+[#269](https://github.com/randomparity/hmc-mcp/issues/269). Under stdio that party is the
+MCP client, not you; under `--http` it is whatever supervisor or journal collects the
+unit's stderr. ADR 0011 ownership-override records are not policy-gated and are emitted on
+the CLI and Python API paths too.
 
 See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.
@@ -720,7 +823,8 @@ hmc-mcp lpars power-on web01
 ### Use with Hermes Agent
 
 ```bash
-hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve
+hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve \
+  --access-policy legacy-equivalent
 ```
 
 ## Testing

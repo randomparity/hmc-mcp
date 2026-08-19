@@ -21,6 +21,7 @@ Spec item -> node id:
   G2   test_the_legacy_policy_composes_the_registry_the_default_used_to
   G3   test_no_module_composes_an_application_at_import
   L1   test_serve_without_a_policy_exits_2_as_a_subprocess
+  L2   test_the_documented_migration_works_end_to_end
 
 R11 and R11a live in tests/app/test_cli_config.py; R7-R10, R9a and R9b in
 tests/unit/test_legacy_policy.py. Each of the three modules carries its own header and
@@ -33,8 +34,11 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
+import json
+import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -377,6 +381,97 @@ def test_serve_without_a_policy_exits_2_as_a_subprocess():
 
     assert completed.returncode == 2
     assert "config init-access-policy" in _unstyle(completed.stderr)
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="the fixture steers config_dir() through HOME; on win32 config_dir() reads "
+    "APPDATA while Path.home() reads USERPROFILE, so the steering does not hold",
+)
+def test_the_documented_migration_works_end_to_end(tmp_path):
+    """L2: generate, refuse to regenerate, then actually serve on what was written.
+
+    The only check here that *writes* through a subprocess, so its isolation is
+    explicit rather than by reference: `HOME` is redirected, and `XDG_CONFIG_HOME` and
+    `APPDATA` are removed from the child environment — setting `HOME` alone does not
+    steer `config_dir()` on Linux, and the failure mode is creating a real
+    `access-policy.toml` in the developer's own config directory, silently changing what
+    `--access-policy` resolves to for them afterwards.
+
+    `HMC_HOST` and `HMC_PROFILE` go too: they change which connection a call selects,
+    and a developer with either exported would otherwise be testing their machine.
+    """
+    executable = shutil.which("hmc-mcp")
+    if executable is None:
+        pytest.skip("the hmc-mcp console script is not on PATH")
+    assert str(REPO_ROOT) in str(Path(executable).resolve().parents[1]), (
+        "the console script resolves outside this checkout"
+    )
+
+    env = dict(os.environ)
+    for name in ("HMC_HOST", "HMC_PROFILE", "XDG_CONFIG_HOME", "APPDATA"):
+        env.pop(name, None)
+    env["HOME"] = str(tmp_path)
+
+    generated = subprocess.run(
+        [executable, "config", "init-access-policy"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    # Taken from the command's own stdout rather than joined by hand: `config_dir()`
+    # is `~/Library/Application Support/hmc-mcp` on darwin and `~/.config/hmc-mcp`
+    # elsewhere, and a hand-built path would pin one platform's answer. Asserting it
+    # lands under the steered HOME is what proves the isolation actually held — the
+    # thing that matters, since this is the one check that writes.
+    target = Path(_unstyle(generated.stdout).strip())
+    assert str(target).startswith(str(tmp_path)), (
+        f"wrote outside the steered HOME: {target}"
+    )
+    assert target.name == "access-policy.toml"
+    assert target.exists(), f"nothing written at {target}"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    written = target.read_bytes()
+
+    # Second run: refuses, changes nothing, and names the way forward.
+    again = subprocess.run(
+        [executable, "config", "init-access-policy"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert again.returncode == 1
+    assert target.read_bytes() == written
+    assert "--output" in _unstyle(again.stdout + again.stderr)
+
+    # And the file it wrote is one a server actually starts on. `initialize` plus
+    # `tools/list` over raw newline-delimited JSON-RPC, deliberately not a client
+    # library: anything the server prints outside the protocol shows up as an
+    # unparseable line on stdout and is observable.
+    server = subprocess.Popen(
+        [executable, "serve", "--access-policy", LEGACY_POLICY_NAME],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=env,
+    )
+    try:
+        request = {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "l2", "version": "0"},
+            },
+        }
+        assert server.stdin is not None and server.stdout is not None
+        server.stdin.write(json.dumps(request) + "\n")
+        server.stdin.flush()
+        line = server.stdout.readline()
+    finally:
+        server.kill()
+        server.wait(timeout=30)
+
+    assert line, "the server produced no initialize reply"
+    reply = json.loads(line)
+    assert reply["id"] == 1
+    assert "result" in reply, reply
 
 
 # ---------------------------------------------------------------------------

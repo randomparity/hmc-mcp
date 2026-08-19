@@ -350,7 +350,13 @@ def config_init_access_policy(
     # path would print with the bracketed segment silently deleted — so the operator
     # copies a path that does not exist — and a `[/x]`-shaped one would raise
     # MarkupError in place of the success line.
-    console.print(escape(str(target)))
+    # `soft_wrap=True` because this line is the command's machine-readable output: a
+    # rich Console hard-folds at 80 columns on a non-tty, so
+    # `hmc-mcp config init-access-policy > path.txt` would otherwise capture a path
+    # broken across lines. Escaped for the reason `_fail` escapes — under --output the
+    # path is the operator's own, and a bracketed segment would be silently deleted
+    # while a `[/x]`-shaped one would raise MarkupError in place of the success line.
+    console.print(escape(str(target)), soft_wrap=True)
     err_console.print(
         "Review it, then start the server with: hmc-mcp serve --access-policy "
         f"{LEGACY_POLICY_NAME}"
