@@ -321,6 +321,39 @@ omissions:
   `hmc_map_storage_to_lpar`'s `storage_name` and `target_device`, and their siblings name objects
   the HMC addresses *inside* a declared VIOS — `POST /VirtualIOServer/{vios_uuid}/VolumeGroup/{vg}`
   — so they cannot name a resource the declared selector does not contain.
+
+  **That containment was not true when this record was first written, and saying so is the
+  point of this paragraph.** Every such path is built by interpolating the argument into an
+  f-string, and `httpx` resolves RFC 3986 dot-segments when merging a path onto `base_url`.
+  Verified against httpx 0.28.1 in this checkout: a `vg_uuid` of `../../../LogicalPartition/X`
+  turns `DELETE /VirtualIOServer/{vios}/VolumeGroup/{vg}` into
+  `DELETE /rest/api/uom/LogicalPartition/X`. The authorizer sees an authorized
+  `vios_name_or_uuid`, has no constraint for the undeclared `vg_uuid`, and permits — so a grant
+  reading `targets = { lpar = ["dev-lpar"] }` authorized a `destructive` call against an
+  arbitrary partition. Every "a denied call makes no outbound attempt" test stayed green,
+  because the call was never denied.
+
+  The containment claim is what justifies classifying these ~13 tools `exhaustive_targets=True`,
+  so it is load-bearing rather than decorative, and this record cannot assert enforcement while
+  it is false. `client._request` — the single waist every REST call crosses, from MCP, the CLI,
+  and the `api` facade alike — now refuses any path carrying a `.` or `..` segment, before the
+  request is built. That is one guard rather than thirteen call-site checks, it covers the two
+  entry points no access policy bounds, and it also closes the `job_href` variant below.
+  Rejecting rather than stripping is deliberate: a sanitized path would leave the caller acting
+  on a resource it did not name, which is the same defect with a tidier URL.
+
+  What that guard does **not** do is require these arguments to be UUID-shaped, which
+  `common.is_uuid` already does for the `*_name_or_uuid` resolvers and issue #262 proposes here.
+  Measured rather than assumed: with dot-segments refused, the remaining shapes an attacker
+  controls — an absolute path, a protocol-relative `//host`, a deeper path segment, a query or
+  matrix parameter, a backslash, a percent-encoded separator — were each built against httpx
+  0.28.1 and **none changes the host or escapes the declared VIOS prefix**; they address
+  something at or below the resource the selector names, which is what containment claims.
+  So UUID-shape validation is strictly stronger than this record needs and is left to #262,
+  where it can be weighed against a compatibility risk this checkout cannot settle: whether
+  every HMC build's volume-group, mapping, and adapter identifiers are canonical 8-4-4-4-12
+  UUIDs. Refusing a legitimate non-canonical identifier would be a regression traded for
+  reach that dot-segment refusal has already removed.
 - **Remote endpoints a call reads from.** `hmc_update_firmware`, `hmc_update_console_software`, and
   `hmc_vios_update` take a `repository`; `hmc_install_lpar_os` and `hmc_install_vios` take NIM
   server addresses. These are not HMC resources, so no `TargetKind` names one and no allowlist can
@@ -516,8 +549,47 @@ operator would otherwise discover as an unexplained denial.
   prevents a fourth `dry_run` tool from being added without one. The `dry_run` argument name is not
   metadata and this record deliberately does not make it any — doing so would be the first step
   toward reading it in the authorizer, which the epic forbids.
-- No new runtime dependency. `inspect`, `ast`, and `dataclasses` are stdlib and already imported
-  across the package and its suite.
+- **Enforcement holds for the request *path*; the request *body* is a second boundary this
+  record does not close.** `documents.py` performs no XML escaping — there is no `escape` or
+  `quoteattr` anywhere in `src/hmc_mcp/` — and every builder is an f-string. Two consequences,
+  both verified in this checkout rather than reasoned about.
+
+  The first is a plain functional defect needing no attacker: `build_ldap_config_document`
+  raises a parse error on `search_filter="(&(objectClass=person)(uid=*))"`, which is ordinary
+  LDAP conjunction syntax, and `build_hmc_user_document` does the same for a password or a
+  description containing `&` or `<`.
+
+  The second crosses *this* dimension. `build_vscsi_mapping_document` emits `target_device`
+  immediately before the `AssociatedLogicalPartition` href built from the authorized `lpar`
+  selector, so a `target_device` value can close its element and emit a second
+  `AssociatedLogicalPartition` naming a different partition — the resulting document is
+  well-formed and carries both hrefs, the injected one first. `build_hmc_user_document` has
+  the same shape via `description`, yielding two `<UserID>` elements. **Explicitly unverified:**
+  which element a real HMC's unmarshaller honours. The injection primitive is confirmed in
+  code; the outcome on an HMC is not, and no live HMC was available.
+
+  So the honest statement of this record's guarantee is: a call reaches only the resources its
+  declared selectors name **in the request URI**. An unescaped body field can still name
+  another. Closing that is output encoding across every builder plus a metacharacter
+  round-trip test — a different control from target scope, in modules this record does not
+  touch, and no `ToolSecurity` change fixes it (marking `hmc_create_user` non-exhaustive would
+  force it under `all-targets` and leave both the parse errors and the primitive intact). It is
+  owned separately. Note also that issue #143 closed this class as a single instance — it
+  constrained `LparResources.sharing_mode` to a `Literal` and called it "the one free-string
+  parameter that reaches generated XML unvalidated" — and the evidence above falsifies that
+  closing claim.
+
+- **Two refusals now live in `client.py`, outside this record's dispatch boundary, and that
+  placement is deliberate.** The dot-segment guard and the `job_href` class check sit in the
+  client because the CLI and the `api` facade reach the same paths and ADR 0029 places both
+  outside every access policy — a guard at the authorization boundary would protect one entry
+  point of three. It is the argument ADR 0038 used to *reject* authorizing inside
+  `build_config`, applied to the opposite conclusion, and the difference is what each check
+  is: an access decision needs the tool and its grant and belongs at dispatch; a malformed
+  request needs neither and belongs where the request is built. Consequence: the CLI and `api`
+  now refuse a dot-segment path they previously sent.
+- No new runtime dependency. `inspect`, `ast`, `dataclasses`, and `urllib.parse` are stdlib and
+  already imported across the package and its suite.
 
 ## Considered & rejected
 

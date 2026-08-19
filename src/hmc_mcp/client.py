@@ -45,6 +45,65 @@ LOGON_REQUEST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
+# The two RFC 3986 dot-segments. Held as a frozenset and compared per path
+# segment rather than with a substring test, so a resource legitimately named
+# "..log" or "a..b" is not refused for containing the characters.
+_DOT_SEGMENTS: frozenset[str] = frozenset({".", ".."})
+
+
+def _reject_dot_segments(method: str, path: str) -> None:
+    """Refuse a request path that could resolve away from the resource it names.
+
+    Raised as ``HMCError`` because it is a request this client will not send,
+    which is what every other pre-flight refusal here is. The message names the
+    method and the offending segment only — never the full path, which on the
+    CLI and API paths can carry an operator's own filesystem-derived values.
+    """
+    candidate = urlparse(path).path if "://" in path else path
+    for segment in candidate.split("/"):
+        if segment in _DOT_SEGMENTS:
+            raise HMCError(
+                f"{method.upper()} refused: the request path contains a "
+                f"{segment!r} segment, which would resolve to a different "
+                "resource than the one addressed. Pass an identifier, not a path."
+            )
+
+
+# The two shapes an HMC job SELF link takes: the legacy uom resource type and
+# the per-operation collection the submission response points at (issue #95).
+_JOB_PATH_SEGMENTS: frozenset[str] = frozenset({"Job", "jobs"})
+
+
+def _reject_non_job_path(path: str) -> None:
+    """Refuse a ``job_href`` that does not address a job.
+
+    ``get_job`` fetches the caller's ``job_href`` directly, so the path — not the
+    ``job_uuid`` argument — decides which resource is read. ``_web_get`` sends
+    the same ``web+xml`` Accept header ``client_users.get_hmc_user`` uses, so
+    without this an ``href`` of ``/rest/api/web/HmcUser/root`` returns the root
+    account record through a tool classified ``read``/``job``.
+
+    The check binds the *resource class*, not the identifier. Binding the last
+    segment to ``job_uuid`` would be tighter, and was rejected: ``jobs.job_identifier``
+    prefers the response's ``UUID``/``JobID`` over the link's last segment, so the
+    two can legitimately differ — and issue #95 exists precisely because some
+    firmware cannot resolve the UUID, which is the case this argument serves and
+    the one that cannot be tested here. Binding the class is what can be verified
+    from this checkout.
+
+    The residual is that a caller may read a *different* job. That is the reach
+    an access-policy grant for these tools already confers: job UUIDs are minted
+    by the HMC at runtime and cannot be enumerated in a policy allowlist, so
+    ADR 0039 marks both job tools ``exhaustive_targets=False`` and only
+    ``targets = "all-targets"`` grants them — a grant that means "any job".
+    After this check the tool can reach exactly what that grant says.
+    """
+    if not _JOB_PATH_SEGMENTS.intersection(path.split("/")):
+        raise HMCError(
+            "job_href refused: the link does not address a job resource. Pass "
+            "the SELF link returned when the job was submitted."
+        )
+
 
 class HMCClient(
     UsersMixin,
@@ -182,7 +241,30 @@ class HMCClient(
     # ------------------------------------------------------------------ #
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        """Send one REST request and normalize transport-layer failures."""
+        """Send one REST request and normalize transport-layer failures.
+
+        Refuses a path carrying an RFC 3986 dot-segment before anything leaves
+        the process. Every REST path in this package is built by interpolating
+        caller-supplied identifiers into an f-string — ``/VirtualIOServer/
+        {vios_uuid}/VolumeGroup/{vg_uuid}`` and a dozen siblings — and httpx
+        *resolves* dot-segments when merging a path onto ``base_url``. Verified
+        against httpx 0.28.1: a ``vg_uuid`` of ``../../../LogicalPartition/X``
+        sends ``DELETE /rest/api/uom/LogicalPartition/X``.
+
+        That silently retargets the request at a resource the caller never
+        named, which defeats every layer above it. The MCP access policy
+        authorizes the *declared* selectors (ADR 0039), so a grant scoped to one
+        VIOS would permit a call that deletes an arbitrary partition; the CLI and
+        the ``api`` facade have no policy at all and are equally exposed. So the
+        guard lives here, at the one waist all three paths cross, rather than at
+        the thirteen interpolation sites or at the authorization boundary only
+        two of them reach.
+
+        Percent-encoded dot-segments are deliberately *not* decoded before the
+        check: httpx does not resolve them either, so they reach the HMC as
+        literal path text and address nothing.
+        """
+        _reject_dot_segments(method, path)
         try:
             return await self._http.request(method, path, **kwargs)
         except httpx.TimeoutException as exc:
@@ -633,6 +715,7 @@ class HMCClient(
         """
         if job_href:
             path = urlparse(job_href).path
+            _reject_non_job_path(path)
             xml = await self._web_get(path)
             if not xml:
                 return None
