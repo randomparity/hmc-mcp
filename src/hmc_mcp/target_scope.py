@@ -62,11 +62,13 @@ UNREADABLE: Final = _Unresolved("UNREADABLE")
 #: string to compare or one of the two sentinels above.
 Selected = tuple[TargetKind, str, str | _Unresolved]
 
+# Phrased over the *table* rather than over the tool's selectors, because it has
+# to be true of both cases it covers: a tool with no selectors at all, and a tool
+# whose selectors exist but do not reach everything it touches.
 _UNBOUNDABLE = (
-    "{tool} is not permitted by access policy {policy}: its declared target "
-    "selectors do not name every resource it acts on, so a targets table cannot "
-    'constrain it. Grant {tool} under targets = "{sentinel}" in a grant that '
-    "names it."
+    "{tool} is not permitted by access policy {policy}: no targets table can "
+    'bound every resource it acts on. Grant {tool} under targets = "{sentinel}" '
+    "in a grant that names it."
 )
 _UNREADABLE_VALUE = (
     "{tool} is not permitted by access policy {policy}: the {argument} argument "
