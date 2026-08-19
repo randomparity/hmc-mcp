@@ -43,6 +43,11 @@ Every task's requirements implicitly include this section.
 - **Do not add** `hmc_mcp.access_policy` to `tests/test_optional_dependencies.py`'s
   core-only import contract. The module imports `tool_registry`, which imports `fastmcp`
   and `mcp.types` unconditionally, so it legitimately requires the `app` extra.
+- **Never write `# pragma: no cover`.** `tests/test_ci_pipeline.py::test_coverage_gate_denominator_is_not_shrunk_in_source`
+  walks every `src/hmc_mcp/**/*.py` and fails on any occurrence not listed in
+  `REVIEWED_NO_COVER`, which is deliberately empty (accepted ADR 0034). Adding a line to
+  that allowlist is the disarm route the ADR exists to close, and it would edit a third
+  file outside this change's surface. Cover the statement with a test instead.
 - **Vocabulary.** An *HMC connection profile* is the existing `config.toml` concept. A
   *server access policy* is the new one. Never call either the other.
 - Commit after each task with a Conventional Commits subject of 72 characters or fewer.
@@ -513,6 +518,16 @@ Append to `tests/unit/test_access_policy.py`:
             "targets.lpar contains a duplicate entry",
             id="selector-duplicate",
         ),
+        pytest.param(
+            _document(effects=["read"], connections=["lab"], targets={"lpar": "db-01"}),
+            "must be an array of selector strings",
+            id="selector-not-an-array",
+        ),
+        pytest.param(
+            _document(effects=["read"], connections=["lab"], targets={"lpar": [1]}),
+            "must contain only selector strings",
+            id="selector-not-a-string",
+        ),
     ],
 )
 def test_shape_tier_rejects(document: dict[str, object], expected: str) -> None:
@@ -555,7 +570,7 @@ GIT_EDITOR=true git commit -m "feat(access-policy): validate policy document sha
 ```
 
 **Acceptance criteria for Task 1.** `_parse_document` accepts a minimal valid document;
-rejects each of the twenty-one shape violations above with an `AccessPolicyError` whose
+rejects each of the twenty-three shape violations above with an `AccessPolicyError` whose
 message starts with the source and names the policy and grant index when the error has
 them; and validates every policy in the document, not only one.
 
@@ -586,7 +601,7 @@ only when one single grant covers its tool, its connection, and its targets toge
 ### Step 2.1 — Write the failing test
 
 Append to `tests/unit/test_access_policy.py`, and add
-`from hmc_mcp.access_policy import ALL_TARGETS, AccessPolicy, compile_access_policy` plus
+`from hmc_mcp.access_policy import ALL_TARGETS, compile_access_policy` plus
 `from hmc_mcp.server import TOOL_SECURITY` to the imports at the top of the file:
 
 ```python
@@ -643,7 +658,7 @@ Append to the module:
 class AllTargets:
     """The grant places no target constraint. The one bounded widening form."""
 
-    def __repr__(self) -> str:  # pragma: no cover - cosmetic
+    def __repr__(self) -> str:
         return "ALL_TARGETS"
 
 
@@ -1070,6 +1085,7 @@ def test_compiled_policy_is_immutable() -> None:
 
     assert isinstance(policy.tools, frozenset)
     assert isinstance(grant.connections, frozenset)
+    assert repr(ALL_TARGETS) == "ALL_TARGETS"
 
 
 def test_compile_does_not_retain_the_caller_dict() -> None:
@@ -1250,8 +1266,9 @@ Expected: `1 passed`.
 
 Move `test_module_exposes_no_mutator` here from Task 2 step 2.5 — it needs
 `load_access_policy` and `resolve_access_policy_path`, which only now exist. Confirm the
-test module imports `AccessPolicy` alongside `ALL_TARGETS` and `compile_access_policy`;
-the test body names it. Then append:
+test module's `hmc_mcp.access_policy` import gains `AccessPolicy` — the test body names
+it, and importing it in Task 2 would have failed `just lint` with F401 and blocked that
+task's commit through the prek hook. Then append:
 
 ```python
 def test_resolve_path_sits_beside_config_toml(monkeypatch, tmp_path) -> None:
