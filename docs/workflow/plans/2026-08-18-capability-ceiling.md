@@ -428,8 +428,18 @@ def test_inspection_does_not_raise_on_a_tool_outside_the_index():
     assert "unknown" not in _inspect(application)["effects"]
 
 
-def test_inspection_carries_only_allowlisted_value_sources():
-    """R17: no config.toml value and no HMC_* environment value reaches the payload."""
+def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
+    """R17: no config.toml value and no HMC_* environment value reaches the payload.
+
+    The sentinels must exist in the process for their absence to mean anything —
+    an unset variable is absent from every payload, correct or leaking — and they
+    are checked as *values*, since a leak of HMC_PASSWORD carries its value and
+    not its name.
+    """
+    monkeypatch.setenv("HMC_HOST", "sentinel-host-do-not-leak")
+    monkeypatch.setenv("HMC_USER", "sentinel-user-do-not-leak")
+    monkeypatch.setenv("HMC_PASSWORD", "sentinel-password-do-not-leak")
+
     policy = _policy(READ_ONLY_GRANT)
     result = _inspect(create_mcp(policy))
 
@@ -444,8 +454,12 @@ def test_inspection_carries_only_allowlisted_value_sources():
         "declared_only_dimensions",
     }
     rendered = repr(result)
-    for forbidden in ("HMC_PASSWORD", "HMC_USER", "HMC_HOST", "password", "hscroot"):
-        assert forbidden not in rendered
+    for sentinel in (
+        "sentinel-host-do-not-leak",
+        "sentinel-user-do-not-leak",
+        "sentinel-password-do-not-leak",
+    ):
+        assert sentinel not in rendered
 ```
 
 `test_no_policy_applies_no_ceiling` needs no edit: it already reads
@@ -1009,41 +1023,59 @@ Task 4 turns `_prepare` into the counting form and adds the warning loop.
 uv run --no-sync pytest -q tests/app/test_capability_ceiling.py --no-cov
 ```
 
-Then `tests/app/test_serve.py`. Four kinds of change:
+Then `tests/app/test_serve.py`. Two kinds of change belong to **this** task — the
+CLI-level `assert_called_once_with` edits belong to Task 4, because `cli_app.serve` does not
+pass `access_policy` until Step 4.4.
 
-- `main_http.assert_called_once_with(...)` at lines 70–75 and 98–103 gain
-  `access_policy=None`; `main_stdio.assert_called_once_with(...)` at line 131 and in
-  `test_serve_passes_arbitrary_command_opt_in` (lines 145–153) likewise.
-- The two tests asserting `configure.assert_called_once_with(enabled, server_app.mcp)`
-  (lines ~164–182) now assert against the freshly composed application, not the global.
-  Rewrite them to patch `hmc_mcp.server.configure_arbitrary_command_tool` and assert the
-  call's `permits` keyword is `None`:
+First, `patch.object(server_app.mcp, "run")` at lines 54, 79, 189, and 197 becomes
+`patch.object(type(server_app.mcp), "run")`, because the served application is no longer the
+module global. The `run.assert_called_once_with(...)` assertions beside them are unchanged:
+`patch.object` installs a `MagicMock`, which is not a descriptor, so a class-level patch
+passes no `self` and the call still records exactly the transport/host/port keywords.
+(Step 3.1 patches with a plain *function*, which **is** a descriptor and does bind, which is
+why its `_capture` takes `self`.)
+
+Second, the parametrized pair at lines ~157–185 asserts
+`configure.assert_called_once_with(enabled, server_app.mcp)`, which no longer holds: the
+entry point gates a freshly composed application, not the global. Replace both, keeping the
+parametrization and the `run` assertions:
 
 ```python
-def test_stdio_entry_point_gates_the_escape_hatch(monkeypatch):
+@pytest.mark.parametrize("enabled", [False, True])
+def test_stdio_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
     import hmc_mcp.server as server_app
 
     calls = []
 
-    async def _record(enabled, application, *, permits=None):
-        calls.append((enabled, permits))
+    async def _record(flag, application, *, permits=None):
+        calls.append((flag, permits))
 
     monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
-    monkeypatch.setattr(type(server_app.mcp), "run", lambda self: None)
+    with patch.object(type(server_app.mcp), "run") as run:
+        server_app.main_stdio(enable_arbitrary_command=enabled)
 
-    server_app.main_stdio(enable_arbitrary_command=True)
+    assert calls == [(enabled, None)]
+    run.assert_called_once_with()
 
-    assert calls == [(True, None)]
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
+    import hmc_mcp.server as server_app
+
+    calls = []
+
+    async def _record(flag, application, *, permits=None):
+        calls.append((flag, permits))
+
+    monkeypatch.setattr(server_app, "configure_arbitrary_command_tool", _record)
+    with patch.object(type(server_app.mcp), "run") as run:
+        server_app.main_http(host="127.0.0.1", port=9000, enable_arbitrary_command=enabled)
+
+    assert calls == [(enabled, None)]
+    run.assert_called_once_with(
+        transport="streamable-http", host="127.0.0.1", port=9000
+    )
 ```
-
-- `patch.object(server_app.mcp, "run")` at lines 54, 79, 189, 197 must become
-  `patch.object(type(server_app.mcp), "run")`, because the served application is no longer
-  the module global.
-- `run.assert_called_once_with(...)` assertions are unchanged. `patch.object` installs a
-  `MagicMock`, which is not a descriptor, so a class-level patch passes no `self` and the
-  call still records exactly the transport/host/port keywords. Only the `patch.object`
-  target changes. (Step 3.1 patches with a plain *function*, which is a descriptor and does
-  bind, which is why its `_capture` takes `self`.)
 
 Run:
 
@@ -1280,12 +1312,19 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
 ### Step 4.2 — Confirm they fail
 
 ```
-uv run --no-sync pytest -q tests/app/test_capability_ceiling.py -k "warn or serve_reports" --no-cov
+uv run --no-sync pytest -q tests/app/test_capability_ceiling.py --no-cov
 ```
 
-Expect the warning tests to fail with
-`ImportError: cannot import name '_startup_warnings' from 'hmc_mcp.server'`, and the two CLI
-tests to fail because `--access-policy` is not an option yet (typer exit code 2).
+Run the whole file — Tasks 1–3's tests are green by now, so it costs nothing, and a `-k`
+filter would silently skip `test_serve_forwards_the_compiled_policy_to_the_entry_point` and
+`test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr`, two of the most
+consequential tests in this task. Expect exactly these failures:
+
+- the six `_warnings(...)` tests and both `_serve_application` tests:
+  `ImportError: cannot import name '_startup_warnings' from 'hmc_mcp.server'`;
+- `test_serve_forwards_the_compiled_policy_to_the_entry_point` (both parametrizations) and
+  `test_serve_reports_an_unloadable_policy_and_starts_nothing`: exit code 2, because
+  `--access-policy` is not an option yet.
 
 ### Step 4.3 — Write `_startup_warnings`
 
@@ -1411,6 +1450,16 @@ Extend the `serve` docstring with one paragraph:
     to see what a running server actually exposes.
 ```
 
+### Step 4.4a — Update the CLI-level entry-point assertions
+
+`cli_app.serve` now passes `access_policy`, so the four CLI-level mocks in
+`tests/app/test_serve.py` must expect it. `patch(...)` installs an unspecced `MagicMock`, so
+no default is filled in and the keyword must be written out:
+
+- lines 70–75 and 98–103: `main_http.assert_called_once_with(...)` gains `access_policy=None`;
+- line 131 and `test_serve_passes_arbitrary_command_opt_in` (lines 145–153):
+  `main_stdio.assert_called_once_with(...)` gains `access_policy=None`.
+
 ### Step 4.5 — Confirm the tests pass
 
 ```
@@ -1422,7 +1471,7 @@ Expect all to pass.
 ### Step 4.6 — Commit
 
 ```
-git add src/hmc_mcp/server.py src/hmc_mcp/cli_app.py tests/app/test_capability_ceiling.py
+git add src/hmc_mcp/server.py src/hmc_mcp/cli_app.py tests/app/test_capability_ceiling.py tests/app/test_serve.py
 git commit -m "feat(cli): select an access policy at serve time
 
 serve --access-policy NAME loads and compiles the named policy and serves
