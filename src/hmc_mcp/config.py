@@ -287,6 +287,31 @@ def list_nicknames(config_path: Path | None = None) -> dict[str, str]:
     return _coerce_nicknames(doc.get("nicknames"), path)
 
 
+def list_profiles_and_nicknames(
+    config_path: Path | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """Return (profile_names, nicknames) from one TOML read.
+
+    Never resolves secrets — safe for diagnostics and for authorization decisions
+    that must mirror :func:`load_profile`'s selection order. One read rather than
+    ``list_profiles()`` plus ``list_nicknames()`` so that the two halves of a
+    single decision cannot be taken from two different versions of the file.
+
+    Returns ``([], {})`` when the file is absent or *config_path* is None.
+    Raises ConfigError on TOML parse errors or a malformed nicknames table.
+    """
+    path = config_path if config_path is not None else resolve_config_path()
+    if path is None or not path.exists():
+        return [], {}
+    try:
+        doc = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    return list(doc.get("profiles", {}).keys()), _coerce_nicknames(
+        doc.get("nicknames"), path
+    )
+
+
 def load_profile(
     profile: str | None = None,
     config_path: Path | None = None,

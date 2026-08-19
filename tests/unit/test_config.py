@@ -618,3 +618,47 @@ def test_list_nicknames_absent(tmp_path):
     cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
     assert list_nicknames(config_path=cfg) == {}
     assert list_nicknames(config_path=tmp_path / "nonexistent.toml") == {}
+
+
+# ---------------------------------------------------------------------------
+# list_profiles_and_nicknames (issue #222)
+# ---------------------------------------------------------------------------
+
+
+def test_list_profiles_and_nicknames_returns_both_tables(tmp_path):
+    """Both selection tables come back from one call, so they cannot disagree."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    profiles, nicknames = list_profiles_and_nicknames(config_path=cfg)
+    assert set(profiles) == {"prod", "stg"}
+    assert nicknames == {"big-iron": "prod", "staging": "stg"}
+
+
+def test_list_profiles_and_nicknames_absent_file(tmp_path):
+    """An absent file is an empty configuration, not an error."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    assert list_profiles_and_nicknames(config_path=tmp_path / "nope.toml") == ([], {})
+
+
+def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
+    """A malformed nicknames table raises, as it does for list_nicknames."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        NICKNAME_TOML.replace('big-iron = "prod"', "big-iron = 7"),
+    )
+    with pytest.raises(ConfigError, match="must map to a profile-key string"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_invalid_toml(tmp_path):
+    """A parse error is a ConfigError naming the path, as elsewhere in this module."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("this is [not valid toml ][[[", encoding="utf-8")
+    with pytest.raises(ConfigError, match="TOML parse error"):
+        list_profiles_and_nicknames(config_path=cfg)
