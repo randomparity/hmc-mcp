@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from . import audit
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import (
@@ -95,13 +96,20 @@ def parse_lpar_ownership_owner(description: str) -> str | None:
 def _audit_lpar_ownership_override(
     hmc: HMCClient, system_name: str, lpar_name: str
 ) -> None:
-    _logger.warning(
-        "LPAR ownership override approved",
-        extra={
-            "hmc_system": system_name,
-            "hmc_lpar": lpar_name,
-            "hmc_agent_id": hmc.config.agent_id or "hmc-mcp",
-        },
+    """Record an approved ADR 0011 ownership override on the audit sink.
+
+    Converged onto ``audit`` rather than logging ``extra=`` fields here (#268):
+    fields passed that way are invisible unless the operator's formatter names
+    each one, this logger propagates to the root, and the values carried no
+    escaping, no bound, and no provenance marker — while ADR 0040 rejects exactly
+    that shape for the record beside it. Still ``WARNING``, so a CLI user whose
+    process never installed the sink sees it through ``logging.lastResort``
+    exactly as before.
+    """
+    audit.record_ownership_override(
+        system=system_name,
+        lpar=lpar_name,
+        agent_id=hmc.config.agent_id or "hmc-mcp",
     )
 
 
