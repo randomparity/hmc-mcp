@@ -287,6 +287,13 @@ declared selector, and none may name an identity the format cannot bound (`file_
 check runs at suite time, costs nothing per call, and fails the author rather than an operator. It
 is what catches the next `hmc_provision_lpar`.
 
+The check was run over all 130 tools before this record was accepted, and it flags exactly four
+names: `hmc_provision_lpar` (`storage.vios_uuid`, `network.vios_partition_id`),
+`hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` (`file_path`), and `hmc_run_command`
+(`cmd`, already `False` for having no selectors). Zero false positives. So the three explicit
+declarations are not three judgements — they are what a mechanical rule already says, written down
+where the runtime can read them.
+
 A second guardrail closes the other half, the direct analogue of ADR 0038's "a declared connection
 argument must actually route the connection": every declared selector argument must be *referenced*
 in its handler's body. A handler that accepts `lpar_name_or_uuid` and never reads it would be
@@ -469,6 +476,17 @@ operator would otherwise discover as an unexplained denial.
   default. Rejected because it means 127 opt-ins, and a 127-line diff of security assertions written
   in one sitting is a worse guarantee than three declarations plus a static check — the opt-ins
   themselves become the fail-open. The check is what makes `True` safe as a default.
+- **Derive `exhaustive_targets` in `tool()` instead of declaring it**, by running the guardrail's
+  own nested-field inspection at registration. Since that inspection reproduces the declared set
+  exactly, this is the closest call in the record: it would make a new composite un-narrowable
+  automatically, with no author action and no test to notice. Rejected on two grounds. The
+  inspection is a *heuristic* — a name-table match one level deep — and making a heuristic
+  authoritative at runtime means every tool's policy semantics depend on it; as a suite check its
+  false negative is a missing guardrail, as a runtime derivation its false negative is a live
+  fail-open with nothing left to catch it. And it would put `typing.get_type_hints` on the import
+  path of `server.py` for 130 handlers, where an unresolvable annotation stops the server rather
+  than the suite. Residual: the declaration can drift from the derivation, which is precisely what
+  the guardrail asserts on every run.
 - **Enforce targets on mutating effects only, as issue #223's title reads.** Rejected in the
   Decision, on ADR 0038's three reasons, and recorded as a deliberate widening of the issue's stated
   outcome rather than absorbed silently.
