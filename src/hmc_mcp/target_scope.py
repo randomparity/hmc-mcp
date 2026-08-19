@@ -21,6 +21,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from .access_policy import ALL_TARGETS_TOKEN, AllTargets
+from .audit import Reason, State
 from .tool_registry import TargetKind, ToolSecurity
 
 
@@ -116,6 +117,20 @@ def _value(raw: Any) -> str | _Unresolved:
     return UNREADABLE
 
 
+def audit_state(value: str | _Unresolved) -> State:
+    """Which of the audit record's three input states *value* is.
+
+    Lives here rather than in the authorizer because this module owns the two
+    singletons, and a mapping written one module away from the values it
+    interprets is the drift ADR 0039 spent a design on avoiding. ``audit`` owns
+    the vocabulary and this owns the interpretation, which is the same split by
+    which ``denial_reason`` returns an ``audit.Reason``.
+    """
+    if isinstance(value, str):
+        return "present"
+    return "absent" if value is ABSENT else "unreadable"
+
+
 def selected_targets(
     security: ToolSecurity, arguments: Mapping[str, Any]
 ) -> tuple[Selected, ...]:
@@ -165,6 +180,34 @@ def targets_permitted(
     return True
 
 
+def denial_reason(
+    security: ToolSecurity, extracted: tuple[Selected, ...]
+) -> Reason:
+    """Which of the four target-denial cases applies, as an audit reason code.
+
+    The single owner of that selection. ``target_denial`` reads it rather than
+    repeating it, so the message a caller sees and the code an operator filters on
+    cannot drift apart — they are two renderings of one answer.
+
+    The order is the whole rule, and it is ADR 0039's, unchanged:
+
+    1. an UNREADABLE selector is malformed. No policy edit fixes it, so every other
+       message would be misleading advice.
+    2. a tool a table can never bound, reported without naming a selector.
+    3. an ABSENT selector, reported with the argument to supply.
+    4. otherwise the whole tuple of targets the caller named.
+    """
+    for _kind, _argument, value in extracted:
+        if value is UNREADABLE:
+            return "target-selector-unreadable"
+    if not security.exhaustive_targets:
+        return "target-unboundable"
+    for _kind, _argument, value in extracted:
+        if value is ABSENT:
+            return "target-selector-absent"
+    return "target-not-granted"
+
+
 def target_denial(
     tool: str,
     policy_name: str,
@@ -175,14 +218,9 @@ def target_denial(
 
     It receives no grant and no policy object, because once the loop has fallen
     through there is no single grant to blame — selecting one would be the
-    cross-grant read the whole design forbids. So the choice is a total function
-    of *security* and *extracted*, in this order:
-
-    1. an UNREADABLE selector, reported as malformed. No policy edit fixes it, so
-       every other message would be misleading advice.
-    2. a tool a table can never bound, reported without naming a selector.
-    3. an ABSENT selector, reported with the argument to supply.
-    4. otherwise the whole tuple of targets the caller named.
+    cross-grant read the whole design forbids. So the choice is a total function of
+    *security* and *extracted*, and :func:`denial_reason` is where that choice is
+    made; this renders it.
 
     Case 4 renders every selector rather than picking the dispositive one, which
     would require choosing a grant to be dispositive against. The honest claim is
@@ -195,31 +233,33 @@ def target_denial(
     chained exception text can reach it, which makes "carries no secret" a
     property of the text rather than a claim about it.
     """
-    for kind, argument, value in extracted:
-        if value is UNREADABLE:
-            # The value itself is deliberately not rendered: an arbitrary object's
-            # repr is not the caller's own token in any useful sense and could
-            # carry anything. The argument name is enough to act on.
-            return TargetScopeError(
-                _UNREADABLE_VALUE.format(
-                    tool=tool, policy=repr(policy_name), argument=repr(argument),
-                    kind=kind,
-                )
+    reason = denial_reason(security, extracted)
+    if reason == "target-selector-unreadable":
+        kind, argument, _value = next(
+            item for item in extracted if item[2] is UNREADABLE
+        )
+        # The value itself is deliberately not rendered: an arbitrary object's
+        # repr is not the caller's own token in any useful sense and could carry
+        # anything. The argument name is enough to act on.
+        return TargetScopeError(
+            _UNREADABLE_VALUE.format(
+                tool=tool, policy=repr(policy_name), argument=repr(argument), kind=kind,
             )
-    if not security.exhaustive_targets:
+        )
+    if reason == "target-unboundable":
         return TargetScopeError(
             _UNBOUNDABLE.format(
                 tool=tool, policy=repr(policy_name), sentinel=ALL_TARGETS_TOKEN
             )
         )
-    for kind, argument, value in extracted:
-        if value is ABSENT:
-            return TargetScopeError(
-                _MISSING.format(
-                    tool=tool, policy=repr(policy_name), kind=kind,
-                    argument=repr(argument), sentinel=ALL_TARGETS_TOKEN,
-                )
+    if reason == "target-selector-absent":
+        kind, argument, _value = next(item for item in extracted if item[2] is ABSENT)
+        return TargetScopeError(
+            _MISSING.format(
+                tool=tool, policy=repr(policy_name), kind=kind,
+                argument=repr(argument), sentinel=ALL_TARGETS_TOKEN,
             )
+        )
     return TargetScopeError(
         _DENIED.format(
             tool=tool,

@@ -1,10 +1,58 @@
 """Shared pytest fixtures for the hmc-mcp suite."""
 
+import logging
+
 import httpx
 import pytest
 import respx
 
+from hmc_mcp.audit import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
+
+
+@pytest.fixture(autouse=True)
+def isolate_audit_logging():
+    """Give every test a pristine ``hmc_mcp.audit`` logger, and restore it after.
+
+    ``audit.install_audit_sink`` mutates process-global state: it sets
+    ``propagate = False`` unconditionally, attaches a handler, and sets a level.
+    Several tests call it directly, and ``server._serve_application`` calls it too
+    — which ``tests/app/test_capability_ceiling.py`` and
+    ``tests/app/test_connection_authorization.py`` drive in-process. Whichever runs
+    first would otherwise leave the sink installed for the rest of the session, and
+    a later ``caplog`` assertion would capture nothing and pass vacuously.
+
+    So it resets at setup as well as restoring at teardown: restoring alone would
+    faithfully restore an earlier test's contamination, which is the failure this
+    exists to prevent. Autouse and in ``conftest.py`` rather than opted into
+    per-file, because the files that merely *emit* a record — every test driving an
+    ADR 0011 ownership override — are as able to leak state as the ones that read
+    records, and any enumeration of them goes stale.
+
+    It also snapshots and restores ``logging.root.handlers``, which it never
+    modifies itself. That is a deliberate belt-and-braces sweep, not dead code:
+    several audit tests clear or add root handlers to observe
+    ``logging.lastResort``, which ``callHandlers`` consults only after an ancestor
+    walk finds none. Each of those cleans up after itself; this is the backstop for
+    one that forgets, since a stray root handler silently changes what every later
+    test captures.
+    """
+    logger = logging.getLogger(AUDIT_LOGGER_NAME)
+    saved_handlers = list(logger.handlers)
+    saved_level = logger.level
+    saved_propagate = logger.propagate
+    saved_root = list(logging.root.handlers)
+    logger.handlers.clear()
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = True
+    try:
+        yield
+    finally:
+        logger.handlers[:] = saved_handlers
+        logger.setLevel(saved_level)
+        logger.propagate = saved_propagate
+        logging.root.handlers[:] = saved_root
+
 
 BASE = "https://hmc.test:12443"
 

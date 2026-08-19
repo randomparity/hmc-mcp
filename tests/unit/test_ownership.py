@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hmc_mcp import audit, operations_lpar
 from hmc_mcp.config import validate_agent_id
-from hmc_mcp.operations_lpar import authorize_lpar_mutation
+from hmc_mcp.operations_lpar import (
+    authorize_decommission_lpar_ownership_snapshot,
+    authorize_lpar_mutation,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -175,22 +181,126 @@ def test_authorize_lpar_mutation(description, agent_id, allowed):
                 asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
 
+# Spec test -> node id (docs/workflow/specs/2026-08-19-authorization-audit-events-design.md)
+#   26a test_authorize_lpar_mutation_override_is_audited
+#   26b test_the_override_record_is_bounded_and_escaped
+#   26c test_operations_lpar_does_not_resolve_the_audit_logger
+#   26d test_the_override_still_reaches_stderr_without_a_sink
+#   26e test_both_override_call_sites_emit_and_normal_access_does_not
+
+
+def _override_records(caplog):
+    """Parsed audit records captured at WARNING on the audit logger."""
+    return [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == audit.AUDIT_LOGGER_NAME
+    ]
+
+
 def test_authorize_lpar_mutation_override_is_audited(caplog):
+    """Spec 26a. Replaces the pre-convergence test that read `extra=` attributes
+    off `hmc_mcp.operations_lpar` — exactly what convergence removes."""
     hmc = type("StubHMC", (), {"config": _config()})()
     read = AsyncMock()
     with (
         patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
-        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_lpar"),
+        caplog.at_level(logging.WARNING),
     ):
         asyncio.run(
             authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
         )
     read.assert_not_awaited()
-    record = caplog.records[-1]
-    assert record.getMessage() == "LPAR ownership override approved"
-    assert record.hmc_system == "sys1"
-    assert record.hmc_lpar == "lpar1"
-    assert record.hmc_agent_id == "hmc-mcp"
+
+    records = _override_records(caplog)
+    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert records[0] == {
+        "time": records[0]["time"],
+        "event": "ownership-override",
+        "system": "sys1",
+        "lpar": "lpar1",
+        "attribution": {
+            "claim": "hmc-mcp",
+            "source": "config:agent_id",
+            "verified": False,
+        },
+    }
+    assert [r for r in caplog.records if r.name == "hmc_mcp.operations_lpar"] == []
+
+
+def test_the_override_record_is_bounded_and_escaped(caplog):
+    """Spec 26b. The same bound and the same escaping as the other record."""
+    hmc = type("StubHMC", (), {"config": _config()})()
+    hostile = "A" * 500
+    with (
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        caplog.at_level(logging.WARNING),
+    ):
+        asyncio.run(
+            authorize_lpar_mutation(
+                hmc, hostile, "x\ny‮z", ownership_override=True
+            )
+        )
+    raw = [
+        r.getMessage() for r in caplog.records if r.name == audit.AUDIT_LOGGER_NAME
+    ]
+    assert len(raw) == 1
+    assert raw[0].isascii() and "\n" not in raw[0]
+    record = json.loads(raw[0])
+    assert len(record["system"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_operations_lpar_does_not_resolve_the_audit_logger():
+    """Spec 26c. `audit` is the only module that names the reserved logger."""
+    source = Path(operations_lpar.__file__).read_text()
+    assert audit.AUDIT_LOGGER_NAME not in source
+
+
+def test_the_override_still_reaches_stderr_without_a_sink(caplog, capsys):
+    """Spec 26d. A CLI user, whose process never called `install_audit_sink`.
+
+    The mechanism is `logging.lastResort`, which `callHandlers` consults only
+    after an ancestor walk finds zero handlers — and pytest keeps one on the
+    root, so the root handlers must be cleared for this to mean anything.
+    Written naively it passes for an unrelated reason.
+    """
+    hmc = type("StubHMC", (), {"config": _config()})()
+    saved = list(logging.root.handlers)
+    logging.root.handlers.clear()
+    try:
+        with patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()):
+            asyncio.run(
+                authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
+            )
+        captured = capsys.readouterr()
+    finally:
+        logging.root.handlers[:] = saved
+    assert captured.out == ""
+    assert json.loads(captured.err.strip())["event"] == "ownership-override"
+
+
+def test_both_override_call_sites_emit_and_normal_access_does_not(caplog):
+    """Spec 26e."""
+    hmc = type("StubHMC", (), {"config": _config()})()
+    # The decommission path reads a description before authorizing it, so the
+    # stub must return a real one; the mutation path never awaits it at all.
+    read = AsyncMock(return_value="legacy partition")
+    with (
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        caplog.at_level(logging.WARNING),
+    ):
+        asyncio.run(
+            authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
+        )
+        asyncio.run(
+            authorize_decommission_lpar_ownership_snapshot(
+                hmc, "sys2", "lpar2", ownership_override=True
+            )
+        )
+    assert [record["system"] for record in _override_records(caplog)] == [
+        "sys1",
+        "sys2",
+    ]
 
 
 def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
@@ -200,8 +310,8 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
             "hmc_mcp.operations_lpar.get_lpar_description",
             new=AsyncMock(return_value="legacy partition"),
         ),
-        caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_lpar"),
+        caplog.at_level(logging.WARNING),
     ):
         asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
-    assert caplog.records == []
+    assert _override_records(caplog) == []

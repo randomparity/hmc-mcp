@@ -14,10 +14,14 @@ from types import MappingProxyType
 import pytest
 
 from hmc_mcp.access_policy import ALL_TARGETS
+from hmc_mcp.audit import REASONS
 from hmc_mcp.target_scope import (
     ABSENT,
     UNREADABLE,
     TargetScopeError,
+    _value,
+    audit_state,
+    denial_reason,
     selected_targets,
     target_denial,
     targets_permitted,
@@ -487,3 +491,99 @@ def test_a_value_allowed_for_one_kind_is_not_allowed_for_another():
         DELETE_LPAR, {"system_name_or_uuid": "sys-a", "lpar_name_or_uuid": "db-01"}
     )
     assert targets_permitted(table, DELETE_LPAR, correct) is True
+
+
+# Spec test -> node id (docs/workflow/specs/2026-08-19-authorization-audit-events-design.md)
+#   6a  test_audit_state_maps_each_arm_of_value
+#   21  test_each_denial_template_has_exactly_one_reason_code
+#   21a test_denial_reason_names_the_condition_that_actually_held
+
+_LPAR = ("lpar", "lpar_name_or_uuid", True)
+
+
+def test_audit_state_maps_each_arm_of_value():
+    """Spec 6a. The seam between `_value`'s result and the record's `state`.
+
+    `_value`'s own arms are covered above; what this pins is the *mapping*, which
+    would otherwise be an inline conditional in `dispatch_scope`, one module away
+    from the singletons it interprets.
+    """
+    assert audit_state(_value("db-01")) == "present"
+    assert audit_state(_value(3)) == "present"
+    assert audit_state(_value(None)) == "absent"
+    assert audit_state(_value(True)) == "unreadable"
+    assert audit_state(_value(object())) == "unreadable"
+
+
+def test_each_denial_template_has_exactly_one_reason_code():
+    """Spec 21. A code-to-template table, not a re-derivation.
+
+    Asserting that the record's `reason` "agrees with" the raised error would be
+    the same function call twice once `target_denial` reads `denial_reason`, so it
+    could not fail for any input. This pins the mapping instead.
+    """
+    cases = {
+        "target-selector-unreadable": (
+            _security(_LPAR),
+            (("lpar", "lpar_name_or_uuid", UNREADABLE),),
+            "does not carry a readable",
+        ),
+        "target-unboundable": (
+            _security(_LPAR, exhaustive=False),
+            (("lpar", "lpar_name_or_uuid", "db-01"),),
+            "no targets table can bound",
+        ),
+        "target-selector-absent": (
+            _security(_LPAR),
+            (("lpar", "lpar_name_or_uuid", ABSENT),),
+            "which this call did not supply",
+        ),
+        "target-not-granted": (
+            _security(_LPAR),
+            (("lpar", "lpar_name_or_uuid", "db-01"),),
+            "No grant naming",
+        ),
+    }
+    for code, (security, extracted, fragment) in cases.items():
+        assert denial_reason(security, extracted) == code
+        assert fragment in str(target_denial("t", "p", security, extracted))
+    assert set(cases) | {
+        "permitted",
+        "configuration-unreadable",
+        "connection-not-granted",
+    } == REASONS
+
+
+def test_denial_reason_names_the_condition_that_actually_held():
+    """Spec 21a. The two functions check their arms in different orders.
+
+    `targets_permitted` tests UNREADABLE, then `AllTargets`, then
+    `exhaustive_targets`, then per-selector; `denial_reason` tests UNREADABLE,
+    then `exhaustive_targets`, then ABSENT, then all. Only this pins them together
+    for the inputs that actually reach a denial.
+    """
+    table = MappingProxyType({"lpar": frozenset({"granted-01"})})
+    for extracted, security, expected in (
+        (
+            (("lpar", "lpar_name_or_uuid", UNREADABLE),),
+            _security(_LPAR),
+            "target-selector-unreadable",
+        ),
+        (
+            (("lpar", "lpar_name_or_uuid", "db-01"),),
+            _security(_LPAR, exhaustive=False),
+            "target-unboundable",
+        ),
+        (
+            (("lpar", "lpar_name_or_uuid", ABSENT),),
+            _security(_LPAR),
+            "target-selector-absent",
+        ),
+        (
+            (("lpar", "lpar_name_or_uuid", "db-01"),),
+            _security(_LPAR),
+            "target-not-granted",
+        ),
+    ):
+        assert targets_permitted(table, security, extracted) is False
+        assert denial_reason(security, extracted) == expected
