@@ -56,8 +56,15 @@ none of them can compose a surface the policy did not bound.
 **`hmc-mcp serve` requires `--access-policy NAME`.** Omitting it is a usage error: exit code 2,
 no server started, and a message naming `hmc-mcp config init-access-policy` and the file the
 generator would write. A policy that fails to read, parse, or compile keeps ADR 0036's existing
-behaviour — exit code 1 through the CLI's error path. Two codes, because they are two different
-operator problems: the first is "you have not chosen", the second is "what you chose is wrong".
+behaviour — exit code 1 through the CLI's error path.
+
+Three operator problems, not two, and the third is the likeliest one on an upgrade: the option is
+supplied correctly and the file has not been generated yet. Left alone it reaches
+`load_access_policy`'s unreadable-file arm and prints `cannot be read: [Errno 2]`, which names
+neither the generator nor the remedy — the least useful message in the one release where every
+deployment meets it. So an absent policy file gets the same migration text as the absent option,
+at exit code 1, because the command line was right and the environment was not. The codes split
+on whose problem it is: 2 for "you have not chosen", 1 for everything about the policy itself.
 
 **`hmc-mcp config init-access-policy` generates the legacy-equivalent policy.** It writes the
 platform-native `access-policy.toml` by default, creates the file with `O_EXCL` at mode `0o600`,
@@ -71,14 +78,25 @@ overwrites a reviewed policy in place answers none of them and destroys the revi
 
 **The emitter is hand-written, and every operator-supplied key is escaped.** Epic requirement 11
 forbids a new runtime dependency and `tomllib` only reads, so the generator renders TOML itself.
-Profile keys reach it straight from `config.list_profiles`, which returns raw TOML keys with no
-charset validation, so each is rendered as a TOML basic string with `"`, `\`, and every control
-character escaped. That escaping is total — no key can end the string early — which is what makes
-"the generated file always parses, and holds exactly the keys `config.toml` holds" a property
-rather than a hope. Unescaped rendering would turn a key containing a quote into a file that
-fails to parse (a bricked migration whose only recovery is regeneration) and a key containing
-`"]` and a newline into an injected grant table, inside the very file the operator is told to
-review.
+Profile keys reach it from `config.list_profiles_and_nicknames` — the hardened reader, whose
+documented contract is that every failure becomes a `ConfigError`, and the one
+`connection_scope` already depends on for that reason; the plain `list_profiles` converts only a
+parse error and lets an unreadable file, a non-UTF-8 file, and an unresolvable home escape as
+themselves. It returns raw TOML keys with no charset validation, so each is rendered as a TOML
+basic string with `"`, `\`, and every control
+character escaped. That escaping is total — no key can end the string early — so no key can inject
+a grant table into the very file the operator is told to review, and none can produce a file that
+fails to parse.
+
+Parsing is not the property the migration needs, though: the file has to **load**, and ADR 0036
+enforces rules on entry content that escaping cannot satisfy. `_check_entries` rejects an empty,
+whitespace-padded, or duplicated `connections` entry, and `[profiles.""]`, `[profiles." prod"]`,
+and `[profiles."<default>"]` are all legal TOML that `config.list_profiles_and_nicknames` returns
+verbatim — the last colliding with the `<default>` the generator always appends. So the generator
+**loads what it rendered before it writes anything**: it parses and compiles the document through
+the same `compile_access_policy` a server would, and a document that would not load is reported
+with that error and no file is created. Enumerating the illegal key shapes was the alternative,
+and it would have to be kept in agreement with rules living in another module.
 
 The written document is a single grant under the policy name `legacy-equivalent`:
 
@@ -91,8 +109,10 @@ The written document is a single grant under the policy name `legacy-equivalent`
   arbitrary-command escape hatch a distinct maximum-risk capability that
   `--enable-arbitrary-command` alone does not confer. A generator that granted it would make the
   flag sufficient again. The generated file carries a comment saying how to add it. The in-memory
-  compiler takes an explicit `include_arbitrary_command` opt-in, defaulting to false and reachable
-  from no CLI path; `scripts/live_test_runner.py` is its one caller, because that harness drives
+  compiler takes an explicit `include_arbitrary_command` opt-in defaulting to false; the
+  *renderer* does not take it and cannot emit the name at all, so requirement 6's property — no
+  file this generator writes grants the escape hatch — holds of the code rather than of today's
+  callers. `scripts/live_test_runner.py` is the opt-in's one caller, because that harness drives
   `hmc_run_command` against a real HMC and would otherwise compose a surface in which its own
   `--enable-arbitrary-command` toggle can never register anything.
 - **`connections` names every profile key in `config.toml`, plus `<default>`.** Legacy accepted
@@ -109,9 +129,9 @@ The written document is a single grant under the policy name `legacy-equivalent`
 `scripts/live_test_runner.py` compile a legacy-equivalent policy in memory over
 `connections = ("<default>",)` and pass it to `create_mcp` — the smoke path with the operator's
 own settings, the live runner with the escape hatch opted in. What the smoke leg proves on every
-CI run is that the grant compiles and composes; it never serializes TOML, so the emitted
-document's parse is proved separately by the render round-trip test, and a rendering defect
-would pass smoke untouched.
+CI run is that the grant compiles and composes; it never serializes TOML, so a rendering defect
+would pass smoke untouched. What proves the emitted document *loads* is the generator's own
+pre-write compile, and the render round-trip test that exercises it.
 
 **Short-lived scoped grants remain a future extension point and nothing more.** The seam is
 `server._gates`: a future grant issuer would compose a second `Authorize` alongside
@@ -122,8 +142,9 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
 ## Consequences
 
 - **Every deployment that upgrades without an `access-policy.toml` stops serving.** That is the
-  point of the entry, and it is the loudest change in the epic. The refusal names the generator
-  command and the path, so the migration is two commands: generate, review, then add
+  point of the entry, and it is the loudest change in the epic. Both refusals — the missing
+  option and the missing file — name the generator command and the path, so however the operator
+  arrives, the migration is: generate, review, then add
   `--access-policy legacy-equivalent` to the launcher.
 - **ADR 0039's R12 and R13 load refusals become universal.** Before this record an operator whose
   policy tripped them had an escape: drop `--access-policy` and get an unenforcing server. That
@@ -184,9 +205,11 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   `Path.home()` — and on macOS `Path.home()` alone, with no override. Generating as a login user
   and serving as a systemd `User=` or a container uid produces a policy the server never reads;
   `--output` is how that deployment writes to the right path.
-- **Three statements in earlier records are retired.** ADR 0037's "`create_mcp(policy=None)`
-  registers every tool", ADR 0038's R14 "no policy means no authorization", and ADR 0039's R20
-  "no behaviour change without a policy" each describe a composition that no longer exists.
+- **Statements in earlier records are retired.** ADR 0037's "`create_mcp(policy=None)` registers
+  every tool" and ADR 0038's section "Without a policy, nothing is authorized" each describe a
+  composition that no longer exists, as do R14 of the connection-scope design spec and R20 of the
+  target-scope design spec. ADR 0039 is not among them: it expressly leaves `create_mcp`'s
+  no-policy default undecided.
   Those records are otherwise unaffected and are not superseded; the tests asserting the retired
   behaviour are inverted rather than deleted, as ADR 0039 inverted ADR 0036's A7 test. The code
   they describe goes with them: `server._unselected_policy_file` and the no-policy branch of
@@ -265,6 +288,13 @@ unbounded server, as a gentler removal of the escape this record closes. Rejecte
 the same escape under a longer name, and the whole difficulty ADR 0039's R12 and R13 create is
 that an escape exists at all; an operator who needs a permissive server can say so in a policy
 that grants everything, and that policy is exactly what the generator writes.
+
+**Let the live-test runner extend the grant itself, and give the compiler no escape-hatch knob.**
+It would keep the arbitrary-command grant where the arbitrary-command user is, and leave
+`legacy_policy` with no parameter justified by a script. Rejected because the harness's value is
+that it exercises the shipped composer: a hand-built grant beside the compiler is one that can
+drift from what the generator produces, and then the live run stops being evidence about the path
+operators take. The opt-in keeps one compiler and confines the divergence to one boolean.
 
 **Add `tomli-w` and serialize the document rather than rendering it.** The obvious way to avoid
 hand-rolling an emitter and its escaping. Rejected on epic requirement 11, which forbids a new

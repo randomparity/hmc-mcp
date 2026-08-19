@@ -67,8 +67,16 @@ exits **2**, starts no server, composes no application, and writes to stderr a m
 naming `hmc-mcp config init-access-policy`, the path
 `resolve_access_policy_path()` would use, and `--access-policy NAME`. A policy that is
 selected but cannot be read, parsed, or compiled keeps ADR 0036's existing behaviour: exit
-**1** through `_fail`, with the `AccessPolicyError` text. The two codes distinguish "you
-have not chosen" from "what you chose is wrong".
+**1** through `_fail`, with the `AccessPolicyError` text. The codes distinguish "you have
+not chosen" from anything about the policy itself.
+
+**R5a — A named policy whose file does not exist gets the migration message too.** When
+`--access-policy` is supplied and `resolve_access_policy_path()` does not exist, `serve`
+emits the same text as R5 and exits **1** — the command line was right and the environment
+was not. Without this the likeliest upgrade order (edit the launcher, then discover the
+file) reaches `load_access_policy`'s unreadable-file arm and prints
+`cannot be read: [Errno 2] No such file or directory`, naming neither the generator nor the
+remedy.
 
 **R6 — The unselected-policy warning is gone.** `server._unselected_policy_file` is removed
 and `_startup_warnings(tool_count: int, access_policy: AccessPolicy,
@@ -95,9 +103,13 @@ after `configure_arbitrary_command_tool(True, ...)`, whose registration is gated
 
 **R8 — Connections are the deployment's own, plus the default token.**
 `legacy_connections() -> tuple[str, ...]` returns `("<default>", *sorted(profile keys))`
-read from the platform-native `config.toml` through `config.list_profiles`. With no config
-file it returns `("<default>",)`. A `ConfigError` propagates to the caller rather than
-being swallowed into a shorter list. Nicknames are excluded: ADR 0030 resolves a nickname
+read from the platform-native `config.toml` through `config.list_profiles_and_nicknames`,
+whose nicknames half is discarded. That reader rather than `config.list_profiles`: only the
+former converts every failure into a `ConfigError` — an unresolvable home, an unreadable or
+non-UTF-8 or unparseable file, a malformed table — which is the contract this requirement
+depends on and `connection_scope` already relies on. With no config file it returns
+`("<default>",)`. A `ConfigError` propagates to the caller rather than being swallowed into
+a shorter list. Nicknames are excluded: ADR 0030 resolves a nickname
 to its target before ADR 0038 compares it, so a granted nickname never matches.
 `"<default>"` is always present because `connection_scope.selected_connection` collapses
 every token to it under `HMC_HOST`, and because an omitted `profile` argument means it.
@@ -120,6 +132,16 @@ validation, so this is the only thing standing between an odd key and either an 
 generated file or an injected grant. Proved by rendering a policy whose connections include
 a key containing a double quote, a backslash, and a newline, then parsing the result with
 `tomllib` and asserting the connection list round-trips byte-identically.
+
+**R9b — The generator loads what it rendered before it writes.** Escaping makes the document
+parse; it does not make it *load*. `_check_entries` rejects an empty, whitespace-padded, or
+duplicated `connections` entry, and `[profiles.""]`, `[profiles." prod"]`, and
+`[profiles."<default>"]` are legal TOML keys that produce exactly those — the last colliding
+with the `<default>` the generator always appends. So `config init-access-policy` parses and
+compiles the rendered text through `compile_access_policy` before creating any file; a
+document that would not load is reported through `_fail` at exit **1** with the
+`AccessPolicyError` text, and no file is created. Enumerating illegal key shapes in the
+generator was rejected: the rules live in `access_policy` and a copy would drift from them.
 
 **R10 — The same document compiles without a filesystem.**
 `compile_legacy_policy(tool_security, connections) -> AccessPolicy` compiles the R7
