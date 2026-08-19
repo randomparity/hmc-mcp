@@ -186,7 +186,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 ACCESS_POLICY_FILENAME = "access-policy.toml"
 
@@ -235,7 +241,11 @@ class _GrantModel(BaseModel):
     effects: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
     connections: tuple[str, ...]
-    targets: str | dict[str, tuple[str, ...]]
+    # Deliberately `Any` rather than `str | dict[...]`. Under a union, pydantic
+    # short-circuits with its own two member errors before an after-validator
+    # runs, so a bare TOML array would never reach the message that tells the
+    # operator to write "all-targets". Discriminating here keeps one message.
+    targets: Any
 
     @field_validator("effects")
     @classmethod
@@ -267,9 +277,7 @@ class _GrantModel(BaseModel):
 
     @field_validator("targets")
     @classmethod
-    def _validate_targets(
-        cls, value: str | dict[str, tuple[str, ...]]
-    ) -> str | dict[str, tuple[str, ...]]:
+    def _validate_targets(cls, value: Any) -> Any:
         from .tool_registry import TARGET_KINDS
 
         if isinstance(value, str):
@@ -279,21 +287,41 @@ class _GrantModel(BaseModel):
                     f"target kind to selector strings; got {value!r}"
                 )
             return value
+        if not isinstance(value, dict):
+            raise ValueError(
+                "'targets' must be the string \"all-targets\" or a table of target "
+                f"kind to selector strings; got {value!r}"
+            )
         if not value:
             raise ValueError(
                 'targets table must not be empty; write targets = "all-targets" for '
                 "no target restriction"
             )
         for kind, selectors in value.items():
-            if kind == "none" or kind not in TARGET_KINDS:
+            if not isinstance(kind, str) or kind == "none" or kind not in TARGET_KINDS:
                 raise ValueError(
                     f"unknown target kind {kind!r}; expected one of "
                     f"{sorted(TARGET_KINDS - {'none'})}"
                 )
+            if not isinstance(selectors, (list, tuple)):
+                raise ValueError(
+                    f"targets kind {kind!r} must be an array of selector strings"
+                )
             if not selectors:
                 raise ValueError(f"targets kind {kind!r} names no selector")
-            _check_entries(selectors, f"targets.{kind}")
-        return value
+            if not all(isinstance(item, str) for item in selectors):
+                raise ValueError(
+                    f"targets kind {kind!r} must contain only selector strings"
+                )
+            _check_entries(tuple(selectors), f"targets.{kind}")
+        return {kind: tuple(selectors) for kind, selectors in value.items()}
+
+    @model_validator(mode="after")
+    def _validate_names_a_tool(self) -> "_GrantModel":
+        """P6. A shape rule, so it binds every policy in the document."""
+        if not self.effects and not self.tools:
+            raise ValueError("names no tool; set 'effects', 'tools', or both")
+        return self
 
 
 class _PolicyModel(BaseModel):
@@ -473,6 +501,18 @@ Append to `tests/unit/test_access_policy.py`:
             "tools contains a duplicate entry",
             id="tools-duplicate",
         ),
+        pytest.param(
+            _document(connections=["lab"], targets="all-targets"),
+            "names no tool",
+            id="grant-names-no-tool",
+        ),
+        pytest.param(
+            _document(
+                effects=["read"], connections=["lab"], targets={"lpar": ["a", "a"]}
+            ),
+            "targets.lpar contains a duplicate entry",
+            id="selector-duplicate",
+        ),
     ],
 )
 def test_shape_tier_rejects(document: dict[str, object], expected: str) -> None:
@@ -515,7 +555,7 @@ GIT_EDITOR=true git commit -m "feat(access-policy): validate policy document sha
 ```
 
 **Acceptance criteria for Task 1.** `_parse_document` accepts a minimal valid document;
-rejects each of the twenty shape violations above with an `AccessPolicyError` whose
+rejects each of the twenty-one shape violations above with an `AccessPolicyError` whose
 message starts with the source and names the policy and grant index when the error has
 them; and validates every policy in the document, not only one.
 
@@ -546,7 +586,7 @@ only when one single grant covers its tool, its connection, and its targets toge
 ### Step 2.1 — Write the failing test
 
 Append to `tests/unit/test_access_policy.py`, and add
-`from hmc_mcp.access_policy import ALL_TARGETS, compile_access_policy` plus
+`from hmc_mcp.access_policy import ALL_TARGETS, AccessPolicy, compile_access_policy` plus
 `from hmc_mcp.server import TOOL_SECURITY` to the imports at the top of the file:
 
 ```python
@@ -582,7 +622,13 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from .tool_registry import TARGET_KINDS, TargetKind, ToolSecurity
 ```
@@ -668,15 +714,14 @@ def _compile_grant(
     tool_security: Mapping[str, ToolSecurity],
     where: str,
 ) -> Grant:
-    """Apply P6-P9 to one grant and compile it.
+    """Apply P7-P9 to one grant and compile it.
+
+    P6 (a grant names at least one tool) is a shape rule and already ran in
+    ``_GrantModel``, so it binds every policy rather than only the selected one.
 
     *where* is the pre-rendered ``<source>: policy '<name>': grant <i>`` prefix, so
     this function never re-derives message context.
     """
-    if not model.effects and not model.tools:
-        raise AccessPolicyError(
-            f"{where}: names no tool; set 'effects', 'tools', or both"
-        )
     for tool in model.tools:
         if tool not in tool_security:
             raise AccessPolicyError(f"{where}: unknown tool {tool!r}")
@@ -808,7 +853,11 @@ def test_arbitrary_command_needs_its_own_name() -> None:
         )
     )
     assert broad.permits_tool("hmc_run_command") is False
-    assert len(broad.tools) == 128
+    assert broad.tools == {
+        name
+        for name, sec in TOOL_SECURITY.items()
+        if sec.effect != "arbitrary-command"
+    }
 
     named = _compile(
         _document(
@@ -835,11 +884,6 @@ def test_unknown_tool_is_rejected() -> None:
                 tools=["hmc_create_lpars"], connections=["lab"], targets="all-targets"
             )
         )
-
-
-def test_grant_naming_no_tool_is_rejected() -> None:
-    with pytest.raises(AccessPolicyError, match="names no tool"):
-        _compile(_document(connections=["lab"], targets="all-targets"))
 
 
 def test_targets_kind_no_granted_tool_declares_is_rejected() -> None:
@@ -1043,10 +1087,15 @@ def test_module_exposes_no_mutator() -> None:
 
     from hmc_mcp import access_policy
 
+    # Filter to functions this module *defines*. `vars()` also carries what it
+    # imported — `dataclass`, `field_validator`, `config_dir` are all public
+    # functions — so an unfiltered check can never pass.
     functions = {
         name
         for name, value in vars(access_policy).items()
-        if not name.startswith("_") and inspect.isfunction(value)
+        if not name.startswith("_")
+        and inspect.isfunction(value)
+        and value.__module__ == access_policy.__name__
     }
     assert functions == {
         "resolve_access_policy_path",
@@ -1064,10 +1113,12 @@ def test_module_exposes_no_mutator() -> None:
 
 Add `import dataclasses` to the test module's imports.
 
-`test_module_exposes_no_mutator` references `load_access_policy` and
-`resolve_access_policy_path`, which Task 3 adds; it fails until then. Mark it
-`@pytest.mark.xfail(reason="Task 3 adds the loader", strict=True)` while working Task 2
-and remove the marker in Task 3 step 3.5.
+**`test_module_exposes_no_mutator` belongs to Task 3, not this one** — it names
+`load_access_policy` and `resolve_access_policy_path`, which Task 3 adds. Write it in
+Task 3 step 3.5 rather than here. A `strict=True` xfail was considered and rejected: any
+exception satisfies an xfail, so a test failing for an unintended reason — a missing
+import, say — would still report `xfailed`, and the real defect would surface only at the
+final `just verify`.
 
 ### Step 2.6 — Run, confirm green, commit
 
@@ -1078,7 +1129,7 @@ just typecheck
 just secrets
 ```
 
-Expected: all tests pass, with `test_module_exposes_no_mutator` reported as `xfailed`.
+Expected: all tests pass.
 
 ```sh
 git add src/hmc_mcp/access_policy.py tests/unit/test_access_policy.py
@@ -1197,17 +1248,35 @@ Expected: `1 passed`.
 
 ### Step 3.5 — Add the remaining loader tests
 
-Remove the `xfail` marker from `test_module_exposes_no_mutator`, then append:
+Move `test_module_exposes_no_mutator` here from Task 2 step 2.5 — it needs
+`load_access_policy` and `resolve_access_policy_path`, which only now exist. Confirm the
+test module imports `AccessPolicy` alongside `ALL_TARGETS` and `compile_access_policy`;
+the test body names it. Then append:
 
 ```python
 def test_resolve_path_sits_beside_config_toml(monkeypatch, tmp_path) -> None:
-    from hmc_mcp.config import config_dir
+    """Pin the relationship, not the implementation.
+
+    Asserting ``resolve_access_policy_path() == config_dir() / FILENAME`` would
+    restate the function body and pass on any platform. What §3.1 and §4 actually
+    claim is that the policy file sits *beside* ``config.toml`` — and
+    ``config_dir()`` duplicates ``resolve_config_path()``'s platform branching
+    rather than sharing it, so the two can drift apart silently.
+    """
+    from hmc_mcp.config import config_dir, resolve_config_path
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
 
-    assert resolve_access_policy_path() == config_dir() / ACCESS_POLICY_FILENAME
+    directory = config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.toml").write_text("", encoding="utf-8")
+
+    config_path = resolve_config_path()
+    assert config_path is not None
+    assert resolve_access_policy_path().parent == config_path.parent
+    assert resolve_access_policy_path().name == ACCESS_POLICY_FILENAME
 
 
 def test_load_uses_the_resolved_path_when_none_is_given(monkeypatch, tmp_path) -> None:
