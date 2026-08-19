@@ -446,3 +446,111 @@ def test_the_decision_modules_never_mention_dry_run():
             if "dry_run" in line and not line.lstrip().startswith("#")
         ]
         assert not code, f"{module.__name__}: {code}"
+
+
+# ---------------------------------------------------------------------------
+# A second argument that overrides a declared selector (threat-scan finding)
+# ---------------------------------------------------------------------------
+
+
+def test_a_second_argument_cannot_override_the_authorized_selector():
+    """`hmc_get_job` declares `job_uuid` and then lets `job_href` replace it.
+
+    `client.get_job` fetches `urlparse(job_href).path` and never reads
+    `job_uuid`, so a table grant would authorize one job identity while the
+    server reads another — the exact escape `exhaustive_targets` exists to
+    refuse, reached through an argument the *name* tables did not know about.
+
+    Both job tools are therefore unbounded, and a table grant refuses them
+    whether or not `job_href` is passed: authorization must not depend on which
+    optional argument a caller chose to send, or the check becomes a race with
+    the caller.
+    """
+    grants = [
+        {
+            "tools": ["hmc_get_job"],
+            "connections": ["lab"],
+            "targets": {"job": ["job-1111"]},
+        }
+    ]
+    # Naming it beside a table is refused at load, so the grant cannot exist.
+    with pytest.raises(Exception, match="all-targets"):
+        _policy(grants)
+
+    # Reached through an effect class instead, the call is refused at dispatch —
+    # with and without the overriding argument.
+    effect_grant = [
+        {"effects": ["read"], "connections": ["lab"], "targets": {"job": ["job-1111"]}}
+    ]
+    for href in (None, "https://elsewhere.invalid/rest/api/uom/jobs/job-9999"):
+        with pytest.raises(TargetScopeError, match="all-targets"):
+            _authorize(
+                effect_grant,
+                "hmc_get_job",
+                {"job_uuid": "job-1111", "job_href": href, "profile": "lab"},
+            )
+
+    # `all-targets` still reaches it, so #225's legacy exposure is unaffected.
+    wide = [{"effects": ["read"], "connections": ["lab"], "targets": "all-targets"}]
+    assert (
+        _authorize(
+            wide,
+            "hmc_get_job",
+            {"job_uuid": "job-1111", "job_href": None, "profile": "lab"},
+        )
+        is None
+    )
+
+
+def test_a_read_tool_is_denied_on_a_target_outside_the_table():
+    """R3 on the live registry: the dimension binds reads, not only mutations.
+
+    Issue #223's title says "mutations". ADR 0039 widens that deliberately —
+    `hmc_get_lpar` against a withheld partition returns its configuration, which
+    is the disclosure the epic exists to bound — and this is the behavioural
+    test for the widening.
+    """
+    grants = [
+        {
+            "effects": ["read"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+        }
+    ]
+    args = {"lpar_name_or_uuid": "secret-db", "system_name_or_uuid": "sys-1",
+            "profile": "lab"}
+    with pytest.raises(TargetScopeError):
+        _authorize(grants, "hmc_get_lpar", args)
+
+    assert _authorize(grants, "hmc_get_lpar", {**args, "lpar_name_or_uuid": "victim"}) is None
+
+
+def test_an_unpinned_list_call_is_denied():
+    """"Every partition on every system" is not what a narrow table granted."""
+    grants = [
+        {"effects": ["read"], "connections": ["lab"],
+         "targets": {"managed_system": ["sys-1"]}}
+    ]
+    with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
+        _authorize(
+            grants, "hmc_list_lpars", {"system_name_or_uuid": None, "profile": "lab"}
+        )
+    assert (
+        _authorize(
+            grants, "hmc_list_lpars", {"system_name_or_uuid": "sys-1", "profile": "lab"}
+        )
+        is None
+    )
+
+
+def test_swapping_two_selector_values_between_their_kinds_denies():
+    """Selector confusion on the live registry, not only on a fixture."""
+    grants = [
+        {
+            "tools": ["hmc_delete_lpar"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+        }
+    ]
+    with pytest.raises(TargetScopeError):
+        _authorize(grants, "hmc_delete_lpar", _delete(system="victim", lpar="sys-1"))

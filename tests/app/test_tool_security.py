@@ -1069,6 +1069,9 @@ _NOT_EXHAUSTIVE = frozenset({
     "hmc_add_vfc_adapter",
     "hmc_add_vscsi_adapter",
     "hmc_attach_disk_to_lpar",
+    # A declared selector that a second argument overrides outright.
+    "hmc_get_job",
+    "hmc_wait_for_job",
 })
 
 
@@ -1101,8 +1104,10 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_add_vscsi_adapter",
         "hmc_attach_disk_to_lpar",
         "hmc_backup_lpar_profiles",
+        "hmc_get_job",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
+        "hmc_wait_for_job",
     }
 
 
@@ -1210,7 +1215,7 @@ def test_no_exhaustive_tool_accepts_an_identity_its_selectors_cannot_bound():
     )
 
 
-def test_the_three_declared_composites_are_exactly_what_the_check_finds():
+def test_the_declared_set_is_exactly_what_the_check_finds():
     """G15: the declaration matches the derivation, in both directions.
 
     ADR 0039 rejected deriving `exhaustive_targets` at registration and kept it
@@ -1230,9 +1235,11 @@ def test_the_three_declared_composites_are_exactly_what_the_check_finds():
         "hmc_add_vscsi_adapter": ["vios_partition_id"],
         "hmc_attach_disk_to_lpar": ["vios_partition_id"],
         "hmc_backup_lpar_profiles": ["file_path"],
+        "hmc_get_job": ["job_href"],
         "hmc_provision_lpar": ["network.vios_partition_id", "storage.vios_uuid"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
+        "hmc_wait_for_job": ["job_href"],
     }
 
 
@@ -1346,32 +1353,48 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
     assert "profile" in loaded
 
 
-# A remote network endpoint the operation reads from — a NIM boot server, a
-# firmware repository — is *not* an HMC resource, so no TargetKind names one and
-# no `targets` allowlist can bound it. ADR 0039 places egress control outside the
-# target dimension deliberately rather than by omission: the call still mutates
-# only the resources its selectors declare, and constraining where those
-# resources are loaded *from* is a different control this policy does not offer.
-# Pinned here so the decision is visible at the five tools it applies to, and so
-# a sixth cannot join them silently.
-_REMOTE_ENDPOINT_ARGUMENTS = frozenset({
+# Where a call loads its *payload* from — a NIM boot server, a firmware
+# repository, an ISO — is not an HMC resource, so no TargetKind names one and no
+# `targets` allowlist can bound it. ADR 0039 places that outside the target
+# dimension deliberately rather than by omission: each of these calls still
+# mutates only the resources its selectors declare, and constraining where the
+# payload comes from is a different control (ingress) this policy does not offer.
+#
+# The line against UNBOUNDED_ARGUMENTS is *which side* the named thing lives on.
+# `file_path` is a file on the **HMC's own** filesystem, so the policy is meant
+# to bound it and cannot — that makes its tool unbounded. Every name below is a
+# remote host or a source outside the HMC, which no `targets` table could reach
+# under any design, so refusing the tool would buy nothing.
+#
+# `iso_source` is the awkward one and is classified explicitly rather than left
+# out: with an http(s) scheme it is a remote URL like the rest, and with anything
+# else `operations_storage.upload_iso` treats it as a path on the **MCP server
+# host** and uploads that file into the granted VIOS's media repository. That is
+# a real local-file-read concern and it is filed separately; it is not a *target*
+# concern, because the resource acted on is still the declared VIOS.
+_PAYLOAD_SOURCE_ARGUMENTS = frozenset({
     "repository",
     "nim_ip",
     "nim_gateway",
     "nim_subnetmask",
     "lpar_ip",
     "vios_ip",
+    "iso_source",
 })
 
 
-def test_remote_endpoint_arguments_are_out_of_the_target_dimension_by_decision():
+def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
     """G15: the tools this decision covers, and the reason it is not an omission.
 
     Each of these mutates exactly the resource its selectors declare — a system,
-    a VIOS, a console, a partition — while reading its payload from an address
-    the caller chose. That is a real risk and it is not this dimension's: a
-    `targets` allowlist bounds *what is acted on*, and none of these acts on
-    anything the allowlist cannot already name.
+    a VIOS, a console, a partition — while reading its payload from a source the
+    caller chose. That is a real risk and it is not this dimension's: a `targets`
+    allowlist bounds *what is acted on*, and none of these acts on anything the
+    allowlist cannot already name.
+
+    The enumeration is the point. A threat scan found `iso_source` missing from
+    an earlier version of this set, which meant the "a sixth cannot join them
+    silently" claim below was false at the moment it was written.
     """
     found = {}
     for module in _TOOL_MODULES:
@@ -1379,7 +1402,7 @@ def test_remote_endpoint_arguments_are_out_of_the_target_dimension_by_decision()
             handler = getattr(module, name, None)
             if handler is None:
                 continue
-            hits = sorted(_REMOTE_ENDPOINT_ARGUMENTS & set(get_type_hints(handler)))
+            hits = sorted(_PAYLOAD_SOURCE_ARGUMENTS & set(get_type_hints(handler)))
             if hits:
                 found[name] = (security.exhaustive_targets, hits)
 
@@ -1394,8 +1417,10 @@ def test_remote_endpoint_arguments_are_out_of_the_target_dimension_by_decision()
         ),
         "hmc_update_console_software": (True, ["repository"]),
         "hmc_update_firmware": (True, ["repository"]),
+        "hmc_upload_iso": (True, ["iso_source"]),
         "hmc_vios_update": (True, ["repository"]),
     }
     # The two tables must stay disjoint, or the decision above would silently
-    # contradict the one UNBOUNDED_ARGUMENTS encodes.
-    assert not (_REMOTE_ENDPOINT_ARGUMENTS & UNBOUNDED_ARGUMENTS)
+    # contradict the one UNBOUNDED_ARGUMENTS encodes: a name cannot both be
+    # outside the dimension and be the reason a tool is refused by it.
+    assert not (_PAYLOAD_SOURCE_ARGUMENTS & UNBOUNDED_ARGUMENTS)

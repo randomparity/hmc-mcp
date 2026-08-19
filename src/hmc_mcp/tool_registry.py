@@ -66,19 +66,29 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "resource_name_or_uuid": "metric_resource",
 })
 
-# The complement of the table above: public argument names that carry the
-# identity of an HMC-side resource no allowlist can pin down. A tool accepting
-# one cannot declare `exhaustive_targets=True`, so a policy `targets` table never
-# grants it and only `all-targets` does.
+# Public argument names that carry the identity of an HMC-side resource no
+# allowlist can pin down. A tool accepting one cannot declare
+# `exhaustive_targets=True`, so a policy `targets` table never grants it and only
+# `all-targets` does.
 #
-# `file_path` names a file on the HMC's own filesystem, which no TargetKind
-# expresses — ADR 0036 placed it outside every grant. `cmd` is free-form console
-# command text. `vios_partition_id` is a *slot number within one managed system*,
-# reused across every system in a fleet, so an allowlist entry of "2" names a
-# different VIOS on each of them; unlike a partition name it has no UUID form to
-# fall back on, so there is no way to write it precisely.
+# - `file_path` names a file on the HMC's own filesystem, which no TargetKind
+#   expresses — ADR 0036 placed it outside every grant.
+# - `cmd` is free-form console command text.
+# - `vios_partition_id` is a *slot number within one managed system*, reused
+#   across every system in a fleet, so an allowlist entry of "2" names a
+#   different VIOS on each of them; unlike a partition name it has no UUID form
+#   to fall back on, so there is no way to write it precisely.
+# - `job_href` is a caller-supplied URI whose *path* replaces the `job_uuid`
+#   selector entirely (`client.get_job`), so the value authorized and the value
+#   fetched are different values.
 #
-# Kept beside REQUIRED_TARGET_ARGUMENTS deliberately: the two are one piece of
+# This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
+# is in both, deliberately. It is a declared selector — so it is extracted and
+# compared under `all-targets`, which is what keeps three live tools working —
+# *and* an identity no table can bound. The two tables answer different
+# questions about the same name and must not be merged.
+#
+# They are kept adjacent for that reason: together they are one piece of
 # knowledge — which public argument names carry which identity — and a name that
 # moved between them while they lived in different files would drift silently.
 # No runtime path reads this one; the boolean it justifies is what the authorizer
@@ -86,6 +96,7 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({
     "cmd",
     "file_path",
+    "job_href",
     "vios_partition_id",
 })
 

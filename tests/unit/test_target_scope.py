@@ -397,3 +397,73 @@ def test_the_sentinels_name_themselves():
     assert repr(ABSENT) == "ABSENT"
     assert repr(UNREADABLE) == "UNREADABLE"
     assert ABSENT is not UNREADABLE
+
+
+# ---------------------------------------------------------------------------
+# Properties a surviving mutant showed were claimed but unproven
+# ---------------------------------------------------------------------------
+
+
+GET_LPAR = ToolSecurity(
+    effect="read",
+    operation="lpar.get",
+    target_kind="lpar",
+    targets=(
+        TargetSelector("lpar", "lpar_name_or_uuid", True),
+        TargetSelector("managed_system", "system_name_or_uuid", False),
+    ),
+    exhaustive_targets=True,
+)
+
+
+def test_a_read_tool_is_bound_exactly_as_a_destructive_one_is():
+    """ADR 0039 widens the dimension past the issue's stated outcome, on purpose.
+
+    Every other fixture in this module is `destructive`, so an effect filter
+    inside the authorizer — `extracted = () if effect == "read" else ...` —
+    survived the whole suite. It should not: a read against a withheld target is
+    a disclosure, and `Grant.targets` is a property of the grant rather than of
+    an effect class.
+    """
+    extracted = selected_targets(
+        GET_LPAR, {"lpar_name_or_uuid": "secret-db", "system_name_or_uuid": "sys-a"}
+    )
+    table = _table(lpar=["db-01"], managed_system=["sys-a"])
+    assert targets_permitted(table, GET_LPAR, extracted) is False
+
+    permitted = selected_targets(
+        GET_LPAR, {"lpar_name_or_uuid": "db-01", "system_name_or_uuid": "sys-a"}
+    )
+    assert targets_permitted(table, GET_LPAR, permitted) is True
+
+
+def test_a_read_tools_omitted_optional_selector_denies_too():
+    """"Every partition on every system" is not what a narrow table granted."""
+    extracted = selected_targets(
+        GET_LPAR, {"lpar_name_or_uuid": "db-01", "system_name_or_uuid": None}
+    )
+    assert targets_permitted(_table(lpar=["db-01"]), GET_LPAR, extracted) is False
+
+
+def test_a_value_allowed_for_one_kind_is_not_allowed_for_another():
+    """Matching is keyed by kind, and the key is load-bearing.
+
+    Every other table fixture pairs disjoint values with their own kinds, so a
+    mutant flattening the table into one set — `frozenset().union(*values())` —
+    survived. Under it this call would be permitted: the system named `db-01`
+    and the partition named `sys-a` are each *somewhere* in the table, just not
+    where the operator put them. That is the selector confusion the spec's
+    threat model lists first and epic #218 names as a canonicalization hazard.
+    """
+    swapped = selected_targets(
+        DELETE_LPAR, {"system_name_or_uuid": "db-01", "lpar_name_or_uuid": "sys-a"}
+    )
+    table = _table(managed_system=["sys-a"], lpar=["db-01"])
+    assert targets_permitted(table, DELETE_LPAR, swapped) is False
+
+    # The same two values, each under its own kind, are permitted — so the test
+    # above fails for the swap and not because the values are unknown.
+    correct = selected_targets(
+        DELETE_LPAR, {"system_name_or_uuid": "sys-a", "lpar_name_or_uuid": "db-01"}
+    )
+    assert targets_permitted(table, DELETE_LPAR, correct) is True
