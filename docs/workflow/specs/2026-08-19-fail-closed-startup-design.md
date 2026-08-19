@@ -107,6 +107,16 @@ patch target becomes `FastMCP` and the identity assertion compares against the a
 the entry point composed. And `test_an_authored_but_unselected_policy_file_is_warned` asserts
 the warning R6 deletes — inverted, not deleted, since the condition is now unreachable.
 
+**R2f — `tests/app/test_authorization_audit.py` carries two more.** Found during the
+build, not by the enumerations above — a third way a test breaks, distinct from importing
+the application and from calling the composer bare. Its spec-32 test asserts
+`_gates(None) == (None, None)` and its spec-34 test asserts the unselected-policy warning
+fires; both are why a default `hmc-mcp serve` emitted no audit record. Both carry an
+explicit note that #225 is expected to change them, so both are inverted rather than
+deleted, and the module's own header inventory is updated with them. That the enumerations
+missed a module which *predicted its own inversion* is the argument for the header
+inventories rather than against them.
+
 **R2e — `_fail`'s blast radius is the whole CLI.** R16e changes error rendering for every
 `cli_*` module that imports `_fail`, so the test modules asserting on `Error:` text are
 re-run and inspected as part of that change rather than assumed unaffected. `unstyle()` is
