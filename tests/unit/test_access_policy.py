@@ -12,6 +12,7 @@ import pytest
 from hmc_mcp.access_policy import (
     ACCESS_POLICY_FILENAME,
     ALL_TARGETS,
+    GRANT_EFFECTS,
     AccessPolicy,
     AccessPolicyError,
     _parse_document,
@@ -467,14 +468,29 @@ def test_compiled_policy_is_immutable() -> None:
     assert repr(ALL_TARGETS) == "ALL_TARGETS"
 
 
-def test_compile_does_not_retain_the_caller_dict() -> None:
-    document = _document(**VALID_GRANT)
+def test_compile_does_not_retain_the_caller_containers() -> None:
+    """Mutate the nested lists a compiled Grant could alias, not the outer key.
+
+    Replacing ``document["policies"]`` proves nothing: no compiled object holds a
+    reference to that key. The retention risk is one and two levels down — the
+    selector list inside a ``targets`` table, and the ``connections`` array.
+    """
+    selectors = ["db-01"]
+    connections = ["lab", "prod"]
+    document = _document(
+        tools=["hmc_power_off_lpar"],
+        connections=connections,
+        targets={"lpar": selectors},
+    )
+
     policy = _compile(document)
-    ceiling = policy.tools
+    grant = policy.grants[0]
 
-    document["policies"] = {}
+    selectors.append("prod-01")
+    connections.append("staging")
 
-    assert policy.tools == ceiling
+    assert grant.targets["lpar"] == frozenset({"db-01"})
+    assert grant.connections == frozenset({"lab", "prod"})
 
 
 POLICY_FILE = """
@@ -636,6 +652,36 @@ def test_module_imports_only_the_declared_first_party_modules() -> None:
     assert first_party == {"config", "tool_registry"}
     assert third_party & {"fastmcp", "mcp", "rich", "typer"} == set()
     assert "pydantic" in third_party
+
+
+def test_grant_effects_track_the_registry_vocabulary() -> None:
+    """GRANT_EFFECTS is hand-written, so pin it to the vocabulary it mirrors.
+
+    Deriving it from ``EFFECTS`` instead would make a future maximum-risk effect
+    class grantable by default, which is what epic #218 requirement 6 forbids for
+    ``arbitrary-command``. A test converts silent drift into a red build without
+    that risk.
+    """
+    from hmc_mcp.tool_registry import EFFECTS
+
+    assert GRANT_EFFECTS | {"arbitrary-command"} == EFFECTS
+
+
+def test_unresolvable_default_path_is_an_access_policy_error(monkeypatch) -> None:
+    def _explode() -> object:
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(
+        "hmc_mcp.access_policy.resolve_access_policy_path", _explode
+    )
+
+    with pytest.raises(AccessPolicyError, match="cannot resolve the access-policy"):
+        load_access_policy("lab", TOOL_SECURITY)
+
+
+def test_unusable_path_string_is_an_access_policy_error() -> None:
+    with pytest.raises(AccessPolicyError, match="cannot be read"):
+        load_access_policy("lab", TOOL_SECURITY, path="a\x00b")
 
 
 def test_api_surface_is_unchanged() -> None:

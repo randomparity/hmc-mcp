@@ -402,13 +402,24 @@ def load_access_policy(
     :class:`AccessPolicyError` naming the resolved path, so a fail-closed startup
     can report which file it read rather than surfacing a decoding traceback.
     """
-    resolved = Path(path) if path is not None else resolve_access_policy_path()
+    try:
+        resolved = Path(path) if path is not None else resolve_access_policy_path()
+    except (RuntimeError, ValueError) as error:
+        # config_dir() calls Path.home(), which raises RuntimeError when the home
+        # directory cannot be determined — a container or systemd unit running
+        # under a uid with no passwd entry and no HOME. Left unguarded that
+        # escapes as a traceback from a security control's startup path.
+        raise AccessPolicyError(
+            f"cannot resolve the access-policy path: {error}"
+        ) from error
     source = str(resolved)
     try:
         text = resolved.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
         raise AccessPolicyError(f"{source}: is not valid UTF-8: {error}") from error
-    except OSError as error:
+    except (OSError, ValueError) as error:
+        # ValueError covers an unusable path string, such as an embedded null
+        # byte, which read_text raises before it reaches the filesystem.
         raise AccessPolicyError(f"{source}: cannot be read: {error}") from error
     try:
         document = tomllib.loads(text)
