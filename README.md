@@ -249,7 +249,31 @@ hmc-mcp serve            # stdio — what MCP clients/agents expect
 hmc-mcp serve --http --listen-host 127.0.0.1 --port 8000
 # Explicitly enable the arbitrary-command MCP escape hatch when required:
 hmc-mcp serve --enable-arbitrary-command
+# Enforce a capability ceiling from access-policy.toml:
+hmc-mcp serve --access-policy lab
 ```
+
+`--access-policy NAME` enforces the named policy from the platform-native
+`access-policy.toml`: the server registers only the tools that policy permits, so
+a withheld tool never appears in `tools/list` and cannot be called by name.
+Without the flag no ceiling is applied and every tool is exposed — authoring the
+file is not enough on its own. A policy that cannot be read, parsed, or compiled
+exits non-zero and starts nothing.
+
+Only the tool dimension is enforced today. A policy's `connections` and `targets`
+entries are recorded and reported but constrain nothing at call time; call
+`hmc_effective_permissions` on a running server to see which is which.
+
+### Startup warnings
+
+`serve` writes these to stderr (never stdout, which carries JSON-RPC on stdio):
+
+| Condition | What it means |
+|-----------|---------------|
+| The served surface has no tools | The policy withholds everything reachable; nothing the server is asked to do will succeed. Suppresses the next line. |
+| The policy withholds `hmc_effective_permissions` | The server cannot report its own permissions to a client. Only a `tools`-only policy that omits it can cause this. |
+| `access-policy.toml` exists but `--access-policy` was not passed | The file was authored but never selected, so no ceiling is applied. |
+| `--enable-arbitrary-command` was passed but the policy does not grant `hmc_run_command` | The flag and the ceiling compose conjunctively, so the escape hatch is not exposed. Name it in a grant's `tools` to allow it. |
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
 > exposes enabled tools — including user administration — to anyone who can reach the
@@ -292,6 +316,13 @@ unbounded when `limit` is omitted.
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_wait_for_job`            | Poll until a terminal HMC state and return a normalized outcome (`status`, `timed_out`, nullable `error`, and last `job`); terminal states include completed, failed, exception, and canceled variants |
+| `hmc_effective_permissions`   | Report the tools this server exposes, their effect classes, and the selected access policy's declared connections and targets |
+
+`hmc_effective_permissions` discloses the selected policy's name, its absolute
+path, every connection token, and every target selector to any MCP client that
+can call it. It carries no credential and reads nothing from `config.toml`, the
+environment, or the HMC. Only a `tools`-only policy that omits it can withhold
+it; a policy granting the `read` effect class reaches it and cannot exclude it.
 
 `hmc_fleet_health` and `systems health` return only exceptions across the whole
 estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
