@@ -1,0 +1,301 @@
+# Structured, redacted authorization audit events — design
+
+Issue: [#224](https://github.com/randomparity/hmc-mcp/issues/224). Epic:
+[#218](https://github.com/randomparity/hmc-mcp/issues/218), requirement 7 and decomposition
+entry 6. Decision record: [ADR 0040](../../adr/0040-authorization-audit-events.md), which owns
+every choice with a viable alternative; this document specifies what gets built and how it is
+proven.
+
+## Goal
+
+Every authorization decision made at the MCP dispatch boundary writes one structured, redacted
+record to the server process's logging sink, so an operator can answer what a connected agent
+attempted, what was permitted, what was refused, and why — without any credential, whole argument
+set, command text, generated document, or response body appearing in the output, and without the
+record being readable by the agent whose calls it describes.
+
+## Non-goals
+
+- Durable retention, sequencing, integrity protection, or export. #218's open questions place
+  these outside this saga.
+- Closing the permit/deny oracle carried forward from #222. This design records it; ADR 0040
+  states the residual.
+- Suppressing FastMCP's traceback rendering of a routine denial (issue #267).
+- Any audit of direct CLI or reusable Python API calls, which do not cross this boundary
+  (ADR 0029).
+- Any new environment variable, CLI flag, or configuration key.
+
+## Architecture
+
+One source file is added, three change, and one operator document is added.
+
+| file | responsibility after this change |
+|---|---|
+| `src/hmc_mcp/audit.py` (new) | the record's field set, its rendering, the reason-code vocabulary, and the sink. Imports nothing from the package. |
+| `src/hmc_mcp/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
+| `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
+| `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
+| `docs/authorization-audit.md` (new) | the operator-facing record contract: field set, reason-code table, logger name, level split, and how to route or silence it. |
+
+`audit.py` importing nothing from `hmc_mcp` is a hard constraint, not an accident: `target_scope`
+imports the reason-code type from it, so any import back would be a cycle. Every value reaches
+`audit.record` as a primitive.
+
+### Data flow
+
+```
+tool_registry.authorized  ->  dispatch_scope.authorize
+                                 |
+                                 |-- selected_connection(token)   (may raise ConnectionScopeError)
+                                 |-- selected_targets(security, arguments)
+                                 |-- per-grant conjunction over policy.grants_for(tool)
+                                 |
+                                 +-> audit.record(...)  exactly once
+                                        |
+                                        +-> logging.getLogger("hmc_mcp.audit")
+                                               |
+                                               +-> _AuditHandler -> sys.stderr   (serve path only)
+```
+
+The record is written **before** the denial is raised and **before** the permitted handler runs,
+so a record can never describe a call that did not reach the boundary, and an outbound HMC request
+can never precede its own record.
+
+## The record contract
+
+One log record per decision. Its message is the complete record: a single line of
+`json.dumps(payload, ensure_ascii=True)` output, with no prefix, no trailing text, and no
+`Formatter` applied by the sink this package installs.
+
+Fields, always present, in this order:
+
+| field | type | value |
+|---|---|---|
+| `time` | string | `datetime.now(timezone.utc).isoformat()` |
+| `event` | string | the constant `"authorization"` |
+| `policy` | string | the selected `AccessPolicy.name` |
+| `tool` | string | the MCP tool name |
+| `effect` | string | `ToolSecurity.effect` |
+| `decision` | string | `"allow"` or `"deny"` |
+| `reason` | string | one of the seven codes below |
+| `connection` | object | `{"state", "selector", "resolved"}` |
+| `targets` | array or null | `null`, or a list of `{"kind", "argument", "state", "value"}` |
+| `attribution` | object | `{"claim", "source", "verified"}` |
+
+`connection.state` ∈ `{"present", "absent", "unreadable"}`, mirroring
+`connection_scope.selected_connection`'s arms: a string token is present, `None` or `""` is
+absent, any other type is unreadable. `connection.selector` is the caller's own string when
+present and `null` otherwise — a value of an unexpected type is never rendered.
+`connection.resolved` is the profile key the call would use, `"<default>"` for the
+environment/default connection, or `"<unresolved>"` when the token names nothing configured.
+
+`targets` is `null` when the decision was reached before selectors were extracted (the
+`connections-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
+selector. Each entry's `state` ∈ `{"present", "absent", "unreadable"}` is taken from what
+`target_scope.selected_targets` already computed, and `value` is the caller's string when present
+and `null` otherwise.
+
+`attribution` is always `{"claim": <str|null>, "source": "environment:HMC_AGENT_ID",
+"verified": false}`.
+
+### Reason codes
+
+| code | decision | raised by |
+|---|---|---|
+| `permitted` | allow | — |
+| `connections-unreadable` | deny | `ConnectionScopeError` from `selected_connection` |
+| `connection-not-granted` | deny | `connection_denial` |
+| `target-selector-unreadable` | deny | `target_denial` case 1 |
+| `target-unboundable` | deny | `target_denial` case 2 |
+| `target-selector-absent` | deny | `target_denial` case 3 |
+| `target-not-granted` | deny | `target_denial` case 4 |
+
+The vocabulary is closed. `audit.Reason` is a `Literal` and `audit.REASONS` the derived
+`frozenset`, mirroring `tool_registry.Effect` / `EFFECTS`.
+
+### Bounding
+
+Every caller-supplied value — `connection.selector`, each target `value`, and
+`attribution.claim` — is truncated to **128 characters** before rendering. No truncation marker is
+appended (ADR 0040). Everything else in the record is a compile-time constant, the policy name, or
+the resolved connection, all of which the operator authored.
+
+The number of target entries is bounded by the tool's own `ToolSecurity.targets`, fixed at import;
+the largest in this checkout is 3.
+
+### Levels and routing
+
+- deny → `WARNING`; allow → `INFO`; logger name `hmc_mcp.audit`.
+- `audit.install_audit_sink()` sets `propagate = False` unconditionally, sets the level to `INFO`,
+  and attaches its handler only when the logger carries none.
+- `server._serve_application` calls it; `create_mcp` does not, and neither does import.
+
+## Error handling
+
+| condition | behaviour |
+|---|---|
+| `sys.stderr is None` (fd 2 closed at interpreter start) | the handler returns without writing; nothing raises |
+| write raises `OSError` (broken pipe) | caught; the record is dropped |
+| write raises `ValueError` (closed stream) | caught; the record is dropped |
+| a tool declares `connection_argument = None` | no record; the authorizer is not on its dispatch path |
+| a malformed call raises `KeyError` on a declared argument | no record; no decision was reached |
+| the sink is not installed (library, CLI, in-process composition) | records are emitted to a logger with no handler and dropped by level; nothing raises |
+
+Emission never changes the authorization outcome and never propagates an exception into
+`authorize`. The handler resolves `sys.stderr` at emit time rather than binding it at install
+time, matching `server._warn`.
+
+## Threat model
+
+### Boundary inventory
+
+Boundaries this design **adds**:
+
+1. **Caller-supplied values → the audit sink.** A connection token, target selector values, and
+   (indirectly) `HMC_AGENT_ID` are rendered into a stream an operator or a log pipeline reads.
+2. **The audit sink → the process's output streams.** Under the stdio transport, stdout carries
+   JSON-RPC framing; anything written there corrupts the protocol.
+3. **The audit sink → whoever reads the operator's logs.** `connection.resolved` discloses a
+   `config.toml` profile key that the caller's own token need not equal.
+
+Boundaries this design **widens**: none. It reads no new input, opens no socket, and adds no
+argument, flag, environment variable, or file.
+
+### Actor model
+
+- **The calling MCP agent** is untrusted. It controls every tool argument, including the
+  connection token and every target selector, and it may be prompt-injected or compromised. It
+  reads tool results. It does not read the server process's stderr through the MCP protocol.
+- **The operator** is trusted. They author `config.toml` and `access-policy.toml`, set
+  `HMC_AGENT_ID`, and choose where logs go. `connection.resolved` and `policy` disclose only what
+  they already wrote.
+- **The agent's host process** launches the server and may capture its stderr. The design places
+  its trust here explicitly: the record is not in the JSON-RPC response channel, which is a
+  property of this code; whether a particular host surfaces captured stderr back to the model is a
+  deployment property this design does not control and does not claim to.
+
+### Control per boundary
+
+| boundary | control |
+|---|---|
+| 1 — caller values into the sink | only *declared* selectors and the connection token are rendered; the whole argument mapping is never serialized. Each value is truncated to 128 characters. `json.dumps(ensure_ascii=True)` escapes every control character, escape sequence, and non-ASCII codepoint, so no value can forge a line or move a terminal cursor. A value of an unexpected type is recorded as a state, never as a `repr()`. |
+| 1 — credentials | structurally absent: `authorize` receives only the tool name, its `ToolSecurity`, and the bound arguments. No `HMCConfig`, client, session token, or password is in scope at the emission point. |
+| 1 — command text, documents, response bodies | structurally absent: `hmc_run_command` declares no target selector, so `cmd` is never extracted; the record is written before the handler runs, so no response body or generated document exists yet. |
+| 2 — output stream | the installed handler writes only to `sys.stderr`, resolved at emit time and skipped when `None`; the logger does not propagate, so no ancestor handler — including one pointed at stdout — can receive the record. |
+| 3 — resolved connection | accepted and stated. The record goes to the operator's sink, not to the tool result; ADR 0038 deferred this question here on that ground. An operator forwarding the sink onward inherits the disclosure. |
+| availability | the handler catches `OSError` and `ValueError` and returns on a `None` stream, so an unavailable destination drops records instead of aborting a call or a start (#221). |
+
+### Explicitly out of scope
+
+- **The permit/deny oracle** (#222). Recorded, not closed; ADR 0040 states why and what closing it
+  would cost.
+- **Log integrity and retention.** Records are neither signed, sequenced, nor persisted. An
+  operator with write access to the sink can forge or delete one.
+- **Denial-of-service by log volume.** An agent calling a denied tool in a loop writes one
+  `WARNING` per call. Levels are the only lever offered; rate limiting is rejected in ADR 0040 as
+  a new DoS surface aimed at the operator's own agents.
+- **Traceback noise on a denial** (#267).
+
+## Testing
+
+Every criterion below is falsifiable and gets a test. Sentinel-secret and redaction tests are
+mutation-verified: the redaction is broken, the test is watched to fail, and the change reverted.
+
+### Rendering — `tests/unit/test_audit.py`
+
+1. A permitted decision renders every field, in order, with `decision="allow"` and
+   `reason="permitted"`.
+2. Output is a single line and is pure ASCII, for a target value containing `\n`, `\r`, `\x1b`,
+   ` `, and an RTL override.
+3. A 500-character selector value is truncated to exactly 128 characters, with no marker.
+4. A 500-character `HMC_AGENT_ID` is truncated to exactly 128 characters.
+5. A non-string connection token renders `state="unreadable"`, `selector=null`, and the token's
+   `repr()` appears nowhere in the output.
+6. `targets` is `null` for `connections-unreadable` and `[]` for a tool declaring no selector.
+7. `attribution` is `{"claim": null, "source": "environment:HMC_AGENT_ID", "verified": false}`
+   when `HMC_AGENT_ID` is unset.
+8. `REASONS` equals the `Literal`'s arguments, and every code the boundary can emit is in it.
+
+### Sink — `tests/unit/test_audit.py`
+
+9. After `install_audit_sink()`, a record reaches `sys.stderr` and stdout receives nothing.
+10. `install_audit_sink()` sets `propagate = False`; a `StreamHandler(sys.stdout)` on the root
+    logger receives no audit record afterwards.
+11. `sys.stderr = None` → emitting raises nothing and writes nothing.
+12. A stream whose `write` raises `ValueError` → emitting raises nothing.
+13. A stream whose `write` raises `OSError` → emitting raises nothing.
+14. Calling `install_audit_sink()` twice attaches one handler; a pre-attached handler is left in
+    place and not duplicated.
+15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly.
+
+### Boundary — `tests/app/test_authorization_audit.py`
+
+16. One record per permitted call through a composed application, with the tool, effect, policy,
+    connection, and targets the call actually used.
+17. One record per denial, for each of the six deny reason codes, driven through a real composed
+    application where reachable and through `dispatch_authorizer` directly otherwise.
+18. Exactly one record per call — not zero, not two — across allow and deny.
+19. A tool with `connection_argument = None` produces no record when its authorizer is called
+    directly.
+20. A malformed call (a declared argument absent from the bound arguments) produces no record and
+    still raises.
+21. The record's `reason` agrees with the raised error's own case selection for all four target
+    denials — driven from `target_scope.denial_reason` so the two cannot drift.
+
+### Redaction — `tests/app/test_authorization_audit.py`
+
+22. **Credentials.** A `config.toml` profile carrying a sentinel password, and `HMC_PASSWORD` /
+    `HMC_USER` carrying sentinels, produce no occurrence of any sentinel in any record, on allow
+    and on deny.
+23. **Whole arguments.** A call to `hmc_create_lpar` passing a sentinel in its `name` argument —
+    a public argument that `REQUIRED_TARGET_ARGUMENTS` deliberately excludes, so it is never a
+    declared selector — produces no occurrence of that sentinel in the record, while the declared
+    `system_name_or_uuid` selector *is* present.
+24. **Command text.** A `hmc_run_command` call whose `cmd` is a sentinel produces no occurrence of
+    the sentinel, on allow and on deny.
+25. **Response bodies and generated documents.** A permitted call whose handler is stubbed to
+    return a sentinel-bearing payload produces no occurrence of the sentinel — the record is
+    written before the handler runs.
+26. **Policy source path.** The policy file's path does not appear in any record.
+
+### Attribution — `tests/app/test_authorization_audit.py`
+
+27. `HMC_AGENT_ID=<value>` is recorded as `attribution.claim` with `verified: false`.
+28. Authorization outcome is invariant under `HMC_AGENT_ID`: the same call under an unset
+    `HMC_AGENT_ID`, under a value naming the policy, and under a value naming a granted connection
+    yields the identical decision and reason.
+
+### Stdio transport — `tests/app/test_authorization_audit.py`
+
+29. A real subprocess server driven over stdio through `fastmcp.client.transports.StdioTransport`,
+    with the child's stderr captured to a file via that transport's `log_file`: a denied call and
+    a permitted call both complete over the protocol — which they cannot if stdout is corrupted —
+    and the captured stderr contains both audit records.
+30. The same server started through `sh -c '… 2>&-'`, so fd 2 is closed at interpreter start and
+    `sys.stderr` is `None`: the denied call still completes over the protocol and the process
+    exits normally. POSIX only, skipped elsewhere, since `2>&-` is a POSIX shell redirection.
+
+### Guardrails
+
+`just verify` — run bare — must pass on the branch head.
+
+## Acceptance criteria
+
+- A1. One record per authorization decision at the dispatch boundary, and no record for the two
+  cases ADR 0040 names as producing none. (tests 16–20)
+- A2. The record carries policy, tool, effect, decision, reason, connection selector, and declared
+  target selectors, in the fixed shape above. (tests 1, 6, 16)
+- A3. Seven stable reason codes, closed and agreeing with the raised error. (tests 8, 17, 21)
+- A4. `HMC_AGENT_ID` recorded as unverified attribution with explicit provenance, and provably
+  unable to change an outcome. (tests 7, 27, 28)
+- A5. Credentials, whole argument sets, command text, generated documents, and response bodies are
+  absent from every record on allow and deny paths, proven with sentinels whose tests are shown to
+  bite. (tests 22–26)
+- A6. The sink cannot write to stdout and cannot abort the server when its destination is
+  unavailable, under the stdio transport. (tests 9–13, 29, 30)
+- A7. Caller-supplied values are bounded at 128 characters and cannot inject a control character
+  or a line break. (tests 2, 3, 4, 5)
+- A8. ADR 0040 records the decision, the two no-record cases, and the residuals.
+- A9. Operator documentation describes the record, the reason codes, the logger name, and how to
+  route or silence it.
+- A10. `just verify` passes bare on the branch head.
