@@ -294,9 +294,17 @@ pre-attaches one to `hmc_mcp.audit`. `just verify` runs `pytest -q` in a single 
 leaves `propagate = False` for the rest of the session — and every later test that reads records
 through `caplog` (which attaches at the root) sees nothing and passes vacuously.
 
+It is not only those four. Once the sink is installed on the serve path, `_serve_application`
+calls it too, and four existing tests drive that function in-process —
+`tests/app/test_capability_ceiling.py:489,504,553` and
+`tests/app/test_connection_authorization.py:418` — none of which is an audit test.
+
 So: an **autouse fixture in `tests/unit/test_audit.py` and `tests/app/test_authorization_audit.py`
-snapshots and restores `handlers`, `level` and `propagate` on `hmc_mcp.audit`, and `handlers` on
-`logging.root`, around every test item.** Nothing in those files may leak sink state.
+that resets `hmc_mcp.audit` at setup (no handlers, `NOTSET`, `propagate = True`) and restores the
+snapshot at teardown**, covering `handlers`, `level` and `propagate` on `hmc_mcp.audit` and
+`handlers` on `logging.root`. Reset *and* restore: a fixture that only restored would faithfully
+restore whatever contamination an earlier non-audit test left, which is the failure it exists to
+prevent. Nothing in those files may leak sink state, and nothing outside them may leak into them.
 
 And a precondition on the redaction tests specifically: tests 22-26 and 26a-26b assert that a
 sentinel is *absent*, which is trivially true of an empty capture. Each must first assert that at

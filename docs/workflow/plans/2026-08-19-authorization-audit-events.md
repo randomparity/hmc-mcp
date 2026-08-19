@@ -40,6 +40,13 @@ the plan is the one that was verified.
   measure the floor, which is the only place it means anything.
 - Exit codes are read **bare**, never through a pipe. These hosts run zsh, where `${PIPESTATUS[0]}`
   is empty (the array is `pipestatus`, 1-indexed), so a piped check silently reports 0.
+- **Every sentinel credential literal carries `# pragma: allowlist secret`.** `just secrets` runs
+  `detect-secrets-hook` over every tracked file against `.secrets.baseline`, its `KeywordDetector`
+  fires on exactly this shape, and `just secrets` is inside `just static` *and* the prek commit
+  hook — so an unmarked sentinel password blocks the commit, not just the gate. The convention is
+  already in the tree (`tests/app/test_connection_authorization.py`, `tests/unit/test_config.py`,
+  `tests/fixtures/config.example.toml`). Where a sentinel sits inside a multi-line TOML blob that
+  cannot carry an inline comment, build the blob from f-string parts so the literal can.
 - Conventional commits, imperative subject ≤72 chars, `Co-Authored-By: Claude Opus 5 (1M context)
   <noreply@anthropic.com>` trailer. Never squash; this branch is code.
 
@@ -131,6 +138,9 @@ nothing from the package, so no policy, config file, or application is needed.
        logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
        saved = (list(logger.handlers), logger.level, logger.propagate,
                 list(logging.root.handlers))
+       logger.handlers[:] = []            # reset, not merely restore - see below
+       logger.setLevel(logging.NOTSET)
+       logger.propagate = True
        try:
            yield
        finally:
@@ -140,7 +150,22 @@ nothing from the package, so no policy, config file, or application is needed.
            logging.root.handlers[:] = saved[3]
    ```
 
-2. Write spec tests 1–8, **6a, 6b**, 8a, **8b**, 9–13, 14, 14a, 14b, 14c and 15 as failing tests.
+   **It resets at setup as well as restoring at teardown**, because after Task 5 the audit tests
+   are no longer the only callers of `install_audit_sink`. `server._serve_application` calls it,
+   and four existing tests drive that function in-process —
+   `tests/app/test_capability_ceiling.py:489,504,553` and
+   `tests/app/test_connection_authorization.py:418`. Any of those running first leaves
+   `propagate = False` and a stderr handler attached for the rest of the session, and a fixture
+   that only *restores* would faithfully restore that contamination: every `caplog`-based audit
+   assertion would then capture nothing and pass vacuously. Resetting at setup is what makes each
+   audit test start from the pristine tree the spec's isolation section describes.
+
+2. Write spec tests 1–8, **6a, 6b**, 8a, **8b**, 9–13, 14, 14a, 14b and 15 as failing tests.
+   **14c is Task 3's**, not this task's: it asserts that a raising renderer and a raising logger
+   leave `dispatch_scope.authorize`'s outcome and exception type unchanged, which is unobservable
+   until Task 3 wires emission into `authorize`. What belongs here is only its audit-local half —
+   a raising renderer or logger leaves `record_authorization` returning `None` — written as part of
+   test 14b.
    6a and 6b and 8b are called out because an earlier draft of this plan lost them between the
    task lists: 6a covers `target_scope._value`'s integer and boolean arms (the spec notes neither
    was ever covered), 6b pins the `<unresolved>` profile-name collision, and 8b is the scan that
@@ -173,12 +198,15 @@ nothing from the package, so no policy, config file, or application is needed.
    `(os.environ.get(ATTRIBUTION_ENV), f"environment:{ATTRIBUTION_ENV}")` and
    `record_ownership_override` passes `(agent_id, "config:agent_id")`. A no-argument builder could
    not produce the override's attribution at all.
-7. Add `_emit(level, payload)`:
+7. Add `_emit(level, build)` — taking the **builder**, not the built payload, so the guard covers
+   both halves of the rule. ADR 0040 says "building one and writing one are both total"; a guard
+   wrapped around `json.dumps` alone leaves every `_value`, `_connection` and `_attribution` call
+   outside it, and those run while the payload is being assembled:
 
    ```python
-   def _emit(level: int, payload: dict[str, Any]) -> None:
+   def _emit(level: int, build: Callable[[], dict[str, Any]]) -> None:
        try:
-           message = json.dumps(payload, ensure_ascii=True)
+           message = json.dumps(build(), ensure_ascii=True)
            logging.getLogger(AUDIT_LOGGER_NAME).log(level, message)
        except Exception:  # noqa: BLE001 - an audit record must never fail a call
            pass
@@ -187,9 +215,10 @@ nothing from the package, so no policy, config file, or application is needed.
    The blanket catch is the ADR's total-emission rule. It is justified inline, not silently: this
    runs inside `authorize`, ahead of the denial and the handler, so any escape would fail an
    authorized call and replace ADR 0038/0039's client-facing error with something else.
-8. Add `record_authorization` and `record_ownership_override`, each building its payload in the
-   documented field order and calling `_emit` at `WARNING` (deny, and every override) or `INFO`
-   (allow). `record_authorization` renders **each `AuditTarget.value` through `_value`**, and
+8. Add `record_authorization` and `record_ownership_override`. Each passes `_emit` a
+   zero-argument closure that builds its payload in the documented field order — so every helper
+   call (`_value`, `_connection`, `_attribution`) runs **inside** the guard — at `WARNING` (deny,
+   and every override) or `INFO` (allow). `record_authorization` renders **each `AuditTarget.value` through `_value`**, and
    `record_ownership_override` renders `system` and `lpar` through it: truncation has exactly one
    owner, inside `audit`, and `AuditTarget` stays a transport for the raw extraction rather than a
    place a caller could forget to bound. Without this the target values — one of the three
@@ -221,11 +250,13 @@ nothing from the package, so no policy, config file, or application is needed.
    the same three guards `server._warn` applies, for the same three reasons (#221).
 10. Run `uv run --no-sync pytest --no-cov tests/unit/test_audit.py -q`. **Expect: all pass.**
 11. Run `just static`. **Expect: exit 0, "All checks passed!" from ruff and ty.**
-12. Commit: `feat(audit): add the authorization audit record and its stderr sink`.
+12. Record each spec-numbered test's pytest node id beside its number in a comment block at the
+    top of `tests/unit/test_audit.py`. Task 6 reads it.
+13. Commit: `feat(audit): add the authorization audit record and its stderr sink`.
 
 ### Acceptance
 
-Spec tests 1–8, 6a, 6b, 8a, 8b, 9–13, 14, 14a, 14b, 14c, 15 pass. `audit.py` contains no `from .`
+Spec tests 1–8, 6a, 6b, 8a, 8b, 9–13, 14, 14a, 14b, 15 pass. `audit.py` contains no `from .`
 or `from hmc_mcp` import — assert it in test 8a's file by reading the source.
 
 **Inventory check before moving on:** the union of the task lists must cover every numbered item
@@ -241,7 +272,10 @@ the four-case selection moves into one function that both the message and the re
 
 ### Steps
 
-1. Add spec tests 21 and 21a to `tests/unit/test_target_scope.py` as failing tests. Run
+1. Add spec tests 21 and 21a to `tests/unit/test_target_scope.py` as failing tests. **This task
+   owns them**, not Task 3: both are function-level assertions about `denial_reason` and
+   `targets_permitted` agreeing arm by arm, with no application involved. The spec files them under
+   its Boundary heading, which is where the ambiguity came from. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
    'hmc_mcp.target_scope' has no attribute 'denial_reason'`.**
 2. Add `from .audit import Reason` to `target_scope`'s imports, then
@@ -254,7 +288,9 @@ the four-case selection moves into one function that both the message and the re
 4. Run `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py tests/app/test_target_authorization.py -q`.
    **Expect: all pass, including the pre-existing tests — the messages are unchanged.**
 5. Run `just static`. **Expect: exit 0.**
-6. Commit: `refactor(target-scope): give the denial case selection one owner`.
+6. Record the node ids for tests 21 and 21a in a comment at the top of
+   `tests/unit/test_target_scope.py`.
+7. Commit: `refactor(target-scope): give the denial case selection one owner`.
 
 ### Acceptance
 
@@ -270,8 +306,10 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
 ### Steps
 
 1. Write `tests/app/test_authorization_audit.py` with the same autouse isolation fixture as
-   Task 1, then spec tests 16–21a, 22–26, 27, 28, 31–35 as failing tests. Include the
-   non-empty-capture precondition on 22–26. Run
+   Task 1, then spec tests **16–20, 14c, 22–26, 27, 28, 31–35** as failing tests. 21 and 21a are
+   Task 2's; 14c moves here because it needs `authorize` to emit. Include the non-empty-capture
+   precondition on 22–26, and mark every sentinel credential literal
+   `# pragma: allowlist secret` — see the note in Task 5 step 1. Run
    `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py -q`. **Expect: failures asserting a record
    that is never emitted.**
 2. Add the imports the fragments below need — `dispatch_scope` today imports only `AccessPolicy`;
@@ -338,11 +376,14 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
 5. Run `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py tests/app/test_connection_authorization.py
    tests/app/test_target_authorization.py -q`. **Expect: all pass.**
 6. Run `just static`. **Expect: exit 0.**
-7. Commit: `feat(dispatch-scope): emit one audit record per authorization decision`.
+7. Record the node ids for this task's spec-numbered tests at the top of
+   `tests/app/test_authorization_audit.py`.
+8. Commit: `feat(dispatch-scope): emit one audit record per authorization decision`.
 
 ### Acceptance
 
-Spec tests 16–21a, 22–26, 27, 28, 31–35 pass. Every pre-existing authorization test still passes.
+Spec tests 16–20, 14c, 22–26, 27, 28, 31–35 pass. Every pre-existing authorization test still
+passes. Re-run the Task 1 inventory check now that three tests have moved between tasks.
 
 ---
 
@@ -375,7 +416,8 @@ Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`. `R
    The two call sites are untouched. `_logger` stays — six other call sites in the file use it.
 3. Run `uv run --no-sync pytest --no-cov tests/unit/test_ownership.py -q`. **Expect: all pass.**
 4. Run `just static`. **Expect: exit 0.**
-5. Commit: `refactor(operations-lpar): converge the override record onto the audit sink`.
+5. Record the node ids for tests 26a–26e at the top of `tests/unit/test_ownership.py`.
+6. Commit: `refactor(operations-lpar): converge the override record onto the audit sink`.
 
 ### Acceptance
 
@@ -421,7 +463,8 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
    "never stdout" sentence in the startup-warnings section.
 6. Run `just verify` **bare**. **Expect: exit 0; pytest green, coverage at or above the 90% floor,
    smoke reporting the tool count, build and artifact validation clean.**
-7. Commit: `feat(server): install the audit sink on both serve transports`.
+7. Record the node ids for L1–L5 at the top of `tests/app/test_authorization_audit_live.py`.
+8. Commit: `feat(server): install the audit sink on both serve transports`.
 
 ### Acceptance
 
@@ -436,8 +479,12 @@ No production change. Applies M1–M10 one at a time, records which test ids red
 
 ### Steps
 
-0. **Prerequisite, discharged in Tasks 3–5, not here:** as each spec-numbered test is written, its
-   pytest node id is recorded beside the number in a comment at the top of its file. The spec's
+0. **Prerequisite, discharged in Tasks 1–5, not here:** as each spec-numbered test is written, its
+   pytest node id is recorded beside the number in a comment at the top of its file. Six of the ten
+   mutation rows must-redden tests that Tasks 1 and 2 own — M3 needs 3 and 4, M4 needs 2, M5 needs
+   15, M6 needs 14, M7 needs 14b, and 21/21a are Task 2's — so scoping this to Tasks 3–5 would
+   leave most of the table unmappable. Each of Tasks 1–5 carries the instruction as its own final
+   step. The spec's
    M1–M10 table holds spec numbers (`23, 24`, `14b, 17`, `15, L2`), not node ids, and only the
    person who just wrote them can map one to the other — which is exactly the perishable knowledge
    this task exists to turn into a durable artifact. Without that mapping Task 6 is not runnable by
