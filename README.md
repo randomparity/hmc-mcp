@@ -537,8 +537,11 @@ unbounded when `limit` is omitted.
 
 `hmc_effective_permissions` discloses the selected policy's name, its absolute
 path, every connection token, and every target selector to any MCP client that
-can call it. It carries no credential: no value in the output is read from
-`config.toml`, from an `HMC_*` environment variable, or from the HMC. The policy
+can call it. It carries no credential. One caveat since the generator exists: a
+generated `legacy-equivalent` policy has `config.toml`'s profile **keys** as its
+`connections`, so those names reach the client through this tool — names only, and
+strictly less than `hmc_list_configured_hosts` discloses to the same caller. If your
+profile keys are themselves sensitive, withhold both tools by name. The policy
 path is the exception it is not — it is built from `XDG_CONFIG_HOME` (Linux),
 `%APPDATA%` (Windows), or your home directory, so it names the account, and it
 is disclosed deliberately so an operator can tell which file is in effect. Any

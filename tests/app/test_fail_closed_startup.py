@@ -16,6 +16,7 @@ Spec item -> node id:
   R12  test_the_generated_policy_authorizes_an_omitted_optional_selector
   R13  test_the_generated_policy_authorizes_a_vios_partition_id_call
   R14  test_the_generated_policy_denies_the_arbitrary_command
+  --   test_a_denial_bounds_the_callers_own_token
   R16e test_error_text_survives_square_brackets
   R16e test_error_text_survives_a_closing_tag_shape
   G1   test_the_composer_has_no_default_policy
@@ -255,6 +256,32 @@ def test_the_generated_policy_authorizes_a_vios_partition_id_call():
         TOOL_SECURITY["hmc_add_vscsi_adapter"],
         {"profile": None, "lpar_name_or_uuid": "db-01", "vios_partition_id": 2},
     )
+
+
+def test_a_denial_bounds_the_callers_own_token():
+    """A denial echoes no more of a caller's input than the audit record keeps.
+
+    Not a spec requirement — raised by the security pass on this branch. The same value
+    in the same call is truncated to `audit.MAX_VALUE_LENGTH` on its way into the
+    record, and was unbounded on its way into the message FastMCP renders back to the
+    client. ADR 0041 is what makes that path universal rather than opt-in, which is why
+    it is closed here rather than left to the layer that has always had it.
+    """
+    from hmc_mcp.audit import MAX_VALUE_LENGTH
+    from hmc_mcp.connection_scope import ConnectionScopeError
+
+    authorize = dispatch_authorizer(_legacy_policy())
+    oversized = "z" * (MAX_VALUE_LENGTH * 40)
+
+    with pytest.raises(ConnectionScopeError) as denial:
+        authorize(
+            "hmc_list_systems",
+            TOOL_SECURITY["hmc_list_systems"],
+            {"profile": oversized, "state": None, "limit": None},
+        )
+
+    assert oversized not in str(denial.value)
+    assert "z" * MAX_VALUE_LENGTH in str(denial.value)
 
 
 # ---------------------------------------------------------------------------

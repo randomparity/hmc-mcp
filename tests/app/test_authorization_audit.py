@@ -433,7 +433,6 @@ def test_authorized_leaves_the_connectionless_handlers_unwrapped():
 
     bearing = TOOL_SECURITY["hmc_power_off_lpar"]
     assert authorized("t", bearing, handler, lambda *_: None) is not handler
-    assert authorized("t", bearing, handler, None) is handler
 
 
 def test_the_no_policy_warning_is_retired():

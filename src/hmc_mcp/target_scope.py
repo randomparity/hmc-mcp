@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from .access_policy import ALL_TARGETS_TOKEN, AllTargets
-from .audit import Reason, State
+from .audit import MAX_VALUE_LENGTH, Reason, State
 from .tool_registry import TargetKind, ToolSecurity
 
 
@@ -208,6 +208,17 @@ def denial_reason(
     return "target-not-granted"
 
 
+def _bounded(value: str | _Unresolved) -> str | _Unresolved:
+    """One extracted selector as the denial renders it, bounded.
+
+    ``audit.MAX_VALUE_LENGTH`` rather than a second constant, for the reason
+    ``connection_scope`` uses it: the same caller-supplied value is already truncated on
+    its way into the audit record, and a message that echoes more than the record does
+    is an asymmetry nothing chose. A sentinel passes through — its ``repr`` is fixed.
+    """
+    return value[:MAX_VALUE_LENGTH] if isinstance(value, str) else value
+
+
 def target_denial(
     tool: str,
     policy_name: str,
@@ -269,7 +280,7 @@ def target_denial(
             # them discloses nothing it did not send. repr() also neutralizes any
             # control character a caller puts in one.
             targets=", ".join(
-                f"{kind}={value!r}" for kind, _argument, value in extracted
+                f"{kind}={_bounded(value)!r}" for kind, _argument, value in extracted
             ),
         )
     )

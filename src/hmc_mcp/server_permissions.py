@@ -176,11 +176,11 @@ def describe(
 
 def register_permissions_tool(
     mcp: FastMCP,
-    policy: AccessPolicy | None,
+    policy: AccessPolicy,
     tool_security: Mapping[str, ToolSecurity],
     *,
-    permits: Callable[[str], bool] | None = None,
-    authorize: Authorize | None = None,
+    permits: Callable[[str], bool],
+    authorize: Authorize,
 ) -> None:
     """Register the inspection tool on *mcp*, unless the ceiling withholds it.
 
@@ -200,7 +200,7 @@ def register_permissions_tool(
     in ``src/`` or ``scripts/`` calls ``mount()`` or ``as_proxy()``. A future
     mount would need the two accessors reconciled.
     """
-    if permits is not None and not permits(TOOL_NAME):
+    if not permits(TOOL_NAME):
         return
 
     async def hmc_effective_permissions() -> EffectivePermissions:

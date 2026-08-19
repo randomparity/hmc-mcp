@@ -236,6 +236,17 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   import and registered 129 tools; removing it makes the import cheap and makes any code that
   depended on the import side effect fail loudly rather than quietly get a surface it never asked
   for.
+- **The generated policy is the first whose `connections` come from `config.toml` rather than
+  from an operator's hand, and `hmc_effective_permissions` echoes them to the MCP client.**
+  ADR 0037 accepted that tool's disclosure on the premise that "no value is read from
+  `config.toml`, from an `HMC_*` environment variable, or from the HMC" — true of every policy
+  written by hand, and no longer true of this one. What a client can now read is the deployment's
+  full **profile-key inventory**: names only, no host, user, port, or credential, and strictly
+  less than `hmc_list_configured_hosts` already discloses to the same caller. So the exposure is
+  small and the premise is not; the premise is corrected here rather than the code changed,
+  because narrowing the report would break the ADR 0012 output contract to hide a name the same
+  client can ask for directly. An operator who considers their profile keys sensitive should
+  withhold both tools by name, which ADR 0037 made possible.
 - **The generator reads `config.toml` and writes its profile keys into a second file.** Both live
   in the same platform-native directory under the same ownership, and a profile *key* is not a
   credential, a host, or a user; `config show` already discloses more. But the coupling is new:
