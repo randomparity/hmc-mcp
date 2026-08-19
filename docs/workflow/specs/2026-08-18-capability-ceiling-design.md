@@ -109,7 +109,17 @@ file's own path.
 policy that does not permit `hmc_effective_permissions`, `serve` writes one warning line
 to stderr naming the tool and the policy, then starts normally.
 
-**R19 — Guardrails.** `just verify` passes bare, including the 90.00% coverage floor and
+**R19 — An authored but unselected policy file is visible.** When `--access-policy` is
+*not* passed and `resolve_access_policy_path()` names a file that exists, `serve` writes
+one warning line to stderr saying the file is present, no policy was selected, and no
+ceiling is applied, then starts normally. When the file does not exist, `serve` writes
+nothing — no deployment predating this change can be in that state.
+
+**R20 — Both registration sites apply the same gate.** `register_permissions_tool` takes
+`permits` and applies it itself. `create_mcp` passes the same predicate to it and to every
+domain module, and applies no ceiling check of its own.
+
+**R21 — Guardrails.** `just verify` passes bare, including the 90.00% coverage floor and
 the no-`# pragma: no cover` rule in `tests/test_ci_pipeline.py`.
 
 ## Design
@@ -122,8 +132,10 @@ skips a definition whose name the predicate rejects. `None` means no ceiling, wh
 both the default and the only value any existing caller passes.
 
 `server.create_mcp(policy=None)` derives `permits = None if policy is None else
-policy.permits_tool` once, passes it to every domain module, and then registers the
-inspection tool if the same predicate admits it. Nothing is ever registered and removed.
+policy.permits_tool` once and passes it, unchanged, to every domain module and to
+`register_permissions_tool`. `create_mcp` itself performs no ceiling check: each
+registration site applies the predicate, so there is one contract rather than one gate in
+the loop and a hand-applied copy beside it. Nothing is ever registered and removed.
 
 ### The inspection tool
 
@@ -156,18 +168,25 @@ class EffectivePermissions:
     declared_only_dimensions: tuple[str, ...]
 
 EFFECTIVE_PERMISSIONS_SECURITY: ToolSecurity
-def register_permissions_tool(mcp: FastMCP, policy: AccessPolicy | None) -> None: ...
+def register_permissions_tool(
+    mcp: FastMCP,
+    policy: AccessPolicy | None,
+    tool_security: Mapping[str, ToolSecurity],
+    *,
+    permits: Callable[[str], bool] | None = None,
+) -> None: ...
 ```
 
-`register_permissions_tool` builds an async, argument-free handler named
-`hmc_effective_permissions` that closes over `mcp` and `policy`, and registers it with
-`annotations_for("read")`. The handler reads the live registry through
-`await mcp.list_tools()`, maps each name through `server.TOOL_SECURITY`, and renders the
-policy's compiled grants.
+`register_permissions_tool` returns without registering anything when `permits` rejects
+`hmc_effective_permissions` — the gate lives here, not in `create_mcp`. Otherwise it builds
+an async, argument-free handler named `hmc_effective_permissions` closing over `mcp`,
+`policy`, and `tool_security`, and registers it with `annotations_for("read")`. The handler
+reads the live registry through `await mcp.list_tools()`, maps each name through
+`tool_security`, and renders the policy's compiled grants.
 
-`server_permissions.py` must not import `server.py` (`server.py` imports it). The tool
-index reaches the handler as a second closure argument supplied by `create_mcp`, keeping
-the import direction one-way.
+`server_permissions.py` must not import `server.py` (`server.py` imports it), which is why
+the tool index arrives as a parameter — the same one-way dependency ADR 0036 fixed for
+`load_access_policy`.
 
 Both dimension tuples are derived from whether a policy is selected, not module constants:
 empty with no policy, and the fixed pair above with one. A constant `("tools",)` would
@@ -178,11 +197,16 @@ when #222 and #223 land.
 ### Startup selection
 
 `serve` gains `--access-policy NAME`. It loads the policy before touching the server,
-converts `AccessPolicyError` into the CLI's standard `_fail` path (stderr + exit 1),
-warns when the policy withholds the inspection tool, and passes the compiled object to
+converts `AccessPolicyError` into the CLI's standard `_fail` path (stderr + exit 1), warns
+when the policy withholds the inspection tool, and passes the compiled object to
 `main_stdio` / `main_http` as `access_policy`. Both entry points compose
 `create_mcp(access_policy)` and run that application, passing `permits` on to
 `configure_arbitrary_command_tool`.
+
+With no `--access-policy`, `serve` checks whether `resolve_access_policy_path()` names an
+existing file and warns once if it does — the authored-but-unselected state. The check is a
+single `Path.exists()`; no file is read, so a malformed or unreadable policy cannot make an
+unselected start fail.
 
 ### Errors
 
@@ -193,7 +217,8 @@ warns when the policy withholds the inspection tool, and passes the compiled obj
 | Policy invalid (any ADR 0036 rule) | `AccessPolicyError` with the module's rendered message → exit 1 |
 | Policy permits no tool at all | Impossible: ADR 0036 rule P6 rejects a grant naming no tool, and a policy with zero grants fails the `grants` requirement |
 | Policy withholds `hmc_effective_permissions` | Warning on stderr; server starts |
-| No `--access-policy` | No ceiling; unchanged behaviour |
+| No `--access-policy`, no policy file on disk | No ceiling, no output; unchanged behaviour |
+| No `--access-policy`, policy file present | Warning on stderr; server starts with no ceiling |
 
 ### Testing
 
