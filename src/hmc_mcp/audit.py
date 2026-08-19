@@ -41,6 +41,21 @@ from typing import Any, Final, Literal, get_args
 #: does not parse rather than fail on it.
 AUDIT_LOGGER_NAME: Final = "hmc_mcp.audit"
 
+# Set where the logger is *defined*, not only inside `install_audit_sink` — which
+# `_serve_application` alone calls, so an embedder composing an application with
+# `create_mcp` and serving it over stdio would otherwise keep propagating. Under
+# that transport a `StreamHandler(sys.stdout)` anywhere above this logger puts an
+# audit record into the JSON-RPC stream on every denial, which is the #221 defect
+# class in a module this change introduces (#272).
+#
+# This is narrower than the "install the sink at import" that ADR 0040 rejects:
+# it attaches no handler, writes nothing, and touches one flag on one logger this
+# package reserves for itself. And it costs an unconfigured caller nothing —
+# `Logger.callHandlers` consults `logging.lastResort` whenever the walk finds
+# *zero* handlers, which `propagate` does not affect, so a CLI user still sees an
+# ownership override on stderr exactly as before.
+logging.getLogger(AUDIT_LOGGER_NAME).propagate = False
+
 #: Every caller-supplied value is truncated to this, with no marker. In band a
 #: marker is forgeable; out of band it is a field on every record for something a
 #: reader can already measure, since a truncated value is exactly this long.

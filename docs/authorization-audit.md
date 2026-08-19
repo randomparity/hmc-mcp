@@ -151,8 +151,11 @@ than the value's authority everywhere.
 Records go to the `hmc_mcp.audit` logger. Denials and ownership overrides are
 `WARNING`; permits are `INFO`.
 
-`hmc-mcp serve` attaches a handler writing to **stderr** and sets `propagate = False`,
-so no ancestor handler receives audit records. To route them elsewhere, attach your own
+Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
+audit records — including on the in-process path, where an embedder composes an
+application itself and never calls the installer. `hmc-mcp serve` additionally attaches
+a handler writing to **stderr**. With neither a handler nor propagation, a `WARNING`
+record still reaches `logging.lastResort` on stderr, which is what a CLI user sees. To route them elsewhere, attach your own
 handler to `hmc_mcp.audit` **before** calling `main_stdio` / `main_http` — the server
 defers to a handler that is already there and will not add a second.
 

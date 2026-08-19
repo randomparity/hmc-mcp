@@ -276,7 +276,9 @@ describes this record's provenance, not the value's authority everywhere.
 neither the in-process composer (`create_mcp`) nor any library or CLI caller install global
 logging state. It:
 
-- sets `propagate = False` on the `hmc_mcp.audit` logger, **always**;
+- re-asserts `propagate = False` on the `hmc_mcp.audit` logger, **always** — the module
+  already set it where the logger is defined (below), so this only takes it back from an
+  operator who deliberately turned it on;
 - attaches a handler writing to `sys.stderr`, **only** when that logger carries no handler
   already;
 - sets the logger's level to `INFO`, **only** when its level is `NOTSET`.
@@ -290,6 +292,16 @@ them nowhere to set it from.
 `propagate = False` is unconditional because propagation to an unknown ancestor handler is the
 stdio hazard itself: an operator or a dependency that puts a `StreamHandler(sys.stdout)` on the
 root logger would, without it, corrupt the protocol stream once per authorized call.
+
+**The flag is set at module import, not only here.** `install_audit_sink` is called by
+`_serve_application` alone, so an embedder that composes an application with `create_mcp` and
+serves it over stdio itself would keep propagating — a route to the protocol stream in a module
+this record introduces (#272). Setting it where the logger is defined closes that, and is
+narrower than the "install the sink at import" rejected below: it attaches no handler, writes
+nothing, and touches one flag on a logger this package already reserves for itself. It costs an
+unconfigured caller nothing, because `Logger.callHandlers` reaches `logging.lastResort` whenever
+the walk finds *zero* handlers — a condition `propagate` does not affect — so a CLI user still
+sees an ownership override on stderr exactly as before.
 `hmc_mcp.audit` is the documented attachment point, and an operator routing audit elsewhere
 attaches a handler there. Two constraints come with that, both stated because nothing enforces
 them. The logger is **reserved for `audit`**: that module is the only one in the package that
@@ -369,9 +381,11 @@ is #270.
 - A server whose stderr is absent, broken, or closed authorizes calls it does not record. That is
   the deliberate trade named in the Decision's total-emission rule. A destination that neither
   raises nor returns is a different case; see the residuals below.
-- Because `propagate` is set unconditionally, an operator who had attached an audit handler to the
-  root logger before this change stops receiving records and must attach to `hmc_mcp.audit`. There
-  is no prior release in which audit records existed, so nothing in the field breaks.
+- Because `propagate` is set unconditionally, and from import, an operator who collected audit
+  output off the root logger must attach to `hmc_mcp.audit` instead. No prior release had audit
+  records on that logger — the ownership override was on `hmc_mcp.operations_lpar` — so nothing in
+  the field breaks, and the one case that could have (a CLI user with no handler at all) is
+  covered by `lastResort`.
 
 ## Residuals
 

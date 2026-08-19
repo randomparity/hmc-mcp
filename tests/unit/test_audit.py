@@ -346,6 +346,43 @@ def test_a_broken_or_closed_stream_is_survived(monkeypatch, error):
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
 
 
+def test_the_module_closes_propagation_at_import(tmp_path):
+    """#272. Asserted in a *fresh interpreter*, because the autouse isolation
+    fixture resets `propagate` to True for every test in this session — so an
+    in-process assertion would read the fixture's value, not the shipped one."""
+    import subprocess
+
+    probe = (
+        "import logging, hmc_mcp.audit as a; "
+        "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "False", (
+        "importing hmc_mcp.audit must close the route to an ancestor handler, "
+        "which under stdio may be pointed at the JSON-RPC stream"
+    )
+
+
+def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
+    """The other half of #272's fix: closing propagation must not cost a CLI user
+    the record. `callHandlers` consults `lastResort` when the walk finds zero
+    handlers, which `propagate` does not affect."""
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.handlers.clear()
+    logger.propagate = False
+    saved = list(logging.root.handlers)
+    logging.root.handlers.clear()
+    try:
+        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        captured = capsys.readouterr()
+    finally:
+        logging.root.handlers[:] = saved
+    assert captured.out == ""
+    assert json.loads(captured.err.strip())["event"] == "ownership-override"
+
+
 def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
     """A stdlib handler never raises into its caller, and this is an attachment
     point the operator documentation invites others to use."""
