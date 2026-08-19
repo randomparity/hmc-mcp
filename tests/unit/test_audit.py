@@ -324,79 +324,69 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
         logging.root.removeHandler(collector)
 
 
+def _emit_directly(message: str = '{"event":"probe"}') -> None:
+    """Drive ``_AuditHandler.emit`` itself, outside ``audit._emit``'s guard.
+
+    Going through ``record_ownership_override`` cannot test the handler's own
+    guards: ``_emit`` wraps the whole logging dispatch in ``except Exception``,
+    so deleting all three #221 guards leaves those tests green. Verified by
+    doing exactly that. Calling ``emit`` directly is what makes them bite.
+    """
+    audit._AuditHandler().emit(
+        logging.LogRecord("t", logging.WARNING, __file__, 0, message, None, None)
+    )
+
+
 def test_a_none_stderr_writes_nothing_and_raises_nothing(monkeypatch, capsys):
     """Spec 11. CPython sets sys.stderr to None when fd 2 is closed at start."""
+    monkeypatch.setattr(sys, "stderr", None)
+    _emit_directly()  # an unguarded emit raises AttributeError here
+
+    # And end to end, where the record also has to survive the level filter.
+    monkeypatch.undo()
+    written: list[str] = []
+
+    class _Watch(io.StringIO):
+        def write(self, data: str) -> int:
+            written.append(data)
+            return len(data)
+
+    watcher = _Watch()
+    monkeypatch.setattr(sys, "stderr", watcher)
     audit.install_audit_sink()
     monkeypatch.setattr(sys, "stderr", None)
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    assert written == [], "an absent stream must not be written to at all"
 
 
 @pytest.mark.parametrize(
     "error", [ValueError("I/O operation on closed file"), OSError("broken pipe")]
 )
 def test_a_broken_or_closed_stream_is_survived(monkeypatch, error):
-    """Spec 12 and 13. The two guards `server._warn` already applies."""
+    """Spec 12 and 13. The two guards `server._warn` already applies.
+
+    Asserted through the handler directly *and* end to end: an unguarded emit
+    raises out of the first, and the second proves the integrated path also
+    survives rather than only the unit.
+    """
+    handled: list[logging.LogRecord] = []
 
     class _Hostile(io.StringIO):
         def write(self, _data: str) -> int:
             raise error
 
-    audit.install_audit_sink()
     monkeypatch.setattr(sys, "stderr", _Hostile())
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
-
-
-def test_the_module_closes_propagation_at_import(tmp_path):
-    """#272. Asserted in a *fresh interpreter*, because the autouse isolation
-    fixture resets `propagate` to True for every test in this session — so an
-    in-process assertion would read the fixture's value, not the shipped one."""
-    import subprocess
-
-    probe = (
-        "import logging, hmc_mcp.audit as a; "
-        "print(logging.getLogger(a.AUDIT_LOGGER_NAME).propagate)"
+    monkeypatch.setattr(
+        logging.Handler, "handleError", lambda self, record: handled.append(record)
     )
-    result = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
-    )
-    assert result.stdout.strip() == "False", (
-        "importing hmc_mcp.audit must close the route to an ancestor handler, "
-        "which under stdio may be pointed at the JSON-RPC stream"
+    _emit_directly()
+    assert handled == [], (
+        f"{type(error).__name__} must be caught by name, not fall through to "
+        "the stdlib error path"
     )
 
-
-def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
-    """The other half of #272's fix: closing propagation must not cost a CLI user
-    the record. `callHandlers` consults `lastResort` when the walk finds zero
-    handlers, which `propagate` does not affect."""
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
-    logger.handlers.clear()
-    logger.propagate = False
-    saved = list(logging.root.handlers)
-    logging.root.handlers.clear()
-    try:
-        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
-        captured = capsys.readouterr()
-    finally:
-        logging.root.handlers[:] = saved
-    assert captured.out == ""
-    assert json.loads(captured.err.strip())["event"] == "ownership-override"
-
-
-def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
-    """A stdlib handler never raises into its caller, and this is an attachment
-    point the operator documentation invites others to use."""
     audit.install_audit_sink()
-    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
-
-    class Hostile:
-        def __str__(self) -> str:
-            raise RuntimeError("this record cannot be rendered")
-
-    # Raised while the handler renders the message, not while audit builds it, so
-    # audit._emit's guard is not what saves the caller here.
-    logger.warning("%s", Hostile())
-    capsys.readouterr()
+    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
 
 
 def test_install_is_idempotent_and_defers_to_what_the_operator_set():

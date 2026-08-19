@@ -382,10 +382,15 @@ is #270.
   the deliberate trade named in the Decision's total-emission rule. A destination that neither
   raises nor returns is a different case; see the residuals below.
 - Because `propagate` is set unconditionally, and from import, an operator who collected audit
-  output off the root logger must attach to `hmc_mcp.audit` instead. No prior release had audit
-  records on that logger — the ownership override was on `hmc_mcp.operations_lpar` — so nothing in
-  the field breaks, and the one case that could have (a CLI user with no handler at all) is
-  covered by `lastResort`.
+  output off the root logger must attach to `hmc_mcp.audit` instead. **One case in the field does
+  change, and it is the ownership override.** It previously logged on `hmc_mcp.operations_lpar`,
+  which propagates through `hmc_mcp` to the root, so a process that had configured root logging —
+  a CLI wrapper, or an ADR 0029 embedder that called `basicConfig` — received it at whatever
+  destination they had set. It now reaches `logging.lastResort` on stderr instead. The record is
+  not lost, but its destination is, and reattaching to `hmc_mcp.audit` is what restores it. That is
+  the price of closing the propagation route, and it is worth naming rather than filing under "no
+  prior release had audit records", which is true of the `authorization` record and not of this
+  one.
 
 ## Residuals
 
