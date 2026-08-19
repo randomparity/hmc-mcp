@@ -370,7 +370,19 @@ def config_init_access_policy(
     # path is the operator's own, and a bracketed segment would be silently deleted
     # while a `[/x]`-shaped one would raise MarkupError in place of the success line.
     console.print(escape(str(target)), soft_wrap=True)
-    err_console.print(
-        "Review it, then start the server with: hmc-mcp serve --access-policy "
-        f"{LEGACY_POLICY_NAME}"
-    )
+    if output is None:
+        err_console.print(
+            "Review it, then start the server with: hmc-mcp serve --access-policy "
+            f"{LEGACY_POLICY_NAME}"
+        )
+    else:
+        # `--access-policy` selects a NAME inside the platform-native file, and no
+        # option takes a path — so this document is not one `serve` can be pointed at.
+        # Printing the activation line here would end the regenerate-and-diff flow by
+        # telling the operator to start the server on the *old* deployed policy, which
+        # would start cleanly and report the same policy name.
+        err_console.print(
+            "Note: serve reads only the platform-native access-policy.toml, so this "
+            "file is not the one it will load. Diff it against the deployed policy and "
+            "merge by hand."
+        )

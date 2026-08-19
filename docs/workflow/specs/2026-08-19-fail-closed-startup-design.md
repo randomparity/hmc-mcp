@@ -34,9 +34,18 @@ request-supplied scoped grant (epic #218 requirement 12 — the extension point 
 in ADR 0041 and built by nothing here); and the decision procedures of ADR 0038 and
 ADR 0039, which this entry uses unchanged.
 
-Deliberately unchanged: `tool_registry.register_tools` and `tool_registry.authorized` keep
-their optional `permits` and `authorize` parameters, and `server_permissions.describe`
-keeps its `AccessPolicy | None` parameter. ADR 0041 records why.
+Also in scope, added during review: every registration site requires both gates —
+`tool_registry.register_tools`, `tool_registry.authorized`,
+`server_permissions.register_permissions_tool`, and
+`server_command.configure_arbitrary_command_tool` lose their `None` defaults. The last of
+those runs outside `create_mcp`, so a mandatory policy at the composer did not reach it,
+and the fail-open survived at the highest-risk tool in the package. Denial messages in
+`connection_scope` and `target_scope` also bound the caller's own value to
+`audit.MAX_VALUE_LENGTH`; the decision procedures there are untouched.
+
+Deliberately unchanged: `server_permissions.describe` keeps its `AccessPolicy | None`
+parameter — it is documented as binding a direct caller, and narrowing it would change the
+ADR 0012 output contract of a public tool. ADR 0041 records why.
 
 ## Requirements
 

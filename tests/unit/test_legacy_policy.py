@@ -148,12 +148,17 @@ def test_connections_are_the_default_alone_without_a_config_file(steered_config)
 
 def test_connections_exclude_nicknames(steered_config):
     """R8: ADR 0030 resolves a nickname away before ADR 0038 compares it."""
+    # `nicknames` at TOP level. Written inside `[profiles.lab]` it is a key of that
+    # profile, `list_profiles_and_nicknames` returns an empty nickname table, and the
+    # assertion below holds for every implementation — including one that unions the
+    # nicknames in, which is exactly what this test claims to forbid.
     _write_config(
         steered_config,
-        '[profiles.lab]\nhost = "a"\nnicknames = { "big-iron" = "lab" }\n',
+        '[profiles.lab]\nhost = "a"\n\n[nicknames]\nbig-iron = "lab"\n',
     )
 
     assert legacy_connections() == ("<default>", "lab")
+    assert "big-iron" not in legacy_connections()
 
 
 def test_an_unreadable_config_raises_config_error(steered_config):

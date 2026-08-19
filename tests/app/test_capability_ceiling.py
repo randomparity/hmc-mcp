@@ -385,7 +385,16 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
         served["app"] = self
         served["names"] = {tool.name for tool in asyncio.run(self.list_tools())}
 
-    with patch.object(FastMCP, "run", _capture):
+    served_apps = []
+
+    def _capture_twice(self, **_kwargs):
+        _capture(self, **_kwargs)
+        served_apps.append(self)
+
+    with patch.object(FastMCP, "run", _capture_twice):
+        getattr(server_module, entry_point)(
+            every_effect, enable_arbitrary_command=True
+        )
         getattr(server_module, entry_point)(
             every_effect, enable_arbitrary_command=True
         )
@@ -393,9 +402,12 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
     # R9 is object identity, not set difference: an all-three-effects grant
     # resolves to every tool but hmc_run_command, which create_mcp never
     # registers anyway, so the two name sets are deliberately equal here.
-    # Freshly composed per call: there is no module-level application left to be, so
-    # the claim is that each entry point built its own rather than sharing one.
-    assert served["app"] is not create_mcp(every_effect)
+    # Two invocations, two applications. Comparing against a freshly-composed one
+    # instead would pass unconditionally — `create_mcp` returns a new object every
+    # call — so it could not fail even for an entry point that cached and reused one,
+    # which is the property this line exists to check.
+    assert len(served_apps) == 2
+    assert served_apps[0] is not served_apps[1]
     assert "hmc_run_command" not in served["names"]
     assert "hmc_delete_lpar" in served["names"]
 

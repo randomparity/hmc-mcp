@@ -132,6 +132,24 @@ CI run is that the grant compiles and composes; it never serializes TOML, so a r
 would pass smoke untouched. What proves the emitted document *loads* is the generator's own
 pre-write compile, and the render round-trip test that exercises it.
 
+**Every registration site requires both gates.** `tool_registry.register_tools`,
+`tool_registry.authorized`, `server_permissions.register_permissions_tool`, and
+`server_command.configure_arbitrary_command_tool` all lose their `None` defaults. A mandatory
+policy at the composer does not by itself reach them: `configure_arbitrary_command_tool` runs
+*outside* `create_mcp`, and while its gates defaulted to `None` a call on an application
+composed from a read-only policy registered `hmc_run_command` with no ceiling and no
+authorizer — the fail-open this record claims to remove, surviving at the highest-risk tool in
+the package. `register_tools` is the same shape at the bulk site, where omitting the gates
+registers a module's entire tool set unbounded and without error.
+
+This record first rejected the narrowing, on the ground that `None` still described the
+mechanism accurately and that ADR 0038 had priced it at a dozen call sites. Both halves stopped
+holding: `None` describes a composition that no longer exists, and every non-test caller now
+passes both gates, so the price is paid already. `authorized`'s early return survives through
+its other disjunct alone — a tool declaring no connection argument. What the earlier reasoning
+got right is narrower than it claimed: the *policy object* still travels as callables, so
+`access_policy` never imports `tool_registry` back.
+
 **Short-lived scoped grants remain a future extension point and nothing more.** The seam is
 `server._gates`: a future grant issuer would compose a second `Authorize` alongside
 `dispatch_authorizer` and widen a decision for a bounded time, under a separately authenticated
@@ -339,25 +357,6 @@ TOML basic-string set, which is a dozen lines and fully covered by the round-tri
 policy file that exists is a policy file that can be selected by name without review, which
 inverts "generation does not activate it" — and because the correct connection list is the
 deployment's own, which a packaged file cannot know.
-
-**`server_command.configure_arbitrary_command_tool` is the exception, and its gates are
-required.** It is the one registration site that runs *outside* `create_mcp`, so a mandatory
-policy at the composer does not reach it: while its `permits` and `authorize` defaulted to
-`None`, calling it on an application composed from a read-only policy registered
-`hmc_run_command` with no ceiling check and no authorizer — the fail-open this record claims
-to remove, surviving at the highest-risk tool in the package. ADR 0038 left them optional on
-the cost of updating a dozen call sites; every non-test caller now passes both, so the cost
-is gone and the claim can be made true rather than narrowed.
-
-**Narrow `tool_registry.register_tools` and `tool_registry.authorized` to require the gates.**
-Their `None` arms become unreachable from production once `create_mcp` requires a policy, and
-removing a dead branch is ordinarily right. Rejected because they are the mechanism ADR 0037 and
-ADR 0038 defined, where `None` still describes the function accurately, and because
-`authorized`'s early return stays live through its other disjunct — a tool declaring no
-connection argument. The residual is named rather than closed: the mechanism can still register
-an unwrapped tool if a future caller passes `None`, and what prevents it is that `create_mcp` is
-the only composer, checked by the ADR 0038 registry assertion in
-`tests/app/test_connection_authorization.py`.
 
 **Block this change on #269.** Considered seriously, because this record is what makes #269
 reachable everywhere. Rejected because #269's mechanism is unchanged here — the same handler,
