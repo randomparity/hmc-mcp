@@ -16,7 +16,7 @@ import pytest
 from hmc_mcp.documents import LparResources
 from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import hmc_provision_lpar
-from conftest import JOB_ENTRY
+from conftest import JOB_ENTRY, assert_no_mutating_requests
 
 
 @pytest.fixture(autouse=True)
@@ -548,3 +548,28 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     assert "no UUID" in result.steps[0]["result"]
     assert result.ownership_stamped is None
     assert "no LPAR body" in result.warnings[0]
+
+
+def test_provision_lpar_dry_run_issues_no_mutating_request(monkeypatch, mock_hmc):
+    """R18: proven at the transport, not per registered route.
+
+    `test_provision_lpar_dry_run_validates_only` above asserts one route it
+    registered was not taken. That stays green if the handler mutates through a
+    route the test never named, which is the failure mode epic #218 requirement 5
+    means by "provably performs no mutation … rather than inferred".
+
+    Here every request the call actually made is read back, so any write on this
+    path fails whatever URL it targets.
+    """
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+
+    result = hmc_provision_lpar(**_provision_args(dry_run=True))
+
+    assert result.dry_run is True
+    requests = assert_no_mutating_requests(mock_hmc)
+    # Reads do happen, and are the classification: the name-uniqueness, VLAN, and
+    # volume-group precondition checks, plus the system resolve. Asserted
+    # non-zero so a future change that skips the handler entirely — and therefore
+    # trivially "mutates nothing" — cannot pass this test.
+    assert requests > 0

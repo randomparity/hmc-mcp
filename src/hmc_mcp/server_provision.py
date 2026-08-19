@@ -18,7 +18,18 @@ from .operations_provision import (
 tool, register_tools, tool_security = tool_module()
 
 
-@tool(effect="mutate", operation="provision.lpar", target_kind="managed_system")
+# Not exhaustive: the VIOS this call mutates is named by `storage.vios_uuid` and
+# `network.vios_partition_id`, one level below the signature, so `build_targets`
+# cannot see them and no policy `targets` table can bound them. The mapping is
+# POSTed to the global /VirtualIOServer/{uuid} URI, so nothing constrains that
+# VIOS to `system_name_or_uuid` either. ADR 0039 grants this tool only under
+# `targets = "all-targets"`.
+@tool(
+    effect="mutate",
+    operation="provision.lpar",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_provision_lpar(
     system_name_or_uuid: str,
     name: str,

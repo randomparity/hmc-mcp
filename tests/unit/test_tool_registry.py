@@ -288,3 +288,80 @@ def test_validate_security_accepts_a_console_declaration_with_no_targets():
         ToolSecurity(effect="read", operation="console.info", target_kind="console"),
         handler,
     )
+
+
+# ---------------------------------------------------------------------------
+# R7 (#223) — exhaustive_targets: can a policy `targets` table bound this tool?
+# ---------------------------------------------------------------------------
+
+
+def test_a_decorated_tool_with_selectors_is_exhaustive_by_default():
+    tool, _register, security = tool_module()
+
+    @tool(effect="destructive", operation="lpar.delete", target_kind="lpar")
+    def delete_lpar(lpar_name_or_uuid: str, profile: str | None = None) -> str:
+        return "ok"
+
+    assert security()["delete_lpar"].exhaustive_targets is True
+
+
+def test_a_selector_less_tool_is_never_exhaustive():
+    """A `targets` table has nothing to bind on, so no default can make it True.
+
+    This is the fail-open ADR 0039 refuses: without it, a grant reading
+    `targets = {lpar = ["scratch-01"]}` would still authorize a console-wide
+    destructive tool because the table never gets to say no.
+    """
+    tool, _register, security = tool_module()
+
+    @tool(effect="destructive", operation="ldap.remove", target_kind="console")
+    def remove_ldap(resource: str, profile: str | None = None) -> str:
+        return "ok"
+
+    assert security()["remove_ldap"].targets == ()
+    assert security()["remove_ldap"].exhaustive_targets is False
+
+
+def test_a_composite_may_declare_itself_unbounded_despite_having_selectors():
+    tool, _register, security = tool_module()
+
+    @tool(
+        effect="mutate",
+        operation="provision.lpar",
+        target_kind="managed_system",
+        exhaustive_targets=False,
+    )
+    def provision(system_name_or_uuid: str, profile: str | None = None) -> str:
+        return "ok"
+
+    assert security()["provision"].targets != ()
+    assert security()["provision"].exhaustive_targets is False
+
+
+def test_a_directly_constructed_record_is_not_exhaustive():
+    """The stored default is the fail-closed one, for records built by hand.
+
+    `HMC_RUN_COMMAND_SECURITY` and `EFFECTIVE_PERMISSIONS_SECURITY` are built
+    this way; so is every record a test writes. Only the decorator, which has
+    inspected a signature, may raise it.
+    """
+    assert (
+        ToolSecurity(
+            effect="mutate", operation="a.b", target_kind="console"
+        ).exhaustive_targets
+        is False
+    )
+
+
+def test_exhaustive_targets_without_a_selector_is_rejected():
+    def handler(profile: str | None = None) -> str:
+        return "ok"
+
+    security = ToolSecurity(
+        effect="mutate",
+        operation="a.b",
+        target_kind="console",
+        exhaustive_targets=True,
+    )
+    with pytest.raises(ValueError, match="exhaustive_targets"):
+        validate_security(security, handler)

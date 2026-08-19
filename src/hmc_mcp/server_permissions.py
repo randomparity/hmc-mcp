@@ -34,20 +34,32 @@ TOOL_NAME = "hmc_effective_permissions"
 # thing to break when the surface changes.
 UNKNOWN = "unknown"
 
-# The dimensions of an access policy this server evaluates today, and those it
-# only records. #223 moves "targets" across; ADR 0038 moved "connections".
-ENFORCED_DIMENSIONS: tuple[str, ...] = ("tools", "connections")
-DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ("targets",)
+# The dimensions of an access policy this server evaluates. ADR 0037 enforced
+# "tools", ADR 0038 "connections", and ADR 0039 "targets" — so nothing is
+# declared-only any more. The empty tuple stays rather than being deleted: it is
+# the field a client reads to learn what a policy records but does not apply, and
+# removing it would make "no such field" and "nothing to report" indistinguishable.
+ENFORCED_DIMENSIONS: tuple[str, ...] = ("tools", "connections", "targets")
+DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ToolPermission:
-    """One registered tool and its authoritative classification."""
+    """One registered tool and its authoritative classification.
+
+    ``exhaustive_targets`` is false when a policy ``targets`` table cannot bound
+    the tool, so only ``all-targets`` grants it (ADR 0039). Reported because it
+    is otherwise invisible: the ceiling is per-tool and cannot see targets, so a
+    table-only policy still registers and advertises such a tool while denying
+    every call to it. Without this field an operator meets that as an
+    unexplained denial.
+    """
 
     name: str
     effect: str
     operation: str
     target_kind: str
+    exhaustive_targets: bool
 
 
 @dataclass(frozen=True)
@@ -91,9 +103,15 @@ def _permission(name: str, tool_security: Mapping[str, ToolSecurity]) -> ToolPer
     """Classify one registered name, tolerating a name outside the index."""
     security = tool_security.get(name)
     if security is None:
-        return ToolPermission(name, UNKNOWN, UNKNOWN, UNKNOWN)
+        # False is the honest value for a name the index does not carry: nothing
+        # establishes that a table could bound it.
+        return ToolPermission(name, UNKNOWN, UNKNOWN, UNKNOWN, False)
     return ToolPermission(
-        name, security.effect, security.operation, security.target_kind
+        name,
+        security.effect,
+        security.operation,
+        security.target_kind,
+        security.exhaustive_targets,
     )
 
 
@@ -190,10 +208,11 @@ def register_permissions_tool(
 
         Returns the tools this server exposes with their effect classes, the
         selected access policy's name and file, and the connection and target
-        constraints each of its grants declares. The tool and connection
-        dimensions are enforced; targets are not yet:
-        `enforced_dimensions` and `declared_only_dimensions` say which is which.
-        Contains no credentials.
+        constraints each of its grants declares. All three dimensions — tools,
+        connections, and targets — are enforced; `enforced_dimensions` and
+        `declared_only_dimensions` say which is which. A tool reporting
+        `exhaustive_targets: false` can only be granted by a grant whose targets
+        are the `all-targets` sentinel. Contains no credentials.
         """
         names = sorted(tool.name for tool in await mcp.local_provider.list_tools())
         return describe(names, policy, tool_security)

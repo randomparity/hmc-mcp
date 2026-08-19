@@ -66,6 +66,40 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "resource_name_or_uuid": "metric_resource",
 })
 
+# Public argument names that carry the identity of an HMC-side resource no
+# allowlist can pin down. A tool accepting one cannot declare
+# `exhaustive_targets=True`, so a policy `targets` table never grants it and only
+# `all-targets` does.
+#
+# - `file_path` names a file on the HMC's own filesystem, which no TargetKind
+#   expresses — ADR 0036 placed it outside every grant.
+# - `cmd` is free-form console command text.
+# - `vios_partition_id` is a *slot number within one managed system*, reused
+#   across every system in a fleet, so an allowlist entry of "2" names a
+#   different VIOS on each of them; unlike a partition name it has no UUID form
+#   to fall back on, so there is no way to write it precisely.
+# - `job_href` is a caller-supplied URI whose *path* replaces the `job_uuid`
+#   selector entirely (`client.get_job`), so the value authorized and the value
+#   fetched are different values.
+#
+# This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
+# is in both, deliberately. It is a declared selector — so it is extracted and
+# compared under `all-targets`, which is what keeps three live tools working —
+# *and* an identity no table can bound. The two tables answer different
+# questions about the same name and must not be merged.
+#
+# They are kept adjacent for that reason: together they are one piece of
+# knowledge — which public argument names carry which identity — and a name that
+# moved between them while they lived in different files would drift silently.
+# No runtime path reads this one; the boolean it justifies is what the authorizer
+# reads. The ADR 0039 guardrail in tests/app/test_tool_security.py enforces it.
+UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({
+    "cmd",
+    "file_path",
+    "job_href",
+    "vios_partition_id",
+})
+
 # (readOnlyHint, destructiveHint) per effect class, held as immutable values
 # rather than shared ToolAnnotations instances: the model is mutable, so a shared
 # instance would let one in-place edit re-flag every tool of that class. `mutate`
@@ -90,13 +124,27 @@ class TargetSelector:
 
 @dataclass(frozen=True)
 class ToolSecurity:
-    """The authoritative security classification of one MCP tool."""
+    """The authoritative security classification of one MCP tool.
+
+    ``exhaustive_targets`` answers one question for the access policy: do the
+    declared selectors name every resource this tool acts on, so a ``targets``
+    table can bound the call? When false, only the ``all-targets`` sentinel can
+    grant the tool — a table has either nothing to bind on (no selectors) or
+    something it cannot see (a composite reaching an identity nested below the
+    signature). See docs/adr/0039-dispatch-time-target-scope.md.
+
+    Its default is the fail-closed value, so a record built by hand — as
+    ``server_command`` and ``server_permissions`` build theirs — is safe without
+    naming the field. Only :func:`tool_module`'s decorator, which has inspected a
+    signature and found selectors, raises it.
+    """
 
     effect: Effect
     operation: str
     target_kind: TargetKind
     targets: tuple[TargetSelector, ...] = ()
     connection_argument: str | None = "profile"
+    exhaustive_targets: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,6 +255,11 @@ def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> No
     kinds = {security.target_kind, *(target.kind for target in security.targets)}
     if unknown := sorted(kinds - TARGET_KINDS):
         raise ValueError(f"{name}: unknown target_kind {unknown}")
+    if security.exhaustive_targets and not security.targets:
+        raise ValueError(
+            f"{name}: exhaustive_targets requires at least one target selector; a "
+            "policy targets table would have nothing to bind on"
+        )
 
     _validate_arguments(security, inspect.signature(handler).parameters, name)
 
@@ -256,6 +309,7 @@ def tool_module():
         target_kind: TargetKind,
         extra_targets: Iterable[tuple[TargetKind, str]] = (),
         connection_argument: str | None = "profile",
+        exhaustive_targets: bool = True,
     ):
         def collect(fn: Callable[..., Any]):
             name = getattr(fn, "__name__", "<handler>")
@@ -271,7 +325,14 @@ def tool_module():
                 raise ValueError(
                     f"{name}: cannot inspect signature: {error!r}"
                 ) from error
-            security = replace(security, targets=targets)
+            # A tool that declares no selector can never be exhaustive, whatever
+            # it claims: the conjunction is what makes the selector-less case a
+            # degenerate instance of the composite rule rather than a second one.
+            security = replace(
+                security,
+                targets=targets,
+                exhaustive_targets=exhaustive_targets and bool(targets),
+            )
             validate_security(security, fn)
             definitions.append(ToolDefinition(name, fn, security))
             return fn

@@ -20,7 +20,16 @@ from .ssh_commands import (
 tool, register_tools, tool_security = tool_module()
 
 
-@tool(effect="destructive", operation="lpar_profile.backup", target_kind="managed_system")
+# Not exhaustive: `file_path` names a file on the HMC's own filesystem, which no
+# TargetKind can express, and `force=True` overwrites whatever is already there.
+# ADR 0036 placed `file_path` outside every grant; ADR 0039 makes that
+# enforceable by granting this tool only under `targets = "all-targets"`.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.backup",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_backup_lpar_profiles(
     system_name_or_uuid: str,
     file_path: str,
@@ -63,7 +72,15 @@ def hmc_backup_lpar_profiles(
     )
 
 
-@tool(effect="destructive", operation="lpar_profile.restore", target_kind="managed_system")
+# Not exhaustive, for the same reason as its backup sibling: `file_path` is an
+# HMC-side path no TargetKind names, and the restore rewrites the profiles of
+# every partition on the system from whatever that file contains.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.restore",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_restore_lpar_profiles(
     system_name_or_uuid: str, file_path: str, profile: str | None = None
 ) -> str:

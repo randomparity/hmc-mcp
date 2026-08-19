@@ -45,7 +45,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, resolve_access_policy_path
-from .connection_scope import connection_authorizer
+from .dispatch_scope import dispatch_authorizer
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -274,7 +274,7 @@ def _gates(
     """
     if policy is None:
         return None, None
-    return policy.permits_tool, connection_authorizer(policy)
+    return policy.permits_tool, dispatch_authorizer(policy)
 
 
 def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:

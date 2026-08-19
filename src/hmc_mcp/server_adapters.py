@@ -89,7 +89,16 @@ def hmc_add_network_adapter(
     return _run(operation)
 
 
-@tool(effect="mutate", operation="adapter.add_vscsi", target_kind="lpar")
+# Not exhaustive: `vios_partition_id` is a slot number within one managed
+# system, reused on every system in a fleet, so a `vios` allowlist entry can
+# never name the VIOS this call actually pairs to. It has no UUID form to fall
+# back on, so ADR 0039 grants this tool only under `targets = "all-targets"`.
+@tool(
+    effect="mutate",
+    operation="adapter.add_vscsi",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_add_vscsi_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,
@@ -123,7 +132,16 @@ def hmc_add_vscsi_adapter(
     return _run(operation)
 
 
-@tool(effect="mutate", operation="adapter.add_vfc", target_kind="lpar")
+# Not exhaustive: `vios_partition_id` is a slot number within one managed
+# system, reused on every system in a fleet, so a `vios` allowlist entry can
+# never name the VIOS this call actually pairs to. It has no UUID form to fall
+# back on, so ADR 0039 grants this tool only under `targets = "all-targets"`.
+@tool(
+    effect="mutate",
+    operation="adapter.add_vfc",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_add_vfc_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,

@@ -24,7 +24,18 @@ def _is_unsupported_job_listing(exc: HMCError) -> bool:
 tool, register_tools, tool_security = tool_module()
 
 
-@tool(effect="read", operation="job.get", target_kind="job")
+# Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
+# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# job identity while the server reads another, so ADR 0039 grants this tool only
+# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
+# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+@tool(
+    effect="read",
+    operation="job.get",
+    target_kind="job",
+    exhaustive_targets=False,
+)
 def hmc_get_job(
     job_uuid: str,
     job_href: str | None = None,
@@ -78,7 +89,18 @@ def hmc_list_recent_jobs(
         ) from exc
 
 
-@tool(effect="read", operation="job.wait", target_kind="job")
+# Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
+# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# job identity while the server reads another, so ADR 0039 grants this tool only
+# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
+# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+@tool(
+    effect="read",
+    operation="job.wait",
+    target_kind="job",
+    exhaustive_targets=False,
+)
 def hmc_wait_for_job(
     job_uuid: str,
     timeout_seconds: int = 300,

@@ -102,3 +102,51 @@ def mock_hmc():
         )
         router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
         yield router
+
+
+# The session lifecycle is the only non-GET traffic a read-only call may produce.
+_SESSION_PATHS = frozenset({"/rest/api/web/Logon"})
+
+
+def assert_no_mutating_requests(router) -> int:
+    """Assert *router* recorded no HMC mutation, and return the request count.
+
+    Epic #218 requirement 5 asks that a ``dry_run=True`` path "provably performs
+    no mutation" be *classified and tested explicitly rather than inferred from
+    client claims". A per-route ``assert not route.called`` cannot do that: it
+    proves the one route a test happened to register was not taken, and stays
+    green when the handler mutates through a route nobody registered.
+
+    This reads every request the call actually made, so a new write on the
+    dry-run path fails whether or not the test anticipated it. ADR 0039 records
+    what remains on those paths and is deliberately not a mutation: reads, and —
+    on ``hmc_decommission_lpar`` — an SSH ``lssyscfg`` and a local audit line.
+    """
+    offending = [
+        f"{call.request.method} {call.request.url.path}"
+        for call in router.calls
+        if call.request.method != "GET"
+        and call.request.url.path not in _SESSION_PATHS
+    ]
+    assert not offending, f"a dry-run path mutated the HMC: {offending}"
+    return len(router.calls)
+
+
+def assert_only_these_client_methods_used(client, allowed: frozenset[str]) -> set[str]:
+    """Assert *client* saw only *allowed* methods, and return the ones it saw.
+
+    The mock-client counterpart of :func:`assert_no_mutating_requests`, for the
+    handlers whose tests drive an ``AsyncMock`` rather than a transport. It pins
+    the whole call set rather than asserting a handful of ``assert_not_awaited``
+    negatives, so a *new* call on a dry-run path fails the test whether or not it
+    mutates — which is the point: epic #218 requirement 5 asks the path to be
+    classified, and a call nobody classified is exactly what must not slip in.
+    """
+    used = {name.split(".")[0] for name, _args, _kwargs in client.mock_calls if name}
+    unexpected = used - allowed
+    assert not unexpected, (
+        f"unclassified calls on a dry-run path: {sorted(unexpected)}. Each is "
+        "either a mutation (a defect) or a read that must be added to the pinned "
+        "set with its classification."
+    )
+    return used

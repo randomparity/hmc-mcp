@@ -147,8 +147,8 @@ def test_inspection_reports_effects_source_and_dimensions():
     assert result["policy_name"] == "test"
     assert result["policy_source"] == SOURCE
     assert result["ceiling_enforced"] is True
-    assert result["enforced_dimensions"] == ["tools", "connections"]
-    assert result["declared_only_dimensions"] == ["targets"]
+    assert result["enforced_dimensions"] == ["tools", "connections", "targets"]
+    assert result["declared_only_dimensions"] == []
 
     grant = result["declared_grants"][0]
     assert grant["connections"] == ["<default>"]
@@ -575,3 +575,47 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     # mid-word between runs. Assert on wrap-proof text instead.
     assert result.exit_code == 1
     assert "cannot be read" in result.output
+
+
+def test_inspection_reports_which_tools_a_targets_table_cannot_bound():
+    """R19 (#223): `exhaustive_targets` is the only signal an operator gets.
+
+    ADR 0037's ceiling is per-tool and structurally cannot see targets, so a
+    policy whose only grant carries a table still registers and advertises the
+    tools that grant will always deny. This field is what lets an operator find
+    them without calling one and reading the denial.
+    """
+    result = _inspect(create_mcp(_policy(READ_ONLY_GRANT)))
+    by_name = {tool["name"]: tool for tool in result["tools"]}
+
+    # Selector-less, so a table has nothing to bind on.
+    assert by_name["hmc_list_systems"]["exhaustive_targets"] is False
+    assert by_name["hmc_effective_permissions"]["exhaustive_targets"] is False
+    # Selectors that do name every resource the call acts on.
+    assert by_name["hmc_get_lpar"]["exhaustive_targets"] is True
+    assert by_name["hmc_list_lpars"]["exhaustive_targets"] is True
+
+    reported = {
+        tool["name"] for tool in result["tools"] if not tool["exhaustive_targets"]
+    }
+    assert reported == {
+        name
+        for name in by_name
+        if not TOOL_SECURITY[name].exhaustive_targets
+    }
+
+
+def test_a_name_outside_the_index_is_reported_as_unbounded():
+    """R19: the fail-closed default for an unindexed name, which nothing else pins.
+
+    `_permission` returns `exhaustive_targets=False` for a name the authoritative
+    index does not carry, on the ground that nothing establishes a table could
+    bound it. Mutating that default to `True` left the whole suite green, so the
+    justification had no test behind it.
+    """
+    from hmc_mcp.server_permissions import UNKNOWN, _permission
+
+    reported = _permission("hmc_not_in_the_index", {})
+
+    assert reported.effect == UNKNOWN
+    assert reported.exhaustive_targets is False
