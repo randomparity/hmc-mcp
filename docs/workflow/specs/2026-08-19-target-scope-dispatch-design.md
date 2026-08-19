@@ -62,10 +62,15 @@ in `security.targets`, `target_scope` reads `arguments[selector.argument]` (inde
 
 | bound value | result |
 |---|---|
-| `str` | that string |
+| `str`, including `""` | that string |
 | `int`, and not `bool` | `str(value)` |
 | `None` | `ABSENT` |
 | anything else, including `bool` | `UNREADABLE` |
+
+`""` is a string, not `ABSENT`. It denies under any table by construction, since
+`access_policy._check_entries` rejects an empty allowlist entry so no table can contain
+it; under `all-targets` it is permitted. Note the asymmetry with `selected_connection`,
+where `""` *is* the default connection.
 
 Extraction performs no filesystem, network, or environment read. A `KeyError` from the
 indexed read is a malformed call and propagates before the handler runs.
@@ -92,18 +97,22 @@ selector-less tool is always `False`. `validate_security` rejects
 `exhaustive_targets=True` with an empty `targets` tuple. `HMC_RUN_COMMAND_SECURITY` and
 `EFFECTIVE_PERMISSIONS_SECURITY` are constructed directly and both carry `False`.
 
-**R8 — Exactly three tools declare `exhaustive_targets=False` explicitly**:
-`hmc_provision_lpar`, `hmc_backup_lpar_profiles`, `hmc_restore_lpar_profiles`. A test pins
-the full set of `False` tools (those three plus the 19 selector-less ones) so a change is
-deliberate.
+**R8 — Exactly six tools declare `exhaustive_targets=False` explicitly**:
+`hmc_provision_lpar`, `hmc_backup_lpar_profiles`, `hmc_restore_lpar_profiles`,
+`hmc_add_vfc_adapter`, `hmc_add_vscsi_adapter`, `hmc_attach_disk_to_lpar`. A test pins the
+full set of `False` tools (those six plus the 19 selector-less ones) so a change is
+deliberate, and a second test pins the five tools whose remote-endpoint arguments are
+outside the target dimension **by decision** rather than by omission.
 
 **R9 — Guardrail: no unbounded identity argument on an exhaustive tool.** A static check
 over the parsed `src/hmc_mcp/server_*.py` sources fails when a tool declaring
 `exhaustive_targets=True` has a handler parameter, or a field of a dataclass/pydantic-model
 parameter one level down, whose name is in `REQUIRED_TARGET_ARGUMENTS` but is not a declared
-selector, or whose name is in `UNBOUNDED_ARGUMENTS = {"file_path", "cmd"}`. The check is
-proven to bite: a fixture source declaring an exhaustive tool with a nested `vios_uuid`
-fails it.
+selector, or whose name is in
+`UNBOUNDED_ARGUMENTS = {"cmd", "file_path", "vios_partition_id"}`. The check is proven to
+bite on three fixture sources: a nested identity, an undeclared top-level identity, and an
+argument no `TargetKind` can express. A further test asserts the check's output equals the
+declared `exhaustive_targets=False` set exactly, in both directions.
 
 **R10 — Guardrail: every declared selector is referenced by its handler.** A static check
 over the same sources fails when a handler's body never loads a name matching one of its
@@ -126,6 +135,13 @@ under a `targets` table that explicitly names a tool with `exhaustive_targets=Fa
 the load, naming the tool and directing the operator to `targets = "all-targets"`. Tools
 reached through `effects` stay exempt and are denied at call time by R5.1.
 
+**R12a — Both load-time rules exempt a tool declaring no connection argument.**
+`hmc_effective_permissions` and `hmc_list_configured_hosts` are never wrapped by
+`tool_registry.authorized`, so no authorizer runs on them and a grant naming either beside
+a `targets` table is not dead — it is bounded by the ceiling alone, exactly as before. A
+test proves a policy naming `hmc_effective_permissions` under a table still loads and the
+tool still answers.
+
 **R14 — A target denial makes no outbound attempt.** A denied call constructs no
 `HMCClient`, calls no `common.build_config` / `client_from_env`, and opens no SSH
 connection. Asserted on client construction, not only on the raised error.
@@ -144,8 +160,9 @@ chained exception text. Proven by a sentinel-secret test on the real user path.
 
 **R17 — `dry_run` is never read by the authorizer.** The decision is identical for
 `dry_run=True` and `dry_run=False` on all three tools that accept it, under both a matching
-and a non-matching grant. No module under `src/hmc_mcp/` named in this spec references
-`dry_run`.
+and a non-matching grant. The three modules that make the decision —
+`src/hmc_mcp/dispatch_scope.py`, `src/hmc_mcp/target_scope.py`, and
+`src/hmc_mcp/connection_scope.py` — contain no reference to `dry_run`.
 
 **R18 — The three dry-run paths are classified by test.** For `hmc_provision_lpar`,
 `hmc_decommission_lpar`, and `hmc_attach_disk_to_lpar`, a test proves the `dry_run=True`
@@ -196,26 +213,44 @@ def target_denial(name, policy_name, security, extracted) -> TargetScopeError
 ```
 
 `selected_targets` implements R4's table. `targets_permitted` implements R5 and R6 against
-one grant's `targets` value. `target_denial` picks the first extracted selector that no
-longer matters — in practice the first `UNREADABLE`, else the first `ABSENT`, else the first
-whose value is outside the table — and renders the corresponding closed template. The three
-templates:
+one grant's `targets` value.
+
+`target_denial` receives no grant and no policy object, because after the loop there is no
+single grant to blame — so its selection must be a total function of `security` and
+`extracted` alone:
+
+1. any `UNREADABLE` → `_UNREADABLE_VALUE`, naming that selector's kind and argument but
+   **not** its value. A malformed call is reported as malformed first: no policy edit fixes
+   it, so the other three messages would all be misleading advice.
+2. else `not security.exhaustive_targets` → `_UNBOUNDABLE`, naming no selector.
+3. else any `ABSENT` → `_MISSING`, naming the first one's kind and argument.
+4. else → `_DENIED`, rendering **every** extracted selector as `kind=repr(value)`.
+
+Step 4 renders the whole tuple rather than picking one selector deliberately. Naming the
+dispositive selector would mean choosing a grant to be dispositive *against*, which is the
+cross-grant read R1 forbids; and the honest statement is that no grant allowed this
+*combination*, which is also the tuple the operator must add. The four templates:
 
 ```
 _DENIED = (
-    "{tool} is not permitted on {kind} {value} by access policy {policy}. Grant that "
-    "{kind} in a policy grant that already names {tool}, or call {tool} with a {kind} "
-    "the policy grants."
+    "{tool} is not permitted on {targets} by access policy {policy}. No grant naming "
+    "{tool} allows that combination of targets. Grant them in a policy grant that "
+    "already names {tool}, or call {tool} with targets the policy grants."
 )
 _MISSING = (
-    "{tool} is not permitted by access policy {policy}: it declares a {kind} selector "
-    "the call did not supply, and a target-constrained grant cannot bound an omitted "
-    "target. Pass {argument}, or grant this tool under targets = \"all-targets\"."
+    "{tool} is not permitted by access policy {policy}: it declares a {kind} target "
+    "through {argument}, which this call did not supply, and a target-constrained "
+    "grant cannot bound an omitted target. Supply it and grant that {kind}, or grant "
+    "{tool} under targets = \"all-targets\"."
 )
 _UNBOUNDABLE = (
-    "{tool} is not permitted by access policy {policy}: its declared selectors cannot "
-    "bound every resource it acts on, so a targets table cannot constrain it. Grant it "
-    "under targets = \"all-targets\" in a grant that names it."
+    "{tool} is not permitted by access policy {policy}: its declared target selectors "
+    "do not name every resource it acts on, so a targets table cannot constrain it. "
+    "Grant {tool} under targets = \"all-targets\" in a grant that names it."
+)
+_UNREADABLE_VALUE = (
+    "{tool} is not permitted by access policy {policy}: the {argument} argument does "
+    "not carry a readable {kind} target."
 )
 ```
 
@@ -298,6 +333,17 @@ The handler docstring stops saying targets are not yet enforced.
 `_gates` imports `dispatch_authorizer` from `dispatch_scope` instead of
 `connection_authorizer` from `connection_scope`. No other change.
 
+### `README.md`
+
+Lines 263-267 currently say the tool and connection dimensions are enforced and that
+`targets` "constrain nothing at call time"; all three are enforced after this change. The
+`targets = "all-targets"      # or a table, e.g. { lpar = ["db-01"] }` example at line 319
+becomes actively misleading — that substitution loads (effect-reached tools are exempt from
+R12/R13) and then denies every console read, `hmc_list_systems`, and every unpinned
+`hmc_list_lpars`. It is replaced with the two-grant shape, plus the operator rules a table
+now implies: every declared selector must be supplied and matched, comparison is exact so a
+name does not cover its UUID, and a table never covers a tool it cannot bound.
+
 ### `server_provision.py`, `server_profiles.py`
 
 One decorator keyword each: `exhaustive_targets=False`, with a comment naming the identity
@@ -317,12 +363,24 @@ selector, and a denied selector-less tool, each asserting no `HMCClient` constru
 message selection between the two error types (R15); the sentinel-secret leak test on the
 real user path (R16); `dry_run` invariance (R17).
 
-New module `tests/app/test_target_guardrails.py`: R9, R10, and R11 over the live sources,
-each with a fixture source proving the check bites.
+R9, R10, and R11 go in `tests/app/test_tool_security.py`, beside the G12 connection
+guardrail they mirror, and reuse its `_module_functions` walker and `_REFUSED` fixture-source
+convention. A second module would duplicate that AST infrastructure. Each check carries a
+fixture source proving it bites.
 
-Extended: `tests/unit/test_access_policy.py` (R12, R13); `tests/unit/test_tool_registry.py`
-(R7); `tests/app/test_tool_security.py` (R8, and the existing registry assertions);
-`tests/app/test_capability_ceiling.py` or its permissions sibling (R19).
+Extended: `tests/unit/test_access_policy.py` (R12, R13, R12a); `tests/unit/test_tool_registry.py`
+(R7); `tests/app/test_tool_security.py` (R8, R9, R10, R11, and the existing registry
+assertions); `tests/app/test_capability_ceiling.py` (R19, and its
+`declared_only_dimensions` assertion).
+
+**R12 supersedes ADR 0036 acceptance criterion A7** ("optional selectors need no
+coverage", `docs/workflow/specs/2026-08-18-server-access-policy-design.md:413`). Three
+currently-green tests construct a grant naming `hmc_power_off_lpar` with a `targets` table
+covering only `lpar`, which R12 now rejects at load:
+`tests/unit/test_access_policy.py::test_optional_selectors_need_no_coverage` asserts A7
+directly and is **inverted**, keeping the same fixture and asserting the new failure;
+`test_compiled_policy_is_immutable` and `test_compile_does_not_retain_the_caller_containers`
+use the shape incidentally and are re-pointed at a fully covered grant.
 
 Existing dry-run tests in `tests/lpar/test_provision_tool.py`,
 `tests/lpar/test_decommission_tool.py`, and `tests/storage/test_storage_tools.py` are

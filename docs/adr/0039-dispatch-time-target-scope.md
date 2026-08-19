@@ -98,12 +98,24 @@ applied the handler's defaults and `validate_security` guarantees the parameter 
 absent key is a malformed call and treating it as an omitted argument would silently soften it.
 Each value normalizes to exactly one of three outcomes:
 
-1. **A string.** `str` is itself. `int` that is not `bool` renders through `str()`. That second arm
-   exists for `vios_partition_id`, the surface's only non-`str` selector, and it is a rendering
-   rather than a coercion: `str(3)` is total and injective over `int`, and the policy file's
-   selectors are strings because TOML gave them no other type. `bool` is excluded explicitly
-   because it is an `int` subclass and `str(True)` would render `"True"` into a comparison against
-   resource names.
+1. **A string.** `str` is itself, including `""` — an empty selector is a well-formed string that
+   denies under any table by construction, because `access_policy._check_entries` already rejects an
+   empty allowlist entry, so no table can contain it. It is deliberately not `ABSENT`; note the
+   asymmetry with `selected_connection`, where `""` *is* the default connection because
+   `load_profile` treats it as an omitted argument.
+
+   `int` that is not `bool` renders through `str()`. That arm exists for `vios_partition_id`, the
+   surface's only non-`str` selector, and it is load-bearing rather than convenient: without it
+   those three tools' calls would be `UNREADABLE`, which denies even under `all-targets`, and
+   #225's legacy-equivalent policy would stop covering them. It is emphatically *not* justified by
+   `str` being injective over `int` — an earlier draft said that, and it is the wrong domain. The
+   function whose injectivity would matter is the one from *all* selectors of a kind into one
+   `frozenset[str]`, and that one is not injective: `"2"` in a `vios` array is a partition ID and a
+   VIOS name at the same time. That collision is why `vios_partition_id` is refused as a bounding
+   identity outright, below.
+
+   `bool` is excluded explicitly because it is an `int` subclass and `str(True)` would render
+   `"True"` into a comparison against resource names.
 2. **`ABSENT`**, for `None` — an optional selector the caller omitted.
 3. **`UNREADABLE`**, for every other type, uninspected and uncoerced. ADR 0038's rule 0 for the
    connection token, applied to targets: a boundary with no coercion rule is one fewer thing to get
@@ -198,11 +210,20 @@ filed as a follow-up issue rather than absorbed.
 disambiguated by a `category` argument that is not a selector and is not in
 `REQUIRED_TARGET_ARGUMENTS`. Recorded here, closed by the same follow-up, not silently inherited.
 
-The `managed_system` **role** collision ADR 0036 flagged resolves safely on its own and is worth
-recording as such: one allowlist spans both the system acted on (`system_name_or_uuid`) and
-`hmc_migrate_lpar`'s destination (`target_system_name_or_uuid`), which makes migration require
-*both* endpoints in the allowlist. That is stricter than role-keyed matching, not laxer, so the
-residual is a usability one — an operator cannot permit S1→S2 without also permitting S2→S1.
+The `managed_system` **role** collision ADR 0036 flagged does *not* resolve safely, and an earlier
+draft of this record claimed it did. The claim was that one allowlist spanning both roles makes
+migration require both endpoints, which would be stricter than role-keyed matching. It is wrong,
+and checking it is what found the residual: **no migration tool declares `system_name_or_uuid` at
+all.** `hmc_migrate_lpar`, `hmc_migrate_validate_lpar`, and `hmc_remote_restart_lpar` declare
+`(lpar, lpar_name_or_uuid)` and `(managed_system, target_system_name_or_uuid)` — the *destination*
+only. So a grant naming `{ lpar = ["db-01"], managed_system = ["S2"] }` authorizes evacuating a
+partition called `db-01` off **any** source system the connection reaches, into S2; and because
+partition names collide across systems, the source is unconstrained twice over.
+`hmc_migrate_abort_lpar` and `hmc_migrate_recover_lpar` declare only `lpar_name_or_uuid` and sit in
+the 20-tool residual above. The remedy is the same UUID one, and this joins the same follow-up
+issue. Recorded as a residual rather than closed here, because closing it means adding a source
+`system_name_or_uuid` to three LPM signatures — the public-contract change rejected two paragraphs
+above.
 
 ### Carry-forward: what a target-constrained grant means for a selector-less tool
 
@@ -235,8 +256,19 @@ release adding a tool to a granted effect class must not make an unedited file s
 under #225's fail-closed startup that is a server that does not start after an upgrade — and are
 denied at call time by (ii) instead.
 
+**Both load-time rules exempt a tool declaring no connection argument, and the exemption is not
+cosmetic.** `hmc_effective_permissions` and `hmc_list_configured_hosts` have
+`connection_argument = None`, so `tool_registry.authorized` returns their handlers unwrapped and no
+authorizer ever runs on them. A grant naming either beside a `targets` table is therefore *not*
+dead — it works exactly as it did before this entry, bounded by the ceiling alone, which is the only
+dimension that can reach a tool the wrapper never wraps. Failing the load over it would refuse to
+start a server over a grant that functions, and it would do so for the introspection tool an
+operator is most likely to name explicitly — the very tool `server._startup_warnings` already nags
+about when a policy withholds it. ADR 0038 recorded the same structural fact for the connection
+dimension; this is its target-dimension twin.
+
 The cost is real and is the point: `effects = ["read"], targets = { managed_system = ["S1"] }` no
-longer reaches `hmc_list_systems`, `hmc_console_info`, or the other 15 console reads. Those are
+longer reaches `hmc_list_systems`, `hmc_console_info`, or the other 12 console reads. Those are
 console-wide operations and that grant said nothing about a console. The operator writes a second
 grant. ADR 0036 predicted this shape when it noted that `all-targets` "is also boilerplate on any
 grant of the … selector-less tools, so its presence is not by itself an audit signal".
@@ -259,25 +291,49 @@ mechanism. The decorator takes `exhaustive_targets: bool = True` and `tool()` co
 value as `declared and bool(targets)`, so all 19 selector-less tools get `False` with no per-tool
 churn and only the genuine composites carry an explicit declaration.
 
-Three tools declare `exhaustive_targets=False`:
+Six tools declare `exhaustive_targets=False`:
 
 - **`hmc_provision_lpar`** — the nested `vios_uuid` above, plus `ProvisionNetwork.vios_partition_id`.
 - **`hmc_backup_lpar_profiles`** and **`hmc_restore_lpar_profiles`** — both act on an arbitrary
   HMC-side `file_path` (the backup with `force=True` overwriting whatever is there), a console
   filesystem object no `TargetKind` names. ADR 0036 already placed `file_path` outside every grant;
   this is that placement made enforceable rather than documented.
+- **`hmc_add_vfc_adapter`**, **`hmc_add_vscsi_adapter`**, and **`hmc_attach_disk_to_lpar`** — each
+  declares a `vios`-kind selector whose argument is `vios_partition_id`, a slot number *within one
+  managed system* that is reused on every system in a fleet. A `vios = ["2"]` entry therefore names
+  a different VIOS on each system the connection reaches, and unlike a partition name there is no
+  UUID form to write instead: two of the three accept no VIOS UUID at all. `hmc_attach_disk_to_lpar`
+  accepts both `vios_uuid` and `vios_partition_id` as `vios` selectors and checks nowhere that they
+  agree, so the partition ID is a second, unverified identity beside the one that *can* be bounded.
+  These are the tools an earlier draft of this record silently authorized under a table; the
+  guardrail below is what found them.
 
-Four composites were examined and are **exhaustive**, which is why the flag is a declaration and not
+Two categories are deliberately **not** made non-exhaustive, and both are decisions rather than
+omissions:
+
+- **Sub-resources reached through a declared selector.** `hmc_attach_disk_to_lpar`'s `vg_uuid`,
+  `hmc_map_storage_to_lpar`'s `storage_name` and `target_device`, and their siblings name objects
+  the HMC addresses *inside* a declared VIOS — `POST /VirtualIOServer/{vios_uuid}/VolumeGroup/{vg}`
+  — so they cannot name a resource the declared selector does not contain.
+- **Remote endpoints a call reads from.** `hmc_update_firmware`, `hmc_update_console_software`, and
+  `hmc_vios_update` take a `repository`; `hmc_install_lpar_os` and `hmc_install_vios` take NIM
+  server addresses. These are not HMC resources, so no `TargetKind` names one and no allowlist can
+  hold one. Each still mutates exactly the resource its selectors declare — a system, a console, a
+  VIOS, a partition — while loading the payload from an address the caller chose. Constraining
+  *where a granted target is loaded from* is egress control, a different control this policy does
+  not offer, and pretending the target dimension covers it would be worse than saying it does not.
+  The five tools are enumerated in a test so a sixth cannot join them silently.
+
+Five composites were examined and are **exhaustive**, which is why the flag is a declaration and not
 a category: `hmc_decommission_lpar` deletes adapters whose UUIDs it derives from the declared
-partition's own inventory; `hmc_attach_disk_to_lpar` takes all three identities as top-level
-parameters; `hmc_deploy_partition_template` stamps a partition it creates on the declared system;
-`hmc_system_summary` reads children of the declared system. The line those four share, and the
-three above do not, is that every resource acted on is either the value of a declared selector or
-derived by the server through the HMC's own containment from one — so it cannot name a resource the
-declared selector does not contain. A newly minted identity is on the permitted side of that line
-by necessity: no allowlist can name a partition that did not exist when the policy was written, and
-`managed_system = ["S1"]` conferring the ability to create partitions on S1 is what the operator
-asked for.
+partition's own inventory; `hmc_deploy_partition_template` stamps a partition it creates on the
+declared system; `hmc_system_summary` and `hmc_lpar_summary` read children of their declared target.
+The line those share, and the six above do not, is that every resource acted on is either the value
+of a declared selector or derived by the server through the HMC's own containment from one — so it
+cannot name a resource the declared selector does not contain. A newly minted identity is on the
+permitted side of that line by necessity: no allowlist can name a partition that did not exist when
+the policy was written, and `managed_system = ["S1"]` conferring the ability to create partitions on
+S1 is what the operator asked for.
 
 **A declaration nobody checks is a comment**, so the flag is paired with a static guardrail over the
 parsed `server_*` sources, in ADR 0038's tradition. For every tool declaring
@@ -287,12 +343,21 @@ declared selector, and none may name an identity the format cannot bound (`file_
 check runs at suite time, costs nothing per call, and fails the author rather than an operator. It
 is what catches the next `hmc_provision_lpar`.
 
-The check was run over all 130 tools before this record was accepted, and it flags exactly four
-names: `hmc_provision_lpar` (`storage.vios_uuid`, `network.vios_partition_id`),
-`hmc_backup_lpar_profiles` and `hmc_restore_lpar_profiles` (`file_path`), and `hmc_run_command`
-(`cmd`, already `False` for having no selectors). Zero false positives. So the three explicit
-declarations are not three judgements — they are what a mechanical rule already says, written down
-where the runtime can read them.
+**What that check does and does not prove.** An earlier draft of this record ran it over all 130
+tools, observed that it flagged exactly the tools already declared, and reported "zero false
+positives" as evidence the declarations were mechanical rather than judgements. That was circular:
+`UNBOUNDED_ARGUMENTS` had been written *from* the known cases, so it could not have flagged anything
+else, and the direction that matters for a fail-open is false *negatives* — which the observation
+says nothing about.
+
+Looking for those instead is what produced the `vios_partition_id` entry above and the
+remote-endpoint decision beside it. The honest statement is therefore the weaker one: the check
+turns a per-tool judgement into a per-*argument-name* judgement, which is a much smaller thing to
+get wrong and a much easier thing to review, and it makes any future tool accepting one of those
+names fail the suite rather than ship. It does not prove the name list is complete. Extending that
+list is how a newly recognised unbounded identity is closed, and the list is deliberately kept in
+`tool_registry.py` beside `REQUIRED_TARGET_ARGUMENTS`, since the two are one piece of knowledge —
+which public argument names carry which identity — and would drift if they lived apart.
 
 A second guardrail closes the other half, the direct analogue of ADR 0038's "a declared connection
 argument must actually route the connection": every declared selector argument must be *referenced*
@@ -329,15 +394,16 @@ argument is silently discarded. The target dimension was checked for the same th
 assumed clear, and the answer is in two parts.
 
 **`build_config` itself has no target-dimension bypass.** No environment variable supplies a default
-target. Verified by reading `common.py`, `config.py`, and `ssh.py` in this checkout on branch
-`feat/target-scope-dispatch-223`: every `os.environ` read in the connection path names
+target. Verified by scanning every `os.environ` and `getenv` read under `src/hmc_mcp/` in this checkout
+on branch `feat/target-scope-dispatch-223`: each one names
 `HMC_HOST`, `HMC_PROFILE`, `HMC_PASSWORD`, `APPDATA`, or `XDG_CONFIG_HOME`. Nothing names a
 partition, a system, or a VIOS. There is no `HMC_SYSTEM` to discard a `system_name_or_uuid` in
 favour of.
 
 **The analogue exists one layer out, and is what `exhaustive_targets` closes.** The bypass is not
 "the declared selector is discarded" but "the tool acts on an identity the declared selector never
-saw" — `hmc_provision_lpar`'s nested `vios_uuid`, and the profile pair's `file_path`. Structurally
+saw" — `hmc_provision_lpar`'s nested `vios_uuid`, the profile pair's `file_path`, and the adapter
+trio's `vios_partition_id`. Structurally
 it is the same failure as `HMC_HOST`: the control compares the thing the caller named while the
 runtime acts on something else. Both are closed above, and the guardrail is what keeps the next one
 from being written.
@@ -381,10 +447,25 @@ operator would otherwise discover as an unexplained denial.
   against #221's or #222's semantics can start seeing denials on calls that worked yesterday. That
   is the point of the entry, and the denial names the tool, the policy, and the selector kind, so
   the diagnosis is one message long — but it is a behaviour change and not only a new failure mode.
-- **The 17 selector-less console tools require their own grant.** Any policy narrowing targets must
-  now be written as at least two grants: one with a table for the tools it can bound, one with
-  `all-targets` for the ones it cannot. #225's legacy-equivalent generator emits `all-targets`
-  throughout and is unaffected.
+- **The 17 selector-less console tools, and six more, require their own grant.** Any policy
+  narrowing targets must now be written as at least two grants: one with a table for the tools it
+  can bound, one with `all-targets` for the ones it cannot. #225's legacy-equivalent generator
+  emits `all-targets` throughout and is unaffected.
+- **A table-only policy advertises tools it will always deny.** ADR 0037's ceiling is per-tool and
+  structurally cannot see targets: `permits_tool` tests membership of the union of the grants'
+  tool sets, and a tool may sit in a table grant and an `all-targets` grant at once, so there is no
+  well-defined "this tool is unreachable" question for the registration filter to ask. A policy
+  whose only grant carries a table therefore *registers* `hmc_remove_ldap_config` and the other 22
+  non-exhaustive tools, advertises them in `tools/list`, and denies every call to them. The agent
+  discovers that by calling one. `exhaustive_targets` in the effective-permissions report is the
+  only signal an operator gets, which is why R19 adds it. Moving the ceiling to drop non-exhaustive
+  tools from table-only grants is a #221 question and is explicitly not settled here — it would
+  make registration depend on the target dimension, which is a coupling ADR 0037 does not have.
+- **This entry supersedes ADR 0036's acceptance criterion A7**, "optional selectors need no
+  coverage", which was written as a placeholder for the decision ADR 0036 deferred to this record.
+  Now that an uncovered optional selector makes a grant *dead* rather than merely narrow, the same
+  argument ADR 0036 used to invent the coverage rule applies to it, and the test asserting A7 is
+  inverted rather than deleted.
 - **An omitted optional selector denies, which retires two tools from table-constrained grants.**
   `hmc_list_lpars` and `hmc_list_vios` have no other selector, so under a table they are callable
   only when the caller pins the system. That is correct — the unpinned call enumerates every system
@@ -456,7 +537,7 @@ operator would otherwise discover as an unexplained denial.
   thing this entry must make hard to get wrong. Splitting it out costs one import and makes the
   combination rule a fifteen-line file.
 - **Rename `connection_scope.py` to `dispatch_scope.py` and put everything in it.** The other
-  single-module shape. Rejected because it churns #222's file and its 462-line test module one day
+  single-module shape. Rejected because it churns #222's file and its 533-line test module one day
   after they landed, to produce a 350-line module in which the loop is again one paragraph among
   many.
 - **Deny an `ABSENT` selector under `all-targets` as well as under a table.** Uniform, and it would
