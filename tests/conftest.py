@@ -53,6 +53,7 @@ def isolate_audit_logging():
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
 
+
 BASE = "https://hmc.test:12443"
 
 LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
