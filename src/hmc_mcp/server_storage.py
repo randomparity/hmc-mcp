@@ -106,7 +106,16 @@ def hmc_create_volume_group(
     return _run(_go)
 
 
-@tool(effect="mutate", operation="storage.attach_disk", target_kind="lpar")
+# Not exhaustive for the same reason as the adapter pair, and one more: it
+# declares both `vios_uuid` and `vios_partition_id` as `vios` selectors and
+# nothing checks that they name the same VIOS, so the partition ID is a second,
+# unverified identity the allowlist cannot bound.
+@tool(
+    effect="mutate",
+    operation="storage.attach_disk",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_attach_disk_to_lpar(
     lpar_name_or_uuid: str,
     vios_uuid: str,

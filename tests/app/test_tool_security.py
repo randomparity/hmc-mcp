@@ -1064,6 +1064,11 @@ _NOT_EXHAUSTIVE = frozenset({
     "hmc_backup_lpar_profiles",
     "hmc_restore_lpar_profiles",
     "hmc_provision_lpar",
+    # Selectors, but one of them is a per-system slot number the fleet-wide
+    # `vios` allowlist cannot pin down.
+    "hmc_add_vfc_adapter",
+    "hmc_add_vscsi_adapter",
+    "hmc_attach_disk_to_lpar",
 })
 
 
@@ -1092,6 +1097,9 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         name for name, s in TOOL_SECURITY.items() if not s.targets
     }
     assert declared == {
+        "hmc_add_vfc_adapter",
+        "hmc_add_vscsi_adapter",
+        "hmc_attach_disk_to_lpar",
         "hmc_backup_lpar_profiles",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
@@ -1218,6 +1226,9 @@ def test_the_three_declared_composites_are_exactly_what_the_check_finds():
             if unbounded := _unbounded_identities(handler, security):
                 found[name] = unbounded
     assert found == {
+        "hmc_add_vfc_adapter": ["vios_partition_id"],
+        "hmc_add_vscsi_adapter": ["vios_partition_id"],
+        "hmc_attach_disk_to_lpar": ["vios_partition_id"],
         "hmc_backup_lpar_profiles": ["file_path"],
         "hmc_provision_lpar": ["network.vios_partition_id", "storage.vios_uuid"],
         "hmc_restore_lpar_profiles": ["file_path"],
@@ -1333,3 +1344,58 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
     }
     assert "lpar_name_or_uuid" not in loaded
     assert "profile" in loaded
+
+
+# A remote network endpoint the operation reads from — a NIM boot server, a
+# firmware repository — is *not* an HMC resource, so no TargetKind names one and
+# no `targets` allowlist can bound it. ADR 0039 places egress control outside the
+# target dimension deliberately rather than by omission: the call still mutates
+# only the resources its selectors declare, and constraining where those
+# resources are loaded *from* is a different control this policy does not offer.
+# Pinned here so the decision is visible at the five tools it applies to, and so
+# a sixth cannot join them silently.
+_REMOTE_ENDPOINT_ARGUMENTS = frozenset({
+    "repository",
+    "nim_ip",
+    "nim_gateway",
+    "nim_subnetmask",
+    "lpar_ip",
+    "vios_ip",
+})
+
+
+def test_remote_endpoint_arguments_are_out_of_the_target_dimension_by_decision():
+    """G15: the tools this decision covers, and the reason it is not an omission.
+
+    Each of these mutates exactly the resource its selectors declare — a system,
+    a VIOS, a console, a partition — while reading its payload from an address
+    the caller chose. That is a real risk and it is not this dimension's: a
+    `targets` allowlist bounds *what is acted on*, and none of these acts on
+    anything the allowlist cannot already name.
+    """
+    found = {}
+    for module in _TOOL_MODULES:
+        for name, security in TOOL_SECURITY.items():
+            handler = getattr(module, name, None)
+            if handler is None:
+                continue
+            hits = sorted(_REMOTE_ENDPOINT_ARGUMENTS & set(get_type_hints(handler)))
+            if hits:
+                found[name] = (security.exhaustive_targets, hits)
+
+    assert found == {
+        "hmc_install_lpar_os": (
+            True,
+            ["lpar_ip", "nim_gateway", "nim_ip", "nim_subnetmask"],
+        ),
+        "hmc_install_vios": (
+            True,
+            ["nim_gateway", "nim_ip", "nim_subnetmask", "vios_ip"],
+        ),
+        "hmc_update_console_software": (True, ["repository"]),
+        "hmc_update_firmware": (True, ["repository"]),
+        "hmc_vios_update": (True, ["repository"]),
+    }
+    # The two tables must stay disjoint, or the decision above would silently
+    # contradict the one UNBOUNDED_ARGUMENTS encodes.
+    assert not (_REMOTE_ENDPOINT_ARGUMENTS & UNBOUNDED_ARGUMENTS)
