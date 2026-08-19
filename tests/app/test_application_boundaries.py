@@ -58,8 +58,8 @@ def test_create_mcp_returns_independent_complete_applications():
     second = create_mcp()
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 128
-    assert len(asyncio.run(second.list_tools())) == 128
+    assert len(asyncio.run(first.list_tools())) == 129
+    assert len(asyncio.run(second.list_tools())) == 129
 
 
 def test_operations_do_not_import_application_modules():

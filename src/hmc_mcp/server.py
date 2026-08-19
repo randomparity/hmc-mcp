@@ -97,6 +97,10 @@ from .server_jobs import (
     hmc_wait_for_job as hmc_wait_for_job,
 )
 from .server_health import hmc_fleet_health as hmc_fleet_health
+from .server_permissions import (
+    EFFECTIVE_PERMISSIONS_SECURITY,
+    register_permissions_tool,
+)
 
 from .server_lpars import (
     hmc_create_lpar as hmc_create_lpar,
@@ -249,7 +253,10 @@ TOOL_MODULES = (
 
 TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
     [module.tool_security() for module in TOOL_MODULES],
-    {"hmc_run_command": HMC_RUN_COMMAND_SECURITY},
+    {
+        "hmc_run_command": HMC_RUN_COMMAND_SECURITY,
+        "hmc_effective_permissions": EFFECTIVE_PERMISSIONS_SECURITY,
+    },
 )
 
 
@@ -265,6 +272,7 @@ def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
     application = _create_base_mcp()
     for module in TOOL_MODULES:
         module.register_tools(application, permits=permits)
+    register_permissions_tool(application, policy, TOOL_SECURITY, permits=permits)
     return application
 
 
