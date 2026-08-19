@@ -309,12 +309,18 @@ Append to `tests/app/test_capability_ceiling.py`:
 
 ```python
 def _inspect(application):
-    """Call the registered inspection tool through the application."""
+    """Call the registered inspection tool through the application.
+
+    Reads ``structured_content`` (a plain dict), not ``data`` — on
+    fastmcp 3.4.7 ``data`` is a pydantic model reconstructed from the output
+    schema, which is neither subscriptable nor iterable.
+    """
     from fastmcp import Client
 
     async def _go():
         async with Client(application) as client:
-            return (await client.call_tool("hmc_effective_permissions", {})).data
+            result = await client.call_tool("hmc_effective_permissions", {})
+            return result.structured_content
 
     return asyncio.run(_go())
 
@@ -450,8 +456,9 @@ registered plus the inspection tool with no edit.
 uv run --no-sync pytest -q tests/app/test_capability_ceiling.py --no-cov
 ```
 
-Expect `KeyError: 'hmc_effective_permissions'` on `TOOL_SECURITY[...]` and
-`ToolError`/`KeyError` on `call_tool("hmc_effective_permissions", ...)`.
+Expect `KeyError: 'hmc_effective_permissions'` from the `TOOL_SECURITY[...]` lookup in
+`test_inspection_is_registered_and_classified`, and a tool-not-found `ToolError` from
+`call_tool("hmc_effective_permissions", {})` in every test that calls `_inspect`.
 
 ### Step 2.3 — Write `src/hmc_mcp/server_permissions.py`
 
@@ -813,7 +820,38 @@ def test_escape_hatch_is_withheld_when_the_policy_omits_it():
     assert "hmc_run_command" not in _names(application)
 
 
-def test_entry_points_serve_a_freshly_composed_filtered_application():
+def test_inspection_tracks_the_arbitrary_command_toggle():
+    """R12, R13: the report follows the registry across a post-composition change."""
+    granted = _policy(GRANT_RUN_COMMAND)
+    application = create_mcp(granted)
+    _configure(application, True, granted.permits_tool)
+
+    result = _inspect(application)
+    reported = [tool["name"] for tool in result["tools"]]
+
+    assert reported == sorted(tool.name for tool in asyncio.run(application.list_tools()))
+    assert "hmc_run_command" in reported
+    assert "arbitrary-command" in result["effects"]
+    assert result["ceiling_enforced"] is True
+
+
+def test_a_registry_that_drifted_past_its_ceiling_claims_no_enforcement():
+    """R14, R16: a policy name with no enforcement claim is the honest reading."""
+    policy = _policy(READ_ONLY_GRANT)
+    application = create_mcp(policy)
+    _configure(application, True)  # no predicate: the fail-open call shape
+
+    result = _inspect(application)
+
+    assert "hmc_run_command" in [tool["name"] for tool in result["tools"]]
+    assert result["policy_name"] == "test"
+    assert result["ceiling_enforced"] is False
+    assert result["enforced_dimensions"] == []
+    assert result["declared_only_dimensions"] == []
+
+
+@pytest.mark.parametrize("entry_point", ["main_stdio", "main_http"])
+def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point):
     """R9, R9a: main_stdio serves its own application, wired to the ceiling."""
     from unittest.mock import patch
 
@@ -828,17 +866,21 @@ def test_entry_points_serve_a_freshly_composed_filtered_application():
     ])
     served = {}
 
-    def _capture(self):
+    def _capture(self, **_kwargs):
+        served["app"] = self
         served["names"] = {tool.name for tool in asyncio.run(self.list_tools())}
 
     with patch.object(type(server_module.mcp), "run", _capture):
-        server_module.main_stdio(
+        getattr(server_module, entry_point)(
             enable_arbitrary_command=True, access_policy=every_effect
         )
 
+    # R9 is object identity, not set difference: an all-three-effects grant
+    # resolves to every tool but hmc_run_command, which create_mcp never
+    # registers anyway, so the two name sets are deliberately equal here.
+    assert served["app"] is not server_module.mcp
     assert "hmc_run_command" not in served["names"]
     assert "hmc_delete_lpar" in served["names"]
-    assert served["names"] != _names(server_module.mcp)
 ```
 
 ### Step 3.2 — Confirm they fail
@@ -934,19 +976,34 @@ def main_http(
     )
 ```
 
-Add `import sys` to the module imports. `_startup_warnings` is written in Task 4; until
-then, define it as a stub returning `()` in this task so the module imports, and replace it
-in Task 4:
+Add `import sys` to the module imports.
+
+`_startup_warnings` does not exist yet — it arrives whole in Task 4, with its tests. **Do
+not commit a stub for it.** In this task, `_serve_application` ends at `return application`
+with no warning loop:
 
 ```python
-def _startup_warnings(
-    tool_count: int,
-    access_policy: AccessPolicy | None,
-    enable_arbitrary_command: bool,
-) -> tuple[str, ...]:
-    """Placeholder replaced in Task 4."""
-    return ()
+    tool_count = asyncio.run(_prepare())
+    del tool_count  # consumed by the startup warnings added in Task 4
+    return application
 ```
+
+Simpler still, and what to write: drop `_prepare`'s return value in Task 3 and restore it in
+Task 4.
+
+```python
+    async def _prepare() -> None:
+        await configure_arbitrary_command_tool(
+            enable_arbitrary_command, application, permits=permits
+        )
+
+    asyncio.run(_prepare())
+    return application
+```
+
+Task 4 replaces `_prepare` with the counting form and adds the warning loop in the same
+commit that adds `_startup_warnings`, so no commit on this branch carries a serve path that
+silently discards its diagnostics.
 
 ### Step 3.5 — Confirm the tests pass, and repair `test_serve.py`
 
@@ -984,9 +1041,11 @@ def test_stdio_entry_point_gates_the_escape_hatch(monkeypatch):
 - `patch.object(server_app.mcp, "run")` at lines 54, 79, 189, 197 must become
   `patch.object(type(server_app.mcp), "run")`, because the served application is no longer
   the module global.
-- `run.assert_called_once_with(...)` assertions keep their transport/host/port arguments;
-  with a class-level patch the bound instance is the first positional argument, so assert
-  on `run.call_args.kwargs` instead.
+- `run.assert_called_once_with(...)` assertions are unchanged. `patch.object` installs a
+  `MagicMock`, which is not a descriptor, so a class-level patch passes no `self` and the
+  call still records exactly the transport/host/port keywords. Only the `patch.object`
+  target changes. (Step 3.1 patches with a plain *function*, which is a descriptor and does
+  bind, which is why its `_capture` takes `self`.)
 
 Run:
 
@@ -1056,6 +1115,8 @@ def test_an_empty_served_surface_is_warned_and_suppresses_the_other_line():
 
     assert len(lines) == 1
     assert "no tools" in lines[0]
+    # Cause-neutral: R10a covers an empty surface however it arose, and the
+    # withheld-inspection line is suppressed rather than printed beside it.
     assert "hmc_effective_permissions" not in lines[0]
 
 
@@ -1109,6 +1170,50 @@ def test_a_withheld_escape_hatch_is_warned_only_when_requested():
     )
 
 
+POLICY_FILE = """
+[[policies.lab.grants]]
+effects = ["read"]
+connections = ["<default>"]
+targets = "all-targets"
+"""
+
+
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (["serve"], "main_stdio"),
+        (["serve", "--http"], "main_http"),
+    ],
+)
+def test_serve_forwards_the_compiled_policy_to_the_entry_point(
+    argv, target, tmp_path, monkeypatch
+):
+    """R7: the selected policy reaches the server, not just the loader."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    import hmc_mcp.access_policy as access_policy_module
+    from hmc_mcp.access_policy import AccessPolicy
+    from hmc_mcp.cli import app
+
+    path = tmp_path / "access-policy.toml"
+    path.write_text(POLICY_FILE, encoding="utf-8")
+    monkeypatch.setattr(
+        access_policy_module, "resolve_access_policy_path", lambda: path
+    )
+
+    with patch(f"hmc_mcp.server.{target}") as entry_point:
+        result = CliRunner().invoke(app, [*argv, "--access-policy", "lab"])
+
+    assert result.exit_code == 0, result.output
+    forwarded = entry_point.call_args.kwargs["access_policy"]
+    assert isinstance(forwarded, AccessPolicy)
+    assert forwarded.name == "lab"
+    assert forwarded.permits_tool("hmc_list_systems")
+    assert not forwarded.permits_tool("hmc_delete_lpar")
+
+
 def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
     """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
     from typer.testing import CliRunner
@@ -1123,8 +1228,11 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     )
     result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
 
+    # `_fail` renders through a rich Console, which hard-folds a non-tty line at
+    # 80 columns with no spaces to break on, so a tmp_path substring can fold
+    # mid-word between runs. Assert on wrap-proof text instead.
     assert result.exit_code == 1
-    assert "absent.toml" in result.output
+    assert "cannot be read" in result.output
 ```
 
 ### Step 4.2 — Confirm they fail
@@ -1173,8 +1281,8 @@ def _startup_warnings(
     lines: list[str] = []
     if tool_count == 0:
         lines.append(
-            "warning: this server exposes no tools; the selected access policy "
-            "permits none. Nothing it is asked to do will succeed."
+            "warning: this server exposes no tools. Nothing it is asked to do will "
+            "succeed."
         )
     elif access_policy is not None and not access_policy.permits_tool(
         PERMISSIONS_TOOL_NAME
@@ -1200,6 +1308,24 @@ def _startup_warnings(
             "exposed. Name it in a grant's tools to allow it."
         )
     return tuple(lines)
+```
+
+### Step 4.3a — Restore the tool count and emit the warnings
+
+In `_serve_application`, replace Task 3's `_prepare` with the counting form and add the
+warning loop, so the function and its call land in one commit:
+
+```python
+    async def _prepare() -> int:
+        await configure_arbitrary_command_tool(
+            enable_arbitrary_command, application, permits=permits
+        )
+        return len(await application.local_provider.list_tools())
+
+    tool_count = asyncio.run(_prepare())
+    for line in _startup_warnings(tool_count, access_policy, enable_arbitrary_command):
+        print(line, file=sys.stderr)
+    return application
 ```
 
 ### Step 4.4 — Add the CLI option
