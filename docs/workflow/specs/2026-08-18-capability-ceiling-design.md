@@ -265,7 +265,7 @@ literals in this module and change when #222 and #223 land.
 as `effects = ["read"]` and one authored as a ninety-name `tools` list render identically
 and the authored `effects` list is not recoverable from the output. Retaining it would mean
 adding a field to `access_policy.Grant`, which this change lists as read-not-changed. The
-omission is accepted here and filed as follow-up work; it costs an operator comparing the
+omission is accepted here and tracked as issue #251; it costs an operator comparing the
 file against the tool's output a hand re-derivation of the effect expansion.
 
 ### Startup selection
