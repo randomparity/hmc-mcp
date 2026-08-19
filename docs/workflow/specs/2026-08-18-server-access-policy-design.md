@@ -1,0 +1,283 @@
+# Load and validate immutable server access policies
+
+Issue: [#220](https://github.com/randomparity/hmc-mcp/issues/220) — part of epic
+[#218](https://github.com/randomparity/hmc-mcp/issues/218).
+Decision record: [ADR 0036](../../adr/0036-server-access-policy-model.md).
+Builds on: [ADR 0035](../../adr/0035-enforceable-tool-security-metadata.md) (#219).
+
+## 1. Goal
+
+Give the server a named *access policy* that an operator writes in TOML, that is
+strictly validated against the authoritative `ToolSecurity` metadata, and that compiles
+into an immutable in-process object answering two questions: which tools the policy
+permits at all, and which grants apply to a given tool. The policy expresses a
+capability ceiling by effect class and explicit tool, an allowed set of HMC connections
+including the environment/default connection, exact target selectors per target kind,
+and one bounded `all-targets` sentinel.
+
+Out of scope, owned elsewhere in epic #218: registration-time capability-ceiling
+filtering and permission inspection (#221), connection-scope authorization at dispatch
+(#222), target-constraint matching and composite/dry-run semantics (#223), audit events
+(#224), fail-closed startup selection, the legacy-equivalent generator, and operator
+documentation (#225). Also out of scope by the issue's own terms: any authorization
+state on `HMCConfig`, and any new runtime dependency.
+
+## 2. Current state
+
+`src/hmc_mcp/tool_registry.py` (ADR 0035, merged) exports `Effect`, `TargetKind`,
+`TargetSelector`, and `ToolSecurity`. `src/hmc_mcp/server.py:249` builds
+`TOOL_SECURITY: Mapping[str, ToolSecurity]` at module scope from the collected
+declarations. It holds 129 entries — 54 `read`, 46 `mutate`, 28 `destructive`, and
+`hmc_run_command` as the single `arbitrary-command` — and always contains
+`hmc_run_command` regardless of the operator toggle, so a lookup cannot fail open.
+
+Eighteen tools declare no target selectors: seventeen `console`-kind tools plus
+`hmc_list_configured_hosts`, which is the one tool with `target_kind="none"` and
+`connection_argument=None`. Every other tool declares `connection_argument="profile"`.
+
+`src/hmc_mcp/config.py` resolves *HMC connection profiles* from a platform-native
+`config.toml` via `config_dir()`, `resolve_config_path()`, and `load_profile()`, raising
+`ConfigError`. `src/hmc_mcp/common.py:30` `build_config(profile=None, ...)` selects one;
+`profile=None` means the environment/default connection. Nothing in the repository
+carries a server access policy today.
+
+## 3. Design
+
+One new module, `src/hmc_mcp/access_policy.py`. It imports `tomllib`, `pydantic`, and
+`hmc_mcp.tool_registry`, and `config_dir` from `hmc_mcp.config`. It does **not** import
+`hmc_mcp.server`: #221 will make `server.py` policy-aware, and the dependency must run
+one way only. The tool index is a parameter.
+
+### 3.1 File format
+
+```toml
+# access-policy.toml, beside config.toml in the platform-native config directory
+
+[policies.read-only]
+grants = [
+  { effects = ["read"], connections = ["<default>"], targets = "all-targets" },
+]
+
+[[policies.lab-provisioning.grants]]
+effects = ["read"]
+connections = ["lab"]
+targets = "all-targets"
+
+[[policies.lab-provisioning.grants]]
+tools = ["hmc_create_lpar", "hmc_delete_lpar"]
+connections = ["lab"]
+targets = { managed_system = ["Server-9080-HEX-SN123456"] }
+```
+
+`policies` is the only top-level key. A policy is a table with one required key,
+`grants`. A grant has four keys:
+
+| key | required | form |
+|---|---|---|
+| `effects` | no (default `[]`) | array of `"read"`, `"mutate"`, `"destructive"` |
+| `tools` | no (default `[]`) | array of live tool names |
+| `connections` | **yes** | non-empty array of connection-profile names and/or `"<default>"` |
+| `targets` | **yes** | either the string `"all-targets"` or a table of target kind to non-empty array of exact selector strings |
+
+The tools a grant resolves to are the **union** of every tool whose `effect` is in
+`effects` and every tool named in `tools`.
+
+### 3.2 Validation rules
+
+Shape rules are enforced by pydantic models carrying
+`ConfigDict(extra="forbid", frozen=True)`; semantic rules run in `compile_access_policy`
+against the injected tool index. Every failure raises `AccessPolicyError` naming the
+source, the policy name, the grant index, and the offending value.
+
+| id | rule |
+|---|---|
+| P1 | Unknown keys are rejected at every level: an unknown top-level key, an unknown key in a policy table, and an unknown key in a grant table. |
+| P2 | `grants` is required on every policy (an explicit `grants = []` is a valid deny-everything policy). `connections` and `targets` are required on every grant; `connections` is non-empty. |
+| P3 | `targets` is exactly one of the literal string `"all-targets"` or a table whose keys are `TargetKind` values and whose values are non-empty arrays of strings. No other form parses. |
+| P4 | `effects` entries are `read`, `mutate`, or `destructive`. `"arbitrary-command"` is rejected with a message directing the operator to name `hmc_run_command` in `tools` (epic #218 requirement 6). |
+| P5 | No array contains a duplicate entry — `effects`, `tools`, `connections`, and every target-kind selector array. No string entry in any of them is empty or whitespace-only. |
+| P6 | A grant names at least one tool: `effects` and `tools` are not both empty. |
+| P7 | Every name in `tools` is a key of the tool index. |
+| P8 | No name in `tools` is already covered by the same grant's `effects`. |
+| P9 | Every key of a `targets` table is a `TargetKind` other than `"none"`, and is declared by at least one tool the grant resolves to (as `target_kind` or as the `kind` of one of its `targets` entries). |
+| P10 | For every tool the grant resolves to, every **required** `TargetSelector` kind is covered — either `targets` is `"all-targets"`, or the kind is a key of the `targets` table. Optional selectors need no coverage; #223 owns their call-time treatment. |
+| P11 | No two grants in a policy are identical after compilation. |
+| P12 | No grant is subsumed by a sibling grant that carries `targets = "all-targets"`, a superset of its resolved tools, and a superset of its connections. |
+| P13 | `load_access_policy` raises `AccessPolicyError` when the file is absent, unreadable, or unparseable, and when the named policy is not in the file; the not-found message lists the available policy names. |
+
+P8 and P10 are decisions rather than mechanics; ADR 0036's Decision section records why.
+
+P10 is deliberately aggressive on effect-class grants. `effects = ["read"]` with a
+`targets` table constraining only `lpar` is rejected, because the read tools that
+require a `managed_system`, `vios`, or `cluster` selector would all be denied at call
+time — the grant would look broad and behave narrow. Such a grant must either name the
+kinds it covers or use `targets = "all-targets"`. The error names the first uncovered
+tool and kind, so the fix is mechanical.
+
+### 3.3 Compiled form
+
+```python
+DEFAULT_CONNECTION_TOKEN = "<default>"
+ACCESS_POLICY_FILENAME = "access-policy.toml"
+
+class AccessPolicyError(ValueError): ...
+
+@dataclass(frozen=True)
+class AllTargets: ...          # repr "ALL_TARGETS"
+ALL_TARGETS = AllTargets()
+
+@dataclass(frozen=True)
+class Grant:
+    tools: frozenset[str]
+    connections: frozenset[str | None]                          # None == default connection
+    targets: AllTargets | Mapping[TargetKind, frozenset[str]]   # MappingProxyType
+
+@dataclass(frozen=True)
+class AccessPolicy:
+    name: str
+    source: str                 # operator-facing origin, e.g. the file path
+    grants: tuple[Grant, ...]
+    tools: frozenset[str]       # derived capability ceiling
+    def permits_tool(self, tool: str) -> bool: ...
+    def grants_for(self, tool: str) -> tuple[Grant, ...]: ...
+
+def resolve_access_policy_path() -> Path: ...
+def compile_access_policy(document, name, tool_security, source) -> AccessPolicy: ...
+def load_access_policy(name, *, path=None, tool_security=None) -> AccessPolicy: ...
+```
+
+`"<default>"` compiles to `None`, matching `build_config(profile=None)`. `AccessPolicy.tools`
+is the union of every grant's `tools`. `Grant` is not hashable — `MappingProxyType` is
+unhashable — so P11 compares grants by equality, never by set membership.
+
+`load_access_policy` defaults `path` to `resolve_access_policy_path()` and
+`tool_security` to `server.TOOL_SECURITY`, imported **inside the function body** so the
+module remains importable without the `app` extra. `compile_access_policy` is pure and
+takes both explicitly; it is what the tests drive.
+
+### 3.4 Immutability
+
+`AccessPolicy` and `Grant` are frozen dataclasses over `frozenset`, `tuple`, and
+`MappingProxyType`. The module defines no mutator, no reload function, and no
+module-level policy state; the underlying dict behind each `MappingProxyType` is built
+locally and never retained. A policy is therefore fixed from construction, and there is
+nothing for an MCP tool argument to reach — no policy value is read from a request, an
+environment variable, or `HMCConfig`. #221 and #225 pass the object explicitly rather
+than reading a global, which keeps `create_mcp()` repeatable per test (ADR 0035).
+
+### 3.5 Error messages
+
+`AccessPolicyError` messages follow `config.py`'s fail-fast convention: the source, then
+the policy and grant, then what was wrong and what to do. For example —
+
+```
+access-policy.toml: policy 'lab': grant 1: unknown tool 'hmc_create_lpars'
+access-policy.toml: policy 'lab': grant 0: 'arbitrary-command' cannot be granted by
+  effect class; name 'hmc_run_command' in tools instead
+access-policy.toml: policy 'lab': grant 2: tool 'hmc_delete_lpar' requires a target
+  constraint for kind 'lpar'; add it to targets or use targets = "all-targets"
+access-policy.toml: policy 'typo' not found; available policies: lab, read-only
+```
+
+Messages name tool names, target kinds, connection-profile names, and the file path.
+None of those is a credential. Target *selector values* (system and LPAR names) are
+operator-supplied and are echoed only in the P5 duplicate/empty messages, where the
+offending value is what the operator needs to see; these errors surface at startup to
+an operator, not to an MCP client.
+
+## 4. Threat model
+
+Security-relevant on intent: this defines the artifact a later authorization boundary
+reads, and it parses a file the process did not produce.
+
+**Boundary inventory.** One boundary is added; none is widened.
+
+1. *Policy file → process* (new, filesystem, operator-controlled). Input: a TOML
+   document naming policies, effect classes, tool names, connection-profile names, and
+   target selector strings. Crossed once, at load, before serving.
+2. *Tool index → policy compile* (in-process, first-party). `TOOL_SECURITY` is
+   compiled-in literals validated at import by ADR 0035's V1–V11. Unchanged.
+
+No MCP request, tool argument, or HMC response reaches either boundary. The policy is
+never constructed from anything a client sends — epic #218 requirement 2.
+
+**Actor model.** The untrusted party is the MCP client and whatever drives it, including
+an LLM agent exposed to prompt injection through HMC data it reads. The trusted parties
+are the repository's own source and the local operator. The policy file sits at the same
+trust level as `config.toml`: an actor who can write it can already write the credential
+file and point the server at an HMC of their choosing, so the file's integrity is a
+filesystem-permissions property of the deployment, not something this module can
+establish. That trust placement is stated because it is the assumption the whole epic
+rests on.
+
+**Control per boundary.**
+
+1. *Policy file → process*: P1 rejects unknown keys, so a misspelled key never silently
+   becomes a wider policy; P4 and P7 reject values outside the closed vocabularies; P2,
+   P6, and P10 fail closed on omission rather than defaulting to permissive; P11 and P12
+   reject grants whose narrowness is illusory. Parsing is `tomllib` — stdlib, no code
+   execution, no object construction from the document. A parse error, an unreadable
+   file, and an absent file are all `AccessPolicyError`, never a silently empty policy.
+   The result is frozen (§3.4).
+2. *Tool index → compile*: the caller supplies the index; the module reads it and never
+   writes it. `MappingProxyType` from `server.py` is already read-only.
+
+**Explicitly out of scope.**
+
+- Nothing enforces the policy after this change. A valid policy file does not reduce any
+  caller's reach until #221. This is the accepted, sequenced risk of entry 2 of seven,
+  and it is the one an operator is most likely to misread — the file looks like a
+  control before it is one.
+- File mode, ownership, and symlink checks on the policy file. Its trust level equals
+  `config.toml`'s, which the repository does not check either; a check on one and not the
+  other would suggest a distinction that does not exist.
+- Resource bounds on the document (size, nesting depth). The file is operator-authored
+  and read once at startup, before serving; a hostile file implies an actor who can
+  already replace the credential file.
+- Connection-profile names are not cross-checked against `config.toml` (ADR 0036
+  consequences). A typo fails closed at call time under #222, not at load.
+- Target-selector *matching*, the `vios_uuid`/`vios_partition_id` namespace split,
+  `metric_resource`'s dependence on `category`, composite tools, and `dry_run` are #223's.
+  The compiled `Grant` exposes the allowlists and no matcher.
+- Read grants carry `connections`, but #222 authorizes mutations at the dispatch
+  boundary. Until that is settled on #222, a read grant's connection list is expressible
+  and unenforced.
+
+**AI surface.** No LLM call, prompt, system message, retrieval path, classifier, or agent
+loop is added or modified. No tool is registered, and no tool description or annotation
+changes. No eval plan applies.
+
+## 5. Acceptance criteria
+
+Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
+
+| id | criterion |
+|---|---|
+| A1 | A policy with one grant of `effects = ["read"]` compiles to a ceiling equal to exactly the set of tool names whose `effect` is `read` in the live index (54), and `permits_tool` is `False` for every `mutate`, `destructive`, and `arbitrary-command` tool. |
+| A2 | A policy granting `effects = ["read"]` on one grant and `tools = ["hmc_create_lpar"]` on another compiles to a ceiling of the reads plus that one tool; `permits_tool("hmc_delete_lpar")` is `False`, and `grants_for("hmc_create_lpar")` returns exactly the second grant. |
+| A3 | `effects = ["arbitrary-command"]` raises `AccessPolicyError` whose message names `hmc_run_command` (P4). `effects = ["read", "mutate", "destructive"]` produces a ceiling that excludes `hmc_run_command`, and `tools = ["hmc_run_command"]` includes it. |
+| A4 | `"<default>"` in `connections` compiles to `None` in `Grant.connections`; a named profile compiles to its own string; both may appear in one grant. |
+| A5 | The legacy-equivalent shape — one grant with `effects = ["read", "mutate", "destructive"]`, two connections, and `targets = "all-targets"` — validates and compiles to a ceiling of exactly the 128 collector-declared tools, proving epic #218's claim that legacy exposure is expressible without a wildcard language. |
+| A6 | Each of P1–P12 raises `AccessPolicyError` (or, for pydantic shape rules, an `AccessPolicyError` wrapping the validation failure) whose message names the policy and the grant index. One case per rule, including: an unknown top-level key, an unknown grant key, a missing `connections`, an empty `connections`, `targets` given as a bare list, a duplicate tool name in one array, an empty selector string, a grant with neither `effects` nor `tools`, an unknown tool name, a tool already covered by the grant's `effects`, a `targets` key of `"none"`, a `targets` kind no granted tool declares, an uncovered required selector kind, two identical grants, and a grant subsumed by an `all-targets` sibling. |
+| A7 | P10 does not fire for optional selectors: a grant of `tools = ["hmc_power_off_lpar"]` with `targets = { lpar = ["db-01"] }` validates even though that tool also declares an optional `managed_system` selector. |
+| A8 | P10 does not fire for tools with no selectors: a grant of `tools = ["hmc_list_systems"]` (a `console` tool) with `targets = "all-targets"` validates, and the same grant with `targets = { managed_system = ["S1"] }` is rejected by P9. |
+| A9 | `AccessPolicy` and `Grant` reject attribute assignment with `FrozenInstanceError`; `AccessPolicy.tools` and `Grant.connections` are `frozenset`; a `targets` table compiles to a `MappingProxyType` that rejects item assignment. No module-level name in `hmc_mcp.access_policy` is a `dict`, `list`, or `set` — every module-level container is an immutable type, so there is no mutable policy state to reach. |
+| A10 | `load_access_policy` on a missing file, on a file with a TOML syntax error, and on an absent policy name each raise `AccessPolicyError`; the absent-name message lists the available names. Round-trip: a written temp file loads to the same `AccessPolicy` as `compile_access_policy` over the parsed document. |
+| A11 | `grants = []` compiles to a policy that permits no tool at all. |
+| A12 | A subprocess that imports only `hmc_mcp.access_policy` finds `hmc_mcp.server` absent from `sys.modules` — the module is importable without the `app` extra, and the dependency runs one way. `api.__all__` is unchanged. |
+| A13 | `just verify` passes, including `scripts/smoke_mcp.py`. Not a pytest case. |
+| A14 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
+
+## 6. Files
+
+| file | change |
+|---|---|
+| `src/hmc_mcp/access_policy.py` | new — models, validation P1–P13, compiled `AccessPolicy`/`Grant`, `load_access_policy` |
+| `tests/unit/test_access_policy.py` | new — A1–A12 |
+| `docs/adr/0036-server-access-policy-model.md` | new |
+| `docs/workflow/specs/2026-08-18-server-access-policy-design.md` | new — this file |
+| `docs/workflow/plans/2026-08-18-server-access-policy.md` | new |
+
+No existing source file changes. The dispatch's file-scope hint listed `config.py` and
+`common.py`; neither needs an edit — `config_dir()` is imported as it stands, and
+`common.py` is read only to establish that `profile=None` is the default connection.
