@@ -10,6 +10,7 @@ on top of them. See docs/adr/0035-enforceable-tool-security-metadata.md.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping
@@ -103,6 +104,46 @@ class ToolDefinition:
     name: str
     handler: Callable[..., Any]
     security: ToolSecurity
+
+
+# The access policy's dispatch-time question, taken as a callable for the reason
+# ADR 0037 takes the ceiling as one: `access_policy` imports this module, so the
+# dependency must not run back the other way. It is given the tool name, its
+# authoritative classification, and the call's bound arguments; it returns None
+# to permit and raises to deny. See ADR 0038.
+Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]
+
+
+def authorized(
+    name: str,
+    security: ToolSecurity,
+    handler: Callable[..., Any],
+    authorize: Authorize | None,
+) -> Callable[..., Any]:
+    """Return *handler*, or a wrapper that authorizes the call before running it.
+
+    The wrapper — not the registration site — decides: a tool declaring no
+    connection argument, and every tool when no policy is selected, registers
+    unwrapped, so no site can be handed an authorizer it forgets to apply.
+
+    Arguments are bound against the handler's own signature rather than read out
+    of ``kwargs``, so a selector passed positionally or left to its default is
+    read correctly. ``functools.wraps`` sets ``__wrapped__``, which both
+    ``inspect.signature`` and FastMCP's schema generation follow, so the
+    registered tool's name, description, and parameter schema are unchanged.
+    """
+    if authorize is None or security.connection_argument is None:
+        return handler
+    signature = inspect.signature(handler)
+
+    @functools.wraps(handler)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        authorize(name, security, bound.arguments)
+        return handler(*args, **kwargs)
+
+    return guarded
 
 
 def annotations_for(effect: Effect) -> ToolAnnotations:
@@ -238,20 +279,29 @@ def tool_module():
         return collect
 
     def register_tools(
-        mcp: FastMCP, *, permits: Callable[[str], bool] | None = None
+        mcp: FastMCP,
+        *,
+        permits: Callable[[str], bool] | None = None,
+        authorize: Authorize | None = None,
     ) -> None:
         """Register this module's tools, skipping any the ceiling withholds.
 
-        *permits* is the access policy's ceiling question. ``None`` means no
-        ceiling, which is what a caller composing without a policy passes. The
-        predicate is taken rather than the policy object because
-        ``access_policy`` imports this module; see ADR 0037.
+        *permits* is the access policy's ceiling question and *authorize* its
+        dispatch-time question. ``None`` means no ceiling and no authorization,
+        which is what a caller composing without a policy passes. Both are taken
+        as callables rather than the policy object because ``access_policy``
+        imports this module; see ADR 0037 and ADR 0038.
         """
         for definition in definitions:
             if permits is not None and not permits(definition.name):
                 continue
             mcp.tool(
-                definition.handler,
+                authorized(
+                    definition.name,
+                    definition.security,
+                    definition.handler,
+                    authorize,
+                ),
                 annotations=annotations_for(definition.security.effect),
             )
 
