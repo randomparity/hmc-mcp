@@ -268,8 +268,8 @@ a running server to see which is which.
 
 Connection scope is decided on the connection the call will *actually* select,
 not on the `profile` string the caller passes, so a nickname is resolved to the
-profile it targets before the check. Two consequences are worth knowing before
-you author a policy:
+profile it targets before the check. Three consequences are worth knowing
+before you author a policy:
 
 - **`connections` entries must be profile keys**, not nicknames. A nickname is
   resolved away before the comparison, so granting one never matches.
@@ -278,7 +278,6 @@ you author a policy:
   resolved. Every call is therefore evaluated as `<default>`, so grant
   `connections = ["<default>"]`; a policy naming profile keys denies everything
   in that deployment, and says so in the denial.
-
 - **`<default>` binds late, and it binds to whatever the deployment resolves.**
   It is not a fixed HMC: absent `HMC_HOST` it follows `HMC_PROFILE`, then
   `default_profile` — which may itself be a nickname, so the granted connection

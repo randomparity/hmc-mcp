@@ -662,3 +662,57 @@ def test_list_profiles_and_nicknames_rejects_invalid_toml(tmp_path):
     cfg.write_text("this is [not valid toml ][[[", encoding="utf-8")
     with pytest.raises(ConfigError, match="TOML parse error"):
         list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_an_unreadable_file(tmp_path):
+    """An OSError must arrive as ConfigError: #222 authorizes on this reader."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    try:
+        with pytest.raises(ConfigError, match="cannot be read"):
+            list_profiles_and_nicknames(config_path=cfg)
+    finally:
+        cfg.chmod(0o600)
+
+
+def test_list_profiles_and_nicknames_rejects_a_directory(tmp_path):
+    """The exists() check is a TOCTOU and a directory satisfies it."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    directory = tmp_path / "config.toml"
+    directory.mkdir()
+    with pytest.raises(ConfigError, match="cannot be read"):
+        list_profiles_and_nicknames(config_path=directory)
+
+
+def test_list_profiles_and_nicknames_rejects_non_utf8(tmp_path):
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ConfigError, match="is not valid UTF-8"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_a_non_table_profiles_key(tmp_path):
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = _write_toml(tmp_path / "config.toml", "profiles = 'not-a-table'\n")
+    with pytest.raises(ConfigError, match="'profiles' must be a table"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_reports_an_unresolvable_home(monkeypatch):
+    """Path.home() raises under a uid with no passwd entry and no HOME."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    def _no_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr("pathlib.Path.home", _no_home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    with pytest.raises(ConfigError, match="cannot resolve the config path"):
+        list_profiles_and_nicknames()

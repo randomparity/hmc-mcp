@@ -99,7 +99,9 @@ def _policy(*connections: str, tools=("hmc_delete_lpar",), name="test"):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("token", [7, 1.5, ["lab"], {"profile": "lab"}, object()])
+@pytest.mark.parametrize(
+    "token", [7, 1.5, ["lab"], {"profile": "lab"}, object(), 0, [], {}]
+)
 def test_non_string_token_resolves_to_nothing(config, token):
     """No grant can hold the unresolved sentinel, so it always denies."""
     assert selected_connection(token, tool="hmc_delete_lpar") == UNRESOLVED
@@ -347,11 +349,21 @@ def test_denial_names_the_tool_the_policy_and_the_callers_own_token(config):
     )
 
 
-def test_denial_renders_an_omitted_argument_as_the_default_token(config):
+@pytest.mark.parametrize("token", [None, ""])
+def test_denial_renders_an_omitted_argument_as_the_default_token(config, token):
     authorize = connection_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
-        authorize("hmc_delete_lpar", SECURITY, {"profile": None})
+        authorize("hmc_delete_lpar", SECURITY, {"profile": token})
     assert "connection '<default>'" in str(error.value)
+
+
+def test_denial_renders_a_falsy_non_string_as_itself(config):
+    """R13 renders what the caller named, and 0 is not the default connection."""
+    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    with pytest.raises(ConnectionScopeError) as error:
+        authorize("hmc_delete_lpar", SECURITY, {"profile": 0})
+    assert "connection 0 " in str(error.value)
+    assert "<default>" not in str(error.value)
 
 
 def test_denial_explains_the_hmc_host_collapse(config, monkeypatch):

@@ -304,7 +304,13 @@ def list_profiles_and_nicknames(
     arrive as one recognizable type rather than as an OSError or an
     AttributeError from the middle of a dict access.
     """
-    path = config_path if config_path is not None else resolve_config_path()
+    try:
+        path = config_path if config_path is not None else resolve_config_path()
+    except (RuntimeError, ValueError) as exc:
+        # resolve_config_path() reaches Path.home(), which raises RuntimeError
+        # under a uid with no passwd entry and no HOME — a container or systemd
+        # unit. access_policy.load_access_policy guards the same case.
+        raise ConfigError(f"cannot resolve the config path: {exc}") from exc
     if path is None or not path.exists():
         return [], {}
     try:

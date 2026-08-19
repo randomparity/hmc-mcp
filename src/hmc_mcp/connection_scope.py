@@ -95,10 +95,10 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
         return None
     try:
         profiles, nicknames = list_profiles_and_nicknames()
-    except (ConfigError, OSError, ValueError) as error:
+    except (ConfigError, OSError, RuntimeError, ValueError) as error:
         # ConfigError is what the reader raises for every failure it knows; the
-        # other two are the belt to its braces, so a configuration this server
-        # cannot read can never reach the client as a raw path or errno.
+        # rest are the belt to its braces, so a configuration this server cannot
+        # read can never reach the client as a raw path, errno, or traceback.
         raise ConnectionScopeError(_UNREADABLE.format(tool=tool)) from error
     if token in profiles:
         return token
@@ -156,7 +156,11 @@ def connection_authorizer(policy: AccessPolicy) -> Authorize:
                 # 3 that value is a profile key read from config.toml, and a
                 # denial is one probe. repr() also neutralizes any control
                 # character a caller puts in it.
-                connection=repr(token if token else DEFAULT_CONNECTION_TOKEN),
+                connection=repr(
+                    DEFAULT_CONNECTION_TOKEN
+                    if token is None or token == ""
+                    else token
+                ),
                 policy=repr(policy.name),
                 clause=_clause(argument),
             )

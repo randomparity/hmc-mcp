@@ -448,22 +448,34 @@ def _assert_routes(
         name = _call_name(node)
         if name in _CONNECTION_BUILDERS:
             reached += 1
+            where = f"{tool}: {name}() at {function.name}:{node.lineno}"
+            # A splat hides its keys from the parser, so the override check below
+            # could not see a `host` travelling inside one. Refuse the shape.
+            assert all(keyword.arg is not None for keyword in node.keywords), (
+                f"{where} splats a mapping into a connection builder, which this "
+                "check cannot read; pass the connection argument explicitly"
+            )
             keywords = {keyword.arg for keyword in node.keywords}
-            passed = argument is not None and (
-                argument in keywords
-                or any(
-                    isinstance(arg, ast.Name) and arg.id == argument
-                    for arg in node.args
-                )
+            # The *value* must be the declared argument, not merely a keyword of
+            # that name: `client_from_env(profile='some-other-profile')` routes
+            # somewhere the authorization never decided about. The keyword arm is
+            # the only one available to the SSH family, whose `profile` is
+            # keyword-only on `_app._ssh_with_client`.
+            passed = argument is not None and any(
+                isinstance(supplied, ast.Name) and supplied.id == argument
+                for supplied in [
+                    *node.args,
+                    *(keyword.value for keyword in node.keywords
+                      if keyword.arg == argument),
+                ]
             )
             assert passed, (
-                f"{tool}: {name}() at {function.name}:{node.lineno} does not receive "
-                "the declared connection argument, so it routes to the deployment "
-                "default whatever the caller and the access policy named"
+                f"{where} does not receive the value of the declared connection "
+                "argument, so it routes to a connection the access policy did not "
+                "authorize"
             )
             assert not keywords & _CONNECTION_OVERRIDES, (
-                f"{tool}: {name}() at {function.name}:{node.lineno} passes a "
-                "connection override that skips profile resolution"
+                f"{where} passes a connection override that skips profile resolution"
             )
         elif name in helpers and name not in seen:
             helper = helpers[name]
@@ -506,9 +518,11 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        # Every top-level function in the file, not only the private ones: a
-        # public same-module helper that drops the profile is exactly as
-        # fail-open as a private one, and was not caught while this filtered.
+        # Every top-level function in the file, not only the private ones. No
+        # handler routes through a public same-module helper today, so this
+        # widens nothing now; it keeps one from becoming a hole later, since a
+        # public helper that drops the selector is exactly as fail-open as a
+        # private one. test_the_walk_descends_into_a_public_helper pins it.
         helpers = dict(functions)
         for name in sorted(functions.keys() & connection_bearing):
             argument = TOOL_SECURITY[name].connection_argument
@@ -519,3 +533,47 @@ def test_every_handler_routes_the_connection_argument_it_declares():
             checked.add(name)
 
     assert checked == connection_bearing, sorted(connection_bearing - checked)
+
+
+_PUBLIC_HELPER_MODULE = """
+def open_client(profile=None):
+    return client_from_env()
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    with open_client(profile) as hmc:
+        return hmc
+"""
+
+
+def test_the_walk_descends_into_a_public_helper():
+    """The widening in G12, pinned: a public helper is followed like a private one.
+
+    No handler in `src/` routes this way, so without a synthetic module nothing
+    would fail if the walk went back to following only `_`-prefixed helpers.
+    """
+    tree = ast.parse(_PUBLIC_HELPER_MODULE)
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    with pytest.raises(AssertionError, match="does not receive the value"):
+        _assert_routes(
+            functions["hmc_probe"], "profile", functions, "hmc_probe", {"hmc_probe"}
+        )
+
+    private_only = {
+        name: node for name, node in functions.items() if name.startswith("_")
+    }
+    assert (
+        _assert_routes(
+            functions["hmc_probe"],
+            "profile",
+            private_only,
+            "hmc_probe",
+            {"hmc_probe"},
+        )
+        == 0
+    ), "the private-only walk reaches no builder, which is why it must not be used"

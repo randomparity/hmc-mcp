@@ -258,19 +258,27 @@ clause:
 <tool> with a connection the policy grants.
 ```
 
-`<clause>` is `""`, or one of exactly two fixed strings:
-
-- rule 1 — `"HMC_HOST is set, so the 'profile' argument is ignored and the call was
-  evaluated as the '<default>' connection. "`
-- rule 3, when the token resolved through a nickname — `"The token resolves through the
-  configured nickname table to a connection this policy does not grant. "`
-
-A normalization failure under R10 uses a second closed template with one substitution:
+`<clause>` is `""`, or exactly one fixed string, used when rule 1 fired:
 
 ```
-<tool> cannot be authorized: the configured HMC connections could not be read, or the
-requested connection does not name one.
+HMC_HOST is set, so the '<argument>' argument is ignored and the call was evaluated as
+the '<default>' connection.
 ```
+
+`<argument>` is the tool's own `ToolSecurity.connection_argument`, not the literal
+`profile`. There is deliberately **no** clause for a token that resolved through a
+nickname: saying so would confirm the token is in the operator's nickname table, which is
+the disclosure the single denial template exists to prevent.
+
+A configuration that cannot be read at all uses a second closed template with one
+substitution:
+
+```
+<tool> cannot be authorized: the configured HMC connections could not be read.
+```
+
+A token that names no configured connection does *not* use it — that case is denied by
+the skeleton above, indistinguishable from a resolvable-but-withheld token.
 
 The originating `ConfigError`, when there is one, is chained as `__cause__` for the
 server-side traceback and never interpolated, so the config path does not reach the
