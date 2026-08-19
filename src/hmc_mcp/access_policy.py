@@ -330,8 +330,29 @@ def _compile_grant(
                     f"{kind!r}, so the constraint could never match"
                 )
         for tool in model.tools:
-            for selector in tool_security[tool].targets:
-                if selector.required and selector.kind not in model.targets:
+            security = tool_security[tool]
+            if security.connection_argument is None:
+                # Never wrapped by `tool_registry.authorized`, so no authorizer
+                # ever runs on it and the target dimension structurally cannot
+                # reach it. A grant naming it beside a table is bounded by the
+                # ceiling alone — which is exactly how it behaved before ADR 0039
+                # — so it is not dead and must not fail the load. Failing here
+                # would refuse to start a server over a working grant, and would
+                # do it for `hmc_effective_permissions` in particular.
+                continue
+            if not security.exhaustive_targets:
+                raise AccessPolicyError(
+                    f"{where}: tool {tool!r} has no target selector that a targets "
+                    "table can bound, so this grant could never authorize it; "
+                    f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
+                )
+            # Every declared selector kind, not only the required ones. ADR 0039
+            # denies an omitted optional selector at call time, so a grant leaving
+            # one uncovered is dead in the same way a missing required kind is —
+            # the authoring error ADR 0036 invented this rule to catch. This
+            # supersedes ADR 0036 acceptance criterion A7.
+            for selector in security.targets:
+                if selector.kind not in model.targets:
                     raise AccessPolicyError(
                         f"{where}: tool {tool!r} requires a target constraint for "
                         f"kind {selector.kind!r}; add it to targets or use "

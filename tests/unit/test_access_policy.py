@@ -371,16 +371,117 @@ def test_coverage_rule_binds_explicitly_named_tools_only() -> None:
     assert policy.permits_tool("hmc_delete_lpar") is True
 
 
-def test_optional_selectors_need_no_coverage() -> None:
+def test_optional_selectors_must_be_covered_too() -> None:
+    """ADR 0039 supersedes ADR 0036 acceptance criterion A7.
+
+    A7 said an optional selector needs no coverage, as a placeholder for the
+    decision ADR 0036 deferred to #223. That decision is that an omitted optional
+    selector *denies* under a table — so this grant would authorize nothing at
+    all, and a dead grant in a security artifact is the authoring error ADR 0036
+    invented the coverage rule to catch.
+
+    `hmc_power_off_lpar` is the live instance: `destructive`, and the surface's
+    only tool whose `managed_system` selector is optional — which is exactly the
+    LPAR-name-collision case ADR 0039 had to close.
+    """
+    with pytest.raises(AccessPolicyError) as raised:
+        _compile(
+            _document(
+                tools=["hmc_power_off_lpar"],
+                connections=["lab"],
+                targets={"lpar": ["db-01"]},
+            )
+        )
+
+    assert "'hmc_power_off_lpar'" in str(raised.value)
+    assert "'managed_system'" in str(raised.value)
+
+    # Covering it loads, and is the remedy the message names.
     policy = _compile(
         _document(
             tools=["hmc_power_off_lpar"],
             connections=["lab"],
-            targets={"lpar": ["db-01"]},
+            targets={"lpar": ["db-01"], "managed_system": ["S1"]},
+        )
+    )
+    assert policy.permits_tool("hmc_power_off_lpar") is True
+
+
+def test_a_tool_a_table_cannot_bound_is_refused_at_load() -> None:
+    """The other half of ADR 0039's reading (ii), at load rather than at call.
+
+    `hmc_remove_ldap_config` is `destructive` and declares no selector, so a
+    table has nothing to bind on. The grant below is the shape an operator
+    actually writes and the one ADR 0036's older rule cannot catch: the table's
+    kinds *are* declared, by the tool sitting beside it, so the grant reads as
+    "may destroy db-01 on S1" while reaching a console-wide LDAP delete.
+    """
+    with pytest.raises(AccessPolicyError) as raised:
+        _compile(
+            _document(
+                tools=["hmc_delete_lpar", "hmc_remove_ldap_config"],
+                connections=["lab"],
+                targets={"lpar": ["db-01"], "managed_system": ["S1"]},
+            )
+        )
+
+    assert "'hmc_remove_ldap_config'" in str(raised.value)
+    assert "all-targets" in str(raised.value)
+
+    # Splitting it is the remedy the message names, and both halves load.
+    policy = _compile(
+        _document(
+            tools=["hmc_remove_ldap_config"],
+            connections=["lab"],
+            targets="all-targets",
+        )
+    )
+    assert policy.permits_tool("hmc_remove_ldap_config") is True
+
+
+def test_a_composite_a_table_cannot_bound_is_refused_at_load() -> None:
+    """Same rule, reached through `exhaustive_targets=False` rather than through
+    an empty selector tuple — the composite case, where the grant *looks* covered.
+    """
+    with pytest.raises(AccessPolicyError) as raised:
+        _compile(
+            _document(
+                tools=["hmc_provision_lpar"],
+                connections=["lab"],
+                targets={"managed_system": ["S1"]},
+            )
+        )
+
+    assert "'hmc_provision_lpar'" in str(raised.value)
+    assert "all-targets" in str(raised.value)
+
+
+def test_an_unwrapped_tool_is_exempt_from_both_load_time_rules() -> None:
+    """A grant naming one beside a table is not dead, so it must not fail.
+
+    `hmc_effective_permissions` and `hmc_list_configured_hosts` declare no
+    connection argument, so `tool_registry.authorized` returns their handlers
+    unwrapped and no authorizer ever runs on them. Their behaviour under a table
+    grant is exactly what it was before ADR 0039 — bounded by the ceiling alone.
+    Refusing the load would stop a server over a grant that works, and would do
+    it for the introspection tool an operator is most likely to name.
+    """
+    policy = _compile(
+        _document(
+            tools=[
+                "hmc_delete_lpar",
+                "hmc_effective_permissions",
+                "hmc_list_configured_hosts",
+            ],
+            connections=["lab"],
+            targets={"lpar": ["db-01"], "managed_system": ["S1"]},
         )
     )
 
-    assert policy.permits_tool("hmc_power_off_lpar") is True
+    assert policy.permits_tool("hmc_effective_permissions") is True
+    assert policy.permits_tool("hmc_list_configured_hosts") is True
+    for name in ("hmc_effective_permissions", "hmc_list_configured_hosts"):
+        assert TOOL_SECURITY[name].connection_argument is None
 
 
 def test_selector_less_tools_stay_in_a_table_scoped_effect_grant() -> None:
@@ -491,7 +592,7 @@ def test_compiled_policy_is_immutable() -> None:
         _document(
             tools=["hmc_power_off_lpar"],
             connections=["lab"],
-            targets={"lpar": ["db-01"]},
+            targets={"lpar": ["db-01"], "managed_system": ["S1"]},
         )
     )
     grant = policy.grants[0]
@@ -524,7 +625,7 @@ def test_compile_does_not_retain_the_caller_containers() -> None:
     document = _document(
         tools=["hmc_power_off_lpar"],
         connections=connections,
-        targets={"lpar": selectors},
+        targets={"lpar": selectors, "managed_system": ["S1"]},
     )
 
     policy = _compile(document)
