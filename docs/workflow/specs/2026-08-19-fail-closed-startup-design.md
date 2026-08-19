@@ -68,6 +68,18 @@ through `list_tools()`, which the dispatch wrapper leaves untouched — `functoo
 gain isolation rather than losing it: the toggled application is now per-module rather than
 process-wide.
 
+**R2b — Two further test modules break on the transport contract itself.**
+`tests/app/test_serve.py` owns the CLI transport contract this entry rewrites and breaks
+against four requirements at once: it patches `server_app.mcp` (removed by R2), asserts
+`access_policy=None` is forwarded (R5 makes those invocations exit 2), asserts
+`calls == [(enabled, None, None)]` for the gate pair (R3 makes both non-optional), and calls
+`main_stdio`/`main_http` without `access_policy` (R4 removes the default, so each raises
+`TypeError`). Every one of those assertions is inverted to the new contract rather than
+deleted: the forwarded value becomes a real `AccessPolicy`, and the omitted-option and
+absent-file cases gain assertions on exit code 2 and exit code 1 respectively.
+`tests/test_live_runner.py` asserts `application is runner.mcp` through a two-parameter
+`configure` double, so it follows R15's composition and R15a's call signature.
+
 **R3 — Both gates are non-optional and still derived together.** `server._gates(policy:
 AccessPolicy) -> tuple[Callable[[str], bool], Authorize]` returns `policy.permits_tool` and
 `dispatch_authorizer(policy)`. It keeps its ADR 0038 contract: a site given one without the
@@ -202,13 +214,24 @@ message rendering it discloses no filesystem path.
 `render_legacy_policy(server.TOOL_SECURITY, legacy_connections())` to
 `resolve_access_policy_path()`, creating parent directories, using `O_WRONLY|O_CREAT|O_EXCL`
 at mode `0o600` on POSIX and `open(..., "x")` on win32 — the same two-branch pattern
-`config init` uses. An existing file is never overwritten, truncated, or read: the command
-exits **1** with a `FileExistsError` naming the path. A write or close failure *after* the
+`config init` uses, and it resolves that destination through the same guard R5b specifies —
+`config_dir()` reaches `Path.home()` here exactly as it does for `serve`, and an
+unresolvable path is reported through `_fail` at exit **1** naming the
+`HOME`/`XDG_CONFIG_HOME` remedy rather than raising. Whether `legacy_connections()` happens
+to convert that failure first is an evaluation order this does not rely on. An existing file
+is never overwritten, truncated, or read: the command exits **1** with a `FileExistsError`
+naming the path. A write or close failure *after* the
 descriptor exists — ENOSPC, EDQUOT, EIO — unlinks the destination before reporting.
 `O_EXCL` alone gives "no partial file" only for failures at `os.open`, and a truncated file
 here is worse than elsewhere: it exists, so the command's own no-overwrite rule refuses to
 regenerate over it, and it does not compile, so `serve` refuses too — leaving a deployment
-that cannot start and cannot regenerate without a manual delete nothing documents. A `ConfigError` from R8 is reported
+that cannot start and cannot regenerate without a manual delete nothing documents.
+The unlink closes the exception arm only: a SIGINT, SIGTERM, OOM kill, or host loss between
+the create and the final flush leaves the same state with no handler to run, and a zero-byte
+file is enough, since an empty document fails the required `policies` key. That residual is
+named rather than implied closed, and R16's migration section carries the recovery: if
+`serve` reports a policy that will not compile and the generator reports the file already
+exists, delete it and re-run the generator. A `ConfigError` from R8 is reported
 the same way — exit **1** through `_fail`, with no file written. On success it prints the
 path to stdout and one activation hint to stderr, and it does not start a server, modify
 `config.toml`, or make the policy active.
@@ -225,6 +248,16 @@ that deployment must run the generator under the serving identity's `HOME` or
 The path is the trusted local operator's own; parent directories
 are created as for the default path, and a directory or unwritable destination surfaces the
 `OSError` through `_fail` at exit **1** with no partial file.
+
+**R11b — "Legacy-equivalent" has two documented edges, both inherited.** The name is a
+claim about what the policy *grants*, and two settled decisions keep it from being exact.
+`connection_scope` resolves an omitted `profile` argument to `<default>` without consulting
+`HMC_PROFILE` or `default_profile` (ADR 0038 fixed that denotation and recorded its late
+binding), so what the authorizer evaluates and what `build_config` loads can differ. And
+`targets_permitted` denies an `UNREADABLE` selector value even under `all-targets`
+(ADR 0039: a value the boundary declines to read is a malformed call, not a narrow one), so
+a call the unpolicied server would have run can be denied. Neither is reopened here; both
+are named so "legacy-equivalent" is read as the two shipped records define it.
 
 **R12 — The generated policy authorizes a call that omits an optional selector.** A call to
 a tool with an optional target selector, made with that argument unset, is permitted under
@@ -251,9 +284,21 @@ invoke. Neither holds an application at module scope. The smoke path proves on e
 `just verify` and every CI leg that the grant compiles and composes; it does not serialize
 TOML, so the emitted document's parse is R9's to prove and not smoke's.
 
+**R15a — Every `configure_arbitrary_command_tool` call passes the gates it composed
+under.** `scripts/live_test_runner.py` calls it as `(True, mcp)` today: `permits=None`
+registers `hmc_run_command` whatever the policy says, and `authorize=None` makes
+`tool_registry.authorized` return the bare handler, so the runner's escape-hatch calls
+would run unauthorized while every other tool it drives is wrapped. That also falsifies
+R7a's justification for `include_arbitrary_command`, which assumes the registration is
+gated. The runner therefore passes `permits` and `authorize` derived from the policy it
+composed, which is what makes the opt-in load-bearing rather than decorative — and what
+makes the live run evidence about the path an operator takes.
+
 **R16 — Documentation states the new default and its precondition.** `README.md` gains a
 migration section covering the refusal, the generator, the two exit codes, the `--output`
 regeneration-and-diff procedure over both the `tools` and `connections` arrays, the
+recovery for a policy file that exists but will not compile (delete it, re-run the
+generator), the
 requirement that the generator run as the identity
 `serve` runs under, the resolvable-`HOME`-or-`XDG_CONFIG_HOME` requirement for a container
 or systemd unit, and the loss of `hmc_run_command` for a deployment that ran with
@@ -416,6 +461,17 @@ is trusted input to the loader.
   path rather than a file. Accepted; the remedy is one environment variable in the unit or
   image, stated in the README. An `--access-policy-file` option was not added, because a
   second place a policy can come from is a second thing to get wrong.
+- *A release that removes or renames a tool stops a generated-policy deployment from
+  starting at all.* The subtractive arm of the pin, and categorically worse than the
+  additive one: `_compile_grant` raises `unknown tool '<name>'` for any granted name absent
+  from `TOOL_SECURITY`, so `serve` exits 1 and nothing runs — where an added tool merely
+  goes ungranted while the server keeps serving. It is not hypothetical; ADR 0003 and
+  ADR 0004 each consolidated tool pairs, which retires names. Accepted rather than closed,
+  because the alternative is a loader that ignores unknown tool names, and ADR 0036 made
+  that strictness deliberate. The remedies are procedural and belong to the project as much
+  as the operator: regenerate as part of any upgrade, and call tool removals out in the
+  release notes. Before this entry an unpolicied deployment was immune, so this is reach
+  this entry creates.
 - *An operator who never regenerates loses new tools **and new connections** silently.*
   Accepted and documented. Both arms of the grant are generation-time snapshots, and the
   connections arm is the more frequent one: adding a profile to `config.toml` is routine,
