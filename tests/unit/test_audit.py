@@ -332,6 +332,22 @@ def test_a_broken_or_closed_stream_is_survived(monkeypatch, error):
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
 
 
+def test_a_foreign_writers_bad_record_does_not_raise_into_them(capsys):
+    """A stdlib handler never raises into its caller, and this is an attachment
+    point the operator documentation invites others to use."""
+    audit.install_audit_sink()
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+
+    class Hostile:
+        def __str__(self) -> str:
+            raise RuntimeError("this record cannot be rendered")
+
+    # Raised while the handler renders the message, not while audit builds it, so
+    # audit._emit's guard is not what saves the caller here.
+    logger.warning("%s", Hostile())
+    capsys.readouterr()
+
+
 def test_install_is_idempotent_and_defers_to_what_the_operator_set():
     """Spec 14. Configured wins; unconfigured gets a default."""
     logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)

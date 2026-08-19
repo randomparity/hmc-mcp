@@ -7,10 +7,16 @@ document is the contract those records keep. The decision behind it is
 
 ## What you get, and when you get nothing
 
-Records exist only for calls the access policy authorizes, which means **a policy must
-be selected**. Without `--access-policy NAME`, no authorizer is on any dispatch path,
-so `hmc-mcp serve` installs the sink and emits nothing at all — for the same reason it
-enforces nothing at all. That default is what issue #225 changes.
+**`authorization` records** exist only for calls the access policy authorizes, which
+means a policy must be selected. Without `--access-policy NAME` no authorizer is on any
+dispatch path, so `hmc-mcp serve` installs the sink and emits no authorization record at
+all — for the same reason it enforces nothing at all. That default is what issue #225
+changes.
+
+**`ownership-override` records are not policy-gated.** They come from the ADR 0011
+ownership check inside the handler, which runs whether or not a policy is selected — and
+on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
+still produce those, and only those.
 
 Three other things produce no record, by design:
 
@@ -69,8 +75,11 @@ names nothing configured, or `null` when the configuration could not be read at 
 > profile literally named `<default>`, per the collision above. A caller that omitted the
 > argument renders `absent`/`"<default>"` whether or not `HMC_HOST` is set.
 
-`targets` is `null` only in the `configuration-unreadable` case, where selectors were
-never extracted; `[]` means the tool declares none. An integer selector —
+`targets` is `null` when the selectors were never extracted — the
+`configuration-unreadable` case, and also the rarer one where assembling the record
+failed and it degraded to nulls rather than being dropped. Treat `null` as "not
+recorded", for any reason code, rather than as a synonym for one. `[]` means the tool
+declares no selector. The same reading applies to a `null` `connection.resolved`. An integer selector —
 `vios_partition_id`, the only one — records `state: "present"` with its decimal
 rendering; a boolean records `unreadable`.
 

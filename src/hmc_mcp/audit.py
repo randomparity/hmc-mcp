@@ -271,6 +271,14 @@ class _AuditHandler(logging.Handler):
             stream.flush()
         except (OSError, ValueError):
             pass
+        except Exception:  # noqa: BLE001 - the stdlib handler contract
+            # Every stdlib handler wraps its body this way, and that is what makes
+            # a logging call safe to place anywhere in a program. This module's own
+            # records cannot reach here — `_emit` already catches around both the
+            # build and the log call — but the operator documentation names
+            # `hmc_mcp.audit` as an attachment point, so a foreign writer's odd
+            # record must not raise back into whatever called it.
+            self.handleError(record)
 
 
 def install_audit_sink() -> None:

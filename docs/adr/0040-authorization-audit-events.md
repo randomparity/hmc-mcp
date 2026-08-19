@@ -333,7 +333,9 @@ is #270.
   cannot read it: it is not in the tool result. **Only when a policy is selected.** `_gates`
   returns `(None, None)` without one, `tool_registry.authorized` then leaves every handler
   unwrapped, and no authorizer is on any dispatch path — so a default `hmc-mcp serve` installs the
-  sink and emits nothing at all, for the same reason it enforces nothing at all. That default is
+  sink and emits no *authorization* record at all, for the same reason it enforces nothing at all.
+  The converged `ownership-override` record is not policy-gated: it comes from the ADR 0011 check
+  inside the handler, so an unpolicied server still produces those, and only those. That default is
   what #225 changes; until then the ADR's own objection to a silent control ("an audit control
   that emits nothing by default is not a control") applies to the missing policy exactly as it
   applied to the missing handler, and the operator with no policy *file* gets no startup warning

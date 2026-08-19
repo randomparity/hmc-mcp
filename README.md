@@ -466,7 +466,8 @@ code, the connection selector, and the declared target selectors. Denials are `W
 and permits are `INFO`. Credentials, whole argument sets, command text, and response
 bodies are absent by construction.
 
-Without `--access-policy NAME` there is no authorizer, so nothing is recorded at all.
+Without `--access-policy NAME` there is no authorizer, so no *authorization* record is
+written. ADR 0011 ownership-override records are not policy-gated and still are.
 
 See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.
