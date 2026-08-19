@@ -147,8 +147,8 @@ def test_inspection_reports_effects_source_and_dimensions():
     assert result["policy_name"] == "test"
     assert result["policy_source"] == SOURCE
     assert result["ceiling_enforced"] is True
-    assert result["enforced_dimensions"] == ["tools"]
-    assert result["declared_only_dimensions"] == ["connections", "targets"]
+    assert result["enforced_dimensions"] == ["tools", "connections"]
+    assert result["declared_only_dimensions"] == ["targets"]
 
     grant = result["declared_grants"][0]
     assert grant["connections"] == ["<default>"]

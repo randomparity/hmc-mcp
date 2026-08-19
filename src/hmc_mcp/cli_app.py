@@ -299,8 +299,10 @@ def serve(
         None,
         "--access-policy",
         metavar="NAME",
-        help="Enforce the named access policy from access-policy.toml. Without it, "
-        "no capability ceiling is applied and every tool is exposed.",
+        help="Enforce the named access policy from access-policy.toml: the "
+        "server registers only the tools it permits, and refuses a call whose "
+        "selected connection its grant does not name. Without it, no capability "
+        "ceiling is applied and every tool is exposed.",
     ),
 ) -> None:
     """Run the MCP server (stdio by default — what agents expect).
@@ -311,10 +313,13 @@ def serve(
     beyond localhost you must pass ``--allow-remote`` AND put an authenticated
     reverse proxy (MCP gateway or HTTPS proxy with bearer-token auth) in front.
 
-    Pass ``--access-policy NAME`` to enforce a capability ceiling from
-    ``access-policy.toml``: the server then registers only the tools that policy
-    permits. Without it no ceiling is applied. Call ``hmc_effective_permissions``
-    to see what a running server actually exposes.
+    Pass ``--access-policy NAME`` to enforce a policy from ``access-policy.toml``.
+    The server then registers only the tools that policy permits, and refuses any
+    call whose selected HMC connection the granting entry does not name — so a
+    grant's ``connections`` must hold profile keys, or ``<default>`` when
+    ``HMC_HOST`` selects the connection from the environment. Target constraints
+    are recorded but not yet enforced. Without the option no policy applies. Call
+    ``hmc_effective_permissions`` to see what a running server actually exposes.
     """
     from . import server
 

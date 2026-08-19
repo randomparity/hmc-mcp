@@ -37,7 +37,7 @@ import asyncio
 import ipaddress
 import socket
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from fastmcp import FastMCP
 
@@ -45,7 +45,8 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, resolve_access_policy_path
-from .tool_registry import ToolSecurity, build_tool_security
+from .connection_scope import connection_authorizer
+from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
     server_adapters,
     server_capacity,
@@ -262,19 +263,36 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 )
 
 
-def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
-    """Compose a fresh MCP application bounded by *policy*'s capability ceiling.
+def _gates(
+    policy: AccessPolicy | None,
+) -> tuple[Callable[[str], bool] | None, Authorize | None]:
+    """The registration-time and dispatch-time questions *policy* answers.
 
-    ``None`` applies no ceiling and registers every tool — the behaviour before
-    ADR 0037, and what every deployment gets until #225 makes startup fail
-    closed. The predicate is passed to each registration site rather than
-    checked here, so no site can be given a ceiling it does not apply.
+    Derived together and always passed together: a site given one without the
+    other registers tools it does not authorize, which is the drift ADR 0038's
+    registry assertion exists to catch.
     """
-    permits = None if policy is None else policy.permits_tool
+    if policy is None:
+        return None, None
+    return policy.permits_tool, connection_authorizer(policy)
+
+
+def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
+    """Compose a fresh MCP application bounded by *policy*.
+
+    ``None`` applies no ceiling, authorizes no connection, and registers every
+    tool — the behaviour before ADR 0037, and what every deployment gets until
+    #225 makes startup fail closed. Both gates are passed to each registration
+    site rather than checked here, so no site can be given a policy it does not
+    apply; ADR 0038's registry assertion is what checks that it did.
+    """
+    permits, authorize = _gates(policy)
     application = _create_base_mcp()
     for module in TOOL_MODULES:
-        module.register_tools(application, permits=permits)
-    register_permissions_tool(application, policy, TOOL_SECURITY, permits=permits)
+        module.register_tools(application, permits=permits, authorize=authorize)
+    register_permissions_tool(
+        application, policy, TOOL_SECURITY, permits=permits, authorize=authorize
+    )
     return application
 
 
@@ -324,8 +342,9 @@ def _startup_warnings(
         )
     if access_policy is None and (path := _unselected_policy_file()) is not None:
         lines.append(
-            f"warning: {path} exists but no access policy was selected, so no "
-            "capability ceiling is applied. Pass --access-policy NAME to enforce one."
+            f"warning: {path} exists but no access policy was selected, so "
+            "neither a capability ceiling nor connection-scope authorization is "
+            "applied. Pass --access-policy NAME to enforce one."
         )
     if (
         enable_arbitrary_command
@@ -368,11 +387,14 @@ def _serve_application(
 ) -> FastMCP:
     """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
-    permits = None if access_policy is None else access_policy.permits_tool
+    permits, authorize = _gates(access_policy)
 
     async def _prepare() -> int:
         await configure_arbitrary_command_tool(
-            enable_arbitrary_command, application, permits=permits
+            enable_arbitrary_command,
+            application,
+            permits=permits,
+            authorize=authorize,
         )
         return len(await application.local_provider.list_tools())
 

@@ -287,6 +287,65 @@ def list_nicknames(config_path: Path | None = None) -> dict[str, str]:
     return _coerce_nicknames(doc.get("nicknames"), path)
 
 
+def list_profiles_and_nicknames(
+    config_path: Path | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """Return (profile_names, nicknames) from one TOML read.
+
+    Never resolves secrets — safe for diagnostics and for authorization decisions
+    that must mirror :func:`load_profile`'s selection order. One read rather than
+    ``list_profiles()`` plus ``list_nicknames()`` so that the two halves of a
+    single decision cannot be taken from two different versions of the file.
+
+    Returns ``([], {})`` when the file is absent or *config_path* is None.
+    Every other failure is a ConfigError: this feeds ADR 0038's authorization
+    decision, whose denial message must interpolate no path and no raw exception
+    text, so an unreadable file, a non-UTF-8 one, and a malformed table must all
+    arrive as one recognizable type rather than as an OSError or an
+    AttributeError from the middle of a dict access.
+    """
+    try:
+        path = config_path if config_path is not None else resolve_config_path()
+    except (RuntimeError, ValueError) as exc:
+        # resolve_config_path() reaches Path.home(), which raises RuntimeError
+        # under a uid with no passwd entry and no HOME — a container or systemd
+        # unit. access_policy.load_access_policy guards the same case.
+        raise ConfigError(f"cannot resolve the config path: {exc}") from exc
+    if path is None or not path.exists():
+        return [], {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except OSError as exc:
+        # The exists() check above is a TOCTOU, and a directory or an unreadable
+        # mode lands here.
+        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
+    try:
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    except RecursionError as exc:
+        # tomllib recurses on nested arrays and inline tables, so a deeply nested
+        # document exhausts the stack before it can report a syntax error. A
+        # RecursionError carries no message, hence the fixed clause. Same guard
+        # as load_access_policy, for the same call.
+        raise ConfigError(
+            f"{path}: TOML parse error: document nesting is too deep"
+        ) from exc
+    profiles = doc.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ConfigError(
+            f"{path}: 'profiles' must be a table of profile name to settings, "
+            f"got {type(profiles).__name__}"
+        )
+    # TOML keys are always strings; str() states that for the type checker, which
+    # sees only the untyped mapping the isinstance check above narrowed to.
+    return [str(name) for name in profiles], _coerce_nicknames(
+        doc.get("nicknames"), path
+    )
+
+
 def load_profile(
     profile: str | None = None,
     config_path: Path | None = None,

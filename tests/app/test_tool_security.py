@@ -8,7 +8,10 @@ classification. See docs/adr/0035-enforceable-tool-security-metadata.md.
 
 from __future__ import annotations
 
+import ast
 import asyncio
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -391,3 +394,631 @@ def test_legacy_classification_sets_are_gone():
             "_STATE_CHANGING",
         ):
             assert not hasattr(module, removed), f"{module.__name__}.{removed}"
+
+
+# A handler's connection routes through exactly these three helpers. Every one
+# of them resolves an HMCConfig from `common.build_config`, so a call that omits
+# the handler's declared connection argument reaches the deployment default
+# whatever the caller — and the access policy — named.
+_CONNECTION_BUILDERS = frozenset(
+    {"build_config", "client_from_env", "_ssh_with_client"}
+)
+
+# `host` is deliberately singled out: `build_config` skips the whole profile
+# branch when an explicit host is given, exactly as HMC_HOST does, so a handler
+# passing one would route around ADR 0038's normalization entirely.
+_CONNECTION_OVERRIDES = frozenset({"host"})
+
+_Def = ast.FunctionDef | ast.AsyncFunctionDef
+_Scope = _Def | ast.Lambda
+
+
+def _call_name(call: ast.Call) -> str | None:
+    """The called name, for builder matching."""
+    return getattr(call.func, "id", None) or getattr(call.func, "attr", None)
+
+
+def _module_functions(tree: ast.Module) -> dict[str, _Def]:
+    """Every top-level function in a module, keyed by name.
+
+    Every one of them, not only the ``_``-prefixed ones: a public same-module
+    helper that drops the selector is exactly as fail-open as a private one. No
+    handler in ``src/`` routes that way today, so the synthetic
+    ``dropped-by-a-public-helper`` case is what keeps this from silently
+    narrowing back.
+    """
+    return {node.name: node for node in tree.body if isinstance(node, _Def)}
+
+
+def _own_scope(function: _Scope) -> Iterator[ast.AST]:
+    """Every node in *function*'s own scope, stopping at a nested one.
+
+    A nested ``def`` or ``lambda`` is a separate frame: its parameters may shadow
+    the selector, and a name bound inside it is not a rebinding of the enclosing
+    one. Walking through them made both the routing check and the rebind check
+    answer about the wrong binding.
+    """
+    body = function.body if isinstance(function.body, list) else [function.body]
+    stack: list[ast.AST] = [function.args, *body]
+    # Decorators and a return annotation belong to the enclosing frame and are
+    # evaluated at import, so they cannot carry a per-call selector — but a
+    # connection opened there is still a connection nothing authorized.
+    stack.extend(getattr(function, "decorator_list", []))
+    if getattr(function, "returns", None) is not None:
+        stack.append(function.returns)
+    while stack:
+        node = stack.pop()
+        yield node
+        # A nested frame is yielded so the caller can recurse into it as its own
+        # scope, but never descended into from here.
+        if not isinstance(node, _Scope):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _nested_selector(function: _Scope, argument: str) -> str | None:
+    """What *argument* is called inside *function*, or None when it is shadowed.
+
+    A nested frame closes over the enclosing selector unless its own parameter
+    list rebinds the name — except when that parameter's *default* is the
+    selector, which is how ``def _go(profile=profile)`` and its rename sibling
+    ``def _go(chosen=profile)`` carry the value in rather than shadow it.
+    """
+    arguments = function.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    defaults = [None] * (len(positional) - len(arguments.defaults))
+    defaults += list(arguments.defaults)
+    pairs = [
+        *zip(positional, defaults),
+        *zip(arguments.kwonlyargs, arguments.kw_defaults),
+        *[(star, None) for star in (arguments.vararg, arguments.kwarg) if star],
+    ]
+    for parameter, default in pairs:
+        if isinstance(default, ast.Name) and default.id == argument:
+            return parameter.arg
+    return None if any(parameter.arg == argument for parameter, _ in pairs) else argument
+
+
+def _bound_names(function: _Scope) -> set[str]:
+    """Every name *function*'s own scope binds after its parameters.
+
+    Store-context ``Name`` nodes cover assignment, augmented assignment,
+    annotated assignment, ``for``, ``with ... as``, walrus, and tuple unpacking,
+    without the false positives a target-expression walk produced for
+    ``results[profile] = ...`` and ``profile.cached = 1``. The four forms that
+    bind without a Store-context ``Name`` are added explicitly.
+    """
+    names: set[str] = set()
+    for node in _own_scope(function):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, ast.comprehension):
+            names |= {
+                child.id
+                for child in ast.walk(node.target)
+                if isinstance(child, ast.Name)
+            }
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            names.add(node.name)
+        elif isinstance(node, ast.alias) and node.asname:
+            names.add(node.asname)
+        elif isinstance(node, ast.MatchAs) and node.name:
+            names.add(node.name)
+    return names
+
+
+def _bound_parameter(helper: _Def, call: ast.Call, argument: str) -> str | None:
+    """The parameter *helper* binds the caller's connection argument to, if any."""
+    for keyword in call.keywords:
+        if isinstance(keyword.value, ast.Name) and keyword.value.id == argument:
+            return keyword.arg
+    positional = [
+        parameter.arg
+        for parameter in [*helper.args.posonlyargs, *helper.args.args]
+    ]
+    for index, node in enumerate(call.args):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == argument
+            and index < len(positional)
+        ):
+            return positional[index]
+    return None
+
+
+def _assert_builder_call(call: ast.Call, argument: str | None, where: str) -> None:
+    """Refuse a connection builder that does not receive the authorized value."""
+    # A splat hides its keys from the parser, so the override check below could
+    # not see a `host` travelling inside one. Refuse the shape.
+    assert all(keyword.arg is not None for keyword in call.keywords), (
+        f"{where} splats a mapping into a connection builder, which this check "
+        "cannot read; pass the connection argument explicitly"
+    )
+    # The *value* must be the declared argument, wherever it is supplied.
+    # `client_from_env(profile='some-other-profile')` routes somewhere the
+    # authorization never decided about, and the keyword arm is the only one
+    # available to the SSH family, whose `profile` is keyword-only on
+    # `_app._ssh_with_client`. The keyword's own name is not constrained: a tool
+    # declaring `connection_argument="connection"` writes `profile=connection`.
+    supplied = [*call.args, *(keyword.value for keyword in call.keywords)]
+    assert argument is not None and any(
+        isinstance(node, ast.Name) and node.id == argument for node in supplied
+    ), (
+        f"{where} does not receive the value of the declared connection argument, "
+        "so it routes to a connection the access policy did not authorize"
+    )
+    assert not {keyword.arg for keyword in call.keywords} & _CONNECTION_OVERRIDES, (
+        f"{where} passes a connection override that skips profile resolution"
+    )
+
+
+def _assert_routes(
+    function: _Scope,
+    argument: str | None,
+    helpers: dict[str, _Def],
+    tool: str,
+    seen: set[str],
+) -> int:
+    """Check *function*'s connection builders, following same-module helpers.
+
+    *argument* is the name currently holding the caller's connection selector, or
+    None when the call chain did not pass one — in which case any connection
+    builder below is routing to the deployment default and fails.
+
+    Returns the number of connection builders reached, so a handler that reaches
+    none at all is caught by the caller rather than passing vacuously.
+    """
+    name_of = getattr(function, "name", "<lambda>")
+    if argument is not None:
+        assert argument not in _bound_names(function), (
+            f"{tool}: {name_of} rebinds {argument!r}; the connection the access "
+            "policy authorized is the one the handler must use"
+        )
+    reached = 0
+    for node in _own_scope(function):
+        if isinstance(node, _Scope):
+            # A nested frame: its parameters shadow the enclosing selector, so a
+            # builder inside one that redeclares the name gets no selector at all.
+            reached += _assert_routes(
+                node,
+                _nested_selector(node, argument) if argument is not None else None,
+                helpers,
+                tool,
+                seen,
+            )
+        elif isinstance(node, ast.Call):
+            called = _call_name(node)
+            if called in _CONNECTION_BUILDERS:
+                reached += 1
+                _assert_builder_call(
+                    node, argument, f"{tool}: {called}() at {name_of}:{node.lineno}"
+                )
+            elif (
+                isinstance(node.func, ast.Name)
+                and called in helpers
+                and called not in seen
+            ):
+                helper = helpers[called]
+                reached += _assert_routes(
+                    helper,
+                    _bound_parameter(helper, node, argument)
+                    if argument is not None
+                    else None,
+                    helpers,
+                    tool,
+                    seen | {called},
+                )
+    return reached
+
+
+def _assert_no_config_construction(function: _Def, tool: str) -> None:
+    """Refuse a handler that builds its own HMCConfig.
+
+    It would hand that config straight to ``HMCClient``, reaching an HMC through
+    no builder this walk knows. None does today; refusing the construction is
+    what keeps the builder set closed.
+    """
+    assert "HMCConfig" not in {
+        _call_name(node)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+    }, f"{tool}: constructs its own HMCConfig, bypassing profile resolution"
+
+
+def _assert_handler_routes(
+    function: _Def, argument: str | None, helpers: dict[str, _Def], tool: str
+) -> int:
+    """Check one handler end to end, including that it opens a connection at all.
+
+    A handler declaring *no* connection argument needs no second rule: it enters
+    the walk with ``argument=None``, so the first connection builder it reaches
+    is refused for receiving nothing — which is the correct verdict, since a
+    connection nothing selects is a connection no access policy can scope.
+    """
+    _assert_no_config_construction(function, tool)
+    reached = _assert_routes(function, argument, helpers, tool, {tool})
+    if argument is not None:
+        assert reached, f"{tool}: declares {argument!r} but opens no HMC connection"
+    return reached
+
+
+def test_every_handler_routes_the_connection_argument_it_declares():
+    """G12: a declared connection argument is used, not merely accepted.
+
+    Authorization decides on the value of ``connection_argument``; a handler that
+    then resolves its client without it makes the decision be about a connection
+    the call does not make. That is a fail-open, and it is what
+    ``hmc_set_lpar_boot_order`` and ``hmc_clear_lpar_boot_order`` did before #222.
+
+    The check is static and follows same-module helpers down the call chain,
+    which is how the metrics, vios, and composite tools reach their client. It
+    does not follow a helper imported from another module, a ``functools.partial``,
+    or a callable held in a variable; ADR 0038 records that residual.
+
+    The two tools that declare *no* connection argument are checked in the same
+    pass, from the other side: entering the walk with no selector, the first
+    builder either of them reached would be refused. Nothing else would notice
+    one growing a `client_from_env()` call, since neither `validate_security`
+    nor the dispatch wrapper reads a handler's body.
+    """
+    root = Path(server_command.__file__).parent
+    checked: set[str] = set()
+
+    for path in sorted(root.glob("server_*.py")):
+        functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
+        for name in sorted(functions.keys() & set(TOOL_SECURITY)):
+            _assert_handler_routes(
+                functions[name],
+                TOOL_SECURITY[name].connection_argument,
+                functions,
+                name,
+            )
+            checked.add(name)
+
+    # `hmc_effective_permissions` is defined inside a factory rather than at
+    # module level, so it is the one name this pass cannot reach; every other
+    # tool, including the two that declare no connection argument, is checked.
+    assert set(TOOL_SECURITY) - checked == {"hmc_effective_permissions"}
+
+
+def _walk(source: str, argument: str | None = "profile") -> int:
+    """Run the G12 walk over a synthetic module, as it runs over a real one."""
+    functions = _module_functions(ast.parse(source))
+    return _assert_handler_routes(
+        functions["hmc_probe"], argument, functions, "hmc_probe"
+    )
+
+
+# Each source is a shape no handler in `src/` exhibits, so without these the
+# corresponding assertion in `_assert_routes` could be deleted and the suite
+# would stay green — which is exactly what happened to three of them.
+_REFUSED = {
+    "no-argument-at-all": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env()
+""",
+    ),
+    "hardcoded-keyword": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile="prod")
+""",
+    ),
+    "another-parameter-as-the-keyword": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile=system_name_or_uuid)
+""",
+    ),
+    "mapping-splat": (
+        "splats a mapping",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile, **{"host": "attacker"})
+""",
+    ),
+    "host-override": (
+        "connection override",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile, host="attacker")
+""",
+    ),
+    "rebound-to-a-literal": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    profile = "prod"
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-in-a-loop": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    for profile in ["prod"]:
+        pass
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-inside-a-helper": (
+        "rebinds 'chosen'",
+        """
+def open_client(chosen=None):
+    chosen = "prod"
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client(profile)
+""",
+    ),
+    "dropped-by-a-public-helper": (
+        "does not receive the value",
+        """
+def open_client(chosen=None):
+    return client_from_env()
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client(profile)
+""",
+    ),
+    "shadowed-by-a-nested-parameter": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go(profile=None):
+        async with client_from_env(profile) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+    ),
+    "rebound-in-a-comprehension": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return [client_from_env(profile) for profile in ["prod"]]
+""",
+    ),
+    "rebound-by-an-except-clause": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    try:
+        pass
+    except ValueError as profile:
+        pass
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-by-an-import-alias": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    import os as profile
+
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-by-a-walrus": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    if (profile := "prod"):
+        return client_from_env(profile)
+    return None
+""",
+    ),
+    "rebound-by-tuple-unpacking": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    profile, _ = ("prod", 1)
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-by-a-with-clause": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    with open("x") as profile:
+        return client_from_env(profile)
+""",
+    ),
+    "connection-opened-in-a-decorator": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    @_wrap(client_from_env())
+    def _go():
+        return None
+
+    return client_from_env(profile)
+""",
+    ),
+    "connection-opened-in-a-return-annotation": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None) -> client_from_env():
+    return client_from_env(profile)
+""",
+    ),
+    "rebound-by-a-match-capture": (
+        "rebinds 'profile'",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    match system_name_or_uuid:
+        case profile:
+            pass
+    return client_from_env(profile)
+""",
+    ),
+    "shadowed-by-a-nested-star-parameter": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    def _go(*profile):
+        return client_from_env(profile)
+
+    return _go()
+""",
+    ),
+    "handler-builds-its-own-config": (
+        "constructs its own HMCConfig",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    config = HMCConfig()
+    return client_from_env(profile)
+""",
+    ),
+    "dropped-at-the-helper-hop": (
+        "does not receive the value",
+        """
+def open_client(chosen=None):
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client()
+""",
+    ),
+}
+
+_ACCEPTED = {
+    "direct-positional": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile)
+""",
+    "direct-keyword": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return build_config(profile=profile)
+""",
+    "keyword-only-hop": """
+def _open(system, *, chosen=None):
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return _open(system_name_or_uuid, chosen=profile)
+""",
+    "positional-only-hop": """
+def open_client(chosen=None, /):
+    return client_from_env(chosen)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return open_client(profile)
+""",
+    "renamed-across-two-hops": """
+def _outer(picked=None):
+    return _inner(picked)
+
+
+def _inner(final=None):
+    return client_from_env(final)
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return _outer(profile)
+""",
+    "subscript-target-is-not-a-rebind": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    results = {}
+    results[profile] = client_from_env(profile)
+    return results
+""",
+    "attribute-target-is-not-a-rebind": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    client = client_from_env(profile)
+    client.chosen = profile
+    return client
+""",
+    "an-uncalled-module-helper-is-never-walked": """
+def _fmt(profile):
+    profile = profile.upper()
+    return profile
+
+
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile)
+""",
+    "a-differently-named-selector": """
+def hmc_probe(system_name_or_uuid: str, connection: str | None = None):
+    return client_from_env(profile=connection)
+""",
+    "nested-parameter-carrying-the-selector": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go(profile=profile):
+        async with client_from_env(profile) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+    "nested-parameter-renaming-the-selector": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go(chosen=profile):
+        async with client_from_env(chosen) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+    "nested-async-body": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+}
+
+
+@pytest.mark.parametrize(("expected", "source"), _REFUSED.values(), ids=_REFUSED)
+def test_the_routing_guardrail_refuses_every_unrouted_shape(expected, source):
+    """Each assertion in the G12 walk, pinned against a synthetic handler.
+
+    No handler in ``src/`` exhibits any of these, so this is the only thing
+    standing between the guardrail and a silent regression.
+    """
+    with pytest.raises(AssertionError, match=expected):
+        _walk(source)
+
+
+@pytest.mark.parametrize("source", _ACCEPTED.values(), ids=_ACCEPTED)
+def test_the_routing_guardrail_accepts_every_correct_shape(source):
+    """The other half: a guard that refused these would fail on correct code."""
+    argument = "connection" if "connection: str" in source else "profile"
+    assert _walk(source, argument) == 1
+
+
+def test_the_guardrail_refuses_a_handler_that_opens_no_connection():
+    """A handler that declares a selector and never connects passes vacuously."""
+    with pytest.raises(AssertionError, match="opens no HMC connection"):
+        _walk(
+            """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    return {}
+"""
+        )
+
+
+def test_the_guardrail_refuses_a_connectionless_handler_that_connects():
+    """The other direction: no declared selector means no connection may be opened.
+
+    Neither `validate_security` nor the dispatch wrapper reads a handler's body,
+    so this is the only thing that would notice `hmc_list_configured_hosts`
+    growing an HMC call.
+    """
+    with pytest.raises(AssertionError, match="does not receive the value"):
+        _walk(
+            """
+def hmc_probe(system_name_or_uuid: str):
+    return client_from_env()
+""",
+            None,
+        )

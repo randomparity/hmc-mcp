@@ -9,7 +9,13 @@ from fastmcp import FastMCP
 from ._app import _run
 from .common import build_config
 from .ssh import run_hmc_cli
-from .tool_registry import ToolSecurity, annotations_for, validate_security
+from .tool_registry import (
+    Authorize,
+    ToolSecurity,
+    annotations_for,
+    authorized,
+    validate_security,
+)
 
 
 def hmc_run_command(cmd: str, profile: str | None = None) -> str:
@@ -39,18 +45,29 @@ async def configure_arbitrary_command_tool(
     mcp: FastMCP,
     *,
     permits: Callable[[str], bool] | None = None,
+    authorize: Authorize | None = None,
 ) -> None:
     """Make escape-hatch registration match the requested capability state.
 
     The ``--enable-arbitrary-command`` flag is the outer gate and *permits* is
     the access policy's ceiling; per ADR 0036 they compose conjunctively, so the
     tool is registered only when both admit it. ``None`` means no ceiling.
+
+    *authorize* is the same dispatch-time gate the domain registration sites
+    take, applied through the same helper — this is the site that registers the
+    one ``arbitrary-command`` tool, so it is the one that least tolerates an
+    exemption. ``None`` means no policy is selected.
     """
     permitted = enabled and (permits is None or permits("hmc_run_command"))
     registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
     if permitted and not registered:
         mcp.tool(
-            hmc_run_command,
+            authorized(
+                "hmc_run_command",
+                HMC_RUN_COMMAND_SECURITY,
+                hmc_run_command,
+                authorize,
+            ),
             annotations=annotations_for(HMC_RUN_COMMAND_SECURITY.effect),
         )
     elif not permitted and registered:

@@ -15,7 +15,9 @@ from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
     config_dir,
+    list_nicknames,
     list_profiles,
+    list_profiles_and_nicknames,
     list_profiles_with_default,
     load_profile,
     resolve_config_path,
@@ -607,14 +609,110 @@ def test_well_formed_nicknames_do_not_block_plain_profile(tmp_path, monkeypatch)
 
 def test_list_nicknames_present(tmp_path):
     """list_nicknames returns the nicknames table as dict[str, str]."""
-    from hmc_mcp.config import list_nicknames
     cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
     assert list_nicknames(config_path=cfg) == {"big-iron": "prod", "staging": "stg"}
 
 
 def test_list_nicknames_absent(tmp_path):
     """list_nicknames returns {} when no nicknames table or no file."""
-    from hmc_mcp.config import list_nicknames
     cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
     assert list_nicknames(config_path=cfg) == {}
     assert list_nicknames(config_path=tmp_path / "nonexistent.toml") == {}
+
+
+# ---------------------------------------------------------------------------
+# list_profiles_and_nicknames (issue #222)
+# ---------------------------------------------------------------------------
+
+
+def test_list_profiles_and_nicknames_returns_both_tables(tmp_path):
+    """Both selection tables come back from one call, so they cannot disagree."""
+
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    profiles, nicknames = list_profiles_and_nicknames(config_path=cfg)
+    assert set(profiles) == {"prod", "stg"}
+    assert nicknames == {"big-iron": "prod", "staging": "stg"}
+
+
+def test_list_profiles_and_nicknames_absent_file(tmp_path):
+    """An absent file is an empty configuration, not an error."""
+
+    assert list_profiles_and_nicknames(config_path=tmp_path / "nope.toml") == ([], {})
+
+
+def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
+    """A malformed nicknames table raises, as it does for list_nicknames."""
+
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        NICKNAME_TOML.replace('big-iron = "prod"', "big-iron = 7"),
+    )
+    with pytest.raises(ConfigError, match="must map to a profile-key string"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_invalid_toml(tmp_path):
+    """A parse error is a ConfigError naming the path, as elsewhere in this module."""
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("this is [not valid toml ][[[", encoding="utf-8")
+    with pytest.raises(ConfigError, match="TOML parse error"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_an_unreadable_file(tmp_path):
+    """An OSError must arrive as ConfigError: #222 authorizes on this reader."""
+
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    try:
+        with pytest.raises(ConfigError, match="cannot be read"):
+            list_profiles_and_nicknames(config_path=cfg)
+    finally:
+        cfg.chmod(0o600)
+
+
+def test_list_profiles_and_nicknames_rejects_a_directory(tmp_path):
+    """The exists() check is a TOCTOU and a directory satisfies it."""
+
+    directory = tmp_path / "config.toml"
+    directory.mkdir()
+    with pytest.raises(ConfigError, match="cannot be read"):
+        list_profiles_and_nicknames(config_path=directory)
+
+
+def test_list_profiles_and_nicknames_rejects_non_utf8(tmp_path):
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ConfigError, match="is not valid UTF-8"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_rejects_a_non_table_profiles_key(tmp_path):
+
+    cfg = _write_toml(tmp_path / "config.toml", "profiles = 'not-a-table'\n")
+    with pytest.raises(ConfigError, match="'profiles' must be a table"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+def test_list_profiles_and_nicknames_reports_an_unresolvable_home(monkeypatch):
+    """Path.home() raises under a uid with no passwd entry and no HOME."""
+
+    def _no_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr("pathlib.Path.home", _no_home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    with pytest.raises(ConfigError, match="cannot resolve the config path"):
+        list_profiles_and_nicknames()
+
+
+def test_list_profiles_and_nicknames_rejects_a_deeply_nested_document(tmp_path):
+    """tomllib recurses on nested arrays; the stack runs out before the parser does."""
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("deep = " + "[" * 3000 + "]" * 3000, encoding="utf-8")
+    with pytest.raises(ConfigError, match="document nesting is too deep"):
+        list_profiles_and_nicknames(config_path=cfg)

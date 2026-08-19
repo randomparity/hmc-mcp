@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 import respx
 
 from hmc_mcp.server import mcp
@@ -266,3 +267,59 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
     client = client_from_env(profile="big-iron")
 
     assert client.config.host == "prod-hmc.test"
+
+
+# ---------------------------------------------------------------------- #
+# T-6: the two handlers that declared a profile and discarded it (#222)
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        (
+            "hmc_set_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "devices": ["network"],
+            },
+        ),
+        (
+            "hmc_clear_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+            },
+        ),
+    ],
+)
+def test_boot_order_tools_route_the_profile_they_declare(
+    monkeypatch, tool_name, arguments
+):
+    """Both declared and documented `profile` while opening the default client.
+
+    Authorization in #222 decides on the declared argument, so a handler that
+    discards it authorizes one connection and reaches another.
+    """
+    from hmc_mcp import server_lpars
+
+    seen: list[str | None] = []
+
+    class _Recorder:
+        async def __aenter__(self):
+            raise AssertionError("the test stops before any HMC request")
+
+        async def __aexit__(self, *exc):
+            return False
+
+    def _capture(profile=None, **overrides):
+        seen.append(profile)
+        return _Recorder()
+
+    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+
+    with pytest.raises(AssertionError, match="stops before any HMC request"):
+        getattr(server_lpars, tool_name)(**arguments, profile="beta")
+
+    assert seen == ["beta"]
