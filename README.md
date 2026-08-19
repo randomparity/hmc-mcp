@@ -307,9 +307,10 @@ It also does not bound a tool that opens no HMC connection at all.
 and default flag, and `hmc_effective_permissions` returns the policy's own
 grants; neither takes a `profile` argument, so neither `connections` nor
 `targets` can narrow either — the dispatch-time check runs only on tools that
-select a connection, and these two select none. A `connections = ["lab"]` read grant still discloses the `prod`
-inventory. Withhold them by name — a grant listing `tools` and no `read` effect
-class — when the configuration or the policy is itself sensitive.
+select a connection, and these two select none. A `connections = ["lab"]` read
+grant still discloses the `prod` inventory. Withhold them by name — a grant
+listing `tools` and no `read` effect class — when the configuration or the
+policy is itself sensitive.
 
 Policies live in `access-policy.toml`, beside `config.toml` in the same
 platform-native directory. A minimal read-only policy:

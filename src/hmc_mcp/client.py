@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import warnings
 from typing import Any
-from urllib.parse import urlparse
+import re
+from urllib.parse import unquote, urlparse
 
 from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
@@ -60,18 +61,28 @@ def _reject_dot_segments(method: str, path: str) -> None:
     CLI and API paths can carry an operator's own filesystem-derived values.
     """
     candidate = urlparse(path).path if "://" in path else path
-    for segment in candidate.split("/"):
-        if segment in _DOT_SEGMENTS:
-            raise HMCError(
-                f"{method.upper()} refused: the request path contains a "
-                f"{segment!r} segment, which would resolve to a different "
-                "resource than the one addressed. Pass an identifier, not a path."
-            )
+    # Raw *and* percent-decoded. httpx resolves only the raw form, so an earlier
+    # version of this guard checked only that and reasoned that `%2e%2e` "addresses
+    # nothing". That was an assumption about how the HMC's own web stack decodes a
+    # path — untestable from here, and the wrong way round for a fail-closed check.
+    # A single decode is enough: `%252e` decodes to `%2e`, not to `.`, so nothing
+    # this rejects can be reached by decoding again.
+    for form in (candidate, unquote(candidate)):
+        for segment in form.split("/"):
+            if segment in _DOT_SEGMENTS:
+                raise HMCError(
+                    f"{method.upper()} refused: the request path contains a "
+                    f"{segment!r} segment, which would resolve to a different "
+                    "resource than the one addressed. Pass an identifier, not a path."
+                )
 
 
-# The two shapes an HMC job SELF link takes: the legacy uom resource type and
-# the per-operation collection the submission response points at (issue #95).
-_JOB_PATH_SEGMENTS: frozenset[str] = frozenset({"Job", "jobs"})
+# The two shapes an HMC job SELF link takes: the legacy uom resource type
+# (`/rest/api/uom/Job/{uuid}`) and the per-operation collection the submission
+# response points at (`/rest/api/uom/jobs/{id}`, issue #95). Anchored on the
+# *last two* segments rather than tested for membership: membership let
+# `/rest/api/web/HmcUser/jobs` through, because it contains the word.
+_JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/]+$")
 
 
 def _reject_non_job_path(path: str) -> None:
@@ -98,7 +109,7 @@ def _reject_non_job_path(path: str) -> None:
     ``targets = "all-targets"`` grants them — a grant that means "any job".
     After this check the tool can reach exactly what that grant says.
     """
-    if not _JOB_PATH_SEGMENTS.intersection(path.split("/")):
+    if not _JOB_PATH.match(unquote(path)):
         raise HMCError(
             "job_href refused: the link does not address a job resource. Pass "
             "the SELF link returned when the job was submitted."

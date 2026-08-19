@@ -603,3 +603,19 @@ def test_inspection_reports_which_tools_a_targets_table_cannot_bound():
         for name in by_name
         if not TOOL_SECURITY[name].exhaustive_targets
     }
+
+
+def test_a_name_outside_the_index_is_reported_as_unbounded():
+    """R19: the fail-closed default for an unindexed name, which nothing else pins.
+
+    `_permission` returns `exhaustive_targets=False` for a name the authoritative
+    index does not carry, on the ground that nothing establishes a table could
+    bound it. Mutating that default to `True` left the whole suite green, so the
+    justification had no test behind it.
+    """
+    from hmc_mcp.server_permissions import UNKNOWN, _permission
+
+    reported = _permission("hmc_not_in_the_index", {})
+
+    assert reported.effect == UNKNOWN
+    assert reported.exhaustive_targets is False

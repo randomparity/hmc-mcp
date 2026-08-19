@@ -517,8 +517,12 @@ def test_a_read_tool_is_denied_on_a_target_outside_the_table():
             "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
         }
     ]
-    args = {"lpar_name_or_uuid": "secret-db", "system_name_or_uuid": "sys-1",
-            "profile": "lab"}
+    # `hmc_get_lpar` declares only `lpar_name_or_uuid` — it takes no system
+    # argument, which is exactly the fleet-uniqueness residual #259 records.
+    assert [t.argument for t in TOOL_SECURITY["hmc_get_lpar"].targets] == [
+        "lpar_name_or_uuid"
+    ]
+    args = {"lpar_name_or_uuid": "secret-db", "profile": "lab"}
     with pytest.raises(TargetScopeError):
         _authorize(grants, "hmc_get_lpar", args)
 

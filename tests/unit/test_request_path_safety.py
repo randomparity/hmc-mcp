@@ -63,6 +63,14 @@ def test_httpx_resolves_dot_segments_against_the_base_url():
         "/rest/api/uom/LogicalPartition/./x",
         "..",
         "https://hmc.test:12443/rest/api/uom/jobs/../HmcUser/root",
+        # Percent-encoded, and mixed. httpx resolves only the raw form, so an
+        # earlier version of this guard let these through on the reasoning that
+        # they "address nothing" — an assumption about the HMC's own decoding
+        # that cannot be tested from here, and the wrong way round for a
+        # fail-closed check.
+        "/rest/api/uom/Job/%2e%2e/%2e%2e/web/HmcUser/root",
+        "/rest/api/uom/Job/..%2f..%2fweb%2fHmcUser%2froot",
+        "/rest/api/uom/VirtualIOServer/v1/VolumeGroup/%2E%2E/%2E%2E/LogicalPartition/x",
     ],
 )
 def test_a_dot_segment_is_refused(path):
@@ -112,7 +120,15 @@ def test_the_guard_runs_before_anything_leaves_the_process():
 
 
 @pytest.mark.parametrize(
-    "path", ["/rest/api/uom/jobs/j-1", "/rest/api/uom/Job/abcd-1234", "/jobs/j-1"]
+    "path",
+    [
+        "/rest/api/uom/jobs/j-1",
+        "/rest/api/uom/Job/abcd-1234",
+        "/jobs/j-1",
+        # The shape the suite's own fixture uses, so the anchored pattern cannot
+        # tighten past what `submit_job` actually returns.
+        "/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn/Job/job-uuid-999",
+    ],
 )
 def test_a_job_link_is_accepted(path):
     assert _reject_non_job_path(path) is None
@@ -125,6 +141,13 @@ def test_a_job_link_is_accepted(path):
         "/rest/api/uom/LogicalPartition/prod",
         "/rest/api/uom/ManagedSystem/s1",
         "",
+        # Contains the word but does not address a job — the case that made
+        # segment membership too weak a test to rely on.
+        "/rest/api/web/HmcUser/jobs",
+        "/rest/api/web/HmcUser/root/Job",
+        # Trailing content after the identifier.
+        "/rest/api/uom/Job/j-1/../../web/HmcUser/root",
+        "/rest/api/uom/Job/%2e%2e/web/HmcUser/root",
     ],
 )
 def test_a_non_job_link_is_refused(path):
@@ -133,3 +156,76 @@ def test_a_non_job_link_is_refused(path):
     through a tool classified `read` on target kind `job`."""
     with pytest.raises(HMCError, match="does not address a job"):
         _reject_non_job_path(path)
+
+
+# ---------------------------------------------------------------------------
+# The guard is site-independent, and that is the point of where it lives
+# ---------------------------------------------------------------------------
+
+
+# Every client method that interpolates a caller-supplied sub-resource identifier
+# into a path, named by symbol rather than by line: `client.py` gains and loses
+# lines, and this list must outlive that. Four independent sweeps enumerated
+# these; two of them produced lists that were each missing sites the other had,
+# which is the argument for guarding the waist rather than the call sites.
+_SUB_RESOURCE_CALLS = (
+    ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
+    ("delete_storage_mapping", ("AUTH", "{X}")),
+    ("delete_optical_mapping", ("AUTH", "{X}")),
+    ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
+    ("delete_virtual_disk", ("AUTH", "{X}", "disk")),
+    ("_post_volume_group_op", ("AUTH", "{X}", "<x/>")),
+    ("get_volume_group", ("AUTH", "{X}")),
+    ("list_optical_media", ("AUTH", "{X}")),
+    ("delete_optical_media", ("AUTH", "{X}", "media")),
+    ("_broker_file_create", ("AUTH", "{X}", "iso")),
+    ("_broker_iso_import", ("AUTH", "{X}", "media", "/broker/uri")),
+    ("delete_virtual_network", ("AUTH", "{X}")),
+)
+
+TRAVERSAL = "../../../LogicalPartition/VICTIM"
+
+
+@pytest.mark.parametrize(
+    "method, args", _SUB_RESOURCE_CALLS, ids=[name for name, _ in _SUB_RESOURCE_CALLS]
+)
+def test_no_sub_resource_identifier_can_walk_out_of_its_parent(method, args):
+    """One guard at the waist, not thirteen checks at the call sites.
+
+    Each of these builds `/{Parent}/{authorized}/{Child}/{caller-supplied}` by
+    f-string. A dot-segment in the trailing identifier resolves the authorized
+    parent away — so the access policy authorizes one resource and the request
+    addresses another, with nothing denied and every "a denied call makes no
+    outbound attempt" test still green.
+
+    Parametrized by symbol rather than by file:line deliberately. The
+    enumerations of this pattern that circulated during review each missed sites
+    the others caught, which is precisely why the check belongs somewhere no
+    enumeration has to be complete.
+    """
+    client = _client()
+    call = getattr(client, method)
+    with pytest.raises(HMCError, match="refused"):
+        asyncio.run(call(*[a.replace("{X}", TRAVERSAL) if isinstance(a, str) else a
+                           for a in args]))
+
+
+def test_the_guard_is_reached_by_every_transport_helper():
+    """`_request` is the only place any of them can send from.
+
+    If a future helper bypasses `_request` — calling `self._http` directly — the
+    guard above stops covering it. This asserts the property the placement
+    depends on, rather than trusting that no such helper appears.
+    """
+    import inspect
+
+    from hmc_mcp import client as client_module
+
+    source = inspect.getsource(client_module)
+    direct = [
+        line.strip()
+        for line in source.splitlines()
+        if "self._http." in line
+        and not any(k in line for k in ("aclose", "headers", "_http.request", "="))
+    ]
+    assert not direct, f"a transport call bypassing _request: {direct}"

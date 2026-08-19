@@ -110,7 +110,8 @@ over the parsed `src/hmc_mcp/server_*.py` sources fails when a tool declaring
 `exhaustive_targets=True` has a handler parameter, or a field of a dataclass/pydantic-model
 parameter one level down, whose name is in `REQUIRED_TARGET_ARGUMENTS` but is not a declared
 selector, or whose name is in
-`UNBOUNDED_ARGUMENTS = {"cmd", "file_path", "job_href", "vios_partition_id"}`. The check is proven to
+`UNBOUNDED_ARGUMENTS = {"cmd", "file_path", "job_href",
+"vios_partition_id"}`. The check is proven to
 bite on three fixture sources: a nested identity, an undeclared top-level identity, and an
 argument no `TargetKind` can express. A further test asserts the check's output equals the
 declared `exhaustive_targets=False` set exactly, in both directions.

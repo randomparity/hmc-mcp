@@ -353,6 +353,21 @@ def test_an_unboundable_tool_is_told_to_use_the_sentinel():
     assert "sys-a" not in message
 
 
+def test_the_unboundable_message_does_not_claim_the_tool_has_selectors():
+    """The template covers a selector-less tool as well as a composite.
+
+    An earlier wording said "its declared target selectors do not name every
+    resource it acts on", which is vacuous for the 19 tools that declare none.
+    Reverting to it left the suite green, because every test matched only on
+    "all-targets" — so the correctness the rewording exists for had no guard.
+    """
+    message = _message(LDAP_REMOVE, {"resource": "ldap"})
+
+    assert "all-targets" in message
+    assert "declared target selectors" not in message
+    assert "no targets table can bound" in message
+
+
 def test_an_unreadable_selector_does_not_echo_the_value():
     """An arbitrary object's repr is not the caller's own token in any useful
     sense, and could carry anything. The argument name is enough to act on.
@@ -404,9 +419,14 @@ def test_the_sentinels_name_themselves():
 # ---------------------------------------------------------------------------
 
 
+# A *read* tool with two selectors. Deliberately not modelled on `hmc_get_lpar`,
+# which declares only `lpar_name_or_uuid` — an earlier draft named it that and
+# invented a `system_name_or_uuid` it does not have, which quietly asserted the
+# fleet-uniqueness residual (#259) was closed. `hmc_list_lpars` is the real
+# shape: one optional system selector on a read.
 GET_LPAR = ToolSecurity(
     effect="read",
-    operation="lpar.get",
+    operation="lpar.list",
     target_kind="lpar",
     targets=(
         TargetSelector("lpar", "lpar_name_or_uuid", True),
