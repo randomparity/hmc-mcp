@@ -36,7 +36,7 @@ One source file is added, three change, and one operator document is added.
 | `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
 | `src/hmc_mcp/operations_lpar.py` | `_audit_lpar_ownership_override`'s body becomes a call into `audit`; the two call sites and the rest of the file are untouched. Converges the package's second audit emitter (`Refs #268`). |
-| `docs/authorization-audit.md` (new) | the operator-facing record contract: field set, reason-code table, logger name, level split, how to route or silence it, and the merged-descriptor caveat. |
+| `docs/authorization-audit.md` (new) | the operator-facing contract for both records: field sets, reason-code table, logger name, level split, how to route or silence them, the merged-descriptor caveat, the `<default>`/`<unresolved>` reserved-rendering collision, and the instruction to skip a non-parsing line rather than fail (the reservation is checked inside this package only). |
 | `README.md` | one caveat beside the existing "never stdout" sentence in the startup-warnings section, which has the same descriptor-merge limit, plus a pointer to the new document. |
 
 `audit.py` importing nothing from `hmc_mcp` is a hard constraint, not an accident: `target_scope`
@@ -110,6 +110,16 @@ present and `null` otherwise — a value of an unexpected type is never rendered
 environment/default connection, `"<unresolved>"` when the token names nothing configured, or
 `null` in the `configuration-unreadable` case, where nothing was resolved at all.
 
+`"<default>"` and `"<unresolved>"` are **reserved renderings sharing a string space with legal
+profile keys**: `selected_connection` returns the caller's token verbatim when it names a profile,
+so a `config.toml` profile literally named `<unresolved>` is indistinguishable from a token that
+resolved to nothing — and it silently joins the result set of the `resolved == "<unresolved>"`
+filter ADR 0040 recommends. A profile named `<default>` is stranger still: `access_policy`
+compiles the policy-side `<default>` to `None`, so no compiled grant can hold that string and such
+a call always denies, while rendering like the ordinary permit case. Narrow — it needs an oddly
+named profile — so it is documented and pinned by a test rather than escaped, which would cost
+more mechanism than the risk earns.
+
 `targets` is `null` when the decision was reached before selectors were extracted (the
 `configuration-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
 selector. Each entry's `state` ∈ `{"present", "absent", "unreadable"}` is taken from what
@@ -118,6 +128,12 @@ selector. Each entry's `state` ∈ `{"present", "absent", "unreadable"}` is take
 `null` in both singleton cases. The singletons are never passed to `json.dumps`; they are not JSON
 values, so doing so would raise `TypeError` inside authorization on the two routine
 selector denials.
+
+`_value`'s two remaining arms are part of the contract and are easy to overlook. An **integer**
+selector — `vios_partition_id`, the surface's only one, on three tools — is coerced by
+`target_scope` and records `state="present"` with its decimal rendering, a string the caller did
+not literally send. A **boolean** records `state="unreadable"`, because `bool` is tested before
+`int` so that `True` cannot compare as `"True"` against a resource name.
 
 `attribution` is always `{"claim": <str|null>, "source": "environment:HMC_AGENT_ID",
 "verified": false}`. The claim identifies the server *process*: under stdio that is one client,
@@ -249,8 +265,34 @@ argument, flag, environment variable, or file.
 
 ## Testing
 
-Every criterion below is falsifiable and gets a test. Sentinel-secret and redaction tests are
-mutation-verified: the redaction is broken, the test is watched to fail, and the change reverted.
+Every criterion below is falsifiable and gets a test.
+
+### Mutation verification, per test, with the mutation named
+
+"Break the redaction and watch it redden" is not a procedure here, because most of what these
+tests assert is **structural absence** rather than a redaction step: `authorize` is handed only
+the tool name, its `ToolSecurity`, and the bound arguments; `hmc_run_command` declares no target
+selector, so `cmd` is never extracted; and the record precedes the handler, so no response body
+exists yet. There is no redaction function to break for those. A general instruction would let
+every one of them pass on an implementation that never had the property.
+
+So each mutation is named, applied one at a time, and the test ids that redden are recorded in a
+table in the PR body:
+
+| # | mutation | must redden |
+|---|---|---|
+| M1 | add `payload["arguments"] = dict(arguments)` to the record builder | 22, 23, 24, 25 |
+| M2 | interpolate the `ConfigError`'s own message — which names the config path — into the `configuration-unreadable` record | 26 |
+| M3 | delete the truncation call in the value renderer | 3, 4, L4 |
+| M4 | pass `ensure_ascii=False` to `json.dumps` | 2 |
+| M5 | drop the `"\n"` from the handler's write | 15, L2 |
+| M6 | make `install_audit_sink` set the level unconditionally | 14 |
+| M7 | render the `ABSENT`/`UNREADABLE` singletons instead of mapping them | 14a, 17 |
+
+**A mutation that reddens no test is itself a finding.** It means the test asserts a structural
+property and is claiming to prove a redaction it does not exercise; the fix is to reword the test
+to assert the structure — and, where the structure is what protects us, to add a test that the
+structure holds (test 8b below).
 
 ### Rendering — `tests/unit/test_audit.py`
 
@@ -265,12 +307,23 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 6. `targets` and `connection.resolved` are both `null` for `configuration-unreadable`; `targets` is
    `[]` for a tool declaring no selector; `connection.resolved` is `"<unresolved>"` for a token
    naming nothing configured and `"<default>"` for an omitted one.
+6a. An integer selector value records `state="present"` with its decimal rendering; a boolean
+   records `state="unreadable"` with a `null` value. Both arms exist in `target_scope._value` and
+   neither was covered.
+6b. A `config.toml` profile named `<unresolved>` renders `resolved == "<unresolved>"`,
+   indistinguishable from a token that resolved to nothing. Asserted so the collision is a chosen
+   behaviour with a documented caveat rather than a discovery.
 7. `attribution` is `{"claim": null, "source": "environment:HMC_AGENT_ID", "verified": false}`
    when `HMC_AGENT_ID` is unset.
 8. `REASONS` equals the `Literal`'s arguments, and every code the boundary can emit is in it.
 8a. No module in `src/hmc_mcp` other than `audit` calls `logging.getLogger` with a name equal to
     or below `hmc_mcp.audit` — asserted by scanning the package, so the reservation is a checked
     invariant rather than a convention.
+8b. **No module on the decision path reads the agent identity.** `dispatch_scope`,
+    `connection_scope`, `target_scope`, `access_policy`, and `tool_registry` contain no reference
+    to `HMC_AGENT_ID` or `agent_id`. This, not test 28's three samples, is what makes A4 an
+    invariant: it catches a future read added to `grants_for` or to a connection rule, which
+    sampling three environment values never would.
 
 ### Sink — `tests/unit/test_audit.py`
 
@@ -285,6 +338,9 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
     unset (`NOTSET`) level becomes `INFO`.
 14a. A record whose target selector is `ABSENT` or `UNREADABLE` renders without raising —
     `json.dumps` never sees a singleton.
+14a. The deferral is deliberate, not accidental: with a `StreamHandler(sys.stdout)` pre-attached
+    to `hmc_mcp.audit`, `install_audit_sink()` adds no second handler **and** a record does reach
+    that stdout handler. Pins the documented hazard as a chosen behaviour.
 14b. Emission is total: a renderer forced to raise, and a logger forced to raise, both leave
     `dispatch_scope.authorize`'s outcome and its exception type unchanged. A non-string connection
     token also renders `state="unreadable"` with `reason="connection-not-granted"` — the
@@ -303,8 +359,16 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
     directly.
 20. A malformed call (a declared argument absent from the bound arguments) produces no record and
     still raises.
-21. The record's `reason` agrees with the raised error's own case selection for all four target
-    denials — driven from `target_scope.denial_reason` so the two cannot drift.
+21. Each of `target_scope`'s four `TargetScopeError` message templates maps to exactly one reason
+    code, pinned as a table rather than derived — after `target_denial` is refactored to read
+    `denial_reason`, asserting that the two "agree" is the same function call twice and cannot
+    fail.
+21a. `denial_reason` names the condition that actually held. For each of the four constructed
+    denial inputs, `targets_permitted` returns `False` **and** `denial_reason` returns the code
+    for the arm that caused it. This is the assertion test 21 was reaching for: `targets_permitted`
+    checks UNREADABLE, then `AllTargets`, then `exhaustive_targets`, then per-selector, while
+    `denial_reason` checks UNREADABLE, `exhaustive_targets`, ABSENT, then all — two orders that
+    could drift apart, and only this pins them together.
 
 ### Redaction — `tests/app/test_authorization_audit.py`
 
@@ -362,19 +426,42 @@ selected must demonstrate all five of these before the PR is called ready. Drive
 newline-delimited JSON-RPC rather than a client library, so that anything printed outside the
 protocol shows up as an unparseable line:
 
-L1. A record arrives on stderr as **one physical line** that parses as JSON and carries the
-    documented fields for its `event`.
-L2. **Two back-to-back records do not share a line** — the `StreamHandler.terminator` claim,
-    which is the one that fails silently only under volume.
-L3. **stdout carries no non-JSON line**, matching the #223 baseline this must not regress.
-L4. A caller value **over 128 characters arrives truncated** to 128.
-L5. An **emission failure leaves the authorization outcome and its error unchanged** — the same
-    denial type, the same message, with the sink made to fail.
+**Fixture.** `HOME` is redirected to a scratch directory holding
+`Library/Application Support/hmc-mcp/config.toml` (profiles `lab` and `prod`, both with
+unreachable `.invalid` hosts and a sentinel password) and `access-policy.toml`:
 
-Reproduced independently rather than taken on report. `config_dir()` on darwin is
-`Path.home()/"Library"/"Application Support"/"hmc-mcp"` with no environment override, so the
-subprocess's `HOME` is redirected to a fixture home holding `config.toml` and
-`access-policy.toml`.
+```toml
+[[policies.lab-scoped.grants]]
+effects = ["read", "mutate"]
+connections = ["lab"]
+targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
+```
+
+Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`, then
+`notifications/initialized`, then `tools/call` frames.
+
+**Run A — observation (L1–L4).** stderr captured to a file, stdout read frame by frame.
+
+| item | call | assertion |
+|---|---|---|
+| L1 | `hmc_power_on_lpar(lpar_name_or_uuid="db-01", system_name_or_uuid="sys-a", profile="lab")` | exactly one stderr line parses as JSON with `event=="authorization"`, `decision=="allow"`, `reason=="permitted"`, `policy=="lab-scoped"`, `tool=="hmc_power_on_lpar"`, `effect=="mutate"`, `connection.resolved=="lab"`, and a `targets` entry `lpar`/`db-01`. The call itself then fails at the transport on DNS, which is the correct shape — authorization is what is under test. |
+| L2 | the L1 call **twice more** | the count of stderr lines parsing as audit JSON equals the number of calls made. Two *permitted* calls deliberately: a denial would put FastMCP's 41-line traceback panel (#267) between the records and confound the line count. |
+| L3 | all of the above | every stdout line parses as a JSON-RPC frame; zero unparseable lines. |
+| L4 | `hmc_power_on_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the record's `targets[0].value` is exactly 128 characters. |
+
+**Run B — failure injection (L5), a separate subprocess.** The observation channel and the
+failure injection cannot coexist: every mechanism that makes the sink fail either closes stderr or
+empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
+
+Launched through `sh -c '… 2>&-'` so fd 2 is closed at interpreter start and `sys.stderr` is
+`None` — the #221 condition, and the arm the handler guards with an early return. Issue the same
+denied call as Run A's L4 and assert the JSON-RPC error body on stdout is byte-identical to the
+one Run A received, and that the process is still serving afterwards (a subsequent
+`tools/list` succeeds). The `OSError`/EPIPE arm is covered at unit level by tests 12–13; forcing
+it live would require closing the parent's read end, which destroys the same channel again for no
+additional assurance.
+
+POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 
 ### Guardrails
 
@@ -392,8 +479,12 @@ subprocess's `HOME` is redirected to a fixture home holding `config.toml` and
 - A5. Credentials, whole argument sets, command text, generated documents, and response bodies are
   absent from every record on allow and deny paths, proven with sentinels whose tests are shown to
   bite. (tests 22–26)
-- A6. The sink cannot write to stdout and cannot abort the server when its destination is
-  unavailable, under the stdio transport. (tests 9–13, 29, 30)
+- A6. The sink **this package installs** writes only to `sys.stderr`, does not propagate to an
+  ancestor handler, and cannot abort the server when its destination is absent, broken, or
+  closed — under the stdio transport. A handler the operator attaches to `hmc_mcp.audit` is
+  theirs to keep off stdout; that deferral is deliberate, documented in
+  `docs/authorization-audit.md`, and pinned by test 14a rather than left as an unexercised claim.
+  (tests 9–13, 14a, L3, L5)
 - A7. Caller-supplied values are bounded at 128 characters and cannot inject a control character
   or a line break. (tests 2, 3, 4, 5)
 - A8. ADR 0040 records the decision, the two no-record cases, and the residuals.

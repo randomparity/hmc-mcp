@@ -106,10 +106,20 @@ What the two share is the *grammar*, not the field set: one physical line, ASCII
 caller-supplied value truncated to 128 characters, `time` and `event` first. A consumer selecting
 on `event == "authorization"` is unaffected by the second shape existing.
 
-`ownership-override` carries no `policy`, `decision`, `reason`, `connection`, or `targets`, and
-deliberately not as nulls: none of them exists for this event, and rendering them empty would
-suggest an access-policy decision was taken when the override is an ADR 0011 ownership check on a
-token parsed from an LPAR description. `system` and `lpar` are the caller's own names.
+`ownership-override` carries no `policy`, `decision`, `reason`, or `targets`, and deliberately not
+as nulls: none of them exists for this event, and rendering them empty would suggest an
+access-policy decision was taken when the override is an ADR 0011 ownership check on a token
+parsed from an LPAR description. `system` and `lpar` are the caller's own names.
+
+It carries no `connection` either, but for a different reason, stated separately because the
+first one would be false: the HMC identity *does* exist at the emission point — the emitter holds
+an `HMCClient` whose `config.host` sits beside the `agent_id` this event records — and is
+dropped. It is omitted because a hostname is not an access-policy connection selector and putting
+it under the same key would conflate them, because this path also runs from the CLI and the
+Python API where no policy connection exists at all, and because what the audit sink discloses is
+a decision this convergence should not make on its own. The consequence is real and is a
+residual, not a non-issue: in a multi-HMC deployment the highest-consequence event this package
+emits does not say which HMC it happened on. Filed as #271.
 
 `attribution.source` therefore becomes a two-value vocabulary too, and the honesty is the point:
 the authorization record reads `os.environ`, while this one reads `hmc.config.agent_id` — the
@@ -286,7 +296,12 @@ them. The logger is **reserved for `audit`**: that module is the only one in the
 resolves it, and every record on it comes from one of its two emitters. That is what makes "the
 message is the record" an invariant of the logger rather than only of the emitter — a stray
 `logging.getLogger("hmc_mcp.audit").info("rotating")` would put an unmarked non-JSON line into a
-stream this record invites operators to parse line by line. And a
+stream this record invites operators to parse line by line. The reservation is *checked* inside
+this package only; a dependency, a plugin, or the operator's own code can still do it, and after
+`propagate = False` such a line lands on the installed handler with no `Formatter` to mark it. So
+the operator documentation tells a consumer to skip a line that does not parse rather than fail
+on it — the bound is stated, not enforced with a `logging.Filter` aimed at a hazard the operator
+controls. And a
 handler an operator attaches there **must not write to `sys.stdout`** under the stdio transport:
 `install_audit_sink` defers to an existing handler without inspecting it, so the shortest route to
 the protocol stream is the attachment point itself, not the ancestor route `propagate = False`
