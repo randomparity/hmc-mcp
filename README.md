@@ -260,11 +260,12 @@ Without the flag no ceiling is applied and every tool is exposed — authoring t
 file is not enough on its own. A policy that cannot be read, parsed, or compiled
 exits non-zero and starts nothing.
 
-The tool and connection dimensions are enforced. A granted tool called with a
-connection the same grant does not name is refused before the server opens any
-connection to an HMC. A policy's `targets` entries are still recorded and
-reported but constrain nothing at call time; call `hmc_effective_permissions` on
-a running server to see which is which.
+All three dimensions — tools, connections, and targets — are enforced, and a
+call is permitted only when a **single** grant covers all three together. A
+grant that names your connection and a *different* grant that names your target
+do not combine. Every refusal happens before the server opens any connection to
+an HMC. Call `hmc_effective_permissions` on a running server to see what the
+selected policy actually applies.
 
 Connection scope is decided on the connection the call will *actually* select,
 not on the `profile` string the caller passes, so a nickname is resolved to the
@@ -316,15 +317,64 @@ platform-native directory. A minimal read-only policy:
 [[policies.lab.grants]]
 effects = ["read"]           # "read", "mutate", "destructive"
 connections = ["<default>"]  # profile names, or "<default>" for the env HMC
-targets = "all-targets"      # or a table, e.g. { lpar = ["db-01"] }
+targets = "all-targets"      # or a table; see "Narrowing targets" below
 ```
 
 A grant must name at least one tool through `effects`, `tools`, or both, and
 must name at least one connection. `targets` is either the string
 `"all-targets"` or a table of target kind to selector strings — a bare array is
 rejected. `hmc_run_command` cannot be reached by effect class: name it in a
-grant's `tools` to grant it, and start the server with
-`--enable-arbitrary-command` as well, since the two compose conjunctively.
+grant's `tools` to grant it, start the server with `--enable-arbitrary-command`
+as well, and grant it under `"all-targets"`, since it declares no target
+selector. All three are required, and they compose conjunctively.
+
+### Narrowing `targets`
+
+Substituting a table for `"all-targets"` is a much stronger statement than it
+looks, so a narrowed policy is normally **two** grants:
+
+```toml
+# Exactly one partition, on exactly one system.
+[[policies.lab.grants]]
+tools = ["hmc_delete_lpar", "hmc_power_off_lpar"]
+connections = ["lab"]
+targets = { managed_system = ["Server-9080-HEX-SN123456"], lpar = ["scratch-01"] }
+
+# Everything console-wide, which no table can express.
+[[policies.lab.grants]]
+effects = ["read"]
+connections = ["lab"]
+targets = "all-targets"
+```
+
+Four rules explain why:
+
+- **Every selector a tool declares must be supplied and must match** — not only
+  the required ones. `hmc_power_off_lpar` takes an optional
+  `system_name_or_uuid`; omitting it means "whichever system has a partition by
+  that name", which a `managed_system` allowlist did not grant, so the call is
+  refused. Likewise `hmc_list_lpars` without a system means *every* system.
+- **Matching is exact string equality.** No globs, no case folding, and no
+  name-to-UUID resolution — resolving would mean asking the HMC inside the
+  check that is supposed to run before any HMC request. A policy written in
+  names does not cover a call written in UUIDs, or the reverse.
+- **A table never grants a tool it cannot bound.** Some tools declare no target
+  selector at all (`hmc_list_systems`, `hmc_remove_ldap_config`,
+  `hmc_run_command` — they act on the console, whose identity *is* the
+  connection). Others act on something the selectors do not name:
+  `hmc_provision_lpar` mutates a VIOS chosen inside its `storage` argument, the
+  LPAR-profile backup and restore pair write an arbitrary path on the HMC's own
+  filesystem, and three adapter tools take a VIOS *partition ID*, a slot number
+  reused on every system in the fleet. Each of those needs a grant whose targets
+  are `"all-targets"`. `hmc_effective_permissions` reports
+  `exhaustive_targets: false` for every one of them. Naming such a tool in a
+  grant's `tools` beside a table is refused at startup.
+- **An LPAR name is unique within a system, not across the fleet.** For the
+  tools that also take a `system_name_or_uuid` the rule above pins it. For those
+  that do not — and for the migration tools, which name only the *destination*
+  system — a `lpar = ["db-01"]` entry matches that name on every system the
+  granted connection reaches. Where that matters, list partition **UUIDs**,
+  which are unique.
 
 ### Startup warnings
 
