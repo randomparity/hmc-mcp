@@ -118,6 +118,11 @@ selector denials.
 The vocabulary is closed. `audit.Reason` is a `Literal` and `audit.REASONS` the derived
 `frozenset`, mirroring `tool_registry.Effect` / `EFFECTS`.
 
+There is no `connection-selector-unreadable` beside `target-selector-unreadable`: `reason` names
+the decision and the `state` fields name the input, and the connection dimension has exactly one
+denial template by ADR 0038's design. A malformed connection token is reported by
+`connection.state == "unreadable"`.
+
 ### Bounding
 
 Every caller-supplied value — `connection.selector`, each target `value`, and
@@ -148,9 +153,19 @@ the largest in this checkout is 3.
 | a malformed call raises `KeyError` on a declared argument | no record; no decision was reached |
 | the sink is not installed (library, CLI, in-process composition) | records are emitted to a logger with no handler and dropped by level; nothing raises |
 
-Emission never changes the authorization outcome and never propagates an exception into
-`authorize`. The handler resolves `sys.stderr` at emit time rather than binding it at install
-time, matching `server._warn`.
+Emission is total: building a record and writing one both drop on failure, leaving the
+authorization outcome and the exception carrying it unchanged. The handler resolves `sys.stderr`
+at emit time rather than binding it at install time, matching `server._warn`.
+
+Two preconditions bound what the trail contains, and both are stated rather than assumed:
+
+- **No policy, no records.** `server._gates` returns `(None, None)` without a selected policy and
+  `tool_registry.authorized` then leaves every handler unwrapped, so no authorizer runs. A default
+  `hmc-mcp serve` installs the sink and emits nothing, for the same reason it enforces nothing.
+  #225 changes that default.
+- **No level lever from the CLI.** `hmc-mcp serve` exposes no logging option and hands control to
+  `.run()`, so only an in-process caller of `main_stdio`/`main_http` can set the level before
+  `install_audit_sink` runs. Filed as #270.
 
 ## Threat model
 
@@ -244,6 +259,10 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
     unset (`NOTSET`) level becomes `INFO`.
 14a. A record whose target selector is `ABSENT` or `UNREADABLE` renders without raising —
     `json.dumps` never sees a singleton.
+14b. Emission is total: a renderer forced to raise, and a logger forced to raise, both leave
+    `dispatch_scope.authorize`'s outcome and its exception type unchanged. A non-string connection
+    token also renders `state="unreadable"` with `reason="connection-not-granted"` — the
+    asymmetry with the target dimension, asserted so it cannot drift silently.
 15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly.
 
 ### Boundary — `tests/app/test_authorization_audit.py`

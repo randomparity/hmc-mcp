@@ -68,6 +68,14 @@ Two calls reach that function without producing a decision, and neither produces
   deliberately, and a `KeyError` there is a defect in the registration path rather than an
   authorization outcome. No decision was reached, so there is nothing to record.
 
+**Emitting a record never raises into `authorize`.** Building one and writing one are both total:
+a failure in either drops the record and leaves the authorization outcome, and the exception that
+carries it, exactly as they were. The rule is the general form of #221's — a diagnostic must not
+abort a start, nor a call — and it matters here because emission precedes both the denial and the
+handler, so a render-side exception would otherwise fail an authorized call and replace ADR 0038's
+and ADR 0039's client-facing errors with something else. The singleton argument below is one
+instance of this rule rather than the only case covered.
+
 Records are emitted for **every** effect class, not for mutations alone. Epic #218 requirement 7
 names "MCP mutation attempts", and that is a floor: the permit/deny oracle above is cheapest to
 run through `read` tools, so restricting the record to mutations would leave unrecorded exactly
@@ -113,11 +121,10 @@ selector.
 Each entry's `state` and `value` come from what `target_scope.selected_targets` already computed,
 so the record cannot disagree with the decision about what the call named. That function returns,
 per selector, either a `str` or one of two singletons, so the vocabulary is total by construction
-and matches `connection`'s: `"present"` with the truncated string as `value`, `"absent"` with a
-`null` value for the `ABSENT` singleton, `"unreadable"` with a `null` value for `UNREADABLE`. The
-singletons are never rendered — for the reason `target_scope.target_denial` already declines to
-render an unreadable value, and because they are not JSON values at all, so passing one through
-would turn a routine denial into a `TypeError` raised inside authorization.
+and matches `connection`'s: `"present"` with the truncated string as `value`, `"absent"` for the
+`ABSENT` singleton, `"unreadable"` for `UNREADABLE`, and a `null` value for both. The singletons
+themselves are never rendered — same reason as above, and they are not JSON values, so passing one
+through would raise inside authorization.
 
 The seven reason codes:
 
@@ -136,6 +143,14 @@ its order. To keep the record and the message from drifting apart, that selectio
 `target_scope.denial_reason`, and `target_denial` reads it rather than repeating it: one function
 decides which case applies, and the message and the reason code are both derived from the answer.
 
+`reason` names the *decision*, and the `state` fields name the *input*. That is why there is no
+`connection-selector-unreadable` beside `target-selector-unreadable`, which reads as an asymmetry
+and is not one: `target_denial` genuinely selects a different branch for a malformed selector,
+with different advice, while `connection_scope` deliberately funnels a malformed token through
+`UNRESOLVED` into the single denial template ADR 0038 wrote to avoid a membership oracle. There is
+one connection denial, so there is one connection reason code. An operator looking for malformed
+calls reads `connection.state == "unreadable"`, which the record carries for exactly that.
+
 ### Caller-supplied values are truncated to 128 characters, unmarked
 
 Every value in the record is one of: a compile-time constant (the event name, decision, reason
@@ -143,9 +158,11 @@ code, effect class, target kind, selector argument name, attribution source); th
 the resolved connection, both operator-authored; or a value the caller itself supplied. Only the
 last class is unbounded, and each such value is truncated to 128 characters.
 
-No truncation marker is appended: a marker is forgeable, and the distinction it buys — a
-128-character value from a longer one — is not one an operator acts on. The bound is documented
-instead.
+No truncation marker is appended. In-band, a marker is forgeable: a caller can end its own value
+with it. Out of band — a per-value boolean the caller cannot influence — it is honest but
+redundant, because a truncated value is exactly 128 characters and an operator who wants the
+signal can measure it. Either way it is a field on every record for something already derivable,
+so the bound is documented instead.
 
 ### `resolved` records the normalized connection; the message still does not
 
@@ -227,12 +244,22 @@ and `ValueError` around the write — the same three guards, for the same three 
 contract.
 
 Denials are logged at `WARNING` and permits at `INFO`, so an operator who wants denials only sets
-the level on `hmc_mcp.audit` and needs no new configuration key.
+the level on `hmc_mcp.audit` and needs no new configuration key — reachable to a caller that
+configures the logger before calling `main_stdio` or `main_http`, and **not** to one running
+`hmc-mcp serve`, which exposes no logging option and hands control straight to `.run()`. That gap
+is #270.
 
 ## Consequences
 
 - The operator gets a per-call authorization trail with a stable grammar, and the calling agent
-  cannot read it: it is not in the tool result.
+  cannot read it: it is not in the tool result. **Only when a policy is selected.** `_gates`
+  returns `(None, None)` without one, `tool_registry.authorized` then leaves every handler
+  unwrapped, and no authorizer is on any dispatch path — so a default `hmc-mcp serve` installs the
+  sink and emits nothing at all, for the same reason it enforces nothing at all. That default is
+  what #225 changes; until then the ADR's own objection to a silent control ("an audit control
+  that emits nothing by default is not a control") applies to the missing policy exactly as it
+  applied to the missing handler, and the operator with no policy *file* gets no startup warning
+  either, because `_startup_warnings` fires that line only when a file exists.
 - An audit record is written before the denial is raised and before the handler runs. A permitted
   call is recorded as *authorized*, not as *succeeded* — the handler may still fail, and this
   record says nothing about that.
@@ -244,7 +271,9 @@ the level on `hmc_mcp.audit` and needs no new configuration key.
   journal, that is a caller-driven consumption path this layer does not stop. Bounding it is the
   deployment's — rotation, journal limits — because the alternative is rate limiting, which this
   charter excludes and which would aim a denial-of-service surface at the operator's own agents.
-  An unrecorded probe is worse than a recorded one, which is why the trade is taken this way.
+  An unrecorded probe is worse than a recorded one, which is why the trade is taken this way. Note
+  that the lever and the consequence do not reach the same operator: a CLI-launched server has the
+  volume and not the lever (#270).
 - An `HMC_HOST` collapse of a call that *named* a connection is visible in the record without
   being a field: `state: "present"` with `resolved: "<default>"` can arise no other way, since a
   non-empty string token reaches rule 3 unless rule 1 fired first. A collapse of a call that
@@ -255,11 +284,9 @@ the level on `hmc_mcp.audit` and needs no new configuration key.
   Behaviour is unchanged; the case selection now has one owner.
 - `audit.py` imports nothing from the package. Every value reaches it as a primitive, so it can be
   tested without a policy, a config file, or an application, and no import cycle is possible.
-- Records are dropped rather than raised when the destination *raises* — absent, broken, or
-  closed. A server whose stderr is closed authorizes calls it does not record, which is the
-  deliberate trade: #221 established that a diagnostic must not abort a start, and the same
-  reasoning binds a diagnostic that must not abort a call. A destination that neither raises nor
-  returns is a different case; see the residual below.
+- A server whose stderr is absent, broken, or closed authorizes calls it does not record. That is
+  the deliberate trade named in the Decision's total-emission rule. A destination that neither
+  raises nor returns is a different case; see the residual below.
 - Because `propagate` is set unconditionally, an operator who had attached an audit handler to the
   root logger before this change stops receiving records and must attach to `hmc_mcp.audit`. There
   is no prior release in which audit records existed, so nothing in the field breaks.
@@ -281,15 +308,13 @@ stdout, so it is not a framing defect. Every fix reaches past authorization — 
 suppresses genuine handler bugs too, and converting the error at the boundary changes the client
 contract ADR 0038 and ADR 0039 fixed — so it is filed as #267 rather than decided here.
 
-**A merged descriptor puts audit output into the protocol stream.** `propagate = False` and a
-stderr-only handler close every route inside the process. They cannot close `serve 2>&1`, a
-wrapper or unit file doing the same, or an in-process `redirect_stderr(sys.stdout)`: under the
-stdio transport fd 1 is the JSON-RPC channel, so merging fd 2 into it injects one JSON line per
-authorized call. This is not new with this record — `server._warn`'s four startup lines already
-have it, and README's startup-warnings section states "never stdout" without the caveat — but a
-per-call writer turns a four-line hazard into a per-call one, so the caveat is stated here and in
-the operator documentation. No in-process detection is proposed: a process cannot tell that its
-own fd 2 and fd 1 are the same pipe without probing the descriptor, and a probe that guesses
+**A merged descriptor puts audit output into the protocol stream.** The Decision's sink section
+states what `propagate = False` closes and what it cannot: `serve 2>&1`, a wrapper or unit file
+doing the same, or an in-process `redirect_stderr(sys.stdout)`. This is not new — `server._warn`'s
+four startup lines already have it, and README's startup-warnings section says "never stdout"
+without the caveat — but a per-call writer turns a four-line hazard into a per-call one, so the
+caveat is added there and in the operator documentation. No in-process detection is proposed: a
+process cannot tell its own fd 2 and fd 1 are one pipe without probing, and a probe that guessed
 wrong would silence the audit trail.
 
 **An undrained stderr blocks the write, and therefore the call.** The handler's guards cover a
@@ -347,12 +372,9 @@ supported Python API of ADR 0029 use. `_serve_application` is where the process 
 established as a server, and where `_warn` already writes to stderr for the same reason.
 
 **Let the record propagate to the root logger**, so operators configure it the way they configure
-everything else. Rejected on the stdio hazard: under that transport the root logger's handler is
-exactly what the server cannot vouch for, and one `StreamHandler(sys.stdout)` anywhere in the
-process would put an audit record into the JSON-RPC stream on every authorized call. A dedicated
-non-propagating logger is what makes closing the in-process route a property of the code; the
-descriptor-level route stays the deployment's, and is recorded as a residual rather than claimed
-closed.
+everything else. Rejected on the stdio hazard the Decision's sink section states: the root
+logger's handler is exactly what the server cannot vouch for, and one `StreamHandler(sys.stdout)`
+anywhere in the process would put a record into the JSON-RPC stream on every authorized call.
 
 **Record only denials.** Halves the volume and loses the ability to answer "what did this agent
 do", which is the question an audit trail exists for. Requirement 7 names both.
