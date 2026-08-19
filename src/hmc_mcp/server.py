@@ -340,6 +340,29 @@ def _startup_warnings(
     return tuple(lines)
 
 
+def _warn(lines: tuple[str, ...]) -> None:
+    """Write startup diagnostics to stderr, or to nowhere at all.
+
+    Never to stdout, which carries JSON-RPC framing under the stdio transport.
+    ``print(file=None)`` falls back to ``sys.stdout``, and CPython sets
+    ``sys.stderr`` to ``None`` when fd 2 is not open at interpreter start — a
+    launcher closing it (``serve 2>&-``) would otherwise inject warning text
+    into the protocol stream — so an absent stream drops the lines instead.
+
+    Nor may emitting one abort a start, which is what ``_unselected_policy_file``
+    already refuses for resolving one. A broken stream raises ``OSError`` and a
+    closed one raises ``ValueError``, so both are caught.
+    """
+    stream = sys.stderr
+    if stream is None:
+        return
+    try:
+        for line in lines:
+            print(line, file=stream)
+    except (OSError, ValueError):
+        pass
+
+
 def _serve_application(
     enable_arbitrary_command: bool, access_policy: AccessPolicy | None
 ) -> FastMCP:
@@ -354,16 +377,7 @@ def _serve_application(
         return len(await application.local_provider.list_tools())
 
     tool_count = asyncio.run(_prepare())
-    try:
-        for line in _startup_warnings(
-            tool_count, access_policy, enable_arbitrary_command
-        ):
-            print(line, file=sys.stderr)
-    except OSError:
-        # Under stdio the client owns stderr, so it can be closed or broken
-        # before the first write. _unselected_policy_file already refuses to let
-        # a diagnostic abort a start; emitting one must not undo that.
-        pass
+    _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
 
 

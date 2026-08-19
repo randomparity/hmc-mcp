@@ -510,27 +510,49 @@ def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
     assert "hmc_effective_permissions" not in captured.err
 
 
-def test_an_unwritable_stderr_never_fails_the_start(monkeypatch):
+class _BrokenStderr:
+    """A stream whose every write raises, as a closed pipe's does."""
+
+    def write(self, _text):
+        raise BrokenPipeError("stderr is gone")
+
+    def flush(self):
+        raise BrokenPipeError("stderr is gone")
+
+
+def _unusable_stderr(state, tmp_path):
+    """One of the three ways stderr is unusable when the server starts."""
+    if state == "broken":
+        return _BrokenStderr()
+    if state == "none":
+        # CPython sets sys.stderr to None when fd 2 is not open at interpreter
+        # start, which is what `serve 2>&-` produces.
+        return None
+    handle = (tmp_path / "closed").open("w", encoding="utf-8")
+    handle.close()
+    return handle
+
+
+@pytest.mark.parametrize("state", ["broken", "none", "closed"])
+def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
+    state, tmp_path, monkeypatch, capsys
+):
     """R10a: a diagnostic nobody asked for must not abort a start.
 
-    Under stdio the client owns stderr, so it can be closed or broken before the
-    server writes its first warning.
+    Nor may it land on stdout, which carries JSON-RPC under stdio. Each state
+    raises differently — BrokenPipeError is an OSError, a closed file raises
+    ValueError, and ``print(file=None)`` does not raise at all but writes to
+    stdout — so asserting only "did not raise" would miss the one that leaks.
     """
     import hmc_mcp.server as server_app
 
-    class _BrokenStderr:
-        def write(self, _text):
-            raise BrokenPipeError("stderr is gone")
-
-        def flush(self):
-            raise BrokenPipeError("stderr is gone")
-
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
-    monkeypatch.setattr(server_app.sys, "stderr", _BrokenStderr())
+    monkeypatch.setattr(server_app.sys, "stderr", _unusable_stderr(state, tmp_path))
 
     application = server_app._serve_application(False, policy)
 
     assert _names(application) == set()
+    assert capsys.readouterr().out == ""
 
 
 def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
