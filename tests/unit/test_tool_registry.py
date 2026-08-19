@@ -276,7 +276,7 @@ def test_a_handler_whose_signature_cannot_be_read_is_named_in_the_error():
         def __call__(self, profile: str | None = None) -> str:
             return "ok"
 
-    with pytest.raises(RuntimeError, match="hmc_unreadable_tool"):
+    with pytest.raises(ValueError, match="hmc_unreadable_tool"):
         tool(effect="read", operation="a.b", target_kind="console")(Unreadable())
 
 

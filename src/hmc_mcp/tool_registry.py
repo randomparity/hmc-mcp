@@ -65,11 +65,16 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "resource_name_or_uuid": "metric_resource",
 })
 
-_ANNOTATIONS: Mapping[str, ToolAnnotations] = MappingProxyType({
-    "read": ToolAnnotations(readOnlyHint=True),
-    "mutate": ToolAnnotations(readOnlyHint=False),
-    "destructive": ToolAnnotations(readOnlyHint=False, destructiveHint=True),
-    "arbitrary-command": ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+# (readOnlyHint, destructiveHint) per effect class, held as immutable values
+# rather than shared ToolAnnotations instances: the model is mutable, so a shared
+# instance would let one in-place edit re-flag every tool of that class. `mutate`
+# leaves destructiveHint unset — MCP defaults it to true, and asserting false
+# would newly invite a client to auto-approve every mutating tool.
+_ANNOTATIONS: Mapping[str, tuple[bool, bool | None]] = MappingProxyType({
+    "read": (True, None),
+    "mutate": (False, None),
+    "destructive": (False, True),
+    "arbitrary-command": (False, True),
 })
 
 
@@ -101,13 +106,9 @@ class ToolDefinition:
 
 
 def annotations_for(effect: Effect) -> ToolAnnotations:
-    """Return the MCP annotations for an effect class.
-
-    A fresh copy each call: ``ToolAnnotations`` is a mutable pydantic model, and
-    handing out the shared instance would let one in-place edit re-flag every
-    tool of that class.
-    """
-    return _ANNOTATIONS[effect].model_copy()
+    """Return the MCP annotations for an effect class, as a fresh object."""
+    read_only, destructive = _ANNOTATIONS[effect]
+    return ToolAnnotations(readOnlyHint=read_only, destructiveHint=destructive)
 
 
 def build_targets(
@@ -226,7 +227,9 @@ def tool_module():
             try:
                 targets = build_targets(fn, extra_targets)
             except Exception as error:  # noqa: BLE001 - re-raised with the tool named
-                raise type(error)(f"{name}: {error}") from error
+                raise ValueError(
+                    f"{name}: cannot inspect signature: {error!r}"
+                ) from error
             security = replace(security, targets=targets)
             validate_security(security, fn)
             definitions.append(ToolDefinition(name, fn, security))

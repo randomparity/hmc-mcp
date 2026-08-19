@@ -355,7 +355,9 @@ def test_the_derivation_tables_are_read_only():
     with pytest.raises(TypeError):
         tool_registry.REQUIRED_TARGET_ARGUMENTS["lpar_name_or_uuid"] = "vios"
     with pytest.raises(TypeError):
-        tool_registry._ANNOTATIONS["read"] = annotations_for("destructive")
+        tool_registry._ANNOTATIONS["read"] = (False, True)
+    with pytest.raises(TypeError):
+        tool_registry._ANNOTATIONS["read"][0] = False
 
 
 def test_annotations_for_hands_out_an_independent_copy():

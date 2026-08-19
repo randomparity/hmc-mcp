@@ -71,8 +71,9 @@ The `mutate`/`destructive` line is drawn as: **destructive** when the operation 
 or irreversibly overwrite existing state the operation did not itself create — a delete, a
 power-off, a restore over a live resource, an OS reinstall. **mutate** when it creates a new
 resource or changes configuration that can be changed back. The criterion has to be written
-down because #221's capability ceiling is expressed in these terms, and 48 tools were
-classified against it; without it the boundary is whatever the last author assumed.
+down because #221's capability ceiling is expressed in these terms, and the 48 previously
+untagged tools were classified against it; without it the boundary is whatever the last
+author assumed.
 
 `target_kind` names the resource whose state the operation changes. For a creation tool that
 is the container gaining the resource — `hmc_create_lpar` declares `managed_system` — because
