@@ -643,26 +643,39 @@ def test_every_handler_routes_the_connection_argument_it_declares():
     which is how the metrics, vios, and composite tools reach their client. It
     does not follow a helper imported from another module, a ``functools.partial``,
     or a callable held in a variable; ADR 0038 records that residual.
+
+    The two tools that declare *no* connection argument are checked in the same
+    pass, from the other side: entering the walk with no selector, the first
+    builder either of them reached would be refused. Nothing else would notice
+    one growing a `client_from_env()` call, since neither `validate_security`
+    nor the dispatch wrapper reads a handler's body.
     """
     root = Path(server_command.__file__).parent
-    connection_bearing = {
-        name
-        for name, security in TOOL_SECURITY.items()
-        if security.connection_argument is not None
-    }
     checked: set[str] = set()
 
     for path in sorted(root.glob("server_*.py")):
         functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
-        for name in sorted(functions.keys() & connection_bearing):
-            argument = TOOL_SECURITY[name].connection_argument
-            reached = _assert_routes(
-                functions[name], argument, functions, name, {name}
+        for name in sorted(functions.keys() & set(TOOL_SECURITY)):
+            _assert_handler_routes(
+                functions[name],
+                TOOL_SECURITY[name].connection_argument,
+                functions,
+                name,
             )
-            assert reached, f"{name}: declares {argument!r} but opens no HMC connection"
+            # A handler that builds its own HMCConfig hands it straight to
+            # HMCClient, reaching an HMC through no builder this walk knows.
+            # None does today; refusing the construction keeps the set closed.
+            assert "HMCConfig" not in {
+                _call_name(node)
+                for node in ast.walk(functions[name])
+                if isinstance(node, ast.Call)
+            }, f"{name}: constructs its own HMCConfig, bypassing profile resolution"
             checked.add(name)
 
-    assert checked == connection_bearing, sorted(connection_bearing - checked)
+    # `hmc_effective_permissions` is defined inside a factory rather than at
+    # module level, so it is the one name this pass cannot reach; every other
+    # tool, including the two that declare no connection argument, is checked.
+    assert set(TOOL_SECURITY) - checked == {"hmc_effective_permissions"}
 
 
 def _walk(source: str, argument: str | None = "profile") -> int:
