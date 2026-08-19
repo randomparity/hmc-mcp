@@ -85,6 +85,14 @@ caller-supplied sequence, and `targets` is the string `"all-targets"`. The grant
 `hmc_mcp.legacy_policy` imports no `server` module: `tool_security` arrives as a parameter,
 as it does for `compile_access_policy`.
 
+**R7a — The escape hatch is opt-in and unreachable from the CLI.** The document builder and
+`compile_legacy_policy` take a keyword-only `include_arbitrary_command: bool = False`; when
+true, `hmc_run_command` joins `tools`. `render_legacy_policy` does not take it and never
+emits the name, so no file the generator writes can grant it. `scripts/live_test_runner.py`
+is the only caller passing `True`, because it drives `hmc_run_command` against a real HMC
+after `configure_arbitrary_command_tool(True, ...)`, whose registration is gated on
+`permits("hmc_run_command")`.
+
 **R8 — Connections are the deployment's own, plus the default token.**
 `legacy_connections() -> tuple[str, ...]` returns `("<default>", *sorted(profile keys))`
 read from the platform-native `config.toml` through `config.list_profiles`. With no config
@@ -98,8 +106,9 @@ every token to it under `HMC_HOST`, and because an omitted `profile` argument me
 `render_legacy_policy(tool_security, connections) -> str` returns TOML text that
 `tomllib.loads` parses and `compile_access_policy` compiles without error, yielding a
 policy named `legacy-equivalent` whose `tools` equals the R7 set. The text carries a
-comment header stating what the policy grants, that it must be regenerated after an
-upgrade that adds tools, and how to add `hmc_run_command`.
+comment header stating what the policy grants, how to add `hmc_run_command`, and the
+three-step regeneration procedure — move the file aside, re-run the generator, diff and
+re-apply hand edits — since R11's command refuses to overwrite and there is no `--force`.
 
 **R10 — The same document compiles without a filesystem.**
 `compile_legacy_policy(tool_security, connections) -> AccessPolicy` compiles the R7
@@ -127,18 +136,24 @@ rather than merely close.
 permitted under the compiled legacy-equivalent policy. Those tools are non-exhaustive, so
 only `all-targets` reaches them.
 
-**R14 — The generated policy grants no arbitrary command.** `hmc_run_command` is absent
-from the compiled policy's `tools`, so `--enable-arbitrary-command` alone does not expose
-it and the ADR 0041 startup warning fires when the flag is passed.
+**R14 — The written policy grants no arbitrary command.** `hmc_run_command` is absent from
+`render_legacy_policy`'s output and from the policy compiled at the R7a default, so
+`--enable-arbitrary-command` alone does not expose it and the existing startup warning
+fires when the flag is passed. Under `include_arbitrary_command=True` it is present, and
+`configure_arbitrary_command_tool(True, ...)` then registers it.
 
-**R15 — Both scripts compose through the generator.** `scripts/smoke_mcp.py` and
-`scripts/live_test_runner.py` build their application as
-`create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))`. The smoke
-path therefore proves on every `just verify` and every CI leg that the generated document
-compiles and composes.
+**R15 — Both scripts compose through the generator.** `scripts/smoke_mcp.py` builds
+`create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))`;
+`scripts/live_test_runner.py` builds the same with `include_arbitrary_command=True`, so its
+`configure_arbitrary_command_tool(True, ...)` call still registers the tool it goes on to
+invoke. Neither holds an application at module scope. The smoke path proves on every
+`just verify` and every CI leg that the grant compiles and composes; it does not serialize
+TOML, so the emitted document's parse is R9's to prove and not smoke's.
 
 **R16 — Documentation states the new default and its precondition.** `README.md` gains a
-migration section covering the refusal, the generator, and the two exit codes; keeps a
+migration section covering the refusal, the generator, the two exit codes, the manual
+regeneration procedure, and the loss of `hmc_run_command` for a deployment that ran with
+`--enable-arbitrary-command`; keeps a
 minimal read-only example; keeps a limited-mutation example; adds an abbreviated
 legacy-equivalent example; drops the removed startup-warning row; and states that a
 deployment must drain the server's fd 2, naming #269. `README.md`'s "Without
