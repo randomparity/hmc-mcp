@@ -95,8 +95,11 @@ tokens with `None` rendered as `"<default>"`, an `all_targets` boolean, and a `t
 mapping of target kind to sorted selector strings — empty when `all_targets` is true.
 Connections and targets from different grants are never merged.
 
-**R16 — Inspection states what is enforced.** `enforced_dimensions == ("tools",)` and
-`declared_only_dimensions == ("connections", "targets")` in every output.
+**R16 — Inspection states what is enforced, and does not overstate it.** With a policy
+selected, `enforced_dimensions == ("tools",)` and
+`declared_only_dimensions == ("connections", "targets")`. With no policy selected both are
+`()`, matching `ceiling_enforced is False`: a server with no ceiling enforces no dimension
+and declares none.
 
 **R17 — Inspection carries no credential.** The output contains no value read from
 `config.toml` and no environment variable value. The only path it contains is the policy
@@ -166,8 +169,11 @@ policy's compiled grants.
 index reaches the handler as a second closure argument supplied by `create_mcp`, keeping
 the import direction one-way.
 
-The `declared_only_dimensions` tuple is a module constant, not a computed value: it
-changes when #222 and #223 land, and a computation would have nothing to compute from.
+Both dimension tuples are derived from whether a policy is selected, not module constants:
+empty with no policy, and the fixed pair above with one. A constant `("tools",)` would
+report an enforcement the permissive default is not performing, which is the fail-open
+reading in the fail-open case. Their *contents* are literals in this module and change
+when #222 and #223 land.
 
 ### Startup selection
 

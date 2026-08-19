@@ -74,10 +74,14 @@ keep in step.
 fixed that a grant is evaluated conjunctively and grants combine disjunctively, so a
 union of connections across grants would misstate the policy. Each grant is reported with
 its own tools, connections (with `None` rendered back as `"<default>"`), and targets. Two
-fields say what those dimensions currently mean: `enforced_dimensions` is `("tools",)`
-and `declared_only_dimensions` is `("connections", "targets")`. #222 and #223 move a
-string from the second tuple to the first. Prose in a description would have said the
-same thing to a human and nothing to a client.
+fields say what those dimensions currently mean: with a policy selected,
+`enforced_dimensions` is `("tools",)` and `declared_only_dimensions` is
+`("connections", "targets")`; with none selected both are empty, because a server with no
+ceiling enforces no dimension and declares none. #222 and #223 move a string from the
+second tuple to the first. The tuples are computed rather than constant precisely so the
+permissive default cannot report an enforcement it is not performing — a client keying off
+a constant `("tools",)` would draw the fail-open conclusion in the fail-open case. Prose
+in a description would have said the same thing to a human and nothing to a client.
 
 **The arbitrary-command flag and the ceiling compose conjunctively**, as ADR 0036
 recorded. `configure_arbitrary_command_tool(enabled, mcp, permits=None)` registers
@@ -88,6 +92,20 @@ and this intersection reads only the compiled result.
 
 ## Consequences
 
+- **A server started without `--access-policy` applies no ceiling and says nothing about
+  it.** The realistic path after this entry ships is that an operator authors
+  `access-policy.toml`, restarts, and gets zero enforcement because the selection flag was
+  omitted: the file loads nowhere, validates nothing, and constrains nothing. ADR 0036's
+  top residual — a policy file that validates *looks* like a control — now has a second
+  silent step between authoring and enforcement, and that is the default configuration of
+  every deployment until #225. `hmc_effective_permissions` reporting a null policy name
+  and empty `enforced_dimensions` is the only in-band way to observe it. A second stderr
+  warning at `serve` was considered and not added: it would fire on every existing
+  deployment, for a state #225 converts into a startup failure outright.
+- **A policy that grants `hmc_run_command` while `--enable-arbitrary-command` is unset
+  produces the same unexplained absence** the inspection-tool warning exists to prevent,
+  and gets no warning. The conjunction is deliberate and the flag is the outer gate, so
+  the absence is correct; only the diagnosis is missing, and inspection reports it.
 - **The ceiling is the only dimension enforced.** A policy naming
   `connections = ["lab"]` still lets a granted tool be called with `profile="prod"`, and
   a `targets` table constrains nothing at call time. That is why inspection labels both
@@ -99,10 +117,14 @@ and this intersection reads only the compiled result.
   by name at all — and it is what "expose only tools permitted by the policy" asks for.
 - **`hmc_effective_permissions` discloses the policy's contents to the MCP client**,
   including the absolute path of the policy file, which on most platforms sits under the
-  operator's home directory and so names the account. It carries no credential: the
-  policy document's four grant keys are `effects`, `tools`, `connections`, and `targets`,
-  and `access_policy.py` parses it with `extra="forbid"`, so there is no field a secret
-  could be written into. The already-shipping `hmc_list_configured_hosts` returns each
+  operator's home directory and so names the account. It carries no credential, argued
+  over values rather than keys: every value it echoes is an operator-authored identifier —
+  the policy name, tool names drawn from the compiled-in index, connection tokens, and
+  target selector strings — and no value is read from `config.toml`, from the environment,
+  or from the HMC. `access_policy.py` parses the document with `extra="forbid"` over four
+  grant keys, so a would-be secret has no field to travel in; an operator who writes one
+  into a policy name or a selector string publishes it, which is the same exposure as
+  writing it into an LPAR name. The already-shipping `hmc_list_configured_hosts` returns each
   profile's host and user to the same client, so this is not the widest disclosure on the
   surface — but it is a new one, and a policy that withholds the inspection tool removes
   it.
@@ -129,14 +151,19 @@ and this intersection reads only the compiled result.
   null option. Rejected because #221's stated outcome is that fresh applications expose
   only permitted tools, and an inspection tool reporting an unfiltered registry against a
   loaded policy would report the gap accurately and change nothing about it.
-- **Deny at dispatch instead of filtering at registration** — keep every tool registered
-  and refuse a denied call. It gives the agent an actionable error and a place to hang
-  #224's audit event, and it is one code path instead of one per registration site.
-  Rejected because a registered tool is advertised: its name, schema, and description
-  still reach the client, an agent still plans with it, and the ceiling becomes a runtime
-  check that must be reached rather than a property of the composed application. #222
-  adds a dispatch layer for the dimensions that can only be evaluated per call;
-  the ceiling is not one of them.
+- **Enforce the ceiling in a `fastmcp` middleware** holding the policy — the strongest
+  form of "deny at dispatch". The pinned `fastmcp-slim[server]==3.4.7` exposes both
+  `on_list_tools` and `on_call_tool`, so one middleware could hide a withheld tool from
+  `tools/list` *and* refuse a call by name: one code path instead of a `permits`
+  parameter, an actionable error for the agent, a place to hang #224's audit event, and
+  the same seam #222 and #223 need anyway. Rejected because it is a check that must be
+  *reached*: any provider, transport, or direct-invocation path that does not run the
+  middleware exposes the full registry, so the ceiling fails open on a bug of omission,
+  whereas a tool that was never registered cannot be reached by construction. The
+  acknowledged cost of rejecting it: #222 and #223 add a dispatch layer regardless, so
+  one policy ends up enforced by two mechanisms with different failure shapes, and only
+  the dispatch one is visible to #224's audit. That is the price of making the highest-risk
+  dimension structural.
 - **Register everything, then remove the denied tools from the provider**, reusing
   `configure_arbitrary_command_tool`'s existing `remove_tool` shape. Rejected because
   composition would construct a registry that exceeds the ceiling and then repair it, so
@@ -159,6 +186,13 @@ and this intersection reads only the compiled result.
   the same fact: it would already disagree with the registry whenever
   `configure_arbitrary_command_tool` has run, and any future registration path would have
   to remember to update it.
+- **Report the policy name only, not its path.** The cheapest form of "policy source",
+  and it removes the one disclosure this change adds that names the operator's account.
+  Rejected because a name does not answer the question an operator asks inspection: *which
+  file was read* — `resolve_access_policy_path` is platform-dependent, and a deployment
+  that believes it edited the policy in effect is the failure mode this field exists to
+  catch. A policy that considers the path sensitive withholds the tool, which is the
+  control this record already gives it.
 - **Report a flat union of connections and targets across grants.** A shorter, flatter
   output. Rejected because ADR 0036 fixed grants as conjunctive alternatives, so the
   union of the connection dimension across grants describes reach no grant confers — the
