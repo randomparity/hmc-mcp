@@ -99,24 +99,41 @@ the connection. Two failures follow from that, both fail-open:
 **Resolved-selector comparison** is adopted. The caller's token is normalized to the
 connection `build_config` will actually select, expressed in the policy's own vocabulary
 — a profile key, or `None` for the environment/default connection — and *that* is
-compared exactly against `Grant.connections`. Normalization is three rules, in order:
+compared exactly against `Grant.connections`. Normalization is four rules, in order,
+each mirroring a line of `build_config`/`load_profile`:
 
-1. **`HMC_HOST` is set in the process environment → `None`.** `build_config` will
-   discard the token, so no token can be evidence of reaching a named profile. The
-   deployment has exactly one connection and it is the environment one, which is what
-   `<default>` denotes.
-2. **The token is absent (`None`) → `None`.** ADR 0036 fixed that omitting the argument
-   is denoted by `<default>`, whose late binding through `HMC_PROFILE` and
-   `default_profile` is an accepted, recorded property of that token. This record does
-   not re-resolve it; see the rejected alternatives.
-3. **Otherwise, resolve one level through the `nicknames` table** read from the
-   platform-native `config.toml`, yielding the profile key. A token that is already a
-   profile key, or that matches no nickname, passes through unchanged — `load_profile`
-   resolves a nickname only when the name is not itself a profile key, and this mirrors
-   it.
+0. **A token that is not `str | None` denies**, without being inspected. Unreachable
+   through MCP, where the schema types the parameter `str | null`; a boundary with no
+   coercion rule is one fewer thing to get wrong.
+1. **`HMC_HOST` is set and non-empty in the process environment → `None`.**
+   `build_config` gates its whole TOML branch on `os.environ.get("HMC_HOST")` being
+   truthy and will discard the token, so no token can be evidence of reaching a named
+   profile. The deployment has exactly one connection and it is the environment one,
+   which is what `<default>` denotes.
+2. **A falsy token — `None` or `""` — → `None`.** `load_profile` opens with
+   `name = profile or os.environ.get("HMC_PROFILE")`, so an empty string already behaves
+   exactly like an omitted one; verified in this checkout, where `build_config(profile="")`
+   and `build_config(profile=None)` both resolve the deployment default. ADR 0036 fixed
+   that the omitted argument is denoted by `<default>`, whose late binding through
+   `HMC_PROFILE` and `default_profile` is an accepted, recorded property of that token.
+   This record does not re-resolve it; see the rejected alternatives.
+3. **Otherwise, resolve against `config.toml`'s `profiles` and `nicknames` tables, in
+   that order.** A token that names a profile is that profile key. A token that does not,
+   but names a nickname whose target is a profile, is that target. Anything else —
+   including a nickname dangling on a missing profile — denies.
 
-A `ConfigError` from reading that table denies. A token that is not `str | None` denies
-without inspection.
+   The order is not cosmetic. `load_profile` consults `nicknames` only inside
+   `if name not in profiles:`, so a profile key always wins over a same-named nickname.
+   Verified in this checkout: with `profiles = {prod, lab}` and `nicknames = {prod = "lab"}`,
+   `load_profile(profile="prod")` resolves to `prod`. A normalizer that read the nicknames
+   table alone would answer `lab`, and a policy granting `["lab"]` would then permit a call
+   that lands on `prod` — a fail-open introduced by the very rule that exists to close one.
+   Both tables come from **one** read, so the two halves of a single decision cannot
+   disagree with each other.
+
+A `ConfigError` while reading either table denies, as does an unresolvable token: in every
+one of those cases `load_profile` would itself have raised, so denying is the same outcome
+reached earlier and without the config path in the message.
 
 The line between rules 2 and 3 is deliberate and is the one a reviewer should press on.
 Rule 3 canonicalizes a selector the **caller supplied**; that is disambiguation, and
@@ -126,8 +143,9 @@ is precisely what ADR 0036 defined `<default>` to denote. Canonicalize what was 
 never invent what was not.
 
 Normalization reads only non-secret structure: whether `HMC_HOST` is set, and the
-`nicknames` table via `config.list_nicknames`, which the module documents as never
-resolving secrets. It reads no password, builds no client, and contacts no HMC.
+`profiles` and `nicknames` **keys** from `config.toml`, through a `config.py` helper of the
+same class as the existing `list_profiles_with_default`, which that module documents as
+never resolving secrets. It reads no password, builds no client, and contacts no HMC.
 
 ### Under `HMC_HOST`, a profile-named policy denies everything
 
@@ -162,26 +180,66 @@ inventory is answered here as *the connection dimension structurally cannot boun
 Withholding that disclosure is the tool dimension's job, and ADR 0037 made it
 withholdable.
 
+### A declared connection argument must actually route the connection
+
+The authorization decides on the value of `ToolSecurity.connection_argument`; the handler
+must then *use* that value, or the decision is about a connection the call does not make.
+Two handlers break that today. `hmc_set_lpar_boot_order` and `hmc_clear_lpar_boot_order`
+declare `profile`, document it, and then open `client_from_env()` with no argument — so
+they always reach the deployment default whatever the caller named. That predates this
+record (ADR 0008 routes REST tools by per-call profile and these two were missed), but it
+is not adjacent work: without the fix, a policy granting `lab` authorizes a `mutate` call
+that writes to the default HMC, and `hmc_effective_permissions` reports the connection
+dimension as enforced while it is being bypassed. Both are corrected here.
+
+Correcting two handlers does not stop the third from being written, so the rule becomes a
+guardrail beside ADR 0035's G-rules: every handler whose `ToolSecurity` declares a
+connection argument passes that argument to every `build_config` / `client_from_env` /
+`_ssh_with_client` call in its body, and passes no other connection-selecting keyword —
+notably not `host`, whose presence would make `build_config` skip profile resolution
+exactly as `HMC_HOST` does. The check is static, over the parsed source of the
+`server_*` modules, so it costs nothing at runtime and fails the suite rather than a call.
+
 ### Denials are stable, actionable, and disclose nothing new
 
-`ConnectionScopeError` carries a message naming the tool, the policy, the connection the
-request was evaluated as, and the remedy. It never names a host, a port, a user, a
-credential, a resolved endpoint, or the contents of `config.toml`.
+`ConnectionScopeError` renders one fixed template with a closed set of substituted
+values: the tool name, the policy name, the connection **as the caller named it**, and
+one clause selected from a fixed set. Nothing else is interpolated, which makes "contains
+no secret" a property of the template rather than an assertion about a message.
+
+It never names a host, a port, a user, a credential, a resolved endpoint, or a filesystem
+path — including the path inside a `ConfigError`, which is chained as `__cause__` for the
+server-side traceback and never interpolated.
 
 It also never enumerates the connections the policy *does* grant. ADR 0037 made
 `hmc_effective_permissions` withholdable precisely so an operator could decline to
 disclose the policy; a denial that listed the allowed connections would be that
 disclosure through a channel no policy can withhold.
 
-The connection it names is the **normalized** one, not the caller's token, because that
-is the value the decision was made on and a denial naming something else is not a
-diagnosis. Two cases make that choice visible. Under rule 1 it reveals that this
-deployment resolves its HMC from the environment — deployment shape, not a secret: it
-names no host and confers no reach, and without it the denial is unactionable in exactly
-the deployment where it is most surprising. Under rule 3 it names the profile key a
-nickname targets, which is an operator-authored identifier of the same class as the
-policy's own connection tokens; ADR 0037 already argued that class carries no credential,
-and nothing about a host, user, or password follows from the key.
+**It renders the caller's own token, not the normalized value.** Naming the normalized
+value would be more directly diagnostic, and it was the first draft of this record — but
+under rule 3 that value is the profile key a nickname targets, read out of `config.toml`,
+and a denial is one probe. Emitting it would turn every denial into a nickname-to-profile
+oracle through the same "channel no policy can withhold" this section rejects
+enumeration for, one entry after ADR 0037 made `hmc_list_configured_hosts` withholdable.
+The distinction is not the *class* of the identifier — the granted connections are the
+same class — it is that the caller already holds its own token and does not already hold
+the table. So the token is echoed and the clause carries the diagnosis without a value:
+
+- under rule 1, that `HMC_HOST` is set, the `profile` argument is ignored, and the call
+  was evaluated as `<default>` — deployment shape, naming no host and conferring no
+  reach, and without it the denial is unactionable in exactly the deployment where it is
+  most surprising, while `<default>` is a policy token rather than anything read from
+  `config.toml`;
+- under rule 3, that the token resolves through the configured nickname table to a
+  connection this policy does not grant — actionable, and naming nothing.
+
+What no message can hide is the permit/deny bit itself. An agent holding one granted tool
+can probe candidate tokens and recover that tool's connection dimension one bit at a
+time, and a single probe reveals whether `<default>` is granted. That is inherent to
+having an enforcement point at all, not a property of this message; making probing
+*visible* is #224's, and this record hands it over rather than claiming to have closed
+it.
 
 ### Without a policy, nothing is authorized
 
@@ -189,9 +247,25 @@ and nothing about a host, user, or password follows from the key.
 ADR 0037's default, unchanged. A policy's absence is not a denial until #225 makes
 startup fail closed.
 
-When a policy *is* selected, a registered tool that no grant covers is denied. That state
-is reachable only through registry drift (`configure_arbitrary_command_tool(True, app)`
-with its default `permits=None`), and denying is the fail-closed reading.
+When a policy *is* selected, a registered tool that no grant covers is denied. Through
+`create_mcp` that state is unreachable — `permits_tool` tests membership of
+`AccessPolicy.tools`, which is the union of the grants' tools, so anything the ceiling
+admits has a non-empty `grants_for` — but it is reachable through
+`configure_arbitrary_command_tool(True, app, authorize=...)` with the default
+`permits=None`, which registers `hmc_run_command` under no ceiling. Denying is the
+fail-closed reading and the authorizer is written for it.
+
+The registration sites take `authorize` the way ADR 0037's take `permits`: as a keyword
+with a `None` default, so a site that omits it registers the handler unwrapped and
+unauthorized. That is the same shape this record objects to in a middleware, and it is
+answered by an assertion rather than by discipline: with a policy selected, every tool in
+the composed application whose `ToolSecurity` declares a connection argument must carry a
+`__wrapped__` attribute — checked over the registry *after*
+`configure_arbitrary_command_tool` has run, so it covers all three sites and the one that
+registers the `arbitrary-command` tool in particular. Making the parameter mandatory
+instead was rejected: it is passed at three sites and defaulted at a dozen existing call
+sites in tests and `scripts/`, so the change would be wide, and the assertion catches the
+same defect at the same moment.
 
 ### The boundary this policy bounds
 
@@ -215,16 +289,30 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
 ## Consequences
 
 - **Authorization and resolution are two reads of a mutable file.** The authorizer reads
-  the `nicknames` table, and `build_config` re-reads `config.toml` moments later inside
-  the handler; an edit between them authorizes a resolution that no longer happens. Not
-  closed, and deliberately: the fix is to resolve once and hand the handler its
-  `HMCConfig`, which changes 129 handler signatures for a race whose only exploiter is
-  someone who can already rewrite the credential file — and who could therefore point a
-  granted profile at an HMC of their choosing regardless. ADR 0036 already placed the two
-  files at one trust level.
-- **The `nicknames` table is read on every authorized call, with no cache.** Matching
-  `build_config`, which re-reads `config.toml` per call. A cache would be a third
-  reading of the same file that could disagree with the other two.
+  the `profiles` and `nicknames` keys, and `build_config` re-reads `config.toml` moments
+  later inside the handler; an edit between them authorizes a resolution that no longer
+  happens. Not closed, and deliberately: the two alternatives are to hand the handler its
+  resolved `HMCConfig`, which changes 129 signatures, or to carry the authorized
+  connection to `build_config` implicitly, which is rejected below. The race's only
+  exploiter is someone who can already rewrite the credential file — and who could
+  therefore point a granted profile at an HMC of their choosing regardless. ADR 0036
+  already placed the two files at one trust level.
+- **`config.toml`'s selection tables are read on every authorized call, with no cache.**
+  Matching `build_config`, which re-reads the file per call. Both tables come from one
+  read, so the halves of a single decision agree; a cache would be a third reading that
+  could disagree with the other two.
+- **Two `mutate` tools change behaviour beyond authorization.** `hmc_set_lpar_boot_order`
+  and `hmc_clear_lpar_boot_order` begin honouring their `profile` argument, which they
+  have documented and ignored since they were written. An operator who has been calling
+  them with a `profile` naming a non-default HMC has been hitting the default one; after
+  this change the call reaches the HMC it names. That is the documented behaviour and the
+  behaviour every sibling tool already has, but it is a behaviour change and not only a
+  new denial.
+- **A malformed call denies without a rule for it.** `signature.bind` raises `TypeError`
+  before the authorizer runs and therefore before the handler; unreachable through MCP,
+  where the generated schema sets `additionalProperties: false`, and reachable by a direct
+  caller of the wrapped object. It is fail-closed by ordering rather than by a clause, and
+  it is pinned by a test so it does not become fail-closed by accident.
 - **An `HMC_HOST` deployment can express exactly one connection.** Rule 1 collapses the
   token space, so `connections = ["<default>"]` is the only grant that permits anything
   and per-connection scoping is unavailable in that shape. That is the true state of such
@@ -242,14 +330,22 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   connection argument out of `kwargs` without binding — is wrong for any call that passes
   the selector positionally and for any handler whose selector has a default the caller
   omitted, which is all 127 of them.
-- **`hmc_effective_permissions` understates connection enforcement under registry
-  drift.** Both dimension tuples still derive from `ceiling_enforced`, so a drifted
-  registry reports `enforced_dimensions = ()` while the wrapper is in fact denying
-  connections. Issue #254 owns that encoding and proposes decoupling the two tuples; this
-  record does not change it, because doing so would put the code in violation of #221's
-  frozen spec requirement R16 and would settle #254's question inside an unrelated entry.
-  The direction of the error is safe — the report claims *less* enforcement than exists —
-  and #223 will meet the same encoding.
+- **`hmc_effective_permissions` can misreport connection enforcement in both directions
+  under registry drift, and only one of them is safe.** Both dimension tuples still derive
+  from `ceiling_enforced`, which re-checks the *tool* dimension only. A registry that has
+  drifted past its ceiling reports `enforced_dimensions = ()` while the wrapper is in fact
+  denying connections — the report claims less than exists, which is the safe direction and
+  the one issue #254 already owns. The unsafe direction is new with this entry: a caller
+  passing `permits` but omitting `authorize` keeps every name inside the ceiling, so
+  `ceiling_enforced` stays true and the report claims `("tools", "connections")` over an
+  application whose connection-bearing tools are unwrapped. That is a claim of enforcement
+  paired with a registry that is not performing it, which is exactly the invariant ADR 0037
+  wrote `ceiling_enforced` to protect. It is closed for every application this package
+  composes by the `__wrapped__` assertion above, and left open for a direct caller of
+  `configure_arbitrary_command_tool` — the same population, and the same residual, as the
+  drift state #254 describes. Decoupling the two tuples so the report could state the two
+  dimensions independently is #254's question and is not settled inside this entry; #223
+  will meet the same encoding.
 - **A tool reached with a non-string connection argument is denied rather than coerced.**
   Unreachable through MCP, where the schema types the parameter `str | None`; reachable
   by a direct caller of the wrapped object. Denying keeps the boundary from having a
@@ -308,6 +404,24 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   acceptable after the ceiling. No bypass exists in this codebase today; the claim is
   that absence-by-construction should not depend on that staying true. The cost is
   acknowledged: #224 gets an observation seam that is not the decision seam.
+- **Carry the authorized connection to `build_config` in a `contextvar`.** The wrapper
+  would set the normalized connection it authorized, and a server-side seam would assert
+  that the connection about to be resolved is that one. `asyncio.run` inside `_app._run`
+  copies the current context, so it already propagates into every handler body; the var is
+  unset on the CLI and `api` paths, so the ADR 0029 boundary survives under the same
+  "unset means no policy" default this record already uses. It is the cheap form of
+  handing the handler its resolved config, and it would catch a handler that ignores its
+  selector at runtime rather than trusting it. Rejected, and this is the closest call in
+  the record. It is a second mechanism enforcing one rule, with a different failure shape
+  from the wrapper and implicit state to keep in step; the defect it catches —
+  `hmc_set_lpar_boot_order` — is caught statically by the guardrail above, at no runtime
+  cost and with a failure that lands on the author rather than on an operator; and the
+  assertion would have to live in `build_config`, which is on the CLI and library paths,
+  reintroducing the coupling the next entry rejects. Residual: nothing at *runtime*
+  verifies that the connection a handler resolves is the one authorized for it, so the
+  guardrail's static reach — the `server_*` modules' own call sites — is the extent of the
+  guarantee. A handler resolving a connection through a helper the parser does not follow
+  would pass the guard.
 - **Authorize inside `common.build_config`.** The narrowest possible waist — every path
   to an HMC goes through it, so nothing could be missed. Rejected because `build_config`
   is on the CLI and library paths too, so it would extend the server policy over the
