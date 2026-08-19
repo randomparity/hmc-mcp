@@ -190,11 +190,30 @@ def test_parse_document_accepts_a_minimal_policy() -> None:
             "'effects': Input should be a valid tuple",
             id="effects-not-an-array",
         ),
+        pytest.param(
+            {
+                "policies": {
+                    "lab": {"grants": [VALID_GRANT]},
+                    "unselected": {
+                        "grants": [dict(VALID_GRANT, targets={"none": ["x"]})]
+                    },
+                }
+            },
+            "unknown target kind 'none'",
+            id="targets-kind-none-in-an-unselected-policy",
+        ),
     ],
 )
 def test_shape_tier_rejects(document: dict[str, object], expected: str) -> None:
+    """Driven through the public entry point, not the private shape tier.
+
+    The shape tier is completion criterion 3, and the specification words its
+    requirement as "fails the load" — so a rejection that is only ever asserted
+    against ``_parse_document`` leaves the public path's behaviour untested, and
+    would stay green if document validation stopped running before selection.
+    """
     with pytest.raises(AccessPolicyError) as raised:
-        _parse_document(document, "access-policy.toml")
+        _compile(document)
 
     assert expected in str(raised.value)
     assert str(raised.value).startswith("access-policy.toml")
@@ -209,10 +228,25 @@ def test_shape_tier_binds_every_policy_not_just_one() -> None:
     }
 
     with pytest.raises(AccessPolicyError) as raised:
-        _parse_document(document, "access-policy.toml")
+        _compile(document, "selected")
 
     assert "policy 'unselected'" in str(raised.value)
     assert "grant 0" in str(raised.value)
+
+
+def test_document_validation_precedes_policy_selection() -> None:
+    """A malformed sibling beats a not-found error; pin the order.
+
+    Selecting first would give the clearer 'policy not found' message at the cost
+    of loading a document with a malformed sibling policy.
+    """
+    document = {"policies": {"lab": {"grants": [dict(VALID_GRANT, targt="x")]}}}
+
+    with pytest.raises(AccessPolicyError) as raised:
+        compile_access_policy(document, "absent", TOOL_SECURITY, "access-policy.toml")
+
+    assert "unknown key 'targt'" in str(raised.value)
+    assert "not found" not in str(raised.value)
 
 
 def test_read_only_policy_ceiling_is_exactly_the_read_tools() -> None:
@@ -642,7 +676,13 @@ def test_module_does_not_import_server() -> None:
         "assert 'hmc_mcp.server' not in sys.modules, sorted(sys.modules)\n"
     )
 
-    subprocess.run([sys.executable, "-c", script], check=True)
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        timeout=60,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_module_imports_only_the_declared_first_party_modules() -> None:
