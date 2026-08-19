@@ -80,6 +80,19 @@ absent-file cases gain assertions on exit code 2 and exit code 1 respectively.
 `tests/test_live_runner.py` asserts `application is runner.mcp` through a two-parameter
 `configure` double, so it follows R15's composition and R15a's call signature.
 
+**R2c — Five test functions call `server.create_mcp()` bare.** R1 turns each into a
+`TypeError`, and R2a's enumeration does not reach them because they import `create_mcp`
+rather than the application. They are: `test_applications_composed_with_different_policies_
+are_independent`, `test_inspection_is_registered_and_classified`, and
+`test_inspection_does_not_raise_on_a_tool_outside_the_index` in
+`tests/app/test_capability_ceiling.py`, and `test_the_wrapper_changes_no_tool_schema` and
+`test_compositions_authorize_independently` in `tests/app/test_connection_authorization.py`.
+Each composes through the legacy-equivalent policy instead, which is the composition whose
+registry G2 pins equal to the one `create_mcp()` used to produce — so every assertion about
+the unfiltered surface stays meaningful rather than being weakened to fit. Note that
+`tests/app/test_application_boundaries.py` and `tests/unit/test_tool_registry.py` import
+`create_mcp` from `hmc_mcp._app`, which takes no policy and is unaffected.
+
 **R3 — Both gates are non-optional and still derived together.** `server._gates(policy:
 AccessPolicy) -> tuple[Callable[[str], bool], Authorize]` returns `policy.permits_tool` and
 `dispatch_authorizer(policy)`. It keeps its ADR 0038 contract: a site given one without the
@@ -120,9 +133,14 @@ this requirement exists to prevent rather than something the load would convert.
 `config_dir()` calls `Path.home()`, which
 raises under a uid with no passwd entry and no `HOME`; unguarded, R5 would raise while
 rendering its own usage error and R5a would raise before the load's guard was reached,
-turning a refusal into a traceback in the deployment least able to read one. With `None`,
-R5's message omits the path and R5a's check does not fire, so an unresolvable path reaches
-`load_access_policy` and surfaces as its `AccessPolicyError` at exit **1**.
+turning a refusal into a traceback in the deployment least able to read one. The helper returns
+`tuple[str, bool] | None` — the resolved path and whether it exists — with `None` reserved
+for a resolution failure. The `str | None` shape its predecessor used cannot serve both
+callers: `_unselected_policy_file` returns `None` for *unresolvable* and for
+*resolvable-but-absent* alike, and R5 needs the path precisely in the second case, which is
+the dominant fresh-install and mid-upgrade one. So `None` means R5 omits the path and R5a
+does not fire, letting an unresolvable path reach `load_access_policy` and surface as its
+`AccessPolicyError` at exit **1**; `(path, False)` means R5 names the path and R5a fires.
 
 **R6 — The unselected-policy warning is gone.** `server._unselected_policy_file` is removed
 and `_startup_warnings(tool_count: int, access_policy: AccessPolicy,
@@ -206,7 +224,10 @@ R10's fixed non-path label as `source`; a document that would not load is report
 and re-raises it with one added clause naming `config.toml` as the origin, because every
 noun in `_check_entries`'s text — the policy name, the grant index, the connections field —
 belongs to a document that was never written, and the operator's actual edit is a profile
-key. `[profiles." prod"]` is legal TOML that `load_profile` resolves today, so this is a
+key. The clause carries a remedy as well as an origin, by the rule R5a and R11 already set:
+it names the offending key and says the two things that resolve it — remove the padding from
+the profile key in `config.toml`, or generate elsewhere with `--output` and hand-edit the
+connections list. `[profiles." prod"]` is legal TOML that `load_profile` resolves today, so this is a
 working deployment that meets the message at upgrade. Enumerating illegal key shapes in the
 generator was rejected: the rules live in `access_policy` and a copy would drift from them.
 
@@ -338,7 +359,12 @@ policy applies") both describe omitting the option as a supported mode. `hmc-mcp
 --help` is the first thing an operator runs after R5 refuses them, so they would read that
 contradiction in the same terminal that just produced the refusal. Both describe the option
 as required and name `hmc-mcp config init-access-policy`; `README.md`'s matching sentence is
-corrected with them. R16a's principle, applied to help text rather than to a command.
+corrected with them. `src/hmc_mcp/server.py`'s own module docstring is covered too: its
+`Run:` block opens with `hmc-mcp serve` and `hmc-mcp serve --http`, both of which now exit
+2, and it sits inside the module R1-R6 rewrite. So does `create_mcp`'s docstring, which
+currently documents `None` as "the behaviour before ADR 0037, and what every deployment gets
+until #225 makes startup fail closed" — this entry is #225. R16a's principle, applied to
+help text and docstrings rather than to a command.
 
 **R16d — The `config` group stops calling itself profile-only.** `config_app` is declared
 `help="Profile configuration commands."`, and `cli_config.py`'s module docstring enumerates
@@ -367,8 +393,12 @@ interpolate resolved paths, so this entry makes a latent defect load-bearing. Bo
 wrap the interpolated value in `rich.markup.escape`, keeping the styled `Error:` prefix.
 Fixed at the helper rather than per message: every `AccessPolicyError` and `ConfigError` in
 the CLI already flows through them, so a per-call-site fix would leave the same defect one
-message away. Proved by a test asserting a bracketed exception message survives both
-helpers intact.
+message away. The generator's own success output goes with them: `config init`
+prints its path through `cli_app.console.print(str(target))`, a markup-enabled Console, and
+under `--output` that path is operator-supplied — so the stdout path line and the stderr
+activation hint escape it too, which is the "one message away" case this requirement's
+rationale names. Proved by a test asserting a bracketed exception message survives both
+helpers intact, and a bracketed path survives the generator's success line.
 
 **R17 — Nothing accepts a request-supplied grant.** No MCP tool argument, request field,
 header, or environment variable selects, widens, or supplies an access policy or a grant.
