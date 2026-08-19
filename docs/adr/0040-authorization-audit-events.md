@@ -62,7 +62,11 @@ Two calls reach that function without producing a decision, and neither produces
   **unwrapped**, so no authorizer is on its dispatch path at all and the early `return` in
   `authorize` is reachable only by a direct call in a test. What governs those two tools is the
   ADR 0037 capability ceiling, applied once at registration; a per-call record for a per-process
-  decision would be a record of nothing.
+  decision would be a record of nothing. `hmc_effective_permissions` is the one worth naming: it
+  returns the policy's name and source and every grant's connection and target constraints, so
+  the most informative read this server offers is also one it does not record. That follows from
+  the ceiling governing it, not from a choice made here — but the oracle residual below should be
+  read knowing it.
 - A malformed call, where a declared connection or selector argument is absent from the bound
   arguments and the indexing raises `KeyError`. ADR 0038 and ADR 0039 both fixed that indexing
   deliberately, and a `KeyError` there is a defect in the registration path rather than an
@@ -87,10 +91,11 @@ mutations can still do so; an operator cannot recover a record that was never wr
 The message *is* the record — a single line produced by `json.dumps(..., ensure_ascii=True)`,
 with no prefix and no separate structured payload. One mechanism, not two.
 
-`ensure_ascii=True` is the control, not a default worth keeping: it escapes every caller-supplied
-value to `\uXXXX`, so a newline, an ANSI escape, or a bidirectional override in an LPAR name
-cannot forge a line or reorder one. ADR 0038 buys the same property for the denial message with
-`repr()`.
+JSON string encoding escapes newlines and C0 control characters — an ANSI escape's `ESC` included
+— whatever `ensure_ascii` says. `ensure_ascii=True` adds the other half: a bidirectional override
+or U+2028 in an LPAR name becomes `‮` / ` ` rather than passing through raw to a
+line-oriented reader that may treat it as text direction or as a line break. Both halves together
+are what ADR 0038's `repr()` buys for the denial message.
 
 The fields, always present and always in this order:
 
@@ -202,6 +207,12 @@ It is passed to the renderer, never to a decision at this boundary. `dispatch_sc
 reads no environment identity at all; the value reaches `audit.record` and stops there. The
 constant `false` is what makes an operator able to filter on it without knowing this ADR exists.
 
+The claim identifies the *server process*, not the calling agent. Under stdio, where one process
+serves one client, those coincide and the field means what it appears to mean. Under streamable
+HTTP one process serves many clients, so every record it writes carries the same claim and the
+field carries no per-caller information at all — ADR 0011 already assumes a process per agent, and
+`verified: false` reads as "they might be lying" rather than as "this is constant here".
+
 The scoping is deliberate and is not a package-wide claim. ADR 0011's LPAR ownership protocol
 consults the same environment value through `HMCConfig.agent_id` and refuses an operation when it
 does not match the owner token parsed from an LPAR description — a real access decision taken
@@ -239,9 +250,11 @@ choice available inside the process detects or prevents that. See the residual b
 
 The handler resolves `sys.stderr` at emit time, returns when it is `None`, and catches `OSError`
 and `ValueError` around the write — the same three guards, for the same three reasons, that
-`server._warn` already applies. It writes `record.getMessage()` directly and installs no
-`Formatter`, so nothing can wrap, box, or re-prefix a line whose single-line grammar is the
-contract.
+`server._warn` already applies. It writes `record.getMessage()` followed by a single `"\n"`, then
+flushes, and installs no `Formatter`: nothing can wrap, box, or re-prefix a line whose single-line
+grammar is the contract, and nothing can run two records onto one physical line either. The
+terminator is stated because a custom `emit` does not inherit `StreamHandler.terminator`, and its
+absence would fail silently until volume or concurrency produced two records back to back.
 
 Denials are logged at `WARNING` and permits at `INFO`, so an operator who wants denials only sets
 the level on `hmc_mcp.audit` and needs no new configuration key — reachable to a caller that
@@ -285,7 +298,9 @@ is #270.
 - `audit.py` imports nothing from the package. Every value reaches it as a primitive, so it can be
   tested without a policy, a config file, or an application, and no import cycle is possible.
 - A server whose stderr is absent, broken, or closed authorizes calls it does not record. That is
-  the deliberate trade named in the Decision's total-emission rule. A destination that neither
+  the deliberate trade named in the Decision's total-emission rule, and the drop is silent: no
+  counter, no marker, nothing written elsewhere. An empty audit stream is not evidence of an idle
+  server, and confirming that records are arriving is out-of-band. A destination that neither
   raises nor returns is a different case; see the residual below.
 - Because `propagate` is set unconditionally, an operator who had attached an audit handler to the
   root logger before this change stops receiving records and must attach to `hmc_mcp.audit`. There
@@ -295,8 +310,12 @@ is #270.
 
 **The permit/deny oracle is recorded, not closed.** An agent holding one granted tool still
 recovers one bit of the connection or target dimension per call, and this record does not prevent
-it. What changes is that every probe is now written down with its reason code, so a run of
-denials against one policy and tool is visible to the operator. Closing the oracle needs a
+it. What changes is that every probe *reaching this boundary* is written down with its reason
+code, so a run of denials against one policy and tool is visible to the operator. Three probe
+classes do not reach it and leave no trace: a call to a tool the ceiling withheld, which is not
+registered and so never reaches the wrapper; listing the tools, which discloses the whole ceiling
+in one call; and the two tools above that declare no connection argument. An empty audit stream is
+therefore not evidence of no reconnaissance. Closing the oracle needs a
 mechanism this issue does not introduce — rate limiting, lockout, or uniform response timing —
 each of which is a new denial-of-service surface aimed at the operator's own agents, and none of
 which #218 asks for. It is stated here so the next reader does not mistake the record for a fix.
@@ -364,7 +383,9 @@ sink's destination, level, and on/off switch.** Both rejected for the same reaso
 library already settles them. `json.dumps(ensure_ascii=True)` handles quoting, delimiters, and
 control characters that hand-rolled text would make this ADR's rules to state and a test's to
 defend; `logging` provides all three controls through the `hmc_mcp.audit` logger, and a second
-mechanism would have to be kept in agreement with it.
+mechanism would have to be kept in agreement with it. That second half holds for a Python-API
+caller and not yet for one running `hmc-mcp serve`, so this is a rejection as redundant *with
+#270*, not as redundant today.
 
 **Install the sink in `create_mcp`, or at import.** Rejected because both mutate global logging
 state for a caller that only composed an application — the in-process path every test and the
@@ -377,7 +398,15 @@ logger's handler is exactly what the server cannot vouch for, and one `StreamHan
 anywhere in the process would put a record into the JSON-RPC stream on every authorized call.
 
 **Record only denials.** Halves the volume and loses the ability to answer "what did this agent
-do", which is the question an audit trail exists for. Requirement 7 names both.
+attempt", which is the question an audit trail exists for. Requirement 7 names both.
+
+**Add a completion record, or an outcome field written after the handler returns**, so the trail
+distinguishes attempted from performed. Rejected because this is an authorization boundary: it
+runs before the handler and knows nothing of what follows, so recording an outcome means a second
+emission point somewhere else — the per-tool instrumentation the first rejection above rules out
+— and it doubles a volume this record already calls dominant. #218 requirement 7 asks for a record
+of the decision. The consequence is stated above rather than designed around: a permitted call is
+recorded as authorized, not as succeeded.
 
 **Omit `connection.resolved`.** Would keep the record to values the caller already holds, which is
 ADR 0038's rule for the *message*. Rejected because the sink and the tool result are different

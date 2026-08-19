@@ -66,7 +66,9 @@ can never precede its own record.
 
 One log record per decision. Its message is the complete record: a single line of
 `json.dumps(payload, ensure_ascii=True)` output, with no prefix, no trailing text, and no
-`Formatter` applied by the sink this package installs.
+`Formatter` applied by the sink this package installs. The handler writes that message followed by
+a single `"\n"` and flushes — a custom `emit` does not inherit `StreamHandler.terminator`, so the
+terminator is explicit.
 
 Fields, always present, in this order:
 
@@ -101,7 +103,8 @@ values, so doing so would raise `TypeError` inside authorization on the two rout
 selector denials.
 
 `attribution` is always `{"claim": <str|null>, "source": "environment:HMC_AGENT_ID",
-"verified": false}`.
+"verified": false}`. The claim identifies the server *process*: under stdio that is one client,
+under streamable HTTP it is every client, so the field carries no per-caller information there.
 
 ### Reason codes
 
@@ -263,7 +266,8 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
     `dispatch_scope.authorize`'s outcome and its exception type unchanged. A non-string connection
     token also renders `state="unreadable"` with `reason="connection-not-granted"` — the
     asymmetry with the target dimension, asserted so it cannot drift silently.
-15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly.
+15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly, and
+    two consecutive records land on two lines rather than one — the terminator is written.
 
 ### Boundary — `tests/app/test_authorization_audit.py`
 
