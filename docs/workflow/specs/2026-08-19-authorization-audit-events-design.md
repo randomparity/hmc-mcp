@@ -35,7 +35,8 @@ One source file is added, three change, and one operator document is added.
 | `src/hmc_mcp/dispatch_scope.py` | unchanged decision; additionally assembles and emits exactly one record per decision it reaches. |
 | `src/hmc_mcp/target_scope.py` | gains `denial_reason`, the single owner of the four-way target-denial case selection; `target_denial` reads it instead of repeating it. |
 | `src/hmc_mcp/server.py` | `_serve_application` installs the sink, beside its existing `_warn` call. |
-| `docs/authorization-audit.md` (new) | the operator-facing record contract: field set, reason-code table, logger name, level split, and how to route or silence it. |
+| `docs/authorization-audit.md` (new) | the operator-facing record contract: field set, reason-code table, logger name, level split, how to route or silence it, and the merged-descriptor caveat. |
+| `README.md` | one caveat beside the existing "never stdout" sentence in the startup-warnings section, which has the same descriptor-merge limit, plus a pointer to the new document. |
 
 `audit.py` importing nothing from `hmc_mcp` is a hard constraint, not an accident: `target_scope`
 imports the reason-code type from it, so any import back would be a cycle. Every value reaches
@@ -87,7 +88,8 @@ Fields, always present, in this order:
 absent, any other type is unreadable. `connection.selector` is the caller's own string when
 present and `null` otherwise — a value of an unexpected type is never rendered.
 `connection.resolved` is the profile key the call would use, `"<default>"` for the
-environment/default connection, or `"<unresolved>"` when the token names nothing configured.
+environment/default connection, `"<unresolved>"` when the token names nothing configured, or
+`null` in the `connections-unreadable` case, where nothing was resolved at all.
 
 `targets` is `null` when the decision was reached before selectors were extracted (the
 `connections-unreadable` case alone) and a list otherwise; `[]` means the tool declares no
@@ -181,7 +183,7 @@ argument, flag, environment variable, or file.
 | 1 — caller values into the sink | only *declared* selectors and the connection token are rendered; the whole argument mapping is never serialized. Each value is truncated to 128 characters. `json.dumps(ensure_ascii=True)` escapes every control character, escape sequence, and non-ASCII codepoint, so no value can forge a line or move a terminal cursor. A value of an unexpected type is recorded as a state, never as a `repr()`. |
 | 1 — credentials | structurally absent: `authorize` receives only the tool name, its `ToolSecurity`, and the bound arguments. No `HMCConfig`, client, session token, or password is in scope at the emission point. |
 | 1 — command text, documents, response bodies | structurally absent: `hmc_run_command` declares no target selector, so `cmd` is never extracted; the record is written before the handler runs, so no response body or generated document exists yet. |
-| 2 — output stream | the installed handler writes only to `sys.stderr`, resolved at emit time and skipped when `None`; the logger does not propagate, so no ancestor handler — including one pointed at stdout — can receive the record. |
+| 2 — output stream | the installed handler writes only to `sys.stderr`, resolved at emit time and skipped when `None`; the logger does not propagate, so no ancestor handler — including one pointed at stdout — can receive the record. This closes the in-process route only: a launcher merging fd 2 into fd 1 (`serve 2>&1`) makes stderr the JSON-RPC channel, which no in-process choice detects. Stated as a residual in ADR 0040 and documented for the operator, not defended in code. |
 | 3 — resolved connection | accepted and stated. The record goes to the operator's sink, not to the tool result; ADR 0038 deferred this question here on that ground. An operator forwarding the sink onward inherits the disclosure. |
 | availability | the handler catches `OSError` and `ValueError` and returns on a `None` stream, so an unavailable destination drops records instead of aborting a call or a start (#221). |
 
@@ -195,6 +197,12 @@ argument, flag, environment variable, or file.
   `WARNING` per call. Levels are the only lever offered; rate limiting is rejected in ADR 0040 as
   a new DoS surface aimed at the operator's own agents.
 - **Traceback noise on a denial** (#267).
+- **A launcher that merges fd 2 into fd 1.** Recorded as an ADR 0040 residual and stated in the
+  operator documentation and beside README's existing "never stdout" sentence, which has the same
+  limit for the four startup warnings today.
+- **The package's second audit emitter**, `operations_lpar._audit_lpar_ownership_override`, which
+  propagates to the root logger and carries none of this record's escaping, bounding, or
+  provenance guarantees. `operations_lpar.py` is outside this surface; filed as #268.
 
 ## Testing
 
@@ -211,7 +219,9 @@ mutation-verified: the redaction is broken, the test is watched to fail, and the
 4. A 500-character `HMC_AGENT_ID` is truncated to exactly 128 characters.
 5. A non-string connection token renders `state="unreadable"`, `selector=null`, and the token's
    `repr()` appears nowhere in the output.
-6. `targets` is `null` for `connections-unreadable` and `[]` for a tool declaring no selector.
+6. `targets` and `connection.resolved` are both `null` for `connections-unreadable`; `targets` is
+   `[]` for a tool declaring no selector; `connection.resolved` is `"<unresolved>"` for a token
+   naming nothing configured and `"<default>"` for an omitted one.
 7. `attribution` is `{"claim": null, "source": "environment:HMC_AGENT_ID", "verified": false}`
    when `HMC_AGENT_ID` is unset.
 8. `REASONS` equals the `Literal`'s arguments, and every code the boundary can emit is in it.

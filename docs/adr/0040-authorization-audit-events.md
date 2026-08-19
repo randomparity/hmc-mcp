@@ -147,7 +147,12 @@ ADR 0038 renders the caller's own token in the denial *message* and never the no
 because under its rule 3 that value is a profile key read from `config.toml` and each denial is
 one probe. The audit record carries both: `connection.selector` is the caller's token and
 `connection.resolved` is the profile key the call would have used, `"<default>"` for the
-environment connection, or `"<unresolved>"` when the token names nothing configured.
+environment connection, `"<unresolved>"` when the token names nothing configured, or `null` when
+nothing was resolved at all — the `connections-unreadable` case, where `selected_connection`
+raises before any of the other three arms is reached. `null` there rather than `"<unresolved>"`,
+for the reason `targets` is `null` in the same case: a token that could not be checked has not
+been found absent, and an operator filtering on `"<unresolved>"` to find callers naming
+connections that do not exist must not also collect every unreadable-configuration event.
 
 The two are not the same disclosure. The denial message is returned to the caller as a tool
 result; the audit record is written to the server process's logging sink, which is not the
@@ -156,20 +161,29 @@ exactly that ground, and #223 recorded that the server can put what it knows whe
 cannot read it. The trust assumption is stated rather than assumed: an operator who forwards this
 sink to a party who may not read `config.toml` inherits that disclosure.
 
-### `HMC_AGENT_ID` is attribution, read at emission, and never an input
+### `HMC_AGENT_ID` is attribution, read at emission, and never an input to *this* decision
 
 `attribution.claim` is `os.environ.get("HMC_AGENT_ID")` truncated to 128 characters,
 `attribution.source` is the constant `"environment:HMC_AGENT_ID"`, and `attribution.verified` is
 the constant `false`.
 
-It is read directly from the environment rather than through `HMCConfig`, because constructing
-that model reads a `.env` file and validates the value, and neither belongs on a per-call
-authorization path. The consequence is that the recorded claim is *unvalidated* as well as
-unverified, which the truncation and the JSON escaping above are what make safe.
+It is read directly from the environment rather than through `HMCConfig`, because that model
+validates `agent_id` — emptiness, a reserved value, a 64-character bound, ASCII printability, and
+a forbidden-character set — and running those on a per-call authorization path buys nothing the
+record wants. The record must be able to report a value those validators would *reject*, since an
+operator setting a malformed one is exactly the case worth seeing. The consequence is that the
+recorded claim is *unvalidated* as well as unverified, which the truncation and the JSON escaping
+above are what make safe.
 
-It is passed to the renderer, never to a decision. `dispatch_scope.authorize` reads it nowhere;
-the value reaches `audit.record` and stops there. The constant `false` is what makes an operator
-able to filter on it without knowing this ADR exists.
+It is passed to the renderer, never to a decision at this boundary. `dispatch_scope.authorize`
+reads no environment identity at all; the value reaches `audit.record` and stops there. The
+constant `false` is what makes an operator able to filter on it without knowing this ADR exists.
+
+The scoping is deliberate and is not a package-wide claim. ADR 0011's LPAR ownership protocol
+consults the same environment value through `HMCConfig.agent_id` and refuses an operation when it
+does not match the owner token parsed from an LPAR description — a real access decision taken
+from an unverified string, which this ADR neither changes nor endorses. `verified: false`
+describes this record's provenance, not the value's authority everywhere.
 
 ### The sink is stderr, installed by the serve path, and does not propagate
 
@@ -188,6 +202,12 @@ root logger would, without it, corrupt the protocol stream once per authorized c
 `hmc_mcp.audit` is the documented attachment point, and an operator routing audit elsewhere
 attaches a handler there.
 
+What that buys is bounded, and the bound is stated rather than left to be discovered: removing
+the in-process route to an ancestor handler is a property of this code. Whether `sys.stderr` is a
+different destination from `sys.stdout` is not — a launcher that merges the descriptors
+(`serve 2>&1`, or a unit file or wrapper doing the same) makes fd 2 the JSON-RPC channel, and no
+choice available inside the process detects or prevents that. See the residual below.
+
 The handler resolves `sys.stderr` at emit time, returns when it is `None`, and catches `OSError`
 and `ValueError` around the write — the same three guards, for the same three reasons, that
 `server._warn` already applies. It writes `record.getMessage()` directly and installs no
@@ -205,7 +225,20 @@ the level on `hmc_mcp.audit` and needs no new configuration key.
   call is recorded as *authorized*, not as *succeeded* — the handler may still fail, and this
   record says nothing about that.
 - A `read` tool called in a loop produces one `INFO` record per call. On a busy server that is the
-  dominant log volume, and the level split is the only lever offered.
+  dominant log volume, and the level split is the only lever offered. The level split does not
+  bound the other half: because the record precedes the denial, an ungranted caller drives
+  `WARNING`-level writes at call rate simply by calling tools it does not hold, and the oracle
+  residual below says a probing agent is expected to. Where stderr is captured to a file or a
+  journal, that is a caller-driven consumption path this layer does not stop. Bounding it is the
+  deployment's — rotation, journal limits — because the alternative is rate limiting, which this
+  charter excludes and which would aim a denial-of-service surface at the operator's own agents.
+  An unrecorded probe is worse than a recorded one, which is why the trade is taken this way.
+- Under an `HMC_HOST` collapse, `connection.resolved` reads `"<default>"`, which is byte-identical
+  to what an ordinary omitted-argument call produces on a machine with no `HMC_HOST` set. The
+  record does not distinguish the two, where `connection_scope`'s denial *message* does through
+  its explicit `HMC_HOST is set` clause. An operator asking "did this call reach the connection
+  the caller named" gets an answer from the record under a nickname and does not get one under a
+  collapse.
 - `target_scope` gains a public `denial_reason`, and `target_denial` is refactored to read it.
   Behaviour is unchanged; the case selection now has one owner.
 - `audit.py` imports nothing from the package. Every value reaches it as a primitive, so it can be
@@ -234,6 +267,25 @@ FastMCP's own tool-error handling, beside the one-line record this ADR adds. Not
 stdout, so it is not a framing defect. Every fix reaches past authorization — suppressing it
 suppresses genuine handler bugs too, and converting the error at the boundary changes the client
 contract ADR 0038 and ADR 0039 fixed — so it is filed as #267 rather than decided here.
+
+**A merged descriptor puts audit output into the protocol stream.** `propagate = False` and a
+stderr-only handler close every route inside the process. They cannot close `serve 2>&1`, a
+wrapper or unit file doing the same, or an in-process `redirect_stderr(sys.stdout)`: under the
+stdio transport fd 1 is the JSON-RPC channel, so merging fd 2 into it injects one JSON line per
+authorized call. This is not new with this record — `server._warn`'s four startup lines already
+have it, and README's startup-warnings section states "never stdout" without the caveat — but a
+per-call writer turns a four-line hazard into a per-call one, so the caveat is stated here and in
+the operator documentation. No in-process detection is proposed: a process cannot tell that its
+own fd 2 and fd 1 are the same pipe without probing the descriptor, and a probe that guesses
+wrong would silence the audit trail.
+
+**The package has a second audit emitter.** `operations_lpar._audit_lpar_ownership_override`
+logs an approved ADR 0011 ownership override under `hmc_mcp.operations_lpar` through `extra=`. It
+propagates to the root logger, its fields are invisible under a formatter that does not name
+them, and its `hmc_agent_id` carries no `verified` marker, no length bound, and no escaping. It is
+also the higher-consequence of the two events. An operator who attaches a handler to
+`hmc_mcp.audit` on this record's advice will not receive it. `operations_lpar.py` is outside this
+issue's surface, so converging or retiring it is filed as #268.
 
 **Retention, integrity, and export are the deployment's.** The record is written to a process
 logging sink and is neither persisted, sequenced, nor signed. #218's open questions already place
@@ -276,8 +328,9 @@ established as a server, and where `_warn` already writes to stderr for the same
 everything else. Rejected on the stdio hazard: under that transport the root logger's handler is
 exactly what the server cannot vouch for, and one `StreamHandler(sys.stdout)` anywhere in the
 process would put an audit record into the JSON-RPC stream on every authorized call. A dedicated
-non-propagating logger is the only shape in which "cannot write to stdout" is a property of the
-code rather than a hope about the deployment.
+non-propagating logger is what makes closing the in-process route a property of the code; the
+descriptor-level route stays the deployment's, and is recorded as a residual rather than claimed
+closed.
 
 **Record only denials.** Halves the volume and loses the ability to answer "what did this agent
 do", which is the question an audit trail exists for. Requirement 7 names both.
@@ -285,5 +338,16 @@ do", which is the question an audit trail exists for. Requirement 7 names both.
 **Omit `connection.resolved`.** Would keep the record to values the caller already holds, which is
 ADR 0038's rule for the *message*. Rejected because the sink and the tool result are different
 channels with different readers, and the operator-facing one is where "which HMC did this call
-reach" is answerable at all — under an `HMC_HOST` collapse or an ADR 0030 nickname the caller's
-token does not answer it.
+reach" is answerable at all — under an ADR 0030 nickname the caller's token does not answer it,
+and the resolved profile key does. It does not answer it under an `HMC_HOST` collapse; that
+limit is recorded in Consequences rather than claimed away here.
+
+**Derive the `HMC_HOST` collapse in the record from what it already carries.** The inference is
+exact today: `selected_connection` returns `None` under rule 1 (`HMC_HOST` set) and under rule 2
+(a falsy token), and a falsy token renders `state: "absent"`, so `state: "present"` with a `null`
+resolution can only be a collapse. Rejected because its exactness is a property of the *ordering*
+of another module's rules, held nowhere and checked by nothing: ADR 0038 kept
+`connection_scope`'s contract to the resolved value precisely so callers would not depend on how
+it was reached, and re-deriving a fact one module computed inside another is the drift ADR 0039
+spent a design on avoiding. If the collapse is worth recording, `selected_connection` should
+report it, which is a change to #222's contract and not this issue's.
