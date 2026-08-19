@@ -117,6 +117,20 @@ locations back to P ids would be machinery bought for a testability nicety. Ever
 the acceptance suite therefore carries exactly **one** violation, and the message for an
 input violating several shape rules is unspecified beyond naming the file.
 
+Two rules answer a completion criterion by a reading worth stating, because a scope
+audit found the mapping implicit. **P9 serves criterion 3's "unsupported target
+constraints".** The unsupported constraint is the *set*, not a key: a `targets` table that
+omits a required selector kind of a tool the grant names by hand cannot support that tool,
+so the grant is dead however well-formed each key is. Criterion 6's "malformed and
+ambiguous policies" covers the same input from the other side. P9 is not derived from epic
+requirement 5, which is a call-time rule owned by #223; ADR 0036 says so in as many words.
+**Criterion 4 permits `"all-targets"` here.** Its "grants that already name allowed tools
+and connection profiles" bars the sentinel from a grant that is unbounded on the other two
+axes; it does not require a non-empty `tools` list. An `effects` list names a closed set of
+tools, `connections` is always a non-empty exact list, and the format has no wildcard on
+either axis — so a grant carrying the sentinel is bounded in both dimensions the criterion
+protects. Requiring `tools` instead would make a read-only policy enumerate 54 names.
+
 P1–P6 are shape rules and bind **every** policy in the document; P7–P10 depend on the tool
 index and bind only the **selected** policy. The split is deliberate in both directions. A
 malformed policy anywhere is an authoring error the operator wants at the next load, and
@@ -152,8 +166,10 @@ fire. The error names the tool and the uncovered kind.
 ### 3.3 Compiled form
 
 ```python
-DEFAULT_CONNECTION_TOKEN = "<default>"
 ACCESS_POLICY_FILENAME = "access-policy.toml"
+DEFAULT_CONNECTION_TOKEN = "<default>"
+ALL_TARGETS_TOKEN = "all-targets"
+GRANT_EFFECTS: frozenset[str]          # {"read", "mutate", "destructive"}
 
 class AccessPolicyError(ValueError): ...
 
