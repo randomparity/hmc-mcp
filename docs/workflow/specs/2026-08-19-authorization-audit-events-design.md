@@ -63,6 +63,13 @@ The record is written **before** the denial is raised and **before** the permitt
 so a record can never describe a call that did not reach the boundary, and an outbound HMC request
 can never precede its own record.
 
+One arm needs new control flow and is called out so an implementer does not have to infer it from
+the diagram: `selected_connection` *raises* `ConnectionScopeError`, and `authorize` has no
+`try`/`except` today. It gains one — around that call only — which emits the
+`configuration-unreadable` record with `targets` and `connection.resolved` both `null` and then
+re-raises the original error unchanged. Emitting inside `connection_scope` instead would put a
+second emitter in the package, which is the thing this design exists to avoid.
+
 ## The record contract
 
 One log record per decision. Its message is the complete record: a single line of
@@ -294,7 +301,7 @@ table in the PR body:
 | M6 | make `install_audit_sink` set the level unconditionally | 14 |
 | M7 | render the `ABSENT`/`UNREADABLE` singletons instead of mapping them | 14b, 17 |
 | M8 | resolve the call's connection through `common.build_config` in the record builder and add `config.password` / `config.user` to the payload | 22 |
-| M9 | move the `audit.record` call in `tool_registry.guarded` to *after* `handler(...)` and add its return value to the payload | 25, 18 |
+| M9 | move the `audit.record` call **out of** `dispatch_scope.authorize` into `tool_registry.guarded`, after `handler(...)`, and add the handler's return value to the payload | 17, 18, 25 |
 | M10 | interpolate the resolved **access-policy** path into the record | 26 |
 
 M1's reach is narrower than it looks and the table says so: test 22's sentinels are a
@@ -414,7 +421,15 @@ structure holds (test 8b below).
 26c. `operations_lpar` does not resolve the audit logger itself — `audit` is the only module in
     `src/hmc_mcp` that names `hmc_mcp.audit` (the same scan as test 8a).
 26d. The override still reaches stderr on a CLI-shaped path where `install_audit_sink` was never
-    called, at `WARNING`, so a CLI user does not silently lose it.
+    called, at `WARNING`, so a CLI user does not silently lose it. **The test must isolate the
+    logging tree to mean anything:** the mechanism is `logging.lastResort`, which
+    `Logger.callHandlers` consults only after walking the whole ancestor chain and finding
+    zero handlers — and pytest's logging plugin attaches a `LogCaptureHandler` to the root
+    logger for every test item, so under the default harness the chain is never empty,
+    `lastResort` is never reached, and the record lands in pytest's capture instead. Either
+    save and clear `logging.root.handlers` (and `hmc_mcp.audit`'s) for the duration and read
+    `capsys`, or drive it as a subprocess and read the child's stderr. Written naively it
+    passes for a reason unrelated to what it claims.
 26e. Both call sites in `authorize_lpar_mutation` and
     `_authorize_lpar_ownership_description` still emit, and neither emits when
     `ownership_override` is false.
@@ -436,6 +451,32 @@ structure holds (test 8b below).
     `sys.stderr` is `None`: the denied call still completes over the protocol and the process
     exits normally. POSIX only, skipped elsewhere, since `2>&-` is a POSIX shell redirection.
 
+### Claims ADR 0040 makes about this checkout — `tests/app/test_authorization_audit.py`
+
+Five statements in ADR 0040 are assertions about *this* codebase rather than about the design.
+Each gets a test, so a later change that falsifies one reddens the suite instead of leaving a
+durable record quietly wrong. All five were verified by execution before being written down.
+
+31. **The logging tree drops an unheard record.** ADR 0040's Context measures three facts about
+    `fastmcp` 3.4.7 and the `hmc_mcp` tree and concludes "an audit control that emits nothing by
+    default is not a control". The test asserts the *consequence this package owns* — with no sink
+    installed and no ambient configuration, a record emitted on `hmc_mcp.audit` at `INFO` does not
+    reach stderr — and not that the `fastmcp` logger carries a `RichHandler`, which would pin a
+    dependency's internals and redden on a version bump with nothing here changed.
+32. **`server._gates(None) == (None, None)`** — the reason a default `hmc-mcp serve` emits no
+    authorization record at all, which A1 and the Consequences both rest on.
+33. **`tool_registry.authorized` returns the handler itself** for both tools declaring
+    `connection_argument = None` (`hmc_list_configured_hosts`, `hmc_effective_permissions`), and
+    for every tool when `authorize is None` — while a connection-bearing tool with an authorizer
+    *is* wrapped. This is what makes "those two produce no record" structural rather than a
+    convention.
+34. **`server._startup_warnings` emits its no-policy line only when a policy file exists**, so an
+    operator with no policy file gets neither a warning nor a record — the gap ADR 0040 names
+    against #225.
+35. **A custom `logging.Handler` subclass does not inherit `StreamHandler.terminator`**, which is
+    why the handler writes its own newline. Asserted directly, because it is the premise M5 and
+    test 15 depend on.
+
 ### Live proof — a precondition of the PR, not a nice-to-have
 
 This record's entire contract is a *sink*. A unit test against a mock logger proves the payload
@@ -454,6 +495,17 @@ would come back `connection-not-granted` — a plausible-looking wrong answer, w
 outcome for a proof whose purpose is to be re-run by someone else. Both files are asserted to
 exist at the resolved path before the first frame is sent, so a misplaced fixture fails setup
 rather than changing the verdict.
+
+**The child's environment is built explicitly, never inherited.** `selected_connection` gates its
+entire TOML branch on `HMC_HOST` and returns the `<default>` connection for *any* token when it is
+set — before the config file is read at all — and the grant names `connections = ["lab"]`, which
+never contains that. So a developer with `HMC_HOST` exported in their shell gets L1 back as
+`connection-not-granted`: the same plausible-looking wrong answer the config-path guard above
+exists to prevent, from a cause that guard does not cover. `HMC_HOST`, `HMC_PROFILE`,
+`XDG_CONFIG_HOME`, and `APPDATA` are deleted from the child env — the same four
+`tests/app/test_connection_authorization.py` already deletes — `HOME` is set to the scratch
+directory, and their absence is asserted in the child env mapping beside the file-existence
+assertion, so this cause also fails setup rather than changing the verdict.
 
 `config.toml` holds profiles `lab` and `prod`, both with unreachable `.invalid` hosts and a
 sentinel password. `access-policy.toml`:
@@ -480,7 +532,7 @@ Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`
 | item | call | assertion |
 |---|---|---|
 | L1 | `hmc_power_off_lpar(lpar_name_or_uuid="db-01", system_name_or_uuid="sys-a", profile="lab")` | exactly one stderr line parses as JSON with `event=="authorization"`, `decision=="allow"`, `reason=="permitted"`, `policy=="lab-scoped"`, `tool=="hmc_power_off_lpar"`, `effect=="destructive"`, `connection.resolved=="lab"`, and the `targets` entry **whose `argument` is `lpar_name_or_uuid`** carrying `db-01`. Selected by name, never by index: `selected_targets` preserves declaration order, so an index assertion silently follows a signature change. The call then fails at the transport on DNS, which is the correct shape — authorization is what is under test. |
-| L2 | the L1 call **twice more** | the count of stderr lines parsing as audit JSON equals the number of calls made. Two *permitted* calls deliberately: a denial would put FastMCP's 41-line traceback panel (#267) between the records and confound the line count. |
+| L2 | the L1 call **twice more** | the count of stderr lines **that parse as audit JSON** equals the number of calls made. stderr is expected to carry non-JSON from other writers — the fixture's `.invalid` hosts make even a permitted call fail at the transport, and that exception reaches the same FastMCP error path that renders the 41-line panel (#267) — so the assertion filters rather than counting total lines. That is also why L2 detects M5: three records with no terminator cannot yield three parsing lines. |
 | L3 | all of the above | every stdout line parses as a JSON-RPC frame; zero unparseable lines. |
 | L4 | `hmc_power_off_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the `lpar_name_or_uuid` entry's `value` is exactly 128 characters. |
 
@@ -536,12 +588,8 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A10. `just verify` passes bare on the branch head.
 - A11. The package has exactly one audit emitter module. `operations_lpar`'s override record is
   produced by `audit`, in the same grammar, and no longer through `extra=`. (tests 26a–26e)
-- A12. The five claims ADR 0040 makes about this checkout are pinned by tests 31-35 in
-  `tests/app/test_authorization_audit.py`, not by assertion. Tests 32-35 assert this package's
-  own behaviour. Test 31 covers the logging-tree facts as the **consequence this package owns** —
-  a record emitted under `hmc_mcp.audit` with no sink installed does not reach stderr at `INFO` —
-  rather than asserting that the `fastmcp` logger carries a `RichHandler`, which would pin a
-  dependency's internals and redden on a version bump without anything here changing.
+- A12. The five claims ADR 0040 makes about this checkout are pinned by tests, not by assertion.
+  (tests 31-35)
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
   `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere.
