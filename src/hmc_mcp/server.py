@@ -279,10 +279,28 @@ def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
 mcp = create_mcp()
 
 
-def main_stdio(enable_arbitrary_command: bool = False) -> None:
-    """Start the fully composed MCP server over stdio."""
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
-    mcp.run()
+def _serve_application(
+    enable_arbitrary_command: bool, access_policy: AccessPolicy | None
+) -> FastMCP:
+    """Compose and gate the application about to be served."""
+    application = create_mcp(access_policy)
+    permits = None if access_policy is None else access_policy.permits_tool
+
+    async def _prepare() -> None:
+        await configure_arbitrary_command_tool(
+            enable_arbitrary_command, application, permits=permits
+        )
+
+    asyncio.run(_prepare())
+    return application
+
+
+def main_stdio(
+    enable_arbitrary_command: bool = False,
+    access_policy: AccessPolicy | None = None,
+) -> None:
+    """Start an MCP server over stdio, bounded by *access_policy*."""
+    _serve_application(enable_arbitrary_command, access_policy).run()
 
 
 def main_http(
@@ -290,8 +308,9 @@ def main_http(
     port: int = 8000,
     enable_arbitrary_command: bool = False,
     allow_remote: bool = False,
+    access_policy: AccessPolicy | None = None,
 ) -> None:
-    """Start the fully composed MCP server over streamable HTTP."""
+    """Start an MCP server over streamable HTTP, bounded by *access_policy*."""
     if not allow_remote and not _is_loopback(host):
         raise ValueError(
             f"listen host {host!r} binds beyond loopback, but the streamable HTTP "
@@ -299,8 +318,9 @@ def main_http(
             "(including user administration). Refusing to start. Explicitly "
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
-    asyncio.run(configure_arbitrary_command_tool(enable_arbitrary_command, mcp))
-    mcp.run(transport="streamable-http", host=host, port=port)
+    _serve_application(enable_arbitrary_command, access_policy).run(
+        transport="streamable-http", host=host, port=port
+    )
 
 
 def _is_loopback(host: str) -> bool:

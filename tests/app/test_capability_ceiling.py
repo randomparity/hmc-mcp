@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from hmc_mcp.access_policy import compile_access_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
@@ -210,3 +212,114 @@ def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
         "sentinel-password-do-not-leak",
     ):
         assert sentinel not in rendered
+
+
+def _configure(application, enabled, permits=None):
+    from hmc_mcp.server_command import configure_arbitrary_command_tool
+
+    asyncio.run(configure_arbitrary_command_tool(enabled, application, permits=permits))
+
+
+# Reaches the escape hatch by name (ADR 0036 forbids granting it by effect
+# class) and the rest of the read class by effect — including
+# hmc_effective_permissions, without which _inspect has no tool to call.
+GRANT_RUN_COMMAND = [
+    {
+        "effects": ["read"],
+        "tools": ["hmc_run_command"],
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+def test_escape_hatch_needs_both_the_flag_and_the_grant():
+    """R5: the flag and the ceiling compose conjunctively."""
+    granted = _policy(GRANT_RUN_COMMAND)
+    application = create_mcp(granted)
+
+    _configure(application, True, granted.permits_tool)
+    assert "hmc_run_command" in _names(application)
+
+    _configure(application, False, granted.permits_tool)
+    assert "hmc_run_command" not in _names(application)
+
+
+def test_escape_hatch_is_withheld_when_the_policy_omits_it():
+    """R5, R6: an effect-class policy cannot reach it, flag or no flag."""
+    every_effect = _policy([
+        {
+            "effects": ["read", "mutate", "destructive"],
+            "connections": ["<default>"],
+            "targets": "all-targets",
+        }
+    ])
+    assert every_effect.permits_tool("hmc_run_command") is False
+
+    application = create_mcp(every_effect)
+    _configure(application, True, every_effect.permits_tool)
+
+    assert "hmc_run_command" not in _names(application)
+
+
+def test_inspection_tracks_the_arbitrary_command_toggle():
+    """R12, R13: the report follows the registry across a post-composition change."""
+    granted = _policy(GRANT_RUN_COMMAND)
+    application = create_mcp(granted)
+    _configure(application, True, granted.permits_tool)
+
+    result = _inspect(application)
+    reported = [tool["name"] for tool in result["tools"]]
+
+    assert reported == sorted(tool.name for tool in asyncio.run(application.list_tools()))
+    assert "hmc_run_command" in reported
+    assert "arbitrary-command" in result["effects"]
+    assert result["ceiling_enforced"] is True
+
+
+def test_a_registry_that_drifted_past_its_ceiling_claims_no_enforcement():
+    """R14, R16: a policy name with no enforcement claim is the honest reading."""
+    policy = _policy(READ_ONLY_GRANT)
+    application = create_mcp(policy)
+    _configure(application, True)  # no predicate: the fail-open call shape
+
+    result = _inspect(application)
+
+    assert "hmc_run_command" in [tool["name"] for tool in result["tools"]]
+    assert result["policy_name"] == "test"
+    assert result["ceiling_enforced"] is False
+    assert result["enforced_dimensions"] == []
+    assert result["declared_only_dimensions"] == []
+
+
+@pytest.mark.parametrize("entry_point", ["main_stdio", "main_http"])
+def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point):
+    """R9, R9a: main_stdio serves its own application, wired to the ceiling."""
+    from unittest.mock import patch
+
+    import hmc_mcp.server as server_module
+
+    every_effect = _policy([
+        {
+            "effects": ["read", "mutate", "destructive"],
+            "connections": ["<default>"],
+            "targets": "all-targets",
+        }
+    ])
+    served = {}
+
+    def _capture(self, **_kwargs):
+        served["app"] = self
+        served["names"] = {tool.name for tool in asyncio.run(self.list_tools())}
+
+    with patch.object(type(server_module.mcp), "run", _capture):
+        getattr(server_module, entry_point)(
+            enable_arbitrary_command=True, access_policy=every_effect
+        )
+
+    # R9 is object identity, not set difference: an all-three-effects grant
+    # resolves to every tool but hmc_run_command, which create_mcp never
+    # registers anyway, so the two name sets are deliberately equal here.
+    assert served["app"] is not server_module.mcp
+    assert "hmc_run_command" not in served["names"]
+    assert "hmc_delete_lpar" in served["names"]
