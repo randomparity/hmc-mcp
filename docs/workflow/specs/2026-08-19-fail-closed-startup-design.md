@@ -105,18 +105,29 @@ every token to it under `HMC_HOST`, and because an omitted `profile` argument me
 **R9 — Rendering round-trips through the real loader.**
 `render_legacy_policy(tool_security, connections) -> str` returns TOML text that
 `tomllib.loads` parses and `compile_access_policy` compiles without error, yielding a
-policy named `legacy-equivalent` whose `tools` equals the R7 set. The text carries a
-comment header stating what the policy grants, how to add `hmc_run_command`, and the
-three-step regeneration procedure — move the file aside, re-run the generator, diff and
-re-apply hand edits — since R11's command refuses to overwrite and there is no `--force`.
+policy named `legacy-equivalent` whose `tools` equals the R7 set and whose `connections`
+equals the sequence given, entry for entry. The text carries a comment header stating what
+the policy grants, how to add `hmc_run_command`, and the regeneration procedure —
+`--output` to a scratch path, diff, merge by hand — since R11's command refuses to
+overwrite and there is no `--force`.
+
+**R9a — Rendering escapes every operator-supplied key.** The emitter is hand-written; no
+TOML-writing dependency is added (epic requirement 11). Each `connections` entry is emitted
+as a TOML basic string with `"`, `\`, and every C0/C1 control character escaped per the TOML
+basic-string rules, so no profile key can terminate the string, inject a key, or open a
+`[[policies...grants]]` table. `config.list_profiles` returns raw TOML keys with no charset
+validation, so this is the only thing standing between an odd key and either an unparseable
+generated file or an injected grant. Proved by rendering a policy whose connections include
+a key containing a double quote, a backslash, and a newline, then parsing the result with
+`tomllib` and asserting the connection list round-trips byte-identically.
 
 **R10 — The same document compiles without a filesystem.**
 `compile_legacy_policy(tool_security, connections) -> AccessPolicy` compiles the R7
 document directly. Its `source` is a fixed non-path label identifying the generator, so a
 message rendering it discloses no filesystem path.
 
-**R11 — The generator command.** `hmc-mcp config init-access-policy` takes no options.
-It writes `render_legacy_policy(server.TOOL_SECURITY, legacy_connections())` to
+**R11 — The generator command.** `hmc-mcp config init-access-policy` writes
+`render_legacy_policy(server.TOOL_SECURITY, legacy_connections())` to
 `resolve_access_policy_path()`, creating parent directories, using `O_WRONLY|O_CREAT|O_EXCL`
 at mode `0o600` on POSIX and `open(..., "x")` on win32 — the same two-branch pattern
 `config init` uses. An existing file is never overwritten, truncated, or read: the command
@@ -124,6 +135,16 @@ exits **1** with a `FileExistsError` naming the path. A `ConfigError` from R8 is
 the same way — exit **1** through `_fail`, with no file written. On success it prints the
 path to stdout and one activation hint to stderr, and it does not start a server, modify
 `config.toml`, or make the policy active.
+
+**R11a — `--output PATH` redirects the write and nothing else.** The one option. It changes
+only the destination: the same document, the same `O_EXCL` create, the same `0o600`, the
+same refusal to overwrite, the same stdout path line. It exists because the command cannot
+overwrite, which otherwise leaves no way to regenerate for a diff (the only detection path
+for a tool an upgrade added — see R16), and because a deployment whose serving identity is
+not the invoking one resolves a different `config_dir()` and needs the file written where
+that identity will read it. The path is the trusted local operator's own; parent directories
+are created as for the default path, and a directory or unwritable destination surfaces the
+`OSError` through `_fail` at exit **1** with no partial file.
 
 **R12 — The generated policy authorizes a call that omits an optional selector.** A call to
 a tool with an optional target selector, made with that argument unset, is permitted under
@@ -151,8 +172,9 @@ invoke. Neither holds an application at module scope. The smoke path proves on e
 TOML, so the emitted document's parse is R9's to prove and not smoke's.
 
 **R16 — Documentation states the new default and its precondition.** `README.md` gains a
-migration section covering the refusal, the generator, the two exit codes, the manual
-regeneration procedure, and the loss of `hmc_run_command` for a deployment that ran with
+migration section covering the refusal, the generator, the two exit codes, the `--output`
+regeneration-and-diff procedure, the requirement that the generator run as the identity
+`serve` runs under, and the loss of `hmc_run_command` for a deployment that ran with
 `--enable-arbitrary-command`; keeps a
 minimal read-only example; keeps a limited-mutation example; adds an abbreviated
 legacy-equivalent example; drops the removed startup-warning row; and states that a
@@ -240,11 +262,20 @@ is trusted input to the loader.
 **Control per boundary.**
 
 - *Generator writing a file* — `O_EXCL` refuses to overwrite, so the command cannot destroy
-  a reviewed policy, and mode `0o600` matches `config init`. It reads profile **keys** only,
-  never a password, a `password_env` value, or a host, so nothing secret can reach the
-  generated file. On failure it emits the `ConfigError` or `FileExistsError` text, which
-  names the config path — the same disclosure `config init` and `config show` already make
-  to the same local operator.
+  a reviewed policy, and mode `0o600` matches `config init`. `--output` changes only the
+  destination and keeps both; the path comes from the trusted local operator's own command
+  line, which is the same trust level as the config directory itself, so there is no
+  traversal question to answer. It reads profile **keys** only, never a password, a
+  `password_env` value, or a host, so nothing secret can reach the generated file. On
+  failure it emits the `ConfigError`, `FileExistsError`, or `OSError` text, which names a
+  path — the same disclosure `config init` and `config show` already make to the same local
+  operator.
+- *Rendering operator-authored keys into a generated file* — the one place this entry turns
+  text it did not author into a document something else parses. `config.list_profiles`
+  applies no charset validation, so R9a's TOML basic-string escaping of `"`, `\`, and every
+  control character is the control: it is total, so no key can terminate its string, and
+  therefore no key can inject a `[[policies...grants]]` table into a file the operator is
+  told to review, or produce one that fails to parse.
 - *Loading the generated file* — unchanged: `load_access_policy` validates and compiles it
   under ADR 0036's strict rules. The generator gets no privileged path into the loader, and
   R9 proves the round trip through the real loader rather than through a private
@@ -260,8 +291,10 @@ is trusted input to the loader.
   every deployment and by an ungranted caller, since ADR 0040 emits the record before the
   denial. Not closed here; stated in ADR 0041 and in the README as a deployment
   precondition. This is the one accepted risk this entry knowingly widens.
-- *An operator who never regenerates loses new tools silently.* Accepted and documented:
-  the fail-closed direction, and `hmc_effective_permissions` shows it.
+- *An operator who never regenerates loses new tools silently.* Accepted and documented.
+  It is the fail-closed direction, and nothing inside the running server surfaces it —
+  `hmc_effective_permissions` reports the registered set, which is exactly what the policy
+  produced. Detection is `--output` to a scratch path plus a diff of the `tools` array.
 - *The permit/deny oracle* (ADR 0038) and *policy-content disclosure through
   `hmc_effective_permissions`* (ADR 0037) are unchanged and remain as those records state.
 - *A local user who can already write the operator's config directory* can author any

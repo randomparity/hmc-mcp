@@ -59,9 +59,27 @@ generator would write. A policy that fails to read, parse, or compile keeps ADR 
 behaviour — exit code 1 through the CLI's error path. Two codes, because they are two different
 operator problems: the first is "you have not chosen", the second is "what you chose is wrong".
 
-**`hmc-mcp config init-access-policy` generates the legacy-equivalent policy.** It takes no
-options, writes only the platform-native `access-policy.toml`, creates it with `O_EXCL` at mode
-`0o600`, refuses to overwrite an existing file, prints the path it wrote, and activates nothing.
+**`hmc-mcp config init-access-policy` generates the legacy-equivalent policy.** It writes the
+platform-native `access-policy.toml` by default, creates the file with `O_EXCL` at mode `0o600`,
+refuses to overwrite whatever path it is given, prints the path it wrote, and activates nothing.
+It takes one option, `--output PATH`, and that option is load-bearing rather than a convenience:
+without it there is no way to regenerate (the command cannot overwrite), no way to diff a new
+generation against a deployed policy, and no way for a deployment whose serving identity is not
+the invoking one — a systemd unit with `User=`, a container image — to produce a file at the path
+that identity's `config_dir()` resolves to. One option answers all three; a `--force` that
+overwrites a reviewed policy in place answers none of them and destroys the review.
+
+**The emitter is hand-written, and every operator-supplied key is escaped.** Epic requirement 11
+forbids a new runtime dependency and `tomllib` only reads, so the generator renders TOML itself.
+Profile keys reach it straight from `config.list_profiles`, which returns raw TOML keys with no
+charset validation, so each is rendered as a TOML basic string with `"`, `\`, and every control
+character escaped. That escaping is total — no key can end the string early — which is what makes
+"the generated file always parses, and holds exactly the keys `config.toml` holds" a property
+rather than a hope. Unescaped rendering would turn a key containing a quote into a file that
+fails to parse (a bricked migration whose only recovery is regeneration) and a key containing
+`"]` and a newline into an injected grant table, inside the very file the operator is told to
+review.
+
 The written document is a single grant under the policy name `legacy-equivalent`:
 
 - **`tools` names every ordinary tool explicitly**, sorted, rather than granting effect classes.
@@ -124,10 +142,15 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   was unreachable in practice; after it, reachable for policy-using deployments; after this
   record, reachable for all of them, and reachable by an ungranted caller, because ADR 0040
   emits the record before the denial. #269 is not resolved here. It is stated here so the
-  deployment requirement — the host must drain fd 2 — is a documented precondition of the
-  fail-closed default rather than a field discovery. Issues #270 (the level split is unreachable
-  from `hmc-mcp serve`) and #267 (a routine denial renders a traceback) are on every deployment's
-  path for the same reason.
+  requirement — something must drain fd 2 — is a documented precondition of the fail-closed
+  default rather than a field discovery. The precondition binds honestly only for the HTTP
+  transport and for a stdio server whose launcher the operator controls: under the stdio
+  transport an MCP client spawns the server and owns fd 2, so for the deployment shape this
+  record makes the default, the residual is "choose a client that drains its child's stderr"
+  rather than "configure the host". With #270 open there is no in-process lever either —
+  `install_audit_sink` takes no argument and reads no environment variable, so an operator
+  meeting a non-draining client can neither reduce record volume nor redirect it. #267 (a routine
+  denial renders a traceback) is on every deployment's path for the same reason.
 - **Legacy-equivalent is not legacy.** Under the generated policy every connection-bearing tool
   is wrapped by `tool_registry.authorized`, every call runs the full `dispatch_scope` conjunction,
   and every decision is recorded. For every tool the file names the outcome is the same as before
@@ -140,21 +163,35 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   never reaches `tools/list` and the existing startup warning fires instead. Restoring it is a
   deliberate edit to the generated grant's `tools`, which is the review step epic requirement 6
   asks for.
-- **The generated policy pins the tool surface at generation time.** After an upgrade that adds a
-  tool, the tool is registered by no grant and absent from `tools/list`. That is fail-closed and
-  deliberate, and `hmc_effective_permissions` is how an operator sees the difference.
-- **Regenerating is a manual, three-step procedure, and it discards hand edits.** The command
-  refuses to overwrite, so regeneration means moving `access-policy.toml` aside, running the
-  generator, diffing the two files, and re-applying by hand whatever was edited into the old one
-  — an added `hmc_run_command` grant, a narrowed connection list, a second policy. That is stated
-  in the generated file's header and in the README rather than discharged with a `--force` flag,
-  because a flag that overwrites a reviewed policy in place is the one operation this command
-  most needs not to have.
+- **The generated policy pins the tool surface at generation time, and nothing inside the running
+  server shows the gap.** After an upgrade that adds a tool, the tool is named by no grant, so it
+  is never registered — and `hmc_effective_permissions` reports the *registered* set, so it shows
+  exactly what `tools/list` shows and carries no signal that anything is missing. The detection
+  path is `--output`: regenerate to a scratch path and diff the `tools` array against the deployed
+  policy. Absent that, release notes are the only signal. The pin itself is fail-closed and
+  deliberate; presenting the inspection tool as the way to see it would not have been true.
+- **Regenerating discards hand edits, and the deployed file must not be moved aside to do it.**
+  Regeneration is: generate to a scratch path with `--output`, diff, and merge by hand whatever
+  was edited into the deployed file — an added `hmc_run_command` grant, a narrowed connection
+  list, a second policy. The obvious alternative, moving `access-policy.toml` aside and
+  regenerating in place, leaves a window in which the platform-native path holds nothing or an
+  unreviewed file, and under this record every start needs that file: an MCP stdio client
+  respawns the server per session, so a reconnect during the window gets a server that exits 1
+  for reasons unconnected to anything the client did. A running server is unaffected, the policy
+  being frozen for its lifetime, which is exactly why the window is easy to miss.
+- **The generator must run as the identity, and with the environment, that `serve` runs under.**
+  Both resolve the file through `config.config_dir()`, which reads `XDG_CONFIG_HOME` or
+  `Path.home()` — and on macOS `Path.home()` alone, with no override. Generating as a login user
+  and serving as a systemd `User=` or a container uid produces a policy the server never reads;
+  `--output` is how that deployment writes to the right path.
 - **Three statements in earlier records are retired.** ADR 0037's "`create_mcp(policy=None)`
   registers every tool", ADR 0038's R14 "no policy means no authorization", and ADR 0039's R20
   "no behaviour change without a policy" each describe a composition that no longer exists.
   Those records are otherwise unaffected and are not superseded; the tests asserting the retired
-  behaviour are inverted rather than deleted, as ADR 0039 inverted ADR 0036's A7 test.
+  behaviour are inverted rather than deleted, as ADR 0039 inverted ADR 0036's A7 test. The code
+  they describe goes with them: `server._unselected_policy_file` and the no-policy branch of
+  `server._startup_warnings` it exists to feed are unreachable once no server starts without a
+  policy, and both are removed rather than left standing.
 - **`hmc_effective_permissions` can no longer report a null policy through a served application.**
   `server_permissions.describe` keeps its `AccessPolicy | None` parameter and its honest
   null-reporting arm — it is documented as binding a direct caller, and this record does not make
@@ -175,6 +212,14 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
 what every prior entry in the epic implicitly chose. Rejected because it leaves the whole
 boundary opt-in: an operator who never learns the flag exists gets ADR 0035-0040's cost and none
 of its protection, which is requirement 9's exact target.
+
+**Warn for one release, then refuse in the next.** The standard answer to a breaking default, and
+nearly free here: `_startup_warnings` already carries a policy-not-selected line, gated on the
+file existing, and widening that gate to fire whenever no policy is selected is a one-condition
+change that would give operators a release of notice. Rejected because requirement 9 asks for the
+refusal in this entry rather than the one after it, and because the package is 0.1.0 — a
+deployment base that does not justify carrying a second unbounded release to soften the landing.
+The generator is the softer landing.
 
 **Refuse in `_serve_application` and leave `create_mcp(policy=None)` alone.** Smaller diff, and it
 satisfies a literal reading of "startup refuses to serve". Rejected because requirement 10 asks
@@ -198,19 +243,33 @@ escape hatch restores exactly the sufficiency the requirement removes.
 Rejected because the message is the deliverable: "Missing option '--access-policy'" tells an
 upgrading operator nothing about the generator, the file, or why their working server stopped.
 
-**Select a policy implicitly, or keep a named opt-out.** Two variants, weighed together because
-they trade the same thing. *Implicit selection* — an `HMC_ACCESS_POLICY` environment variable, or
-defaulting to the sole policy in `access-policy.toml` — would remove the launcher edit from the
-migration, which is the step that costs most in an MCP deployment where the launch command lives
-in a client-owned JSON config the operator may not edit directly. Rejected because issue #225 and
-epic requirement 9 both say *explicitly selected*, and because a file that activates by existing
-is the property the packaged-default entry below rejects, reached by a different route: an
-operator who generates a policy to read it would find it enforcing before they finished reading.
-*A named opt-out* — a `--no-access-policy` token by which an operator states they accept an
-unbounded server — was considered as a gentler removal of the escape this record closes.
-Rejected because it is the same escape under a longer name, and the whole difficulty ADR 0039's
-R12 and R13 create is that an escape exists at all; an operator who needs a permissive server can
-say so in a policy that grants everything, and that policy is exactly what the generator writes.
+**Default to the sole policy in `access-policy.toml`.** It would remove the launcher edit from the
+migration entirely. Rejected because it makes the file activate by existing, which is the
+property the packaged-default entry below rejects reached by another route: an operator who
+generates a policy in order to read it would find it enforcing before they had finished reading,
+and requirement 9's *explicitly selected* is exactly the word that forecloses it.
+
+**Select the policy through an `HMC_ACCESS_POLICY` environment variable.** Weighed separately,
+because the argument above does not reach it: naming a policy in a variable is a deliberate act,
+a generated file under it stays inert, and it is arguably an explicit selection. It is rejected
+on two grounds of its own. It does not buy what it appears to buy — under the stdio transport an
+MCP client's configuration carries `env` in the same client-owned block as `command` and `args`,
+so an operator who cannot edit one cannot edit the other, and the launcher edit is not avoided.
+And ambient process state selecting an authorization policy is worse than an argument visible in
+the process line: a variable exported in a shell profile or inherited from a unit file would
+carry a selection into a `serve` nobody meant to constrain that way, which is the class of
+accident `--access-policy` on argv cannot have.
+
+**Keep a named opt-out.** A `--no-access-policy` token by which an operator states they accept an
+unbounded server, as a gentler removal of the escape this record closes. Rejected because it is
+the same escape under a longer name, and the whole difficulty ADR 0039's R12 and R13 create is
+that an escape exists at all; an operator who needs a permissive server can say so in a policy
+that grants everything, and that policy is exactly what the generator writes.
+
+**Add `tomli-w` and serialize the document rather than rendering it.** The obvious way to avoid
+hand-rolling an emitter and its escaping. Rejected on epic requirement 11, which forbids a new
+runtime dependency; the document is one table with three keys, and the escaping it needs is the
+TOML basic-string set, which is a dozen lines and fully covered by the round-trip test.
 
 **Ship a default legacy-equivalent `access-policy.toml` in the package.** Rejected because a
 policy file that exists is a policy file that can be selected by name without review, which
