@@ -109,10 +109,17 @@ P8 and P10 are decisions rather than mechanics; ADR 0036's Decision section reco
 
 P10 is deliberately aggressive on effect-class grants. `effects = ["read"]` with a
 `targets` table constraining only `lpar` is rejected, because the read tools that
-require a `managed_system`, `vios`, or `cluster` selector would all be denied at call
-time — the grant would look broad and behave narrow. Such a grant must either name the
-kinds it covers or use `targets = "all-targets"`. The error names the first uncovered
-tool and kind, so the fix is mechanical.
+require a `managed_system`, `vios`, or `job` selector would all be denied at call time —
+the grant would look broad and behave narrow. The error names the first uncovered tool
+and kind.
+
+In practice this makes `targets = "all-targets"` the only expressible form for any
+`effects = ["read"]` grant, because two required selector kinds carry runtime-generated
+values: `job`/`job_uuid` on `hmc_get_job` and `hmc_wait_for_job`, and
+`console`/`console_uuid` on `hmc_get_available_hmc_ptfs` and
+`hmc_update_console_software`. Target-scoped reads remain expressible by naming tools
+instead of an effect class. ADR 0036 records this; narrowing P10 to enumerable kinds is
+#223's decision.
 
 ### 3.3 Compiled form
 
@@ -149,6 +156,14 @@ def load_access_policy(name, *, path=None, tool_security=None) -> AccessPolicy: 
 `"<default>"` compiles to `None`, matching `build_config(profile=None)`. `AccessPolicy.tools`
 is the union of every grant's `tools`. `Grant` is not hashable — `MappingProxyType` is
 unhashable — so P11 compares grants by equality, never by set membership.
+
+`grants_for(tool)` exists because grants combine **disjunctively while each grant is
+evaluated conjunctively**: a request is permitted only when one single grant covers its
+tool, its connection, and its targets together, and the dimensions are never unioned
+independently across grants (ADR 0036). `permits_tool` answers the ceiling question for
+#221's registration filter only and is never sufficient authorization on its own; #222
+and #223 must evaluate a grant returned by `grants_for`, not a union of connection or
+target sets.
 
 `load_access_policy` defaults `path` to `resolve_access_policy_path()` and
 `tool_security` to `server.TOOL_SECURITY`, imported **inside the function body** so the
@@ -265,8 +280,10 @@ Each is a test in `tests/unit/test_access_policy.py` unless stated otherwise.
 | A10 | `load_access_policy` on a missing file, on a file with a TOML syntax error, and on an absent policy name each raise `AccessPolicyError`; the absent-name message lists the available names. Round-trip: a written temp file loads to the same `AccessPolicy` as `compile_access_policy` over the parsed document. |
 | A11 | `grants = []` compiles to a policy that permits no tool at all. |
 | A12 | A subprocess that imports only `hmc_mcp.access_policy` finds `hmc_mcp.server` absent from `sys.modules` — the module is importable without the `app` extra, and the dependency runs one way. `api.__all__` is unchanged. |
-| A13 | `just verify` passes, including `scripts/smoke_mcp.py`. Not a pytest case. |
-| A14 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
+| A13 | A grant of `effects = ["read"]` with any `targets` table is rejected by P10 with a message naming a job tool and the `job` kind; the same grant with `targets = "all-targets"` validates. This pins ADR 0036's recorded consequence that the sentinel is mandatory for effect-class read grants. |
+| A14 | `grants_for` returns whole grants, not merged dimensions: for a policy whose first grant is `effects = ["read"]` on connection `prod` with `all-targets` and whose second is `tools = ["hmc_delete_lpar"]` on connection `lab` with `targets = { lpar = ["scratch-01"] }`, `grants_for("hmc_delete_lpar")` returns only the second grant, and no `Grant` in the result carries `prod` or `ALL_TARGETS`. |
+| A15 | `just verify` passes, including `scripts/smoke_mcp.py`. Not a pytest case. |
+| A16 | No new runtime dependency is added to `pyproject.toml`. Not a pytest case. |
 
 ## 6. Files
 

@@ -59,6 +59,17 @@ and compiles the named policy into a frozen `AccessPolicy`. The tool index is a
 **parameter**, not an import: `server.py` will import the policy module in #221, so
 the dependency must not run the other way.
 
+**Grants combine disjunctively; a grant is evaluated conjunctively.** A request is
+permitted only when some *single* grant covers its tool, its connection, and its
+targets together. The dimensions are never unioned independently across grants: a
+policy whose first grant permits all reads on `prod` and whose second permits
+`hmc_delete_lpar` on `lab`/`scratch-01` must not be read as permitting
+`hmc_delete_lpar` on `prod`. `AccessPolicy.tools` is the derived ceiling for #221's
+registration filter and is never sufficient authorization on its own — #222 and #223
+evaluate a grant, not a dimension. This rule is stated here because #221, #222, and
+#223 each read exactly one dimension and would otherwise each infer the combination
+separately.
+
 Five choices carry the design.
 
 **A separate file, not a section of `config.toml`.** `config.toml` holds passwords, so
@@ -77,9 +88,11 @@ would restate what the grants say and could disagree with them. The ceiling is
 `set().union(*(grant.tools for grant in policy.grants))`.
 
 Tool selection inside a grant is a **union**: every tool whose effect is in `effects`,
-plus every tool in `tools`. Intersection was the alternative, and it makes the
-epic's own limited-policy criterion — all reads plus one named mutation — require
-listing all 54 read tools by hand.
+plus every tool in `tools`. Intersection was the alternative — `effects` plus `tools`
+would then mean "the named tools that also carry this effect", a narrowing no
+requirement asks for and one an operator would read as additive. Union keeps a grant a
+single additive statement, and it is what makes P8 below necessary: only under union can
+naming a tool the grant's own `effects` already covers be a no-op worth rejecting.
 
 **`arbitrary-command` cannot be granted by effect class.** `effects` accepts `read`,
 `mutate`, and `destructive` only; `hmc_run_command` must be named in `tools`. There is
@@ -115,6 +128,12 @@ obvious than the rest and are decisions rather than mechanics:
   load. Optional selectors are *not* required to be covered — how an absent optional
   selector is treated is #223's decision, per ADR 0035.
 
+The line between the two is what a dead grant is decidable *from*. P10 fails the load
+because deadness follows from first-party, compiled-in metadata that validation already
+holds. Where deciding would mean reading external mutable state — a connection-profile
+name against `config.toml` — the grant loads and the denial happens at call time; see
+the connections consequence below. Later rules should follow that split.
+
 **Immutability is a property of the object, not of a singleton.** `AccessPolicy` and
 `Grant` are frozen dataclasses over `frozenset` and `MappingProxyType`; the module
 exposes no mutator, no reload, and no module-level policy state. #221 and #225 will
@@ -134,6 +153,22 @@ already records what a registration-time global costs.
   therefore expresses a constraint nothing currently enforces. Recorded on #222 rather
   than resolved here; the alternative — omitting `connections` from read grants — would
   bake #222's scope into the file format and make it unfixable later.
+- `"all-targets"` is the mandatory form for any effect-class grant, not the
+  legacy-migration edge case it looks like. Two required selector kinds carry values no
+  static file can enumerate: `job`/`job_uuid` on `hmc_get_job` and `hmc_wait_for_job`, and
+  `console`/`console_uuid` on `hmc_get_available_hmc_ptfs` and
+  `hmc_update_console_software`. Since selectors are exact strings with no wildcard form,
+  P10 cannot be satisfied for any grant containing `effects = ["read"]` — the read set
+  includes both job tools — except by the sentinel. Target-scoped reads are still
+  expressible, but only by naming tools rather than an effect class. Narrowing P10 to
+  enumerable kinds is #223's call, not this record's.
+- A policy's meaning is coupled to the shipping tool index in both directions.
+  `effects = ["read"]` silently gains any tool a later release adds to that class, with
+  no edit to the file the operator reviewed. In the other direction, reclassifying a tool
+  can make an unchanged, previously-valid file fail P8 or P10 — under #225's fail-closed
+  startup that is a server that will not start after an upgrade, over a redundancy that
+  grants nothing. An operator wanting a ceiling stable across upgrades must enumerate
+  `tools`. The upgrade-time startup failure is #225's to handle.
 - The compiled `Grant` exposes `tools`, `connections`, and `targets` and stops there. It
   carries no `matches()` method, because exact-selector matching, the
   `vios_uuid`/`vios_partition_id` namespace split, `metric_resource`'s dependence on
@@ -165,10 +200,15 @@ already records what a registration-time global costs.
 
 ## Considered & rejected
 
-- **Do nothing; express the ceiling in `HMCConfig` or a new section of `config.toml`.**
-  Issue #220 excludes authorization state from `HMCConfig` outright, and the file-mixing
-  problems are in the Decision above: credentials in the review path, no safe generator,
-  and opposite unknown-key strictness.
+- **Do nothing: rely on ADR 0035's client-facing annotations plus the existing
+  arbitrary-command toggle.** Every tool already ships `readOnlyHint`/`destructiveHint`,
+  and the one maximum-risk tool is already off by default. Rejected because an annotation
+  is advisory and the party that would honour it — the MCP client and the agent driving
+  it — is the untrusted party; nothing server-side constrains reach today.
+- **Express the ceiling in `HMCConfig` or a new section of `config.toml`.** Issue #220
+  excludes authorization state from `HMCConfig` outright, and the file-mixing problems are
+  in the Decision above: credentials in the review path, no safe generator, and opposite
+  unknown-key strictness.
 - **A top-level capability ceiling plus separate grants.** Closer to requirement 3's
   literal wording, and it lets an operator see the ceiling without reading every grant.
   Rejected because the ceiling then has to agree with the grants and nothing forces it
@@ -179,8 +219,9 @@ already records what a registration-time global costs.
   select for the operator is one step from a deployment where nobody chose.
 - **Wildcards or globs in target selectors (`Server-*`).** A general expression engine is
   an explicit non-goal of #218, and a glob over resource names is a selector-confusion
-  bypass waiting for a renamed LPAR. The single `"all-targets"` literal covers the one
-  case — legacy-equivalent exposure — that motivated wildcards.
+  bypass waiting for a renamed LPAR. The single `"all-targets"` literal covers the cases
+  that motivated wildcards — legacy-equivalent exposure, and the runtime-generated
+  selector kinds noted in the consequences — with one form that has no partial reading.
 - **Deny rules alongside allow rules.** Order-dependent and it makes "contradictory
   grants" a genuinely hard question. An allowlist with no denies has one reading.
 - **Pydantic all the way to the runtime form, with no compile step.** Fewer types, but
