@@ -168,9 +168,14 @@ and the numbered rules.
   grant of the 18 selector-less tools, so its presence is not by itself an audit signal.
   #221's effective-permission inspection is where the gap becomes visible.
 - **An index change alone can make an unedited policy file stop loading**, and under
-  #225's fail-closed startup that is a server that does not start after an upgrade. Both
-  remaining index-reading rules resolve tool sets: coverage (bound to explicitly named
-  tools, so the surface is small) and the duplicate-grant check. In the other direction
+  #225's fail-closed startup that is a server that does not start after an upgrade. Three
+  rules read the index: coverage (bound to explicitly named tools, so its surface is
+  small), the duplicate-grant check, and the rule requiring a `targets` key to be a kind
+  some granted tool declares — which resolves effect-class members too, deliberately,
+  since narrowing it would let a pure effect-class grant carry an entirely inert table.
+  Several kinds are backed by a single selector-declaring tool, `shared_storage_pool` by
+  `hmc_get_shared_storage_pool` alone, so that rule is the most index-fragile of the
+  three. In the other direction
   `effects = ["read"]` silently gains any tool a later release adds to that class. An
   operator wanting a ceiling stable across upgrades enumerates `tools`, and thereby
   accepts the coverage rule. Making the load failure diagnosable at startup is #225's.
@@ -182,7 +187,11 @@ and the numbered rules.
   granted connection name therefore resolves to the same HMC, and naming a profile does
   not pin an identity. The mirror case is fail-closed and equally unobvious: a policy
   naming only `prod` does not cover a caller who *omits* `profile`, which compiles to
-  `None`. #222 owns both.
+  `None`. The token space is many-to-one by a second route as well: `load_profile`
+  resolves an ADR 0030 `nicknames` table one level deep, so several distinct `profile`
+  values reach the same profile and a nickname may point at one the policy withholds.
+  Withholding an HMC means withholding every token that reaches it, and validation cannot
+  enumerate that set without reading `config.toml`. #222 owns all of it.
 - **`"<default>"` denotes whatever HMC the deployment selects, by design.** Absent
   `HMC_HOST`, `build_config(profile=None)` resolves through `HMC_PROFILE` then
   `default_profile`, so a policy granting `["lab"]` on one grant and `["<default>"]` on
