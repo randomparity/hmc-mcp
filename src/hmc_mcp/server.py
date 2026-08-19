@@ -45,6 +45,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, resolve_access_policy_path
+from .audit import install_audit_sink
 from .dispatch_scope import dispatch_authorizer
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
@@ -399,6 +400,11 @@ def _serve_application(
         return len(await application.local_provider.list_tools())
 
     tool_count = asyncio.run(_prepare())
+    # Installed here rather than in `create_mcp` or at import: this is where the
+    # process has been established as a server, and where `_warn` already writes
+    # to stderr for the same reason. Composing an application must not mutate
+    # global logging state (ADR 0040).
+    install_audit_sink()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
 

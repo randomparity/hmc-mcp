@@ -383,7 +383,10 @@ Four rules explain why:
 
 ### Startup warnings
 
-`serve` writes these to stderr (never stdout, which carries JSON-RPC on stdio):
+`serve` writes these to stderr, never stdout, which carries JSON-RPC on stdio — with
+one caveat that applies to the audit records below as well: a launcher merging the
+descriptors (`serve 2>&1`, or a unit file doing the same) makes stderr *become* the
+JSON-RPC channel, and nothing inside the process can detect that.
 
 | Condition | What it means |
 |-----------|---------------|
@@ -454,6 +457,19 @@ inventory and capacity rather than individual unhealthy resources. On HMCs that
 do not support global Job listing, the stable response keeps `failed_jobs` empty
 and includes a warning that recent-job health is unavailable; that warning must
 not be interpreted as a healthy job feed.
+
+### Authorization audit records
+
+With a policy selected, every authorization decision writes one line of JSON to stderr
+on the `hmc_mcp.audit` logger — policy, tool, effect class, decision, a stable reason
+code, the connection selector, and the declared target selectors. Denials are `WARNING`
+and permits are `INFO`. Credentials, whole argument sets, command text, and response
+bodies are absent by construction.
+
+Without `--access-policy NAME` there is no authorizer, so nothing is recorded at all.
+
+See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
+reason codes, and how to route or silence them.
 
 ### Public parameter units and selectors
 
