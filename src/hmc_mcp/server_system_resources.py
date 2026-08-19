@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _DESTRUCTIVE, _READ_ONLY, _ssh_with_client
+from ._app import _ssh_with_client
 from .ssh_commands import (
     PciClass,
     get_proc_compat_modes,
@@ -16,10 +16,10 @@ from .ssh_commands import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="system.get_proc_compat_modes", target_kind="managed_system")
 def hmc_get_proc_compat_modes(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[str]:
@@ -36,7 +36,7 @@ def hmc_get_proc_compat_modes(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="io_slot.list", target_kind="managed_system")
 def hmc_list_io_slots(
     system_name_or_uuid: str,
     pci_class: PciClass = "all",
@@ -56,7 +56,7 @@ def hmc_list_io_slots(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="memory_pool.list", target_kind="managed_system")
 def hmc_list_memory_pools(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -73,7 +73,7 @@ def hmc_list_memory_pools(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="memory_pool.remove", target_kind="managed_system")
 def hmc_remove_memory_pool(
     system_name_or_uuid: str, pool_name: str, profile: str | None = None
 ) -> str:

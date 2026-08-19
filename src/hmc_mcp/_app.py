@@ -1,8 +1,9 @@
 """Shared app state and entry points for the hmc-mcp server.
 
-Builds empty :class:`FastMCP` instances for explicit composition, defines
-the capability annotations and frozensets that document them, and provides
-the small sync-run / SSH-passthrough helpers used by tool bodies.
+Builds empty :class:`FastMCP` instances for explicit composition and provides
+the small sync-run / SSH-passthrough helpers used by tool bodies. Tool
+capability classification lives on each tool's ``ToolSecurity`` record in
+``tool_registry.py``; see docs/adr/0035-enforceable-tool-security-metadata.md.
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
@@ -17,7 +18,6 @@ from functools import partial
 from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
-from mcp.types import ToolAnnotations
 
 from .common import build_config
 from .config import HMCConfig
@@ -119,107 +119,6 @@ _new_mcp = partial(
 def create_mcp() -> FastMCP:
     """Create an empty MCP application for explicit domain composition."""
     return _new_mcp()
-
-
-# Tool capability annotations. MCP clients and gateways use these to separate
-# read-only, state-changing, and destructive tools (e.g. to auto-approve the
-# first, warn before the last). Tools are tagged inline on their @tool
-# collector with _READ_ONLY or _DESTRUCTIVE; everything else is state-changing
-# and intentionally untagged. tests/test_capabilities.py asserts the live tool
-# registry matches the documented READ_ONLY_TOOLS / DESTRUCTIVE_TOOLS sets, so
-# a new tool must be placed in exactly one category there and tagged here.
-_READ_ONLY = ToolAnnotations(readOnlyHint=True)
-_DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
-_STATE_CHANGING = ToolAnnotations(readOnlyHint=False)
-
-READ_ONLY_TOOLS = frozenset(
-    {
-        "hmc_console_info",
-        "hmc_list_systems",
-        "hmc_system_summary",
-        "hmc_list_lpars",
-        "hmc_get_lpar",
-        "hmc_get_lpar_state",
-        "hmc_lpar_summary",
-        "hmc_list_vios",
-        "hmc_get_vios",
-        "hmc_list_resources",
-        "hmc_get_job",
-        "hmc_list_recent_jobs",
-        "hmc_fleet_health",
-        "hmc_capacity_report",
-        "hmc_find_placement",
-        "hmc_get_system",
-        "hmc_wait_for_job",
-        "hmc_list_adapters",
-        "hmc_list_configured_hosts",
-        "hmc_list_volume_groups",
-        "hmc_list_virtual_switches",
-        "hmc_list_virtual_networks",
-        "hmc_list_network_bridges",
-        "hmc_list_fc_ports",
-        "hmc_list_sea_adapters",
-        "hmc_list_partition_templates",
-        "hmc_get_partition_template",
-        "hmc_list_clusters",
-        "hmc_list_shared_storage_pools",
-        "hmc_get_shared_storage_pool",
-        "hmc_get_pcm_preferences",
-        "hmc_processed_metrics",
-        "hmc_processed_metric_links",
-        "hmc_aggregated_metrics",
-        "hmc_aggregated_metric_links",
-        "hmc_list_users",
-        "hmc_get_user",
-        "hmc_list_password_policies",
-        "hmc_list_password_policy_status",
-        "hmc_get_ldap_config",
-        "hmc_get_available_hmc_ptfs",
-        "hmc_list_vios_backups",
-        "hmc_get_lpar_description",
-        "hmc_get_lpar_msp",
-        "hmc_get_proc_compat_modes",
-        "hmc_get_lpar_proc_compat",
-        "hmc_list_io_slots",
-        "hmc_list_memory_pools",
-        "hmc_list_vnics",
-        "hmc_get_media_repository",
-        "hmc_list_optical_media",
-        "hmc_list_optical_mappings",
-        "hmc_list_storage_mappings",
-    }
-)
-
-DESTRUCTIVE_TOOLS = frozenset(
-    {
-        "hmc_power_off_lpar",
-        "hmc_delete_lpar",
-        "hmc_decommission_lpar",
-        "hmc_delete_vios",
-        "hmc_delete_adapter",
-        "hmc_delete_virtual_network",
-        "hmc_delete_media_repository",
-        "hmc_delete_optical_media",
-        "hmc_delete_virtual_disk",
-        "hmc_delete_logical_unit",
-        "hmc_delete_user",
-        "hmc_delete_password_policy",
-        "hmc_remove_ldap_config",
-        "hmc_remove_memory_pool",
-        "hmc_remove_vnic",
-        "hmc_power_off_system",
-        "hmc_power_off_vios",
-        "hmc_migrate_abort_lpar",
-        "hmc_remote_restart_lpar",
-        "hmc_restore_vios",
-        "hmc_restore_lpar_profiles",
-        "hmc_backup_lpar_profiles",
-        "hmc_sync_lpar_profile",
-        "hmc_unmount_optical_media",
-        "hmc_detach_optical_mapping",
-        "hmc_detach_storage_mapping",
-    }
-)
 
 
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:

@@ -609,7 +609,7 @@ src/hmc_mcp/
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
-  _app.py        # shared FastMCP instance, READ_ONLY/DESTRUCTIVE_TOOLS sets, entry points
+  _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # thin aggregator importing every server_*.py tool module
   server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
   server_lpar_config.py      # SSH-only LPAR configuration handlers

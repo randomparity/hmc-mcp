@@ -7,8 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
     _run,
     _run_limited_collection,
 )
@@ -32,10 +30,10 @@ from .operations_ssh_network import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_switches", target_kind="managed_system")
 def hmc_list_virtual_switches(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -61,7 +59,7 @@ def hmc_list_virtual_switches(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_networks", target_kind="managed_system")
 def hmc_list_virtual_networks(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -84,7 +82,7 @@ def hmc_list_virtual_networks(
     return _run_limited_collection(_go, limit)
 
 
-@tool
+@tool(effect="mutate", operation="network.create_network", target_kind="managed_system")
 def hmc_create_virtual_network(
     system_name_or_uuid: str,
     name: str,
@@ -118,7 +116,7 @@ def hmc_create_virtual_network(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="network.delete_network", target_kind="managed_system")
 def hmc_delete_virtual_network(
     system_name_or_uuid: str, network_uuid: str, profile: str | None = None
 ) -> str:
@@ -142,7 +140,7 @@ def hmc_delete_virtual_network(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_bridges", target_kind="managed_system")
 def hmc_list_network_bridges(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -165,7 +163,7 @@ def hmc_list_network_bridges(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_fc_ports", target_kind="managed_system")
 def hmc_list_fc_ports(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -196,7 +194,7 @@ def hmc_list_fc_ports(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_sea", target_kind="managed_system")
 def hmc_list_sea_adapters(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -227,7 +225,7 @@ def hmc_list_sea_adapters(
     )
 
 
-@tool
+@tool(effect="mutate", operation="sriov.set_mode", target_kind="managed_system")
 def hmc_set_sriov_adapter_mode(
     system_name_or_uuid: str,
     adapter_id: str,
@@ -268,7 +266,7 @@ def hmc_set_sriov_adapter_mode(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vnic.list", target_kind="lpar")
 def hmc_list_vnics(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -297,7 +295,7 @@ def hmc_list_vnics(
     )
 
 
-@tool
+@tool(effect="mutate", operation="vnic.add", target_kind="lpar")
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -357,7 +355,7 @@ def hmc_add_vnic(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="vnic.remove", target_kind="lpar")
 def hmc_remove_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

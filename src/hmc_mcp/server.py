@@ -36,14 +36,14 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+from collections.abc import Mapping
 
 from fastmcp import FastMCP
 
 from ._app import (
-    DESTRUCTIVE_TOOLS as DESTRUCTIVE_TOOLS,
-    READ_ONLY_TOOLS as READ_ONLY_TOOLS,
     create_mcp as _create_base_mcp,
 )
+from .tool_registry import ToolSecurity, build_tool_security
 from . import (
     server_adapters,
     server_capacity,
@@ -86,6 +86,7 @@ from .server_capacity import (
     hmc_find_placement as hmc_find_placement,
 )
 from .server_command import (
+    HMC_RUN_COMMAND_SECURITY,
     hmc_run_command as hmc_run_command,
     configure_arbitrary_command_tool,
 )
@@ -242,6 +243,12 @@ TOOL_MODULES = (
     server_system_resources,
     server_composite,
     server_provision,
+)
+
+
+TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
+    [module.tool_security() for module in TOOL_MODULES],
+    {"hmc_run_command": HMC_RUN_COMMAND_SECURITY},
 )
 
 

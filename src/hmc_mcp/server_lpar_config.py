@@ -5,7 +5,6 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _READ_ONLY,
     _ssh_with_client,
 )
 
@@ -23,7 +22,7 @@ from .client import HMCClient
 from typing import Literal
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 ProcessorCompatibilityMode = Literal[
     "default",
@@ -53,7 +52,7 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
 )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_description", target_kind="lpar")
 def hmc_get_lpar_description(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
@@ -74,7 +73,7 @@ def hmc_get_lpar_description(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_description", target_kind="lpar")
 def hmc_set_lpar_description(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -118,7 +117,7 @@ def hmc_set_lpar_description(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_msp", target_kind="lpar")
 def hmc_get_lpar_msp(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> bool:
@@ -139,7 +138,7 @@ def hmc_get_lpar_msp(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_msp", target_kind="lpar")
 def hmc_set_lpar_msp(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -167,7 +166,7 @@ def hmc_set_lpar_msp(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_proc_compat", target_kind="lpar")
 def hmc_get_lpar_proc_compat(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, str]:
@@ -188,7 +187,7 @@ def hmc_get_lpar_proc_compat(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_proc_compat", target_kind="lpar")
 def hmc_set_lpar_proc_compat(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

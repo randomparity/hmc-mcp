@@ -7,7 +7,6 @@ from .tool_registry import tool_module
 from typing import Any, Literal
 
 from ._app import (
-    _READ_ONLY,
     _run,
 )
 
@@ -33,10 +32,10 @@ async def _update_op(
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="update.console", target_kind="console")
 def hmc_update_console_software(
     console_uuid: str,
     repository: RepositorySource,
@@ -116,7 +115,7 @@ def _check_ptf_error(exc: HMCError) -> None:
             ) from exc
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="update.list_ptfs", target_kind="console")
 def hmc_get_available_hmc_ptfs(
     console_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -144,7 +143,7 @@ def hmc_get_available_hmc_ptfs(
         raise
 
 
-@tool
+@tool(effect="mutate", operation="update.vios", target_kind="vios")
 def hmc_vios_update(
     vios_name_or_uuid: str,
     repository: RepositorySource,
@@ -199,7 +198,7 @@ def hmc_vios_update(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="update.firmware", target_kind="managed_system")
 def hmc_update_firmware(
     system_name_or_uuid: str,
     repository: RepositorySource,

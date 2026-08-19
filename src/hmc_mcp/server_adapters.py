@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _DESTRUCTIVE, _READ_ONLY, _run, _run_limited_collection
+from ._app import _run, _run_limited_collection
 from .client_adapters import AdapterType, validate_adapter_type
 from .common import client_from_env
 from .operations_adapters import (
@@ -17,10 +17,10 @@ from .operations_adapters import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="adapter.list", target_kind="lpar")
 def hmc_list_adapters(
     lpar_name_or_uuid: str,
     adapter_type: AdapterType = "ClientNetworkAdapter",
@@ -48,7 +48,7 @@ def hmc_list_adapters(
     return _run_limited_collection(operation, limit)
 
 
-@tool
+@tool(effect="mutate", operation="adapter.add_network", target_kind="lpar")
 def hmc_add_network_adapter(
     lpar_name_or_uuid: str,
     port_vlan_id: int,
@@ -89,7 +89,7 @@ def hmc_add_network_adapter(
     return _run(operation)
 
 
-@tool
+@tool(effect="mutate", operation="adapter.add_vscsi", target_kind="lpar")
 def hmc_add_vscsi_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,
@@ -123,7 +123,7 @@ def hmc_add_vscsi_adapter(
     return _run(operation)
 
 
-@tool
+@tool(effect="mutate", operation="adapter.add_vfc", target_kind="lpar")
 def hmc_add_vfc_adapter(
     lpar_name_or_uuid: str,
     vios_partition_id: int,
@@ -157,7 +157,7 @@ def hmc_add_vfc_adapter(
     return _run(operation)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="adapter.delete", target_kind="lpar")
 def hmc_delete_adapter(
     lpar_name_or_uuid: str,
     adapter_type: AdapterType,

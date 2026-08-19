@@ -5,7 +5,6 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _DESTRUCTIVE,
     _ssh_with_client,
 )
 
@@ -18,10 +17,10 @@ from .ssh_commands import (
 
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar_profile.backup", target_kind="managed_system")
 def hmc_backup_lpar_profiles(
     system_name_or_uuid: str,
     file_path: str,
@@ -64,7 +63,7 @@ def hmc_backup_lpar_profiles(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar_profile.restore", target_kind="managed_system")
 def hmc_restore_lpar_profiles(
     system_name_or_uuid: str, file_path: str, profile: str | None = None
 ) -> str:
@@ -99,7 +98,7 @@ def hmc_restore_lpar_profiles(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar_profile.sync", target_kind="lpar")
 def hmc_sync_lpar_profile(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
@@ -136,7 +135,7 @@ def hmc_sync_lpar_profile(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar_profile.assign_io_slot", target_kind="lpar")
 def hmc_assign_profile_io_slot(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,

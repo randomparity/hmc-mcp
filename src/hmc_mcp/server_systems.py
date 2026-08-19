@@ -8,8 +8,6 @@ import tomllib
 from typing import Any, Literal
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
     _run,
     _run_limited_collection,
 )
@@ -34,7 +32,7 @@ from .documents import (
 from .jobs import validate_wait_timing
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 ManagedSystemState = Literal[
     "operating",
@@ -98,7 +96,7 @@ PARTITION_STATES: frozenset[PartitionState] = frozenset(
 )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="console.info", target_kind="console")
 def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
@@ -115,7 +113,7 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="config.list_hosts", target_kind="none", connection_argument=None)
 def hmc_list_configured_hosts() -> dict[str, Any]:
     """List all configured HMC profiles from the platform-native TOML config.
 
@@ -194,7 +192,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
       }
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="system.list", target_kind="console")
 def hmc_list_systems(
     state: ManagedSystemState | None = None,
     profile: str | None = None,
@@ -227,7 +225,7 @@ def hmc_list_systems(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.list", target_kind="managed_system")
 def hmc_list_lpars(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
@@ -262,7 +260,7 @@ def hmc_list_lpars(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get", target_kind="lpar")
 def hmc_get_lpar(
     lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -282,7 +280,7 @@ def hmc_get_lpar(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_state", target_kind="lpar")
 def hmc_get_lpar_state(
     lpar_name_or_uuid: str,
     profile: str | None = None,
@@ -304,7 +302,7 @@ def hmc_get_lpar_state(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vios.list", target_kind="managed_system")
 def hmc_list_vios(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
@@ -344,7 +342,7 @@ def hmc_list_vios(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vios.get", target_kind="vios")
 def hmc_get_vios(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -363,7 +361,7 @@ def hmc_get_vios(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="console.list_resources", target_kind="console")
 def hmc_list_resources(
     resource_type: str,
     profile: str | None = None,
@@ -390,7 +388,7 @@ def hmc_list_resources(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="system.get", target_kind="managed_system")
 def hmc_get_system(
     system_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -413,7 +411,7 @@ def hmc_get_system(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="system.modify", target_kind="managed_system")
 def hmc_modify_system(
     system_name_or_uuid: str,
     new_name: str | None = None,
@@ -453,7 +451,7 @@ def hmc_modify_system(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="system.power_on", target_kind="managed_system")
 def hmc_power_on_system(
     system_name_or_uuid: str,
     wait: bool = False,
@@ -491,7 +489,7 @@ def hmc_power_on_system(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="system.power_off", target_kind="managed_system")
 def hmc_power_off_system(
     system_name_or_uuid: str,
     immediate: bool = False,
