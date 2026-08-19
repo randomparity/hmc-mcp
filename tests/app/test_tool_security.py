@@ -11,18 +11,29 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections.abc import Iterator
+from dataclasses import dataclass, fields as dataclass_fields, is_dataclass
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import pytest
+from pydantic import BaseModel
 
-from hmc_mcp import server_command
-from hmc_mcp.server import TOOL_SECURITY, mcp
+from hmc_mcp import server_command, server_permissions
+from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, mcp
 from hmc_mcp.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,
+    UNBOUNDED_ARGUMENTS,
+    TargetSelector,
+    ToolSecurity,
     annotations_for,
     validate_security,
 )
+
+# Every module a live tool handler is defined in. `server_command` and
+# `server_permissions` are not domain modules, so they are absent from
+# `TOOL_MODULES`, and the escape hatch is the one tool that most needs checking.
+_TOOL_MODULES = (*TOOL_MODULES, server_command, server_permissions)
 
 # The classification as it stood before ADR 0035, transcribed from _app.py at
 # 20f3068. A frozen regression snapshot: no tool is ever added here.
@@ -1085,3 +1096,240 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
     }
+
+
+# ---------------------------------------------------------------------------
+# G14-G16 (#223) — the static half of the target dimension.
+#
+# G12 above proves a declared *connection* argument is actually routed. These
+# three prove the *target* side of the same contract: that a tool claiming its
+# selectors bound it is not accepting an identity they cannot see, that a
+# declared selector is used rather than merely accepted, and that every selector
+# is of a type the boundary can read. See ADR 0039.
+# ---------------------------------------------------------------------------
+
+
+def _selector_annotations() -> dict[str, object]:
+    """Every declared selector argument's resolved annotation, keyed `tool.arg`."""
+    resolved: dict[str, object] = {}
+    for module in _TOOL_MODULES:
+        for name, security in TOOL_SECURITY.items():
+            handler = getattr(module, name, None)
+            if handler is None:
+                continue
+            hints = get_type_hints(handler)
+            for target in security.targets:
+                resolved[f"{name}.{target.argument}"] = hints.get(target.argument)
+    return resolved
+
+
+def test_every_selector_argument_is_a_type_the_boundary_can_read():
+    """G14: `str`, `str | None`, or `int` — nothing else.
+
+    ADR 0039's extraction renders exactly those and refuses everything else as
+    UNREADABLE. Refusing is fail-closed, but a *live* tool that always denies is
+    a dead tool, so the guarantee has to be that the fourth type never ships.
+    That makes UNREADABLE reachable only by a direct caller of the wrapped
+    object, which is what the ADR claims.
+    """
+    allowed = {str, int, str | None}
+    resolved = _selector_annotations()
+    assert resolved, "no selector annotations resolved; the walk found no handlers"
+    unexpected = {
+        where: annotation
+        for where, annotation in resolved.items()
+        if annotation not in allowed
+    }
+    assert not unexpected, f"selector arguments of an unreadable type: {unexpected}"
+
+
+def _nested_field_names(annotation: object) -> list[str]:
+    """The field names of a dataclass or pydantic model, one level down.
+
+    One level, deliberately: it is what `hmc_provision_lpar` needed and what the
+    format can describe. A two-level nest would be caught by neither this check
+    nor `build_targets`, which is recorded rather than hidden — the third level
+    of nesting is not a shape any tool in `src/` has.
+    """
+    names: list[str] = []
+    for member in get_args(annotation) or (annotation,):
+        if is_dataclass(member) and isinstance(member, type):
+            names.extend(field.name for field in dataclass_fields(member))
+        elif isinstance(member, type) and issubclass(member, BaseModel):
+            names.extend(member.model_fields)
+    return names
+
+
+def _unbounded_identities(handler, security) -> list[str]:
+    """Identity-bearing argument names *security* does not declare as selectors."""
+    declared = {target.argument for target in security.targets}
+    found: list[str] = []
+    for parameter, annotation in get_type_hints(handler).items():
+        if parameter == "return":
+            continue
+        if parameter in UNBOUNDED_ARGUMENTS:
+            found.append(parameter)
+        if parameter in REQUIRED_TARGET_ARGUMENTS and parameter not in declared:
+            found.append(parameter)
+        for field_name in _nested_field_names(annotation):
+            if field_name in UNBOUNDED_ARGUMENTS or (
+                field_name in REQUIRED_TARGET_ARGUMENTS and field_name not in declared
+            ):
+                found.append(f"{parameter}.{field_name}")
+    return sorted(set(found))
+
+
+def test_no_exhaustive_tool_accepts_an_identity_its_selectors_cannot_bound():
+    """G15: `exhaustive_targets=True` is checked, not taken on trust.
+
+    A declaration nobody checks is a comment. This is the check that catches the
+    next `hmc_provision_lpar`: an identity arriving through a nested field, or
+    through an argument no TargetKind can express, while the tool claims a
+    policy `targets` table bounds it.
+    """
+    offenders = {}
+    for module in _TOOL_MODULES:
+        for name, security in TOOL_SECURITY.items():
+            handler = getattr(module, name, None)
+            if handler is None or not security.exhaustive_targets:
+                continue
+            if found := _unbounded_identities(handler, security):
+                offenders[name] = found
+    assert not offenders, (
+        "these tools claim their selectors bound them but accept an identity the "
+        f"selectors cannot name: {offenders}. Declare exhaustive_targets=False, or "
+        "expose the identity as a top-level selector argument."
+    )
+
+
+def test_the_three_declared_composites_are_exactly_what_the_check_finds():
+    """G15: the declaration matches the derivation, in both directions.
+
+    ADR 0039 rejected deriving `exhaustive_targets` at registration and kept it
+    a declaration. That trade is only honest if the two agree, so this asserts
+    the agreement rather than assuming it.
+    """
+    found = {}
+    for module in _TOOL_MODULES:
+        for name, security in TOOL_SECURITY.items():
+            handler = getattr(module, name, None)
+            if handler is None:
+                continue
+            if unbounded := _unbounded_identities(handler, security):
+                found[name] = unbounded
+    assert found == {
+        "hmc_backup_lpar_profiles": ["file_path"],
+        "hmc_provision_lpar": ["network.vios_partition_id", "storage.vios_uuid"],
+        "hmc_restore_lpar_profiles": ["file_path"],
+        "hmc_run_command": ["cmd"],
+    }
+
+
+def test_every_handler_reads_the_target_selectors_it_declares():
+    """G16: a declared selector is used, not merely accepted.
+
+    The target-dimension twin of G12. A handler that accepts
+    `lpar_name_or_uuid` and never reads it would be authorized against a target
+    it does not act on — the shape `hmc_set_lpar_boot_order` had for the
+    connection argument before #222.
+
+    Its limit is stated rather than implied: it proves the value is *read*, not
+    that it reaches the right sink. Following it to a sink would need G12's
+    builder table, and there is no target equivalent of `client_from_env`.
+    """
+    root = Path(server_command.__file__).parent
+    unread: dict[str, list[str]] = {}
+    checked: set[str] = set()
+
+    for path in sorted(root.glob("server_*.py")):
+        functions = _module_functions(ast.parse(path.read_text(encoding="utf-8")))
+        for name in sorted(functions.keys() & set(TOOL_SECURITY)):
+            body = functions[name]
+            loaded = {
+                node.id
+                for node in ast.walk(body)
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+            }
+            missing = [
+                target.argument
+                for target in TOOL_SECURITY[name].targets
+                if target.argument not in loaded
+            ]
+            if missing:
+                unread[name] = missing
+            checked.add(name)
+
+    assert not unread, f"handlers that accept a selector and never read it: {unread}"
+    # The same name G12 cannot reach, for the same reason: it is defined inside
+    # a factory rather than at module level. It declares no selector.
+    assert set(TOOL_SECURITY) - checked == {"hmc_effective_permissions"}
+    assert not TOOL_SECURITY["hmc_effective_permissions"].targets
+
+
+@pytest.mark.parametrize(
+    "label, source, expected",
+    [
+        (
+            "a-nested-identity-the-selectors-cannot-see",
+            """
+@dataclass
+class Storage:
+    vios_uuid: str
+
+
+def hmc_probe(system_name_or_uuid: str, storage: Storage, profile: str | None = None):
+    return client_from_env(profile)
+""",
+            ["storage.vios_uuid"],
+        ),
+        (
+            "a-top-level-identity-left-out-of-the-selectors",
+            """
+def hmc_probe(system_name_or_uuid: str, cluster_uuid: str, profile: str | None = None):
+    return client_from_env(profile)
+""",
+            ["cluster_uuid"],
+        ),
+        (
+            "an-argument-no-target-kind-can-express",
+            """
+def hmc_probe(system_name_or_uuid: str, file_path: str, profile: str | None = None):
+    return client_from_env(profile)
+""",
+            ["file_path"],
+        ),
+    ],
+)
+def test_the_unbounded_identity_check_bites(label, source, expected):
+    """G15: each refusal is proven on a shape no handler in `src/` exhibits.
+
+    Without these the assertion could be deleted and the suite would stay green,
+    which is what happened to three of G12's.
+    """
+    namespace: dict[str, object] = {"dataclass": dataclass, "client_from_env": None}
+    exec(compile(source, f"<{label}>", "exec"), namespace)  # noqa: S102
+    handler = namespace["hmc_probe"]
+    security = ToolSecurity(
+        effect="mutate",
+        operation="probe.run",
+        target_kind="managed_system",
+        targets=(TargetSelector("managed_system", "system_name_or_uuid", True),),
+        exhaustive_targets=True,
+    )
+    assert _unbounded_identities(handler, security) == expected
+
+
+def test_the_unread_selector_check_bites():
+    """G16: a handler that accepts a selector and ignores it is refused."""
+    source = """
+def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
+    return client_from_env(profile)
+"""
+    body = _module_functions(ast.parse(source))["hmc_probe"]
+    loaded = {
+        node.id
+        for node in ast.walk(body)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    assert "lpar_name_or_uuid" not in loaded
+    assert "profile" in loaded

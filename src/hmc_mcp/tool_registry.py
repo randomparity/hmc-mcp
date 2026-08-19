@@ -66,6 +66,15 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
     "resource_name_or_uuid": "metric_resource",
 })
 
+# Public argument names that carry the identity of something no TargetKind can
+# express, so a policy `targets` table can never bound them. A tool accepting one
+# cannot declare `exhaustive_targets=True`. `file_path` names a file on the HMC's
+# own filesystem (ADR 0036 placed it outside every grant); `cmd` is free-form CLI
+# text. Read only by the ADR 0039 guardrail in tests/app/test_tool_security.py —
+# no runtime path consults it, because the boolean it justifies is what the
+# authorizer reads.
+UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({"file_path", "cmd"})
+
 # (readOnlyHint, destructiveHint) per effect class, held as immutable values
 # rather than shared ToolAnnotations instances: the model is mutable, so a shared
 # instance would let one in-place edit re-flag every tool of that class. `mutate`
