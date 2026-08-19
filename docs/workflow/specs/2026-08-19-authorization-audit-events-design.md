@@ -361,8 +361,10 @@ structure holds (test 8b below).
    `[]` for a tool declaring no selector; `connection.resolved` is `"<unresolved>"` for a token
    naming nothing configured and `"<default>"` for an omitted one.
 6a. An integer selector value records `state="present"` with its decimal rendering; a boolean
-   records `state="unreadable"` with a `null` value. Both arms exist in `target_scope._value` and
-   neither was covered.
+   records `state="unreadable"` with a `null` value. `_value`'s two arms are already covered
+   (`tests/unit/test_target_scope.py:77,93`); what is not covered is the **mapping from its result
+   to the record's `state`**, which is why `target_scope` gains `audit_state` beside `_value` and
+   this test asserts against that rather than duplicating the existing two.
 6b. A `config.toml` profile named `<unresolved>` renders `resolved == "<unresolved>"`,
    indistinguishable from a token that resolved to nothing. Asserted so the collision is a chosen
    behaviour with a documented caveat rather than a discovery.
@@ -492,7 +494,9 @@ Five statements in ADR 0040 are assertions about *this* codebase rather than abo
 Each gets a test, so a later change that falsifies one reddens the suite instead of leaving a
 durable record quietly wrong. All five were verified by execution before being written down.
 
-31. **The logging tree drops an unheard record.** ADR 0040's Context measures three facts about
+31. **The logging tree drops an unheard record.** Needs the same isolation as 26d — clear
+    `logging.root.handlers` and read `capsys`, or use a subprocess — because `logging.lastResort`
+    is reached only after an ancestor walk finds zero handlers, and pytest keeps one on the root. ADR 0040's Context measures three facts about
     `fastmcp` 3.4.7 and the `hmc_mcp` tree and concludes "an audit control that emits nothing by
     default is not a control". The test asserts the *consequence this package owns* — with no sink
     installed and no ambient configuration, a record emitted on `hmc_mcp.audit` at `INFO` does not
@@ -515,7 +519,10 @@ durable record quietly wrong. All five were verified by execution before being w
 ### Live proof — `tests/app/test_authorization_audit_live.py`
 
 Pytest items under `tests/app/`, so `just verify` runs them and A13 is re-runnable by anyone;
-Run B is POSIX-only — `2>&-` is a POSIX shell redirection — and skipped elsewhere. These items
+The whole module is POSIX-only and skipped elsewhere. Run B needs `2>&-`, a POSIX shell
+redirection; Run A's fixture needs `HOME` to steer `config_dir()`, which on win32 resolves from
+`APPDATA` and reads `USERPROFILE` rather than `HOME` — so on Windows the fixture would write its
+sentinel-bearing `config.toml` over the developer's real one. These items
 **replace** the retired tests 29 and 30, which were specified before this section existed and
 drove the same two subprocess shapes with weaker assertions; Runs A and B are those shapes with
 the assertions written out.

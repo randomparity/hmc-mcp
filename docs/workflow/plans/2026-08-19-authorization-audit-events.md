@@ -129,8 +129,12 @@ nothing from the package, so no policy, config file, or application is needed.
 
 ### Steps
 
-1. Write `tests/unit/test_audit.py` with the autouse isolation fixture **first**, before any test
-   — it is the precondition for everything else in the file:
+1. Write the isolation fixture as a **shared helper** — `tests/audit_isolation.py`, exporting
+   `isolate_audit_logging()` — and import it as an autouse fixture from every file that touches the
+   audit logger: `tests/unit/test_audit.py` (Task 1), `tests/app/test_authorization_audit.py`
+   (Task 3) and `tests/unit/test_ownership.py` (Task 4). Three files, one definition; a per-file
+   copy is how the third one gets forgotten. Write it before any test — it is the precondition for
+   everything else:
 
    ```python
    @pytest.fixture(autouse=True)
@@ -166,10 +170,11 @@ nothing from the package, so no policy, config file, or application is needed.
    until Task 3 wires emission into `authorize`. What belongs here is only its audit-local half —
    a raising renderer or logger leaves `record_authorization` returning `None` — written as part of
    test 14b.
-   6a and 6b and 8b are called out because an earlier draft of this plan lost them between the
-   task lists: 6a covers `target_scope._value`'s integer and boolean arms (the spec notes neither
-   was ever covered), 6b pins the `<unresolved>` profile-name collision, and 8b is the scan that
-   makes A4 an invariant rather than a three-value sample. Run
+   6b and 8b are called out because an earlier draft of this plan lost them between the task
+   lists: 6b pins the `<unresolved>` profile-name collision, and 8b is the scan that makes A4 an
+   invariant rather than a three-value sample. **6a is Task 2's, not this task's** — the claim that
+   `target_scope._value`'s int and bool arms were never covered is false;
+   `tests/unit/test_target_scope.py:77,93` already cover them. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_audit.py -q`. **Expect: collection error, `No module named
    'hmc_mcp.audit'`.** That is the confirm-it-fails step.
 3. Create `src/hmc_mcp/audit.py` with the constants, `Reason`, `REASONS`, `State`, `AuditTarget`,
@@ -272,14 +277,19 @@ the four-case selection moves into one function that both the message and the re
 
 ### Steps
 
-1. Add spec tests 21 and 21a to `tests/unit/test_target_scope.py` as failing tests. **This task
-   owns them**, not Task 3: both are function-level assertions about `denial_reason` and
+1. Add spec tests 21, 21a and **6a** to `tests/unit/test_target_scope.py` as failing tests. **This
+   task owns them**, not Task 3: both are function-level assertions about `denial_reason` and
    `targets_permitted` agreeing arm by arm, with no application involved. The spec files them under
    its Boundary heading, which is where the ambiguity came from. Run
    `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
    'hmc_mcp.target_scope' has no attribute 'denial_reason'`.**
-2. Add `from .audit import Reason` to `target_scope`'s imports, then
-   `denial_reason(security, extracted) -> Reason` holding the existing four-case order:
+2. Add `from .audit import Reason, State` to `target_scope`'s imports, then two functions.
+   First `audit_state(value: str | _Unresolved) -> State`, beside `_value` where the two singletons
+   already live: `"present"` for a `str`, `"absent"` for `ABSENT`, `"unreadable"` for `UNREADABLE`.
+   This is spec test 6a's seam and Task 3's generator calls it — without it the mapping is an
+   inline conditional in `dispatch_scope`, one module away from the singletons it interprets, and
+   6a has nothing to assert against. It mirrors `denial_reason` importing `Reason`.
+   Then `denial_reason(security, extracted) -> Reason` holding the existing four-case order:
    UNREADABLE selector → `"target-selector-unreadable"`; `not security.exhaustive_targets` →
    `"target-unboundable"`; ABSENT selector → `"target-selector-absent"`; otherwise
    `"target-not-granted"`.
@@ -309,7 +319,15 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
    Task 1, then spec tests **16–20, 14c, 22–26, 27, 28, 31–35** as failing tests. 21 and 21a are
    Task 2's; 14c moves here because it needs `authorize` to emit. Include the non-empty-capture
    precondition on 22–26, and mark every sentinel credential literal
-   `# pragma: allowlist secret` — see the note in Task 5 step 1. Run
+   `# pragma: allowlist secret` — see the note in Task 5 step 1.
+
+   **Test 31 needs the same isolation test 26d needs, for the same reason.** Its claim is that a
+   record at `INFO` with no sink installed does not reach stderr, and the mechanism is
+   `logging.lastResort`'s level filter — which `Logger.callHandlers` consults only after finding
+   zero handlers on the whole ancestor walk. pytest's logging plugin keeps a `LogCaptureHandler` on
+   the root logger, so under the default harness `lastResort` is never reached and the test passes
+   for an unrelated reason. Clear `logging.root.handlers` for the duration and read `capsys`, or
+   drive it as a subprocess. Run
    `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py -q`. **Expect: failures asserting a record
    that is never emitted.**
 2. Add the imports the fragments below need — `dispatch_scope` today imports only `AccessPolicy`;
@@ -338,13 +356,15 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
    audited = tuple(
        audit.AuditTarget(
            kind=kind, argument=argument,
-           state=("present" if isinstance(value, str)
-                  else "absent" if value is ABSENT else "unreadable"),
+           state=audit_state(value),
            value=value if isinstance(value, str) else None,
        )
        for kind, argument, value in extracted
    )
    ```
+
+   `audit_state` comes from `target_scope` (Task 2), which owns the singletons it interprets, so
+   `ABSENT` no longer needs importing here.
 
 4. Add one `record_authorization` call on the permit path and one on each denial path. Write the
    full keyword set — in particular `resolved=`, which is the one argument needing a helper the
@@ -393,9 +413,13 @@ Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`. `R
 
 ### Steps
 
-1. Rewrite `tests/unit/test_ownership.py::test_authorize_lpar_mutation_override_is_audited` as
+1. Add the shared `isolate_audit_logging` autouse fixture from Task 1 to
+   `tests/unit/test_ownership.py` — it reads the audit logger like the other two files and would
+   otherwise inherit whatever `_serve_application` left behind once Task 5 lands. Then rewrite
+   `tests/unit/test_ownership.py::test_authorize_lpar_mutation_override_is_audited` as
    spec test 26a, asserting a JSON record on `hmc_mcp.audit` and **no** record on
-   `hmc_mcp.operations_lpar`. Repoint its sibling
+   `hmc_mcp.operations_lpar`, first asserting the capture is non-empty — an "absent" assertion is
+   trivially true of an empty capture. Repoint its sibling
    `…_normal_access_has_no_override_audit` at the new logger — against the old name it would pass
    vacuously. Add 26b–26e. Run `uv run --no-sync pytest --no-cov tests/unit/test_ownership.py -q`. **Expect: the
    rewritten tests fail; the record is still on the old logger.**
@@ -437,7 +461,15 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
    Run B (L5), including the fixture that derives the config directory from
    `hmc_mcp.config.config_dir()` **after** redirecting `HOME`, deletes `HMC_HOST`, `HMC_PROFILE`,
    `XDG_CONFIG_HOME` and `APPDATA` from the child environment, and asserts both files exist and
-   those four variables are absent before the first frame. Mark Run B POSIX-only.
+   those four variables are absent before the first frame.
+
+   **Mark the whole module POSIX-only** — `pytestmark = pytest.mark.skipif(os.name != "posix", ...)`
+   — not just Run B. Both halves of the fixture are POSIX assumptions: `config_dir()` on win32
+   resolves from `APPDATA` first and `Path.home()` there reads `USERPROFILE`, not `HOME`, so on
+   Windows the **parent** would resolve `config_dir()` to the developer's real `%APPDATA%\hmc-mcp`
+   and overwrite their `config.toml` — carrying the fixture's sentinel password — and their
+   `access-policy.toml`. Deleting `APPDATA` from the *child* env does not protect the parent that
+   writes the files.
 
    **Subprocess contract — this is the suite's first long-lived `hmc-mcp serve` child.** No
    existing test spawns one (`tests/app/test_serve.py` and `test_capability_ceiling.py` use
