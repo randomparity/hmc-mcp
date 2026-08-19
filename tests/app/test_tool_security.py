@@ -445,6 +445,12 @@ def _own_scope(function: _Def | ast.Lambda):
     """
     body = function.body if isinstance(function.body, list) else [function.body]
     stack: list[ast.AST] = [function.args, *body]
+    # Decorators and a return annotation belong to the enclosing frame and are
+    # evaluated at import, so they cannot carry a per-call selector — but a
+    # connection opened there is still a connection nothing authorized.
+    stack.extend(getattr(function, "decorator_list", []))
+    if getattr(function, "returns", None) is not None:
+        stack.append(function.returns)
     while stack:
         node = stack.pop()
         yield node
@@ -454,18 +460,27 @@ def _own_scope(function: _Def | ast.Lambda):
             stack.extend(ast.iter_child_nodes(node))
 
 
-def _parameters(function: _Def | ast.Lambda) -> set[str]:
+def _nested_selector(function: _Def | ast.Lambda, argument: str) -> str | None:
+    """What *argument* is called inside *function*, or None when it is shadowed.
+
+    A nested frame closes over the enclosing selector unless its own parameter
+    list rebinds the name — except when that parameter's *default* is the
+    selector, which is how ``def _go(profile=profile)`` and its rename sibling
+    ``def _go(chosen=profile)`` carry the value in rather than shadow it.
+    """
     arguments = function.args
-    return {
-        parameter.arg
-        for parameter in [
-            *arguments.posonlyargs,
-            *arguments.args,
-            *arguments.kwonlyargs,
-            *([arguments.vararg] if arguments.vararg else []),
-            *([arguments.kwarg] if arguments.kwarg else []),
-        ]
-    }
+    positional = [*arguments.posonlyargs, *arguments.args]
+    defaults = [None] * (len(positional) - len(arguments.defaults))
+    defaults += list(arguments.defaults)
+    pairs = [
+        *zip(positional, defaults),
+        *zip(arguments.kwonlyargs, arguments.kw_defaults),
+        *[(star, None) for star in (arguments.vararg, arguments.kwarg) if star],
+    ]
+    for parameter, default in pairs:
+        if isinstance(default, ast.Name) and default.id == argument:
+            return parameter.arg
+    return None if any(parameter.arg == argument for parameter, _ in pairs) else argument
 
 
 def _bound_names(function: _Def | ast.Lambda) -> set[str]:
@@ -477,13 +492,11 @@ def _bound_names(function: _Def | ast.Lambda) -> set[str]:
     ``results[profile] = ...`` and ``profile.cached = 1``. The four forms that
     bind without a Store-context ``Name`` are added explicitly.
     """
-    names = {
-        node.id
-        for node in _own_scope(function)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
-    }
+    names: set[str] = set()
     for node in _own_scope(function):
-        if isinstance(node, ast.comprehension):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, ast.comprehension):
             names |= {
                 child.id
                 for child in ast.walk(node.target)
@@ -572,7 +585,7 @@ def _assert_routes(
             # builder inside one that redeclares the name gets no selector at all.
             reached += _assert_routes(
                 node,
-                None if argument in _parameters(node) else argument,
+                _nested_selector(node, argument) if argument is not None else None,
                 helpers,
                 tool,
                 seen,
@@ -802,6 +815,17 @@ def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
         return client_from_env(profile)
 """,
     ),
+    "connection-opened-in-a-decorator": (
+        "does not receive the value",
+        """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    @_wrap(client_from_env())
+    def _go():
+        return None
+
+    return client_from_env(profile)
+""",
+    ),
     "dropped-at-the-helper-hop": (
         "does not receive the value",
         """
@@ -876,6 +900,22 @@ def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
     "a-differently-named-selector": """
 def hmc_probe(system_name_or_uuid: str, connection: str | None = None):
     return client_from_env(profile=connection)
+""",
+    "nested-parameter-carrying-the-selector": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go(profile=profile):
+        async with client_from_env(profile) as hmc:
+            return hmc
+
+    return _run(_go)
+""",
+    "nested-parameter-renaming-the-selector": """
+def hmc_probe(system_name_or_uuid: str, profile: str | None = None):
+    async def _go(chosen=profile):
+        async with client_from_env(chosen) as hmc:
+            return hmc
+
+    return _run(_go)
 """,
     "nested-async-body": """
 def hmc_probe(system_name_or_uuid: str, profile: str | None = None):

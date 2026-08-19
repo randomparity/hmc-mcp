@@ -436,3 +436,23 @@ def test_denial_neutralizes_control_characters_in_a_caller_token(config):
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "a\nb"})
     assert "\n" not in str(error.value)
+
+
+def test_a_missing_selector_key_is_a_malformed_call_not_an_omitted_argument(config):
+    """`authorized` applies defaults, so an absent key means the mapping is wrong.
+
+    Treating it as omitted would silently make it the `<default>` connection,
+    which a policy granting `<default>` would then permit.
+    """
+    authorize = connection_authorizer(_policy("<default>"))
+    with pytest.raises(KeyError):
+        authorize("hmc_delete_lpar", SECURITY, {})
+
+
+def test_a_non_string_token_under_hmc_host_gets_no_collapse_clause(config, monkeypatch):
+    """Rule 0 runs first, so the call was never evaluated as the default."""
+    monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
+    authorize = connection_authorizer(_policy("<default>"))
+    with pytest.raises(ConnectionScopeError) as error:
+        authorize("hmc_delete_lpar", SECURITY, {"profile": 7})
+    assert "HMC_HOST is set" not in str(error.value)

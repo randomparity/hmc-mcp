@@ -311,7 +311,7 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   the `profiles` and `nicknames` keys, and `build_config` re-reads `config.toml` moments
   later inside the handler; an edit between them authorizes a resolution that no longer
   happens. Not closed, and deliberately: the two alternatives are to hand the handler its
-  resolved `HMCConfig`, which changes 129 signatures, or to carry the authorized
+  resolved `HMCConfig`, which changes 128 signatures, or to carry the authorized
   connection to `build_config` implicitly, which is rejected below. The race's only
   exploiter is someone who can already rewrite the credential file — and who could
   therefore point a granted profile at an HMC of their choosing regardless. ADR 0036
@@ -348,7 +348,7 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   free, and it sits on the hot path of every tool call. The alternative — reading the
   connection argument out of `kwargs` without binding — is wrong for any call that passes
   the selector positionally and for any handler whose selector has a default the caller
-  omitted, which is all 127 of them.
+  omitted, which is all 128 of them.
 - **`hmc_effective_permissions` can misreport connection enforcement in both directions
   under registry drift, and only one of them is safe.** Both dimension tuples still derive
   from `ceiling_enforced`, which re-checks the *tool* dimension only. A registry that has
@@ -440,9 +440,10 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   verifies that the connection a handler resolves is the one authorized for it, so the
   guardrail's static reach — the `server_*` modules' own call sites — is the extent of the
   guarantee. The guard follows every top-level function in the handler's own module down
-  the call chain; a helper imported from another module, a `functools.partial`, or a
-  callable held in a variable is not followed, and a handler reaching a connection that
-  way would pass it.
+  the call chain, treating a nested `def` or `lambda` as its own frame, and refuses a
+  handler that rebinds its selector or constructs its own `HMCConfig`. What it does not
+  follow is a helper imported from another module, a `functools.partial`, or a callable
+  held in a variable; a handler reaching a connection that way would pass it.
 - **Authorize inside `common.build_config`.** The narrowest possible waist — every path
   to an HMC goes through it, so nothing could be missed. Rejected because `build_config`
   is on the CLI and library paths too, so it would extend the server policy over the

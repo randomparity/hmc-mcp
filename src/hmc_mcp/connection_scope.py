@@ -112,19 +112,21 @@ def selected_connection(token: Any, *, tool: str) -> str | None:
     return UNRESOLVED
 
 
-def _clause(argument: str) -> str:
+def _clause(argument: str, collapsed: bool) -> str:
     """The one explanatory sentence a denial carries, or none.
 
-    Only the ``HMC_HOST`` collapse gets one. A nickname that resolved to a
-    withheld profile deliberately gets none: saying so would confirm the token
-    is in the operator's nickname table, which is the disclosure the single
-    denial template exists to prevent.
+    Only the ``HMC_HOST`` collapse gets one, and *collapsed* is the flag the
+    decision already computed rather than a second read of the environment — the
+    message must describe the decision that was made, not one taken afresh. A
+    nickname that resolved to a withheld profile deliberately gets no clause:
+    saying so would confirm the token is in the operator's nickname table, which
+    is the disclosure the single denial template exists to prevent.
     """
-    if os.environ.get("HMC_HOST"):
-        return _HMC_HOST_CLAUSE.format(
-            argument=argument, default=DEFAULT_CONNECTION_TOKEN
-        )
-    return ""
+    if not collapsed:
+        return ""
+    return _HMC_HOST_CLAUSE.format(
+        argument=argument, default=DEFAULT_CONNECTION_TOKEN
+    )
 
 
 def connection_authorizer(policy: AccessPolicy) -> Authorize:
@@ -143,8 +145,17 @@ def connection_authorizer(policy: AccessPolicy) -> Authorize:
             # already declines to wrap such a tool; an authorizer must still be
             # safe to call on any tool.
             return
-        token = arguments.get(argument)
+        # Indexed, not `.get`: `authorized` applies the handler's defaults and
+        # `validate_security` guarantees the parameter exists, so an absent key
+        # is a malformed call, and treating it as an omitted argument would
+        # silently make it the default connection.
+        token = arguments[argument]
         connection = selected_connection(token, tool=name)
+        # Read after the decision and gated on its result, so the clause can only
+        # describe a collapse that actually happened: a non-string token
+        # normalizes to UNRESOLVED before rule 1 is reached, and an HMC_HOST that
+        # changed between the two reads simply yields no clause.
+        collapsed = connection is None and bool(os.environ.get("HMC_HOST"))
         # One predicate per grant, never a union across them: ADR 0036 fixed that
         # a single grant must cover the tool and the connection together. #223
         # extends the condition inside this loop, not beside it.
@@ -164,7 +175,7 @@ def connection_authorizer(policy: AccessPolicy) -> Authorize:
                     else token
                 ),
                 policy=repr(policy.name),
-                clause=_clause(argument),
+                clause=_clause(argument, collapsed),
             )
         )
 
