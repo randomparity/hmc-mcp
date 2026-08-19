@@ -7,6 +7,7 @@ decision record is docs/adr/0038-dispatch-time-connection-scope.md.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastmcp import Client
@@ -454,13 +455,43 @@ def test_the_served_application_wraps_every_connection_bearing_tool():
         assert _is_guarded(tool) == expected, name
 
 
-def test_the_served_escape_hatch_denies_a_withheld_connection():
+def test_the_served_escape_hatch_denies_a_withheld_connection(monkeypatch):
     """`hmc_run_command` runs an arbitrary HMC CLI command; it must be scoped."""
+    opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
     application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
 
     with pytest.raises(ToolError) as error:
         _call(application, "hmc_run_command", {"cmd": "lssyscfg", "profile": "prod"})
     assert "hmc_run_command is not permitted on connection 'prod'" in str(error.value)
+    assert opened == []
+
+
+def test_an_unrelated_wraps_decorator_is_not_mistaken_for_the_guard():
+    """`__wrapped__` alone is a weak witness, which is why `_is_guarded` reads more."""
+    import functools
+
+    def handler(profile: str | None = None) -> str:
+        return "ran"
+
+    @functools.wraps(handler)
+    def decorated(*args, **kwargs):
+        return handler(*args, **kwargs)
+
+    assert getattr(decorated, "__wrapped__", None) is not None
+    assert not _is_guarded(SimpleNamespace(fn=decorated))
+    assert _is_guarded(
+        SimpleNamespace(
+            fn=authorized(
+                "probe",
+                ToolSecurity(
+                    effect="mutate", operation="probe.run", target_kind="console"
+                ),
+                handler,
+                lambda *a: None,
+            )
+        )
+    )
 
 
 def test_the_served_application_without_a_policy_wraps_nothing():
@@ -496,3 +527,32 @@ def test_an_unreadable_configuration_leaks_no_path_to_the_mcp_client(lab_profile
     assert str(lab_profile) not in message
     assert str(lab_profile.parent) not in message
     assert "not-a-table" not in message
+
+
+def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
+    """R1 at the one site whose wrap is inert, so nothing else could observe it.
+
+    `hmc_effective_permissions` declares no connection argument, so `authorized`
+    provably returns it unchanged — which means only the call itself witnesses
+    that this site honours the same contract as the other two rather than
+    deciding for itself.
+    """
+    from hmc_mcp import server_permissions
+
+    calls: list[tuple] = []
+    real = server_permissions.authorized
+
+    def _spy(name, security, handler, authorize):
+        calls.append((name, security, authorize))
+        return real(name, security, handler, authorize)
+
+    monkeypatch.setattr(server_permissions, "authorized", _spy)
+
+    policy = _policy(LAB_ONLY)
+    create_mcp(policy)
+
+    assert len(calls) == 1
+    name, security, authorize = calls[0]
+    assert name == server_permissions.TOOL_NAME
+    assert security is server_permissions.EFFECTIVE_PERMISSIONS_SECURITY
+    assert authorize is not None

@@ -141,9 +141,11 @@ Python API reach an unauthorized path by construction.
 **R17 — Every connection-bearing registered tool is actually wrapped.** With a policy
 selected, for every tool in the composed application — read from `local_provider` *after*
 `configure_arbitrary_command_tool` has run — whose `ToolSecurity.connection_argument` is
-non-`None`, the registered callable carries a `__wrapped__` attribute. This is what makes
-"the check cannot be skipped" a checked property rather than a discipline over three
-keyword arguments.
+non-`None`, the registered callable is the wrapper: `__wrapped__` is set *and* its code
+object is named `guarded`. Both, because `functools.wraps` sets `__wrapped__` and any
+future decorator would satisfy that half alone, while it never copies `__code__`. This is
+what makes "the check cannot be skipped" a checked property rather than a discipline over
+three keyword arguments.
 
 **R18 — A declared connection argument routes the connection.** `hmc_set_lpar_boot_order`
 and `hmc_clear_lpar_boot_order` pass their `profile` argument to `client_from_env`, as
@@ -247,9 +249,9 @@ permits = None if policy is None else policy.permits_tool
 authorize = None if policy is None else connection_authorizer(policy)
 ```
 
-and passes both to every registration site. `_serve_application` passes the same
-`authorize` to `configure_arbitrary_command_tool`, alongside the `permits` it already
-passes. R17 is asserted against the result of that second call, not the first.
+and passes both to every registration site. `_serve_application` derives the pair again through the same
+`_gates` helper and passes the authorizer to `configure_arbitrary_command_tool`; the two
+closures are distinct objects over one frozen policy, so they decide identically. R17 is asserted against the result of that second call, not the first.
 
 ### Errors
 

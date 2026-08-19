@@ -716,3 +716,13 @@ def test_list_profiles_and_nicknames_reports_an_unresolvable_home(monkeypatch):
     monkeypatch.delenv("APPDATA", raising=False)
     with pytest.raises(ConfigError, match="cannot resolve the config path"):
         list_profiles_and_nicknames()
+
+
+def test_list_profiles_and_nicknames_rejects_a_deeply_nested_document(tmp_path):
+    """tomllib recurses on nested arrays; the stack runs out before the parser does."""
+    from hmc_mcp.config import list_profiles_and_nicknames
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("deep = " + "[" * 3000 + "]" * 3000, encoding="utf-8")
+    with pytest.raises(ConfigError, match="document nesting is too deep"):
+        list_profiles_and_nicknames(config_path=cfg)

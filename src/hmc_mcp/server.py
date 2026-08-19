@@ -342,8 +342,9 @@ def _startup_warnings(
         )
     if access_policy is None and (path := _unselected_policy_file()) is not None:
         lines.append(
-            f"warning: {path} exists but no access policy was selected, so no "
-            "capability ceiling is applied. Pass --access-policy NAME to enforce one."
+            f"warning: {path} exists but no access policy was selected, so "
+            "neither a capability ceiling nor connection-scope authorization is "
+            "applied. Pass --access-policy NAME to enforce one."
         )
     if (
         enable_arbitrary_command

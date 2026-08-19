@@ -276,8 +276,10 @@ The registration sites take `authorize` the way ADR 0037's take `permits`: as a 
 with a `None` default, so a site that omits it registers the handler unwrapped and
 unauthorized. That is the same shape this record objects to in a middleware, and it is
 answered by an assertion rather than by discipline: with a policy selected, every tool in
-the composed application whose `ToolSecurity` declares a connection argument must carry a
-`__wrapped__` attribute — checked over the registry *after*
+the composed application whose `ToolSecurity` declares a connection argument must be the wrapper
+rather than the handler — `__wrapped__` set *and* a code object named `guarded`, since
+`functools.wraps` copies a name but never a code object — checked over the registry
+*after*
 `configure_arbitrary_command_tool` has run, so it covers all three sites and the one that
 registers the `arbitrary-command` tool in particular. Making the parameter mandatory
 instead was rejected: it is passed at three sites and defaulted at a dozen existing call
