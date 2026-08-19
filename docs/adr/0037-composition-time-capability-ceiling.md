@@ -83,9 +83,10 @@ union of connections across grants would misstate the policy. Each grant is repo
 its own tools, connections (with `None` rendered back as `"<default>"`), and targets. Two
 fields say what those dimensions currently mean: with a policy selected,
 `enforced_dimensions` is `("tools",)` and `declared_only_dimensions` is
-`("connections", "targets")`; with none selected both are empty. They are computed rather
-than constant so the permissive default cannot report an enforcement it is not performing.
-#222 and #223 move a string from the second tuple to the first.
+`("connections", "targets")`; with none selected both are empty. They are derived from
+whether a policy is in effect — not from re-verifying the registry beside them — so the
+permissive default cannot claim an enforcement it is not performing. #222 and #223 move a
+string from the second tuple to the first.
 
 **The arbitrary-command flag and the ceiling compose conjunctively**, as ADR 0036
 recorded. `configure_arbitrary_command_tool(enabled, mcp, permits=None)` registers
@@ -105,14 +106,21 @@ and this intersection reads only the compiled result.
   every deployment until #225. Two things narrow it. `serve` prints one stderr line when
   `resolve_access_policy_path()` names a file that exists and `--access-policy` was not
   passed — the authored-but-unselected state exactly, and a state no deployment predating
-  this entry can be in, since none has the file. And `hmc_effective_permissions` reports a
+  this entry can be in, since none has the file. That check must never fail the start:
+  `resolve_access_policy_path()` reaches `Path.home()`, which raises `RuntimeError` under a
+  uid with no passwd entry and no `HOME` — the container case `access_policy.py:418-425`
+  already guards — so `serve` catches `RuntimeError`/`OSError` around it and simply skips
+  the warning. A diagnostic that can abort a start nobody asked to constrain is worse than
+  no diagnostic. And `hmc_effective_permissions` reports a
   null policy name with empty `enforced_dimensions`. An *unconditional* warning was
   rejected: it would fire on every existing deployment for a state #225 converts into a
   startup failure outright.
-- **A policy that grants `hmc_run_command` while `--enable-arbitrary-command` is unset
-  produces the same unexplained absence** the inspection-tool warning exists to prevent,
-  and gets no warning. The conjunction is deliberate and the flag is the outer gate, so
-  the absence is correct; only the diagnosis is missing, and inspection reports it.
+- **The arbitrary-command conjunction is warned in one direction only.** Passing
+  `--enable-arbitrary-command` to a policy whose ceiling withholds `hmc_run_command` is an
+  explicit request answered with silence, so `serve` prints one stderr line for it — the
+  same reasoning that buys the inspection-tool warning. The mirror case, a policy granting
+  the tool while the flag is unset, gets none: the flag is the outer gate and its absence
+  is the operator's own most recent decision, not a surprise. Inspection reports both.
 - **The ceiling is the only dimension enforced.** A policy naming
   `connections = ["lab"]` still lets a granted tool be called with `profile="prod"`, and
   a `targets` table constrains nothing at call time. That is why inspection labels both
@@ -143,7 +151,10 @@ and this intersection reads only the compiled result.
   tests and `scripts/` import; it is no longer mutated by the serve path.
 - **Inspection reports a registry, so it inherits whatever the registry does.** If a
   future change disables rather than removes a tool, inspection reports what the provider
-  reports, without a second opinion. That is intended.
+  reports, without a second opinion. `enforced_dimensions` describes composition, not a
+  re-verification of the registry beside it, so any registration site added after
+  `create_mcp` returns must take `permits` for that label to stay true —
+  `configure_arbitrary_command_tool` is the one that exists, and it does.
 - **`hmc_effective_permissions` is the second tool with no connection argument**, after
   `hmc_list_configured_hosts`. Rule G10 in `tests/app/test_tool_security.py` — "only the
   local config tool opens no HMC connection" — becomes an allowance of two, and both
@@ -180,9 +191,7 @@ and this intersection reads only the compiled result.
 - **Pass the permitted set as a `frozenset[str]` rather than a predicate.** Rejected on the
   merits, not on authority: one callable serves the domain loop, the inspection factory,
   and `configure_arbitrary_command_tool` alike, and `tool_registry` never couples to the
-  ceiling being a set of names. (ADR 0036 names `AccessPolicy.tools` as the ceiling and
-  does not mention `permits_tool`; the method's contract is its docstring,
-  `access_policy.py:275-282`.)
+  ceiling being a set of names.
 - **Give the inspection tool an exemption from the ceiling**, so an operator can always
   ask what the server can do. Rejected because it is a tool no policy can withhold, in a
   file whose whole purpose is withholding tools, and its output is a description of the
@@ -205,7 +214,20 @@ and this intersection reads only the compiled result.
 - **Add `--access-policy-file PATH` beside `--access-policy NAME`.** Rejected as
   unrequested surface; `load_access_policy` already takes `path`, and #225 revisits startup
   selection anyway.
-- **Fail closed when no policy is selected**, which is the stronger default. Rejected
-  because it is #225's deliverable including its generator, and shipping it here would
-  break every current deployment on upgrade with no supported migration. Recorded in the
-  Decision because the question is #221's to answer, not to leave unnamed.
+- **Fail closed when no policy is selected.** The stronger default, and #225's deliverable
+  together with the generator that would make it survivable; see the Decision.
+- **Make `hmc_effective_permissions` ungrantable by effect class**, mirroring ADR 0036's
+  rule that `arbitrary-command` must be named in `tools`. It would make disclosure opt-in
+  per policy and erase the index-drift consequence above, at the same one-string cost
+  ADR 0036 priced. Rejected on two grounds. It amends an accepted record's resolution rule
+  to add a second exception, where ADR 0036's first exists to satisfy an explicit epic
+  requirement and no requirement asks for this one. And it inverts the trap rather than
+  removing it: an operator writing `effects = ["read"]` would get a server whose
+  permissions they cannot inspect, silently, unless they knew to name a tool that did not
+  exist before the upgrade — strictly worse than a read-only self-description they can
+  withhold deliberately.
+- **Render the policy path home-relative (`~/Library/...`) instead of absolute**, answering
+  *which file was read* without naming the account. Rejected because
+  `AccessPolicyError` already reports the absolute path at startup, and two renderings of
+  one path means an operator comparing a warning against inspection output has to
+  translate between them.

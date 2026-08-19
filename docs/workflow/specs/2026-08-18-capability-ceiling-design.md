@@ -109,11 +109,19 @@ file's own path.
 policy that does not permit `hmc_effective_permissions`, `serve` writes one warning line
 to stderr naming the tool and the policy, then starts normally.
 
-**R19 — An authored but unselected policy file is visible.** When `--access-policy` is
-*not* passed and `resolve_access_policy_path()` names a file that exists, `serve` writes
-one warning line to stderr saying the file is present, no policy was selected, and no
-ceiling is applied, then starts normally. When the file does not exist, `serve` writes
-nothing — no deployment predating this change can be in that state.
+**R19 — An authored but unselected policy file is visible, and the check cannot fail the
+start.** When `--access-policy` is *not* passed and `resolve_access_policy_path()` names a
+file that exists, `serve` writes one warning line to stderr saying the file is present, no
+policy was selected, and no ceiling is applied, then starts normally. When the file does
+not exist, `serve` writes nothing. When `resolve_access_policy_path()` raises
+`RuntimeError` or `OSError` — `Path.home()` under a uid with no passwd entry and no `HOME`
+— `serve` skips the warning and starts normally; it never propagates.
+
+**R19a — An explicitly requested escape hatch the policy withholds is visible.** When
+`--enable-arbitrary-command` is passed and the selected policy does not permit
+`hmc_run_command`, `serve` writes one warning line to stderr naming the flag and the
+policy, then starts normally. The mirror case — the policy permits it and the flag is
+absent — produces no warning.
 
 **R20 — Both registration sites apply the same gate.** `register_permissions_tool` takes
 `permits` and applies it itself. `create_mcp` passes the same predicate to it and to every
@@ -190,9 +198,9 @@ the tool index arrives as a parameter — the same one-way dependency ADR 0036 f
 
 Both dimension tuples are derived from whether a policy is selected, not module constants:
 empty with no policy, and the fixed pair above with one. A constant `("tools",)` would
-report an enforcement the permissive default is not performing, which is the fail-open
-reading in the fail-open case. Their *contents* are literals in this module and change
-when #222 and #223 land.
+report an enforcement the permissive default is not performing. They describe composition
+rather than a re-verification of the registry reported beside them. Their *contents* are
+literals in this module and change when #222 and #223 land.
 
 ### Startup selection
 
@@ -204,9 +212,12 @@ when the policy withholds the inspection tool, and passes the compiled object to
 `configure_arbitrary_command_tool`.
 
 With no `--access-policy`, `serve` checks whether `resolve_access_policy_path()` names an
-existing file and warns once if it does — the authored-but-unselected state. The check is a
-single `Path.exists()`; no file is read, so a malformed or unreadable policy cannot make an
-unselected start fail.
+existing file and warns once if it does — the authored-but-unselected state. No file is
+read, so a malformed policy cannot make an unselected start fail, and the resolution itself
+is wrapped: `resolve_access_policy_path()` reaches `Path.home()`, which raises
+`RuntimeError` where no home directory can be determined, so `serve` catches
+`RuntimeError`/`OSError` and skips the warning rather than aborting a start nobody asked to
+constrain.
 
 ### Errors
 
@@ -219,6 +230,8 @@ unselected start fail.
 | Policy withholds `hmc_effective_permissions` | Warning on stderr; server starts |
 | No `--access-policy`, no policy file on disk | No ceiling, no output; unchanged behaviour |
 | No `--access-policy`, policy file present | Warning on stderr; server starts with no ceiling |
+| No `--access-policy`, policy path unresolvable (`RuntimeError`/`OSError`) | No warning; server starts with no ceiling |
+| `--enable-arbitrary-command` with a policy that withholds `hmc_run_command` | Warning on stderr; server starts without the tool |
 
 ### Testing
 
