@@ -17,14 +17,24 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
     TOOL_SECURITY,
+    create_mcp,
     hmc_decommission_lpar,
     hmc_delete_lpar,
     hmc_delete_vios,
-    mcp,
 )
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
+
 
 LPAR_UUID = "aaaa0000-0000-0000-0000-000000000001"
 

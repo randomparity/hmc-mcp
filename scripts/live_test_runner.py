@@ -34,7 +34,9 @@ from typing import Any
 
 from fastmcp import Client
 
-from hmc_mcp.server import mcp
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
 
 # ---------------------------------------------------------------------------
@@ -2908,7 +2910,19 @@ async def main(
                 _restore_ctx_from_results(state, prior)
                 break
 
-    await configure_arbitrary_command_tool(True, mcp)
+    # The escape hatch is opted in because this harness drives `hmc_run_command`
+    # against a real HMC. `permits` and `authorize` come from the policy just composed:
+    # calling the toggle with neither would register the tool whatever the policy says
+    # and leave its handler unwrapped, so the live run would stop being evidence about
+    # the path an operator actually takes.
+    policy = compile_legacy_policy(
+        TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+    )
+    mcp = create_mcp(policy)
+    permits, authorize = _gates(policy)
+    await configure_arbitrary_command_tool(
+        True, mcp, permits=permits, authorize=authorize
+    )
     async with Client(mcp) as client:
         for n in tasks:
             fn = SUBTASKS.get(n)

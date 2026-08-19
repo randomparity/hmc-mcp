@@ -9,9 +9,16 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from fastmcp import FastMCP
 
-from hmc_mcp.access_policy import compile_access_policy
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
+
+
+def _legacy():
+    """The policy that replaced the unfiltered default composition (ADR 0041)."""
+    return compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
 SOURCE = "test-access-policy.toml"
 
@@ -69,16 +76,25 @@ def test_a_withheld_tool_cannot_be_called_by_name():
 
 
 def test_no_policy_applies_no_ceiling():
-    """R2: the default composition is unfiltered."""
-    names = _names(create_mcp())
+    """R2, inverted by ADR 0041: there is no unfiltered composition to have a ceiling.
 
-    assert names == set(TOOL_SECURITY) - {"hmc_run_command"}
+    This asserted that `create_mcp()` registered every tool but `hmc_run_command`. A
+    policy is mandatory now, so the ceiling-free registry this described cannot be
+    built at all. The claim it made about the *surface* did not disappear with it — it
+    moved to the legacy-equivalent policy, where G2 in
+    tests/app/test_fail_closed_startup.py pins the same set.
+    """
+    with pytest.raises(TypeError):
+        create_mcp()  # ty: ignore[missing-argument]
+
+    with pytest.raises(TypeError, match="init-access-policy"):
+        create_mcp(None)  # ty: ignore[invalid-argument-type]
 
 
 def test_applications_composed_with_different_policies_are_independent():
     """R3: a restrictive composition does not leak into a later one."""
     restricted = _names(create_mcp(_policy(READ_ONLY_GRANT)))
-    unrestricted = _names(create_mcp())
+    unrestricted = _names(create_mcp(_legacy()))
     restricted_again = _names(create_mcp(_policy(READ_ONLY_GRANT)))
 
     assert restricted == restricted_again
@@ -111,7 +127,7 @@ def test_inspection_is_registered_and_classified():
     assert security.target_kind == "none"
     assert security.targets == ()
     assert security.connection_argument is None
-    assert "hmc_effective_permissions" in _names(create_mcp())
+    assert "hmc_effective_permissions" in _names(create_mcp(_legacy()))
 
 
 def test_inspection_is_subject_to_the_ceiling():
@@ -158,15 +174,26 @@ def test_inspection_reports_effects_source_and_dimensions():
 
 
 def test_inspection_reports_no_policy_honestly():
-    """R14, R16: nothing is enforced and nothing is declared."""
-    result = _inspect(create_mcp())
+    """R14, R16, retargeted by ADR 0041: no *composed* application reaches this arm.
+
+    The behaviour is unchanged and still worth pinning — `describe` documents itself as
+    binding a direct caller, and ADR 0041 deliberately kept its `AccessPolicy | None`
+    parameter rather than narrowing the public report's schema. What changed is the
+    route: `create_mcp()` no longer produces an application to ask, so the honest
+    null-reporting is asserted against `describe` itself.
+    """
+    from dataclasses import asdict
+
+    from hmc_mcp.server_permissions import describe
+
+    result = asdict(describe(["hmc_list_systems"], None, TOOL_SECURITY))
 
     assert result["policy_name"] is None
     assert result["policy_source"] is None
     assert result["ceiling_enforced"] is False
-    assert result["enforced_dimensions"] == []
-    assert result["declared_only_dimensions"] == []
-    assert result["declared_grants"] == []
+    assert result["enforced_dimensions"] == ()
+    assert result["declared_only_dimensions"] == ()
+    assert result["declared_grants"] == ()
 
 
 def test_inspection_reports_grants_separately_without_merging():
@@ -188,7 +215,7 @@ def test_inspection_reports_grants_separately_without_merging():
 
 def test_inspection_does_not_raise_on_a_tool_outside_the_index():
     """R13: an unindexed registered name is reported, not fatal."""
-    application = create_mcp()
+    application = create_mcp(_legacy())
 
     def hmc_not_in_the_index() -> str:
         """A tool registered outside the authoritative index."""
@@ -336,15 +363,17 @@ def test_entry_points_serve_a_freshly_composed_filtered_application(entry_point)
         served["app"] = self
         served["names"] = {tool.name for tool in asyncio.run(self.list_tools())}
 
-    with patch.object(type(server_module.mcp), "run", _capture):
+    with patch.object(FastMCP, "run", _capture):
         getattr(server_module, entry_point)(
-            enable_arbitrary_command=True, access_policy=every_effect
+            every_effect, enable_arbitrary_command=True
         )
 
     # R9 is object identity, not set difference: an all-three-effects grant
     # resolves to every tool but hmc_run_command, which create_mcp never
     # registers anyway, so the two name sets are deliberately equal here.
-    assert served["app"] is not server_module.mcp
+    # Freshly composed per call: there is no module-level application left to be, so
+    # the claim is that each entry point built its own rather than sharing one.
+    assert served["app"] is not create_mcp(every_effect)
     assert "hmc_run_command" not in served["names"]
     assert "hmc_delete_lpar" in served["names"]
 
@@ -384,31 +413,38 @@ def test_a_withheld_inspection_tool_is_warned():
     assert any("hmc_effective_permissions" in line and "test" in line for line in lines)
 
 
-def test_an_authored_but_unselected_policy_file_is_warned(tmp_path, monkeypatch):
-    """R19: fires only when the file exists and no policy was selected."""
+def test_an_authored_but_unselected_policy_file_is_warned():
+    """R19, retired by ADR 0041: a file can no longer be authored-but-unselected.
+
+    The warning fired when `access-policy.toml` existed and no policy was chosen. A
+    server that starts has chosen one, so the condition is unreachable and both the
+    line and `_unselected_policy_file` are gone.
+    """
     import hmc_mcp.server as server_app
 
-    present = tmp_path / "access-policy.toml"
-    present.write_text("", encoding="utf-8")
-    monkeypatch.setattr(server_app, "resolve_access_policy_path", lambda: present)
-    assert any("access-policy.toml" in line for line in _warnings(129, None))
-
-    monkeypatch.setattr(
-        server_app, "resolve_access_policy_path", lambda: tmp_path / "absent.toml"
+    assert not hasattr(server_app, "_unselected_policy_file")
+    assert not any(
+        "access-policy.toml" in line for line in _warnings(129, _legacy())
     )
-    assert _warnings(129, None) == ()
 
 
-def test_an_unresolvable_policy_path_never_fails_the_start(monkeypatch):
-    """R19: Path.home() with no home directory must not propagate."""
+def test_an_unresolvable_policy_path_never_fails_the_start():
+    """R19, moved by ADR 0041: the guard is still needed, one layer up.
+
+    `Path.home()` raises under a uid with no passwd entry and no HOME. That used to
+    threaten a *warning* rendered during startup; now it threatens the *refusal*
+    rendered by `serve`, which resolves the same path to name it. The successor
+    assertion is
+    tests/app/test_fail_closed_startup.py::test_an_unresolvable_config_home_refuses_without_a_traceback;
+    what remains here is that the warning function no longer touches a path at all.
+    """
+    import inspect as inspect_module
+
     import hmc_mcp.server as server_app
 
-    def _boom():
-        raise RuntimeError("Could not determine home directory")
+    source = inspect_module.getsource(server_app._startup_warnings)
 
-    monkeypatch.setattr(server_app, "resolve_access_policy_path", _boom)
-
-    assert _warnings(129, None) == ()
+    assert "resolve_access_policy_path" not in source
 
 
 def test_a_withheld_escape_hatch_is_warned_only_when_requested():
@@ -460,7 +496,7 @@ def test_serve_forwards_the_compiled_policy_to_the_entry_point(
         result = CliRunner().invoke(app, [*argv, "--access-policy", "lab"])
 
     assert result.exit_code == 0, result.output
-    forwarded = entry_point.call_args.kwargs["access_policy"]
+    forwarded = entry_point.call_args.args[0]
     assert isinstance(forwarded, AccessPolicy)
     assert forwarded.name == "lab"
     assert forwarded.permits_tool("hmc_list_systems")
@@ -557,16 +593,24 @@ def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
 
 
 def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):
-    """R7, R8: an explicit selection that cannot be loaded exits non-zero."""
+    """R7, R8: an explicit selection that cannot be loaded exits non-zero.
+
+    The file is now *present and malformed* rather than absent. ADR 0041 intercepts the
+    absent case earlier and answers it with the migration message, because an operator
+    who edited the launcher before generating the file is the likeliest arrival at this
+    refusal and `cannot be read: [Errno 2]` named neither the generator nor the remedy.
+    tests/app/test_fail_closed_startup.py::test_serve_with_an_absent_policy_file_exits_1
+    is where that case is now pinned; this keeps the malformed-content path.
+    """
     from typer.testing import CliRunner
 
     import hmc_mcp.access_policy as access_policy_module
     from hmc_mcp.cli import app
 
+    present = tmp_path / "access-policy.toml"
+    present.write_text("this is not = = valid toml\n", encoding="utf-8")
     monkeypatch.setattr(
-        access_policy_module,
-        "resolve_access_policy_path",
-        lambda: tmp_path / "absent.toml",
+        access_policy_module, "resolve_access_policy_path", lambda: present
     )
     result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
 
@@ -574,7 +618,7 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     # 80 columns with no spaces to break on, so a tmp_path substring can fold
     # mid-word between runs. Assert on wrap-proof text instead.
     assert result.exit_code == 1
-    assert "cannot be read" in result.output
+    assert "TOML parse error" in result.output
 
 
 def test_inspection_reports_which_tools_a_targets_table_cannot_bound():

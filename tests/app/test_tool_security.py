@@ -19,7 +19,9 @@ import pytest
 from pydantic import BaseModel
 
 from hmc_mcp import server_command, server_permissions
-from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, mcp
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.server import TOOL_MODULES, TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import (
     EFFECTS,
     REQUIRED_TARGET_ARGUMENTS,
@@ -29,6 +31,14 @@ from hmc_mcp.tool_registry import (
     annotations_for,
     validate_security,
 )
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
+
 
 # Every module a live tool handler is defined in. `server_command` and
 # `server_permissions` are not domain modules, so they are absent from

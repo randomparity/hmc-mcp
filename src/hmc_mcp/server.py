@@ -1,8 +1,12 @@
 """MCP server exposing the IBM HMC REST API as MCP tools.
 
 Run:
-    hmc-mcp serve            # stdio transport (default, for agents)
-    hmc-mcp serve --http     # streamable HTTP on 127.0.0.1:8000
+    hmc-mcp config init-access-policy          # once, then review the file it writes
+    hmc-mcp serve --access-policy NAME         # stdio transport (default, for agents)
+    hmc-mcp serve --access-policy NAME --http  # streamable HTTP on 127.0.0.1:8000
+
+``--access-policy`` is required: since ADR 0041 no application can be composed without
+one, and ``serve`` refuses rather than starting unbounded.
 
 The HTTP transport is UNAUTHENTICATED: it exposes every enabled tool,
 including user administration, to anyone who can reach the port. Bind only
@@ -44,7 +48,7 @@ from fastmcp import FastMCP
 from ._app import (
     create_mcp as _create_base_mcp,
 )
-from .access_policy import AccessPolicy, resolve_access_policy_path
+from .access_policy import AccessPolicy
 from .audit import install_audit_sink
 from .dispatch_scope import dispatch_authorizer
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
@@ -264,29 +268,44 @@ TOOL_SECURITY: Mapping[str, ToolSecurity] = build_tool_security(
 )
 
 
-def _gates(
-    policy: AccessPolicy | None,
-) -> tuple[Callable[[str], bool] | None, Authorize | None]:
+def _gates(policy: AccessPolicy) -> tuple[Callable[[str], bool], Authorize]:
     """The registration-time and dispatch-time questions *policy* answers.
 
     Derived together and always passed together: a site given one without the
     other registers tools it does not authorize, which is the drift ADR 0038's
-    registry assertion exists to catch.
+    registry assertion exists to catch. Neither is optional since ADR 0041 — a
+    policy is now mandatory, so there is no composition for a ``None`` gate to
+    describe.
     """
-    if policy is None:
-        return None, None
     return policy.permits_tool, dispatch_authorizer(policy)
 
 
-def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
+def create_mcp(policy: AccessPolicy) -> FastMCP:
     """Compose a fresh MCP application bounded by *policy*.
 
-    ``None`` applies no ceiling, authorizes no connection, and registers every
-    tool — the behaviour before ADR 0037, and what every deployment gets until
-    #225 makes startup fail closed. Both gates are passed to each registration
-    site rather than checked here, so no site can be given a policy it does not
-    apply; ADR 0038's registry assertion is what checks that it did.
+    A policy is mandatory (ADR 0041). This is the only composer in the package,
+    which is what makes "no unbounded application exists" a property of the code
+    rather than of the serve path alone: the stdio and HTTP transports, the
+    arbitrary-command toggle, the smoke script, and the live-test runner all
+    arrive here. ``hmc-mcp config init-access-policy`` writes a policy granting
+    what an unpolicied server used to grant, for a deployment that needs one.
+
+    The ``None`` check is explicit because an annotation refuses nothing at
+    runtime: a caller holding a ``None`` from elsewhere would otherwise compose
+    an application with no ceiling and no authorizer, which is exactly the state
+    this signature exists to remove.
+
+    Both gates are passed to each registration site rather than checked here, so
+    no site can be given a policy it does not apply; ADR 0038's registry
+    assertion is what checks that it did.
     """
+    if policy is None:
+        raise TypeError(
+            "create_mcp requires an access policy; composing without one is no longer "
+            "supported. Run 'hmc-mcp config init-access-policy' to generate a policy "
+            "granting what an unpolicied server used to grant, review it, then pass it "
+            "here or select it with 'hmc-mcp serve --access-policy NAME'."
+        )
     permits, authorize = _gates(policy)
     application = _create_base_mcp()
     for module in TOOL_MODULES:
@@ -297,35 +316,21 @@ def create_mcp(policy: AccessPolicy | None = None) -> FastMCP:
     return application
 
 
-mcp = create_mcp()
-
-
-def _unselected_policy_file() -> str | None:
-    """The platform-native policy file's path when one exists, else ``None``.
-
-    Reads nothing and never raises: ``resolve_access_policy_path`` reaches
-    ``Path.home()``, which raises under a uid with no passwd entry and no HOME,
-    and a diagnostic that can abort a start nobody asked to constrain is worse
-    than no diagnostic.
-    """
-    try:
-        path = resolve_access_policy_path()
-        return str(path) if path.exists() else None
-    except (RuntimeError, OSError, ValueError):
-        return None
-
-
 def _startup_warnings(
     tool_count: int,
-    access_policy: AccessPolicy | None,
+    access_policy: AccessPolicy,
     enable_arbitrary_command: bool,
 ) -> tuple[str, ...]:
     """The stderr lines describing what this server will and will not expose.
 
     Every input exists only here — the served registry, the policy, and the
-    escape-hatch flag — which is why the four warnings share one function. An
+    escape-hatch flag — which is why the three warnings share one function. An
     empty surface already implies the inspection tool is absent, so it replaces
     that line rather than printing beside it.
+
+    ADR 0041 retired a fourth: a policy file that existed but had not been
+    selected. No server starts without a policy now, so the condition it
+    described is unreachable, and ``_unselected_policy_file`` went with it.
     """
     lines: list[str] = []
     if tool_count == 0:
@@ -333,25 +338,13 @@ def _startup_warnings(
             "warning: this server exposes no tools. Nothing it is asked to do will "
             "succeed."
         )
-    elif access_policy is not None and not access_policy.permits_tool(
-        PERMISSIONS_TOOL_NAME
-    ):
+    elif not access_policy.permits_tool(PERMISSIONS_TOOL_NAME):
         lines.append(
             f"warning: access policy {access_policy.name!r} withholds "
             f"{PERMISSIONS_TOOL_NAME}, so this server cannot report its own "
             "effective permissions to a client."
         )
-    if access_policy is None and (path := _unselected_policy_file()) is not None:
-        lines.append(
-            f"warning: {path} exists but no access policy was selected, so "
-            "neither a capability ceiling nor connection-scope authorization is "
-            "applied. Pass --access-policy NAME to enforce one."
-        )
-    if (
-        enable_arbitrary_command
-        and access_policy is not None
-        and not access_policy.permits_tool("hmc_run_command")
-    ):
+    if enable_arbitrary_command and not access_policy.permits_tool("hmc_run_command"):
         lines.append(
             "warning: --enable-arbitrary-command was requested, but access policy "
             f"{access_policy.name!r} does not grant hmc_run_command, so it is not "
@@ -384,7 +377,7 @@ def _warn(lines: tuple[str, ...]) -> None:
 
 
 def _serve_application(
-    enable_arbitrary_command: bool, access_policy: AccessPolicy | None
+    enable_arbitrary_command: bool, access_policy: AccessPolicy
 ) -> FastMCP:
     """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
@@ -410,19 +403,19 @@ def _serve_application(
 
 
 def main_stdio(
+    access_policy: AccessPolicy,
     enable_arbitrary_command: bool = False,
-    access_policy: AccessPolicy | None = None,
 ) -> None:
     """Start an MCP server over stdio, bounded by *access_policy*."""
     _serve_application(enable_arbitrary_command, access_policy).run()
 
 
 def main_http(
+    access_policy: AccessPolicy,
     host: str = "127.0.0.1",
     port: int = 8000,
     enable_arbitrary_command: bool = False,
     allow_remote: bool = False,
-    access_policy: AccessPolicy | None = None,
 ) -> None:
     """Start an MCP server over streamable HTTP, bounded by *access_policy*."""
     if not allow_remote and not _is_loopback(host):

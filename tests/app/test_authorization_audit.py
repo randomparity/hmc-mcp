@@ -22,9 +22,9 @@ Spec test -> node id:
   28  test_the_outcome_is_invariant_under_agent_id
   8b  test_no_module_on_the_decision_path_reads_the_agent_identity
   31  test_an_info_record_does_not_reach_stderr_without_a_sink
-  32  test_gates_returns_nothing_without_a_policy
+  32  test_gates_requires_a_policy_and_returns_both
   33  test_authorized_leaves_the_connectionless_handlers_unwrapped
-  34  test_the_no_policy_warning_needs_an_existing_policy_file
+  34  test_the_no_policy_warning_is_retired
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ from hmc_mcp import audit, server as server_app
 from hmc_mcp.access_policy import compile_access_policy
 from hmc_mcp.connection_scope import ConnectionScopeError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY
 from hmc_mcp.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import authorized
@@ -404,13 +406,18 @@ def test_an_info_record_does_not_reach_stderr_without_a_sink(capsys):
         logging.root.handlers[:] = saved
 
 
-def test_gates_returns_nothing_without_a_policy():
-    """Spec 32. Why a default `hmc-mcp serve` emits no authorization record.
+def test_gates_requires_a_policy_and_returns_both():
+    """Spec 32, inverted by ADR 0041: every deployment now records every decision.
 
-    Issue #225 is expected to change this; a future failure here reads as #225
-    landing, not as a regression.
+    This asserted `_gates(None) == (None, None)` — the reason a default `hmc-mcp serve`
+    emitted no authorization record. A policy is mandatory now, so there is no such
+    default and no such silence: both gates are always derived and neither is None.
     """
-    assert server_app._gates(None) == (None, None)
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    permits, authorize = server_app._gates(policy)
+
+    assert permits is not None and authorize is not None
 
 
 def test_authorized_leaves_the_connectionless_handlers_unwrapped():
@@ -429,23 +436,19 @@ def test_authorized_leaves_the_connectionless_handlers_unwrapped():
     assert authorized("t", bearing, handler, None) is handler
 
 
-def test_the_no_policy_warning_needs_an_existing_policy_file(tmp_path, monkeypatch):
-    """Spec 34. An operator with no policy file gets neither warning nor record.
+def test_the_no_policy_warning_is_retired():
+    """Spec 34, inverted by ADR 0041: the condition it described is unreachable.
 
-    Issue #225 is expected to change this too.
+    This asserted that an authored-but-unselected policy file produced a warning. No
+    server starts without a policy now, so "a file exists but was not selected" cannot
+    happen, and both the warning and `_unselected_policy_file` are gone.
     """
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
-    def said_it(lines) -> bool:
-        return any("no access policy was selected" in line for line in lines)
+    lines = server_app._startup_warnings(55, policy, False)
 
-    assert not said_it(server_app._startup_warnings(55, None, False))
-    path = server_app.resolve_access_policy_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("")
-    assert said_it(server_app._startup_warnings(55, None, False))
+    assert not any("no access policy was selected" in line for line in lines)
+    assert not hasattr(server_app, "_unselected_policy_file")
 
 
 def test_a_declared_selector_is_recorded_but_bounded(records):

@@ -14,7 +14,8 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from hmc_mcp import server_command, server_lpars
-from hmc_mcp.access_policy import compile_access_policy
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import ToolSecurity, authorized
@@ -279,12 +280,25 @@ def test_every_connection_bearing_tool_is_wrapped_under_a_policy():
             assert not _is_guarded(registered[name]), name
 
 
-def test_no_tool_is_wrapped_without_a_policy():
-    """R14: a policy's absence is not a denial, and costs no wrapper."""
-    registered = _registered(create_mcp())
+def test_every_connection_bearing_tool_is_wrapped_under_the_legacy_policy():
+    """R14, inverted by ADR 0041: legacy-equivalent is not legacy.
+
+    This asserted that composing without a policy wrapped nothing. There is no such
+    composition now, and the successor claim is the one an operator most needs: the
+    policy that *grants* what the unpolicied server granted still authorizes — and
+    audits — every call. It permits the same things; it does not behave the same way.
+    """
+    registered = _registered(create_mcp(_legacy()))
+
     assert registered
-    for name, tool in registered.items():
-        assert not _is_guarded(tool), name
+    bearing = [
+        name
+        for name in registered
+        if TOOL_SECURITY[name].connection_argument is not None
+    ]
+    assert bearing
+    for name in bearing:
+        assert _is_guarded(registered[name]), name
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +307,7 @@ def test_no_tool_is_wrapped_without_a_policy():
 
 
 def test_the_wrapper_changes_no_tool_schema():
-    unfiltered = _registered(create_mcp())
+    unfiltered = _registered(create_mcp(_legacy()))
     guarded = _registered(create_mcp(_policy(LAB_ONLY)))
 
     assert set(guarded) == set(unfiltered)
@@ -379,7 +393,11 @@ def test_compositions_authorize_independently(monkeypatch):
     monkeypatch.setattr(server_lpars, "client_from_env", _capture)
 
     restricted = create_mcp(_policy(LAB_ONLY))
-    unrestricted = create_mcp()
+    # A policy granting the connection the call selects, standing in for the
+    # unpolicied composition this test used to build.
+    unrestricted = create_mcp(
+        compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN, "prod"))
+    )
 
     with pytest.raises(ToolError):
         _call(
@@ -409,6 +427,15 @@ def test_the_module_level_handler_is_never_wrapped():
 # ---------------------------------------------------------------------------
 # R17 — the served path, which is the only path a deployment takes
 # ---------------------------------------------------------------------------
+
+
+def _legacy(*, include_arbitrary_command: bool = False):
+    """The policy that replaced the unfiltered default composition (ADR 0041)."""
+    return compile_legacy_policy(
+        TOOL_SECURITY,
+        (DEFAULT_CONNECTION_TOKEN,),
+        include_arbitrary_command=include_arbitrary_command,
+    )
 
 
 def _serve(policy, *, enable_arbitrary_command=True):
@@ -473,13 +500,19 @@ def test_an_unrelated_wraps_decorator_is_not_mistaken_for_the_guard():
     )
 
 
-def test_the_served_application_without_a_policy_wraps_nothing():
-    """R14 on the served path: no policy is still no denial."""
-    registered = _registered(_serve(None))
+def test_the_served_application_wraps_the_escape_hatch_too():
+    """R14 on the served path, inverted by ADR 0041.
+
+    This asserted that `_serve_application(_, None)` registered `hmc_run_command`
+    unwrapped. That path no longer exists — the transports take a required policy —
+    and the property worth pinning in its place is that the highest-risk registration
+    site is gated like every other: opting the escape hatch into the grant registers
+    it, and it arrives wrapped.
+    """
+    registered = _registered(_serve(_legacy(include_arbitrary_command=True)))
 
     assert "hmc_run_command" in registered
-    for name, tool in registered.items():
-        assert not _is_guarded(tool), name
+    assert _is_guarded(registered["hmc_run_command"])
 
 
 def test_an_unreadable_configuration_leaks_no_path_to_the_mcp_client(lab_profile):
