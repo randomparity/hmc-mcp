@@ -354,8 +354,16 @@ def _serve_application(
         return len(await application.local_provider.list_tools())
 
     tool_count = asyncio.run(_prepare())
-    for line in _startup_warnings(tool_count, access_policy, enable_arbitrary_command):
-        print(line, file=sys.stderr)
+    try:
+        for line in _startup_warnings(
+            tool_count, access_policy, enable_arbitrary_command
+        ):
+            print(line, file=sys.stderr)
+    except OSError:
+        # Under stdio the client owns stderr, so it can be closed or broken
+        # before the first write. _unselected_policy_file already refuses to let
+        # a diagnostic abort a start; emitting one must not undo that.
+        pass
     return application
 
 

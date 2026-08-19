@@ -45,6 +45,29 @@ def test_a_read_only_policy_registers_only_read_tools():
     assert "hmc_delete_lpar" not in names
 
 
+def test_a_withheld_tool_cannot_be_called_by_name():
+    """R1: absence is the control — unlisted is not enough, it must not dispatch.
+
+    Listing and dispatch read the same registry today, so this holds by
+    construction. #222 adds authorization at the dispatch boundary, which is the
+    change that could filter the listing while leaving dispatch open; this is the
+    invariant it has to preserve.
+    """
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    application = create_mcp(_policy(READ_ONLY_GRANT))
+
+    async def _call():
+        async with Client(application) as client:
+            return await client.call_tool(
+                "hmc_delete_lpar", {"lpar_name_or_uuid": "victim"}
+            )
+
+    with pytest.raises(ToolError, match="Unknown tool"):
+        asyncio.run(_call())
+
+
 def test_no_policy_applies_no_ceiling():
     """R2: the default composition is unfiltered."""
     names = _names(create_mcp())
@@ -485,6 +508,29 @@ def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
     assert captured.out == ""
     assert "no tools" in captured.err
     assert "hmc_effective_permissions" not in captured.err
+
+
+def test_an_unwritable_stderr_never_fails_the_start(monkeypatch):
+    """R10a: a diagnostic nobody asked for must not abort a start.
+
+    Under stdio the client owns stderr, so it can be closed or broken before the
+    server writes its first warning.
+    """
+    import hmc_mcp.server as server_app
+
+    class _BrokenStderr:
+        def write(self, _text):
+            raise BrokenPipeError("stderr is gone")
+
+        def flush(self):
+            raise BrokenPipeError("stderr is gone")
+
+    policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
+    monkeypatch.setattr(server_app.sys, "stderr", _BrokenStderr())
+
+    application = server_app._serve_application(False, policy)
+
+    assert _names(application) == set()
 
 
 def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeypatch):

@@ -166,6 +166,13 @@ def register_permissions_tool(
     It reads ``local_provider`` rather than ``mcp.list_tools()``: the provider is
     what ``configure_arbitrary_command_tool`` mutates, and the server-level call
     runs the ``tools/list`` middleware chain, which this is not.
+
+    The provider is the wider set for a tool that is disabled or filtered by
+    app visibility, and the *narrower* one for a tool reached through a mounted
+    sub-server. So ``ceiling_enforced`` is accurate for an application nothing
+    is mounted onto, which is every application this package composes; nothing
+    in ``src/`` or ``scripts/`` calls ``mount()`` or ``as_proxy()``. A future
+    mount would need the two accessors reconciled.
     """
     if permits is not None and not permits(TOOL_NAME):
         return
