@@ -70,37 +70,32 @@ Both messages name the documented read-only and limited-mutation examples beside
 Nothing at the point of refusal distinguishes an upgrade from a first run, so a message offering
 only the generator would send every new deployment to the widest policy the system can express.
 
+Both also resolve the policy path through the same guard `load_access_policy` applies. A uid with
+no passwd entry and no `HOME` makes `Path.home()` raise, so an unguarded path interpolation — or
+an unguarded existence check for the absent-file case — would replace a refusal with a traceback,
+in the deployment shape least able to diagnose it. That is what `server._unselected_policy_file`
+existed for, and its removal must not take the guard with it: an unresolvable path renders the
+message without one and falls through to the load's own `AccessPolicyError`.
+
 **`hmc-mcp config init-access-policy` generates the legacy-equivalent policy.** It writes the
 platform-native `access-policy.toml` by default, creates the file with `O_EXCL` at mode `0o600`,
 refuses to overwrite whatever path it is given, prints the path it wrote, and activates nothing.
-It takes one option, `--output PATH`, and that option is load-bearing rather than a convenience:
-without it there is no way to regenerate (the command cannot overwrite), no way to diff a new
-generation against a deployed policy, and no way for a deployment whose serving identity is not
-the invoking one — a systemd unit with `User=`, a container image — to produce a file at the path
-that identity's `config_dir()` resolves to. One option answers all three; a `--force` that
-overwrites a reviewed policy in place answers none of them and destroys the review.
+It takes one option, `--output PATH`, because the command cannot overwrite and therefore has no
+other way to regenerate for a diff. A `--force` that overwrites a reviewed policy in place is the
+alternative, and it destroys the review. `--output` moves the *write* only: the connections list
+is always read from the invoking identity's `config.toml`, so a split-identity deployment has to
+run the generator under the serving identity's `HOME` or `XDG_CONFIG_HOME` — which then places
+the default path correctly too, leaving `--output` for the scratch-and-diff case and for macOS,
+where `config_dir()` has no environment override.
 
-**The emitter is hand-written, and every operator-supplied key is escaped.** Epic requirement 11
-forbids a new runtime dependency and `tomllib` only reads, so the generator renders TOML itself.
-Profile keys reach it from `config.list_profiles_and_nicknames` — the hardened reader, whose
-documented contract is that every failure becomes a `ConfigError`, and the one
-`connection_scope` already depends on for that reason; the plain `list_profiles` converts only a
-parse error and lets an unreadable file, a non-UTF-8 file, and an unresolvable home escape as
-themselves. It returns raw TOML keys with no charset validation, so each is rendered as a TOML
-basic string with `"`, `\`, and every control
-character escaped. That escaping is total — no key can end the string early — so no key can inject
-a grant table into the very file the operator is told to review, and none can produce a file that
-fails to parse.
-
-Parsing is not the property the migration needs, though: the file has to **load**, and ADR 0036
-enforces rules on entry content that escaping cannot satisfy. `_check_entries` rejects an empty,
-whitespace-padded, or duplicated `connections` entry, and `[profiles.""]`, `[profiles." prod"]`,
-and `[profiles."<default>"]` are all legal TOML that `config.list_profiles_and_nicknames` returns
-verbatim — the last colliding with the `<default>` the generator always appends. So the generator
-**loads what it rendered before it writes anything**: it parses and compiles the document through
-the same `compile_access_policy` a server would, and a document that would not load is reported
-with that error and no file is created. Enumerating the illegal key shapes was the alternative,
-and it would have to be kept in agreement with rules living in another module.
+**Two decisions about emitting the document.** The emitter is hand-written, because epic
+requirement 11 forbids a new runtime dependency and `tomllib` only reads; every operator-authored
+key it renders is escaped, since profile keys arrive unvalidated. And the generator **loads what
+it rendered before it writes anything** — parsing is not the property the migration needs, ADR
+0036 enforces rules on entry *content* that escaping cannot satisfy, and compiling the rendered
+text through the same `compile_access_policy` a server would use is what makes "the file this
+command writes is a file that loads" true without a second copy of ADR 0036's rules living here.
+The spec holds the escape set and the key shapes that motivate it.
 
 The written document is a single grant under the policy name `legacy-equivalent`:
 
@@ -208,8 +203,10 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
 - **The generator must run as the identity, and with the environment, that `serve` runs under.**
   Both resolve the file through `config.config_dir()`, which reads `XDG_CONFIG_HOME` or
   `Path.home()` — and on macOS `Path.home()` alone, with no override. Generating as a login user
-  and serving as a systemd `User=` or a container uid produces a policy the server never reads;
-  `--output` is how that deployment writes to the right path.
+  and serving as a systemd `User=` or a container uid produces a policy the server never reads —
+  and, because the connections list is read through the same resolution, one naming the wrong
+  profiles. Running the generator under the serving identity's environment fixes both; `--output`
+  fixes only the write.
 - **A uid with no passwd entry, no `HOME`, and no `XDG_CONFIG_HOME` can no longer serve at all.**
   `Path.home()` raises there, `--access-policy` selects a *name* at the platform-native path
   rather than a file, and `--output` moves only where the generator writes — so the load fails
@@ -298,6 +295,16 @@ And ambient process state selecting an authorization policy is worse than an arg
 the process line: a variable exported in a shell profile or inherited from a unit file would
 carry a selection into a `serve` nobody meant to constrain that way, which is the class of
 accident `--access-policy` on argv cannot have.
+
+**Give the generator a posture argument, so it can emit the read-only policy too.** It would fix
+the ergonomic gradient the fresh-install consequence concedes: today the one command that works
+produces the widest grant, and the narrower posture is hand-copied from the README. Rejected
+because the migration is the only case where the file's contents cannot be chosen by the operator
+— legacy exposure is a fact about their existing deployment, and reproducing it by hand across
+129 tool names is what makes a generator worth having. A read-only policy is four lines that the
+operator should read as they write, and a second generated posture would need its own connection
+list, its own review guidance, and its own regeneration story for a document nobody needs
+generated.
 
 **Keep a named opt-out.** A `--no-access-policy` token by which an operator states they accept an
 unbounded server, as a gentler removal of the escape this record closes. Rejected because it is

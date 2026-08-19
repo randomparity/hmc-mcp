@@ -80,6 +80,17 @@ file) reaches `load_access_policy`'s unreadable-file arm and prints
 `cannot be read: [Errno 2] No such file or directory`, naming neither the generator nor the
 remedy.
 
+**R5b — Both refusals resolve the policy path through a guard.** `serve` obtains the path
+for R5's message and for R5a's existence check through one helper that catches
+`RuntimeError`, `OSError`, and `ValueError` and returns `None` — the guard
+`server._unselected_policy_file` carried and whose removal must not take it with it, and
+the same three `load_access_policy` catches. `config_dir()` calls `Path.home()`, which
+raises under a uid with no passwd entry and no `HOME`; unguarded, R5 would raise while
+rendering its own usage error and R5a would raise before the load's guard was reached,
+turning a refusal into a traceback in the deployment least able to read one. With `None`,
+R5's message omits the path and R5a's check does not fire, so an unresolvable path reaches
+`load_access_policy` and surfaces as its `AccessPolicyError` at exit **1**.
+
 **R6 — The unselected-policy warning is gone.** `server._unselected_policy_file` is removed
 and `_startup_warnings(tool_count: int, access_policy: AccessPolicy,
 enable_arbitrary_command: bool)` emits at most the three lines that remain: an empty
@@ -163,10 +174,12 @@ path to stdout and one activation hint to stderr, and it does not start a server
 **R11a — `--output PATH` redirects the write and nothing else.** The one option. It changes
 only the destination: the same document, the same `O_EXCL` create, the same `0o600`, the
 same refusal to overwrite, the same stdout path line. It exists because the command cannot
-overwrite, which otherwise leaves no way to regenerate for a diff (the only detection path
-for a tool an upgrade added — see R16), and because a deployment whose serving identity is
-not the invoking one resolves a different `config_dir()` and needs the file written where
-that identity will read it. The path is the trusted local operator's own; parent directories
+overwrite, which otherwise leaves no way to regenerate for a diff — the only detection path
+for a tool an upgrade added (see R16). It does not help a split-identity deployment on its
+own: R8's connections list is still read from the invoking identity's `config.toml`, so
+that deployment must run the generator under the serving identity's `HOME` or
+`XDG_CONFIG_HOME`, which places the default path correctly as well.
+The path is the trusted local operator's own; parent directories
 are created as for the default path, and a directory or unwritable destination surfaces the
 `OSError` through `_fail` at exit **1** with no partial file.
 
