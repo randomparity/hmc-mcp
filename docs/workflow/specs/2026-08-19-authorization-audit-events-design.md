@@ -67,9 +67,14 @@ can never precede its own record.
 
 One log record per decision. Its message is the complete record: a single line of
 `json.dumps(payload, ensure_ascii=True)` output, with no prefix, no trailing text, and no
-`Formatter` applied by the sink this package installs. The handler writes that message followed by
-a single `"\n"` and flushes — a custom `emit` does not inherit `StreamHandler.terminator`, so the
-terminator is explicit.
+`Formatter` applied by the sink this package installs. The handler writes `message + "\n"` in **one** `write` call and flushes. One call, not
+message-then-terminator: `logging`'s handler lock serialises audit records against each other but
+against nothing else writing to `sys.stderr`, and two other writers share that stream on this exact
+path — FastMCP's 41-line `rich` traceback panel (#267) and `server._warn`. A record split by
+another writer's output is a line that does not parse, which the operator documentation tells
+consumers to skip, so the failure mode is a silently lost record under exactly the denial-storm
+load the oracle residual says to expect. A custom `emit` also does not inherit
+`StreamHandler.terminator`, so the newline is explicit either way.
 
 Two event types share that grammar and differ in their fields. `time` and `event` come first on
 both; every caller-supplied value is truncated to 128 characters on both.
@@ -192,7 +197,7 @@ the largest in this checkout is 3.
 | stderr is open but undrained (a full pipe) | `write` blocks; not covered, and not detectable in-process. Residual in ADR 0040, filed as #269 |
 | a tool declares `connection_argument = None` | no record; the authorizer is not on its dispatch path |
 | a malformed call raises `KeyError` on a declared argument | no record; no decision was reached |
-| the sink is not installed (library, CLI, in-process composition) | records are emitted to a logger with no handler and dropped by level; nothing raises |
+| the sink is not installed (library, CLI, in-process composition) | `INFO` permits are dropped by level. `WARNING` records — every denial, and the ownership override — reach `logging.lastResort` on stderr **and propagate to any ancestor handler**, because `propagate` is untouched on that path. Nothing raises. |
 
 Emission is total: building a record and writing one both drop on failure, leaving the
 authorization outcome and the exception carrying it unchanged. The handler resolves `sys.stderr`
@@ -244,7 +249,7 @@ argument, flag, environment variable, or file.
 | 1 — caller values into the sink | only *declared* selectors and the connection token are rendered; the whole argument mapping is never serialized. Each value is truncated to 128 characters. `json.dumps(ensure_ascii=True)` escapes every control character, escape sequence, and non-ASCII codepoint, so no value can forge a line or move a terminal cursor. A value of an unexpected type is recorded as a state, never as a `repr()`. |
 | 1 — credentials | structurally absent: `authorize` receives only the tool name, its `ToolSecurity`, and the bound arguments. No `HMCConfig`, client, session token, or password is in scope at the emission point. |
 | 1 — command text, documents, response bodies | structurally absent: `hmc_run_command` declares no target selector, so `cmd` is never extracted; the record is written before the handler runs, so no response body or generated document exists yet. |
-| 2 — output stream | the installed handler writes only to `sys.stderr`, resolved at emit time and skipped when `None`; the logger does not propagate, so no ancestor handler — including one pointed at stdout — can receive the record. This closes the in-process route only: a launcher merging fd 2 into fd 1 (`serve 2>&1`) makes stderr the JSON-RPC channel, which no in-process choice detects. Stated as a residual in ADR 0040 and documented for the operator, not defended in code. |
+| 2 — output stream | the installed handler writes only to `sys.stderr`, resolved at emit time and skipped when `None`; the logger does not propagate, so no ancestor handler — including one pointed at stdout — can receive the record. Three routes stay open and are stated rather than claimed closed: a launcher merging fd 2 into fd 1 (`serve 2>&1`), which no in-process choice detects; a handler the operator attaches to `hmc_mcp.audit` itself, which `install_audit_sink` defers to without inspecting (pinned by test 14a); and the **in-process composition path**, where `create_mcp` never installs the sink so `propagate` stays `True` and `WARNING` records reach a root stdout handler — filed as #272. |
 | 3 — resolved connection | accepted and stated. The record goes to the operator's sink, not to the tool result; ADR 0038 deferred this question here on that ground. An operator forwarding the sink onward inherits the disclosure. |
 | availability | the handler catches `OSError` and `ValueError` and returns on a `None` stream, so an unavailable destination drops records instead of aborting a call or a start (#221). |
 
@@ -281,13 +286,22 @@ table in the PR body:
 
 | # | mutation | must redden |
 |---|---|---|
-| M1 | add `payload["arguments"] = dict(arguments)` to the record builder | 22, 23, 24, 25 |
-| M2 | interpolate the `ConfigError`'s own message — which names the config path — into the `configuration-unreadable` record | 26 |
+| M1 | add `payload["arguments"] = dict(arguments)` to the record builder | 23, 24 |
+| M2 | interpolate the `ConfigError`'s own message — which names the **config.toml** path — into the `configuration-unreadable` record | 26 |
 | M3 | delete the truncation call in the value renderer | 3, 4, L4 |
 | M4 | pass `ensure_ascii=False` to `json.dumps` | 2 |
 | M5 | drop the `"\n"` from the handler's write | 15, L2 |
 | M6 | make `install_audit_sink` set the level unconditionally | 14 |
-| M7 | render the `ABSENT`/`UNREADABLE` singletons instead of mapping them | 14a, 17 |
+| M7 | render the `ABSENT`/`UNREADABLE` singletons instead of mapping them | 14b, 17 |
+| M8 | resolve the call's connection through `common.build_config` in the record builder and add `config.password` / `config.user` to the payload | 22 |
+| M9 | move the `audit.record` call in `tool_registry.guarded` to *after* `handler(...)` and add its return value to the payload | 25, 18 |
+| M10 | interpolate the resolved **access-policy** path into the record | 26 |
+
+M1's reach is narrower than it looks and the table says so: test 22's sentinels are a
+`config.toml` password and `HMC_PASSWORD`/`HMC_USER`, which are never tool arguments, so only M8
+can redden it; and test 25's sentinel is what a stubbed handler *returns*, which only M9 can put
+in a record. M2 and M10 exist separately because `config.toml` and `access-policy.toml` are two
+different paths and test 26 must assert both are absent.
 
 **A mutation that reddens no test is itself a finding.** It means the test asserts a structural
 property and is claiming to prove a redaction it does not exercise; the fix is to reword the test
@@ -336,17 +350,19 @@ structure holds (test 8b below).
 14. Calling `install_audit_sink()` twice attaches one handler; a pre-attached handler is left in
     place and not duplicated; and a level the operator set before the call survives it, while an
     unset (`NOTSET`) level becomes `INFO`.
-14a. A record whose target selector is `ABSENT` or `UNREADABLE` renders without raising —
+14b. A record whose target selector is `ABSENT` or `UNREADABLE` renders without raising —
     `json.dumps` never sees a singleton.
 14a. The deferral is deliberate, not accidental: with a `StreamHandler(sys.stdout)` pre-attached
     to `hmc_mcp.audit`, `install_audit_sink()` adds no second handler **and** a record does reach
     that stdout handler. Pins the documented hazard as a chosen behaviour.
-14b. Emission is total: a renderer forced to raise, and a logger forced to raise, both leave
+14c. Emission is total: a renderer forced to raise, and a logger forced to raise, both leave
     `dispatch_scope.authorize`'s outcome and its exception type unchanged. A non-string connection
     token also renders `state="unreadable"` with `reason="connection-not-granted"` — the
     asymmetry with the target dimension, asserted so it cannot drift silently.
 15. The sink applies no `Formatter`: the line on stderr equals the record's message exactly, and
-    two consecutive records land on two lines rather than one — the terminator is written.
+    two consecutive records land on two lines rather than one — the terminator is written. The
+    handler issues **one** `write` call per record, asserted with a recording stream that counts
+    them, so nothing else writing to stderr can land between a record and its newline.
 
 ### Boundary — `tests/app/test_authorization_audit.py`
 
@@ -384,7 +400,9 @@ structure holds (test 8b below).
 25. **Response bodies and generated documents.** A permitted call whose handler is stubbed to
     return a sentinel-bearing payload produces no occurrence of the sentinel — the record is
     written before the handler runs.
-26. **Policy source path.** The policy file's path does not appear in any record.
+26. **File paths.** Neither the `config.toml` path nor the resolved `access-policy.toml` path
+    appears in any record — both, because they are different paths reached by different failures
+    and M2 and M10 leak them independently.
 
 ### Ownership-override convergence — `tests/unit/test_ownership.py`, `tests/unit/test_audit.py`
 
@@ -426,16 +444,33 @@ selected must demonstrate all five of these before the PR is called ready. Drive
 newline-delimited JSON-RPC rather than a client library, so that anything printed outside the
 protocol shows up as an unparseable line:
 
-**Fixture.** `HOME` is redirected to a scratch directory holding
-`Library/Application Support/hmc-mcp/config.toml` (profiles `lab` and `prod`, both with
-unreachable `.invalid` hosts and a sentinel password) and `access-policy.toml`:
+**Fixture.** `HOME` is redirected to a scratch directory, and both `config.toml` and
+`access-policy.toml` are written into **`hmc_mcp.config.config_dir()` resolved after that
+redirection** — never a hard-coded `Library/Application Support/…`. That path is
+platform-dependent (Darwin uses `~/Library/Application Support/hmc-mcp`; elsewhere
+`$XDG_CONFIG_HOME/hmc-mcp` or `~/.config/hmc-mcp`), and a fixture written to the macOS path on
+Linux produces *no config at all*: `lab` would resolve to `UNRESOLVED` and L1's expected `allow`
+would come back `connection-not-granted` — a plausible-looking wrong answer, which is the worst
+outcome for a proof whose purpose is to be re-run by someone else. Both files are asserted to
+exist at the resolved path before the first frame is sent, so a misplaced fixture fails setup
+rather than changing the verdict.
+
+`config.toml` holds profiles `lab` and `prod`, both with unreachable `.invalid` hosts and a
+sentinel password. `access-policy.toml`:
 
 ```toml
 [[policies.lab-scoped.grants]]
-effects = ["read", "mutate"]
+effects = ["read", "mutate", "destructive"]
 connections = ["lab"]
 targets = { lpar = ["db-01"], managed_system = ["sys-a"] }
 ```
+
+`destructive` is in the list because the proof drives `hmc_power_off_lpar`, which is the tool that
+declares **both** an `lpar` and a `managed_system` selector — `hmc_power_on_lpar` declares only
+`lpar_name_or_uuid` and takes no `system_name_or_uuid` at all, so a call passing one is rejected
+by schema validation before any authorization decision is reached. A setup step asserts every
+argument of each call is present in that tool's generated schema, so this class of error fails at
+setup rather than as a wrong verdict.
 
 Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`, then
 `notifications/initialized`, then `tools/call` frames.
@@ -444,10 +479,10 @@ Launched as `hmc-mcp serve --access-policy lab-scoped`, driven with `initialize`
 
 | item | call | assertion |
 |---|---|---|
-| L1 | `hmc_power_on_lpar(lpar_name_or_uuid="db-01", system_name_or_uuid="sys-a", profile="lab")` | exactly one stderr line parses as JSON with `event=="authorization"`, `decision=="allow"`, `reason=="permitted"`, `policy=="lab-scoped"`, `tool=="hmc_power_on_lpar"`, `effect=="mutate"`, `connection.resolved=="lab"`, and a `targets` entry `lpar`/`db-01`. The call itself then fails at the transport on DNS, which is the correct shape — authorization is what is under test. |
+| L1 | `hmc_power_off_lpar(lpar_name_or_uuid="db-01", system_name_or_uuid="sys-a", profile="lab")` | exactly one stderr line parses as JSON with `event=="authorization"`, `decision=="allow"`, `reason=="permitted"`, `policy=="lab-scoped"`, `tool=="hmc_power_off_lpar"`, `effect=="destructive"`, `connection.resolved=="lab"`, and the `targets` entry **whose `argument` is `lpar_name_or_uuid`** carrying `db-01`. Selected by name, never by index: `selected_targets` preserves declaration order, so an index assertion silently follows a signature change. The call then fails at the transport on DNS, which is the correct shape — authorization is what is under test. |
 | L2 | the L1 call **twice more** | the count of stderr lines parsing as audit JSON equals the number of calls made. Two *permitted* calls deliberately: a denial would put FastMCP's 41-line traceback panel (#267) between the records and confound the line count. |
 | L3 | all of the above | every stdout line parses as a JSON-RPC frame; zero unparseable lines. |
-| L4 | `hmc_power_on_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the record's `targets[0].value` is exactly 128 characters. |
+| L4 | `hmc_power_off_lpar(lpar_name_or_uuid="A"*500, system_name_or_uuid="sys-a", profile="lab")` | denied `target-not-granted`; the `lpar_name_or_uuid` entry's `value` is exactly 128 characters. |
 
 **Run B — failure injection (L5), a separate subprocess.** The observation channel and the
 failure injection cannot coexist: every mechanism that makes the sink fail either closes stderr or
@@ -455,11 +490,16 @@ empties it, which is the stream Run A reads. So L5 asserts on **stdout only**.
 
 Launched through `sh -c '… 2>&-'` so fd 2 is closed at interpreter start and `sys.stderr` is
 `None` — the #221 condition, and the arm the handler guards with an early return. Issue the same
-denied call as Run A's L4 and assert the JSON-RPC error body on stdout is byte-identical to the
-one Run A received, and that the process is still serving afterwards (a subsequent
-`tools/list` succeeds). The `OSError`/EPIPE arm is covered at unit level by tests 12–13; forcing
-it live would require closing the parent's read end, which destroys the same channel again for no
-additional assurance.
+denied call as Run A's L4 and assert, **on the parsed frame rather than its bytes**: the same
+JSON-RPC error code, `isError` set, and the same ADR 0039 denial message string. Not a
+byte-identical comparison — the two bodies come from separately launched processes, and their
+key ordering and any request metadata are FastMCP's to change, so a byte assertion is stronger
+than the property under test and would block a PR on a rendering change. The denial *message* is
+the deterministic part, and it is what ADR 0038 and ADR 0039 fixed as the client contract. Then
+assert the process is still serving (a subsequent `tools/list` succeeds).
+
+The `OSError`/EPIPE arm is covered at unit level by tests 12–13; forcing it live would require
+closing the parent's read end, which destroys the same channel again for no additional assurance.
 
 POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 
@@ -474,8 +514,11 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A2. The record carries policy, tool, effect, decision, reason, connection selector, and declared
   target selectors, in the fixed shape above. (tests 1, 6, 16)
 - A3. Seven stable reason codes, closed and agreeing with the raised error. (tests 8, 17, 21)
-- A4. `HMC_AGENT_ID` recorded as unverified attribution with explicit provenance, and provably
-  unable to change an outcome. (tests 7, 27, 28)
+- A4. `HMC_AGENT_ID` recorded as unverified attribution with explicit provenance, and unable to
+  change an outcome **at the dispatch boundary** — explicitly not a package-wide claim, since
+  ADR 0011 ownership takes a real decision from the same value, which is why A11 exists. Test 8b
+  is the invariant and test 28 the behavioural sample; 8b is a textual scan, so it catches a
+  literal read and not an identity threaded in as a parameter. (tests 7, 8b, 27, 28)
 - A5. Credentials, whole argument sets, command text, generated documents, and response bodies are
   absent from every record on allow and deny paths, proven with sentinels whose tests are shown to
   bite. (tests 22–26)
@@ -493,8 +536,12 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A10. `just verify` passes bare on the branch head.
 - A11. The package has exactly one audit emitter module. `operations_lpar`'s override record is
   produced by `audit`, in the same grammar, and no longer through `extra=`. (tests 26a–26e)
-- A12. The five claims ADR 0040 makes about this checkout are pinned by tests, not by assertion:
-  the three logging-tree facts, `_gates(None) == (None, None)`, `authorized` leaving the two
-  `connection_argument=None` handlers unwrapped, `_startup_warnings` gating its no-policy line on
-  an existing file, and a custom `emit` not inheriting `StreamHandler.terminator`.
-- A13. The live proof L1–L5 runs and passes on the branch head.
+- A12. The five claims ADR 0040 makes about this checkout are pinned by tests 31-35 in
+  `tests/app/test_authorization_audit.py`, not by assertion. Tests 32-35 assert this package's
+  own behaviour. Test 31 covers the logging-tree facts as the **consequence this package owns** —
+  a record emitted under `hmc_mcp.audit` with no sink installed does not reach stderr at `INFO` —
+  rather than asserting that the `fastmcp` logger carries a `RichHandler`, which would pin a
+  dependency's internals and redden on a version bump without anything here changing.
+- A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
+  `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
+  `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere.
