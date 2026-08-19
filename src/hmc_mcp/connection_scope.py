@@ -1,10 +1,13 @@
 """Dispatch-time authorization of the HMC connection an MCP call selects.
 
 The access policy loaded by ``access_policy.py`` names the connections each grant
-allows. This module answers, for one call, which connection it actually selects
-and whether a single grant covers that connection together with the tool. It is
-the *decision*; ``tool_registry.authorized`` is the seam that applies it before a
-handler runs. See docs/adr/0038-dispatch-time-connection-scope.md.
+allows. This module answers, for one call and **one grant**, which connection the
+call actually selects and whether that grant covers it. It never sees the policy
+and never iterates grants: ``dispatch_scope`` owns the only loop, because a single
+grant must cover the tool, the connection, *and* the targets together, and a
+module that could union one dimension across grants is a module that could break
+that rule. See docs/adr/0038-dispatch-time-connection-scope.md, and
+docs/adr/0039-dispatch-time-target-scope.md for why the loop moved out.
 
 The connection is not the caller's token. ``common.build_config`` discards the
 token entirely when ``HMC_HOST`` is set, and ``config.load_profile`` resolves an
@@ -15,12 +18,11 @@ connection that will actually be selected before it is compared.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Container
 from typing import Any
 
-from .access_policy import DEFAULT_CONNECTION_TOKEN, AccessPolicy
+from .access_policy import DEFAULT_CONNECTION_TOKEN
 from .config import ConfigError, list_profiles_and_nicknames
-from .tool_registry import Authorize, ToolSecurity
 
 
 class ConnectionScopeError(Exception):
@@ -129,54 +131,36 @@ def _clause(argument: str, collapsed: bool) -> str:
     )
 
 
-def connection_authorizer(policy: AccessPolicy) -> Authorize:
-    """An authorizer denying any call whose selected connection *policy* withholds.
+def connection_permitted(connection: str | None, grant_connections: Container) -> bool:
+    """True when one grant's ``connections`` covers the resolved *connection*.
 
-    The returned callable is what ``server.create_mcp`` hands to every
-    registration site. It closes over the frozen policy and holds no other state.
+    One grant's set, never a union across grants: ``dispatch_scope`` owns the
+    loop, so this function cannot see more than one grant and therefore cannot
+    combine one grant's connection with another grant's targets.
     """
+    return connection in grant_connections
 
-    def authorize(
-        name: str, security: ToolSecurity, arguments: Mapping[str, Any]
-    ) -> None:
-        argument = security.connection_argument
-        if argument is None:
-            # No connection is selected, so there is none to scope. `authorized`
-            # already declines to wrap such a tool; an authorizer must still be
-            # safe to call on any tool.
-            return
-        # Indexed, not `.get`: `authorized` applies the handler's defaults and
-        # `validate_security` guarantees the parameter exists, so an absent key
-        # is a malformed call, and treating it as an omitted argument would
-        # silently make it the default connection.
-        token = arguments[argument]
-        connection = selected_connection(token, tool=name)
-        # Read after the decision and gated on its result, so the clause can only
-        # describe a collapse that actually happened: a non-string token
-        # normalizes to UNRESOLVED before rule 1 is reached, and an HMC_HOST that
-        # changed between the two reads simply yields no clause.
-        collapsed = connection is None and bool(os.environ.get("HMC_HOST"))
-        # One predicate per grant, never a union across them: ADR 0036 fixed that
-        # a single grant must cover the tool and the connection together. #223
-        # extends the condition inside this loop, not beside it.
-        for grant in policy.grants_for(name):
-            if connection in grant.connections:
-                return
-        raise ConnectionScopeError(
-            _DENIED.format(
-                tool=name,
-                # The caller's own token, never the normalized value: under rule
-                # 3 that value is a profile key read from config.toml, and a
-                # denial is one probe. repr() also neutralizes any control
-                # character a caller puts in it.
-                connection=repr(
-                    DEFAULT_CONNECTION_TOKEN
-                    if token is None or token == ""
-                    else token
-                ),
-                policy=repr(policy.name),
-                clause=_clause(argument, collapsed),
-            )
+
+def connection_denial(
+    tool: str, policy_name: str, argument: str, token: Any, connection: str | None
+) -> ConnectionScopeError:
+    """The error a connection denial raises, from ADR 0038's single template."""
+    # Read after the decision and gated on its result, so the clause can only
+    # describe a collapse that actually happened: a non-string token normalizes
+    # to UNRESOLVED before rule 1 is reached, and an HMC_HOST that changed
+    # between the two reads simply yields no clause.
+    collapsed = connection is None and bool(os.environ.get("HMC_HOST"))
+    return ConnectionScopeError(
+        _DENIED.format(
+            tool=tool,
+            # The caller's own token, never the normalized value: under rule 3
+            # that value is a profile key read from config.toml, and a denial is
+            # one probe. repr() also neutralizes any control character a caller
+            # puts in it.
+            connection=repr(
+                DEFAULT_CONNECTION_TOKEN if token is None or token == "" else token
+            ),
+            policy=repr(policy_name),
+            clause=_clause(argument, collapsed),
         )
-
-    return authorize
+    )

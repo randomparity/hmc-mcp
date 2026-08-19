@@ -14,9 +14,9 @@ from hmc_mcp.config import config_dir
 from hmc_mcp.connection_scope import (
     UNRESOLVED,
     ConnectionScopeError,
-    connection_authorizer,
     selected_connection,
 )
+from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.tool_registry import ToolSecurity
 
 # `prod` is both a profile key and a nickname targeting `lab`; `load_profile`
@@ -110,7 +110,7 @@ def test_non_string_token_denies_even_under_hmc_host(config, monkeypatch):
     """Rule 0 runs before rule 1, so the collapse cannot launder a bad type."""
     monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
     assert selected_connection(7, tool="hmc_delete_lpar") == UNRESOLVED
-    authorize = connection_authorizer(_policy("<default>"))
+    authorize = dispatch_authorizer(_policy("<default>"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": 7})
 
@@ -244,55 +244,55 @@ def test_default_connection_survives_a_missing_config_file(no_config):
 
 
 def test_a_granted_connection_permits(config):
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     assert authorize("hmc_delete_lpar", SECURITY, {"profile": "lab"}) is None
 
 
 def test_a_withheld_connection_denies(config):
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
 
 
 def test_the_default_connection_is_granted_by_its_token(config):
-    authorize = connection_authorizer(_policy("<default>"))
+    authorize = dispatch_authorizer(_policy("<default>"))
     assert authorize("hmc_delete_lpar", SECURITY, {"profile": None}) is None
 
 
 def test_a_profile_grant_does_not_cover_an_omitted_argument(config):
     """The mirror ADR 0036 recorded: omitting the argument means <default>."""
-    authorize = connection_authorizer(_policy("prod"))
+    authorize = dispatch_authorizer(_policy("prod"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": None})
 
 
 def test_a_nickname_cannot_launder_reach_to_a_withheld_profile(config):
     """`big-iron` targets `lab`; a policy granting only the alias must not permit it."""
-    authorize = connection_authorizer(_policy("big-iron"))
+    authorize = dispatch_authorizer(_policy("big-iron"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": "big-iron"})
 
 
 def test_a_nickname_reaching_a_granted_profile_permits(config):
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     assert authorize("hmc_delete_lpar", SECURITY, {"profile": "big-iron"}) is None
 
 
 def test_hmc_host_denies_a_policy_that_names_only_profiles(config, monkeypatch):
     monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": "lab"})
 
 
 def test_hmc_host_permits_a_policy_granting_the_default(config, monkeypatch):
     monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
-    authorize = connection_authorizer(_policy("<default>"))
+    authorize = dispatch_authorizer(_policy("<default>"))
     assert authorize("hmc_delete_lpar", SECURITY, {"profile": "lab"}) is None
 
 
 def test_a_tool_no_grant_covers_is_denied(config):
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_run_command", SECURITY, {"profile": "lab"})
 
@@ -325,7 +325,7 @@ def test_a_grant_for_another_tool_does_not_supply_the_connection(config):
     }
     security = {"hmc_list_lpars": SECURITY, "hmc_delete_lpar": SECURITY}
     policy = compile_access_policy(document, "split", security, "test-policy.toml")
-    authorize = connection_authorizer(policy)
+    authorize = dispatch_authorizer(policy)
     assert authorize("hmc_list_lpars", SECURITY, {"profile": "prod"}) is None
     with pytest.raises(ConnectionScopeError):
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
@@ -339,7 +339,7 @@ def test_a_tool_without_a_connection_argument_is_permitted(config):
         target_kind="none",
         connection_argument=None,
     )
-    authorize = connection_authorizer(_policy("lab"))
+    authorize = dispatch_authorizer(_policy("lab"))
     assert authorize("hmc_effective_permissions", security, {}) is None
 
 
@@ -349,7 +349,7 @@ def test_a_tool_without_a_connection_argument_is_permitted(config):
 
 
 def test_denial_names_the_tool_the_policy_and_the_callers_own_token(config):
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
     assert str(error.value) == (
@@ -361,7 +361,7 @@ def test_denial_names_the_tool_the_policy_and_the_callers_own_token(config):
 
 @pytest.mark.parametrize("token", [None, ""])
 def test_denial_renders_an_omitted_argument_as_the_default_token(config, token):
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": token})
     assert "connection '<default>'" in str(error.value)
@@ -369,7 +369,7 @@ def test_denial_renders_an_omitted_argument_as_the_default_token(config, token):
 
 def test_denial_renders_a_falsy_non_string_as_itself(config):
     """R13 renders what the caller named, and 0 is not the default connection."""
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": 0})
     assert "connection 0 " in str(error.value)
@@ -378,7 +378,7 @@ def test_denial_renders_a_falsy_non_string_as_itself(config):
 
 def test_denial_explains_the_hmc_host_collapse(config, monkeypatch):
     monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
     message = str(error.value)
@@ -396,7 +396,7 @@ def test_the_hmc_host_clause_names_the_declared_selector(config, monkeypatch):
         target_kind="console",
         connection_argument="connection",
     )
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", security, {"connection": "prod"})
     assert "the 'connection' argument is ignored" in str(error.value)
@@ -409,7 +409,7 @@ def test_a_nickname_and_an_unknown_token_are_denied_identically(config):
     table. A caller that could tell them apart could enumerate the operator's
     configuration one probe at a time, through a channel no policy can withhold.
     """
-    authorize = connection_authorizer(_policy("prod", name="prod-only"))
+    authorize = dispatch_authorizer(_policy("prod", name="prod-only"))
 
     def _denial(token: str) -> str:
         with pytest.raises(ConnectionScopeError) as error:
@@ -426,7 +426,7 @@ def test_a_nickname_and_an_unknown_token_are_denied_identically(config):
 
 
 def test_denial_never_enumerates_the_granted_connections(config):
-    authorize = connection_authorizer(_policy("lab", "prod", name="both"))
+    authorize = dispatch_authorizer(_policy("lab", "prod", name="both"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "scratch"})
     message = str(error.value)
@@ -436,7 +436,7 @@ def test_denial_never_enumerates_the_granted_connections(config):
 
 def test_denial_neutralizes_control_characters_in_a_caller_token(config):
     """The token is caller-controlled, so it is rendered with repr, not raw."""
-    authorize = connection_authorizer(_policy("lab", name="lab-only"))
+    authorize = dispatch_authorizer(_policy("lab", name="lab-only"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": "a\nb"})
     assert "\n" not in str(error.value)
@@ -448,7 +448,7 @@ def test_a_missing_selector_key_is_a_malformed_call_not_an_omitted_argument(conf
     Treating it as omitted would silently make it the `<default>` connection,
     which a policy granting `<default>` would then permit.
     """
-    authorize = connection_authorizer(_policy("<default>"))
+    authorize = dispatch_authorizer(_policy("<default>"))
     with pytest.raises(KeyError):
         authorize("hmc_delete_lpar", SECURITY, {})
 
@@ -456,7 +456,7 @@ def test_a_missing_selector_key_is_a_malformed_call_not_an_omitted_argument(conf
 def test_a_non_string_token_under_hmc_host_gets_no_collapse_clause(config, monkeypatch):
     """Rule 0 runs first, so the call was never evaluated as the default."""
     monkeypatch.setenv("HMC_HOST", "env-hmc.example.com")
-    authorize = connection_authorizer(_policy("<default>"))
+    authorize = dispatch_authorizer(_policy("<default>"))
     with pytest.raises(ConnectionScopeError) as error:
         authorize("hmc_delete_lpar", SECURITY, {"profile": 7})
     assert "HMC_HOST is set" not in str(error.value)

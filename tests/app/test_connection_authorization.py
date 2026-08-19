@@ -15,7 +15,7 @@ from fastmcp.exceptions import ToolError
 
 from hmc_mcp import server_command, server_lpars
 from hmc_mcp.access_policy import compile_access_policy
-from hmc_mcp.connection_scope import connection_authorizer
+from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.tool_registry import ToolSecurity, authorized
 
@@ -259,7 +259,7 @@ def test_every_connection_bearing_tool_is_wrapped_under_a_policy():
             True,
             application,
             permits=policy.permits_tool,
-            authorize=connection_authorizer(policy),
+            authorize=dispatch_authorizer(policy),
         )
     )
 
@@ -315,7 +315,7 @@ def test_the_arbitrary_command_tool_keeps_its_schema_through_the_wrapper():
         )
         return _registered(application)["hmc_run_command"]
 
-    guarded = _compose(connection_authorizer(policy))
+    guarded = _compose(dispatch_authorizer(policy))
     plain = _compose(None)
 
     assert guarded.name == plain.name
