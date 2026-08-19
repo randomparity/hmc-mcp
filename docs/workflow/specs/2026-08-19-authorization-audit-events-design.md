@@ -153,7 +153,12 @@ not literally send. A **boolean** records `state="unreadable"`, because `bool` i
 `int` so that `True` cannot compare as `"True"` against a resource name.
 
 `attribution` is always `{"claim": <str|null>, "source": "environment:HMC_AGENT_ID",
-"verified": false}`. The claim identifies the server *process*: under stdio that is one client,
+"verified": false}`. **The claim is the raw environment value** — unvalidated, bounded at 128
+characters, JSON-escaped. `docs/environment-variables.md` documents `HMC_AGENT_ID` as 1-64
+printable ASCII with a forbidden-character set, which is `config.validate_agent_id`'s contract for
+*configuration*; this record deliberately bypasses it, so a recorded claim may be wider and
+stranger than that contract allows. The operator document must say so, or the two documents
+contradict each other. The claim identifies the server *process*: under stdio that is one client,
 under streamable HTTP it is every client, so the field carries no per-caller information there.
 
 ### Reason codes
@@ -517,9 +522,15 @@ durable record quietly wrong. All five were verified by execution before being w
 34. **`server._startup_warnings` emits its no-policy line only when a policy file exists**, so an
     operator with no policy file gets neither a warning nor a record — the gap ADR 0040 names
     against #225.
-35. **A custom `logging.Handler` subclass does not inherit `StreamHandler.terminator`**, which is
-    why the handler writes its own newline. Asserted directly, because it is the premise M5 and
-    test 15 depend on.
+The `StreamHandler.terminator` fact — that a custom `logging.Handler` subclass does not inherit it
+— is asserted **inside test 15**, whose explicit newline it explains, rather than as a test of its
+own: it is a CPython property no change in this repository can falsify, so it documents a premise
+rather than guarding a regression.
+
+**Note on 32 and 34.** Both pin behaviour issue #225 exists to change: today no policy is selected
+by default, so `_gates(None)` returns `(None, None)` and `_startup_warnings` stays silent without a
+policy file. The test file says so, so that their future failure reads as #225 landing rather than
+as a regression here.
 
 ### Live proof — `tests/app/test_authorization_audit_live.py`
 
@@ -645,8 +656,20 @@ POSIX only — `2>&-` is a POSIX shell redirection — and skipped elsewhere.
 - A10. `just verify` passes bare on the branch head.
 - A11. The package has exactly one audit emitter module. `operations_lpar`'s override record is
   produced by `audit`, in the same grammar, and no longer through `extra=`. (tests 26a–26e)
-- A12. The five claims ADR 0040 makes about this checkout are pinned by tests, not by assertion.
-  (tests 31-35)
+- A12. The claims ADR 0040 makes about *this checkout* are pinned by tests, not by assertion.
+  This traces to the campaign orchestrator's ruling of 2026-08-19 — "verify by execution the five
+  facts the ADR asserts about this checkout, and either pin each with a test or correct the ADR" —
+  which is external authority, so the charter carries it as a twelfth completion criterion rather
+  than the design inventing it. Two of the five moved to where they belong rather than standing
+  alone: 31 is the not-installed half of the sink group (9-13 are the installed half), and the
+  `StreamHandler.terminator` fact is an assertion inside test 15, whose behaviour it explains,
+  rather than a test of its own. (tests 15, 31, 32, 33, 34)
+- A13a. The live-proof harness is safe to leave in `just verify`: a bounded per-frame read
+  deadline, a fixture that terminates then kills the child and asserts it exited, and setup
+  assertions (both config files at the resolved path, the four environment variables absent,
+  `shutil.which("hmc-mcp")` not `None`) that fail setup rather than hang. Not prose — this is the
+  suite's first long-lived `hmc-mcp serve` child, and a blocking read on one that never answers
+  hangs every CI leg with no diagnostic.
 - A13. The live proof runs and passes on the branch head: Run A (L1-L4) against a real
   `hmc-mcp serve --access-policy lab-scoped` stdio subprocess, and Run B (L5) as a separate
   `sh -c '… 2>&-'` subprocess. POSIX only; skipped elsewhere.

@@ -363,10 +363,8 @@ is #270.
 - `audit.py` imports nothing from the package. Every value reaches it as a primitive, so it can be
   tested without a policy, a config file, or an application, and no import cycle is possible.
 - A server whose stderr is absent, broken, or closed authorizes calls it does not record. That is
-  the deliberate trade named in the Decision's total-emission rule, and the drop is silent: no
-  counter, no marker, nothing written elsewhere. An empty audit stream is not evidence of an idle
-  server, and confirming that records are arriving is out-of-band. A destination that neither
-  raises nor returns is a different case; see the residual below.
+  the deliberate trade named in the Decision's total-emission rule. A destination that neither
+  raises nor returns is a different case; see the residuals below.
 - Because `propagate` is set unconditionally, an operator who had attached an audit handler to the
   root logger before this change stops receiving records and must attach to `hmc_mcp.audit`. There
   is no prior release in which audit records existed, so nothing in the field breaks.
@@ -401,6 +399,12 @@ caveat is added there and in the operator documentation. No in-process detection
 process cannot tell its own fd 2 and fd 1 are one pipe without probing, and a probe that guessed
 wrong would silence the audit trail.
 
+**A dropped record is silent.** No counter, no marker, nothing written elsewhere — so an empty
+audit stream is not evidence of an idle server, and confirming that records are arriving is
+out-of-band. This sits in Residuals rather than Consequences because, unlike the truncation marker
+or `connection.resolved`, it describes a gap a later change could close (a drop counter, a health
+signal) rather than a choice already made here.
+
 **An undrained stderr blocks the write, and therefore the call.** The handler's guards cover a
 destination that raises. They do not cover one that is open, healthy, and not being read: under
 the stdio transport the client usually owns fd 2 as a pipe, and a full pipe makes `write()` block
@@ -419,9 +423,9 @@ those outside this saga; nothing here should be read as promising them.
 
 ## Considered & rejected
 
-**Instrument the tool bodies.** Rejected by the issue itself, and by arithmetic: 128 wrapped tools
-would carry 128 opportunities for a record to disagree with the decision, and a tool added later
-would carry none at all. The dispatch boundary has one emission point that no registration site
+**Instrument the tool bodies.** Rejected by the issue itself, and by structure rather than by a
+count: every wrapped tool would carry its own opportunity for a record to disagree with the
+decision, and a tool added later would carry none at all. The dispatch boundary has one emission point that no registration site
 can forget.
 
 **Do nothing — let the denial message be the record.** The message reaches the caller and not the

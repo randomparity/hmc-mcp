@@ -430,7 +430,14 @@ passes. Re-run the Task 1 inventory check now that three tests have moved betwee
 
 ## Task 4 — converge the ownership override
 
-Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`. `Refs #268`.
+Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`.
+
+**`Refs #268`, deliberately not `Closes #268`.** The convergence does discharge #268's substance,
+and the natural instinct is a closing keyword. The campaign orchestrator ruled otherwise:
+`closingIssuesReferences` on this PR must stay exactly `[224]` so the merge check reads
+unambiguously, and the orchestrator closes #268 by hand post-merge citing the commit. #271 already
+carves out the one part convergence does not discharge — the override record still does not name
+which HMC it applied to.
 
 ### Steps
 
@@ -518,7 +525,12 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
    on non-POSIX for Run B.**
 4. Write `docs/authorization-audit.md`: both record shapes, the reason-code table, the logger name,
    the level split, how to route or silence, the merged-descriptor caveat, the
-   `<default>`/`<unresolved>` collision, and the instruction to skip a non-parsing line.
+   `<default>`/`<unresolved>` collision, and the instruction to skip a non-parsing line. It must
+   also state that `attribution.claim` is the **raw** environment value — unvalidated, bounded at
+   128 characters, JSON-escaped — and may therefore be wider and stranger than the 1-64 printable
+   ASCII contract `docs/environment-variables.md` documents for `HMC_AGENT_ID`, which is
+   `config.validate_agent_id`'s rule for configuration and is deliberately bypassed here.
+   Without that sentence the two documents contradict each other.
 5. Add the descriptor-merge caveat and a pointer to that document beside README's existing
    "never stdout" sentence in the startup-warnings section.
 6. Run `just verify` **bare**. **Expect: exit 0; pytest green, coverage at or above the 90% floor,
