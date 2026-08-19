@@ -28,6 +28,7 @@ from .connection_scope import (
     selected_connection,
 )
 from .target_scope import (
+    Selected,
     audit_state,
     denial_reason,
     selected_targets,
@@ -35,6 +36,30 @@ from .target_scope import (
     targets_permitted,
 )
 from .tool_registry import Authorize, ToolSecurity
+
+
+def _audit_view(
+    connection: str | None, extracted: tuple[Selected, ...]
+) -> tuple[str | None, tuple[audit.AuditTarget, ...] | None]:
+    """The half of the audit record this module builds, or nulls if it cannot.
+
+    Guarded here rather than beside the decision, because ADR 0040's totality rule
+    covers building a record as well as writing one, and ``audit._emit``'s guard
+    only reaches the half ``audit`` assembles. A failure degrades the record to
+    nulls rather than dropping it, and either way cannot touch the decision.
+    """
+    try:
+        return audit.resolved_connection(connection), tuple(
+            audit.AuditTarget(
+                kind=kind,
+                argument=selector,
+                state=audit_state(value),
+                value=value if isinstance(value, str) else None,
+            )
+            for kind, selector, value in extracted
+        )
+    except Exception:  # noqa: BLE001 - a diagnostic must not fail a call
+        return None, None
 
 
 def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
@@ -103,23 +128,7 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
             record("deny", "configuration-unreadable", None, None)
             raise
         extracted = selected_targets(security, arguments)
-        # Built inside the guard, not beside it: these are the half of the record
-        # this module assembles, and ADR 0040's totality rule covers building as
-        # well as writing. A failure here degrades the record to nulls rather than
-        # dropping it, and cannot touch the decision below either way.
-        try:
-            resolved = audit.resolved_connection(connection)
-            audited: tuple[audit.AuditTarget, ...] | None = tuple(
-                audit.AuditTarget(
-                    kind=kind,
-                    argument=selector,
-                    state=audit_state(value),
-                    value=value if isinstance(value, str) else None,
-                )
-                for kind, selector, value in extracted
-            )
-        except Exception:  # noqa: BLE001 - a diagnostic must not fail a call
-            resolved, audited = None, None
+        resolved, audited = _audit_view(connection, extracted)
 
         connection_matched = False
         # One conjunction per grant, never a union across them. Both conditions

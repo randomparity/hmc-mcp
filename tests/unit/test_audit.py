@@ -35,6 +35,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
@@ -250,8 +251,6 @@ def test_attribution_is_unverified_and_sourced_when_the_env_is_unset(monkeypatch
 
 def test_reasons_matches_the_literal():
     """Spec 8. The vocabulary is closed."""
-    from typing import get_args
-
     assert audit.REASONS == frozenset(get_args(audit.Reason))
     assert audit.REASONS == {
         "permitted",
@@ -266,8 +265,6 @@ def test_reasons_matches_the_literal():
 
 def test_events_matches_the_literal_and_both_emitters_use_it():
     """The `event` vocabulary is two values, and a checker can see that."""
-    from typing import get_args
-
     assert audit.EVENTS == frozenset(get_args(audit.Event))
     assert audit.EVENTS == {"authorization", "ownership-override"}
 
@@ -337,7 +334,7 @@ def _emit_directly(message: str = '{"event":"probe"}') -> None:
     )
 
 
-def test_a_none_stderr_writes_nothing_and_raises_nothing(monkeypatch, capsys):
+def test_a_none_stderr_writes_nothing_and_raises_nothing(monkeypatch):
     """Spec 11. CPython sets sys.stderr to None when fd 2 is closed at start."""
     monkeypatch.setattr(sys, "stderr", None)
     _emit_directly()  # an unguarded emit raises AttributeError here
