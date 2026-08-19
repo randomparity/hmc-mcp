@@ -124,6 +124,12 @@ def describe(
     every reported name must satisfy it. A registry that has drifted past its
     ceiling therefore reports a policy name with no enforcement claim, rather
     than a claim the registry contradicts.
+
+    An empty *names* satisfies that check vacuously, and deliberately: a registry
+    holding nothing cannot exceed any ceiling, so a policy denying everything is
+    enforced maximally rather than not at all. The state is unreachable through
+    the tool — its own registration is what makes *names* non-empty — so this
+    only binds a direct caller of :func:`describe`.
     """
     tools = tuple(_permission(name, tool_security) for name in names)
     enforced = policy is not None and all(policy.permits_tool(name) for name in names)

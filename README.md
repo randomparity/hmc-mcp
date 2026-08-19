@@ -264,6 +264,23 @@ Only the tool dimension is enforced today. A policy's `connections` and `targets
 entries are recorded and reported but constrain nothing at call time; call
 `hmc_effective_permissions` on a running server to see which is which.
 
+Policies live in `access-policy.toml`, beside `config.toml` in the same
+platform-native directory. A minimal read-only policy:
+
+```toml
+[[policies.lab.grants]]
+effects = ["read"]           # "read", "mutate", "destructive"
+connections = ["<default>"]  # profile names, or "<default>" for the env HMC
+targets = "all-targets"      # or a table, e.g. { lpar = ["db-01"] }
+```
+
+A grant must name at least one tool through `effects`, `tools`, or both, and
+must name at least one connection. `targets` is either the string
+`"all-targets"` or a table of target kind to selector strings — a bare array is
+rejected. `hmc_run_command` cannot be reached by effect class: name it in a
+grant's `tools` to grant it, and start the server with
+`--enable-arbitrary-command` as well, since the two compose conjunctively.
+
 ### Startup warnings
 
 `serve` writes these to stderr (never stdout, which carries JSON-RPC on stdio):
@@ -320,9 +337,13 @@ unbounded when `limit` is omitted.
 
 `hmc_effective_permissions` discloses the selected policy's name, its absolute
 path, every connection token, and every target selector to any MCP client that
-can call it. It carries no credential and reads nothing from `config.toml`, the
-environment, or the HMC. Only a `tools`-only policy that omits it can withhold
-it; a policy granting the `read` effect class reaches it and cannot exclude it.
+can call it. It carries no credential: no value in the output is read from
+`config.toml`, from an `HMC_*` environment variable, or from the HMC. The policy
+path is the exception it is not — it is built from `XDG_CONFIG_HOME` (Linux),
+`%APPDATA%` (Windows), or your home directory, so it names the account, and it
+is disclosed deliberately so an operator can tell which file is in effect. Only
+a `tools`-only policy that omits it can withhold it; a policy granting the
+`read` effect class reaches it and cannot exclude it.
 
 `hmc_fleet_health` and `systems health` return only exceptions across the whole
 estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
