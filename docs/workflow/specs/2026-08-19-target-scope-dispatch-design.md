@@ -249,6 +249,7 @@ _UNBOUNDABLE = (
     "{tool} is not permitted by access policy {policy}: no targets table can "
     "bound every resource it acts on. Grant {tool} under targets = \"all-targets\" "
     "in a grant that names it."
+)
 _UNREADABLE_VALUE = (
     "{tool} is not permitted by access policy {policy}: the {argument} argument does "
     "not carry a readable {kind} target."
