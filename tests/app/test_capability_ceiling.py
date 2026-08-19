@@ -195,12 +195,13 @@ def test_inspection_does_not_raise_on_a_tool_outside_the_index():
         return "ok"
 
     application.tool(hmc_not_in_the_index)
-    reported = {tool["name"]: tool for tool in _inspect(application)["tools"]}
+    result = _inspect(application)
+    reported = {tool["name"]: tool for tool in result["tools"]}
 
     assert reported["hmc_not_in_the_index"]["effect"] == "unknown"
     assert reported["hmc_not_in_the_index"]["operation"] == "unknown"
     assert reported["hmc_not_in_the_index"]["target_kind"] == "unknown"
-    assert "unknown" not in _inspect(application)["effects"]
+    assert "unknown" not in result["effects"]
 
 
 def test_inspection_carries_only_allowlisted_value_sources(monkeypatch):
