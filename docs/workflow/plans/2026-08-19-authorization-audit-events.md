@@ -13,8 +13,10 @@ onto the same logger. `server._serve_application` installs the sink.
 requirement 11).
 
 Source of truth: [the design spec](../specs/2026-08-19-authorization-audit-events-design.md) and
-[ADR 0040](../../adr/0040-authorization-audit-events.md). Where this plan and the spec disagree,
-the spec wins and this plan is wrong.
+[ADR 0040](../../adr/0040-authorization-audit-events.md). Where the two disagree **about
+behaviour**, the spec wins and this plan is wrong. Identifiers in this plan — file paths, symbol
+names, existing test names — were checked against this checkout, so where an identifier differs
+the plan is the one that was verified.
 
 ## Global constraints
 
@@ -30,6 +32,14 @@ the spec wins and this plan is wrong.
 - Repo limits: ≤100 lines per function, cyclomatic complexity ≤8, 100-character lines.
 - Guardrail: `just verify`, run **bare** — no pipes, no `|| true`. `just static` is the fast
   subset while iterating.
+- **Focused pytest runs pass `--no-cov`.** `pyproject.toml` sets
+  `addopts = "--cov=hmc_mcp --cov-report=term-missing"` with `fail_under = 90` (ADR 0034), so a
+  single-file run measures package coverage at a few percent and **exits 1 even when every test
+  passes** — verified in this checkout: `pytest tests/unit/test_target_scope.py -q` prints
+  `44 passed` and exits 1; with `--no-cov` it exits 0. Only the `just verify` runs in Tasks 5 and 6
+  measure the floor, which is the only place it means anything.
+- Exit codes are read **bare**, never through a pipe. These hosts run zsh, where `${PIPESTATUS[0]}`
+  is empty (the array is `pipestatus`, 1-indexed), so a piped check silently reports 0.
 - Conventional commits, imperative subject ≤72 chars, `Co-Authored-By: Claude Opus 5 (1M context)
   <noreply@anthropic.com>` trailer. Never squash; this branch is code.
 
@@ -130,8 +140,12 @@ nothing from the package, so no policy, config file, or application is needed.
            logging.root.handlers[:] = saved[3]
    ```
 
-2. Write spec tests 1–8, 8a, 14, 14a, 14b, 14c, 15 and 9–13 as failing tests. Run
-   `uv run pytest tests/unit/test_audit.py -q`. **Expect: collection error, `No module named
+2. Write spec tests 1–8, **6a, 6b**, 8a, **8b**, 9–13, 14, 14a, 14b, 14c and 15 as failing tests.
+   6a and 6b and 8b are called out because an earlier draft of this plan lost them between the
+   task lists: 6a covers `target_scope._value`'s integer and boolean arms (the spec notes neither
+   was ever covered), 6b pins the `<unresolved>` profile-name collision, and 8b is the scan that
+   makes A4 an invariant rather than a three-value sample. Run
+   `uv run --no-sync pytest --no-cov tests/unit/test_audit.py -q`. **Expect: collection error, `No module named
    'hmc_mcp.audit'`.** That is the confirm-it-fails step.
 3. Create `src/hmc_mcp/audit.py` with the constants, `Reason`, `REASONS`, `State`, `AuditTarget`,
    and `resolved_connection` from the Interfaces block.
@@ -148,13 +162,17 @@ nothing from the package, so no policy, config file, or application is needed.
    A non-`str` renders `None` rather than its `repr()`, for the reason `target_scope.target_denial`
    already declines to render one: an arbitrary object's `repr()` is not the caller's token and can
    carry anything.
-5. Add `_connection(token, resolved, extracted_targets_known)` returning the `connection` object:
-   `state` is `"absent"` for `None` or `""`, `"present"` for any other `str`, `"unreadable"`
-   otherwise; `selector` is `_value(token)`; `resolved` is the argument, or `None` when the
-   selectors were never extracted.
-6. Add `_attribution()` returning
-   `{"claim": _value(os.environ.get(ATTRIBUTION_ENV)), "source": f"environment:{ATTRIBUTION_ENV}",
-   "verified": False}`.
+5. Add `_connection(token, resolved)` returning the `connection` object: `state` is `"absent"` for
+   `None` or `""`, `"present"` for any other `str`, `"unreadable"` otherwise; `selector` is
+   `_value(token)`; `resolved` is the argument unchanged — `None` already means "never resolved",
+   so no third parameter is needed to say so.
+6. Add `_attribution(claim: Any, source: str)` returning
+   `{"claim": _value(claim), "source": source, "verified": False}`. **One builder, two call sites**,
+   because the two records genuinely read different things and the two-value `source` vocabulary is
+   the point: `record_authorization` passes
+   `(os.environ.get(ATTRIBUTION_ENV), f"environment:{ATTRIBUTION_ENV}")` and
+   `record_ownership_override` passes `(agent_id, "config:agent_id")`. A no-argument builder could
+   not produce the override's attribution at all.
 7. Add `_emit(level, payload)`:
 
    ```python
@@ -171,7 +189,11 @@ nothing from the package, so no policy, config file, or application is needed.
    authorized call and replace ADR 0038/0039's client-facing error with something else.
 8. Add `record_authorization` and `record_ownership_override`, each building its payload in the
    documented field order and calling `_emit` at `WARNING` (deny, and every override) or `INFO`
-   (allow).
+   (allow). `record_authorization` renders **each `AuditTarget.value` through `_value`**, and
+   `record_ownership_override` renders `system` and `lpar` through it: truncation has exactly one
+   owner, inside `audit`, and `AuditTarget` stays a transport for the raw extraction rather than a
+   place a caller could forget to bound. Without this the target values — one of the three
+   caller-supplied classes — reach the record untruncated.
 9. Add `_AuditHandler` and `install_audit_sink`:
 
    ```python
@@ -197,14 +219,18 @@ nothing from the package, so no policy, config file, or application is needed.
 
    `sys.stderr` resolved at emit time, `None` returning early, `OSError` and `ValueError` caught:
    the same three guards `server._warn` applies, for the same three reasons (#221).
-10. Run `uv run pytest tests/unit/test_audit.py -q`. **Expect: all pass.**
+10. Run `uv run --no-sync pytest --no-cov tests/unit/test_audit.py -q`. **Expect: all pass.**
 11. Run `just static`. **Expect: exit 0, "All checks passed!" from ruff and ty.**
 12. Commit: `feat(audit): add the authorization audit record and its stderr sink`.
 
 ### Acceptance
 
-Spec tests 1–8, 8a, 9–13, 14, 14a, 14b, 14c, 15 pass. `audit.py` contains no `from .` or
-`from hmc_mcp` import — assert it in test 8a's file by reading the source.
+Spec tests 1–8, 6a, 6b, 8a, 8b, 9–13, 14, 14a, 14b, 14c, 15 pass. `audit.py` contains no `from .`
+or `from hmc_mcp` import — assert it in test 8a's file by reading the source.
+
+**Inventory check before moving on:** the union of the task lists must cover every numbered item
+in the spec's Testing section exactly once. Run it as a checklist, not from memory — losing three
+items is how this task's list was wrong the first time.
 
 ---
 
@@ -216,15 +242,16 @@ the four-case selection moves into one function that both the message and the re
 ### Steps
 
 1. Add spec tests 21 and 21a to `tests/unit/test_target_scope.py` as failing tests. Run
-   `uv run pytest tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
+   `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py -q`. **Expect: `AttributeError: module
    'hmc_mcp.target_scope' has no attribute 'denial_reason'`.**
-2. Add `denial_reason(security, extracted) -> Reason` holding the existing four-case order:
+2. Add `from .audit import Reason` to `target_scope`'s imports, then
+   `denial_reason(security, extracted) -> Reason` holding the existing four-case order:
    UNREADABLE selector → `"target-selector-unreadable"`; `not security.exhaustive_targets` →
    `"target-unboundable"`; ABSENT selector → `"target-selector-absent"`; otherwise
    `"target-not-granted"`.
 3. Refactor `target_denial` to `reason = denial_reason(security, extracted)` and branch on the
    code, one template per code. Do not duplicate the case selection.
-4. Run `uv run pytest tests/unit/test_target_scope.py tests/app/test_target_authorization.py -q`.
+4. Run `uv run --no-sync pytest --no-cov tests/unit/test_target_scope.py tests/app/test_target_authorization.py -q`.
    **Expect: all pass, including the pre-existing tests — the messages are unchanged.**
 5. Run `just static`. **Expect: exit 0.**
 6. Commit: `refactor(target-scope): give the denial case selection one owner`.
@@ -245,9 +272,15 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
 1. Write `tests/app/test_authorization_audit.py` with the same autouse isolation fixture as
    Task 1, then spec tests 16–21a, 22–26, 27, 28, 31–35 as failing tests. Include the
    non-empty-capture precondition on 22–26. Run
-   `uv run pytest tests/app/test_authorization_audit.py -q`. **Expect: failures asserting a record
+   `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py -q`. **Expect: failures asserting a record
    that is never emitted.**
-2. In `authorize`, wrap only the `selected_connection` call:
+2. Add the imports the fragments below need — `dispatch_scope` today imports only `AccessPolicy`;
+   `connection_denial`/`connection_permitted`/`selected_connection`;
+   `selected_targets`/`target_denial`/`targets_permitted`; and `Authorize`/`ToolSecurity`. Add
+   `from . import audit`, extend the `connection_scope` import with `ConnectionScopeError` (easy to
+   miss — `selected_connection` already comes from that module but the exception does not), and
+   extend the `target_scope` import with `ABSENT` and `denial_reason`. Then wrap only the
+   `selected_connection` call:
 
    ```python
    try:
@@ -275,12 +308,34 @@ Modifies `src/hmc_mcp/dispatch_scope.py`; creates `tests/app/test_authorization_
    )
    ```
 
-4. Add one `record_authorization` call on the permit path (`reason="permitted"`,
-   `decision="allow"`) and one on each denial path, with
-   `reason=denial_reason(security, extracted)` for the target denial and
-   `reason="connection-not-granted"` for the connection denial. Extract a local closure if
-   `authorize` approaches the complexity limit.
-5. Run `uv run pytest tests/app/test_authorization_audit.py tests/app/test_connection_authorization.py
+4. Add one `record_authorization` call on the permit path and one on each denial path. Write the
+   full keyword set — in particular `resolved=`, which is the one argument needing a helper the
+   implementer has had no other reason to call:
+
+   ```python
+   # permit path, immediately before `return`
+   audit.record_authorization(
+       policy=policy.name, tool=name, effect=security.effect,
+       decision="allow", reason="permitted",
+       token=token, resolved=audit.resolved_connection(connection), targets=audited,
+   )
+   # target denial, immediately before `raise target_denial(...)`
+   audit.record_authorization(
+       policy=policy.name, tool=name, effect=security.effect,
+       decision="deny", reason=denial_reason(security, extracted),
+       token=token, resolved=audit.resolved_connection(connection), targets=audited,
+   )
+   # connection denial, immediately before `raise connection_denial(...)`
+   audit.record_authorization(
+       policy=policy.name, tool=name, effect=security.effect,
+       decision="deny", reason="connection-not-granted",
+       token=token, resolved=audit.resolved_connection(connection), targets=audited,
+   )
+   ```
+
+   Extract a local closure over the four constant keywords if `authorize` approaches the
+   complexity limit of 8 or the line limit of 100.
+5. Run `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit.py tests/app/test_connection_authorization.py
    tests/app/test_target_authorization.py -q`. **Expect: all pass.**
 6. Run `just static`. **Expect: exit 0.**
 7. Commit: `feat(dispatch-scope): emit one audit record per authorization decision`.
@@ -301,9 +356,10 @@ Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`. `R
    spec test 26a, asserting a JSON record on `hmc_mcp.audit` and **no** record on
    `hmc_mcp.operations_lpar`. Repoint its sibling
    `…_normal_access_has_no_override_audit` at the new logger — against the old name it would pass
-   vacuously. Add 26b–26e. Run `uv run pytest tests/unit/test_ownership.py -q`. **Expect: the
+   vacuously. Add 26b–26e. Run `uv run --no-sync pytest --no-cov tests/unit/test_ownership.py -q`. **Expect: the
    rewritten tests fail; the record is still on the old logger.**
-2. Replace `_audit_lpar_ownership_override`'s body:
+2. Add `from . import audit` to `operations_lpar`'s imports, then replace
+   `_audit_lpar_ownership_override`'s body:
 
    ```python
    def _audit_lpar_ownership_override(
@@ -317,7 +373,7 @@ Modifies `src/hmc_mcp/operations_lpar.py` and `tests/unit/test_ownership.py`. `R
    ```
 
    The two call sites are untouched. `_logger` stays — six other call sites in the file use it.
-3. Run `uv run pytest tests/unit/test_ownership.py -q`. **Expect: all pass.**
+3. Run `uv run --no-sync pytest --no-cov tests/unit/test_ownership.py -q`. **Expect: all pass.**
 4. Run `just static`. **Expect: exit 0.**
 5. Commit: `refactor(operations-lpar): converge the override record onto the audit sink`.
 
@@ -339,12 +395,24 @@ Modifies `src/hmc_mcp/server.py`, `README.md`; creates `docs/authorization-audit
    Run B (L5), including the fixture that derives the config directory from
    `hmc_mcp.config.config_dir()` **after** redirecting `HOME`, deletes `HMC_HOST`, `HMC_PROFILE`,
    `XDG_CONFIG_HOME` and `APPDATA` from the child environment, and asserts both files exist and
-   those four variables are absent before the first frame. Mark Run B POSIX-only. Run
-   `uv run pytest tests/app/test_authorization_audit_live.py -q`. **Expect: failure — no record on
+   those four variables are absent before the first frame. Mark Run B POSIX-only.
+
+   **Subprocess contract — this is the suite's first long-lived `hmc-mcp serve` child.** No
+   existing test spawns one (`tests/app/test_serve.py` and `test_capability_ceiling.py` use
+   `CliRunner` with `main_stdio`/`main_http` patched), and `pyproject.toml` configures no
+   `pytest-timeout`, so a blocking read on a child that never answers hangs `just verify` and every
+   CI leg with no diagnostic. Required: a bounded per-frame read deadline; a fixture that
+   `terminate()`s then `kill()`s the child in `finally` and asserts it exited; and on deadline
+   expiry, fail with the child's captured stderr attached rather than raising a bare timeout.
+
+   **Note the red step is narrower than the task.** L5 is expected to *pass* before the sink is
+   installed — with no sink, no record is written, which is what L5 asserts is harmless. The
+   confirm-it-fails step covers L1–L4 only. Run
+   `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit_live.py -q`. **Expect: failure — no record on
    stderr, because the sink is not installed on the serve path yet.**
 2. Add `install_audit_sink()` to `server._serve_application`, immediately before its existing
    `_warn(...)` call.
-3. Run `uv run pytest tests/app/test_authorization_audit_live.py -q`. **Expect: all pass, or skip
+3. Run `uv run --no-sync pytest --no-cov tests/app/test_authorization_audit_live.py -q`. **Expect: all pass, or skip
    on non-POSIX for Run B.**
 4. Write `docs/authorization-audit.md`: both record shapes, the reason-code table, the logger name,
    the level split, how to route or silence, the merged-descriptor caveat, the
@@ -368,14 +436,27 @@ No production change. Applies M1–M10 one at a time, records which test ids red
 
 ### Steps
 
-1. For each of M1–M10 in the spec's table: apply the mutation with an editor, run the test ids in
-   its "must redden" column, record the observed result, then `git restore` the file.
+0. **Prerequisite, discharged in Tasks 3–5, not here:** as each spec-numbered test is written, its
+   pytest node id is recorded beside the number in a comment at the top of its file. The spec's
+   M1–M10 table holds spec numbers (`23, 24`, `14b, 17`, `15, L2`), not node ids, and only the
+   person who just wrote them can map one to the other — which is exactly the perishable knowledge
+   this task exists to turn into a durable artifact. Without that mapping Task 6 is not runnable by
+   anyone else.
+1. For each of M1–M10 in the spec's table: apply the mutation with an editor, run the node ids in
+   its "must redden" column with `--no-cov`, record the observed result, then `git restore` the
+   file. Confirm the restore actually reverted — `git diff --stat` empty — before the next row; a
+   scripted edit that silently matched nothing is how a mutation "passes" without ever applying.
 2. **Any mutation that reddens nothing is a finding**, not a pass — it means the test asserts a
-   structural property while claiming to prove a redaction. Fix the test or reword the claim, and
-   say which in the PR body.
+   structural property while claiming to prove a redaction. Fix the test or reword the claim.
+   **A test changed under this step is committed**, with a message naming the mutation that
+   exposed it, so the remediation is in the history rather than folded silently into an earlier
+   commit. If more than three of the ten rows need remediation, stop and report it: that is a
+   signal the test suite is asserting structure throughout while claiming to prove redaction, and
+   it is a design question rather than ten local edits.
 3. Confirm the tree is clean: `git status --short`. **Expect: empty.**
 4. Run `just verify` bare. **Expect: exit 0.**
-5. Put the mutation/test-id table in the PR body. Nothing is committed by this task.
+5. Put the mutation/node-id table, with the observed result per row, in the PR body. Apart from
+   any step-2 remediation commit, this task commits nothing.
 
 ### Acceptance
 
@@ -386,7 +467,8 @@ than an assurance.
 
 ## Rollback
 
-Every task is one commit on `feat/audit-events-224`. Nothing migrates, nothing persists, no
+Tasks 1–5 are one commit each on `feat/audit-events-224`; Task 6 commits only if step 2 finds
+something. Nothing migrates, nothing persists, no
 public tool contract changes, and no schema moves: `git revert` of the range restores the previous
 behaviour exactly. The one externally visible change a revert would undo is the `hmc_mcp.audit`
 logger and the ownership record's shape — neither has shipped in any release.
