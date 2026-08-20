@@ -188,6 +188,17 @@ counter, no marker. That keeps a diagnostic from failing a call, but it means an
 stream is not evidence of an idle server. A destination that is open but never drained
 is a different case: the write blocks (issue #269), so fd 2 must be drained.
 
+**The record is readable by the party it is about, and it says more than the denial does.**
+Under stdio the MCP client owns the server's stderr, so a client can read the records describing
+its own calls. That matters for one field: `connection.resolved` carries the profile key a token
+resolved to, or `<unresolved>` when it named nothing configured. The denial *message* withholds
+that distinction on purpose — ADR 0038 makes an unresolvable token and a withheld one deny
+identically, so a caller cannot use denials to test membership of `config.toml` — and the record
+does not. A caller reading the stream therefore learns which of its guesses name configured
+profiles, and a correctly-guessed nickname yields the profile key it targets. The disclosure is
+names only, and `hmc_list_configured_hosts` offers a client more; if your profile inventory is
+sensitive, withhold that tool by policy and route this stream somewhere the client cannot read.
+
 Who has to do that depends on the transport, and under stdio it is not you. The MCP
 client spawns the server and owns fd 2, so "drain it" binds the client rather than the
 operator deploying it — choose one that reads its child's stderr. Under `--http` it is

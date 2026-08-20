@@ -190,6 +190,19 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   the narrower documented examples as well, and why the generated file's own header says the
   grant is a migration aid rather than a recommended posture. The paved road for a new
   deployment is the read-only example, not this file.
+- **The audit record tells the caller what the denial deliberately does not.** ADR 0038 built the
+  connection denial so an unresolvable token and a resolvable-but-withheld one deny through the
+  *same* message, because two distinguishable messages would be a membership oracle over
+  `config.toml` on a channel no policy can withhold. The ADR 0040 record does not apply that rule:
+  its `connection.resolved` field carries the profile key, or `<unresolved>`, which is exactly the
+  bit the message withholds — and for a correctly-guessed nickname it carries the *target* key,
+  which the caller never supplied. Under stdio the MCP client owns fd 2, so the party the record
+  is about is a party that can read it. ADR 0040 shipped the field; this record is what makes it
+  reachable on every deployment rather than only those that opted in. Not closed here: redacting
+  the field would remove the operator's primary diagnostic to withhold a set of profile *names*
+  from a client that `hmc_list_configured_hosts` already offers more to. Stated so an operator who
+  considers their profile inventory sensitive knows the audit stream discloses it, and can
+  withhold that tool and route the stream away from the client.
 - **Legacy-equivalent is not legacy.** Under the generated policy every connection-bearing tool
   is wrapped by `tool_registry.authorized`, every call runs the full `dispatch_scope` conjunction,
   and every decision is recorded. For every tool the file names the outcome is the same as before
