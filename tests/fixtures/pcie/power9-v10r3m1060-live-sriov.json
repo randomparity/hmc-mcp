@@ -10,6 +10,22 @@
   "support": "captured",
   "probes": [
     {
+      "name": "hmc-version",
+      "command": "lshmc -V",
+      "fields": [],
+      "exit_status": 0,
+      "stdout": "Version: 10\nRelease: 3\nService Pack: 1060\nBuild level: 2408210051\n",
+      "stderr": ""
+    },
+    {
+      "name": "system-model",
+      "command": "lssyscfg -r sys -m system-a -F type_model",
+      "fields": ["type_model"],
+      "exit_status": 0,
+      "stdout": "8375-42A\n",
+      "stderr": ""
+    },
+    {
       "name": "adapter",
       "command": "lshwres -r sriov --rsubtype adapter -m system-a -F adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header",
       "fields": ["adapter_id", "slot_id", "config_state", "functional_state", "phys_loc", "phys_ports", "logical_ports", "adapter_max_logical_ports", "sriov_status"],

@@ -545,6 +545,7 @@ async def set_sriov_adapter_mode(
 ) -> str:
     validate_sriov_mode(mode)
     system_name = await _system_name(config, system)
+    await _require_admitted_environment(config, system_name)
     rows = [
         row
         for row in await list_sriov_adapter_rows(config, system_name)
@@ -668,11 +669,22 @@ async def list_sriov_logical_ports(
         and (logical_port_id is None or row["logical_port_id"] == logical_port_id)
     ]
     unconfigured = await list_sriov_unconfigured_logical_port_rows(config, system_name)
+    physical_rows = await list_sriov_physical_port_rows(config, system_name, adapter_id)
+
+    def physical_id(row: dict[str, str]) -> str | None:
+        location = row.get("location_code", "")
+        matches = [
+            port["phys_port_id"]
+            for port in physical_rows
+            if location.startswith(port["phys_port_loc"] + "-S")
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     items.extend(
         SriovLogicalPort(
             system_name,
             row["adapter_id"],
-            None,
+            physical_id(row),
             row["logical_port_id"],
             "unconfigured",
             None,
@@ -683,7 +695,7 @@ async def list_sriov_logical_ports(
         )
         for row in unconfigured
         if row.get("adapter_id") == adapter_id
-        and physical_port_id is None
+        and (physical_port_id is None or physical_id(row) == physical_port_id)
         and (logical_port_id is None or row.get("logical_port_id") == logical_port_id)
     )
     return InventoryResult(

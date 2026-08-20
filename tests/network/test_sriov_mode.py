@@ -48,7 +48,10 @@ def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
         f"{fields}\n{ADAPTER_ID},1,sriov,1,U,2,120,120,running\n"
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+    ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
     command = conn_mock.run.await_args.args[0]
@@ -71,7 +74,10 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
         f"{fields}\n{ADAPTER_ID},1,dedicated,1,U,2,120,120,stopped\n"
     )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+    ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 
     command = conn_mock.run.await_args.args[0]

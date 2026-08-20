@@ -2301,6 +2301,10 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
 
     async def fake(_config, command):
         commands.append(command)
+        if command == "lshmc -V":
+            return "V10R3 M1060 build 2408210051\n"
+        if "-r sys" in command and "type_model" in command:
+            return "8375-42A\n"
         if "--rsubtype adapter" in command:
             fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
             return f"{fields}\nP1-C1,1,sriov,1,U,2,120,120,running\n"
