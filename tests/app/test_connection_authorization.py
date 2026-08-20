@@ -574,3 +574,155 @@ def test_the_permissions_site_routes_through_the_shared_helper(monkeypatch):
     assert name == server_permissions.TOOL_NAME
     assert security is server_permissions.EFFECTIVE_PERMISSIONS_SECURITY
     assert authorize is not None
+
+
+# ---------------------------------------------------------------------------
+# #267 — a denial is a record, not a traceback panel (ADR 0046)
+# ---------------------------------------------------------------------------
+
+# The grant a target denial needs: the connection matches, the named lpar does not.
+LAB_ONE_LPAR = [
+    {
+        "tools": ["hmc_power_on_lpar"],
+        "connections": ["lab"],
+        "targets": {"lpar": ["scratch-01"]},
+    }
+]
+
+# ADR 0038's closed denial templates as the client receives them, wrapped in the
+# prefix fastmcp adds. Byte-for-byte, because #267's fix must not move the
+# client-facing contract by so much as a character.
+CONNECTION_DENIAL = (
+    "Error calling tool 'hmc_power_on_lpar': hmc_power_on_lpar is not permitted "
+    "on connection 'other' by access policy 'lab-only'. Grant that connection in "
+    "a policy grant that already names hmc_power_on_lpar, or call "
+    "hmc_power_on_lpar with a connection the policy grants."
+)
+TARGET_DENIAL = (
+    "Error calling tool 'hmc_power_on_lpar': hmc_power_on_lpar is not permitted "
+    "on lpar='lp-1' by access policy 'lab-only'. No grant naming hmc_power_on_lpar "
+    "allows that combination of targets. Grant them in a policy grant that already "
+    "names hmc_power_on_lpar, or call hmc_power_on_lpar with targets the policy "
+    "grants."
+)
+
+
+@pytest.fixture
+def denial_filter():
+    """Install the ADR 0046 filter for one test and take it off again.
+
+    It lives on a process-global logger that belongs to fastmcp, so a test that
+    left it there would decide what every later test sees on stderr.
+    """
+    import logging
+
+    from hmc_mcp.server import install_denial_log_filter
+
+    logger = logging.getLogger("fastmcp.server.server")
+    saved = list(logger.filters)
+    install_denial_log_filter()
+    try:
+        yield
+    finally:
+        logger.filters[:] = saved
+
+
+def _stderr(capsys) -> str:
+    """Whitespace-normalized stderr, drained first.
+
+    Two reasons not to read ``capsys`` raw. The audit sink writes on a daemon
+    thread (ADR 0043), so without the drain this reads whatever happened to have
+    arrived. And fastmcp's ``RichHandler`` hard-wraps its line to the console
+    width, so an assertion against the unnormalized text asserts against the
+    terminal size of whoever ran it.
+    """
+    from hmc_mcp import audit
+
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    return " ".join(capsys.readouterr().err.split())
+
+
+def _denied(application, profile: str) -> str:
+    """Drive one denied `hmc_power_on_lpar` call and return the client's message."""
+    with pytest.raises(ToolError) as error:
+        _call(
+            application,
+            "hmc_power_on_lpar",
+            {"lpar_name_or_uuid": "lp-1", "profile": profile},
+        )
+    return str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("grants", "profile", "expected"),
+    [
+        pytest.param(LAB_ONLY, "other", CONNECTION_DENIAL, id="connection-scope"),
+        pytest.param(LAB_ONE_LPAR, "lab", TARGET_DENIAL, id="target-scope"),
+    ],
+)
+def test_a_denial_writes_one_line_and_leaves_the_client_message_alone(
+    denial_filter, capsys, grants, profile, expected
+):
+    """#267 on both denial shapes: no panel on stderr, no change to the client.
+
+    Both are asserted in one test on purpose — the whole risk of this fix is that
+    quieting the server also quiets the client, and separating them would let a
+    regression pass half the pair.
+
+    ``TargetScopeError`` is exercised here rather than assumed to behave like
+    ``ConnectionScopeError``: PR #307 made the target dimension bind tools
+    declaring no connection argument, so it reaches this boundary on paths it did
+    not before.
+    """
+    assert _denied(create_mcp(_policy(grants)), profile) == expected
+
+    captured = _stderr(capsys)
+    assert "authorization denied" in captured
+    assert "Traceback" not in captured
+    assert "ConnectionScopeError" not in captured
+    assert "TargetScopeError" not in captured
+
+
+@pytest.mark.parametrize(
+    ("grants", "profile", "expected"),
+    [
+        pytest.param(LAB_ONLY, "other", CONNECTION_DENIAL, id="connection-scope"),
+        pytest.param(LAB_ONE_LPAR, "lab", TARGET_DENIAL, id="target-scope"),
+    ],
+)
+def test_the_client_denial_template_is_the_same_with_the_filter_off(
+    grants, profile, expected
+):
+    """The other half of the pin: the filter is the only thing that changed.
+
+    Without this, the test above would still pass if the fix had rewritten the
+    template and the constant had been updated to match it.
+    """
+    assert _denied(create_mcp(_policy(grants)), profile) == expected
+
+
+def test_an_unexpected_handler_error_still_renders_its_traceback(
+    denial_filter, capsys
+):
+    """The criterion that stops #267's fix becoming a debuggability regression.
+
+    A handler bug is not an authorization outcome, and its panel is the only
+    server-side record of it — fastmcp's own line names the tool and nothing
+    else. Driven through a throwaway application because no shipped tool can be
+    made to raise a non-scope error at this boundary without stubbing one.
+    """
+    from fastmcp import FastMCP
+
+    application = FastMCP("denial-filter-probe")
+
+    @application.tool
+    def explode() -> str:
+        raise RuntimeError("a handler bug, not a denial")
+
+    with pytest.raises(ToolError):
+        _call(application, "explode", {})
+
+    captured = _stderr(capsys)
+    assert "Traceback" in captured
+    assert "RuntimeError" in captured
+    assert "authorization denied" not in captured
