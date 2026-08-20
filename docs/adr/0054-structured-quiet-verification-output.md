@@ -1,4 +1,4 @@
-# ADR 0054: Structured quiet verification output
+# ADR 0054: Capture successful verification output
 
 ## Status
 
@@ -16,17 +16,15 @@ successful path.
 Pytest's quiet flags do not provide the required contract. With pytest 9.1.1,
 `-qq` and `-qqq` still print progress while removing the passing summary.
 Pytest's terminal text is presentation output rather than a stable data
-interface, so extracting a summary from it would couple the runner to wording
-and layout changes.
+interface, so the quiet path must not extract data from its wording or layout.
 
 ## Decision
 
 The canonical test recipe will call a repository-owned Python runner. The runner
-will execute pytest with combined output captured, JUnit XML enabled, coverage
-output disabled, and coverage data confined to its temporary directory. A
-successful run will derive test counts and duration from JUnit XML and the
-coverage percentage from coverage.py's JSON output, then print one summary line.
-On failure it will replay the captured combined output and return pytest's exit
+will execute pytest with combined output captured and the terminal coverage
+report disabled. On success it will discard the captured presentation and print
+one fixed summary stating that the tests and configured coverage gate passed. On
+failure it will replay the captured combined output and return pytest's exit
 status.
 
 `just test-verbose` will invoke pytest directly with the missing-lines coverage
@@ -40,29 +38,37 @@ guards remain unchanged. Only coverage presentation changes.
 ## Consequences
 
 - Successful test output becomes one stable, bounded line regardless of suite
-  size or the number of measured files.
+  size or the number of measured files. It deliberately omits counts, duration,
+  and percentage rather than adding a structured post-processing stage.
 - A failed run is intentionally noisy because its full combined diagnostic is
   the information needed to act.
 - The runner waits for pytest to finish before printing output. This trades live
   progress for context conservation on the canonical agent path; the verbose
   recipe remains available for long-running interactive diagnosis.
-- The runner owns temporary JUnit and coverage files and removes them on every
-  exit, so verification leaves no untracked artifacts.
-- The solution uses only Python, pytest, pytest-cov, and coverage.py already
-  present in the locked development environment.
+- The runner is repository-owned code that must be maintained, but its boundary
+  is limited to one subprocess, one captured stream, and exit-status handling.
+- The solution uses only Python, pytest, and pytest-cov already present in the
+  locked development environment.
 
 ## Considered & rejected
 
 - **Increase pytest quietness.** verified: `uv run --no-sync pytest -c
   /dev/null -qqq -p no:cacheprovider <passing-test>` with pytest 9.1.1 on
   x86_64 Linux still printed the progress line and no passing summary.
-- **Scrape pytest's terminal summary and coverage table.** judgment: terminal
-  presentation is a brittle interface for a repository guardrail; JUnit XML and
-  coverage JSON already expose the required values structurally.
+- **Parse pytest's terminal summary and coverage table.** judgment: terminal
+  presentation is a brittle interface for a repository guardrail, and exact
+  counts or percentages are not required to establish that both configured
+  gates passed.
+- **Post-process JUnit XML and coverage JSON.** judgment: those structured
+  formats could reproduce exact counts and percentage, but would add artifact
+  lifecycle, parsing, and a second subprocess failure after pytest had already
+  passed. A fixed success statement satisfies the confirmed compact result and
+  coverage-summary requirement with less owned code.
 - **Pipe pytest through `tail` or `grep`.** judgment: preserving the producing
   command's status and replaying complete failures becomes shell-dependent and
   conflicts with the repository's bare-guardrail discipline.
 - **Keep the current output.** verified: `just test` at the issue's base commit
   emitted 13,524 bytes over 192 lines for 2,449 passing tests on pytest 9.1.1,
-  pytest-cov 7.1.0, coverage 7.15.4, x86_64 Linux.
-
+  pytest-cov 7.1.0, coverage 7.15.4, x86_64 Linux. Judgment: paying a small,
+  focused subprocess wrapper once is proportionate to removing that recurring
+  context cost from every successful agent run.

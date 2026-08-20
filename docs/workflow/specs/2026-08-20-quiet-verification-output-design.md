@@ -27,31 +27,24 @@ summary while suppressing progress. The quiet path must capture output.
 ## Command contract
 
 `just test` invokes `uv run --no-sync python scripts/run_tests.py`. On success it
-prints exactly one semantic line in this form:
+prints exactly one semantic line:
 
 ```text
-test: <passed> passed[, <skipped> skipped] in <seconds>s; coverage <percent>%
+test: passed; configured coverage gate passed
 ```
 
-Counts and elapsed time come from pytest's JUnit XML. `passed` is total tests
-minus failures, errors, and skipped tests. Zero-valued optional categories are
-omitted. Coverage comes from coverage.py JSON and uses the configured display
-precision. The exact elapsed representation may follow JUnit's numeric value;
-tests assert its semantic fields rather than a wall-clock fixture value.
-
-Warnings are omitted on success. A warning that must fail the suite remains a
-pytest failure under existing configuration; ordinary warning detail is
-available through the verbose path.
+The line makes only the guarantees pytest's exit status establishes: tests
+passed and pytest-cov accepted the configured coverage floor. Counts, duration,
+warnings, and exact coverage percentage are intentionally omitted rather than
+parsed from terminal presentation or reconstructed through a second reporting
+stage. A warning that must fail the suite remains a pytest failure under existing
+configuration; ordinary warning detail is available through the verbose path.
 
 On any pytest non-zero exit, the runner writes pytest's complete combined
-stdout/stderr to stderr and exits with the same positive exit code. It does not
-try to parse JUnit or coverage data. If pytest is terminated by a signal, the
-runner re-emits the captured diagnostics and exits non-zero; exact shell signal
-encoding is outside this command's portable contract.
-
-If pytest succeeds but the structured summary cannot be read or generated, the
-runner reports the failed summary operation and exits non-zero. A passing suite
-without its promised bounded result is not a successful canonical command.
+stdout/stderr to stderr and exits with the same positive exit code. If pytest is
+terminated by a signal, the runner re-emits the captured diagnostics and exits
+non-zero; exact shell signal encoding is outside this command's portable
+contract.
 
 `just test-verbose` invokes pytest directly with `-q` and
 `--cov-report=term-missing`. It retains live pytest output, the full coverage
@@ -69,26 +62,12 @@ abstraction. Its public-to-tests boundary is:
 def main(args: list[str] | None = None) -> int: ...
 ```
 
-Additional arguments are forwarded to pytest after the runner-owned
-`--junitxml` option. The canonical recipe supplies none. The runner rejects no
-pytest arguments, but its own JUnit and coverage destinations remain last so a
-caller cannot redirect the structured artifacts used for the summary.
-
-Within a `TemporaryDirectory`, the runner:
-
-1. sets `COVERAGE_FILE` for the child to a temporary path;
-2. runs `[sys.executable, "-m", "pytest", *args,
-   "--junitxml=<temporary path>"]` with stderr redirected to stdout;
-3. replays the combined stream and returns immediately on non-zero;
-4. runs `[sys.executable, "-m", "coverage", "json", "-o",
-   <temporary path>]` against the same `COVERAGE_FILE`;
-5. parses the JUnit `<testsuite>` aggregate and coverage JSON `totals`; and
-6. emits the compact line.
-
-Both subprocesses inherit the repository working directory so pytest and
-coverage continue reading `pyproject.toml`. The runner changes only
-`COVERAGE_FILE`, not `COVERAGE_RCFILE`, `PYTEST_ADDOPTS`, the measured source,
-or the coverage floor.
+Additional arguments are forwarded to pytest. The canonical recipe supplies
+none. The runner invokes `[sys.executable, "-m", "pytest", *args]` with stderr
+redirected to stdout. Both streams remain available in observed order for
+failure replay. The subprocess inherits the repository working directory and
+environment, so pytest and coverage continue reading `pyproject.toml`; the
+runner changes no coverage or pytest environment variable.
 
 ## Coverage configuration
 
@@ -120,25 +99,16 @@ that path; `just verify` continues to select `smoke`.
 ## Error handling and cleanup
 
 - Pytest failures are replayed without truncation and retain their exit code.
-- Coverage-summary subprocess failures include that subprocess's combined
-  diagnostic and return its non-zero exit code.
-- Missing or malformed JUnit or coverage JSON produces an actionable runner
-  error naming the artifact and failed operation.
-- Temporary output is owned by `TemporaryDirectory` and removed on success,
-  failure, parse error, and interruption handled by Python teardown.
 - The runner never pipes a guardrail through a filtering command.
 
 ## Tests
 
 Focused unit tests replace subprocess execution with controlled completed
-processes and temporary structured artifacts. They prove:
+processes. They prove:
 
-- a successful suite prints only the compact semantic summary;
-- skipped tests are represented and failures/errors are not counted as passed;
+- a successful suite prints only the fixed compact semantic summary;
 - pytest failure output is replayed completely and its exit code is preserved;
-- coverage JSON generation failure is visible and non-zero;
-- malformed JUnit and coverage data fail with actionable messages;
-- runner-owned artifact arguments and `COVERAGE_FILE` reach child processes;
+- pytest arguments reach the child without changing its environment;
 - default smoke output contains only count, while verbose output lists live
   registry names;
 - canonical and verbose recipes retain the coverage gate and verification
@@ -159,4 +129,3 @@ boundary must stop the next operation.
 - Canonical guardrail remains `just verify`.
 - Host architecture is x86_64; no target architecture is declared, and the
   behavior is architecture-independent.
-
