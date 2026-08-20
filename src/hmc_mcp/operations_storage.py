@@ -220,8 +220,40 @@ async def get_media_repository(
     )
 
 
+ACCEPTED_ISO_SCHEMES = ("http", "https")
+
+
+def _require_http_url(iso_source: str) -> str:
+    """Return ``iso_source`` if it is an http(s) URL, else raise ``ValueError``.
+
+    This is the whole of ``upload_iso``'s input validation, and it runs before
+    the operation touches the filesystem, the network, or the HMC. ADR 0049
+    records why: anything that is not an http(s) URL used to be read as a path on
+    the MCP server's own host, so a caller holding a grant for the tool could
+    have any file the server process could read uploaded into a VIOS media
+    repository (#261). Refusing by scheme, first, closes that by construction —
+    there is no path for traversal or a symlink to escape through.
+
+    The message is identical whether or not a file exists at the rejected value,
+    and is derived only from the caller's own input, so a refusal discloses
+    nothing about the server's filesystem.
+    """
+    if urlparse(iso_source).scheme not in ACCEPTED_ISO_SCHEMES:
+        accepted = " or ".join(f"{scheme}://" for scheme in ACCEPTED_ISO_SCHEMES)
+        raise ValueError(
+            f"iso_source must be an {accepted} URL: got {iso_source!r}. "
+            "The ISO is downloaded over HTTP(S); a path on the MCP server's "
+            "filesystem is not an accepted source. Publish the ISO on a web "
+            "server reachable from the MCP server and pass its URL."
+        )
+    return iso_source
+
+
 async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
     """Download an ISO file from an HTTP(S) URL with bounds and validation.
+
+    The scheme is the caller's responsibility: ``upload_iso`` admits only what
+    ``_require_http_url`` accepts, which is this function's only caller.
 
     Args:
         url: HTTP(S) URL to download the ISO from.
@@ -230,19 +262,10 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
         Tuple of (temp_file_path, sha256_hexdigest, file_size_bytes).
 
     Raises:
-        ValueError: For URL validation failures, scheme rejection, or download errors.
+        ValueError: If the download exceeds ``MAX_DOWNLOAD_SIZE_BYTES``.
         httpx.TimeoutException: If connection or read timeout is exceeded.
         httpx.HTTPStatusError: If HTTP request fails (4xx/5xx).
     """
-    parsed = urlparse(url)
-
-    # Validate scheme - only HTTP and HTTPS allowed
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Unsupported URL scheme '{parsed.scheme}': "
-            "only 'http' and 'https' are supported for ISO downloads"
-        )
-
     # Configure HTTP client with timeouts and redirect limits
     timeout = httpx.Timeout(CONNECT_TIMEOUT, read=READ_TIMEOUT)
     async with httpx.AsyncClient(
@@ -309,24 +332,22 @@ async def upload_iso(
     vios: str,
     vg_uuid: str,
     media_name: str,
-    iso_source: str | Path,
+    iso_source: str,
 ) -> dict[str, Any]:
-    """Upload an ISO file to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC file broker.
 
-    Accepts either a local file path or an HTTP(S) URL. For HTTP(S) sources,
-    downloads with explicit redirect, timeout, and size bounds, computes SHA-256,
-    and cleans up both local temp and HMC broker resources consistently.
-
-    Computes SHA-256 and size before upload, refuses name collisions, and cleans
-    up broker resources on every outcome. Returns staged result data including
-    the imported media entry or existing media if the same content already exists.
+    ``iso_source`` must be an ``http`` or ``https`` URL, and is refused before
+    any other work happens. The ISO is downloaded with explicit redirect,
+    timeout, and size bounds; SHA-256 and size are computed from the download;
+    name collisions are refused; and both the local temp file and the HMC broker
+    resources are cleaned up on every outcome.
 
     Args:
         hmc: HMC client instance.
         vios: VIOS name or UUID.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
-        iso_source: Path to local ISO file or HTTP(S) URL to download.
+        iso_source: HTTP(S) URL to download the ISO from.
 
     Returns:
         Dict with:
@@ -339,48 +360,13 @@ async def upload_iso(
 
     Raises:
         HMCError: For HMC API errors during broker operations or import.
-        ValueError: For local file validation errors, URL validation errors, 
-                   or download errors (unsupported scheme, timeout, size exceeded).
+        ValueError: If ``iso_source`` is not an http(s) URL, or the download
+                   exceeds the size bound.
         FileExistsError: If media_name already exists in the repository.
     """
+    iso_url = _require_http_url(iso_source)
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    iso_source_str = str(iso_source)
-    
-    # Detect if source is HTTP(S) URL or local file
-    parsed_url = urlparse(iso_source_str)
-    is_url = parsed_url.scheme in ("http", "https")
-    
-    if is_url:
-        # Download from HTTP(S) URL
-        iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_source_str)
-        cleanup_temp_file = True
-    else:
-        # Use local file
-        iso_path = Path(iso_source)
-        cleanup_temp_file = False
-
-        # Validate source file
-        if not iso_path.exists():
-            raise ValueError(f"ISO file does not exist: {iso_path}")
-        if not iso_path.is_file():
-            raise ValueError(f"ISO path is not a file: {iso_path}")
-        if not os.access(iso_path, os.R_OK):
-            raise ValueError(f"ISO file is not readable: {iso_path}")
-
-        # Compute SHA-256 and size
-        sha256_hash = hashlib.sha256()
-        file_size = 0
-        chunk_size = DEFAULT_CHUNK_SIZE
-
-        try:
-            with iso_path.open("rb") as f:
-                while chunk := f.read(chunk_size):
-                    sha256_hash.update(chunk)
-                    file_size += len(chunk)
-        except OSError as e:
-            raise ValueError(f"Failed to read ISO file: {e}") from e
-
-        iso_sha256 = sha256_hash.hexdigest()
+    iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
     # Check for name collision
     existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
@@ -436,8 +422,8 @@ async def upload_iso(
                 # Cleanup errors are logged but don't fail the upload
                 pass
         
-        # Cleanup temp file if downloaded from URL
-        if cleanup_temp_file and iso_path.exists():
+        # Cleanup the temp file the download staged
+        if iso_path.exists():
             try:
                 iso_path.unlink()
             except OSError:

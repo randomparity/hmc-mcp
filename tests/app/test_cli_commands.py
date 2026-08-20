@@ -1982,7 +1982,7 @@ def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
 def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeypatch):
     async def fake_upload(_hmc, vios, vg, media_name, iso_source):
         assert (vios, vg, media_name) == (VIOS_UUID, VG_UUID, "aix.iso")
-        assert iso_source == "/tmp/aix.iso"
+        assert iso_source == "https://images.test/aix.iso"
         return {
             "status": "existing",
             "media_name": "aix.iso",
@@ -1996,7 +1996,14 @@ def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeyp
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "upload-iso", VIOS_UUID, VG_UUID, "aix.iso", "/tmp/aix.iso"],
+        [
+            "storage",
+            "upload-iso",
+            VIOS_UUID,
+            VG_UUID,
+            "aix.iso",
+            "https://images.test/aix.iso",
+        ],
     )
 
     assert result.exit_code == 0
@@ -2019,7 +2026,7 @@ def test_storage_upload_iso_json(direct_client, monkeypatch):
             VIOS_UUID,
             VG_UUID,
             "aix.iso",
-            "/tmp/aix.iso",
+            "https://images.test/aix.iso",
             "--json",
         ],
     )

@@ -233,6 +233,12 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
+    """ADR 0029: the supported signatures move only with a recorded decision.
+
+    Last moved by ADR 0049, which narrowed ``upload_iso``'s ``iso_source`` from
+    ``str | Path`` to ``str``: a filesystem path is no longer an accepted source,
+    and the annotation had to stop advertising one.
+    """
     operations = {
         name: getattr(api, name)
         for name in api.__all__
@@ -250,8 +256,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "313d5baf99edc0a3075141c093954f08"  # pragma: allowlist secret
-        "4e5aa1b5e5e58469170e628a981e7370"  # pragma: allowlist secret
+        "3ec598e30bee5072131603a751247b6e"  # pragma: allowlist secret
+        "e5681e1fe5aa5ba8186a543558fd3f12"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
