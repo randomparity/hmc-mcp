@@ -114,11 +114,12 @@ unguarded site can exist.
 is a public MCP tool contract change and the reason this record exists.
 
 The narrowing is not a loss of reachable function. Such a description never reached the HMC as a
-description: the HMC parsed the text after the first comma or the second equals sign as further
-attributes. `description=owner=alice env=prod` set `description=owner` and then attempted an
-attribute named `alice env`. The caller who wrote it got an outcome it did not ask for, or an
-HMC error, never the description it typed. What changes is that the failure is now local,
-immediate, and names the character.
+description, because the HMC parses the text after the delimiter as further attributes rather
+than as description text. Exactly what it then did with `description=owner=alice env=prod` —
+store `owner` and reject the rest, store `owner` and act on an attribute named `alice env`, or
+refuse the record — is unverified, and it is the same unverified question as the duplicate
+attribute below. What is certain either way is that the caller did not get the description it
+typed. What changes is that the failure is now local, immediate, and names the character.
 
 `tests/lpar/test_lpar_description.py::test_set_lpar_description_embeds_description` pinned the
 old behaviour with `owner=alice env=prod`. It now passes an ordinary description and still pins
