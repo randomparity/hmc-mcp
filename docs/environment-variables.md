@@ -45,6 +45,18 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   this variable will see `hmc_upload_iso` refuse every call, with a message
   naming this variable, until it is set. Matching is on the URL's host and port
   only; a redirect away from that host is refused rather than followed.
+  **Allowlisting a name trusts DNS for that name:** entries are matched as
+  written, and nothing checks what the name resolves to, so whoever controls
+  that resolution at fetch time — owning the record, poisoning the resolver this
+  host uses — chooses where the download lands. That yields them a fetch from
+  the MCP server's network position, the SHA-256 and exact size of whatever came
+  back (both returned to the caller), and those bytes imported into the VIOS
+  media repository as media; recovering the body needs an LPAR the caller can
+  mount it in, as listing the repository returns metadata only. Prefer names
+  whose resolution you control, served by a resolver you trust. An entry written
+  as an IP literal (`192.0.2.10`, `[2001:db8::1]:443`) is matched as that
+  literal, and no name resolving to it matches. ADR 0050 records the reasoning;
+  #322 tracks the residual.
 
 ## Profile Nicknames
 
