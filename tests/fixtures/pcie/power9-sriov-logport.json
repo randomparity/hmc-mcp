@@ -1,0 +1,14 @@
+{
+  "record_kind": "contract-evidence",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power9",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
+  "source_locator": "lshwres > -r sriov > --rsubtype logport > --level eth > adapter_ids,logical_port_ids,phys_port_ids",
+  "claim_summary": "Ethernet logical-port inventory has stable selectors, but no read projection is admitted.",
+  "support": "unknown",
+  "admitted_claims": [
+    "system + adapter_id + logical_port_id selectors",
+    "read fields remain unknown"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "record_kind": "contract-evidence",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power9",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
+  "source_locator": "lshwres > -r sriov > --rsubtype adapter > adapter_ids",
+  "claim_summary": "SR-IOV adapter inventory has an adapter-ID selector, but no read projection is admitted.",
+  "support": "unknown",
+  "admitted_claims": ["system + adapter_id selector", "read fields remain unknown"]
+}

@@ -1,0 +1,16 @@
+{
+  "record_kind": "read-fixture",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power8",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg",
+  "source_locator": "lssyscfg > -r prof > -F > sriov_eth_logical_ports",
+  "claim_summary": "Profile output exposes the Ethernet SR-IOV logical-port property.",
+  "support": "documented",
+  "command": "lssyscfg -r prof -m sys1 -F sriov_eth_logical_ports --header",
+  "fields": ["sriov_eth_logical_ports"],
+  "parser_examples": {
+    "kind": "synthetic",
+    "stdout": "sriov_eth_logical_ports\n1/0/27004001/10.25/20.50\n"
+  }
+}

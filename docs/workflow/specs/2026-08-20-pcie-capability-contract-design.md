@@ -1,0 +1,203 @@
+# PCIe and SR-IOV capability contract design
+
+**Issue:** #211  
+**Decision:** [ADR 0053](../../adr/0053-evidence-backed-pcie-capability-contract.md)  
+**Base branch:** `main`  
+**Guardrail:** `just verify`
+
+## Goal and scope
+
+Establish the repository-backed command, field, identity, capacity-unit, LPAR-state, and
+capability-unavailable contract required by issues #212–#216. This change adds version-labelled
+sanitized evidence and tests that pin its parsing. It does not expose normalized inventory tools,
+implement mutation, or perform a live HMC mutation.
+
+The repository documents HMC V8–V11 compatibility. IBM command references for Power8, Power9,
+Power10, and Power11 are the allowed evidence source in this change. No supported live HMC was
+available to this run, so fixtures must say `documentation` rather than imply captured live
+output. A future live capture may add another labelled fixture without changing the identities.
+
+## Evidence representation
+
+Create one JSON evidence record per admitted command or contract family under
+`tests/fixtures/pcie/`. Every record contains:
+
+- `evidence_kind`: `documentation`;
+- `documentation_family`: one of `Power8`, `Power9`, `Power10`, `Power11`;
+- `hmc_release`: an exact release when the source names one, otherwise `not-established`;
+- an IBM documentation URL;
+- a `source_locator` composed only of exact command, option, section, or attribute labels that a
+  reviewer can match in the cited reference;
+- a separately labelled editorial `claim_summary`;
+- `capacity_unit` where capacity fields occur.
+
+The `record_kind` discriminates two closed shapes. A `read-fixture` additionally contains
+`support: documented`, the exact read-only `command` with explicit `-F` field order, `fields`
+matching that order exactly, and `parser_examples` explicitly labelled `synthetic` with a header
+and data records using the command's comma delimiter. A `contract-evidence` contains
+`support: unknown` and an exact `admitted_claims` string array; it has no command, fields, or
+parser example because the source establishes mutation and unit rules but no admitted read
+inventory. Adding parser data to such a record would invent evidence.
+
+Source locators navigate evidence; claim summaries are repository prose, not quotations. Parser
+examples are test vectors and never claim to be raw HMC output. Tests load every file, validate
+its exact closed shape and exact reviewed provenance, and
+parse every `read-fixture` synthetic row against the declared field count. A Power-generation
+documentation family is not presented as an HMC software release:
+`hmc_release=not-established` forbids a test or downstream caller from claiming release-specific
+availability. This prevents field-order drift, accidental identity substitutions, undocumented
+unit changes, and false version precision.
+
+## Read command contract
+
+| Resource | Exact `-F` field order | Stable identity |
+|---|---|---|
+| Dedicated slot | `drc_index,description,lpar_name` | system + `drc_index` |
+| SR-IOV adapter | No admitted read fields | system + `adapter_id` selector |
+| Physical port | No admitted read fields | system + `adapter_id` + `phys_port_id` selectors |
+| Logical port | No admitted read fields | system + `adapter_id` + `logical_port_id` selectors |
+
+Physical-port selector grammar includes `--level eth` but admits no `-F` projection; RoCE and
+converged-Ethernet fields remain unknown until separate evidence is admitted. Documented read
+commands use `-F <comma-list> --header` with the
+declared order and a comma delimiter. The
+synthetic examples preserve header and data in one raw string, so the parser checks the first
+nonblank header against the independent matrix before parsing data. The admitted family matrix is:
+
+| Documentation family | Dedicated slot | Adapter | Physical port | Logical port |
+|---|---|---|---|---|
+| Power8 | unknown | unknown | unknown | profile-only evidence |
+| Power9 | documented | unknown | unknown | unknown |
+| Power10 | unknown | unknown | unknown | mutation/unit evidence only |
+| Power11 | unknown | unknown | unknown | mutation/unit evidence only |
+
+Each `documented` cell requires a fixture with the exact family-specific IBM read-command URL,
+source locator, selected fields, and claim summary.
+`profile-only evidence` admits only `chsyscfg`/`lssyscfg` profile properties, not live inventory.
+`unknown` means no claim and requires fail-closed behavior; it does not mean unsupported. A future
+unsupported cell is written explicitly as `unsupported` with source evidence; omission is invalid.
+The common field matrix applies only where a cell is `documented`. The Power9 reference establishes
+plural SR-IOV filter selectors, not singular `-F` output attributes, so selector identity is
+evidence-backed while all SR-IOV read fields remain unknown. Configuration state, location, owner,
+capacity, and granularity read fields likewise remain unknown; mutation attributes do not prove
+read availability. Later fields require
+a separate per-family optional-field matrix. These documentation-backed cells do not prove exact HMC release
+availability; #212 must preserve capability-unavailable/error behavior rather than infer it.
+
+Exact fixture field names are the compatibility boundary for #212. Additional HMC fields are
+ignored until a new labelled fixture and contract test admits them. Empty parsed values are
+retained, but this evidence set does not admit an owner read field.
+
+The parser is presentation-neutral: `parse_hmc_delimited_rows(text, fields, delimiter=",")`
+returns dictionaries with whitespace preserved only inside values and empty strings retained.
+It rejects an empty field list, duplicate/blank field names, a non-single-character delimiter,
+and rows whose column count differs from the field count. It is used for fixture proof now and
+can be reused by #212's explicit `-F` read commands.
+
+Row tokenization uses `str.splitlines()`. Empty input or only blank lines is malformed because a
+`--header` command must return a header. A final newline and blank or whitespace-only lines before,
+between, or after records contribute no row. The first nonblank record is exactly one header and
+is removed before data parsing; a header-only stream is an available empty collection. A repeated
+header among data is an ordinary data row, not silently discarded. Each nonblank line is parsed
+with Python's `csv.reader` using the one-character delimiter, `strict=True`, and standard
+double-quote escaping. Each physical line is parsed independently; a quote cannot continue onto
+another line. Unterminated quotes and characters after a closing quote are malformed.
+Unquoted and quoted values have surrounding whitespace retained; only the blank-line predicate
+uses `str.strip()`. A delimiter-only line is a row of empty values and is valid only when its
+column count matches. A quoted delimiter remains inside one value. Header validation requires an
+exact value-for-value match with the canonical field list before data rows are accepted. A final
+record needs no newline.
+
+## Identity and units
+
+Selectors always include managed-system scope. `drc_index`, `adapter_id`, `phys_port_id`, and
+`logical_port_id` retain their CLI spelling as strings at the parsing boundary; normalization may
+validate numeric forms later without losing leading or hexadecimal notation. `logical_port_id`
+is the logical-port DRC index. Display names, DRC names, location codes, labels, MAC addresses,
+and owner names are never selectors by themselves.
+
+`capacity`, `max_capacity`, and `min_eth_capacity_granularity` are decimal percentages with up to
+two decimal places. Downstream code must use decimal semantics and must not interpret `10` as
+bytes, Mbps, or an arbitrary weight. This contract does not generalize undocumented zero rules,
+aliases, available-capacity fields, or aggregation behavior across families.
+
+## LPAR-state-by-operation matrix
+
+The matrix combines IBM-backed command grammar with repository safety policy. Source locators pin
+the command/resource/attribute tokens. Choosing profile-only behavior for `Not Activated`, dynamic
+behavior only for `Running` with active RMC, rejecting every other state, and failing closed are
+explicit safety policy; they are not presented as quotations or HMC availability evidence.
+The Power8 `chsyscfg` contract-evidence record backs profile attribute grammar. The Power10 and
+Power11 `chhwres` contract-evidence records back dedicated-slot, adapter-mode, and logical-port
+dynamic grammar plus capacity units. Their mutation attributes do not widen the read-field matrix.
+
+| Operation | Create time | Inactive/shut down | Running | Capability unavailable |
+|---|---|---|---|---|
+| Assign/unassign dedicated slot | Profile grammar is documented, but mutation is capability-unavailable until exact `io_slots` readback is admitted; do not mutate | Profile grammar is documented, but mutation is capability-unavailable until exact `io_slots` readback is admitted; do not mutate | Dynamic grammar is documented as `chhwres -r io -m SYSTEM -o a/r --id LPAR_ID -l DRC_INDEX`, but mutation is capability-unavailable until one family admits both it and exact readback; do not compose Power10/11 mutation evidence with Power9 read evidence; do not mutate | Any unavailable precondition or command failure is an error; do not fall back to a profile-only success |
+| Assign/unassign SR-IOV logical port | Ethernet profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; RoCE profile grammar is unknown; do not mutate | Ethernet profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; RoCE profile grammar is unknown; do not mutate | Dynamic grammar is documented, but mutation is capability-unavailable until exact precondition/readback fields are admitted; do not mutate | Any unavailable precondition or command failure is an error; do not mutate |
+| Switch adapter shared/dedicated mode | Not an LPAR create operation | Capability-unavailable until exact dependency, owner, and adapter-state read fields are admitted; do not mutate | Command grammar is documented, but mutation is capability-unavailable until exact dependency, owner, and adapter-state read fields are admitted; never infer safety from one LPAR's state; do not mutate | Any unavailable inventory or command failure is an error; do not mutate |
+
+Before any LPAR-targeted dedicated-slot or logical-port operation, query
+`lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state`.
+`Not Activated` selects profile-only behavior. `Running` selects a dynamic path only when
+`rmc_state=active`; no additional DLPAR-capability field is claimed. Every other state/value is
+unsupported for mutation. Before switching adapter mode, do not select behavior from any one
+LPAR's state. The currently unknown adapter, physical-port, logical-port, and owner inventories
+make the operation capability-unavailable; downstream code must not mutate until later evidence
+admits them. A profile or effective operation is likewise unavailable unless its exact readback
+fields are admitted for the selected family.
+
+The IBM command references establish adapter-mode switching as `-o a/r -a slot_id=...`. The
+existing public `set_sriov_adapter_mode` implementation uses a conflicting `-o s --id ...`
+command. This issue does not change mutation, so the baseline remains callable but is explicitly
+not evidence-backed by this contract. Issue #214 owns replacing or removing that path before it
+uses adapter mode as a logical-port precondition; downstream code must not compose it as-is.
+
+Create-time and profile operations are declarative. Dynamic operations are effective-state
+operations. Downstream result schemas must report these two states separately. `--force` is not
+part of the ordinary contract; conflict override requires an explicit later policy decision.
+
+## Capability and error behavior
+
+Command success whose validated `--header` is followed by zero data rows means `available` with an
+empty collection. Successful output with no header or only blank content is malformed. This change
+admits no HMC error signature as proof of `capability-unavailable`: every non-success remains an
+error unless later version-labelled evidence supplies the exact command, exit status, diagnostic,
+and classifier test. Authentication, authorization, transport, timeout, malformed successful
+output, and apparently unsupported-resource failures therefore must not be rewritten as
+capability absence. A required unavailable capability fails closed without mutation. A partial row
+missing any stable-identity component is malformed evidence, not an unavailable capability and
+not an unassigned resource.
+
+## Testing and acceptance
+
+Tests must prove:
+
+1. all evidence records use the closed shape for their `record_kind`, allowed
+   documentation-family labels, an exact HMC release or `not-established`, HTTPS IBM sources,
+   and exact reviewed provenance; every `read-fixture` has a read-only `lshwres`/`lssyscfg`
+   command and exact declared columns, while every `contract-evidence` has exact admitted claims;
+2. documented read-fixture identities survive parsing and generic empty values are retained;
+   selector-only SR-IOV records pin exact stable identity strings and contain no parser data or
+   read fields;
+3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
+4. malformed column counts, duplicate/blank fields, invalid delimiters, unterminated quotes,
+   characters after closing quotes, and successful output without a header fail clearly, while a
+   validated header with no data is available-empty;
+5. the state matrix contains create-time, inactive, running, and capability-unavailable outcomes
+   plus exact selectors, attributes, preconditions, and readbacks for dedicated slots, logical
+   ports, and adapter-mode transitions, distinguishing LPAR state selection from adapter mode's
+   system-scoped inventory/owner preconditions;
+6. a diff-scoped no-mutation check confirms #211 adds no command execution, mutation function,
+   effect metadata, server/CLI/API export, or parser-to-SSH call. The existing
+   `set_sriov_adapter_mode` function is baseline, not a failure;
+7. `just verify` passes.
+
+## Security boundary
+
+The generic parser proves documentation fixtures in this issue. If #212 later applies it to SSH
+output, #212 owns byte/row/field bounds at that external boundary. This parser does not claim an
+input bound, execute values, build shell commands, or deserialize objects; it only separates rows
+into caller-supplied columns and rejects shape mismatches. Existing SSH quoting and
+attribute-record validation remain unchanged. Mutation commands and authorization are outside
+this change and remain owned by #213–#216.
