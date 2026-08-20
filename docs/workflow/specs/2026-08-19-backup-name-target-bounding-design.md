@@ -26,17 +26,18 @@ unstated rule and neither can drift from the other unnoticed.
   load-bearing.
 - **R4** A test pins the classification together with the guard that makes it
   true, so removing either fails on the other.
-- **R5** No legitimate catalog entry becomes unrestorable: the refusal covers only
-  shapes that could leave the catalog directory.
+- **R5** The refusal covers only shapes that could denote something other than a
+  catalog entry. It is narrower than the character set the HMC's own backup UI
+  accepts, so an entry named outside that set stays restorable.
 
 ## Changes
 
 | File | Change |
 |---|---|
 | `docs/adr/0044-containment-decides-unbounded-arguments.md` | The decision record. |
-| `src/hmc_mcp/server_vios.py` | `hmc_restore_vios` refuses a `backup_name` that is empty or whitespace-only, contains `/` or `\`, or is `.` or `..`; docstring states the refusal. |
+| `src/hmc_mcp/server_vios.py` | `_validate_backup_name` refuses a `backup_name` that is empty or differs from its stripped form, carries `/` or `\`, is made only of dots, or starts with `-`; docstring states the refusal. |
 | `src/hmc_mcp/tool_registry.py` | `UNBOUNDED_ARGUMENTS` comment states the containment criterion and points at ADR 0044. |
-| `tests/app/test_tool_security.py` | Guardrail comment rewritten to the containment rule; new test pinning `hmc_restore_vios`'s classification to the guard. |
+| `tests/app/test_tool_security.py` | Guardrail comment rewritten to the containment rule; a test pinning `hmc_restore_vios`'s classification to the guard; a test requiring every `UNBOUNDED_ARGUMENTS` member to carry its reason beside the set. |
 | `tests/vios/test_vios_backup.py` | The refused shapes, and a legitimate name still reaching the command unchanged. |
 | `tests/unit/test_ssh_quoting.py` | `test_restore_vios_quotes_hostile_backup_name` moves to a separator-free hostile value. |
 
@@ -57,6 +58,10 @@ is lost.
 - Whether restoring an `ssp`-type entry reaches the cluster, which would make
   `hmc_restore_vios`'s own declaration wrong —
   [#282](https://github.com/randomparity/hmc-mcp/issues/282).
+- Whether `chviosbackup`/`lsviosbackup` are the HMC's actual command names —
+  IBM documents `chviosbk`/`lsviosbk` —
+  [#289](https://github.com/randomparity/hmc-mcp/issues/289). The classification
+  turns on the call's shape, which that question does not change.
 - `file_path`'s classification on the profile pair, settled by ADR 0036 and
   ADR 0039.
 
@@ -74,16 +79,29 @@ command as the configured SSH user. The client is *not* trusted to supply a
 `backup_name` that stays inside the catalog — that is the assumption the guard
 stops making.
 
-**Control per boundary.** `shlex.quote` already governs shell metacharacters and
-stays; it is a different control from this one and neither replaces the other. The
-new control is the containment refusal, raising `ValueError` naming the
-constraint. `vios_name_or_uuid` is authorized by the access policy before the
-handler runs, unchanged.
+**Control per boundary.** Three controls meet at this boundary and none replaces
+another. `shlex.quote` governs shell metacharacters and is unchanged. The access
+policy authorizes `vios_name_or_uuid` before the handler runs, also unchanged.
+The new control is the containment refusal, raising `ValueError` naming the
+constraint and echoing the value no further than the caller's own error.
+
+One shape needs naming separately because the first control does not reach it: a
+value like `-operation` carries no shell metacharacter, so `shlex.quote` emits it
+bare and the CLI reads it as a flag rather than as a file name. The refusal is
+what covers argument injection here, which is why it refuses a leading `-` and
+not only separators.
 
 **Explicitly out of scope.** Whether a caller granted one VIOS should reach *any*
 backup of that VIOS — every entry in the catalog belongs to the declared VIOS, so
 it is inside the grant by construction. Whether the HMC imposes further validation
 (#283). Local-file disclosure through a different argument — `iso_source` is #261.
+
+**Observability, stated rather than assumed.** A refused `backup_name` raises
+before the authorization layer records anything, so a caller probing for catalog
+escapes leaves no ADR 0040 audit entry. That is accepted here rather than fixed:
+the grant is still required to reach the handler, so the probe reveals nothing a
+granted caller did not already have, and adding an audit path for argument
+validation is a broader change than this issue owns.
 
 ## Testing
 
@@ -91,10 +109,11 @@ it is inside the grant by construction. Whether the HMC imposes further validati
   true, `backup_name` is absent from `UNBOUNDED_ARGUMENTS`, **and** each escape
   shape is refused. Deleting the guard reddens the test that asserts the
   classification, which is what R4 asks for.
-- Each refused shape exercised: empty, whitespace-only, `/`-bearing, `\`-bearing,
-  `.`, `..`.
-- A name matching IBM's documented grammar reaches the command unchanged (R5),
-  and the existing restore tests keep passing untouched.
+- Each refused shape exercised: empty, whitespace-only, dot-segment, absolute
+  path, backslash, `.`, `..`, padded `..`, padded ordinary name, option-shaped.
+- Ordinary catalog names — `vios1_backup_001`, `nim_resources.tar`,
+  `cfgbackup.tar.gz`, `a-b_c.1` — reach the command unchanged (R5), and the
+  existing restore tests keep passing untouched.
 - Both pins watched biting rather than assumed: flip `exhaustive_targets` to
   `False` and remove the guard in turn, confirm each reddens a test, revert.
 - `tests/unit/test_ssh_quoting.py` still proves `shlex.quote` is applied to

@@ -59,10 +59,19 @@ to and not on whether it is written.
 
 `backup_name` stays out of the list and `hmc_restore_vios` keeps
 `exhaustive_targets=True`, and the server closes the gap that classification
-would otherwise leave open. `hmc_restore_vios` refuses a `backup_name` that is
-empty or whitespace-only, contains `/` or `\`, or consists only of dots, before
-building the command. What survives is a bare name, which can denote only an entry
-in the catalog `-id` selects.
+would otherwise leave open. `server_vios._validate_backup_name` refuses four
+shapes before the command is built, and none of them can name a catalog entry:
+
+- empty, or differing from its own stripped form — a padded `" .. "` would
+  otherwise slip a dot-segment past a naive check;
+- containing `/` or `\`;
+- consisting only of dots;
+- starting with `-`, which the CLI reads as an option rather than a value.
+  `shlex.quote` does not cover this one: `-operation` holds no shell
+  metacharacter, so quoting passes it through bare.
+
+What survives is a bare name, which can denote only an entry in the catalog
+`-id` selects.
 
 **The one premise this rests on, stated rather than buried.** That `-id` scopes
 the operation. It is not verifiable here and it is not eliminable: it is the same
@@ -99,12 +108,27 @@ either fails on the other.
   and its declared effect lands on the declared VIOS, so classifying it unbounded
   would force the strictly wider `all-targets` grant to reach a strictly narrower
   operation.
-- A caller can no longer pass a separator-bearing or all-dot `backup_name`. If
+- A caller can no longer pass a `backup_name` of any of those four shapes. If
   some HMC does hold a catalog entry named that way, restoring it needs the HMC
   CLI directly; #283 owns finding out whether that is reachable.
   `tests/unit/test_ssh_quoting.py::test_restore_vios_quotes_hostile_backup_name`
-  passes `/backups/vios;id` today and moves to a separator-free hostile value, so
-  the quoting property stays proven independently of containment.
+  moves from `/backups/vios;id` to `vios;id`, so the quoting property stays
+  proven independently of containment.
+- The guard is invisible to `_unbounded_identities`, the mechanical check that
+  catches the next unbounded argument: that check matches argument *names*, and a
+  name bounded by a per-tool guard looks identical to one that needs no guard.
+  The pairing is held by a test asserting the classification and the refusal
+  together instead, and by the rule text now naming `backup_name` explicitly —
+  which is itself checked, since the guardrail comment is what drifted last time.
+- A refused `backup_name` raises before the authorization layer records anything,
+  so a caller probing for catalog escapes leaves no entry in the ADR 0040 audit
+  stream. The authorization decision it would have needed is unaffected — the
+  grant is still required to reach the handler at all — but the probe itself is
+  not observable.
+- The command this reasons about is the one this repository builds. Whether
+  `chviosbackup` is the HMC's actual command name is a separate open question
+  (#289); the classification turns on the call's shape — a VIOS selector plus a
+  backup name — which that question does not change.
 - Two open findings would reverse parts of this, and neither is speculative. If
   #282 establishes that restoring an `ssp`-type entry reconfigures the cluster,
   `hmc_restore_vios`'s own declaration is wrong and flips to `False` — a per-tool
