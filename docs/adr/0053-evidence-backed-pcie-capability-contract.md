@@ -39,9 +39,10 @@ tests exist and pass.
 
 ## Decision
 
-Repository fixtures are version-labelled evidence records: each names the IBM documentation
-family, resource command, selected fields, exact source locator, editorial claim summary, and
-explicitly synthetic parser example. Parsers consume only explicit
+Repository fixtures are version-labelled evidence records: each names its record kind, IBM
+documentation family, source URL, exact source locator, and editorial claim summary. Only a
+`read-fixture` names a read command and selected fields and carries an explicitly synthetic parser
+example. A `contract-evidence` record carries admitted claims and no parser data. Parsers consume only explicit
 `-F` column order and retain empty columns. Stable identities are:
 
 - dedicated slot: managed-system identity plus `drc_index`;

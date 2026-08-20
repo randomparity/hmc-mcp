@@ -57,7 +57,8 @@ Use it for every red, green, and bite run below; bare `just verify` owns coverag
 
 1. Add failing tests for empty/duplicate/blank fields, invalid delimiters, missing or wrong header,
    header-only output, empty/blank input, quoted commas, empty values, whitespace preservation,
-   blank lines, final-newline absence, delimiter-only rows, and column-count mismatch.
+   blank lines, final-newline absence, delimiter-only rows, column-count mismatch, unterminated
+   quotes, and characters after a closing quote.
 2. Run the focused test command; expect failures because the parser is absent.
 3. Add the parser:
 
@@ -78,7 +79,7 @@ def parse_hmc_delimited_rows(
     records = [line for line in text.splitlines() if line.strip()]
     if not records:
         raise ValueError("HMC delimited output is missing its header")
-    parsed = list(csv.reader(records, delimiter=delimiter))
+    parsed = list(csv.reader(records, delimiter=delimiter, strict=True))
     if tuple(parsed[0]) != expected:
         raise ValueError("HMC delimited header does not match the requested fields")
 
@@ -123,9 +124,9 @@ available-empty; the parser never executes a command.
 | `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg` | locator `lssyscfg > -r prof > -F > sriov_eth_logical_ports`; summary `Profile output exposes the Ethernet SR-IOV logical-port property.` |
 | `power8-profile-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg` | locator `chsyscfg > -r prof > io_slots,sriov_eth_logical_ports,sriov_roce_logical_ports`; summary `Profile mutation grammar covers dedicated slots and SR-IOV logical ports.` |
 | `power9-io-slot.json` | `read-fixture` | `https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm` | locator `lshwres > -r io > --rsubtype slot > -F > drc_index,description,lpar_name`; summary `Physical-I/O slot output exposes identity, description, and owner.` |
-| `power9-sriov-adapter.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype adapter > adapter_ids`; summary `SR-IOV adapter inventory has an adapter-ID selector.` |
-| `power9-sriov-physport.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype physport > adapter_ids,phys_port_ids`; summary `SR-IOV physical-port inventory has adapter- and physical-port-ID selectors.` |
-| `power9-sriov-logport.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype logport > --level eth > adapter_ids,logical_port_ids,phys_port_ids`; summary `Ethernet logical-port inventory has stable adapter, physical-port, and logical-port selectors.` |
+| `power9-sriov-adapter.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype adapter > adapter_ids`; summary `SR-IOV adapter inventory has an adapter-ID selector, but no read projection is admitted.` |
+| `power9-sriov-physport.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype physport > adapter_ids,phys_port_ids`; summary `SR-IOV physical-port inventory has stable selectors, but no read projection is admitted.` |
+| `power9-sriov-logport.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype logport > --level eth > adapter_ids,logical_port_ids,phys_port_ids`; summary `Ethernet logical-port inventory has stable selectors, but no read projection is admitted.` |
 | `power10-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres` | locator `chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity`; summary `The mutation contract selects stable SR-IOV identities and uses percentage capacities.` |
 | `power11-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres` | same locator and summary as Power10 |
 
@@ -135,9 +136,6 @@ available-empty; the parser never executes a command.
 |---|---|---|---|
 | `power8-profile.json` | `lssyscfg -r prof -m sys1 -F sriov_eth_logical_ports --header` | `sriov_eth_logical_ports` | `sriov_eth_logical_ports\n1/0/27004001/10.25/20.50\n` |
 | `power9-io-slot.json` | `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header` | `drc_index,description,lpar_name` | `drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n` |
-| `power9-sriov-adapter.json` | `lshwres -r sriov --rsubtype adapter -m sys1 -F adapter_id --header` | `adapter_id` | `adapter_id\n1\n` |
-| `power9-sriov-physport.json` | `lshwres -r sriov --rsubtype physport --level eth -m sys1 -F adapter_id,phys_port_id --header` | `adapter_id,phys_port_id` | `adapter_id,phys_port_id\n1,0\n` |
-| `power9-sriov-logport.json` | `lshwres -r sriov --rsubtype logport --level eth -m sys1 -F adapter_id,phys_port_id,logical_port_id --header` | `adapter_id,phys_port_id,logical_port_id` | `adapter_id,phys_port_id,logical_port_id\n1,0,27004001\n` |
 
    Every `read-fixture` uses the table's literal values and exactly these common keys:
    `record_kind: "read-fixture"`, `evidence_kind: "documentation"`,
@@ -150,7 +148,12 @@ available-empty; the parser never executes a command.
    A `contract-evidence` record omits parser fields and contains exactly `record_kind`,
    `evidence_kind`, `documentation_family`, `hmc_release`, `source_url`, `source_locator`,
    `claim_summary`, `support: "unknown"`, `capacity_unit: "percent"`, and an
-   For Power10 and Power11, `admitted_claims` contains, in this order,
+   For the Power9 adapter record, `admitted_claims` is
+   `["system + adapter_id selector", "read fields remain unknown"]`; for physical port it is
+   `["system + adapter_id + phys_port_id selectors", "read fields remain unknown"]`; for logical
+   port it is `["system + adapter_id + logical_port_id selectors", "read fields remain unknown"]`.
+   These records omit `capacity_unit`. For Power10 and Power11, `admitted_claims` contains, in this
+   order,
    `dedicated-slot dynamic operations use -r io -o a/r -l`,
    `adapter mode uses -o a/r with slot_id`,
    `logical-port operations use adapter_id and logical_port_id`, and
@@ -158,7 +161,7 @@ available-empty; the parser never executes a command.
    For Power8 it contains, in order, `dedicated-slot profiles use io_slots` and
    `logical-port profiles use sriov_eth_logical_ports or sriov_roce_logical_ports` and omits
    `capacity_unit`. Contract-evidence never contains synthetic stdout.
-4. Assert the logical-port identity is adapter plus logical-port ID. Load the contract-evidence
+4. Assert the logical-port selector identity is adapter plus logical-port ID. Load the contract-evidence
    two-decimal capacity claim and prove with `Decimal("10.25")` that tests do not convert capacity
    semantics to float. Use a separate synthetic parser case to prove an empty value survives.
 5. Run the focused test; expect green. Change one fixture identity field, confirm its test fails,
@@ -182,11 +185,11 @@ mistaken for live capture; identities and units are executable assertions.
 
 1. Add characterization tests that read the already-reviewed spec and require all three operation
    rows, all four state columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic
-   templates, profile record grammar, stable readback identities, error/no-fallback wording, and
+   templates, profile record grammar, stable identities, error/no-fallback wording, and
    the explicit disposition of the conflicting existing adapter-mode function to #214. Assert
-   LPAR state selection applies only to LPAR-targeted operations, adapter mode uses system-scoped
-   inventory/owner preconditions, header-only success is available-empty, and blank success is
-   malformed.
+   LPAR state selection applies only to LPAR-targeted operations; profile dedicated-slot,
+   logical-port, and adapter-mode mutation are capability-unavailable until their exact readback
+   fields are admitted; header-only success is available-empty; and blank success is malformed.
 2. Add a repository-only structural no-mutation test. Without Git metadata, skip with
    `repository-only no-mutation guard requires Git metadata`; make no packaging claim. With Git
    metadata, resolve `main` locally or `origin/main` in CI and fail if neither exists. Reject
