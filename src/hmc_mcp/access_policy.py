@@ -468,7 +468,7 @@ def unboundable_effect_tools(
     """One diagnostic line per grant whose table cannot bind part of its reach.
 
     #279: ``_compile_grant`` refuses a grant outright only when its table could
-    never authorize *anything* it reaches (every connection-bound tool
+    never authorize *anything* it reaches (every tool it resolves to
     non-exhaustive) — a *mixed* grant, reaching some tools the table binds and
     some it cannot, still loads, because refusing it would discard the working
     majority to diagnose an unreachable minority. This is that minority's
