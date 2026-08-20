@@ -175,6 +175,21 @@ has lapsed. Detecting the lapse and reinstalling — a watchdog, or a re-check o
 is not undertaken here: it adds a mechanism whose failure mode is the one being fixed, for a path
 no shipped entry point takes.
 
+### Residual: the startup banner is not a log record and is not on the sink
+
+`FastMCP.run` calls `log_server_banner`, which builds its own `Console(stderr=True)` and
+`print`s to it (`fastmcp/utilities/cli.py:246`, `:268`). Nothing about it goes through the
+`fastmcp` logger, so nothing here touches it: fd 2 still takes one unbounded `rich` write per
+start. Observed on a real `hmc-mcp serve` subprocess at this branch's HEAD, where the banner
+rendered above the first record.
+
+Its exposure is the one ADR 0043 declined to hand-wave for `server._warn`: a fixed-size write
+before `.run()` reaches the transport, so a start that blocks there is a start nobody reaches.
+The difference from `_warn` is that this one is not ours to move — it is a direct console write
+inside the dependency, and the levers are FastMCP's own (`FASTMCP_SHOW_SERVER_BANNER=false`, the
+`--no-banner` flag, or `show_banner=False` to `.run()`). Choosing one is a change to what an
+operator sees at startup and belongs to whoever wants that, not to this record.
+
 ### Residual: `Handler.handleError` still writes straight to fd 2
 
 `_AuditHandler.emit` wraps its body and routes a failure to `logging.Handler.handleError`, which
