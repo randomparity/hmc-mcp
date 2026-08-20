@@ -441,8 +441,8 @@ async def add_vnic(
     ownership_override: bool = False,
 ) -> VnicChangeResult:
     selector = _validated(selector)
-    if isinstance(port_vlan_id, bool) or not 0 <= port_vlan_id <= 4094:
-        raise ValueError("port_vlan_id must be between 0 and 4094")
+    if type(port_vlan_id) is not int or not 0 <= port_vlan_id <= 4094:
+        raise ValueError("port_vlan_id must be an integer between 0 and 4094")
     (
         system_name,
         lpar_name,

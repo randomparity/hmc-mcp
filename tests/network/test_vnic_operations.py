@@ -162,6 +162,32 @@ async def test_add_rejects_vlan_out_of_range(vlan: int) -> None:
         await add_vnic(_hmc(), "system-a", "client-a", selector, vlan)
 
 
+@pytest.mark.parametrize("vlan", [7.5, True])
+@pytest.mark.asyncio
+async def test_add_rejects_non_integer_vlan_before_preflight(
+    monkeypatch: pytest.MonkeyPatch, vlan: object
+) -> None:
+    selector = VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2"))
+    preflight = AsyncMock()
+    mutation = AsyncMock()
+    monkeypatch.setattr("hmc_mcp.operations_ssh_network._preflight_add", preflight)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.add_vnic_backing", mutation
+    )
+
+    with pytest.raises(ValueError, match="integer between 0 and 4094"):
+        await add_vnic(
+            object(),  # ty: ignore[invalid-argument-type]
+            "system-a",
+            "client-a",
+            selector,
+            vlan,  # ty: ignore[invalid-argument-type]
+        )
+
+    preflight.assert_not_awaited()
+    mutation.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("field", "character"),
     [
