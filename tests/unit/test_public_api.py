@@ -235,9 +235,11 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0049, which narrowed ``upload_iso``'s ``iso_source`` from
-    ``str | Path`` to ``str``: a filesystem path is no longer an accepted source,
-    and the annotation had to stop advertising one.
+    Last moved by ADR 0050, which added ``HMCConfig.iso_url_allowlist`` — a
+    pydantic model's ``__init__`` signature is derived from its fields, so a new
+    setting moves the digest even though no operation's parameters changed.
+    Before that, ADR 0049 narrowed ``upload_iso``'s ``iso_source`` from
+    ``str | Path`` to ``str``.
     """
     operations = {
         name: getattr(api, name)
@@ -256,8 +258,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-        "3ec598e30bee5072131603a751247b6e"  # pragma: allowlist secret
-        "e5681e1fe5aa5ba8186a543558fd3f12"  # pragma: allowlist secret
+        "bee0732697b746a5708dc3a76aaf5d5f"  # pragma: allowlist secret
+        "a4a284cf9e5fb245af37ba763400be0d"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 

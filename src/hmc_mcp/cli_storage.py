@@ -421,14 +421,20 @@ def storage_upload_iso(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     media_name: str = typer.Argument(..., help="Target name for the ISO in the repository"),
-    iso_source: str = typer.Argument(..., help="http(s) URL to download the ISO from"),
+    iso_source: str = typer.Argument(
+        ...,
+        help="http(s) URL to download the ISO from; its host must be on "
+        "HMC_ISO_URL_ALLOWLIST",
+    ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
 ) -> None:
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
-    ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Computes
-    SHA-256 and size before upload, refuses name collisions, and cleans up broker
-    resources on every outcome.
+    ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Its host
+    must be on HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the profile) — with
+    no allowlist configured every URL is refused — and redirects are not followed.
+    Computes SHA-256 and size before upload, refuses name collisions, and cleans
+    up broker resources on every outcome.
     """
     async def _go() -> dict[str, Any]:
         config = load_profile()

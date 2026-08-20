@@ -2085,9 +2085,29 @@ _ISO_FILENAME = "ubuntu-26.04-live-server-ppc64el.iso"
 _ISO_PATH = str(Path.home() / "Downloads" / _ISO_FILENAME)
 _ISO_MEDIA_NAME = "ubuntu-26.04-test.iso"
 _HTTP_PORT = 18765
-_ISO_URL = f"http://localhost:{_HTTP_PORT}/{_ISO_FILENAME}"
+_ISO_HOST = f"localhost:{_HTTP_PORT}"
+_ISO_URL = f"http://{_ISO_HOST}/{_ISO_FILENAME}"
 
 _iso_http_server: http.server.HTTPServer | None = None
+
+
+def _allow_iso_host() -> None:
+    """Put this runner's own ISO server on ``HMC_ISO_URL_ALLOWLIST``.
+
+    ADR 0050 made ``hmc_upload_iso`` refuse every URL whose host an operator has
+    not named, including when nothing is named at all, so the runner has to
+    configure the allowlist for its own run exactly as an operator would. The
+    entry is appended to whatever the environment or ``.env`` already carries
+    rather than replacing it, and it names the port as well as the host, so this
+    permits the one server started below and no other loopback service.
+    """
+    configured = os.environ.get("HMC_ISO_URL_ALLOWLIST", "")
+    entries = [entry.strip() for entry in configured.split(",") if entry.strip()]
+    if _ISO_HOST in entries:
+        return
+    entries.append(_ISO_HOST)
+    os.environ["HMC_ISO_URL_ALLOWLIST"] = ",".join(entries)
+    print(f"  ℹ  HMC_ISO_URL_ALLOWLIST={os.environ['HMC_ISO_URL_ALLOWLIST']}")
 
 
 def _serve_iso_over_http() -> None:
@@ -2095,9 +2115,12 @@ def _serve_iso_over_http() -> None:
 
     ADR 0049 made an http(s) URL the only source ``hmc_upload_iso`` accepts, so
     every upload step below goes through this server rather than handing the tool
-    a path. The serving thread is a daemon and is never shut down: ST20 re-uploads
-    long after ST18 has returned, and the process exit reclaims it.
+    a path. ADR 0050 then made the URL's host something an operator has to permit,
+    which is what :func:`_allow_iso_host` does for this run. The serving thread is
+    a daemon and is never shut down: ST20 re-uploads long after ST18 has returned,
+    and the process exit reclaims it.
     """
+    _allow_iso_host()
     global _iso_http_server
     if _iso_http_server is not None:
         return

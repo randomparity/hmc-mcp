@@ -1,6 +1,8 @@
 """Tests for ISO upload operation via HMC file broker."""
 
+import functools
 import hashlib
+import socket
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +12,7 @@ import pytest
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
+from hmc_mcp.config import parse_iso_url_allowlist
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_storage import upload_iso, _download_iso_from_url
 
@@ -17,7 +20,8 @@ from hmc_mcp.operations_storage import upload_iso, _download_iso_from_url
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-002"
 MEDIA_NAME = "test-image.iso"
-ISO_URL = "https://images.test/test-image.iso"
+ISO_HOST = "images.test"
+ISO_URL = f"https://{ISO_HOST}/test-image.iso"
 TEST_CONTENT = b"Test ISO content for upload\n" * 100
 TEST_SHA256 = hashlib.sha256(TEST_CONTENT).hexdigest()
 
@@ -109,7 +113,7 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     )
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
 
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(
             side_effect=[
@@ -152,7 +156,7 @@ async def test_upload_iso_accepts_both_supported_schemes(
     mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
 
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(side_effect=[[], []])
         result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, url)
@@ -264,7 +268,7 @@ async def test_upload_iso_refusal_reveals_nothing_about_the_server_filesystem(
 async def test_upload_iso_name_collision(mock_hmc, stage_download):
     """Upload ISO fails when media name already exists in repository."""
     stage_download()
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(
             return_value=[{"MediaName": MEDIA_NAME, "MediaSize": 100}]
@@ -291,7 +295,7 @@ async def test_upload_iso_broker_cleanup_on_error(mock_hmc, stage_download):
     mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
 
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(return_value=[])
 
@@ -315,7 +319,7 @@ async def test_upload_iso_empty_repository(mock_hmc, stage_download):
     mock_hmc.get(VG_PATH).mock(return_value=httpx.Response(200, text=_media_feed()))
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
 
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(return_value=[])
         result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
@@ -330,7 +334,7 @@ async def test_upload_iso_broker_create_missing_location(mock_hmc, stage_downloa
     """Upload ISO fails when broker create doesn't return Location header."""
     # _broker_file_create raises HMCError when Location header is missing.
     stage_download()
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(return_value=[])
         hmc._broker_file_create = AsyncMock(
@@ -362,7 +366,7 @@ async def test_upload_iso_large_file(mock_hmc, stage_download):
     )
     mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
 
-    config = make_config()
+    config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(return_value=[])
         result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
@@ -543,3 +547,357 @@ async def test_download_iso_cleanup_on_error():
         import glob
         temp_files = glob.glob("/tmp/hmc_upload_*.iso")
         assert len(temp_files) == 0, f"Temp files not cleaned: {temp_files}"
+
+
+# ---------------------------------------------------------------------------
+# G303 — the fetch runs from the MCP server's network position
+# ---------------------------------------------------------------------------
+
+# Reachable-looking destinations a caller could name. The metadata address is
+# the canonical SSRF target; `localhost:22` stands for a service bound to
+# loopback on the server host that the caller cannot route to.
+BLOCKED_URLS = (
+    "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+    "http://localhost:22/test-image.iso",
+    "http://127.0.0.1:8080/test-image.iso",
+    "https://internal.corp.test/test-image.iso",
+)
+
+
+@pytest.fixture
+def detonate_on_network(monkeypatch):
+    """Fail the test if anything resolves a name or opens a socket.
+
+    G303's refusal has to happen *before* the fetch, not after it: a check that
+    connects first and refuses afterwards still reaches the destination, and
+    still tells the caller whether it answered. Trapping `socket` as well as
+    `httpx.AsyncClient` is what makes the timing claim testable — a refusal that
+    performs no DNS lookup cannot take longer for a host that resolves than for
+    one that does not.
+    """
+    calls: list[str] = []
+
+    def _trap(name):
+        def _boom(*_args, **_kwargs):
+            calls.append(name)
+            raise AssertionError(f"{name} was reached before the refusal")
+
+        return _boom
+
+    monkeypatch.setattr(socket, "getaddrinfo", _trap("DNS resolution"))
+    monkeypatch.setattr(socket, "create_connection", _trap("a connection"))
+    # `socket.socket` itself is not trapped: asyncio builds its event loop out of
+    # a socketpair, so trapping the constructor fails the test in the loop rather
+    # than in the code under test. `connect` is the reaching-out half.
+    monkeypatch.setattr(socket.socket, "connect", _trap("a connection"))
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.httpx.AsyncClient", _trap("the HTTP client")
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.resolve_vios_uuid", _trap("the HMC")
+    )
+    return calls
+
+
+def _client_for(allowlist: str) -> MagicMock:
+    """A stand-in HMC client carrying nothing but the operator's allowlist.
+
+    The allowlist check reads `hmc.config` and must refuse before the client is
+    used for anything else, so a mock with no HMC behaviour at all is the point:
+    any HMC call would raise instead of returning.
+    """
+    hmc = MagicMock()
+    hmc.config = make_config(iso_url_allowlist=allowlist)
+    return hmc
+
+
+@pytest.mark.parametrize("blocked", BLOCKED_URLS)
+@pytest.mark.asyncio
+async def test_upload_iso_refuses_a_host_off_the_allowlist_without_connecting(
+    blocked, detonate_on_network
+):
+    """G303: a URL outside the allowlist is refused with no connection opened.
+
+    The tool downloads from the MCP server's network position, so the caller
+    picks a destination and the server supplies the reachability — cloud
+    instance metadata, loopback services, hosts inside the server's segment.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        await upload_iso(
+            _client_for(ISO_HOST), VIOS_UUID, VG_UUID, MEDIA_NAME, blocked
+        )
+
+    message = str(exc_info.value)
+    assert "allowlist" in message
+    assert "HMC_ISO_URL_ALLOWLIST" in message
+    assert detonate_on_network == []
+
+
+@pytest.mark.parametrize("url", (ISO_URL, *BLOCKED_URLS))
+@pytest.mark.asyncio
+async def test_upload_iso_refuses_every_url_when_no_allowlist_is_configured(
+    url, detonate_on_network
+):
+    """G303: the unset allowlist permits nothing, and says what to set.
+
+    ADR 0050 chose fail-closed over preserving today's behaviour, which breaks
+    every existing caller until an operator sets the field. A fail-closed default
+    that produced an opaque error would be a support burden, so the message
+    naming the setting is part of the decision rather than a nicety.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        await upload_iso(_client_for(""), VIOS_UUID, VG_UUID, MEDIA_NAME, url)
+
+    message = str(exc_info.value)
+    assert "HMC_ISO_URL_ALLOWLIST" in message
+    assert "iso_url_allowlist" in message
+    assert detonate_on_network == []
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_refusal_cannot_distinguish_a_host_that_exists(
+    detonate_on_network,
+):
+    """G303: a blocked host that resolves and one that does not refuse alike.
+
+    A refusal that varied would hand back the oracle the refusal exists to
+    remove — a caller could sweep the server's segment for live names. Message
+    equality is asserted directly; the timing half is asserted structurally, by
+    the `detonate_on_network` trap: no name is resolved on either path, so there
+    is no lookup whose success or failure could take a different amount of time.
+    """
+    resolvable = "http://localhost/test-image.iso"
+    unresolvable = "http://no-such-host.invalid/test-image.iso"
+
+    messages = set()
+    for candidate in (resolvable, unresolvable):
+        with pytest.raises(ValueError) as exc_info:
+            await upload_iso(
+                _client_for(ISO_HOST), VIOS_UUID, VG_UUID, MEDIA_NAME, candidate
+            )
+        # Only the caller's own input distinguishes the two.
+        messages.add(str(exc_info.value).replace(candidate, "<source>"))
+
+    assert len(messages) == 1
+    assert detonate_on_network == []
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_allowlist_entry_with_a_port_permits_only_that_port(
+    detonate_on_network,
+):
+    """G303: `localhost:18765` must not open every loopback service.
+
+    The live-test runner publishes its ISO on one loopback port, so the entry an
+    operator writes for it has to bound the port as well as the host — otherwise
+    permitting the runner's own server would permit every service bound to
+    loopback on the MCP server host.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        await upload_iso(
+            _client_for("localhost:18765"),
+            VIOS_UUID,
+            VG_UUID,
+            MEDIA_NAME,
+            "http://localhost:22/test-image.iso",
+        )
+
+    assert "allowlist" in str(exc_info.value)
+    assert detonate_on_network == []
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_matches_the_default_port_of_a_portless_url(
+    mock_hmc, stage_download
+):
+    """G303: `https://host/x` matches an entry pinned to the scheme's port.
+
+    Without this the allowlist would look correct and refuse every real URL, so
+    an operator would widen the entry to the whole host to make it work — the
+    check talking itself out of its own tightening.
+    """
+    download = stage_download()
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-port"
+
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config(iso_url_allowlist=f"{ISO_HOST}:443")
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(side_effect=[[], []])
+        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    assert result["status"] == "uploaded"
+    download.assert_awaited_once_with(ISO_URL)
+
+
+def _install_iso_transport(monkeypatch, handler):
+    """Route `_download_iso_from_url` through a recording mock transport.
+
+    A real `httpx.AsyncClient` on `httpx.MockTransport` rather than a mock
+    client: the client-side behaviour under test *is* redirect handling, and a
+    hand-rolled mock would answer whatever the test told it to regardless of
+    what `follow_redirects` was set to. Every request the client actually emits
+    lands in the returned list.
+
+    The patch is installed on the httpx module itself, so it must go in after
+    any `HMCClient` has been constructed — the HMC's own client is built in
+    `HMCClient.__init__` and has to keep the respx-intercepted transport.
+    """
+    requests: list[httpx.Request] = []
+
+    def _record(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return handler(request)
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.httpx.AsyncClient",
+        functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(_record)),
+    )
+    return requests
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
+    mock_hmc, monkeypatch
+):
+    """G303: the allowlist does not break the path it exists to bound.
+
+    Nothing is stubbed between the URL and the broker: the download runs through
+    a real httpx client, the bytes are hashed and staged on disk, and the staged
+    file is what reaches the HMC upload.
+    """
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-e2e"
+
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    uploaded = mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        requests = _install_iso_transport(
+            monkeypatch, lambda _request: httpx.Response(200, content=TEST_CONTENT)
+        )
+        hmc.list_optical_media = AsyncMock(
+            side_effect=[[], [{"MediaName": MEDIA_NAME, "MediaSize": len(TEST_CONTENT)}]]
+        )
+        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    assert result["status"] == "uploaded"
+    assert result["sha256"] == TEST_SHA256
+    assert result["media_size_bytes"] == len(TEST_CONTENT)
+    assert [str(request.url) for request in requests] == [ISO_URL]
+    assert uploaded.calls.last.request.content == TEST_CONTENT
+
+
+@pytest.mark.asyncio
+async def test_download_iso_refuses_a_redirect_instead_of_following_it(monkeypatch):
+    """G303: the URL fetched is the URL the allowlist checked.
+
+    An allowlisted host that answers `302 http://169.254.169.254/…` would
+    otherwise carry the fetch to a destination no check ever saw, which is why
+    bounding the redirect count was never a fix. `raise_for_status` does not
+    cover this on its own — 3xx is not an error status, so an unfollowed
+    redirect would be staged and imported as if it were the ISO.
+    """
+    elsewhere = "http://169.254.169.254/latest/meta-data/"
+    requests = _install_iso_transport(
+        monkeypatch,
+        lambda _request: httpx.Response(302, headers={"Location": elsewhere}),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await _download_iso_from_url(ISO_URL)
+
+    assert "redirect" in str(exc_info.value)
+    # One request, to the URL that was checked: the redirect was not followed.
+    assert [str(request.url) for request in requests] == [ISO_URL]
+
+
+@pytest.mark.asyncio
+async def test_download_iso_refuses_a_redirect_without_a_location(monkeypatch):
+    """G303: every 3xx is refused, not only the ones httpx calls a redirect.
+
+    `httpx.Response.is_redirect` additionally requires a `Location` header, so a
+    bare 3xx would slip past a check written in terms of it and be imported into
+    a media repository as an ISO.
+    """
+    _install_iso_transport(monkeypatch, lambda _request: httpx.Response(304))
+
+    with pytest.raises(ValueError, match="redirect"):
+        await _download_iso_from_url(ISO_URL)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", ()),
+        ("images.test", (("images.test", None),)),
+        ("localhost:18765", (("localhost", 18765),)),
+        (" images.test , localhost:18765 ,", (("images.test", None), ("localhost", 18765))),
+        ("IMAGES.TEST", (("images.test", None),)),
+        ("[::1]:18765", (("::1", 18765),)),
+    ],
+)
+def test_parse_iso_url_allowlist_accepts_hosts_and_host_ports(value, expected):
+    """G303: entries are authorities, and are normalised the way URLs are."""
+    assert parse_iso_url_allowlist(value) == expected
+
+
+@pytest.mark.parametrize(
+    "rejected",
+    [
+        "https://images.test",
+        "images.test/isos/",
+        "http://images.test/isos",
+        "user@images.test",
+        "images.test:0",
+        "images.test:70000",
+        "images.test:iso",
+    ],
+)
+def test_parse_iso_url_allowlist_refuses_anything_that_is_not_an_authority(rejected):
+    """G303: a URL-shaped entry fails loudly instead of matching nothing.
+
+    An operator who writes `https://images.test/isos/` and gets a silently empty
+    allowlist would conclude the feature is broken and widen it; the whole entry
+    is rejected at config load instead, naming what to write.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        parse_iso_url_allowlist(rejected)
+
+    assert rejected in str(exc_info.value)
+    assert "HMC_ISO_URL_ALLOWLIST" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "url", ["http://images.test:0/x.iso", "https://images.test:99999/x.iso"]
+)
+@pytest.mark.asyncio
+async def test_upload_iso_refuses_a_url_whose_port_is_unusable(
+    url, detonate_on_network
+):
+    """G303: an unusable port is refused, not quietly replaced by the default.
+
+    `urlparse` raises on an out-of-range port and yields a falsy 0 for `:0`, so a
+    check that fell back to the scheme default on either would compare
+    `images.test:99999` against an entry pinned to `images.test:443` and match
+    it. The host in these cases is allowlisted; the port is what refuses them.
+    """
+    with pytest.raises(ValueError, match="usable TCP port"):
+        await upload_iso(
+            _client_for(f"{ISO_HOST}:443"), VIOS_UUID, VG_UUID, MEDIA_NAME, url
+        )
+
+    assert detonate_on_network == []

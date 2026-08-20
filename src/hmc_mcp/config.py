@@ -20,6 +20,7 @@ import tomllib
 import warnings
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +55,64 @@ def validate_agent_id(agent_id: str) -> None:
     for character, reason in forbidden.items():
         if character in agent_id:
             raise ValueError(f"agent_id contains {character!r}; {reason}")
+
+
+ISO_URL_ALLOWLIST_HELP = (
+    "Set HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the TOML profile) to a "
+    "comma-separated list of hosts, each written as 'host' or 'host:port' with "
+    "no scheme and no path — for example "
+    "HMC_ISO_URL_ALLOWLIST=iso.example.internal,localhost:18765"
+)
+
+
+def parse_iso_url_allowlist(value: str) -> tuple[tuple[str, int | None], ...]:
+    """Parse the ISO download allowlist into ``(host, port_or_None)`` pairs.
+
+    *value* is a comma-separated list of ``host`` or ``host:port`` entries;
+    empty entries are dropped, so a trailing comma is not an error. An entry
+    without a port permits any port on that host.
+
+    Each entry is parsed as a URL authority rather than split by hand, so
+    bracketed IPv6 literals (``[::1]:18765``) and out-of-range ports are handled
+    by the standard library. Anything that is not a bare authority — a scheme, a
+    path, credentials, a query — raises ``ValueError`` naming the entry: an
+    operator who writes ``https://iso.example.internal/isos/`` would otherwise
+    get an allowlist that silently matches nothing.
+    """
+    entries: list[tuple[str, int | None]] = []
+    for raw in value.split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        parts = urlsplit(f"//{entry}")
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} has an unusable port: {exc}. "
+                + ISO_URL_ALLOWLIST_HELP
+            ) from exc
+        if port == 0:
+            # Port 0 is not a destination, and it is falsy: an entry carrying it
+            # would compare unequal to every URL's port and silently match
+            # nothing.
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} has an unusable port: port "
+                "must be between 1 and 65535. " + ISO_URL_ALLOWLIST_HELP
+            )
+        if not parts.hostname or parts.username is not None:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} is not a host or host:port. "
+                + ISO_URL_ALLOWLIST_HELP
+            )
+        if parts.path or parts.query or parts.fragment:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} carries a scheme, path, or "
+                "query; the allowlist matches hosts, not URL prefixes. "
+                + ISO_URL_ALLOWLIST_HELP
+            )
+        entries.append((parts.hostname, port))
+    return tuple(entries)
 
 
 class HMCConfig(BaseSettings):
@@ -98,6 +157,28 @@ class HMCConfig(BaseSettings):
             "square brackets. (HMC_AGENT_ID)"
         ),
     )
+
+    iso_url_allowlist: str = Field(
+        default="",
+        description=(
+            "Comma-separated hosts that hmc_upload_iso may download an ISO from, "
+            "each written as 'host' or 'host:port'. An entry without a port "
+            "permits any port on that host. Empty (the default) refuses every "
+            "URL: the tool fetches from the MCP server's network position, so "
+            "there is no safe default destination. (HMC_ISO_URL_ALLOWLIST)"
+        ),
+    )
+
+    @field_validator("iso_url_allowlist")
+    @classmethod
+    def _validate_iso_url_allowlist(cls, v: str) -> str:
+        parse_iso_url_allowlist(v)
+        return v
+
+    @property
+    def iso_url_allowlist_entries(self) -> tuple[tuple[str, int | None], ...]:
+        """The allowlist as ``(host, port_or_None)`` pairs; empty when unset."""
+        return parse_iso_url_allowlist(self.iso_url_allowlist)
 
     @field_validator("agent_id")
     @classmethod

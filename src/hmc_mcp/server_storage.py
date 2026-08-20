@@ -629,7 +629,10 @@ def hmc_upload_iso(
     """Upload an ISO to a VIOS media repository via the HMC file broker.
 
     The ISO is downloaded from an http(s) URL, which is the only accepted source:
-    a path on the MCP server's filesystem is refused. Computes SHA-256 and size
+    a path on the MCP server's filesystem is refused. The download runs from the
+    MCP server's network position, so the URL's host must be on the operator's
+    allowlist (`HMC_ISO_URL_ALLOWLIST`); with no allowlist configured every URL
+    is refused, and redirects are never followed. Computes SHA-256 and size
     before upload, refuses name collisions, and cleans up broker resources on
     every outcome. Returns staged result data including the imported media entry.
 
@@ -637,8 +640,10 @@ def hmc_upload_iso(
         vios_name_or_uuid: VIOS name or UUID to target.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
-        iso_source: http(s) URL to download the ISO from. Local filesystem
-            paths are not accepted.
+        iso_source: http(s) URL to download the ISO from, served by a host on
+            the operator's `HMC_ISO_URL_ALLOWLIST`. Local filesystem paths are
+            not accepted, and the ISO must be served at this URL rather than
+            redirected from it.
         profile: HMC profile name (uses default if omitted).
 
     Returns:
@@ -646,8 +651,9 @@ def hmc_upload_iso(
 
     Raises:
         HMCError: For HMC API errors during broker operations or import.
-        ValueError: If iso_source is not an http(s) URL, or the download exceeds
-            the size bound.
+        ValueError: If iso_source is not an http(s) URL, if its host is not on
+            the operator's allowlist, if the server answers with a redirect, or
+            if the download exceeds the size bound.
         FileExistsError: If media_name already exists in the repository.
     """
     async def _go():
