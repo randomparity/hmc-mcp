@@ -372,10 +372,11 @@ def _validate_backup_name(backup_name: str) -> None:
     which ``shlex.quote`` passes through bare because it holds no shell
     metacharacter.
 
-    Deliberately narrower than the character set the HMC's own backup-creation UI
-    accepts. ADR 0039 made the same call for ``job_href``, refusing dot-segments
-    but not requiring a UUID shape: refusing a legitimate identifier would trade a
-    regression for reach the narrow refusal has already removed.
+    Deliberately no character-set or length rule, so a catalog entry named outside
+    whatever grammar the HMC enforces stays restorable. ADR 0039 made the same call
+    for ``job_href``, refusing dot-segments but not requiring a UUID shape:
+    refusing a legitimate identifier would trade a regression for reach the narrow
+    refusal has already removed.
     """
     if (
         not backup_name

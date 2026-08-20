@@ -1491,6 +1491,25 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
         "not a member; see ADR 0044."
     )
 
+    # The sentence #264 was actually filed about lives here, above
+    # `_PAYLOAD_SOURCE_ARGUMENTS`, not beside the set in `tool_registry.py`. It
+    # said the line was "*which side* the named thing lives on", which is what
+    # gave the wrong answer for `backup_name`. Pin the retired formulation out and
+    # the replacement in, so this file's rule text cannot drift back or fall
+    # silent about the case that exposed it.
+    own_source = Path(__file__).read_text(encoding="utf-8")
+    _, _, guardrail = own_source.partition("# The line against UNBOUNDED_ARGUMENTS")
+    guardrail, _, _ = guardrail.partition("_PAYLOAD_SOURCE_ARGUMENTS = frozenset")
+    assert guardrail, "the UNBOUNDED_ARGUMENTS guardrail comment has gone missing"
+    assert "*which side* the named thing lives on" not in guardrail, (
+        "the guardrail comment has returned to the side-of-the-filesystem rule "
+        "that ADR 0044 retired; it answers `backup_name` wrongly."
+    )
+    assert "`backup_name`" in guardrail, (
+        "the guardrail comment no longer names `backup_name`, the case that showed "
+        "the rule and its application had diverged; see ADR 0044."
+    )
+
 
 def test_backup_name_stays_bounded_only_while_the_catalog_guard_holds(monkeypatch):
     """G15: `hmc_restore_vios`'s classification and its guard stand or fall together.
@@ -1512,18 +1531,10 @@ def test_backup_name_stays_bounded_only_while_the_catalog_guard_holds(monkeypatc
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
     vios_uuid = "00000000-0000-0000-0000-000000000003"
-    escapes = [
-        "",
-        "   ",
-        "../other/x.tar",
-        "/data/viosbackup/x.tar",
-        "a\\b.tar",
-        ".",
-        "..",
-        " .. ",
-        " backup.tar ",
-        "-operation",
-    ]
+    # One shape per refused route, not the full set: tests/vios/test_vios_backup.py
+    # owns exhaustive coverage, and a second copy of that list here would be two
+    # lists free to disagree — the defect this whole change is about.
+    escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
         "hmc_mcp.ssh.asyncssh.connect", side_effect=AssertionError("reached the SSH layer")

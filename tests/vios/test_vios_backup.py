@@ -195,8 +195,14 @@ def test_restore_vios_refuses_a_name_that_could_leave_the_catalog(monkeypatch, b
     value would reach the CLI as a flag rather than as a file name.
     """
     _hmc_env(monkeypatch)
-    with pytest.raises(ValueError, match="backup_name"):
-        hmc_restore_vios(VIOS_UUID, backup_name)
+    # Patched to raise rather than mocked to succeed: if the guard regressed, each
+    # case would fall through to the SSH layer, and this makes that a loud failure
+    # here instead of a connection attempt from the suite.
+    with patch(
+        "hmc_mcp.ssh.asyncssh.connect", side_effect=AssertionError("reached the SSH layer")
+    ):
+        with pytest.raises(ValueError, match="backup_name"):
+            hmc_restore_vios(VIOS_UUID, backup_name)
 
 
 @pytest.mark.parametrize(

@@ -37,7 +37,8 @@ every resource acted on must be "either the value of a declared selector or
 derived by the server through the HMC's own containment from one"
 (`docs/adr/0039-dispatch-time-target-scope.md:379-383`).
 
-#264 proposes instead that the distinction is write-versus-read. It is not:
+#264 proposes instead that the distinction is write-versus-read — of the *file*,
+not of the target. It is not that:
 `hmc_restore_lpar_profiles` only reads its `file_path` and is non-exhaustive
 (`src/hmc_mcp/server_profiles.py:78-83`). Containment explains that directly —
 `rstprofdata -f` takes an absolute path anywhere on the console filesystem, and
@@ -81,10 +82,11 @@ What the guard removes is the *additional* premise the first draft of this recor
 needed — that the HMC would itself reject a path-shaped value — which is
 unverified and was avoidable. #283 owns confirming both against a real HMC.
 
-The refusal is narrow by choice: separators and all-dot values only. ADR 0039 made
-the same call for `job_href`, refusing dot-segments and declining to require a
-UUID shape, because refusing a legitimate identifier trades a regression for reach
-the narrow refusal has already removed.
+The refusal is narrow by choice: those four shapes and no character-set or length
+rule. ADR 0039 made the same call for `job_href`, refusing dot-segments and
+declining to require a UUID shape, because refusing a legitimate identifier trades
+a regression for reach the narrow refusal has already removed. A catalog entry
+named outside whatever grammar the HMC enforces stays restorable here.
 
 `shlex.quote` stays and is unrelated — it governs shell metacharacters, a
 different failure from leaving the catalog. No percent-decoded arm accompanies the
@@ -102,7 +104,8 @@ either fails on the other.
 
 - One rule decides the next classification and it covers all four current
   members, where the side-of-the-filesystem proxy covered two.
-  `hmc_restore_lpar_profiles` — read-only and unbounded — stops looking like a
+  `hmc_restore_lpar_profiles` — which only reads its `file_path`, though its
+  effect on the system's profiles is `destructive` — stops looking like a
   contradiction.
 - A `targets` table can still grant `hmc_restore_vios`. The tool is `destructive`
   and its declared effect lands on the declared VIOS, so classifying it unbounded
@@ -120,11 +123,11 @@ either fails on the other.
   The pairing is held by a test asserting the classification and the refusal
   together instead, and by the rule text now naming `backup_name` explicitly —
   which is itself checked, since the guardrail comment is what drifted last time.
-- A refused `backup_name` raises before the authorization layer records anything,
-  so a caller probing for catalog escapes leaves no entry in the ADR 0040 audit
-  stream. The authorization decision it would have needed is unaffected — the
-  grant is still required to reach the handler at all — but the probe itself is
-  not observable.
+- A caller probing for catalog escapes *is* observable. `authorized()` runs the
+  dispatch authorizer before the handler (`src/hmc_mcp/tool_registry.py:193`), so
+  each probe emits an ADR 0040 `allow` record for `vios.restore` against the
+  declared VIOS and only then hits the refusal. The audit stream shows an allowed
+  dispatch that produced no restore, which is the shape a probe takes here.
 - The command this reasons about is the one this repository builds. Whether
   `chviosbackup` is the HMC's actual command name is a separate open question
   (#289); the classification turns on the call's shape — a VIOS selector plus a
@@ -159,12 +162,14 @@ either fails on the other.
   wider change than this record is entitled to make.
 - **Verify the name against the catalog** — run `lsviosbackup -id <uuid>` first,
   which this repository already does and parses in `hmc_list_vios_backups`, and
-  refuse a `backup_name` the listing does not contain. Strictly more evidence than
-  the string guard, and rejected anyway: it rests on the same `-id`-scoping
-  premise, since a name present in the listing still gets resolved by `-file`
-  however the HMC resolves it. So it buys the classification nothing, while adding
-  an SSH round-trip to every restore and a TOCTOU window between listing and
-  restore.
+  refuse a `backup_name` the listing does not contain. Rejected *for the decision
+  as it stands*, not in general: while `-id` scopes the operation, a bare name
+  already resolves in the selected catalog, so the round-trip and the TOCTOU
+  window between listing and restore buy the classification nothing. The
+  qualifier matters, because it is exactly the branch where this record reopens:
+  if #283 finds a bare `-file` resolving outside the selected catalog, listing
+  membership becomes evidence the string guard cannot supply, and #283 names it as
+  the remedy to weigh there.
 - **Record the containment as an HMC-side fact and change no code.** The cheapest
   option, and the first draft of this record. Rejected because the fact is not
   established (#283) — the substitution ADR 0039 names as its own recurring error,

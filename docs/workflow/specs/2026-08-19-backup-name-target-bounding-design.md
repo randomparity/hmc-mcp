@@ -27,8 +27,8 @@ unstated rule and neither can drift from the other unnoticed.
 - **R4** A test pins the classification together with the guard that makes it
   true, so removing either fails on the other.
 - **R5** The refusal covers only shapes that could denote something other than a
-  catalog entry. It is narrower than the character set the HMC's own backup UI
-  accepts, so an entry named outside that set stays restorable.
+  catalog entry — no character-set or length rule, so a catalog entry named
+  outside whatever grammar the HMC enforces stays restorable.
 
 ## Changes
 
@@ -96,12 +96,12 @@ backup of that VIOS — every entry in the catalog belongs to the declared VIOS,
 it is inside the grant by construction. Whether the HMC imposes further validation
 (#283). Local-file disclosure through a different argument — `iso_source` is #261.
 
-**Observability, stated rather than assumed.** A refused `backup_name` raises
-before the authorization layer records anything, so a caller probing for catalog
-escapes leaves no ADR 0040 audit entry. That is accepted here rather than fixed:
-the grant is still required to reach the handler, so the probe reveals nothing a
-granted caller did not already have, and adding an audit path for argument
-validation is a broader change than this issue owns.
+**Observability.** `authorized()` calls the dispatch authorizer before the
+handler (`src/hmc_mcp/tool_registry.py:193`), so a refused `backup_name` has
+already produced an ADR 0040 `allow` record for `vios.restore` against the
+declared VIOS. A caller probing for catalog escapes therefore appears in the audit
+stream as a run of allowed dispatches that produced no restore. No new audit path
+is needed, and none is added.
 
 ## Testing
 
