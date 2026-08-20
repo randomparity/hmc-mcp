@@ -566,14 +566,16 @@ code, the connection selector, and the declared target selectors. Denials are `W
 and permits are `INFO`. Credentials, whole argument sets, command text, and response
 bodies are absent by construction.
 
-Every deployment writes these, because every deployment now selects a policy. That has a
-deployment requirement attached: **something must drain the server's stderr.** The sink
-writes synchronously, and an open-but-undrained pipe blocks rather than raising, so a
-client that never reads its child's stderr can wedge the server — see
-[#269](https://github.com/randomparity/hmc-mcp/issues/269). Under stdio that party is the
-MCP client, not you; under `--http` it is whatever supervisor or journal collects the
-unit's stderr. ADR 0011 ownership-override records are not policy-gated and are emitted on
-the CLI and Python API paths too.
+Every deployment writes these, because every deployment now selects a policy. Delivery is
+**asynchronous and droppable**: records go onto a bounded in-memory queue drained by one
+background thread, so a destination nobody is reading can cost you records but cannot stop
+the server answering. A dropped line is never silent — the next line that lands is preceded
+by `{"event": "records-dropped", "count": N}`. See
+[ADR 0043](docs/adr/0043-non-blocking-stderr-diagnostics.md); a full trail still wants
+something reading the server's stderr (under stdio that is the MCP client, not you; under
+`--http` it is whatever supervisor or journal collects the unit's stderr). ADR 0011
+ownership-override records are not policy-gated and are emitted on the CLI and Python API
+paths too.
 
 See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.

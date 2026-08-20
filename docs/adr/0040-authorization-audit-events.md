@@ -428,9 +428,10 @@ out-of-band. This sits in Residuals rather than Consequences because, unlike the
 or `connection.resolved`, it describes a gap a later change could close (a drop counter, a health
 signal) rather than a choice already made here.
 
-> **Closed by [ADR 0043](0043-non-blocking-stderr-diagnostics.md)** (2026-08-19). The sink counts
+> **Narrowed by [ADR 0043](0043-non-blocking-stderr-diagnostics.md)** (2026-08-19). The sink counts
 > every dropped line and emits a `records-dropped` record carrying the count ahead of the next line
-> it writes.
+> it *successfully* writes. Counting is unconditional; reporting needs a destination that accepts a
+> write again, so a stream that never recovers still loses silently.
 
 **An undrained stderr blocks the write, and therefore the call.** The handler's guards cover a
 destination that raises. They do not cover one that is open, healthy, and not being read: under

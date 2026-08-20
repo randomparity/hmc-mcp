@@ -40,7 +40,6 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
-import sys
 from collections.abc import Callable, Mapping
 
 from fastmcp import FastMCP
@@ -49,7 +48,7 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy
-from .audit import install_audit_sink
+from .audit import install_audit_sink, write_diagnostic
 from .dispatch_scope import dispatch_authorizer
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
@@ -356,24 +355,21 @@ def _startup_warnings(
 def _warn(lines: tuple[str, ...]) -> None:
     """Write startup diagnostics to stderr, or to nowhere at all.
 
-    Never to stdout, which carries JSON-RPC framing under the stdio transport.
-    ``print(file=None)`` falls back to ``sys.stdout``, and CPython sets
-    ``sys.stderr`` to ``None`` when fd 2 is not open at interpreter start — a
-    launcher closing it (``serve 2>&-``) would otherwise inject warning text
-    into the protocol stream — so an absent stream drops the lines instead.
+    Never to stdout, which carries JSON-RPC framing under the stdio transport, and
+    never at the cost of the start itself — which is what ``_unselected_policy_file``
+    already refused for *resolving* a policy. There are four ways for the
+    destination to fail a diagnostic and none of them may abort a start: absent
+    (CPython sets ``sys.stderr`` to ``None`` when fd 2 is not open at interpreter
+    start, as ``serve 2>&-`` arranges), broken, closed, and — the one #269 names —
+    open but never read, which blocks instead of raising.
 
-    Nor may emitting one abort a start, which is what ``_unselected_policy_file``
-    already refuses for resolving one. A broken stream raises ``OSError`` and a
-    closed one raises ``ValueError``, so both are caught.
+    ``audit``'s sink owns all four, so this function neither resolves the stream nor
+    writes to it. One mechanism rather than two: a second writer to the same
+    descriptor would carry its own failure mode, and here that mode is a start that
+    hangs (ADR 0043).
     """
-    stream = sys.stderr
-    if stream is None:
-        return
-    try:
-        for line in lines:
-            print(line, file=stream)
-    except (OSError, ValueError):
-        pass
+    for line in lines:
+        write_diagnostic(line)
 
 
 def _serve_application(

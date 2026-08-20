@@ -25,10 +25,13 @@ settles it, and a second mechanism would have to be kept in agreement with it.
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
+import queue
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -86,11 +89,14 @@ Reason = Literal[
 #: ``EFFECTS`` from ``Effect``.
 REASONS: frozenset[str] = frozenset(get_args(Reason))
 
-Event = Literal["authorization", "ownership-override"]
+Event = Literal["authorization", "ownership-override", "records-dropped"]
 
-#: Derived, as REASONS is, so the two-value vocabulary is something a checker and
-#: a test can consult rather than a claim in a docstring. Both builders bind their
-#: literal through ``Event``, so a typo in either is a type error.
+#: Derived, as REASONS is, so the vocabulary is something a checker and a test can
+#: consult rather than a claim in a docstring. Every builder binds its literal
+#: through ``Event``, so a typo in any of them is a type error.
+#:
+#: ``records-dropped`` is the sink's own event, not a decision: see
+#: :class:`_StderrSink` and docs/adr/0043-non-blocking-stderr-diagnostics.md.
 EVENTS: frozenset[str] = frozenset(get_args(Event))
 
 #: What a caller supplied for one selector: a value, nothing, or something the
@@ -267,32 +273,206 @@ def record_ownership_override(*, system: str, lpar: str, agent_id: str) -> None:
     _emit(_DENY_LEVEL, build)
 
 
+#: How many lines the sink will hold for a destination that is not reading. About
+#: 0.5 MiB at the measured record sizes, and roughly six times the 64 KiB pipe
+#: buffer it stands in for. Not configurable; #270 owns that gap.
+_QUEUE_CAPACITY: Final = 1024
+
+#: The whole of what shutdown waits on a destination nobody is draining. A
+#: destination that *is* being read finishes in microseconds.
+_DRAIN_TIMEOUT: Final = 2.0
+
+_SENTINEL: Final = object()
+
+
+class _StderrSink:
+    """Every stderr write this package makes, off the thread that asked for it.
+
+    A synchronous ``write()`` to a pipe nobody is draining blocks. It raises
+    nothing, so no guard fires, and under ADR 0040 that write sits inside
+    ``dispatch_scope.authorize`` — ahead of the denial and ahead of the handler — so
+    the server stops answering. One bounded queue and one daemon writer move the
+    only blocking call in the chain onto a thread whose progress nothing waits on.
+
+    A full queue **drops** the line and counts it, which is the trade
+    ADR 0043 takes deliberately: a droppable audit trail that keeps serving, over a
+    complete one that stops. Nothing is lost silently — the count is written into
+    the stream as a ``records-dropped`` record ahead of the next line that lands.
+
+    ``sys.stderr`` is resolved per write rather than bound at construction, an
+    absent stream is skipped, and ``OSError`` and ``ValueError`` are caught: the
+    same three guards ADR 0040 gave the handler, for the same three reasons —
+    CPython sets ``sys.stderr`` to ``None`` when fd 2 is closed at interpreter
+    start, a broken stream raises ``OSError``, and a closed one raises
+    ``ValueError``. What changes is that each of them now counts a drop.
+
+    Each line is written with its newline in **one** call. ``logging``'s lock
+    serialises audit records against each other but against nothing else on this
+    stream — FastMCP's traceback panel writes to it too — so a second call could let
+    another writer land between a record and its terminator.
+    """
+
+    def __init__(self, capacity: int, drain_timeout: float) -> None:
+        # One slot past the capacity, reserved for the stop sentinel and refused to
+        # `submit`. Without it, stopping a full queue would have to evict a queued
+        # line to make room — losing, at shutdown, records a destination that *is*
+        # being read would otherwise have received.
+        self._capacity = capacity
+        self._queue: queue.Queue[Any] = queue.Queue(maxsize=capacity + 1)
+        self._drain_timeout = drain_timeout
+        self._state = threading.Condition()
+        self._pending = 0
+        self._dropped = 0
+        self._closed = False
+        self._writer: threading.Thread | None = None
+
+    def submit(self, line: str) -> None:
+        """Queue one already-terminated line. Never blocks, never raises."""
+        with self._state:
+            if self._closed:
+                self._dropped += 1
+                return
+            if self._queue.qsize() >= self._capacity:
+                self._dropped += 1
+                return
+            self._start_writer()
+            self._queue.put_nowait(line)
+            self._pending += 1
+
+    def drain(self, timeout: float) -> bool:
+        """Wait until every submitted line has been written or dropped.
+
+        Bounded by *timeout* and by nothing else, which is what makes it safe to
+        call from ``logging.shutdown``'s ``flush()`` on a destination that has
+        stopped reading. Returns whether the queue emptied.
+        """
+        with self._state:
+            if self._closed:
+                return self._pending == 0
+            return self._state.wait_for(lambda: self._pending == 0, timeout)
+
+    def close(self) -> None:
+        """Stop the writer, giving queued lines ``drain_timeout`` to land.
+
+        The sentinel goes *behind* whatever is already queued and into a slot
+        reserved for it, so nothing is evicted to make room and a destination being
+        read drains completely. One that is not cannot be drained by any mechanism,
+        so the join times out, the daemon thread is abandoned, and the process exits
+        rather than hanging. Idempotent.
+
+        Anything submitted after this is counted and can never be reported: the
+        writer is gone, so no later write can carry the marker.
+
+        Calling it again re-joins a writer the first call had to abandon, rather
+        than returning while that thread is still parked on the descriptor — an
+        abandoned writer wakes up eventually and writes wherever ``sys.stderr``
+        points by then.
+        """
+        with self._state:
+            writer = self._writer
+            if writer is None:
+                return
+            if not self._closed:
+                self._closed = True
+                self._queue.put_nowait(_SENTINEL)
+        writer.join(timeout=self._drain_timeout)
+        with self._state:
+            if not writer.is_alive():
+                self._writer = None
+
+    def _start_writer(self) -> None:
+        """Begin draining. Caller holds ``_state``; importing must start nothing."""
+        if self._writer is None:
+            self._writer = threading.Thread(
+                target=self._run, name="hmc-mcp-audit-stderr", daemon=True
+            )
+            self._writer.start()
+
+    def _run(self) -> None:
+        """Drain the queue onto stderr until the sentinel arrives."""
+        while True:
+            item = self._queue.get()
+            if item is _SENTINEL:
+                self._report_drops()
+                return
+            self._report_drops()
+            if not self._write(item):
+                with self._state:
+                    self._dropped += 1
+            with self._state:
+                self._pending -= 1
+                self._state.notify_all()
+
+    def _report_drops(self) -> None:
+        """Write the drop marker, if anything is owed, ahead of the next line."""
+        with self._state:
+            owed, self._dropped = self._dropped, 0
+        if not owed:
+            return
+        if not self._write(_drop_marker(owed)):
+            with self._state:
+                self._dropped += owed
+
+    def _write(self, line: str) -> bool:
+        """Put one line on stderr. Returns whether it landed."""
+        stream = sys.stderr
+        if stream is None:
+            return False
+        try:
+            stream.write(line)
+            stream.flush()
+        except (OSError, ValueError):
+            return False
+        except Exception:  # noqa: BLE001 - a dead writer stops the trail for good
+            # Anything else the destination raises is still a drop rather than the
+            # end of the audit trail: this thread is the only one draining, so
+            # letting it die would silently strand every later record.
+            return False
+        return True
+
+
+def _drop_marker(count: int) -> str:
+    """The record that says lines are missing above this point in the stream."""
+    event: Event = "records-dropped"
+    return (
+        json.dumps(
+            {
+                "time": datetime.now(timezone.utc).isoformat(),
+                "event": event,
+                "count": count,
+            },
+            ensure_ascii=True,
+        )
+        + "\n"
+    )
+
+
+_SINK: Final = _StderrSink(_QUEUE_CAPACITY, _DRAIN_TIMEOUT)
+atexit.register(_SINK.close)
+
+
+def write_diagnostic(line: str) -> None:
+    """Queue one non-record diagnostic line for stderr. Never blocks, never raises.
+
+    ``server._warn``'s entry point. Its lines are prose rather than records, and
+    they share this sink rather than a second one because a second one would be a
+    second mechanism with its own failure mode on the same descriptor — the
+    condition #269 names first is precisely a start that hangs on such a write.
+    """
+    _SINK.submit(line + "\n")
+
+
 class _AuditHandler(logging.Handler):
-    """Write one record per line to stderr, or drop it.
+    """Hand one record per line to the sink, which writes it or counts it lost.
 
-    ``sys.stderr`` is resolved at emit time rather than bound at install time, an
-    absent stream returns early, and ``OSError`` and ``ValueError`` are caught: the
-    same three guards ``server._warn`` applies, for the same three reasons — CPython
-    sets ``sys.stderr`` to ``None`` when fd 2 is closed at interpreter start, a
-    broken stream raises ``OSError``, and a closed one raises ``ValueError``.
-
-    The message is written with its newline in **one** call and no ``Formatter`` is
-    installed. A custom handler inherits no ``StreamHandler.terminator``, so the
-    newline is explicit; and ``logging``'s lock serialises audit records against each
-    other but against nothing else on this stream — FastMCP's traceback panel and
-    ``server._warn`` both write to it — so a second call could let another writer
-    land between a record and its terminator.
+    No ``Formatter`` is installed and the newline is explicit: a custom handler
+    inherits no ``StreamHandler.terminator``, so the message plus its terminator is
+    what reaches the stream, in one write, as ADR 0040 requires.
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        stream = sys.stderr
-        if stream is None:
-            return
         try:
-            stream.write(record.getMessage() + "\n")
-            stream.flush()
-        except (OSError, ValueError):
-            pass
+            _SINK.submit(record.getMessage() + "\n")
         except Exception:  # noqa: BLE001 - the stdlib handler contract
             # Every stdlib handler wraps its body this way, and that is what makes
             # a logging call safe to place anywhere in a program. This module's own
@@ -301,6 +481,14 @@ class _AuditHandler(logging.Handler):
             # `hmc_mcp.audit` as an attachment point, so a foreign writer's odd
             # record must not raise back into whatever called it.
             self.handleError(record)
+
+    def flush(self) -> None:
+        """Wait, boundedly, for what has been submitted to reach the stream.
+
+        ``logging.shutdown`` calls this on every handler at interpreter exit, and
+        the bound is what keeps that from becoming the hang this sink removes.
+        """
+        _SINK.drain(_DRAIN_TIMEOUT)
 
 
 def install_audit_sink() -> None:

@@ -1,7 +1,9 @@
 """The audit record's rendering, its bounds, and its sink.
 
-Covers docs/workflow/specs/2026-08-19-authorization-audit-events-design.md; the
-decision record is docs/adr/0040-authorization-audit-events.md.
+Covers docs/workflow/specs/2026-08-19-authorization-audit-events-design.md and
+docs/workflow/specs/2026-08-19-non-blocking-stderr-diagnostics-design.md; the
+decision records are docs/adr/0040-authorization-audit-events.md and
+docs/adr/0043-non-blocking-stderr-diagnostics.md.
 
 Logging isolation comes from the autouse ``isolate_audit_logging`` fixture in
 ``tests/conftest.py``. Nothing here may install a sink without it.
@@ -21,18 +23,26 @@ Spec test -> node id. This map is checked by
   8a  test_only_audit_resolves_the_audit_logger
   9   test_a_record_reaches_stderr_and_not_stdout
   10  test_the_sink_does_not_propagate_to_an_ancestor_handler
-  11  test_a_none_stderr_writes_nothing_and_raises_nothing
-  12,13 test_a_broken_or_closed_stream_is_survived  (parametrized over both)
+  11,12,13 test_a_stream_that_cannot_be_written_drops_and_says_so
+           (parametrized over absent, closed, broken, and unforeseen)
   14  test_install_is_idempotent_and_defers_to_what_the_operator_set
   14a test_a_preattached_stdout_handler_is_deferred_to
   14b test_the_singletons_render_as_states_rather_than_raising
   15  test_the_line_equals_the_message_and_records_do_not_share_a_line
   15  test_the_handler_issues_one_write_per_record
 
+#269 / ADR 0043, the sink's liveness contract. Each drives a real filled pipe:
+
+  269a test_an_undrained_pipe_does_not_block_the_submitting_thread
+  269b test_an_overflowing_queue_reports_what_it_lost
+  269c test_the_drop_marker_is_one_ascii_line_of_the_same_grammar
+  269d test_shutdown_delivers_everything_queued_when_the_destination_is_read
+  269e test_shutdown_returns_even_when_the_destination_never_drains
+
 Not spec-numbered, each pinning something a review round found:
 
   test_resolved_connection_is_bound_to_the_sentinel_that_owns_it
-  test_events_matches_the_literal_and_both_emitters_use_it
+  test_events_matches_the_literal_and_every_emitter_uses_it
   test_the_module_closes_propagation_at_import          (#272, fresh interpreter)
   test_an_unconfigured_logger_still_reaches_last_resort (#272's other half)
   test_a_foreign_writers_bad_record_does_not_raise_into_them
@@ -40,12 +50,15 @@ Not spec-numbered, each pinning something a review round found:
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import logging
 import re
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import get_args
 
@@ -69,6 +82,18 @@ def _capture() -> list[str]:
     logger.setLevel(logging.INFO)
     logger.propagate = False
     return lines
+
+
+def _flush() -> None:
+    """Wait for the sink to settle. Delivery is asynchronous since ADR 0043.
+
+    Every assertion that reads what reached the *stream* — as opposed to what
+    reached the logger — has to wait for the writer thread, and has to fail rather
+    than time out silently if it never lands.
+    """
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), (
+        "the sink did not settle: a submitted line neither landed nor dropped"
+    )
 
 
 def _one(lines: list[str]) -> dict:
@@ -298,15 +323,21 @@ def test_reasons_matches_the_literal():
     }
 
 
-def test_events_matches_the_literal_and_both_emitters_use_it():
-    """The `event` vocabulary is two values, and a checker can see that."""
+def test_events_matches_the_literal_and_every_emitter_uses_it():
+    """The `event` vocabulary is three values, and a checker can see that.
+
+    ADR 0043 added `records-dropped`, which is the sink's own event rather than a
+    decision, so it is emitted by the sink and not through the logger — which is
+    why it is reached here through `_drop_marker` and the other two are not.
+    """
     assert audit.EVENTS == frozenset(get_args(audit.Event))
-    assert audit.EVENTS == {"authorization", "ownership-override"}
+    assert audit.EVENTS == {"authorization", "ownership-override", "records-dropped"}
 
     lines = _capture()
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
     emitted = {json.loads(lines[0])["event"]}
     emitted.add(_authorization()["event"])
+    emitted.add(json.loads(audit._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
 
 
@@ -331,6 +362,7 @@ def test_a_record_reaches_stderr_and_not_stdout(capsys):
     """Spec 9."""
     audit.install_audit_sink()
     audit.record_ownership_override(system="sys-a", lpar="db-01", agent_id="agent-7")
+    _flush()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err.strip())["event"] == "ownership-override"
@@ -350,75 +382,81 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
         audit.install_audit_sink()
         assert logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate is False
         audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        _flush()
         capsys.readouterr()
         assert root_lines == [], "a root handler must not receive audit records"
     finally:
         logging.root.removeHandler(collector)
 
 
-def _emit_directly(message: str = '{"event":"probe"}') -> None:
-    """Drive ``_AuditHandler.emit`` itself, outside ``audit._emit``'s guard.
+def _private_sink(capacity: int = 8, drain_timeout: float = 2.0):
+    """A sink of this test's own, so nothing here depends on process-global state.
 
-    Going through ``record_ownership_override`` cannot test the handler's own
-    guards: ``_emit`` wraps the whole logging dispatch in ``except Exception``,
-    so deleting all three #221 guards leaves those tests green. Verified by
-    doing exactly that. Calling ``emit`` directly is what makes them bite.
+    ``audit._SINK`` is shared with every other test in the session and carries a
+    live daemon thread; a test that wants to observe a drop counter, a shutdown, or
+    a blocked writer needs an instance it alone owns.
     """
-    audit._AuditHandler().emit(
-        logging.LogRecord("t", logging.WARNING, __file__, 0, message, None, None)
-    )
+    sink = audit._StderrSink(capacity, drain_timeout)
+    try:
+        yield sink
+    finally:
+        sink.close()
 
 
-def test_a_none_stderr_writes_nothing_and_raises_nothing(monkeypatch):
-    """Spec 11. CPython sets sys.stderr to None when fd 2 is closed at start."""
-    monkeypatch.setattr(sys, "stderr", None)
-    _emit_directly()  # an unguarded emit raises AttributeError here
+@pytest.fixture
+def sink():
+    yield from _private_sink()
 
-    # And end to end, where the record also has to survive the level filter.
-    monkeypatch.undo()
-    written: list[str] = []
 
-    class _Watch(io.StringIO):
-        def write(self, data: str) -> int:
-            written.append(data)
-            return len(data)
+class _Hostile(io.StringIO):
+    """A stream that fails every write with the error it was built with."""
 
-    watcher = _Watch()
-    monkeypatch.setattr(sys, "stderr", watcher)
-    audit.install_audit_sink()
-    monkeypatch.setattr(sys, "stderr", None)
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
-    assert written == [], "an absent stream must not be written to at all"
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self._error = error
+
+    def write(self, _data: str) -> int:
+        raise self._error
 
 
 @pytest.mark.parametrize(
-    "error", [ValueError("I/O operation on closed file"), OSError("broken pipe")]
+    ("label", "stream"),
+    [
+        ("absent", None),
+        ("closed", _Hostile(ValueError("I/O operation on closed file"))),
+        ("broken", _Hostile(OSError("broken pipe"))),
+        ("unforeseen", _Hostile(RuntimeError("something nobody predicted"))),
+    ],
 )
-def test_a_broken_or_closed_stream_is_survived(monkeypatch, error):
-    """Spec 12 and 13. The two guards `server._warn` already applies.
+def test_a_stream_that_cannot_be_written_drops_and_says_so(
+    monkeypatch, sink, label, stream
+):
+    """Spec 11, 12 and 13, and ADR 0043's closing of "a dropped record is silent".
 
-    Asserted through the handler directly *and* end to end: an unguarded emit
-    raises out of the first, and the second proves the integrated path also
-    survives rather than only the unit.
+    CPython sets ``sys.stderr`` to ``None`` when fd 2 is closed at interpreter
+    start; a broken stream raises ``OSError`` and a closed one ``ValueError``. Each
+    was silent before. Each is now a counted drop that the *next* successful write
+    reports — asserted by pointing the sink at a working stream afterwards, which
+    also proves the writer thread survived the failure rather than dying and
+    stranding every later record.
     """
-    handled: list[logging.LogRecord] = []
+    monkeypatch.setattr(sys, "stderr", stream)
+    sink.submit(f"lost-{label}\n")
+    assert sink.drain(2.0), "a failing write must still settle"
 
-    class _Hostile(io.StringIO):
-        def write(self, _data: str) -> int:
-            raise error
+    landed = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", landed)
+    sink.submit('{"event":"probe"}\n')
+    assert sink.drain(2.0)
 
-    monkeypatch.setattr(sys, "stderr", _Hostile())
-    monkeypatch.setattr(
-        logging.Handler, "handleError", lambda self, record: handled.append(record)
-    )
-    _emit_directly()
-    assert handled == [], (
-        f"{type(error).__name__} must be caught by name, not fall through to "
-        "the stdlib error path"
-    )
-
-    audit.install_audit_sink()
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    lines = landed.getvalue().splitlines()
+    assert json.loads(lines[0]) == {
+        "time": json.loads(lines[0])["time"],
+        "event": "records-dropped",
+        "count": 1,
+    }
+    assert json.loads(lines[1]) == {"event": "probe"}
+    assert f"lost-{label}" not in landed.getvalue()
 
 
 def test_the_module_closes_propagation_at_import(tmp_path):
@@ -539,6 +577,7 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
     audit.install_audit_sink()
     audit.record_ownership_override(system="one", lpar="l", agent_id="a")
     audit.record_ownership_override(system="two", lpar="l", agent_id="a")
+    _flush()
     err = capsys.readouterr().err
     lines = err.splitlines()
     assert len(lines) == 2, "two records must not share a physical line"
@@ -561,5 +600,153 @@ def test_the_handler_issues_one_write_per_record(monkeypatch):
     audit.install_audit_sink()
     monkeypatch.setattr(sys, "stderr", _Counting())
     audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    _flush()
     assert len(writes) == 1
     assert writes[0].endswith("\n")
+
+
+# --- #269 / ADR 0043: an undrained destination must not block the writer -------
+#
+# Every test below drives a *real* pipe filled to its buffer limit, not a stream
+# object pretending to block. The `full_stderr_pipe` fixture in tests/conftest.py
+# owns the arrangement and explains why clearing O_NONBLOCK leaves it blocking.
+
+
+@contextlib.contextmanager
+def _wedged(pipe, capacity: int = 64):
+    """A private sink writing to a pipe nobody is draining.
+
+    The redirection and the shutdown live here, in the test's own call frame,
+    rather than in a fixture: `sys.stderr` restored by a fixture finalizer races
+    the writer thread, which may not be scheduled at all until the test body has
+    returned. Closing the sink *before* restoring `sys.stderr` is what guarantees
+    every line the writer still owes goes to the pipe under test instead of to the
+    console — and to whatever a later test is capturing.
+    """
+    sink = audit._StderrSink(capacity, 2.0)
+    saved, sys.stderr = sys.stderr, pipe.stream
+    try:
+        yield sink
+    finally:
+        pipe.read_available()
+        sink.close()
+        sys.stderr = saved
+
+
+def _records(raw: bytes) -> list[dict]:
+    """Every JSON line in what came off the pipe, in order.
+
+    The pipe was filled with unterminated padding, so the first record is glued to
+    the tail of that padding: each line is taken from its first ``{`` rather than
+    being required to start with one.
+    """
+    found = []
+    for line in raw.decode().splitlines():
+        start = line.find("{")
+        if start >= 0:
+            found.append(json.loads(line[start:]))
+    return found
+
+
+def test_an_undrained_pipe_does_not_block_the_submitting_thread(full_stderr_pipe):
+    """#269, the whole point. The first line blocks the writer thread; the rest
+    fill the queue and then drop. None of it reaches the caller.
+
+    The bound is wall clock: before ADR 0043 this call did not return at all, so a
+    generous ceiling still separates the two behaviours completely.
+    """
+    assert full_stderr_pipe.capacity > 0, "the pipe must actually have filled"
+    returned = threading.Event()
+    with _wedged(full_stderr_pipe) as sink:
+
+        def drive() -> None:
+            for index in range(264):
+                sink.submit(f'{{"n":{index}}}\n')
+            returned.set()
+
+        # Driven from a thread this test can abandon, so the pre-ADR-0043
+        # behaviour *fails* here instead of hanging the suite: a synchronous
+        # write to this pipe never returns, and an unbounded wait in the main
+        # thread would take the whole run down with it.
+        threading.Thread(target=drive, daemon=True).start()
+        landed = returned.wait(10.0)
+    assert landed, "submitting onto a wedged destination never returned — #269"
+
+
+def test_an_overflowing_queue_reports_what_it_lost(full_stderr_pipe):
+    """ADR 0043's drop marker, over a real overflow rather than a forced counter.
+
+    264 lines onto a 64-line queue with the writer wedged: most are lost. How many
+    exactly depends on when the writer thread got scheduled, so the assertion is
+    the conservation law rather than a number — every submitted line is either on
+    the stream or in a marker's count. An accounting bug shows up as a total that
+    does not add back, which is what makes the silent loss #269 refuses detectable
+    at all.
+    """
+    pipe = full_stderr_pipe
+    submitted = 264
+    with _wedged(pipe) as sink:
+        for index in range(submitted):
+            sink.submit(f'{{"n":{index}}}\n')
+        # Freeing the writer also collects whatever it manages to write while we
+        # read, so both halves are kept: `drain` then guarantees the rest landed.
+        seen = pipe.read_available()
+        assert sink.drain(5.0), "the sink never settled after the pipe was drained"
+        sink.submit('{"n":"last"}\n')
+        assert sink.drain(5.0)
+        records = _records(seen + pipe.read_available())
+
+    markers = [record for record in records if record.get("event")]
+    written = [record for record in records if "n" in record]
+    assert markers, "an overflow that reports nothing is the silent loss #269 refuses"
+    assert all(marker["event"] == "records-dropped" for marker in markers)
+    assert sum(marker["count"] for marker in markers) + len(written) == submitted + 1
+    assert len(written) < submitted, "the queue must have overflowed for this to test"
+    assert written[-1]["n"] == "last"
+    assert records.index(markers[0]) < records.index(written[-1]), (
+        "a marker reports lines missing *above* it, so it must precede them"
+    )
+
+
+def test_the_drop_marker_is_one_ascii_line_of_the_same_grammar():
+    """A consumer of the record stream must be able to parse this like any other."""
+    line = audit._drop_marker(7)
+    assert line.endswith("\n") and line.count("\n") == 1
+    assert line.isascii()
+    marker = json.loads(line)
+    assert set(marker) == {"time", "event", "count"}
+    assert marker["event"] == "records-dropped"
+    assert marker["count"] == 7
+    assert marker["event"] in audit.EVENTS
+
+
+def test_shutdown_delivers_everything_queued_when_the_destination_is_read(
+    monkeypatch,
+):
+    """Criterion 3, first half — including a queue that is full when close begins.
+
+    The stop sentinel has a slot of its own, so nothing is evicted to make room
+    for it; an eviction here would silently lose records at exit on a perfectly
+    healthy destination.
+    """
+    landed = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", landed)
+    sink = audit._StderrSink(16, 2.0)
+    for index in range(16):
+        sink.submit(f'{{"n":{index}}}\n')
+    sink.close()
+    assert [json.loads(line)["n"] for line in landed.getvalue().splitlines()] == list(
+        range(16)
+    ), "shutdown must lose nothing, and must not reorder what it keeps"
+
+
+def test_shutdown_returns_even_when_the_destination_never_drains(full_stderr_pipe):
+    """Criterion 3, second half. `QueueListener.stop` joins unboundedly and would
+    hang here; this join is bounded and the thread is a daemon."""
+    with _wedged(full_stderr_pipe, capacity=16) as sink:
+        for index in range(16):
+            sink.submit(f'{{"n":{index}}}\n')
+        start = time.monotonic()
+        sink.close()
+        elapsed = time.monotonic() - start
+    assert elapsed < 5.0, f"close() on a wedged destination took {elapsed}s"

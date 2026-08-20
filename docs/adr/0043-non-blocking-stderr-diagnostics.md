@@ -39,7 +39,14 @@ thread. A full queue drops the line and counts it. The count is written out as a
 `server._warn` submits its startup lines to the same sink. A queue of `LogRecord`s could not carry
 `_warn`'s lines, and leaving `_warn` on a second, blocking mechanism keeps one writer in the
 process that can still wedge a start — the condition #269 names first. One destination, one bound,
-one drop counter, one shutdown.
+one drop counter, one shutdown — for the shipped sink. An operator who attaches their own handler
+to `hmc_mcp.audit` splits it back into two: their handler takes the records, this sink still takes
+`_warn`'s lines.
+
+The sink object and its `atexit` hook are created at **import**, and only the writer thread is
+lazy. That is the same narrowness ADR 0040 claimed for setting `propagate = False` at import: no
+handler is attached, nothing is written, no thread is started, and the hook is a no-op on a process
+that never submits a line. The in-process composition path ADR 0040 protects is unaffected.
 
 **Not `logging.handlers.QueueHandler` and `QueueListener` as they stand.** Read at 3.11.15, both
 reintroduce the failure this record exists to remove:
@@ -54,18 +61,35 @@ Subclassing both to fix both leaves nothing of the stdlib pair but the name.
 
 **A drop is a record.** `Event` gains a third value, `records-dropped`, and the writer emits
 `{"time": …, "event": "records-dropped", "count": N}` immediately before the next line it
-successfully writes. `count` is the number of lines lost since the previous marker — from a full
-queue, or from an absent, broken, or closed stream. A reader therefore learns that N lines are
-missing *before this point in the stream*, in the same one-line ASCII JSON grammar as every other
-record. Adding an event value is what ADR 0040's stability rule permits: a field may be added, a
-reason code may be added, a consumer ignores what it does not know.
+**successfully** writes. `count` is lines lost since the previous marker — from a full queue, or
+from an absent, broken, or closed stream — so a reader learns that N lines are missing *before this
+point in the stream*, in the same one-line ASCII JSON grammar as every other record.
 
-**Shutdown is bounded, and the bound is the only thing between the two failures.** `atexit` stops
-the sink: a sentinel goes on the queue behind whatever is already there, and the thread is joined
-for at most `_DRAIN_TIMEOUT` (2.0 s). A destination that is being read drains completely, because
-the sentinel is last. A destination that is not being read cannot be drained by any mechanism, so
-the join times out, the daemon thread is abandoned, and the process exits. `_AuditHandler.flush()`
-is the same bounded wait, which is what `logging.shutdown` already calls.
+Two limits on that, both real. **The marker needs a destination that recovers.** A stream that
+never accepts another write carries no marker; the count accumulates in memory and is reported when
+and if a write lands. Counting is unconditional, reporting is not. And **`count` is lines, not
+records**: `server._warn`'s prose shares this queue, so a dropped startup warning counts the same
+as a dropped audit record. In practice the two cannot mix — `_warn` runs once, before `.run()`,
+against an empty queue — but an operator reconciling a trail should know the field is not a record
+count by construction.
+
+Adding an event value follows ADR 0040's precedent rather than the letter of its stability rule,
+which enumerates fields and reason codes: that rule's principle — additive, never renamed, never
+repurposed, consumers ignore what they do not know — is what `EVENTS` being derived from the
+`Literal` already encodes for events.
+
+**Shutdown is bounded, and the bound is the only thing between the two failures.** An `atexit` hook
+registered by this module stops the sink: a sentinel goes on the queue behind whatever is already
+there, into a slot reserved for it and refused to `submit`, and the thread is joined for at most
+`_DRAIN_TIMEOUT` (2.0 s). Nothing is evicted to make room, so a destination being read drains
+**completely** — including a queue that was full when shutdown began. A destination that is not
+being read cannot be drained by any mechanism, so the join times out, the daemon thread is
+abandoned, and the process exits.
+
+`atexit` is LIFO and `logging` registers its own `shutdown` hook when it is first imported, so this
+module's hook — registered later — runs **first**, and it is the one that drains at exit.
+`_AuditHandler.flush()` is the same bounded wait, and it covers the other caller: a program that
+invokes `logging.shutdown()` itself, before exit.
 
 The queue holds 1024 lines — about 0.5 MiB at the measured record sizes, and roughly six times the
 pipe buffer it is standing in for.
@@ -83,11 +107,19 @@ pipe buffer it is standing in for.
 - **A hard kill loses what is queued.** `SIGKILL` or `os._exit` skips `atexit`; up to 1024 lines a
   synchronous write would have delivered are lost, and no marker reports them. A synchronous
   writer lost nothing here, so this is a real regression, accepted for the same reason as above.
-- **Two ADR 0040 residuals close.** "An undrained stderr blocks the write, and therefore the call"
-  is fixed. "A dropped record is silent" is fixed for the shipped sink: every drop reason now has a
-  count and a marker. ADR 0040's Residuals section is amended in place to point here; nothing else
-  in that record changes and it is not superseded — its record schema, logger reservation,
-  propagation rule, and installation point all still govern.
+- **Two ADR 0040 residuals close, one of them partly.** "An undrained stderr blocks the write, and
+  therefore the call" is fixed outright. "A dropped record is silent" is narrowed rather than
+  removed: every drop reason is now counted, and the count is reported as soon as any write lands —
+  but a destination that never accepts another write reports nothing, and lines submitted after
+  `atexit` has stopped the sink are counted and never reportable. ADR 0040's Residuals section is
+  amended in place to point here; nothing else in that record changes and it is not superseded —
+  its record schema, logger reservation, propagation rule, and installation point all still govern.
+- **ADR 0040's logger reservation now bounds the logger, not the stream.** The `records-dropped`
+  line is written by the sink and never becomes a `LogRecord`, because it describes this sink's
+  queue rather than a decision. Two things follow: it is not filtered by the level an operator sets
+  on `hmc_mcp.audit` — the only volume lever ADR 0040 offers — and a reader of the *stream* now
+  sees a line that no emitter on the reserved logger produced. ADR 0040's instruction to skip a
+  line that does not parse is unaffected; this one parses, and `EVENTS` names it.
 - **One daemon thread per served process**, started on the first submitted line and never on the
   in-process composition path, since nothing there submits one.
 - **The guarantee is the default sink's, not the logger's.** An operator who attaches their own
@@ -112,7 +144,17 @@ it mutates the same object the parent process holds and every other writer in th
 buffered text stream meeting `EAGAIN` mid-write raises `BlockingIOError` with `characters_written`
 set, which is a partial line on a line-oriented stream, and it raises it inside whatever unrelated
 code was printing. Under stdio the descriptor belongs to the client, so this is a server mutating
-state it does not own.
+state it does not own. Duplicating the descriptor first does not help: `dup` shares the open file
+description, so `O_NONBLOCK` set on the copy is set on the original.
+
+**Probe writability instead of mutating the descriptor** — `select.select([], [2], [], 0)` before
+each write, drop when it says no. It answers option 3's objection completely: no thread, no queue,
+no asynchronous delivery, no loss on `SIGKILL`, and nothing about the descriptor changed. Rejected
+because writability is not the guarantee needed. `select` reports a pipe writable when `PIPE_BUF`
+bytes will fit — 512 on this host, measured with `getconf PIPE_BUF /tmp` — and a record is 386 to
+563 bytes. A record above 512 bytes can therefore find the pipe "writable" and still block partway
+through. The probe narrows the window; it does not close it, and a residual liveness dependency on
+the record's own length is worse than a thread.
 
 **Do nothing about `server._warn`.** Its exposure is four lines once, before `.run()`, and #269
 calls a start that hangs there "a start nobody reaches". Rejected because it leaves two mechanisms
