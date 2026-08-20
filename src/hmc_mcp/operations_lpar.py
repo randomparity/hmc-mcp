@@ -29,6 +29,22 @@ from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_owne
 from .ssh_commands import get_lpar_description
 
 _logger = logging.getLogger(__name__)
+
+
+def _check_lpar_write_error(exc: HMCError) -> None:
+    """Translate an LPAR write rejection while preserving its response body."""
+    if exc.status_code == 406:
+        raise HMCError(
+            "The HMC rejected the LPAR write request (Not Acceptable). "
+            "Likely causes: (1) Accept or Content-Type header mismatch — "
+            "the HMC may require a more specific media type; "
+            "(2) XML schema version mismatch — try setting "
+            "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
+            exc.status_code,
+            body=exc.body,
+        ) from exc
+
+
 _OWNERSHIP_TOKEN = re.compile(
     r"\[hmc-mcp owner:(?P<owner>[^\s\[\]:]+) created:\d{4}-\d{2}-\d{2}\]"
 )
@@ -510,7 +526,11 @@ async def set_lpar_boot_order(
     
     # Build and submit the boot order document
     xml = build_boot_order_document(devices)
-    updated = await hmc.modify_logical_partition(lpar_uuid, xml)
+    try:
+        updated = await hmc.modify_logical_partition(lpar_uuid, xml)
+    except HMCError as exc:
+        _check_lpar_write_error(exc)
+        raise
     
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
@@ -560,7 +580,11 @@ async def clear_lpar_boot_order(
     
     # Build and submit the clear boot order document
     xml = build_clear_boot_order_document()
-    updated = await hmc.modify_logical_partition(lpar_uuid, xml)
+    try:
+        updated = await hmc.modify_logical_partition(lpar_uuid, xml)
+    except HMCError as exc:
+        _check_lpar_write_error(exc)
+        raise
     
     _logger.info(
         "Cleared boot order for LPAR %s (%s) (restored defaults)",

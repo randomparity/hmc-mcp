@@ -719,44 +719,52 @@ def hmc_mount_optical_media(
 @tool(effect="destructive", operation="media.unmount", target_kind="vios")
 def hmc_unmount_optical_media(
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    lpar_name_or_uuid: str,
+    media_name: str,
     profile: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping for optical media (unmount and detach).
+    """Remove a VirtualSCSIMapping for optical media (unmount and detach).
 
+    Identifies the mapping by the LPAR and media name rather than a UUID.
+    Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
     container) is preserved and can be remounted later.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
+        media_name: Name of the VirtualOpticalMedia (ISO) to unmount.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            await unmount_optical_media(hmc, vios_name_or_uuid, mapping_uuid)
-            return f"Unmounted optical mapping {mapping_uuid} from VIOS {vios_name_or_uuid}"
+            await unmount_optical_media(hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name)
+            return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
     return _run(_go)
 
 
 @tool(effect="destructive", operation="media.detach_mapping", target_kind="vios")
 def hmc_detach_optical_mapping(
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    lpar_name_or_uuid: str,
+    media_name: str,
     profile: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping for optical media (detach mapping).
+    """Remove a VirtualSCSIMapping for optical media (detach mapping).
 
+    Identifies the mapping by the LPAR and media name rather than a UUID.
+    Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
     container) is preserved and can be remounted later.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
+        media_name: Name of the VirtualOpticalMedia (ISO) to detach.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            await detach_optical_mapping(hmc, vios_name_or_uuid, mapping_uuid)
-            return f"Detached optical mapping {mapping_uuid} from VIOS {vios_name_or_uuid}"
+            await detach_optical_mapping(hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name)
+            return f"Detached {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
     return _run(_go)

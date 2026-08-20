@@ -193,10 +193,10 @@ def test_a_non_job_link_is_refused(path):
 _SUB_RESOURCE_CALLS = (
     ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
     ("delete_storage_mapping", ("AUTH", "{X}")),
-    ("delete_optical_mapping", ("AUTH", "{X}")),
+    ("delete_optical_mapping", ("{X}", "lpar", "media")),
     ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
     ("delete_virtual_disk", ("AUTH", "{X}", "disk")),
-    ("_post_volume_group_op", ("AUTH", "{X}", "<x/>")),
+    ("_get_vg_raw_xml", ("AUTH", "{X}")),
     ("get_volume_group", ("AUTH", "{X}")),
     ("list_optical_media", ("AUTH", "{X}")),
     ("delete_optical_media", ("AUTH", "{X}", "media")),

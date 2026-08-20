@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
@@ -481,12 +482,17 @@ async def upload_iso(
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
-    # Everything after the download is inside the try: the `finally` arm unlinks
-    # the staged file, and the collision check below raises on an input a caller
-    # supplies. With the check outside, a name that already exists left the whole
-    # download — up to the 100 GiB bound — on the server's temp filesystem.
     broker_uri: str | None = None
     try:
+        # Validate media_name against HMC FileName.Pattern
+        _HMC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.]{1,79}$")
+        if not _HMC_FILENAME_RE.match(media_name):
+            raise ValueError(
+                f"media_name {media_name!r} is invalid. "
+                "HMC only accepts filenames matching [A-Za-z0-9_.]{1,79} "
+                "(no hyphens, spaces, or other special characters)."
+            )
+
         # Check for name collision
         existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
         for media in existing_media:
@@ -500,15 +506,13 @@ async def upload_iso(
         # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
         # so we cannot perform duplicate detection via server-side checksums.
         # The client-side SHA-256 is computed for future deduplication features,
-        # but we cannot skip upload based on existing content without a
-        # server-side checksum to compare against.
+        # but we cannot skip upload based on existing content without a server-side
+        # checksum to compare against.
 
-        # Create brokered file handle
+        # Create brokered file handle on HMC
         broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
 
-        # Upload content, streamed from the staged file. The download bound is
-        # 100 GiB, so reading it back whole would size an allocation in this
-        # shared process by the ISO an operator happened to name (ADR 0052).
+        # Stream ISO bytes to the broker URI
         with iso_path.open("rb") as f:
             await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
 
@@ -532,20 +536,18 @@ async def upload_iso(
             "existing_name": None,
         }
     finally:
-        # Always cleanup broker resources
+        # Always release the broker file slot (404 is tolerated)
         if broker_uri:
             try:
                 await hmc._broker_file_cleanup(broker_uri)
             except Exception:
-                # Cleanup errors are logged but don't fail the upload
                 pass
-        
+
         # Cleanup the temp file the download staged
         if iso_path.exists():
             try:
                 iso_path.unlink()
             except OSError:
-                # Temp file cleanup errors are non-fatal
                 pass
 
 
@@ -636,26 +638,28 @@ async def mount_optical_media(
 
 
 async def unmount_optical_media(
-    hmc: HMCClient, vios: str, mapping_uuid: str
+    hmc: HMCClient, vios: str, lpar: str, media_name: str
 ) -> None:
-    """Delete a VirtualSCSIMapping for optical media (unmount and detach).
+    """Remove the VirtualSCSIMapping for an optical device (unmount and detach).
 
-    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
-    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
-    preserved and can be remounted later.
+    Identifies the mapping by lpar + media_name using a read-modify-write pattern
+    against the full VirtualIOServer document.  The backing VirtualOpticalMedia
+    (ISO container) is preserved and can be remounted later.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    await hmc.delete_optical_mapping(vios_uuid, mapping_uuid)
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
 
 
 async def detach_optical_mapping(
-    hmc: HMCClient, vios: str, mapping_uuid: str
+    hmc: HMCClient, vios: str, lpar: str, media_name: str
 ) -> None:
-    """Delete a VirtualSCSIMapping for optical media (detach mapping).
+    """Remove a VirtualSCSIMapping for an optical device (detach mapping).
 
-    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
-    the optical mapping only; the backing VirtualOpticalMedia (ISO container) is
-    preserved and can be remounted later.
+    Identifies the mapping by lpar + media_name using a read-modify-write pattern
+    against the full VirtualIOServer document.  The backing VirtualOpticalMedia
+    (ISO container) is preserved and can be remounted later.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    await hmc.delete_optical_mapping(vios_uuid, mapping_uuid)
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
