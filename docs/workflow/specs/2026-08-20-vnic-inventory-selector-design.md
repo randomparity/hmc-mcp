@@ -26,12 +26,14 @@ adapter, physical/logical port, desired/current capacity, activity, and status.
 `VnicChangeResult`. Its ordered fields are `operation`, `mutation_dispatched`, `changed`,
 `selector`, `slot_num`, `vnic_before`, `backing_before`, `vnic_after`, `backing_after`,
 `vnic_after_read_succeeded`, `backing_after_read_succeeded`, `output`, and `errors`.
-`changed: bool | None`; selector/slot and all four typed snapshots are nullable; read flags are
-bool; output is str; errors is an ordered tuple of public-safe strings whose first member is the
-original dispatch/readback cause. `changed=None` means a
+`changed: bool | None`; selector and slot are nullable; each before/after field is an immutable
+tuple of matching typed snapshots (empty means verified absence when its read succeeded); read
+flags are bool; output is str; errors is an ordered tuple of public-safe strings. `changed=None`
+means a
 dispatched mutation could not be reconciled; it never means unchanged. A successful after-read
 that proves absence uses a true read flag with an absent snapshot, while a failed read uses a false
-flag, so those states cannot collapse. `VnicPartialError` carries that complete result. Local
+flag, so those states cannot collapse. Multiple ambiguous matches remain in the tuple rather than
+being discarded. `VnicPartialError` carries that complete result. Local
 validation and admitted environment/inventory capability failures occur before writes; any
 post-dispatch failure is partial. An HMC-only rejection such as the captured VLAN-restriction
 diagnostic is partial because no admitted projection can prove that restriction before dispatch.
@@ -48,8 +50,9 @@ SSH adds strict collectors for version-labelled vNIC and `vnicbkdev` key/value r
 identity projection. `No results were found.` is available-empty only for the admitted read. A
 malformed identity, decimal, duplicated slot/logical port, or conflicting parent fails closed.
 Before serialization, every VIOS/adapter/port/LPAR component rejects ASCII controls and the HMC
-record delimiters `/`, `,`, and `=`. Shell metacharacters are permitted and remain data because the
-complete attribute record and each standalone argument are shell-quoted.
+record delimiters `/`, `,`, `=`, and `"` identified by ADR 0045. Other shell metacharacters are
+permitted and remain data because the complete attribute record and each standalone argument are
+shell-quoted; grammar validation and shell quoting are separate controls.
 
 Add authorizes the target LPAR, checks the environment, requires nonblank selector components,
 finite one-to-100 capacity with at most two decimals, and VLAN 0–4094. It verifies exact VIOS
@@ -92,10 +95,11 @@ Every other successful-read combination is contradictory or degraded.
 | Exactly one read succeeds, whatever it shows | `None` | partial error |
 | Neither read succeeds | `None` | partial error |
 
-Each successful projection populates its matching `vnic_after` or `backing_after`; successful
-absence is its read flag true and snapshot `None`. Each failed projection leaves its snapshot
-`None` and its flag false. Errors are ordered: dispatch cause,
-vNIC read cause, backing read cause, then one verification-mismatch description. A dispatched
+Each successful projection populates its matching `vnic_after` or `backing_after` tuple;
+successful absence is its read flag true and an empty tuple. Each failed projection also leaves an
+empty tuple but its flag is false. Errors contain only present causes, ordered as dispatch cause,
+vNIC read cause, backing read cause, then one verification-mismatch description. When all commands
+and reads succeed but verification mismatches, that mismatch is the first and only error. A dispatched
 command returns normally only in the first row; every other row raises `VnicPartialError`, even if
 one projection suggests the requested transition occurred.
 
@@ -121,8 +125,9 @@ validation, exact retries, capacity aggregation, relationship failures, successf
 remove verification, command timeout with one failed after-read, and command failure with both
 after-reads failed and every cause retained. Table-driven tests cover every reconciliation row for
 both operations, including contradictory successful reads and the captured HMC-only VLAN
-restriction diagnostic. Parser/orchestration tests reject conflicting cross-projection capacity
-and HMC delimiters while separately proving shell metacharacters remain quoted data. MCP/schema,
+restriction diagnostic. Parser/orchestration tests retain multiple ambiguous rows, reject
+conflicting cross-projection capacity and every HMC delimiter including double quote, and
+separately prove other shell metacharacters remain quoted data. MCP/schema,
 CLI, and public API tests prove replacement
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the
