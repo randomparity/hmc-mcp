@@ -40,11 +40,12 @@ parsed from terminal presentation or reconstructed through a second reporting
 stage. A warning that must fail the suite remains a pytest failure under existing
 configuration; ordinary warning detail is available through the verbose path.
 
-On any pytest non-zero exit, the runner writes pytest's complete combined
-stdout/stderr to stderr and exits with the same positive exit code. If pytest is
-terminated by a signal, the runner re-emits the captured diagnostics and exits
-non-zero; exact shell signal encoding is outside this command's portable
-contract.
+On any pytest non-zero exit, the runner writes pytest's complete combined bytes
+to `sys.stderr.buffer` without decoding and exits with the same positive exit
+code. Undecodable plugin or test output therefore cannot replace the original
+failure with a runner traceback. If pytest is terminated by a signal, the runner
+re-emits the captured diagnostics and exits non-zero; exact shell signal encoding
+is outside this command's portable contract.
 
 `just test-verbose` invokes pytest directly with `-q` and
 `--cov-report=term-missing`. It retains live pytest output, the full coverage
@@ -65,10 +66,10 @@ def main() -> int: ...
 The runner exposes no pytest argument-forwarding surface: focused and diagnostic
 runs use pytest directly, as the existing `--no-cov` guidance already requires.
 The runner invokes `[sys.executable, "-m", "pytest"]` with stderr redirected to
-stdout. Both streams remain available in observed order for failure replay. The
-subprocess inherits the repository working directory and environment, so pytest
-and coverage continue reading `pyproject.toml`; the runner changes no coverage
-or pytest environment variable.
+stdout and captures bytes, not text. Both streams remain available in observed
+order for byte-for-byte failure replay. The subprocess inherits the repository
+working directory and environment, so pytest and coverage continue reading
+`pyproject.toml`; the runner changes no coverage or pytest environment variable.
 
 ## Coverage configuration
 
@@ -109,8 +110,9 @@ processes. They prove:
 
 - a successful suite prints only the fixed compact semantic summary;
 - pytest failure output is replayed completely and its exit code is preserved;
+- undecodable failure bytes are replayed unchanged without a runner traceback;
 - the child command is exactly `sys.executable -m pytest`, combines stderr into
-  stdout, captures text, and does not override the environment;
+  stdout, captures bytes, and does not override the environment;
 - default smoke output contains only count, while verbose output lists live
   registry names;
 - canonical and verbose recipes retain the coverage gate and verification
