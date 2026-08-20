@@ -247,10 +247,28 @@ def _matches(item: VnicBackingSnapshot, selector: VnicBackingSelector) -> bool:
 
 
 def _correlated(vnic: VnicSnapshot, backing: VnicBackingSnapshot) -> bool:
-    return any(
-        (item.adapter_id, item.logical_port_id)
-        == (backing.adapter_id, backing.logical_port_id)
-        for item in vnic.backing_devices
+    return any(_same_backing_identity(item, backing) for item in vnic.backing_devices)
+
+
+def _same_backing_identity(
+    left: VnicBackingSnapshot, right: VnicBackingSnapshot
+) -> bool:
+    return (
+        left.vios_name,
+        left.vios_lpar_id,
+        left.adapter_id,
+        left.physical_port_id,
+        left.logical_port_id,
+        left.capacity_percent,
+        left.desired_capacity_percent,
+    ) == (
+        right.vios_name,
+        right.vios_lpar_id,
+        right.adapter_id,
+        right.physical_port_id,
+        right.logical_port_id,
+        right.capacity_percent,
+        right.desired_capacity_percent,
     )
 
 
@@ -470,7 +488,7 @@ async def add_vnic(
         else []
     )
     slot = observed_new[0].slot_num if len(observed_new) == 1 else None
-    final = v_ok and b_ok and len(new_pairs) == 1
+    final = v_ok and b_ok and len(observed_new) == 1 and len(new_pairs) == 1
     unchanged = v_ok and b_ok and after == before and backing_after == backing_before
     changed: bool | None = True if final else False if unchanged else None
     if not final:
@@ -548,20 +566,14 @@ async def remove_vnic(
     errors.extend(read_errors)
     slot_absent = v_ok and not any(item.slot_num == slot_num for item in after)
     backing_absent = b_ok and not any(
-        (item.adapter_id, item.logical_port_id)
-        == (captured.adapter_id, captured.logical_port_id)
-        for item in backing_after
+        _same_backing_identity(item, captured) for item in backing_after
     )
     final = slot_absent and backing_absent
     unchanged = (
         v_ok
         and b_ok
-        and any(item.slot_num == slot_num for item in after)
-        and any(
-            (item.adapter_id, item.logical_port_id)
-            == (captured.adapter_id, captured.logical_port_id)
-            for item in backing_after
-        )
+        and selected[0] in after
+        and any(_same_backing_identity(item, captured) for item in backing_after)
     )
     changed: bool | None = True if final else False if unchanged else None
     if not final:
@@ -575,8 +587,7 @@ async def remove_vnic(
         tuple(
             item
             for item in backing_after
-            if (item.adapter_id, item.logical_port_id)
-            == (captured.adapter_id, captured.logical_port_id)
+            if _same_backing_identity(item, captured)
         )
         if b_ok
         else ()
