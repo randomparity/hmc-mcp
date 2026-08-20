@@ -1402,12 +1402,18 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 # `targets` table could reach under any design, so refusing the tool would buy
 # nothing.
 #
-# `iso_source` is the awkward one and is classified explicitly rather than left
-# out: with an http(s) scheme it is a remote URL like the rest, and with anything
-# else `operations_storage.upload_iso` treats it as a path on the **MCP server
-# host** and uploads that file into the granted VIOS's media repository. That is
-# a real local-file-read concern and it is filed separately; it is not a *target*
-# concern, because the resource acted on is still the declared VIOS.
+# `iso_source` was the awkward one: it used to accept anything, and anything
+# without an http(s) scheme was read as a path on the **MCP server host** and
+# uploaded into the granted VIOS's media repository (#261). ADR 0049 closed that
+# by admitting only `http` and `https`, so the name is now a remote URL like the
+# rest of this set and belongs here for the same reason they do. It stays named
+# in this comment rather than quietly folded in, because the classification was
+# once a judgement call and the record of why should not evaporate with the
+# branch that made it one.
+#
+# What ADR 0049 did *not* close is the tool fetching a caller-supplied URL from
+# the MCP server's network position — that is #303, and it is still a source
+# outside the HMC that no `targets` table could reach.
 _PAYLOAD_SOURCE_ARGUMENTS = frozenset({
     "repository",
     "nim_ip",
@@ -1431,6 +1437,13 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
     The enumeration is the point. A threat scan found `iso_source` missing from
     an earlier version of this set, which meant the "a sixth cannot join them
     silently" claim below was false at the moment it was written.
+
+    Membership here never meant "harmless". `iso_source` was in this set while it
+    still read the MCP server's own filesystem (#261); it stayed in the set when
+    ADR 0049 cut that branch away, because neither the risk nor its removal was
+    ever a *target* question. This test pins classification, so it is not
+    evidence that any member is safe — only that a `targets` allowlist is not the
+    thing that would make it so.
     """
     found = {}
     for module in _TOOL_MODULES:
