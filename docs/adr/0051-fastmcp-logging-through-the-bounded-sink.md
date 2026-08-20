@@ -73,6 +73,28 @@ traceback, which is the debuggability regression #267 rejected and #323 was file
 reintroduce. `test_a_handler_bug_keeps_its_traceback_through_the_sink` fails if the formatter
 goes.
 
+**The rendering is marked, not merely formatted.** A `logging.Formatter` alone would have made
+this change a *forgery* vector, and that was verified rather than reasoned about. A rendered
+exception carries whatever the exception's `str()` carries; under ADR 0042's threat model
+HMC-returned text is not trusted, and it reaches this boundary — `operations_lpm` interpolates a
+`validation.error` into a message that ends up as a tool error. Through the `RichHandler` being
+replaced, such text was indented into the message column and hard-wrapped, so **column 0 was
+unreachable**; through a plain formatter, a newline followed by `{"time": …, "event":
+"authorization", "decision": "allow"}` lands at column 0 of the audit stream and **parses as a
+record**. Both halves were reproduced side by side at this branch's HEAD.
+
+So `audit.StreamSafeFormatter` puts a fixed non-JSON prefix — `fastmcp: ` — on **every physical
+line** of the rendering, and escapes the C0 controls, DEL, the Unicode line and paragraph
+separators, and the bidirectional overrides to their `\uXXXX` form. A line this formatter
+produces can never begin a JSON object and can never carry a raw ESC to a terminal. The
+rendering stays one string, so it is still one queue item and one write; the prefix bounds what
+a line may *say*, not how many writes it takes.
+
+The escaping is narrower than the record grammar's `ensure_ascii=True`, deliberately: the
+hazards are named directly, so a UTF-8 path in a traceback stays readable while an ESC does not
+survive at all. The audit logger itself gets none of this — `sink_handler` installs no formatter
+— because ADR 0040's `json.dumps` already produces exactly this guarantee for a record.
+
 **`_DenialFilter` stays.** It and this handler solve different problems and neither subsumes the
 other: the handler decides *where* a FastMCP record goes, ADR 0046's filter decides *what* a
 denial record says. Removing the filter reddens
@@ -105,6 +127,25 @@ record exists to remove, wearing a different name.
   suppressed `fastmcp`, `mcp` and `pydantic` frames and capped the render at three, and none of
   that survives. More frames and less decoration; whether that reads better is a matter of taste,
   but it reads differently and an operator will notice on the first handler bug.
+- **A traceback now shows every frame and every absolute path.** The handler this replaces was
+  built with `tracebacks_suppress=[fastmcp, mcp, pydantic]`, `tracebacks_max_frames=3` and
+  `show_path=False`. None of that survives, so a rendered handler bug puts the full stack and
+  the deployment's real filesystem paths on stderr. Weighed above as debuggability; it is also
+  **disclosure**, and under stdio the party reading that stream is the MCP client, which is the
+  same reader ADR 0040 already warns can read the records describing its own calls. Not
+  re-capped here: a frame limit would put back the argument ADR 0046 settled, that what an
+  operator needs to diagnose a genuine handler bug is the whole trace.
+  `tracebacks_show_locals` was false before and stays false, so no frame-local values are
+  rendered either way.
+- **A record emitted after the sink closes is lost where it used to be delivered.** `atexit` is
+  LIFO and `hmc_mcp.audit` registers later than `logging`, so `_SINK.close()` runs first; a
+  `fastmcp` record emitted after that point is counted and can never be reported, because no
+  writer is left to carry the marker. ADR 0043 already states that limit for this package's own
+  records — this extends it to FastMCP's, which a synchronous `RichHandler` would have
+  delivered. Confirmed by emitting one after `close()`: `closed=True pending=0 dropped=1`. The
+  window is narrow (nothing in the shipped serve path logs during interpreter shutdown) and it
+  is not closed here, because a final marker from `close()` would be a change to ADR 0043's
+  shutdown design rather than to where FastMCP's records go.
 - **This package takes ownership of another package's logger.** It removes handlers it did not
   attach, on a logger it does not own, on the strength of source read at one version.
   `fastmcp-slim` is pinned exactly at `==3.4.7`, which bounds the drift to a deliberate bump and
@@ -175,6 +216,48 @@ has lapsed. Detecting the lapse and reinstalling — a watchdog, or a re-check o
 is not undertaken here: it adds a mechanism whose failure mode is the one being fixed, for a path
 no shipped entry point takes.
 
+### Residual: `--http` still gets an unbounded writer, from uvicorn, after this install
+
+**This is the largest thing this record does not close, and it is on a shipped entry point.**
+`main_http` calls `.run(transport="streamable-http")`, which constructs a `uvicorn.Config`, whose
+`__init__` calls `configure_logging()` unconditionally (`uvicorn/config.py:297`) and runs
+`dictConfig` over uvicorn's own `LOGGING_CONFIG`. Probed in this worktree, after
+`install_fastmcp_stderr_sink()` had already run:
+
+```
+BEFORE uvicorn        handlers=[]
+AFTER  uvicorn        handlers=[<StreamHandler <stderr>>]     stderr=True
+AFTER  uvicorn.access handlers=[<StreamHandler <stdout>>]
+fastmcp still sunk:   [<_AuditHandler>]
+```
+
+So on `--http` a synchronous, unbounded `StreamHandler` lands on fd 2 **after** this install,
+and nothing re-installs. The `fastmcp` logger stays sunk; the `uvicorn` one does not.
+(Checking `uvicorn.error` answers nothing — the handler is on `uvicorn`.)
+
+Not fixed here, for a reason specific to that transport rather than a shrug. ADR 0043 rejected
+its option 1 — "keep fd 2 drained, and say so" — because *under stdio* the party the
+precondition binds is the MCP client, which spawns the server and never reads this repository's
+documentation. Under `--http` fd 2 belongs to the operator's own supervisor or journal, and
+`hmc-mcp serve --http` already requires a deliberate, operator-owned deployment behind an
+authenticated proxy. Option 1 is genuinely available there and it is not available under stdio.
+Taking it also avoids a second wholesale seizure — of a *third* package's logger — where the
+only levers are passing `log_config` through FastMCP's `uvicorn_config` (which would silently
+drop uvicorn's access log) or re-running `dictConfig` ourselves.
+
+**What this record therefore claims is scoped to the `fastmcp` logger**, and the ADR 0043
+amendment says so in those words. Tracked in #330 rather than left in a document only.
+
+### Residual: the `mcp` namespace is still on `logging.lastResort`
+
+The same shape, one level down and smaller. `mcp/server/lowlevel/server.py:713` and `:826` log
+on the `mcp` namespace, which has no handler, so a record walks to the root and reaches
+`logging.lastResort` — a `StreamHandler` on fd 2, synchronous and unbounded. The argument this
+record makes for installing on `fastmcp` even when `settings.log_enabled` is false applies to it
+verbatim. Not swept here only because it belongs with the `uvicorn` decision — both are "which
+third-party loggers does this package take over", and answering that for one dependency at a
+time is how the surface grows without anyone deciding to. Tracked with it in #330.
+
 ### Residual: the startup banner is not a log record and is not on the sink
 
 `FastMCP.run` calls `log_server_banner`, which builds its own `Console(stderr=True)` and
@@ -201,8 +284,11 @@ this branch's HEAD: `--- Logging error ---` and a traceback reached the stream d
 
 This is not new — the arm predates this record and ADR 0040 accepted it for the malformed
 foreign record it was written for — but routing FastMCP's records through the same handler makes
-it reachable by more traffic. It needs a record that fails to render, which FastMCP's own tool
-error path cannot produce (it logs f-strings with no `args`), so no shipped call reaches it. Left
+it reachable by more traffic. It needs a record that fails to render. FastMCP's tool-error path
+logs f-strings with no `args` and cannot produce one; `fastmcp/server/server.py:1325` does use
+`%`-args (`logger.warning("Invalid arguments for tool %r: %s", name, detail)`) on the same logger
+and in the dispatch path, but its arity is fixed and correct, so it does not raise either. No
+shipped call is *known* to reach the arm, which is a weaker claim than "none can". Left
 as it is rather than rerouted through the sink, because replacing the stdlib error contract on
 the handler an operator may attach to `hmc_mcp.audit` is a decision about ADR 0040's surface, not
 about where FastMCP's records go.

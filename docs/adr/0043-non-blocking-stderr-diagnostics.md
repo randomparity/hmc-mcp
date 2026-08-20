@@ -136,7 +136,11 @@ pipe buffer it is standing in for.
   the life of the process, so the hedge is gone and the field's stated meaning is the only one.
   And **the queue holds 1024 lines** now means 1024 *items*, one of which may be a rendered
   traceback of no fixed length — the 0.5 MiB figure is a typical case rather than a ceiling,
-  and the bound on outstanding writes is the part that keeps the server answering.
+  and the bound on outstanding writes is the part that keeps the server answering. What ADR 0051
+  does **not** widen: it binds the `fastmcp` logger and nothing else, so under `--http` uvicorn's
+  own `dictConfig` still attaches an unbounded `StreamHandler` to fd 2 *after* that install, and
+  the `mcp` namespace still reaches `logging.lastResort`. Both are recorded there as residuals.
+  Neither record claims fd 2 has a single writer.
 - **A process that never installs the sink is unchanged.** `logging.lastResort` writes
   synchronously at `WARNING`, so a CLI ownership-override record still blocks on an undrained
   stderr. No dispatch path exists in such a process, and `install_audit_sink` runs on every serve
