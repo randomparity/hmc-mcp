@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
+from dataclasses import asdict
+from decimal import Decimal
+import json
 from typing import Any
 
 from ._app import (
@@ -20,6 +23,8 @@ from .operations_network import (
     list_virtual_switches,
 )
 from .operations_ssh_network import (
+    VnicBackingSelector,
+    VnicPartialError,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
@@ -366,10 +371,8 @@ def hmc_list_vnics(
 ) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
-    Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
-    --filter lpar_names=<lpar_name>`` on the HMC via SSH and returns one dict
-    per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
-    ``port_vlan_id``, and ``backing_devices``.
+    Returns the HMC inventory for the selected partition, including slot and
+    backing-device readback fields.
 
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
@@ -382,108 +385,103 @@ def hmc_list_vnics(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: list_vnics(
-            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_vnics(
+                hmc.config, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return _run(_go)
 
 
 @tool(effect="mutate", operation="vnic.add", target_kind="lpar")
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    capacity: int,
-    virtual_switch_name: str,
+    vios_name: str,
+    vios_lpar_id: str,
+    adapter_id: str,
+    physical_port_id: str,
+    capacity_percent: float,
     port_vlan_id: int,
-    backing_devices: str | None = None,
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI.
 
-    Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
-    --filter lpar_names=<lpar_name> -a "<attrs>"`` on the HMC via SSH.
-
-    The system and partition may be given by CLI name or by UUID; UUIDs
-    are resolved to their CLI names via REST (falling back to an lssyscfg
-    lookup over SSH when the REST API is unreachable) before the command
-    runs.
-
-    **V1 scope boundary:** Only the following parameters are supported in
-    this version: ``capacity``, ``virtual_switch_name``, ``port_vlan_id``, and
-    ``backing_devices`` (optional, opaque string passed verbatim).  Complex
-    backing-device topology (multi-adapter failover, per-device SR-IOV
-    physical port IDs, capacity weights) is a follow-up and explicitly out
-    of scope for v1.
-
-    Returns the raw HMC command output on success.
-
-    WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name_or_uuid, lpar_name_or_uuid, and virtual_switch_name before calling.  The
-    underlying physical adapter must be in SR-IOV mode (see
-    ``hmc_set_sriov_adapter_mode``).
-
-    Raises:
-        HMCCLIError: If the HMC command fails, e.g. because the underlying
-            SR-IOV adapter is not in SR-IOV mode.
+    Verifies the selected VIOS, adapter, physical port, capacity, and final
+    HMC readback. Returns a structured mutation and reconciliation result.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        capacity: Requested vNIC capacity percentage.
-        virtual_switch_name: Backing switch name from ``hmc_list_virtual_switches``.
+        vios_name: VIOS partition name from managed-system inventory.
+        vios_lpar_id: VIOS partition ID matching ``vios_name``.
+        adapter_id: SR-IOV physical adapter identifier.
+        physical_port_id: Physical port identifier on ``adapter_id``.
+        capacity_percent: Requested backing capacity percentage.
         port_vlan_id: Port VLAN ID assigned to untagged traffic.
-        backing_devices: Optional opaque HMC backing-device attribute string.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: add_vnic(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-            capacity,
-            virtual_switch_name,
-            port_vlan_id,
-            backing_devices,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            try:
+                result = await add_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    VnicBackingSelector(
+                        vios_name,
+                        vios_lpar_id,
+                        adapter_id,
+                        physical_port_id,
+                        Decimal(str(capacity_percent)),
+                    ),
+                    port_vlan_id,
+                    ownership_override=ownership_override,
+                )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+            return asdict(result)
+
+    return _run(_go)
 
 
 @tool(effect="destructive", operation="vnic.remove", target_kind="lpar")
 def hmc_remove_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    vnic_id: str,
+    slot_num: str,
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
-    Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
-    --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` on the HMC
-    via SSH.
-
-    The system and partition may be given by CLI name or by UUID; UUIDs
-    are resolved to their CLI names via REST (falling back to an lssyscfg
-    lookup over SSH when the REST API is unreachable) before the command
-    runs.
-
-    ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
-
-    WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name_or_uuid, lpar_name_or_uuid, and vnic_id before calling. Returns the HMC CLI
-    output (immediate delete — no job to poll).
+    Removes the selected slot after verification and returns a structured
+    mutation and reconciliation result.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        vnic_id: Numeric vNIC ID returned by ``hmc_list_vnics``.
+        slot_num: vNIC slot number returned by ``hmc_list_vnics``.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: remove_vnic(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-            vnic_id,
-        ),
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            try:
+                result = await remove_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    slot_num,
+                    ownership_override=ownership_override,
+                )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+            return asdict(result)
+
+    return _run(_go)

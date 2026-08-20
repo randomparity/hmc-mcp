@@ -722,6 +722,126 @@ async def list_vnics(
     return _parse_lshwres_output(raw)
 
 
+_VNIC_FIELDS = (
+    "lpar_name",
+    "lpar_id",
+    "slot_num",
+    "desired_mode",
+    "curr_mode",
+    "auto_priority_failover",
+    "port_vlan_id",
+    "pvid_priority",
+    "allowed_vlan_ids",
+    "mac_addr",
+    "allowed_os_mac_addrs",
+    "backing_devices",
+    "backing_device_states",
+)
+_VNIC_BACKING_FIELDS = (
+    "lpar_name",
+    "lpar_id",
+    "type",
+    "adapter_id",
+    "physical_port_id",
+    "logical_port_id",
+    "capacity",
+    "desired_capacity",
+    "max_capacity",
+    "desired_max_capacity",
+    "failover_priority",
+    "is_active",
+    "status",
+)
+_VIOS_IDENTITY_FIELDS = ("name", "lpar_id", "lpar_env")
+
+
+async def list_vnic_rows(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> list[dict[str, str]]:
+    """Return strict, version-admitted vNIC rows for one partition."""
+    fields = ",".join(_VNIC_FIELDS)
+    command = (
+        "lshwres -r virtualio --rsubtype vnic --level lpar"
+        f" -m {shlex.quote(system_name)}"
+        f" --filter {shlex.quote(f'lpar_names={lpar_name}')}"
+        f" -F {fields} --header"
+    )
+    output = await run_hmc_command(config, command)
+    return parse_hmc_delimited_rows(output, _VNIC_FIELDS)
+
+
+async def list_vnic_backing_rows(
+    config: HMCConfig,
+    system_name: str,
+) -> list[dict[str, str]]:
+    """Return strict, system-wide vNIC backing-device rows."""
+    fields = ",".join(_VNIC_BACKING_FIELDS)
+    command = (
+        "lshwres -r virtualio --rsubtype vnicbkdev"
+        f" -m {shlex.quote(system_name)} -F {fields} --header"
+    )
+    output = await run_hmc_command(config, command)
+    if output.strip() == "No results were found.":
+        return []
+    return parse_hmc_delimited_rows(output, _VNIC_BACKING_FIELDS)
+
+
+async def read_vios_identity(
+    config: HMCConfig,
+    system_name: str,
+    vios_name: str,
+) -> dict[str, str]:
+    """Return the unique strict identity row for a named VIOS candidate."""
+    fields = ",".join(_VIOS_IDENTITY_FIELDS)
+    command = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)}"
+        f" --filter {shlex.quote(f'lpar_names={vios_name}')}"
+        f" -F {fields} --header"
+    )
+    rows = parse_hmc_delimited_rows(
+        await run_hmc_command(config, command), _VIOS_IDENTITY_FIELDS
+    )
+    if len(rows) != 1:
+        raise ValueError(
+            f"VIOS identity read for {vios_name!r} returned {len(rows)} rows; expected 1"
+        )
+    return rows[0]
+
+
+async def add_vnic_backing(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    backing_device: str,
+    port_vlan_id: int,
+) -> str:
+    """Add one vNIC with a prevalidated backing-device payload."""
+    payload = f"port_vlan_id={port_vlan_id},backing_devices={backing_device}"
+    command = (
+        "chhwres -r virtualio --rsubtype vnic -o a"
+        f" -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
+        f" -a {shlex.quote(payload)}"
+    )
+    return await run_hmc_command(config, command)
+
+
+async def remove_vnic_slot(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    slot_num: str,
+) -> str:
+    """Remove one vNIC by its admitted partition-local slot identity."""
+    command = (
+        "chhwres -r virtualio --rsubtype vnic -o r"
+        f" -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
+        f" -s {shlex.quote(slot_num)}"
+    )
+    return await run_hmc_command(config, command)
+
+
 async def list_memory_pools(
     config: HMCConfig,
     system_name: str,
@@ -1018,72 +1138,6 @@ def validate_sriov_mode(mode: SriovMode) -> SriovMode:
             f"Must be one of: {', '.join(sorted(_VALID_SRIOV_MODES))}"
         )
     return mode
-
-
-async def add_vnic(
-    config: HMCConfig,
-    system_name: str,
-    lpar_name: str,
-    capacity: int,
-    virtual_switch_name: str,
-    port_vlan_id: int,
-    backing_devices: str | None = None,
-) -> str:
-    """Add a vNIC (SR-IOV-backed Virtual NIC) to *lpar_name* via SSH.
-
-    Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
-    --filter lpar_names=<lpar_name> -a "<attrs>"`` and returns the raw command
-    output.
-
-    **V1 scope boundary:** Only ``capacity``, ``virtual_switch_name``,
-    ``port_vlan_id``, and ``backing_devices`` (optional, opaque string passed
-    verbatim) are supported.  Complex backing-device topology (multi-adapter
-    failover, per-device SR-IOV physical port IDs, capacity weights) is a
-    follow-up.
-
-    Raises:
-        HMCCLIError: If the HMC command fails, e.g. because the underlying
-            SR-IOV adapter is not in SR-IOV mode.
-    """
-    attrs = f"capacity={capacity},vswitch_name={virtual_switch_name},port_vlan_id={port_vlan_id}"
-    if backing_devices is not None:
-        attrs += f",backing_devices={backing_devices}"
-
-    cmd = (
-        f"chhwres -r virtualio --rsubtype vnic -o a -m {shlex.quote(system_name)}"
-        f" --filter lpar_names={shlex.quote(lpar_name)}"
-        f" -a {shlex.quote(attrs)}"
-    )
-    try:
-        return await run_hmc_command(config, cmd)
-    except HMCCLIError as exc:
-        raise HMCCLIError(
-            f"Failed to add vNIC to '{lpar_name}' on '{system_name}': {exc}. "
-            f"Ensure the underlying SR-IOV adapter is in sriov mode "
-            f"(see hmc_set_sriov_adapter_mode)."
-        ) from exc
-
-
-async def remove_vnic(
-    config: HMCConfig,
-    system_name: str,
-    lpar_name: str,
-    vnic_id: str,
-) -> str:
-    """Remove a vNIC from *lpar_name* via SSH.
-
-    Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
-    --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` and returns the
-    raw command output.
-
-    *vnic_id* is the numeric ID reported by :func:`list_vnics`.
-    """
-    cmd = (
-        f"chhwres -r virtualio --rsubtype vnic -o r -m {shlex.quote(system_name)}"
-        f" --filter lpar_names={shlex.quote(lpar_name)}"
-        f" -a {shlex.quote(f'vnic_id={vnic_id}')}"
-    )
-    return await run_hmc_command(config, cmd)
 
 
 # ---------------------------------------------------------------------- #

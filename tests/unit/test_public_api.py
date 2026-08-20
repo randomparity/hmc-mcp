@@ -102,6 +102,12 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_sea_adapters",
         "set_sriov_adapter_mode",
         "list_vnics",
+        "VnicBackingSelector",
+        "VnicBackingSnapshot",
+        "VnicSnapshot",
+        "VnicChangeResult",
+        "VnicCapabilityError",
+        "VnicPartialError",
         "add_vnic",
         "remove_vnic",
         "SriovMode",
@@ -229,6 +235,12 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "provision_lpar",
         },
         "hmc_mcp.operations_ssh_network": {
+            "VnicBackingSelector",
+            "VnicBackingSnapshot",
+            "VnicSnapshot",
+            "VnicChangeResult",
+            "VnicCapabilityError",
+            "VnicPartialError",
             "add_vnic",
             "list_fc_ports",
             "list_sea_adapters",
@@ -304,7 +316,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "f4051ea65c566e358ed3340bf0dac7498f1933bc5d88191ee1dd856e2fa45a28"  # pragma: allowlist secret
+    expected_digest = "7ecd37c262bb0b756ffec59bca6260c891d85293b4a237d1dd7ed486b693d989"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

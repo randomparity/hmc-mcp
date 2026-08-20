@@ -13,15 +13,20 @@ create-vg/create-disk) had zero direct coverage.
 
 from __future__ import annotations
 
+import asyncio
 import json
+
 import pytest
 import typer
+from click import unstyle
+from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
 
 from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
+from hmc_mcp.operations_ssh_network import VnicChangeResult, VnicPartialError
 
 LPAR_NAME = "lpar1"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
@@ -2272,26 +2277,6 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
-        (
-            [
-                "network",
-                "add-vnic",
-                "sys1",
-                "lpar1",
-                "--capacity",
-                "20",
-                "--virtual-switch-name",
-                "ETHERNET0",
-                "--vlan",
-                "100",
-                "--yes",
-            ],
-            ("chhwres", "lpar1", "20", "ETHERNET0", "100"),
-        ),
-        (
-            ["network", "remove-vnic", "sys1", "lpar1", "4", "--yes"],
-            ("chhwres", "lpar1", "4"),
-        ),
     ],
 )
 def test_destructive_ssh_commands_delegate_valid_arguments(
@@ -2318,6 +2303,122 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
 
     assert result.exit_code == 0, result.output
     assert all(fragment in commands[-1] for fragment in command_fragments)
+
+
+def test_add_vnic_cli_replaces_legacy_options():
+    result = RUNNER.invoke(cli.app, ["network", "add-vnic", "--help"])
+
+    assert result.exit_code == 0
+    output = unstyle(result.output)
+    for option in (
+        "--vios-name",
+        "--vios-lpar-id",
+        "--adapter-id",
+        "--physical-port-id",
+        "--capacity-percent",
+        "--port-vlan-id",
+    ):
+        assert option in output
+    for legacy in ("--backing-devices", "--virtual-switch-name", "--capacity "):
+        assert legacy not in output
+
+
+def test_remove_vnic_cli_names_slot_selector():
+    result = RUNNER.invoke(cli.app, ["network", "remove-vnic", "--help"])
+
+    assert result.exit_code == 0
+    assert "slot_num" in result.output
+    assert "vnic_id" not in result.output
+
+
+@pytest.mark.parametrize("command", ["add-vnic", "remove-vnic"])
+def test_vnic_mutation_cli_exposes_ownership_override(command):
+    result = RUNNER.invoke(cli.app, ["network", command, "--help"])
+
+    assert result.exit_code == 0
+    assert "--ownership-override" in unstyle(result.output)
+
+
+def _vnic_result(operation: str) -> VnicChangeResult:
+    return VnicChangeResult(
+        operation=operation,  # type: ignore[arg-type]
+        mutation_dispatched=True,
+        changed=True,
+        selector=None,
+        slot_num="4",
+        vnic_before=(),
+        backing_before=(),
+        vnic_after=(),
+        backing_after=(),
+        vnic_after_read_succeeded=True,
+        backing_after_read_succeeded=True,
+        output="done",
+        errors=(),
+    )
+
+
+def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
+    operation = AsyncMock(return_value=_vnic_result("add"))
+    monkeypatch.setattr("hmc_mcp.cli_network.add_vnic", operation)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_network._with_client", lambda fn: asyncio.run(fn(object()))
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "network",
+            "add-vnic",
+            "system",
+            "lpar",
+            "--vios-name",
+            "vios1",
+            "--vios-lpar-id",
+            "2",
+            "--adapter-id",
+            "1",
+            "--physical-port-id",
+            "0",
+            "--capacity-percent",
+            "20.25",
+            "--port-vlan-id",
+            "100",
+            "--ownership-override",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["operation"] == "add"
+    assert "Add vNIC" in result.stderr
+    assert operation.await_args.kwargs == {"ownership_override": True}
+
+
+def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypatch):
+    partial = VnicPartialError("incomplete", _vnic_result("remove"))
+    operation = AsyncMock(side_effect=partial)
+    monkeypatch.setattr("hmc_mcp.cli_network.remove_vnic", operation)
+    monkeypatch.setattr(
+        "hmc_mcp.cli_network._with_client", lambda fn: asyncio.run(fn(object()))
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "network",
+            "remove-vnic",
+            "system",
+            "lpar",
+            "4",
+            "--ownership-override",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["operation"] == "remove"
+    assert "Remove vNIC" in result.stderr
+    assert operation.await_args.kwargs == {"ownership_override": True}
 
 
 # --------------------------------------------------------------------------- #

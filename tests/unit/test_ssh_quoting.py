@@ -20,7 +20,6 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import (
-    hmc_add_vnic,
     hmc_backup_lpar_profiles,
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
@@ -28,6 +27,8 @@ from hmc_mcp.server import (
     hmc_set_lpar_description,
 )
 from hmc_mcp.ssh_commands import list_io_slots
+from hmc_mcp.operations_ssh_network import VnicBackingSelector, _required, _validated
+from decimal import Decimal
 
 from conftest import mock_uuid_resolution
 
@@ -92,45 +93,16 @@ async def test_list_io_slots_quotes_hostile_system_name():
 # ---------------------------------------------------------------------- #
 
 
-def test_add_vnic_quotes_hostile_vswitch(monkeypatch, mock_hmc):
-    """hmc_add_vnic keeps a hostile virtual_switch_name inside the quoted -a payload."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn = _make_ssh_mock("")
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_add_vnic(
-            system_name_or_uuid=SYSTEM_UUID,
-            lpar_name_or_uuid=LPAR_UUID,
-            capacity=2,
-            virtual_switch_name=HOSTILE,
-            port_vlan_id=100,
-        )
-
-    payload = f"capacity=2,vswitch_name={HOSTILE},port_vlan_id=100"
-    args = shlex.split(_captured_cmd(conn))
-    assert _arg_after(args, "-a") == payload
+def test_add_vnic_rejects_structural_selector_characters():
+    """Typed vNIC selectors reject characters that alter HMC payload structure."""
+    with pytest.raises(ValueError, match="alter HMC command structure"):
+        _validated(VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2")))
 
 
-def test_add_vnic_quotes_hostile_backing_devices(monkeypatch, mock_hmc):
-    """hmc_add_vnic keeps hostile backing_devices inside the quoted -a payload."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn = _make_ssh_mock("")
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_add_vnic(
-            system_name_or_uuid=SYSTEM_UUID,
-            lpar_name_or_uuid=LPAR_UUID,
-            capacity=2,
-            virtual_switch_name="ETHERNET0",
-            port_vlan_id=100,
-            backing_devices=f"U78DA.001.XYZ {HOSTILE}",
-        )
-
-    payload = f"capacity=2,vswitch_name=ETHERNET0,port_vlan_id=100,backing_devices=U78DA.001.XYZ {HOSTILE}"
-    args = shlex.split(_captured_cmd(conn))
-    assert _arg_after(args, "-a") == payload
+def test_remove_vnic_rejects_structural_slot_characters():
+    """Slot removal rejects characters that alter the HMC attribute payload."""
+    with pytest.raises(ValueError, match="alter HMC command structure"):
+        _required(f"4,{HOSTILE}", "slot_num")
 
 
 def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):

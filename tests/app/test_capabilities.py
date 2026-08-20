@@ -293,7 +293,14 @@ def test_parameter_normalization_contract_is_schema_pinned():
         "hmc_create_optical_media": {"size_mib"},
         "hmc_create_logical_unit": {"lu_size_gib"},
         "hmc_create_virtual_network": {"virtual_switch_id"},
-        "hmc_add_vnic": {"virtual_switch_name"},
+        "hmc_add_vnic": {
+            "vios_name",
+            "vios_lpar_id",
+            "adapter_id",
+            "physical_port_id",
+            "capacity_percent",
+            "port_vlan_id",
+        },
     }
     displaced = {
         "timeout",
@@ -307,6 +314,16 @@ def test_parameter_normalization_contract_is_schema_pinned():
         properties = set(by_name[tool_name].parameters["properties"])
         assert expected <= properties
         assert not (properties & displaced)
+    add_vnic = set(by_name["hmc_add_vnic"].parameters["properties"])
+    remove_vnic = set(by_name["hmc_remove_vnic"].parameters["properties"])
+    assert not add_vnic & {"backing_devices", "virtual_switch_name", "capacity"}
+    assert "slot_num" in remove_vnic
+    assert "vnic_id" not in remove_vnic
+    for properties in (
+        by_name["hmc_add_vnic"].parameters["properties"],
+        by_name["hmc_remove_vnic"].parameters["properties"],
+    ):
+        assert properties["ownership_override"]["default"] is False
     for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
         properties = by_name[install_tool].parameters["properties"]
         assert "timeout_seconds" not in properties

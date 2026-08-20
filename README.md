@@ -591,8 +591,8 @@ reason codes, and how to route or silence them.
 Storage quantities use binary-unit suffixes: `capacity_mib` for virtual disks,
 `size_mib` for media repositories and optical media, and `lu_size_gib` for
 Shared Storage Pool logical units. Numeric virtual-switch selectors are named
-`virtual_switch_id`; the SSH vNIC tool uses `virtual_switch_name` because it
-requires a name instead.
+`virtual_switch_id`. Verified vNIC mutations instead select the backing VIOS,
+SR-IOV adapter, and physical port; they do not accept a virtual-switch selector.
 
 The NIM install tools distinguish `hmc_timeout_minutes` from the client-side
 `wait_timeout_seconds`. With `wait=True` and no explicit client budget, the
@@ -680,12 +680,36 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 
 | Tool                       | Description |
 |----------------------------|-------------|
-| `hmc_list_vnics`           | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR |
-| `hmc_add_vnic`             | Add a vNIC to an LPAR using `virtual_switch_name` |
-| `hmc_remove_vnic`          | Remove a vNIC from an LPAR |
+| `hmc_list_vnics`           | List vNIC slots and HMC backing-device readback for an LPAR |
+| `hmc_add_vnic`             | Ensure one vNIC with a verified SR-IOV backing selector |
+| `hmc_remove_vnic`          | Remove the verified vNIC identified by its partition-local `slot_num` |
 | `hmc_list_fc_ports`        | List Virtual Fibre Channel (NPIV) adapters for a system |
 | `hmc_list_sea_adapters`    | List Shared Ethernet Adapters for a system |
 | `hmc_set_sriov_adapter_mode` | Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode |
+
+The verified vNIC mutation contract is admitted only for POWER9 8375-42A managed by HMC V10R3
+M1060. `hmc_add_vnic` selects one backing with `vios_name`, `vios_lpar_id`, `adapter_id`,
+`physical_port_id`, and `capacity_percent`, plus the vNIC `port_vlan_id`. The HMC assigns the
+logical-port ID; callers do not supply one. A successful or unchanged result reports the assigned
+ID in `backing_after[].logical_port_id` after correlated HMC readback. `hmc_remove_vnic` accepts
+the `slot_num` reported by `hmc_list_vnics`, verifies its single active Operational backing, and
+removes that slot.
+
+Add and remove return the stable fields `operation`, `mutation_dispatched`, `changed`, `selector`,
+`slot_num`, `vnic_before`, `backing_before`, `vnic_after`, `backing_after`,
+`vnic_after_read_succeeded`, `backing_after_read_succeeded`, `output`, and `errors`. Once a
+mutation has been dispatched, a command or reconciliation failure raises a structured partial
+error carrying the same result evidence; there is no rollback promise. An empty inventory with
+its matching read-succeeded flag set means verified absence.
+
+| vNIC capability | Admitted | Notes |
+|-----------------|----------|-------|
+| One SR-IOV backing on POWER9 8375-42A / HMC V10R3 M1060 | Yes | Exact family and HMC level only |
+| Caller-selected logical-port ID | No | The HMC allocates and readback reports it |
+| Multiple backings or failover topology | No | Ambiguous or degraded topology fails before mutation |
+| Priority or maximum-capacity inputs | No | HMC defaults remain in effect |
+| Other server families or HMC levels | No | Capability checks fail before mutation |
+| Rollback after a dispatched mutation | No | Partial errors retain observed before/after evidence |
 
 **Template library**
 
