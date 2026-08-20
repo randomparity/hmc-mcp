@@ -95,6 +95,22 @@ of tool enforcement with a registry that has drifted past its ceiling, and the p
 default cannot claim an enforcement it is not performing. #222 and #223 move a string from
 the second tuple to the first.
 
+> **Amended by [ADR 0047](0047-per-dimension-enforcement-labels.md)** (2026-08-19).
+> **The derivation described in the paragraph above was wrong, and this record was wrong to
+> fix it.** `ceiling_enforced` re-checks the *tool* dimension only, so deriving all three
+> labels from it makes one fact about tools decide three answers. The failure was
+> reproduced, not inferred: a registry drifted past its ceiling reported
+> `enforced_dimensions == []` **and** `declared_only_dimensions == []` — every dimension
+> dropped from a report still enumerating the connections and targets its grants name —
+> while a live call on an ungranted connection was denied by the very policy the report
+> named. The invariant this paragraph claims is real and is kept; what is corrected is that
+> it is an invariant about `tools` and was applied to all three. Each dimension is now
+> labelled from evidence about that dimension, and the two tuples partition all three
+> whenever a policy is selected. Nothing else in this record changes and it is not
+> superseded: the ceiling decision, the `permits` contract at both registration sites, the
+> live-registry reading, the warning placement, and the disclosure analysis all still
+> govern.
+
 **The arbitrary-command flag and the ceiling compose conjunctively**, as ADR 0036
 recorded. `configure_arbitrary_command_tool(enabled, mcp, permits=None)` registers
 `hmc_run_command` only when `enabled` and the ceiling admits it, taking the same
@@ -167,6 +183,13 @@ and this intersection reads only the compiled result.
   `create_mcp` returns that skips `permits` degrades the label to "not enforced" rather than
   leaving it falsely true. `configure_arbitrary_command_tool` is the one that exists, and it
   takes `permits`.
+
+  > **Amended by [ADR 0047](0047-per-dimension-enforcement-labels.md)** (2026-08-19). The
+  > second opinion degrades the `tools` label, not the whole tuple — it re-checks names
+  > against the ceiling, which says nothing about connection or target scope. Those two are
+  > now re-checked against their own evidence, the dispatch wrapper on each registered
+  > callable, so a site that skips `permits` and a site that skips `authorize` degrade
+  > different labels instead of the same one.
 - **`hmc_effective_permissions` is the second tool with no connection argument**, after
   `hmc_list_configured_hosts`. Rule G10 in `tests/app/test_tool_security.py` — "only the
   local config tool opens no HMC connection" — becomes an allowance of two, and both

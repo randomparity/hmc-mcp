@@ -365,6 +365,16 @@ becomes `("targets",)`, which is what ADR 0037 said this entry would do.
   drift state #254 describes. Decoupling the two tuples so the report could state the two
   dimensions independently is #254's question and is not settled inside this entry; #223
   will meet the same encoding.
+
+  > **Superseded in part by [ADR 0047](0047-per-dimension-enforcement-labels.md)**
+  > (2026-08-19). #254's question is settled: the tuples are decoupled and each dimension is
+  > labelled from evidence about that dimension. Both directions this residual names are
+  > fixed for `hmc_effective_permissions` — the safe one, where a drifted registry claimed no
+  > connection enforcement while the wrapper was denying, and the unsafe one, where a caller
+  > omitting `authorize` claimed enforcement over unwrapped tools. `describe` now reads the
+  > registered callables and witnesses the wrapper directly. One residual remains, narrowed
+  > rather than closed: the witness proves *an* authorizer is applied, not that it was built
+  > from the policy the report names.
 - **A tool reached with a non-string connection argument is denied rather than coerced.**
   Unreachable through MCP, where the schema types the parameter `str | None`; reachable
   by a direct caller of the wrapped object. Denying keeps the boundary from having a

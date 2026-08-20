@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
-import tomllib
 from typing import Any, Literal
 
 from ._app import (
@@ -20,6 +19,8 @@ from .common import (
 )
 from .config import (
     HMCConfig,
+    _coerce_profiles,
+    _read_config_document,
     list_nicknames,
     resolve_config_path,
 )
@@ -129,18 +130,13 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     if config_path is None:
         return {"profiles": [], "config_file": None}
 
-    try:
-        raw_text = config_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ValueError(f"{config_path}: cannot read config file: {exc}") from exc
-
-    try:
-        doc = tomllib.loads(raw_text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"{config_path}: TOML parse error: {exc}") from exc
+    # config's one read-and-parse: every read, decode, parse, and structure
+    # failure arrives as a ConfigError, which is a ValueError the MCP boundary
+    # surfaces as an error result naming the file.
+    doc = _read_config_document(config_path)
 
     default_profile = doc.get("default_profile")
-    profiles_raw: dict[str, Any] = doc.get("profiles", {})
+    profiles_raw: dict[str, Any] = _coerce_profiles(doc.get("profiles"), config_path)
 
     # Read the HMCConfig field defaults once — port and verify_ssl come from
     # the model, not hardcoded constants, so they stay in sync if the model changes.
