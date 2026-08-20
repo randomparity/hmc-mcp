@@ -100,17 +100,25 @@ frame list, which pointed at `dispatch_scope.authorize` rather than at the unrea
 file, and never named the file (deliberately — ADR 0038 chains the `ConfigError` as
 `__cause__` and interpolates nothing from it). Nothing that identified the fault is lost.
 
-**Two writers still share fd 2.** ADR 0043 routes everything this package writes through
-one bounded queue and one daemon thread, because a blocked `write()` on fd 2 wedges the
-server. FastMCP's `RichHandler` is not on that queue and never was; this record makes its
-denial output much smaller — a per-denial panel was the largest recurring contributor —
-but does not bring it under the sink. Doing so means taking over FastMCP's handlers, which
-is the blanket re-levelling #267 rejected, and is not undertaken here.
+**Two writers still share fd 2 — closed by ADR 0051.** ADR 0043 routes everything this
+package writes through one bounded queue and one daemon thread, because a blocked `write()`
+on fd 2 wedges the server. FastMCP's `RichHandler` was not on that queue; this record made
+its denial output much smaller — a per-denial panel was the largest recurring contributor —
+but did not bring it under the sink, on the reasoning that doing so meant taking over
+FastMCP's handlers and that this was the blanket re-levelling #267 rejected. #323 tracked
+the residual and ADR 0051 closed it: the `fastmcp` logger's handlers are replaced with one
+handler feeding the same sink, carrying a `logging.Formatter` so that a genuine handler bug
+still renders its traceback. The rejection above stands — nothing is re-levelled or
+suppressed — and the filter this record installs stays, because it decides *what* a denial
+record says while ADR 0051's handler decides *where* every FastMCP record goes.
 
-**A test that reads stderr must drain the sink first.** The audit record and the FastMCP
-line arrive by different routes, and only the audit route is asynchronous. The tests use
-`audit._SINK.drain(audit._DRAIN_TIMEOUT)` and normalize whitespace before asserting,
-since `RichHandler` hard-wraps to the console width.
+**A test that reads stderr must drain the sink first.** Written when the audit record and
+the FastMCP line arrived by different routes and only the audit route was asynchronous;
+since ADR 0051 both arrive through the sink, so the drain is required for both. The tests
+use `audit._SINK.drain(audit._DRAIN_TIMEOUT)` and normalize whitespace before asserting —
+whitespace normalization that `RichHandler`'s hard-wrap to the console width made necessary
+and that the plain formatter no longer needs, kept because it costs nothing and the
+assertions are substring checks either way.
 
 ## Alternatives considered
 

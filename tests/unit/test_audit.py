@@ -41,6 +41,15 @@ Spec test -> node id. This map is checked by
   269d test_shutdown_delivers_everything_queued_when_the_destination_is_read
   269e test_shutdown_returns_even_when_the_destination_never_drains
 
+#323 / ADR 0051, a second producer sharing the sink:
+
+  test_a_handler_without_a_formatter_renders_the_message_and_nothing_else
+  test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink
+  test_a_foreign_rendering_cannot_forge_a_record_on_this_stream
+  test_the_audit_records_own_grammar_is_untouched_by_that_formatter
+  test_a_multi_line_rendering_reaches_the_stream_in_one_write
+  test_two_producers_share_one_bound_and_the_count_still_adds_back
+
 Not spec-numbered, each pinning something a review round found:
 
   test_resolved_connection_is_bound_to_the_sentinel_that_owns_it
@@ -574,7 +583,8 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
 
     A custom ``logging.Handler`` inherits no ``terminator``, so the newline is
     written explicitly — and in the same ``write`` call, since nothing serialises
-    this handler against FastMCP's traceback panel on the same stream.
+    this handler against the other writers still on fd 2: the interpreter's own
+    exit traceback, and any handler an operator attached outside this sink.
     """
     assert not hasattr(logging.Handler, "terminator")
     assert logging.StreamHandler.terminator == "\n"
@@ -608,6 +618,154 @@ def test_the_handler_issues_one_write_per_record(monkeypatch):
     _flush()
     assert len(writes) == 1
     assert writes[0].endswith("\n")
+
+
+# --- #323 / ADR 0051: a second producer on the same sink -----------------------
+
+
+def test_a_handler_without_a_formatter_renders_the_message_and_nothing_else(capsys):
+    """ADR 0040's grammar survives the handler growing a formatted mode.
+
+    ``logging.Handler.format`` falls back to a shared default ``Formatter`` when
+    none is installed, which would append a traceback to a record carrying
+    ``exc_info``. ``sink_handler`` must not take that fallback: the audit stream's
+    contract is that the message *is* the record, one line of ASCII JSON.
+    """
+    handler = audit.sink_handler()
+    assert handler.formatter is None
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        logger.warning('{"event":"authorization"}', exc_info=True)
+    _flush()
+
+    err = capsys.readouterr().err
+    assert err == '{"event":"authorization"}\n'
+    assert "Traceback" not in err
+
+
+def test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink(capsys):
+    """The other arm, which is what ADR 0051 attaches to the ``fastmcp`` logger."""
+    handler = audit.sink_handler()
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        raise RuntimeError("a handler bug")
+    except RuntimeError:
+        logger.error("Error calling tool 'x'", exc_info=True)
+    _flush()
+
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: Error calling tool 'x'\n")
+    assert "Traceback" in err
+    assert "RuntimeError: a handler bug" in err
+
+
+#: A record that parses. Injected through a *foreign* producer's rendering, which
+#: is the only way anything but `audit` puts text on this stream.
+FORGED = '{"time": "2026-01-01T00:00:00+00:00", "event": "authorization", "decision": "allow"}'
+
+
+def _record_lines(text: str) -> list[dict]:
+    """Every line of *text* a consumer of this stream would parse as a record."""
+    parsed = []
+    for line in text.splitlines():
+        try:
+            candidate = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and "event" in candidate:
+            parsed.append(candidate)
+    return parsed
+
+
+def test_a_foreign_rendering_cannot_forge_a_record_on_this_stream(capsys):
+    """#323: the grammar ADR 0040 defined, against the producer ADR 0051 added.
+
+    A rendered exception carries the exception's ``str()``, and under ADR 0042's
+    threat model that is HMC-returned text this package does not trust. Through
+    the ``RichHandler`` ADR 0051 replaces, such text was indented into the message
+    column and hard-wrapped, so column 0 was unreachable by accident. This asserts
+    the rule that replaces the accident.
+    """
+    handler = audit.sink_handler()
+    handler.setFormatter(audit.StreamSafeFormatter("%(message)s", "fastmcp: "))
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+    try:
+        raise RuntimeError(f"hmc said: \n{FORGED}\n and \x1b[31m‮ too")
+    except RuntimeError:
+        logger.error("Error calling tool 'hmc_migrate_validate_lpar'", exc_info=True)
+    _flush()
+
+    err = capsys.readouterr().err
+    assert FORGED in err.replace("\\u", ""), "the text must still be reported"
+    assert _record_lines(err) == [], "a foreign rendering forged a parseable record"
+    assert all(line.startswith("fastmcp: ") for line in err.splitlines())
+    assert "\x1b" not in err, "a raw ESC reached the stream"
+    assert "‮" not in err, "a raw bidirectional override reached the stream"
+    assert "\\u001b" in err and "\\u202e" in err, "both must be reported, escaped"
+
+
+def test_the_audit_records_own_grammar_is_untouched_by_that_formatter(capsys):
+    """The other half: no prefix and no escaping on the records themselves.
+
+    ``sink_handler`` installs no formatter, so ADR 0040's rendering is what lands
+    — this fails if a later change gives the audit logger the marked one.
+    """
+    audit.install_audit_sink()
+    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    _flush()
+
+    err = capsys.readouterr().err
+    assert len(_record_lines(err)) == 1
+    assert not err.startswith("fastmcp: ")
+
+
+def test_a_multi_line_rendering_reaches_the_stream_in_one_write(monkeypatch):
+    """Spec 15's premise, for the multi-line item ADR 0051 introduced.
+
+    Written after the assertion it replaces was shown not to bite: an earlier
+    version asserted that a traceback's *text* survived intact, which stayed green
+    when `_StderrSink._write` was mutated to one `write()` plus `flush()` per
+    physical line. Content preservation is not atomicity; the number of calls is.
+    """
+    writes: list[str] = []
+
+    class _Counting(io.StringIO):
+        def write(self, data: str) -> int:
+            writes.append(data)
+            return len(data)
+
+    handler = audit.sink_handler()
+    handler.setFormatter(audit.StreamSafeFormatter("%(message)s", "fastmcp: "))
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+    monkeypatch.setattr(sys, "stderr", _Counting())
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        logger.error("Error calling tool 'x'", exc_info=True)
+    _flush()
+
+    assert len(writes) == 1, "a traceback must be one write, so it cannot land torn"
+    assert writes[0].count("\n") > 2, "the rendering must really have been multi-line"
+    assert writes[0].endswith("\n")
+
+
+# The overflow arm of this section lives below `_wedged`, which it needs:
+#   test_two_producers_share_one_bound_and_the_count_still_adds_back
 
 
 # --- #269 / ADR 0043: an undrained destination must not block the writer -------
@@ -710,6 +868,51 @@ def test_an_overflowing_queue_reports_what_it_lost(full_stderr_pipe):
     assert written[-1]["n"] == "last"
     assert records.index(markers[0]) < records.index(written[-1]), (
         "a marker reports lines missing *above* it, so it must precede them"
+    )
+
+
+def test_two_producers_share_one_bound_and_the_count_still_adds_back(full_stderr_pipe):
+    """#323 / ADR 0051: what a second producer does to ADR 0043's accounting.
+
+    A rendered traceback is many physical lines but **one** submitted item, so it
+    takes one queue slot and costs one drop. What this asserts is the conservation
+    law with both producers on the queue: every item is on the stream or inside a
+    marker's ``count``. The field means what ADR 0043 already said — items lost,
+    never a record count — so a reader reconciling the trail is not misled by the
+    extra source, only by more of it.
+
+    Atomicity is *not* asserted here. An earlier version claimed it by checking
+    that the traceback text survived intact, which stayed green when
+    ``_StderrSink._write`` was mutated to one write per physical line.
+    ``test_a_multi_line_rendering_reaches_the_stream_in_one_write`` owns that
+    property, by counting calls.
+    """
+    pipe = full_stderr_pipe
+    rendered_traceback = "ERROR: boom\nTraceback (most recent call last):\n  frame\n"
+    submitted = 264
+    with _wedged(pipe) as sink:
+        for index in range(submitted):
+            sink.submit(rendered_traceback if index % 2 else f'{{"n":{index}}}\n')
+        seen = pipe.read_available()
+        assert sink.drain(5.0), "the sink never settled after the pipe was drained"
+        sink.submit('{"n":"last"}\n')
+        assert sink.drain(5.0)
+        raw = seen + pipe.read_available()
+
+    text = raw.decode()
+    records = _records(raw)
+    markers = [record for record in records if record.get("event")]
+    written_records = [record for record in records if "n" in record]
+    written_tracebacks = text.count(rendered_traceback)
+
+    assert markers, "an overflow that reports nothing is the silent loss #269 refuses"
+    assert all(marker["event"] == "records-dropped" for marker in markers)
+    assert written_tracebacks, "no traceback survived, so nothing here was tested"
+    assert (
+        sum(marker["count"] for marker in markers)
+        + len(written_records)
+        + written_tracebacks
+        == submitted + 1
     )
 
 

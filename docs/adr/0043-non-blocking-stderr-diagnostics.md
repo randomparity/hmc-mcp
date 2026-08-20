@@ -125,6 +125,22 @@ pipe buffer it is standing in for.
 - **The guarantee is the default sink's, not the logger's.** An operator who attaches their own
   handler to `hmc_mcp.audit` before `main_stdio` / `main_http` still gets the deferral ADR 0040
   chose — and their handler's blocking behaviour, which this record cannot fix from here.
+- **The bound was on this package's contribution, not on the stream — widened by ADR 0051.**
+  FastMCP's own `RichHandler`s write to fd 2 and were not on this queue, so a consumer that
+  stopped reading could still wedge the server through them. #323 tracked that and ADR 0051
+  brings the `fastmcp` logger onto this sink as a third producer. Nothing in this record is
+  superseded: the queue, the capacity, the drop rule, the marker grammar and the bounded
+  shutdown all still govern, and they now govern more of the stream. Two clauses above read
+  differently under it. **"`count` is lines, not records"** was hedged with "in practice the
+  two cannot mix" because `_warn` runs once before `.run()`; FastMCP's records mix freely for
+  the life of the process, so the hedge is gone and the field's stated meaning is the only one.
+  And **the queue holds 1024 lines** now means 1024 *items*, one of which may be a rendered
+  traceback of no fixed length — the 0.5 MiB figure is a typical case rather than a ceiling,
+  and the bound on outstanding writes is the part that keeps the server answering. What ADR 0051
+  does **not** widen: it binds the `fastmcp` logger and nothing else, so under `--http` uvicorn's
+  own `dictConfig` still attaches an unbounded `StreamHandler` to fd 2 *after* that install, and
+  the `mcp` namespace still reaches `logging.lastResort`. Both are recorded there as residuals.
+  Neither record claims fd 2 has a single writer.
 - **A process that never installs the sink is unchanged.** `logging.lastResort` writes
   synchronously at `WARNING`, so a CLI ownership-override record still blocks on an undrained
   stderr. No dispatch path exists in such a process, and `install_audit_sink` runs on every serve

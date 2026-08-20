@@ -42,6 +42,7 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Callable, Mapping
+from typing import Final
 
 from fastmcp import FastMCP
 
@@ -55,7 +56,12 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, unboundable_effect_tools
-from .audit import install_audit_sink, write_diagnostic
+from .audit import (
+    StreamSafeFormatter,
+    install_audit_sink,
+    sink_handler,
+    write_diagnostic,
+)
 from .connection_scope import ConnectionScopeError
 from .dispatch_scope import dispatch_authorizer
 from .target_scope import TargetScopeError
@@ -401,10 +407,11 @@ def _warn(lines: tuple[str, ...]) -> None:
 #: What the concise line says. Fixed text with nothing interpolated: the
 #: authorization audit record (ADR 0040) already carries the policy, the tool, the
 #: effect, the decision, the reason, the connection, and the targets, and this line
-#: exists to stop a denial *looking* like a crash, not to restate that record. The
-#: audit record is submitted to an async sink while this line is written straight
-#: through by FastMCP's own handler, so the two orderings on stderr are not fixed
-#: and this text does not claim one.
+#: exists to stop a denial *looking* like a crash, not to restate that record. Since
+#: ADR 0051 both go onto the same FIFO sink from the same call, so the record
+#: normally precedes this line on stderr — normally, because a full queue drops one
+#: of the two and leaves the other. The text names neither, which is why that is a
+#: note here rather than a claim in the line itself.
 _DENIAL_LINE = (
     "authorization denied; the authorization audit record carries the decision"
 )
@@ -421,9 +428,12 @@ class _DenialFilter(logging.Filter):
       ``fastmcp.server.server.logger`` — imported by object below, so a version
       that moves or renames it fails at import rather than silently rendering
       panels again;
-    - ``configure_logging`` routes a record to its traceback handler on
-      ``record.exc_info is not None`` and to its plain handler otherwise, so
-      clearing ``exc_info`` is how a record asks for one line.
+    - a record carrying ``exc_info`` renders as a traceback and one clearing it
+      renders as one line. That was true of ``configure_logging``'s two
+      ``RichHandler``s, which filter on ``record.exc_info is not None``, and it
+      stays true of the single sink-backed handler ADR 0051 puts in their place,
+      whose ``logging.Formatter`` appends a traceback only when there is one.
+      Clearing ``exc_info`` is how a record asks for one line either way.
 
     Only a record whose exception *is* a scope error is touched, which is what
     keeps this from being the blanket suppression #267 rejected: a handler bug
@@ -461,6 +471,92 @@ def install_denial_log_filter() -> None:
         _fastmcp_logger.addFilter(_DenialFilter())
 
 
+#: FastMCP's own logger, and the second of this module's two couplings to that
+#: package's logging layout. ``_fastmcp_logger`` is where tool errors are
+#: *emitted* — ``fastmcp.server.server``, imported by object so a rename fails at
+#: import. This is where they are *handled*: ``configure_logging`` attaches every
+#: handler it builds to the ``fastmcp`` root of that namespace, and a child logger
+#: reaches them by propagation.
+_FASTMCP_LOGGER_NAME: Final = "fastmcp"
+
+#: How a FastMCP record renders once its ``RichHandler``s are gone. Taken from
+#: ``configure_logging``'s non-rich branch, which is FastMCP's own answer to
+#: rendering these records without ``rich``. Installing a ``Formatter`` at all is
+#: the load-bearing part: ``logging.Formatter.format`` is what appends
+#: ``exc_info``'s traceback, and without one the sink-backed handler would render
+#: the bare message and silently undo ADR 0046's guarantee that a genuine handler
+#: bug keeps its traceback.
+_FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
+
+#: What every physical line of a FastMCP rendering starts with. Its job is to be
+#: something a JSON object cannot start with: a rendered exception carries whatever
+#: the exception's ``str()`` carries, which under ADR 0042's threat model is
+#: HMC-returned text, and without this a newline followed by ``{"event": …}`` would
+#: land at column 0 of the audit stream and parse as a record. ``rich``'s wrapping
+#: made column 0 unreachable before ADR 0051; this is what replaces that accident
+#: with a rule. It also names the producer, which is worth something now that three
+#: of them share the stream.
+_FASTMCP_LINE_PREFIX: Final = "fastmcp: "
+
+
+def install_fastmcp_stderr_sink() -> None:
+    """Put FastMCP's own stderr output on ADR 0043's bounded queue. ADR 0051.
+
+    ADR 0043 bounded every write *this package* makes to fd 2, on the reasoning
+    that a blocked ``write()`` there wedges the server. FastMCP's two
+    ``RichHandler``s write to the same descriptor and were not on that queue, so
+    the bound was on this package's contribution rather than on the stream. This
+    replaces them with one handler feeding the same sink.
+
+    **A handler attached here survives.** ``fastmcp/__init__.py`` calls
+    ``configure_logging`` once, at import of ``fastmcp`` and only when
+    ``settings.log_enabled``. The only other caller is ``temporary_log_level``,
+    which reconfigures nothing when its level is falsy, and neither ``main_stdio``
+    nor ``main_http`` passes ``log_level`` to ``.run()``. Verified against
+    ``fastmcp-slim==3.4.7``, which this project pins exactly.
+
+    **Every handler goes, not only a recognized ``RichHandler``.** Deciding a
+    handler's destination means reading ``rich``'s ``Console.file``, and when
+    ``settings.log_enabled`` is false there is no handler to recognize at all.
+    Taking the list wholesale is ADR 0051's accepted cost — it also displaces a
+    handler an operator attached to ``fastmcp`` themselves — and it is what makes
+    "no handler on this logger writes to fd 2" something a test asserts rather
+    than infers. Removing and re-adding is what makes this idempotent: a second
+    call takes out the handler the first one left. A removed handler is not
+    ``close()``d: it is no longer reachable through this logger, ``logging.shutdown``
+    flushes and closes it at exit anyway, and closing a handler this package did not
+    open would be a second liberty on top of removing it.
+
+    **Only the handlers.** The logger's level, its ``propagate`` flag, and its
+    filters are untouched — including ``_DenialFilter``, which sits on the child
+    logger and solves a different problem: this handler decides *where* a record
+    goes, that filter decides *what* a denial record says. One thing the wholesale
+    removal takes with it in a test process is ``pytest``'s own
+    ``LogCaptureHandler``, so a test that serves and then asserts on a FastMCP
+    record through ``caplog`` would pass vacuously; nothing does today.
+
+    **The rendering is marked, not just formatted.** ``StreamSafeFormatter`` puts a
+    fixed non-JSON prefix on every physical line and escapes the control
+    characters, because a rendered exception carries HMC-returned text onto a
+    stream whose grammar is one line of JSON per record. See ADR 0051.
+
+    **Called unconditionally**, including when ``settings.log_enabled`` is false
+    and the removal loop finds nothing to remove. That case is the reason not to
+    skip rather than a reason to: a logger with no handler anywhere above it falls
+    through to ``logging.lastResort``, a ``StreamHandler`` on fd 2 that writes
+    synchronously and unbounded, which is precisely the writer this exists to
+    remove.
+    """
+    logger = logging.getLogger(_FASTMCP_LOGGER_NAME)
+    for existing in logger.handlers[:]:
+        logger.removeHandler(existing)
+    handler = sink_handler()
+    handler.setFormatter(
+        StreamSafeFormatter(_FASTMCP_LINE_FORMAT, _FASTMCP_LINE_PREFIX)
+    )
+    logger.addHandler(handler)
+
+
 def _serve_application(
     enable_arbitrary_command: bool, access_policy: AccessPolicy
 ) -> FastMCP:
@@ -483,6 +579,7 @@ def _serve_application(
     # to stderr for the same reason. Composing an application must not mutate
     # global logging state (ADR 0040).
     install_audit_sink()
+    install_fastmcp_stderr_sink()
     install_denial_log_filter()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
