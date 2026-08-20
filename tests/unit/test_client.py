@@ -3,10 +3,11 @@
 import asyncio
 import traceback
 import warnings
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+import respx
 from defusedxml import ElementTree as DET
 
 from hmc_mcp.client import HMCClient, HMCError
@@ -14,9 +15,111 @@ from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
 from hmc_mcp.xmlutil import localname
 
-from conftest import make_config
+from conftest import LOGON_RESPONSE, make_config
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
+
+
+@pytest.mark.asyncio
+async def test_implicit_port_falls_back_to_12443_after_logon_transport_failure():
+    with respx.mock(assert_all_called=False) as router:
+        primary = router.put(
+            url__regex=r"https://hmc\.test/rest/api/web/Logon"
+        ).mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        legacy = router.put(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(
+            return_value=httpx.Response(200, text=LOGON_RESPONSE)
+        )
+        metrics = router.get(
+            url__regex=(
+                r"https://hmc\.test:12443/rest/api/pcm/ProcessedMetrics/"
+                r"ManagedSystem_sys_2\.json"
+            )
+        ).mock(return_value=httpx.Response(200, json={"systemUtil": {}}))
+        logoff = router.delete(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(
+            return_value=httpx.Response(204)
+        )
+
+        async with HMCClient(make_config(verify_ssl=True)) as client:
+            assert client.is_logged_on
+            await client.fetch_json(
+                "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+            )
+
+    assert primary.call_count == 1
+    assert legacy.call_count == 1
+    assert metrics.call_count == 1
+    assert logoff.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("port", [443, 12443])
+async def test_explicit_port_transport_failure_is_hard_failure(port):
+    with respx.mock(assert_all_called=False) as router:
+        selected_url = (
+            r"https://hmc\.test/rest/api/web/Logon"
+            if port == 443
+            else rf"https://hmc\.test:{port}/rest/api/web/Logon"
+        )
+        selected = router.put(url__regex=selected_url).mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        legacy = None
+        if port == 443:
+            legacy = router.put(
+                url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+            ).mock(
+                side_effect=AssertionError("explicit ports must not fall back")
+            )
+
+        client = HMCClient(make_config(port=port, verify_ssl=True))
+        with pytest.raises(HMCTransportError):
+            await client.logon()
+        await client._http.aclose()
+
+    assert selected.call_count == 1
+    if legacy is not None:
+        assert legacy.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_close_failure_aborts_fallback_before_legacy_client_is_created():
+    client = HMCClient(make_config(verify_ssl=True))
+    client._request = AsyncMock(side_effect=HMCTransportError("primary failed"))
+    client._http.aclose = AsyncMock(side_effect=RuntimeError("close failed"))
+    client._new_http_client = MagicMock()
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        await client.logon()
+
+    client._new_http_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_closing_aborts_fallback():
+    close_started = asyncio.Event()
+
+    async def suspended_close():
+        close_started.set()
+        await asyncio.Event().wait()
+
+    client = HMCClient(make_config(verify_ssl=True))
+    client._request = AsyncMock(side_effect=HMCTransportError("primary failed"))
+    client._http.aclose = AsyncMock(side_effect=suspended_close)
+    client._new_http_client = MagicMock()
+
+    logon = asyncio.create_task(client.logon())
+    await close_started.wait()
+    logon.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await logon
+    client._new_http_client.assert_not_called()
 
 
 @pytest.mark.asyncio

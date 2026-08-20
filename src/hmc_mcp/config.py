@@ -124,7 +124,7 @@ class HMCConfig(BaseSettings):
     )
 
     host: str = Field(default="", description="HMC hostname or IP address")
-    port: int = Field(default=12443, description="HMC REST API port")
+    port: int = Field(default=443, description="HMC REST API port")
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")

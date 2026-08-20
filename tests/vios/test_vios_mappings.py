@@ -7,7 +7,7 @@ from hmc_mcp.client import HMCClient
 
 from conftest import make_config
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 
 # Minimal ViosStorageDetail entry with a vSCSI server mapping and an NPIV port mapping.
 VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

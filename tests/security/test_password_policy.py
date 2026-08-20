@@ -16,7 +16,7 @@ from hmc_mcp.documents import PasswordPolicySettings, build_password_policy_docu
 from conftest import make_config
 
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 
 # Minimal XML responses for password policy endpoints
 POLICY_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

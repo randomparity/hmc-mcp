@@ -11,7 +11,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `HMC_HOST` | string | _(required)_ | HMC hostname or IP address |
-| `HMC_PORT` | integer | `12443` | HMC REST API port |
+| `HMC_PORT` | integer | `443` | HMC REST API port. If unset, a transport failure during logon retries once on legacy port 12443; if set, connection failure is final and never falls back |
 | `HMC_USER` | string | _(required)_ | HMC user name |
 | `HMC_PASSWORD` | string | _(required)_ | HMC password |
 | `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmc-mcp/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
@@ -25,6 +25,13 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. **Leave unset for normal operation** — see note below. |
 
 ## Notes
+
+- **REST port** (`HMC_PORT`): when omitted, logon starts on port 443 and retries
+  once on port 12443 only after a transport failure. Any configured value is an
+  explicit choice and fails without fallback. The legacy retry can add the
+  duration of the failed 443 attempt; `HMC_TIMEOUT` applies per HTTP timeout
+  phase, not across both attempts. A lost 443 logon response may leave an
+  unreachable server-side session until the HMC expires it.
 
 - **TLS verification** (`HMC_VERIFY_SSL`): HMCs ship self-signed certificates,
   so TLS verification is off by default. To verify the HMC certificate, install

@@ -15,7 +15,7 @@ from hmc_mcp.documents import build_ldap_config_document
 from conftest import make_config
 
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 
 # Minimal XML responses for LDAP endpoints
 LDAP_CONFIG_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

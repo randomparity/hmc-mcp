@@ -15,7 +15,7 @@ from hmc_mcp.documents import build_hmc_user_document
 
 from conftest import make_config
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 
 # Minimal XML responses for user endpoints
 USER_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

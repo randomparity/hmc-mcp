@@ -80,6 +80,7 @@ class PcmClient(Protocol):
 
     config: HMCConfig
     _http: httpx.AsyncClient
+    _rest_base_url: str
 
     async def _request(
         self, method: str, path: str, **kwargs: Any
@@ -111,6 +112,7 @@ class StorageClient(Protocol):
     """Host state and operations required by :class:`client_storage.StorageMixin`."""
 
     config: HMCConfig
+    _rest_base_url: str
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any: ...
 

@@ -134,17 +134,25 @@ class HMCClient(
         config.validate_credentials()
         self.config = config
         self._session_token: str | None = None
+        self._legacy_port_fallback = (
+            config.port == 443 and "port" not in config.model_fields_set
+        )
         # X-Audit-Memento is evaluated once at construction time — this is safe
         # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
         # If the transport ever moves to a persistent shared client, this header would
         # stale when HMC_AGENT_ID changes; re-evaluate effective_audit_memento per-request
         # in that case.
-        self._http = httpx.AsyncClient(
-            base_url=config.base_url,
-            verify=config.verify_ssl,
-            timeout=config.timeout,
+        self._http = self._new_http_client(config.port)
+        self._rest_base_url = str(self._http.base_url).rstrip("/")
+
+    def _new_http_client(self, port: int) -> httpx.AsyncClient:
+        base_url = httpx.URL(self.config.base_url).copy_with(port=port)
+        return httpx.AsyncClient(
+            base_url=base_url,
+            verify=self.config.verify_ssl,
+            timeout=self.config.timeout,
             headers={
-                "X-Audit-Memento": config.effective_audit_memento,
+                "X-Audit-Memento": self.config.effective_audit_memento,
                 # Most HMC builds ignore charset but honour JSON when asked;
                 # we stick to the canonical XML representation everywhere.
             },
@@ -208,6 +216,18 @@ class HMCClient(
         body = build_logon_request_document(
             user=self.config.user, password=self.config.password
         )
+        try:
+            return await self._logon_once(body)
+        except HMCTransportError:
+            if not self._legacy_port_fallback:
+                raise
+        self._legacy_port_fallback = False
+        await self._http.aclose()
+        self._http = self._new_http_client(12443)
+        self._rest_base_url = str(self._http.base_url).rstrip("/")
+        return await self._logon_once(body)
+
+    async def _logon_once(self, body: str) -> str:
         resp = await self._request(
             "PUT",
             "/rest/api/web/Logon",

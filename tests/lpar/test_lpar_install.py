@@ -8,7 +8,7 @@ from conftest import JOB_ENTRY, make_config
 from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import install_lpar_job
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 LPAR_UUID = "11111111-1111-4111-8111-111111111111"
 
 

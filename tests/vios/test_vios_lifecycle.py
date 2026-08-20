@@ -10,7 +10,7 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import install_vios_job
 from hmc_mcp.documents import LparResources, build_vios_document
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 
 VIOS_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">

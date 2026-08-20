@@ -118,6 +118,46 @@ def test_resolve_returns_none_when_absent(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_omitted_port_defaults_to_443_without_explicit_provenance(monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+
+    config = HMCConfig(_env_file=None)
+
+    assert config.port == 443
+    assert "port" not in config.model_fields_set
+
+
+def test_constructor_port_is_explicit_even_when_it_matches_default(monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+
+    config = HMCConfig(port=443, _env_file=None)
+
+    assert config.port == 443
+    assert "port" in config.model_fields_set
+
+
+def test_environment_port_is_explicit(monkeypatch):
+    monkeypatch.setenv("HMC_PORT", "12443")
+
+    config = HMCConfig(_env_file=None)
+
+    assert config.port == 12443
+    assert "port" in config.model_fields_set
+
+
+def test_toml_port_is_explicit(tmp_path, monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        MINIMAL_TOML + "port = 12443\n",
+    )
+
+    config = load_profile("dev", config_path=cfg)
+
+    assert config.port == 12443
+    assert "port" in config.model_fields_set
+
+
 def test_load_profile_explicit(tmp_path, monkeypatch):
     """Explicit profile arg selects the correct profile."""
     monkeypatch.delenv("HMC_PROFILE", raising=False)
