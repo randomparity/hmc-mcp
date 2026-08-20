@@ -319,6 +319,11 @@ def test_parameter_normalization_contract_is_schema_pinned():
     assert not add_vnic & {"backing_devices", "virtual_switch_name", "capacity"}
     assert "slot_num" in remove_vnic
     assert "vnic_id" not in remove_vnic
+    for properties in (
+        by_name["hmc_add_vnic"].parameters["properties"],
+        by_name["hmc_remove_vnic"].parameters["properties"],
+    ):
+        assert properties["ownership_override"]["default"] is False
     for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
         properties = by_name[install_tool].parameters["properties"]
         assert "timeout_seconds" not in properties

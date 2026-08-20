@@ -39,6 +39,7 @@ from .operations_pcie import (
 )
 from .operations_ssh_network import (
     VnicBackingSelector,
+    VnicPartialError,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
@@ -417,6 +418,7 @@ def network_add_vnic(
     physical_port_id: str = typer.Option(..., "--physical-port-id"),
     capacity_percent: float = typer.Option(..., "--capacity-percent"),
     port_vlan_id: int = typer.Option(..., "--port-vlan-id"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Add and verify a vNIC with one typed SR-IOV backing selector."""
@@ -427,24 +429,30 @@ def network_add_vnic(
     ):
         raise typer.Abort()
 
-    result = _with_client(
-        lambda hmc: add_vnic(
-            hmc,
-            system_name,
-            lpar,
-            VnicBackingSelector(
-                vios_name,
-                vios_lpar_id,
-                adapter_id,
-                physical_port_id,
-                Decimal(str(capacity_percent)),
-            ),
-            port_vlan_id,
-        )
-    )
+    async def operation(hmc):
+        try:
+            return await add_vnic(
+                hmc,
+                system_name,
+                lpar,
+                VnicBackingSelector(
+                    vios_name,
+                    vios_lpar_id,
+                    adapter_id,
+                    physical_port_id,
+                    Decimal(str(capacity_percent)),
+                ),
+                port_vlan_id,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            return exc
 
-    console.print(f"[green]vNIC added to '{lpar}' on '{system_name}'[/green]")
+    outcome = _with_client(operation)
+    result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
     _print_json(asdict(result))
+    if isinstance(outcome, VnicPartialError):
+        raise typer.Exit(1)
 
 
 @network_app.command("remove-vnic")
@@ -452,6 +460,7 @@ def network_remove_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
     slot_num: str = typer.Argument(..., help="vNIC slot number (from list-vnics)"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
@@ -460,9 +469,20 @@ def network_remove_vnic(
     ):
         raise typer.Abort()
 
-    result = _with_client(lambda hmc: remove_vnic(hmc, system_name, lpar, slot_num))
+    async def operation(hmc):
+        try:
+            return await remove_vnic(
+                hmc,
+                system_name,
+                lpar,
+                slot_num,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            return exc
 
-    console.print(
-        f"[green]vNIC slot {slot_num} removed from '{lpar}' on '{system_name}'[/green]"
-    )
+    outcome = _with_client(operation)
+    result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
     _print_json(asdict(result))
+    if isinstance(outcome, VnicPartialError):
+        raise typer.Exit(1)

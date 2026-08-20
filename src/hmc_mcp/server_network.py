@@ -6,6 +6,7 @@ from .tool_registry import tool_module
 
 from dataclasses import asdict
 from decimal import Decimal
+import json
 from typing import Any
 
 from ._app import (
@@ -23,6 +24,7 @@ from .operations_network import (
 )
 from .operations_ssh_network import (
     VnicBackingSelector,
+    VnicPartialError,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
@@ -402,6 +404,7 @@ def hmc_add_vnic(
     physical_port_id: str,
     capacity_percent: float,
     port_vlan_id: int,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI.
@@ -418,23 +421,29 @@ def hmc_add_vnic(
         physical_port_id: Physical port identifier on ``adapter_id``.
         capacity_percent: Requested backing capacity percentage.
         port_vlan_id: Port VLAN ID assigned to untagged traffic.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            result = await add_vnic(
-                hmc,
-                system_name_or_uuid,
-                lpar_name_or_uuid,
-                VnicBackingSelector(
-                    vios_name,
-                    vios_lpar_id,
-                    adapter_id,
-                    physical_port_id,
-                    Decimal(str(capacity_percent)),
-                ),
-                port_vlan_id,
-            )
+            try:
+                result = await add_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    VnicBackingSelector(
+                        vios_name,
+                        vios_lpar_id,
+                        adapter_id,
+                        physical_port_id,
+                        Decimal(str(capacity_percent)),
+                    ),
+                    port_vlan_id,
+                    ownership_override=ownership_override,
+                )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
             return asdict(result)
 
     return _run(_go)
@@ -445,6 +454,7 @@ def hmc_remove_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     slot_num: str,
+    ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Remove a vNIC from an LPAR via the HMC CLI.
@@ -456,14 +466,22 @@ def hmc_remove_vnic(
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         slot_num: vNIC slot number returned by ``hmc_list_vnics``.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            return asdict(
-                await remove_vnic(
-                    hmc, system_name_or_uuid, lpar_name_or_uuid, slot_num
+            try:
+                result = await remove_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    slot_num,
+                    ownership_override=ownership_override,
                 )
-            )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+            return asdict(result)
 
     return _run(_go)
