@@ -20,6 +20,7 @@ from hmc_mcp.operations_ssh_network import VnicBackingSelector, add_vnic
 from hmc_mcp.ssh_commands import (
     list_sriov_configured_logical_port_rows,
     list_vnic_backing_rows,
+    read_vios_identity,
 )
 
 
@@ -111,6 +112,14 @@ class LparPcieWorkflowResult:
 def _required(value: str, name: str) -> str:
     if not value.strip():
         raise ValueError(f"{name} must not be blank")
+    structural = {"/": "slash", ",": "comma", "=": "equals sign", '"': "double quote"}
+    for character, label in structural.items():
+        if character in value:
+            raise ValueError(
+                f"{name} contains {label}; it would alter HMC command structure"
+            )
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{name} contains a control character")
     return value
 
 
@@ -191,6 +200,7 @@ async def prevalidate_lpar_pcie_assignments(
             requested_capacity.get((adapter, physical), Decimal()) + capacity
         )
 
+    vnic_identities: set[tuple[str, str, str, str, Decimal, int]] = set()
     for item in assignments.vnics:
         backing = item.backing
         adapter = _required(backing.adapter_id, "adapter_id")
@@ -200,6 +210,17 @@ async def prevalidate_lpar_pcie_assignments(
         capacity = _capacity(backing.capacity_percent)
         if type(item.port_vlan_id) is not int or not 0 <= item.port_vlan_id <= 4094:
             raise ValueError("port_vlan_id must be an integer between 0 and 4094")
+        identity = (
+            backing.vios_name,
+            backing.vios_lpar_id,
+            adapter,
+            physical,
+            capacity,
+            item.port_vlan_id,
+        )
+        if identity in vnic_identities:
+            raise ValueError("duplicate vNIC assignment")
+        vnic_identities.add(identity)
         requested_capacity[adapter, physical] = (
             requested_capacity.get((adapter, physical), Decimal()) + capacity
         )
@@ -230,6 +251,22 @@ async def prevalidate_lpar_pcie_assignments(
                 f"capacity exhausted on {adapter}/{physical}: {used}% used and "
                 f"{requested_capacity[adapter, physical]}% requested"
             )
+    checked_vios: set[tuple[str, str]] = set()
+    for item in assignments.vnics:
+        identity = item.backing.vios_name, item.backing.vios_lpar_id
+        if identity in checked_vios:
+            continue
+        system_name = (await list_sriov_adapters(hmc.config, system)).system
+        observed = await read_vios_identity(hmc.config, system_name, identity[0])
+        if observed != {
+            "name": identity[0],
+            "lpar_id": identity[1],
+            "lpar_env": "vioserver",
+        }:
+            raise ValueError(
+                "selected VIOS name, ID, or partition type does not match inventory"
+            )
+        checked_vios.add(identity)
 
 
 async def apply_lpar_pcie_assignments(

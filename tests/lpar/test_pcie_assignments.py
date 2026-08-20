@@ -53,6 +53,26 @@ async def test_conflicting_duplicate_logical_port_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_duplicate_vnic_request_fails_before_inventory() -> None:
+    item = _vnic()
+    with pytest.raises(ValueError, match="duplicate vNIC"):
+        await prevalidate_lpar_pcie_assignments(
+            AsyncMock(), "sys", LparPcieAssignments(vnics=(item, item))
+        )
+
+
+@pytest.mark.asyncio
+async def test_structural_selector_character_fails_before_inventory() -> None:
+    request = SriovLogicalPortAssignment(
+        "default_profile", "1,2", "1", "27004001", Decimal("2")
+    )
+    with pytest.raises(ValueError, match="comma"):
+        await prevalidate_lpar_pcie_assignments(
+            AsyncMock(), "sys", LparPcieAssignments(sriov=(request,))
+        )
+
+
+@pytest.mark.asyncio
 async def test_dry_run_preserves_stable_assignment_order() -> None:
     assignments = LparPcieAssignments(sriov=(_sriov(),), vnics=(_vnic(),))
     with patch(
