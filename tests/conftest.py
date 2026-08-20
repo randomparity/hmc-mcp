@@ -7,6 +7,7 @@ import select
 import sys
 from dataclasses import dataclass
 
+import fastmcp  # noqa: F401 — imported for its import-time logging configuration
 import httpx
 import pytest
 import respx
@@ -14,6 +15,30 @@ import respx
 from hmc_mcp import audit
 from hmc_mcp.audit import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
+
+
+#: The ``fastmcp`` logger and its handlers as importing ``fastmcp`` leaves them.
+#: Captured at collection time, before any test can serve, because ADR 0051 made
+#: ``server._serve_application`` *replace* those handlers — so unlike the audit
+#: logger, whose pristine state is "empty", no later code can reconstruct this one.
+#:
+#: ``import fastmcp`` above is what makes the snapshot the right one rather than an
+#: empty list: ``fastmcp/__init__.py`` attaches the handlers, and nothing else this
+#: module imports pulls that package in. Snapshotting before it would silently
+#: replace every test's ``fastmcp`` logger with an unconfigured one.
+_FASTMCP_LOGGER = logging.getLogger("fastmcp")
+_PRISTINE_FASTMCP = (
+    list(_FASTMCP_LOGGER.handlers),
+    _FASTMCP_LOGGER.level,
+    _FASTMCP_LOGGER.propagate,
+)
+
+
+def _restore_fastmcp_logger() -> None:
+    handlers, level, propagate = _PRISTINE_FASTMCP
+    _FASTMCP_LOGGER.handlers[:] = handlers
+    _FASTMCP_LOGGER.setLevel(level)
+    _FASTMCP_LOGGER.propagate = propagate
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +67,14 @@ def isolate_audit_logging():
     walk finds none. Each of those cleans up after itself; this is the backstop for
     one that forgets, since a stray root handler silently changes what every later
     test captures.
+
+    Since ADR 0051 it does the same for the ``fastmcp`` logger, whose handlers
+    ``_serve_application`` also replaces. That logger needs its pristine state
+    captured at import rather than reset to empty, so the snapshot lives at module
+    level and this fixture only applies it — at setup as well as teardown, for the
+    reason above.
     """
+    _restore_fastmcp_logger()
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     saved_handlers = list(logger.handlers)
     saved_level = logger.level
@@ -58,6 +90,7 @@ def isolate_audit_logging():
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
+        _restore_fastmcp_logger()
         # ADR 0043 made delivery asynchronous, so a record emitted here can still
         # be in flight after the test returns. Settle the sink and clear anything
         # it is owed, or one test's records land in another test's captured output

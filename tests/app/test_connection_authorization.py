@@ -701,25 +701,11 @@ def test_the_client_denial_template_is_the_same_with_the_filter_off(
     assert _denied(create_mcp(_policy(grants)), profile) == expected
 
 
-@pytest.fixture(autouse=True)
-def fastmcp_handlers():
-    """Save and restore the process-global ``fastmcp`` logger's configuration.
-
-    ADR 0051 made ``_serve_application`` replace that logger's handlers, and this
-    module drives ``_serve_application`` in-process. Autouse for the reason
-    ``isolate_audit_logging`` is autouse for ``hmc_mcp.audit``: the tests that
-    merely *serve* leak the state as readily as the ones that read stderr, and
-    whichever ran first would otherwise decide what every later test in the
-    session sees.
-    """
-    logger = logging.getLogger("fastmcp")
-    saved = list(logger.handlers), logger.level, logger.propagate
-    try:
-        yield logger
-    finally:
-        logger.handlers[:] = saved[0]
-        logger.setLevel(saved[1])
-        logger.propagate = saved[2]
+#: The logger ADR 0051's handler goes on. Restoring it between tests is
+#: ``isolate_audit_logging``'s job (tests/conftest.py) — ``_serve_application``
+#: replaces its handlers process-wide, so isolating it per-module would leave
+#: every other module that serves leaking into this one.
+FASTMCP_LOGGER = logging.getLogger("fastmcp")
 
 
 def _targets_stderr(handler) -> bool:
@@ -736,7 +722,7 @@ def _targets_stderr(handler) -> bool:
     return stream is sys.stderr
 
 
-def test_the_served_path_takes_fastmcps_handlers_off_fd_2(fastmcp_handlers, capsys):
+def test_the_served_path_takes_fastmcps_handlers_off_fd_2(capsys):
     """#323 criterion 1, asserted on the handler set rather than on output.
 
     The logger is first put back into the state importing ``fastmcp`` leaves it
@@ -747,17 +733,17 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(fastmcp_handlers, caps
     """
     from fastmcp.utilities.logging import configure_logging
 
-    fastmcp_handlers.handlers[:] = []
+    FASTMCP_LOGGER.handlers[:] = []
     configure_logging(level="INFO")
-    assert any(_targets_stderr(each) for each in fastmcp_handlers.handlers), (
+    assert any(_targets_stderr(each) for each in FASTMCP_LOGGER.handlers), (
         "fastmcp must have installed a writer on fd 2 for this to be removing one"
     )
 
     _serve(_policy(LAB_ONLY))
 
-    assert len(fastmcp_handlers.handlers) == 1
-    assert not any(_targets_stderr(each) for each in fastmcp_handlers.handlers)
-    assert fastmcp_handlers.handlers[0].formatter is not None
+    assert len(FASTMCP_LOGGER.handlers) == 1
+    assert not any(_targets_stderr(each) for each in FASTMCP_LOGGER.handlers)
+    assert FASTMCP_LOGGER.handlers[0].formatter is not None
 
     # And the records still reach stderr — through the sink, which is why this
     # has to drain before reading.
@@ -765,19 +751,17 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(fastmcp_handlers, caps
     assert "a fastmcp line" in _stderr(capsys)
 
 
-def test_installing_the_sink_twice_leaves_one_handler(fastmcp_handlers):
+def test_installing_the_sink_twice_leaves_one_handler():
     """Idempotence, which the remove-then-add shape gives rather than a type check."""
     from hmc_mcp.server import install_fastmcp_stderr_sink
 
     install_fastmcp_stderr_sink()
     install_fastmcp_stderr_sink()
 
-    assert len(fastmcp_handlers.handlers) == 1
+    assert len(FASTMCP_LOGGER.handlers) == 1
 
 
-def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
-    fastmcp_handlers, capsys, monkeypatch
-):
+def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(capsys, monkeypatch):
     """#323 criterion 4. ``settings.log_enabled`` false is not a reason to skip.
 
     That setting gates ``_configure_logging`` at import of ``fastmcp``, so
@@ -793,20 +777,20 @@ def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
     from hmc_mcp.server import install_fastmcp_stderr_sink
 
     monkeypatch.setattr(fastmcp.settings, "log_enabled", False)
-    fastmcp_handlers.handlers[:] = []
-    fastmcp_handlers.setLevel(logging.NOTSET)
+    FASTMCP_LOGGER.handlers[:] = []
+    FASTMCP_LOGGER.setLevel(logging.NOTSET)
 
     install_fastmcp_stderr_sink()
 
-    assert len(fastmcp_handlers.handlers) == 1
-    assert not any(_targets_stderr(each) for each in fastmcp_handlers.handlers)
-    assert logging.lastResort not in fastmcp_handlers.handlers
+    assert len(FASTMCP_LOGGER.handlers) == 1
+    assert not any(_targets_stderr(each) for each in FASTMCP_LOGGER.handlers)
+    assert logging.lastResort not in FASTMCP_LOGGER.handlers
 
     logging.getLogger("fastmcp.server.server").warning("a line with logging disabled")
     assert "a line with logging disabled" in _stderr(capsys)
 
 
-def test_a_denial_is_one_line_through_the_sink(fastmcp_handlers, denial_filter, capsys):
+def test_a_denial_is_one_line_through_the_sink(denial_filter, capsys):
     """#323 criterion 3: ADR 0046's concise line survives ADR 0051's rerouting.
 
     The filter and the handler are both installed here on purpose. They solve
@@ -825,9 +809,7 @@ def test_a_denial_is_one_line_through_the_sink(fastmcp_handlers, denial_filter, 
     assert "ConnectionScopeError" not in captured
 
 
-def test_a_handler_bug_keeps_its_traceback_through_the_sink(
-    fastmcp_handlers, denial_filter, capsys
-):
+def test_a_handler_bug_keeps_its_traceback_through_the_sink(denial_filter, capsys):
     """#323 criterion 2, which is ADR 0046's criterion carried over the reroute.
 
     A ``logging.Handler`` renders ``exc_info`` only when a ``Formatter`` is
