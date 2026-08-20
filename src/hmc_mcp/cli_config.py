@@ -351,6 +351,18 @@ def config_init_access_policy(
     try:
         _write_exclusive(target, text)
     except FileExistsError:
+        # `output is not None` is the discriminator, not a comparison of `target`
+        # against the platform-native default: an operator can point --output at
+        # that exact path, and the message must still speak to the flag they passed
+        # rather than assume this is the reviewed policy.
+        if output is not None:
+            _fail(
+                FileExistsError(
+                    f"Output path already exists: {target}. This command never "
+                    "overwrites an existing file. Delete it, or pass a different "
+                    "--output PATH."
+                )
+            )
         _fail(
             FileExistsError(
                 f"Access policy file already exists: {target}. This command never "
