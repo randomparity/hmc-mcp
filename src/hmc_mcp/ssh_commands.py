@@ -8,26 +8,142 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import shlex
+from collections.abc import Sequence
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
 from .documents import LparResources
 from .ssh import HMCCLIError, run_hmc_command
 
+# ---------------------------------------------------------------------- #
+# HMC CLI -i attribute record grammar (see ADR 0045)
+# ---------------------------------------------------------------------- #
+# `chsyscfg`/`mksyscfg` take their configuration as one `-i` argument holding
+# an attribute record: `name=lpar1,description=web tier`.  Three characters carry
+# that record's structure, and the HMC splits the record itself *after* the
+# shell has finished with the argument — so `shlex.quote` cannot protect them.
+
+_RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
+    ",": ("a comma", "a comma separates one attribute from the next"),
+    "=": ("an equals sign", "an equals sign separates an attribute name from its value"),
+    '"': (
+        "a double quote",
+        "a double quote is the HMC's own escape for a value containing a comma, "
+        "so it opens a quoted region that swallows the attributes after it",
+    ),
+}
+
+# An HMC attribute name, optionally carrying the `+` append operator that
+# `chsyscfg -r prof` uses to extend a list attribute (`io_slots+=…`).
+_ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*\+?$")
+
+# Characters `set_lpar_description` has always refused in the LPAR name it
+# writes a description for.  Neither is record structure — IBM's own escaping
+# note shows an unquoted `name=No comma name` — so this rejection is not part
+# of the record grammar and is deliberately not extended to the other records.
+# It is kept at its historical site, unchanged, because widening or dropping a
+# public tool's accepted input is not this module's call to make.  See ADR 0045.
+_DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
+    " ": ("a space", "a space may make the HMC's internal -i parser tokenise incorrectly"),
+    ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
+}
+
+
+def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
+    """Return the ``-i`` attribute record for *pairs*, or raise.
+
+    *pairs* is an ordered sequence of ``(attribute, value)``.  Each value is
+    rendered with :func:`str` and checked against the record grammar before the
+    record is joined, so no caller-supplied value can introduce or terminate an
+    attribute the caller was not given an argument for.
+
+    Callers still wrap the result in :func:`shlex.quote`.  The two mechanisms
+    protect different layers and neither substitutes for the other:
+    ``shlex.quote`` keeps the record a single word for the *remote shell*; this
+    function keeps the record's own ``,``, ``=``, and ``"`` structure meaningful
+    for the *HMC's* parser, which runs afterwards on the already-unquoted text.
+
+    The rejection message quotes the offending value back to the caller.  Every
+    attribute reaching this function today carries a name, an enumerated mode,
+    or a number; do not route a credential attribute (``chhmcusr -i
+    "name=…,passwd=…"``) through it without redacting the value first.
+
+    Raises:
+        HMCCLIError: If *pairs* is empty, repeats an attribute, names a
+            malformed attribute, or carries a value containing a character the
+            record's parser treats as structure.  The message names the
+            attribute, the character, and its effect.
+    """
+    if not pairs:
+        raise HMCCLIError(
+            "cannot build an HMC CLI -i attribute record with no attributes; "
+            "at least one attribute is required"
+        )
+    seen: set[str] = set()
+    for attribute, _value in pairs:
+        if attribute in seen:
+            raise HMCCLIError(
+                f"HMC CLI -i attribute {attribute!r} appears twice in one "
+                "record; the HMC's handling of a repeated attribute is "
+                "undefined, so the record is refused rather than sent"
+            )
+        seen.add(attribute)
+    return ",".join(
+        f"{attribute}={_validated_value(attribute, value)}"
+        for attribute, value in pairs
+    )
+
+
+def _validated_value(attribute: str, value: object) -> str:
+    """Return *value* as record text, or raise :class:`HMCCLIError`."""
+    if not _ATTRIBUTE_NAME.match(attribute):
+        raise HMCCLIError(
+            f"invalid HMC CLI -i attribute name {attribute!r}; expected a "
+            "lower-case identifier, optionally with the '+' append operator"
+        )
+    text = str(value)
+    for character, (name, reason) in _RECORD_DELIMITERS.items():
+        if character in text:
+            raise HMCCLIError(
+                f"HMC CLI -i attribute {attribute!r} value {text!r} contains "
+                f"{name} ({character!r}); {reason}, so the value would alter "
+                f"the record's structure. Remove {name} from the value."
+            )
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
+        raise HMCCLIError(
+            f"HMC CLI -i attribute {attribute!r} value {text!r} contains a "
+            "control character; the record is one line and the same data "
+            "format is read one record per line by the -f file form, so a "
+            "newline may terminate the record and a NUL may truncate it. "
+            "Remove the control character from the value."
+        )
+    return text
+
 
 def validate_lpar_description(description: str) -> None:
-    """Raise ``ValueError`` if *description* is not printable ASCII.
+    """Raise ``ValueError`` if *description* cannot be written to the HMC.
 
     The HMC enforces printable ASCII-only partition descriptions (HSCLC63B).
     Control characters (NUL, LF, CR, ESC, …) are also rejected because they
     can corrupt the HMC CLI's CSV-like ``-i`` parser or be silently truncated
-    at the C-string layer.
+    at the C-string layer.  Every character in :data:`_RECORD_DELIMITERS` is
+    rejected too, because the ``-i`` record's parser reads them as structure:
+    ``description=x,foo=bar`` sets a ``foo`` attribute the caller was never
+    given an argument for.  The message names the offending character, so this
+    docstring does not restate the table — it has grown once already.
 
     Called at the MCP tool layer before UUID resolution and again inside
     :func:`set_lpar_description` as a defensive check.  Both call sites are
     intentional: the outer call provides fast rejection without REST
     round-trips; the inner call guards callers that bypass the MCP tool.
+
+    The structural characters come from :data:`_RECORD_DELIMITERS`, the same
+    table :func:`build_attribute_record` enforces, so the two layers cannot
+    drift.  Only the exception type differs: this is the caller-facing
+    validator (``ValueError``); the builder refuses the record itself
+    (``HMCCLIError``).
     """
     if not description.isascii() or any(
         ord(c) < 0x20 or ord(c) == 0x7F for c in description
@@ -36,6 +152,14 @@ def validate_lpar_description(description: str) -> None:
             "description contains non-ASCII or non-printable characters; "
             "the HMC only accepts printable ASCII partition descriptions (HSCLC63B)"
         )
+    for character, (name, reason) in _RECORD_DELIMITERS.items():
+        if character in description:
+            raise ValueError(
+                f"description {description!r} contains {name} ({character!r}); "
+                f"{reason} in the HMC CLI -i attribute record, so the text "
+                f"would be read as further attributes rather than as the "
+                f"description. Remove {name} from the description."
+            )
 
 
 async def stamp_lpar_ownership(
@@ -108,10 +232,10 @@ async def create_lpar_via_cli(
     else:
         lpar_env = "aixlinux"
 
-    config_pairs = [
-        f"name={name}",
-        f"lpar_env={lpar_env}",
-        f"profile_name={profile_name}",
+    config_pairs: list[tuple[str, object]] = [
+        ("name", name),
+        ("lpar_env", lpar_env),
+        ("profile_name", profile_name),
     ]
 
     # Determine whether any explicit resource values were provided.
@@ -146,27 +270,29 @@ async def create_lpar_via_cli(
         _max_vp = resources.max_vcpus or max(_des_vp, 2)
 
         config_pairs += [
-            f"min_mem={_min_mem}",
-            f"desired_mem={_des_mem}",
-            f"max_mem={_max_mem}",
-            "proc_mode=shared",
-            "sharing_mode=uncap",
-            f"min_proc_units={_min_pu}",
-            f"desired_proc_units={_des_pu}",
-            f"max_proc_units={_max_pu}",
-            f"min_procs={_min_vp}",
-            f"desired_procs={_des_vp}",
-            f"max_procs={_max_vp}",
+            ("min_mem", _min_mem),
+            ("desired_mem", _des_mem),
+            ("max_mem", _max_mem),
+            ("proc_mode", "shared"),
+            ("sharing_mode", "uncap"),
+            ("min_proc_units", _min_pu),
+            ("desired_proc_units", _des_pu),
+            ("max_proc_units", _max_pu),
+            ("min_procs", _min_vp),
+            ("desired_procs", _des_vp),
+            ("max_procs", _max_vp),
         ]
         if max_virtual_slots is not None:
-            config_pairs.append(f"max_virtual_slots={max_virtual_slots}")
+            config_pairs.append(("max_virtual_slots", max_virtual_slots))
     else:
-        config_pairs.append("all_resources=1")
+        config_pairs.append(("all_resources", 1))
 
-    config_str = ",".join(config_pairs)
-    # Use shlex.quote for both the system name and the -i value so that
-    # special characters (spaces, quotes, commas in names) cannot break the
-    # shell command or the mksyscfg attribute string.
+    # Two guards at two layers, neither substituting for the other:
+    # build_attribute_record keeps the record's own ',' and '=' delimiters
+    # meaningful to the HMC's parser, which splits the record itself; shlex.quote
+    # keeps the whole record one word for the remote shell, which runs first and
+    # strips the quotes before the HMC ever sees the text.
+    config_str = build_attribute_record(config_pairs)
     cmd = f"mksyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(config_str)}"
     return await run_hmc_command(config, cmd)
 
@@ -486,40 +612,29 @@ async def set_lpar_description(
     -i "name=<lpar_name>,description=<description>"`` and returns the raw
     command output.
 
-    Raises ``ValueError`` if *description* is not printable ASCII; see
+    Raises ``ValueError`` if *description* is not printable ASCII or carries a
+    character the record treats as structure; see
     :func:`validate_lpar_description` for the constraint and error code.
 
     Raises :class:`HMCCLIError` if *lpar_name* contains a character that would
-    corrupt the ``chsyscfg -i`` attribute string.  The HMC CLI ``-i`` parser
-    is comma-delimited and equals-delimited; a space in the name may cause the
-    HMC's internal parser to tokenise incorrectly even when the shell argument
-    is properly quoted.
+    corrupt the ``chsyscfg -i`` attribute record; see
+    :func:`build_attribute_record`, which enforces the record grammar for both
+    fields so the guard cannot be present at one and absent at its neighbour.
+    A space or a semicolon in *lpar_name* is refused too — a restriction this
+    function has always carried and that ADR 0045 deliberately kept here rather
+    than extending to the other records, where it would refuse HMC-legal names.
     """
-    if "," in lpar_name:
-        raise HMCCLIError(
-            f"LPAR name {lpar_name!r} contains a comma; cannot safely write "
-            "description via chsyscfg -i (comma-delimited attribute parser)"
-        )
-    if "=" in lpar_name:
-        raise HMCCLIError(
-            f"LPAR name {lpar_name!r} contains '='; cannot safely write "
-            "description via chsyscfg -i (equals-delimited key/value parser)"
-        )
-    if " " in lpar_name:
-        raise HMCCLIError(
-            f"LPAR name {lpar_name!r} contains a space; cannot safely write "
-            "description via chsyscfg -i (space may corrupt the HMC CLI -i parser)"
-        )
-    if ";" in lpar_name:
-        raise HMCCLIError(
-            f"LPAR name {lpar_name!r} contains a semicolon; cannot safely write "
-            "description via chsyscfg -i (semicolon may corrupt the HMC CLI -i parser)"
-        )
     validate_lpar_description(description)
-    cmd = (
-        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(f'name={lpar_name},description={description}')}"
+    for character, (name, reason) in _DESCRIPTION_TARGET_UNSAFE.items():
+        if character in lpar_name:
+            raise HMCCLIError(
+                f"LPAR name {lpar_name!r} contains {name} ({character!r}); "
+                f"cannot safely write description via chsyscfg -i ({reason})"
+            )
+    record = build_attribute_record(
+        [("name", lpar_name), ("description", description)]
     )
+    cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 
 
@@ -592,10 +707,8 @@ async def set_lpar_msp(
             f"lpar_env='{lpar_env}'. Use hmc_list_vios to confirm the partition type."
         )
     value = "1" if enabled else "0"
-    cmd = (
-        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(f'name={lpar_name},msp={value}')}"
-    )
+    record = build_attribute_record([("name", lpar_name), ("msp", value)])
+    cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 
 
@@ -659,11 +772,15 @@ async def set_lpar_proc_compat(
     Runs ``chsyscfg -r lpar -m <system_name>
     -i "name=<lpar_name>,lpar_proc_compat_mode=<mode>"`` and returns the raw
     command output.
+
+    Raises:
+        HMCCLIError: If *lpar_name* or *mode* contains a character the ``-i``
+            record's parser treats as structure.
     """
-    cmd = (
-        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(f'name={lpar_name},lpar_proc_compat_mode={mode}')}"
+    record = build_attribute_record(
+        [("name", lpar_name), ("lpar_proc_compat_mode", mode)]
     )
+    cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 
 
@@ -841,11 +958,15 @@ async def sync_lpar_profile(
     -i "name=<lpar_name>,sync_curr_profile=1"`` and returns the raw command
     output. This saves the LPAR's current running configuration to its
     current named profile, overwriting the previous profile definition.
+
+    Raises:
+        HMCCLIError: If *lpar_name* contains a character the ``-i`` record's
+            parser treats as structure.
     """
-    cmd = (
-        f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(f'name={lpar_name},sync_curr_profile=1')}"
+    record = build_attribute_record(
+        [("name", lpar_name), ("sync_curr_profile", 1)]
     )
+    cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 
 
@@ -862,9 +983,22 @@ async def assign_profile_io_slot(
     -i "name=<profile_name>,io_slots+=<drc_index>//0,lpar_name=<lpar_name>"
     --force`` and returns the raw command output. Appends the slot to the
     profile's I/O slot list; ``--force`` overrides any conflicts.
+
+    Raises:
+        HMCCLIError: If *profile_name*, *drc_index*, or *lpar_name* contains a
+            character the ``-i`` record's parser treats as structure.  The
+            ``//0`` suffix is record-safe, so validating the whole ``io_slots``
+            value covers *drc_index*.
     """
+    record = build_attribute_record(
+        [
+            ("name", profile_name),
+            ("io_slots+", f"{drc_index}//0"),
+            ("lpar_name", lpar_name),
+        ]
+    )
     cmd = (
         f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(f'name={profile_name},io_slots+={drc_index}//0,lpar_name={lpar_name}')} --force"
+        f"{shlex.quote(record)} --force"
     )
     return await run_hmc_command(config, cmd)
