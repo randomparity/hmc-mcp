@@ -7,14 +7,16 @@ capability classification lives on each tool's ``ToolSecurity`` record in
 
 ``server.py`` imports this module and every ``server_*`` domain module; the
 domain modules import ``mcp`` back from here (one-way dependency, no
-cycles).
+cycles). The client-visible instructions live here too, and ``server.py``
+qualifies them against its access policy before composing
+(docs/adr/0048-ceiling-aware-server-instructions.md).
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Coroutine
-from functools import partial
+import re
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from typing import Any, Literal, TypeVar, overload
 
 from fastmcp import FastMCP
@@ -25,100 +27,152 @@ from .ssh_selectors import resolve_ssh_names
 
 _T = TypeVar("_T")
 
-_new_mcp = partial(
-    FastMCP,
-    name="hmc-mcp",
-    instructions=(
-        "Tools for querying and operating IBM Power systems via the HMC "
-        "(Hardware Management Console) REST API. Managed systems are Power "
-        "servers; logical partitions (LPARs) are the AIX/Linux/IBM i virtual "
-        "servers running on them. Most read tools return parsed uom Atom "
-        "entries as JSON.\n\n"
-        "## Composite tools — prefer these for common tasks\n\n"
-        "These tools aggregate multiple HMC endpoints in a single call and "
-        "should be the first choice when their scope matches the task:\n\n"
-        "- **hmc_lpar_summary(lpar_name_or_uuid)** — state, RMC status, "
-        "memory/CPU, OS version, and adapter count for one LPAR. Use instead "
-        "of hmc_list_lpars + hmc_list_adapters when you need a quick health check "
-        "or status snapshot of a single partition.\n"
-        "- **hmc_system_summary(system_name_or_uuid)** — system state, total "
-        "resources, LPAR count and state breakdown, and VIOS state for one "
-        "managed system. Use instead of hmc_list_systems + hmc_list_lpars + hmc_list_vios "
-        "when you need an overview of a single server.\n"
-        "- **hmc_capacity_report()** — total, assigned, and free memory (MiB) "
-        "and processor units for every managed system, plus running/total LPAR "
-        "counts. Use to survey available capacity across the whole HMC.\n"
-        "- **hmc_fleet_health()** — exception-only estate view covering systems "
-        "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
-        "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
-        "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
-        "returns systems that can host a new LPAR of the given size, sorted by "
-        "free memory. Use before provisioning to choose a target system.\n"
-        "- **hmc_list_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "
-        "firmware, migrations) on HMC versions that expose the global Job feed. "
-        "Use to audit recent activity; poll a submitted job through its SELF link.\n"
-        "- **hmc_provision_lpar(...)** — end-to-end LPAR creation: creates the "
-        "partition, attaches a virtual network adapter, and optionally attaches "
-        "a vSCSI disk. Supports dry_run=True to validate inputs without making "
-        "changes. For lower-level creation without adapters, use hmc_create_lpar.\n\n"
-        "## Resource addressing and asynchronous jobs\n\n"
-        "Parameters ending in `*_name_or_uuid` accept either a resource name or UUID. "
-        "Parameters\nending in `*_uuid` require a UUID. SSH-passthrough tools resolve "
-        "UUIDs to HMC CLI names\nbefore running the command.\n\n"
-        "For tools that expose asynchronous wait controls, `wait=False` is the default "
-        "and returns\nthe submitted job for later polling; `wait=True` polls until the "
-        "job reaches a terminal\nstate. Install tools use `wait_timeout_seconds=None` "
-        "by default, deriving the client-side\npolling budget from "
-        "`hmc_timeout_minutes` plus one poll interval. Other wait-capable tools\nuse "
-        "`timeout_seconds=300` by default. `poll_interval=5` is the default number of "
-        "seconds\nbetween status requests.\n\n"
-        "## Recommended workflows\n\n"
-        "**Check LPAR status:** hmc_lpar_summary → inspect state/rmc_state/os_version.\n\n"
-        "**Survey a server:** hmc_system_summary → inspect system state, LPAR "
-        "counts, and VIOS health in one call.\n\n"
-        "**Plan new LPAR placement:** hmc_capacity_report (see all systems) → "
-        "hmc_find_placement(mem, cpu) (filter to candidates) → pick system_uuid.\n\n"
-        "**Provision a new LPAR:** hmc_find_placement → hmc_provision_lpar with "
-        "dry_run=True (validate) → hmc_provision_lpar with dry_run=False (execute) "
-        "→ hmc_lpar_summary (confirm).\n\n"
-        "**Track an operation:** retain the job UUID and SELF link returned by the "
-        "submitting tool → hmc_get_job(job_uuid, job_href=self_link) for detail → "
-        "hmc_wait_for_job(job_uuid, job_href=self_link) to poll until done. Use "
-        "hmc_list_recent_jobs only for HMC versions that support the global feed.\n\n"
-        "**Migrate safely:** hmc_migrate_lpar validates to a successful terminal "
-        "state before migration by default; set validate_first=False only to "
-        "request direct submission explicitly.\n\n"
-        "## Lower-level tools\n\n"
-        "Use the individual tools (hmc_list_systems, hmc_list_lpars, hmc_list_vios, "
-        "hmc_list_adapters, etc.) when you need raw resource data, fields not "
-        "returned by the composite tools, or operations outside the composite "
-        "tool scope (network, storage, templates, metrics, users).\n\n"
-        "## Multi-agent ownership protocol\n\n"
-        "When multiple agents share this server, LPAR ownership is tracked via "
-        "a description-field token: ``[hmc-mcp owner:<agent_id> created:<date>]``.\n\n"
-        "**On create:** Ownership tokens are stamped automatically by "
-        "hmc_create_lpar and hmc_provision_lpar. A completed "
-        "hmc_deploy_partition_template call also stamps automatically when wait=True "
-        "and its before/after LPAR snapshots identify exactly one new partition. If "
-        "ownership_stamped is None, follow the returned warning: resolve the LPAR name "
-        "(e.g. via hmc_list_lpars or hmc_lpar_summary) and call "
-        "hmc_set_lpar_description to write the ownership token.\n\n"
-        "**Before delete / rename / description-overwrite:** Read the LPAR "
-        "description with hmc_get_lpar_description or hmc_lpar_summary. If it "
-        "contains ``[hmc-mcp owner:<id> ...]`` and <id> differs from your "
-        "HMC_AGENT_ID, stop and ask the operator before proceeding.\n\n"
-        "**Absent token:** An LPAR with no token was created before this feature "
-        "or through a path that does not stamp. Treat it as unowned and proceed "
-        "with caution — ask the operator if in doubt.\n\n"
-        "**Set HMC_AGENT_ID** in the environment for per-agent attribution in "
-        "HMC audit logs (X-Audit-Memento: hmc-mcp:<agent_id>)."
-    ),
+INSTRUCTIONS = (
+    "Tools for querying and operating IBM Power systems via the HMC "
+    "(Hardware Management Console) REST API. Managed systems are Power "
+    "servers; logical partitions (LPARs) are the AIX/Linux/IBM i virtual "
+    "servers running on them. Most read tools return parsed uom Atom "
+    "entries as JSON.\n\n"
+    "## Composite tools — prefer these for common tasks\n\n"
+    "These tools aggregate multiple HMC endpoints in a single call and "
+    "should be the first choice when their scope matches the task:\n\n"
+    "- **hmc_lpar_summary(lpar_name_or_uuid)** — state, RMC status, "
+    "memory/CPU, OS version, and adapter count for one LPAR. Use instead "
+    "of hmc_list_lpars + hmc_list_adapters when you need a quick health check "
+    "or status snapshot of a single partition.\n"
+    "- **hmc_system_summary(system_name_or_uuid)** — system state, total "
+    "resources, LPAR count and state breakdown, and VIOS state for one "
+    "managed system. Use instead of hmc_list_systems + hmc_list_lpars + hmc_list_vios "
+    "when you need an overview of a single server.\n"
+    "- **hmc_capacity_report()** — total, assigned, and free memory (MiB) "
+    "and processor units for every managed system, plus running/total LPAR "
+    "counts. Use to survey available capacity across the whole HMC.\n"
+    "- **hmc_fleet_health()** — exception-only estate view covering systems "
+    "not operating, VIOS not running, inactive LPAR RMC, and recent failed "
+    "jobs. Use for a bounded fleet health check instead of composing raw lists.\n"
+    "- **hmc_find_placement(desired_memory_mb, desired_proc_units)** — "
+    "returns systems that can host a new LPAR of the given size, sorted by "
+    "free memory. Use before provisioning to choose a target system.\n"
+    "- **hmc_list_recent_jobs(limit)** — most-recent HMC async jobs (power ops, "
+    "firmware, migrations) on HMC versions that expose the global Job feed. "
+    "Use to audit recent activity; poll a submitted job through its SELF link.\n"
+    "- **hmc_provision_lpar(...)** — end-to-end LPAR creation: creates the "
+    "partition, attaches a virtual network adapter, and optionally attaches "
+    "a vSCSI disk. Supports dry_run=True to validate inputs without making "
+    "changes. For lower-level creation without adapters, use hmc_create_lpar.\n\n"
+    "## Resource addressing and asynchronous jobs\n\n"
+    "Parameters ending in `*_name_or_uuid` accept either a resource name or UUID. "
+    "Parameters\nending in `*_uuid` require a UUID. SSH-passthrough tools resolve "
+    "UUIDs to HMC CLI names\nbefore running the command.\n\n"
+    "For tools that expose asynchronous wait controls, `wait=False` is the default "
+    "and returns\nthe submitted job for later polling; `wait=True` polls until the "
+    "job reaches a terminal\nstate. Install tools use `wait_timeout_seconds=None` "
+    "by default, deriving the client-side\npolling budget from "
+    "`hmc_timeout_minutes` plus one poll interval. Other wait-capable tools\nuse "
+    "`timeout_seconds=300` by default. `poll_interval=5` is the default number of "
+    "seconds\nbetween status requests.\n\n"
+    "## Recommended workflows\n\n"
+    "**Check LPAR status:** hmc_lpar_summary → inspect state/rmc_state/os_version.\n\n"
+    "**Survey a server:** hmc_system_summary → inspect system state, LPAR "
+    "counts, and VIOS health in one call.\n\n"
+    "**Plan new LPAR placement:** hmc_capacity_report (see all systems) → "
+    "hmc_find_placement(mem, cpu) (filter to candidates) → pick system_uuid.\n\n"
+    "**Provision a new LPAR:** hmc_find_placement → hmc_provision_lpar with "
+    "dry_run=True (validate) → hmc_provision_lpar with dry_run=False (execute) "
+    "→ hmc_lpar_summary (confirm).\n\n"
+    "**Track an operation:** retain the job UUID and SELF link returned by the "
+    "submitting tool → hmc_get_job(job_uuid, job_href=self_link) for detail → "
+    "hmc_wait_for_job(job_uuid, job_href=self_link) to poll until done. Use "
+    "hmc_list_recent_jobs only for HMC versions that support the global feed.\n\n"
+    "**Migrate safely:** hmc_migrate_lpar validates to a successful terminal "
+    "state before migration by default; set validate_first=False only to "
+    "request direct submission explicitly.\n\n"
+    "## Lower-level tools\n\n"
+    "Use the individual tools (hmc_list_systems, hmc_list_lpars, hmc_list_vios, "
+    "hmc_list_adapters, etc.) when you need raw resource data, fields not "
+    "returned by the composite tools, or operations outside the composite "
+    "tool scope (network, storage, templates, metrics, users).\n\n"
+    "## Multi-agent ownership protocol\n\n"
+    "When multiple agents share this server, LPAR ownership is tracked via "
+    "a description-field token: ``[hmc-mcp owner:<agent_id> created:<date>]``.\n\n"
+    "**On create:** Ownership tokens are stamped automatically by "
+    "hmc_create_lpar and hmc_provision_lpar. A completed "
+    "hmc_deploy_partition_template call also stamps automatically when wait=True "
+    "and its before/after LPAR snapshots identify exactly one new partition. If "
+    "ownership_stamped is None, follow the returned warning: resolve the LPAR name "
+    "(e.g. via hmc_list_lpars or hmc_lpar_summary) and call "
+    "hmc_set_lpar_description to write the ownership token.\n\n"
+    "**Before delete / rename / description-overwrite:** Read the LPAR "
+    "description with hmc_get_lpar_description or hmc_lpar_summary. If it "
+    "contains ``[hmc-mcp owner:<id> ...]`` and <id> differs from your "
+    "HMC_AGENT_ID, stop and ask the operator before proceeding.\n\n"
+    "**Absent token:** An LPAR with no token was created before this feature "
+    "or through a path that does not stamp. Treat it as unowned and proceed "
+    "with caution — ask the operator if in doubt.\n\n"
+    "**Set HMC_AGENT_ID** in the environment for per-agent attribution in "
+    "HMC audit logs (X-Audit-Memento: hmc-mcp:<agent_id>)."
 )
 
+_TOOL_MENTION = re.compile(r"\bhmc_[a-z0-9_]+\b")
 
-def create_mcp() -> FastMCP:
-    """Create an empty MCP application for explicit domain composition."""
-    return _new_mcp()
+CEILING_HEADING = "## Tools this server's access policy withholds"
+
+
+def _mentioned_tools(index: Iterable[str]) -> frozenset[str]:
+    """The names in *index* that :data:`INSTRUCTIONS` recommends by name.
+
+    Derived from the prose rather than restated as a list beside it, so that
+    editing the prose cannot leave a hand-maintained roster stale. Intersecting
+    with the authoritative tool index is what keeps the pattern honest: it also
+    matches ``hmc_timeout_minutes``, a configuration setting the conventions
+    block names, which is not a tool and must not be reported as withheld.
+    """
+    return frozenset(_TOOL_MENTION.findall(INSTRUCTIONS)) & frozenset(index)
+
+
+def ceiling_aware_instructions(
+    permits: Callable[[str], bool], index: Iterable[str]
+) -> str:
+    """:data:`INSTRUCTIONS`, qualified when *permits* withholds a tool it names.
+
+    The instructions are fixed at composition and shipped whole to every client
+    at ``initialize``, while ``server.create_mcp`` filters registration by the
+    same *permits* predicate. A client under a narrow ceiling would otherwise be
+    told to prefer tools absent from ``tools/list``; see
+    docs/adr/0048-ceiling-aware-server-instructions.md. When nothing the
+    prose names is withheld — every policy that grants the read effect class,
+    and the legacy-equivalent policy — the string is returned unchanged.
+
+    *permits* is the ceiling, not the served registry: ``hmc_run_command`` also
+    needs ``--enable-arbitrary-command``, so the ceiling can admit a name the
+    registry omits. The prose names no such tool, and the divergence can only
+    under-report, never invent a withheld name.
+    """
+    withheld = sorted(name for name in _mentioned_tools(index) if not permits(name))
+    if not withheld:
+        return INSTRUCTIONS
+    inspect = (
+        " Call hmc_effective_permissions for the policy that decided it."
+        if permits("hmc_effective_permissions")
+        else ""
+    )
+    return (
+        f"{INSTRUCTIONS}\n\n{CEILING_HEADING}\n\n"
+        "The guidance above is written for the full tool set. This server's access "
+        "policy withholds these tools it names: "
+        f"{', '.join(withheld)}. They are absent from `tools/list` and cannot be "
+        "called, so disregard any recommendation above to use one. `tools/list` is "
+        f"the authoritative set of what this server exposes.{inspect}"
+    )
+
+
+def create_mcp(instructions: str = INSTRUCTIONS) -> FastMCP:
+    """Create an empty MCP application for explicit domain composition.
+
+    *instructions* defaults to the unqualified prose; ``server.create_mcp``
+    passes the ceiling-aware form built by :func:`ceiling_aware_instructions`.
+    """
+    return FastMCP(name="hmc-mcp", instructions=instructions)
 
 
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:

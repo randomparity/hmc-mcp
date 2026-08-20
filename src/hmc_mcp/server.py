@@ -45,6 +45,7 @@ from collections.abc import Callable, Mapping
 from fastmcp import FastMCP
 
 from ._app import (
+    ceiling_aware_instructions,
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy
@@ -297,6 +298,11 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
     Both gates are passed to each registration site rather than checked here, so
     no site can be given a policy it does not apply; ADR 0038's registry
     assertion is what checks that it did.
+
+    The ceiling reaches the base application's ``instructions`` as well as its
+    registry (ADR 0048). The string is fixed at construction and shipped whole at
+    ``initialize``, so the qualification has to be decided here, where the policy
+    and the authoritative tool index are both in hand.
     """
     if policy is None:
         raise TypeError(
@@ -306,7 +312,7 @@ def create_mcp(policy: AccessPolicy) -> FastMCP:
             "here or select it with 'hmc-mcp serve --access-policy NAME'."
         )
     permits, authorize = _gates(policy)
-    application = _create_base_mcp()
+    application = _create_base_mcp(ceiling_aware_instructions(permits, TOOL_SECURITY))
     for module in TOOL_MODULES:
         module.register_tools(application, permits=permits, authorize=authorize)
     register_permissions_tool(
