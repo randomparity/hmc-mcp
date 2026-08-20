@@ -87,6 +87,12 @@ class _EscapedXmlText(str):
     Carrying the fact in the type is what makes ``escape_xml`` idempotent, so
     a builder that delegates to another builder (``build_vios_document`` ->
     ``build_lpar_document``) cannot double-escape its caller's value.
+
+    The marker survives assignment and nothing else: every string operation
+    (``str()``, ``strip()``, concatenation, an f-string) yields a plain ``str``
+    and loses it. A builder may therefore forward a caller's value to another
+    builder only untouched. Deriving a new string from one and passing that on
+    would escape it twice.
     """
 
     __slots__ = ()
@@ -120,30 +126,54 @@ def escape_xml(value: str) -> str:
     return _EscapedXmlText(escape(value, _ATTRIBUTE_ENTITIES))
 
 
-def _escape_item(value: object) -> object:
-    """Escape a string; leave any other type alone."""
-    return escape_xml(value) if isinstance(value, str) else value
+# Argument types that carry no string and are rendered by str()/format().
+_OPAQUE_ARGUMENT_TYPES = (bool, int, float, type(None))
 
 
 def _escape_argument(value: object) -> object:
-    """Escape the strings in one builder argument, at one level of nesting.
+    """Escape every string reachable from one builder argument.
 
-    Lists, dicts, and dataclass instances are the argument shapes the builders
-    accept, so each has a branch: ``physical_volumes``, the job-parameter
-    mapping, and ``LparResources`` / ``PasswordPolicySettings`` respectively.
+    Lists, dicts, and dataclass instances are the composite shapes the builders
+    accept — ``physical_volumes``, the job-parameter mapping, and
+    ``LparResources`` / ``PasswordPolicySettings`` — and each recurses, so
+    nesting is covered rather than assumed away.
+
+    Any other shape is refused. Passing it through would be the one silent
+    failure this boundary exists to prevent: its strings would reach a template
+    unescaped, and a shape nobody modelled here is a shape the escaping harness
+    cannot synthesize either, so it would arrive with no test to catch it.
     """
+    if isinstance(value, str):
+        return escape_xml(value)
+    if isinstance(value, _OPAQUE_ARGUMENT_TYPES):
+        return value
     if isinstance(value, list):
-        return [_escape_item(item) for item in value]
+        return [_escape_argument(item) for item in value]
     if isinstance(value, dict):
-        return {_escape_item(key): _escape_item(item) for key, item in value.items()}
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        escaped_fields = {
-            f.name: escape_xml(member)
-            for f in dataclasses.fields(value)
-            if isinstance(member := getattr(value, f.name), str)
+        return {
+            _escape_argument(key): _escape_argument(item)
+            for key, item in value.items()
         }
-        return dataclasses.replace(value, **escaped_fields) if escaped_fields else value
-    return _escape_item(value)
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _escape_dataclass(value)
+    raise TypeError(
+        f"Cannot build an XML document from an argument of type "
+        f"{type(value).__name__!r}: "
+        f"the escaping boundary models str, bool, int, float, None, list, dict, "
+        f"and dataclass values. Give _escape_argument a branch for this shape, "
+        f"and the escaping harness a case for it, before a builder accepts it."
+    )
+
+
+def _escape_dataclass(value: Any) -> Any:
+    """Rebuild a dataclass instance with every string field escaped."""
+    replacements = {}
+    for member_field in dataclasses.fields(value):
+        member = getattr(value, member_field.name)
+        escaped = _escape_argument(member)
+        if escaped is not member:
+            replacements[member_field.name] = escaped
+    return dataclasses.replace(value, **replacements) if replacements else value
 
 
 _P = ParamSpec("_P")

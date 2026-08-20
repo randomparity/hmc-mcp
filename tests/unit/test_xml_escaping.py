@@ -2,9 +2,13 @@
 
 The builders are discovered by reflection over ``hmc_mcp.documents`` and
 ``hmc_mcp.jobs`` rather than listed by hand, so a builder added later is
-covered without anyone remembering to extend this file. A builder whose
-signature this harness cannot synthesize arguments for is a collection error,
-not a silent skip.
+covered without anyone remembering to extend this file.
+
+A builder parameter whose annotation this harness does not model raises
+``UnsupportedAnnotation`` while the cases are built, which is a collection
+error; one it models but cannot build a value for fails its own case. Neither
+is a silent skip, and that is the property the whole file rests on: a guard
+that quietly declines to cover a new builder is worse than no guard.
 
 For each string-carrying parameter the harness asserts one of two outcomes:
 
@@ -98,19 +102,29 @@ def _member_hints(annotation: Any) -> dict[str, Any]:
     return get_type_hints(annotation)
 
 
+_SCALAR_ANNOTATIONS = (str, bool, int, float, type(None))
+
+
 def _carries_string(annotation: Any) -> bool:
-    """Whether a caller can put a free-form string into this annotation."""
+    """Whether a caller can put a free-form string into this annotation.
+
+    Refuses to answer for an annotation it does not model, rather than saying
+    "no". A shape this cannot classify — ``tuple[str, ...]``, ``set[str]``,
+    ``Any`` — is one whose strings the harness would never probe, so guessing
+    here is how a vulnerable builder would pass CI. Raising makes it a
+    collection error instead.
+    """
     annotation = _unwrap(annotation)
     origin = get_origin(annotation)
     if origin is Literal:
         return False
-    if annotation is str:
-        return True
+    if annotation in _SCALAR_ANNOTATIONS:
+        return annotation is str
     if origin in (list, dict):
         return any(_carries_string(arg) for arg in get_args(annotation))
     if dataclasses.is_dataclass(annotation) or _is_typed_dict(annotation):
         return any(_carries_string(h) for h in _member_hints(annotation).values())
-    return False
+    raise UnsupportedAnnotation(annotation)
 
 
 def _is_closed_vocabulary(annotation: Any) -> bool:
@@ -232,9 +246,12 @@ def test_builders_are_discovered():
 def test_metacharacters_round_trip_without_changing_structure(builder, parameter):
     try:
         tainted = builder(**_call_kwargs(builder, parameter))
-    except ValueError:
+    except ValueError as rejected:
         # A closed vocabulary refused the value outright: no document was
         # produced, so neither malformed output nor injection is reachable.
+        # The payload carries no character XML 1.0 lacks, so this can only be
+        # the builder's own validation, never the encoding boundary's refusal.
+        assert "XML 1.0" not in str(rejected)
         return
 
     assert PAYLOAD in _values(tainted), (
@@ -273,9 +290,30 @@ def test_every_documents_builder_escapes_its_arguments():
     assert unprotected == []
 
 
+def _renders_through_job_request(func: Any, seen: frozenset[str]) -> bool:
+    """Whether *func* reaches jobs.build_job_request, directly or via a helper."""
+    for name in func.__code__.co_names:
+        target = getattr(jobs, name, None)
+        if target is jobs.build_job_request:
+            return True
+        if inspect.isfunction(target) and name not in seen:
+            if _renders_through_job_request(target, seen | {name}):
+                return True
+    return False
+
+
 def test_job_request_is_the_jobs_module_choke_point():
-    """Every jobs.py builder renders through build_job_request, which wraps."""
+    """One decorator covers jobs.py only while nothing renders around it."""
     assert getattr(jobs.build_job_request, "__xml_escaped_arguments__", False)
+
+    bypassing = [
+        name
+        for module, name, builder in _builders()
+        if module is jobs
+        and builder is not jobs.build_job_request
+        and not _renders_through_job_request(builder, frozenset({name}))
+    ]
+    assert bypassing == []
 
 
 # --------------------------------------------------------------------- #
@@ -403,6 +441,29 @@ def test_dataclass_members_are_escaped_too():
         return f"<x n={fixture.count}>{fixture.label}</x>"
 
     assert build(Fixture(label="a&b", count=1)) == "<x n=1>a&amp;b</x>"
+
+
+def test_escaping_an_escaped_value_is_a_no_op():
+    """build_vios_document delegates to build_lpar_document; both are wrapped."""
+    once = escape_xml(PAYLOAD)
+
+    assert escape_xml(once) is once
+    assert "&amp;amp;" not in once
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [builder for _, _, builder in _builders()],
+    ids=[f"{module.__name__.rsplit('.', 1)[-1]}.{name}" for module, name, _ in _builders()],
+)
+def test_benign_input_produces_no_entity_at_all(builder):
+    """The byte-for-byte claim, asserted for every builder rather than two."""
+    try:
+        xml = builder(**_call_kwargs(builder, None))
+    except ValueError:
+        return
+
+    assert "&" not in xml
 
 
 def test_valid_input_is_unchanged_by_escaping():

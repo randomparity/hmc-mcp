@@ -112,26 +112,49 @@ either a `ValueError`, or all three of: the document parses, the payload parses 
 the document's element-and-attribute structure is identical to one built from a benign value. That
 third assertion is what makes element injection impossible rather than merely unlikely — a value
 that added a sibling element or an attribute would change the structure even when the result is
-well-formed. A parameter whose annotation the harness cannot synthesize is a collection error, so
-a builder cannot be silently skipped.
+well-formed.
+
+**Both halves fail closed on a shape they do not model, and that is the load-bearing part.** A
+guard that quietly declines to cover a new builder is worse than no guard, because it reports
+green. So `_escape_argument` refuses an argument shape it has no branch for with a `TypeError`
+rather than passing it through, and the harness raises while it builds its cases rather than
+answering "carries no string" for an annotation it cannot classify. Without both, a builder
+taking `tuple[str, ...]`, `set[str]`, or `Any` would interpolate unescaped *and* generate no
+case — vulnerable, and passing CI. The two together are what let this record claim the criterion
+holds for builders nobody has written yet.
+
+`jobs.py`'s single-decorator argument needs its own guard, since one decorated function proves
+nothing about the twenty around it. The harness walks each `*_job` builder's call graph and
+requires that it reaches `build_job_request`; a job builder that rendered its own template would
+fail that test rather than quietly bypass the boundary.
 
 ## Consequences
 
-A document built from metacharacter-free input is byte-for-byte what it was before this change,
-which is asserted directly. That property is why this record does not rewrite the builders onto
-`ElementTree` — see below.
+**A document built from input free of all five metacharacters is byte-for-byte what it was**, and
+every builder is asserted to emit no entity at all for such input. That is the exact property, and
+it is narrower than "valid input is unchanged": a value containing only `>`, `"`, or `'` was
+already well-formed in an element-text position and now goes out as `&gt;`, `&quot;`, `&apos;`.
+Only the two `AssociatedLogicalPartition` / `AssociatedSwitch` `href` attributes strictly need the
+quote escaping. Uniform five-character escaping is chosen anyway, because "escape once, safe
+everywhere" is what removes the per-site judgement this record exists to remove — but the trade is
+real and belongs beside the `ElementTree` rejection below rather than hidden behind it. An HMC's
+entity handling for `<Password>a&gt;b</Password>` is unverified in the same way its tolerance for
+re-serialized whitespace is; the difference is that entity expansion is required of any conforming
+XML parser, while indentation and namespace placement are not.
 
 A rejection message for a closed-vocabulary parameter now quotes the *escaped* form of an illegal
 value, because the decorator runs before the builder validates. `build_lpar_document(os_type="a<b")`
-reports `'a&lt;b'`. The value is still recognizable and the existing tests that assert an illegal
-value does not appear verbatim in a message continue to hold for `sharing_mode`, which travels
-inside `LparResources` and is not touched by the decorator.
+reports `'a&lt;b'`. The value stays recognizable, and the existing test that an illegal
+`sharing_mode` never appears in its own rejection message still holds, because
+`_validate_sharing_mode` does not quote the value at all.
 
-The decorator escapes one level of nesting — list members, dict keys and values, dataclass fields
-— and does not descend further. That covers every argument shape the builders accept:
-`RepositorySource` is a `TypedDict`, so it arrives as a plain `dict`. A builder that took a nested
-container would need a new branch, and the harness would report it as a failing case rather than
-letting it through.
+The decorator recurses: list members, dict keys and values, and dataclass fields all go back
+through it, so nesting is covered rather than assumed away. `RepositorySource` is a `TypedDict`
+and therefore arrives as a plain `dict`. The dataclass branch is defence in depth rather than a
+live fix — the only string field on either dataclass is `LparResources.sharing_mode`, a closed
+vocabulary, and every reachable path coerces the numeric fields through pydantic or typer before
+they arrive. It is kept because a boundary that covers "every string in the argument" is easier
+to reason about than one with an exception, and it is tested through the decorator's own contract.
 
 The round trip a caller gets back from a parser is exact for every value the boundary accepts,
 with one exception that belongs to XML rather than to this change: a carriage return in element
@@ -169,9 +192,12 @@ declaration placement, and the XML declaration, and the HMC's tolerance for each
 unverified — the documents' field names and shapes came from IBM's `HmcRestClient` reference
 implementation, not from a schema this repo can validate against. That trades a defect that is
 demonstrated and fixable for a wire-format risk that cannot be tested until someone has hardware.
-The boundary decorator keeps every byte of a valid document identical, which is a property this
-change can actually prove. If a live HMC becomes available (issues #121, #217), the `ElementTree`
-path becomes testable and this decision is worth revisiting; nothing here blocks it.
+The boundary decorator's exposure is one order of magnitude smaller and one kind narrower: it
+changes bytes only for input carrying `>`, `"`, or `'` (see Consequences), and only into entity
+references every conforming parser must expand, where an `ElementTree` rewrite would change the
+serialization of every document including those built from input the HMC accepts today. If a live
+HMC becomes available (issues #121, #217), the `ElementTree` path becomes testable and this
+decision is worth revisiting; nothing here blocks it.
 
 **A `Literal` or regex for every free-text parameter.** #143's remedy, generalized. There is no
 vocabulary for a description, a password, an LDAP filter, or a media name, and a regex that
