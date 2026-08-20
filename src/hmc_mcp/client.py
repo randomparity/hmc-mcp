@@ -217,10 +217,13 @@ class HMCClient(
             user=self.config.user, password=self.config.password
         )
         try:
-            return await self._logon_once(body)
+            token = await self._logon_once(body)
         except HMCTransportError:
-            if not self._legacy_port_fallback:
+            if not self._legacy_port_fallback or self._session_token is not None:
                 raise
+        else:
+            self._legacy_port_fallback = False
+            return token
         self._legacy_port_fallback = False
         await self._http.aclose()
         self._http = self._new_http_client(12443)

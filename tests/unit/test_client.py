@@ -88,6 +88,32 @@ async def test_explicit_port_transport_failure_is_hard_failure(port):
 
 
 @pytest.mark.asyncio
+async def test_existing_session_token_prevents_fallback_on_repeated_logon():
+    with respx.mock(assert_all_called=False) as router:
+        primary = router.put(
+            url__regex=r"https://hmc\.test/rest/api/web/Logon"
+        ).mock(
+            side_effect=[
+                httpx.Response(200, text=LOGON_RESPONSE),
+                httpx.ConnectError("connection refused"),
+            ]
+        )
+        legacy = router.put(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(side_effect=AssertionError("an existing session must not fall back"))
+
+        client = HMCClient(make_config(verify_ssl=True))
+        token = await client.logon()
+        with pytest.raises(HMCTransportError):
+            await client.logon()
+        await client._http.aclose()
+
+    assert client._session_token == token
+    assert primary.call_count == 2
+    assert legacy.call_count == 0
+
+
+@pytest.mark.asyncio
 async def test_close_failure_aborts_fallback_before_legacy_client_is_created():
     client = HMCClient(make_config(verify_ssl=True))
     client._request = AsyncMock(side_effect=HMCTransportError("primary failed"))
