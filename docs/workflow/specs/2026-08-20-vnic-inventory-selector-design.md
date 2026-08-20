@@ -44,9 +44,10 @@ finite one-to-100 capacity with at most two decimals, and VLAN 0–4094. It veri
 name/ID/type, healthy adapter, active physical port, and remaining percentage. Capacity sums unique
 logical-port IDs from direct SR-IOV rows and vNIC backing rows so an identity observed in both is
 counted once. Add is ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
-port, and capacity is unchanged; more than one is ambiguous. The contract deliberately cannot
-create a second identical vNIC. Mutation serializes the captured single-backing grammar and uses
-`-p`.
+port, and capacity is unchanged only when exactly one active, Operational backing row correlates
+to its logical port. Multiple matches or incomplete/degraded correlation fail closed without a
+second add. The contract deliberately cannot create a second identical vNIC. Mutation serializes
+the captured single-backing grammar and uses `-p`.
 
 After add, compare target vNIC snapshots before/after. Require one new slot matching the request,
 one allocated logical-port ID, and one matching `vnicbkdev` row with `is_active=1` and

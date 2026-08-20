@@ -23,10 +23,11 @@ allocates the logical port; the result exposes it only after correlated readback
 
 Before add, require the ADR 0056 environment, a healthy SR-IOV adapter, an available matching
 physical port, a matching VIOS identity, and enough capacity across admitted logical-port and vNIC
-backing inventories. Add is an ensure-one operation: one exact existing target-LPAR vNIC is an
-unchanged retry; multiple exact matches are ambiguous and fail closed. Add uses the captured `-p`
-grammar. After dispatch, exactly one new vNIC slot must match the selector and VLAN, and exactly
-one Operational backing row must match its logical port.
+backing inventories. Add is an ensure-one operation: one exact existing target-LPAR vNIC with one
+correlated active, Operational backing row is an unchanged retry; multiple exact matches or a
+matching vNIC without that verified backing state fail closed without another add. Add uses the
+captured `-p` grammar. After dispatch, exactly one new vNIC slot must match the selector and VLAN,
+and exactly one active, Operational backing row must match its logical port.
 
 Remove accepts the stable `slot_num` read identity. An absent target slot is unchanged. Otherwise
 capture its backing logical ports, use the captured `-p ... -s ...` grammar, and require both the

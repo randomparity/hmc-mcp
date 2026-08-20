@@ -47,8 +47,8 @@ LPAR authorization.
 `remove_vnic(...)` signatures from the spec. Task 3 consumes these exact names.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
-   mismatch, exhausted capacity, duplicate inventory, exact ensure-one retry, successful add
-   correlation,
+   mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
+   refusal, successful add correlation,
    mutation failure, readback mismatch, absent remove retry, successful remove, and remove partial
    failure. Run `uv run pytest -q tests/network/test_vnic_operations.py`; expect collection or
    assertion failures against the old raw-output API.
