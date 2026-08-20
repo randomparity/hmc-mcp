@@ -17,9 +17,13 @@ from urllib.parse import unquote, urlparse
 from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
+from .documents import (
+    build_brokered_file_document,
+    build_linked_optical_media_document,
+    build_logon_request_document,
+)
 from .errors import HMCError, HMCTransportError
 from .jobs import TERMINAL_JOB_STATUSES
-from .xmlutil import WEB_NS
 
 from .client_adapters import AdaptersMixin
 from .client_cluster import ClusterMixin
@@ -31,16 +35,6 @@ from .client_storage import StorageMixin
 from .client_systems import SystemsMixin
 from .client_templates import TemplatesMixin
 from .client_users import UsersMixin
-
-LOGON_REQUEST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LogonRequest xmlns="{web_ns}" schemaVersion="V1_0">
-  <Metadata>
-    <Atom/>
-  </Metadata>
-  <UserID kb="CUR" kxe="false">{user}</UserID>
-  <Password kb="CUR" kxe="false">{password}</Password>
-</LogonRequest>
-"""
 
 # Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
@@ -210,8 +204,8 @@ class HMCClient(
                 "enable verification.",
                 stacklevel=2,
             )
-        body = LOGON_REQUEST_TEMPLATE.format(
-            web_ns=WEB_NS, user=self.config.user, password=self.config.password
+        body = build_logon_request_document(
+            user=self.config.user, password=self.config.password
         )
         resp = await self._request(
             "PUT",
@@ -381,13 +375,7 @@ class HMCClient(
         This method exists to verify the broker creation endpoint behavior.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        # brokered file creation payload - the exact structure is version-dependent
-        # this placeholder exercises the endpoint to record the actual contract
-        create_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<BrokeredFile xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-  <Filename>{filename}</Filename>
-</BrokeredFile>
-'''
+        create_xml = build_brokered_file_document(filename=filename)
         resp = await self._request(
             "POST",
             path,
@@ -449,12 +437,9 @@ class HMCClient(
         This method exists to verify the import endpoint behavior and checksum handling.
         """
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
-        import_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<LinkedVirtualOpticalMedia xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-  <MediaName>{media_name}</MediaName>
-  <LinkedFileURI>{broker_uri}</LinkedFileURI>
-</LinkedVirtualOpticalMedia>
-'''
+        import_xml = build_linked_optical_media_document(
+            media_name=media_name, broker_uri=broker_uri
+        )
         resp = await self._post(path, import_xml, resource_type="VolumeGroup")
         # Parse response to extract checksum information (if exposed)
         # This placeholder exercises the endpoint to record whether checksums are available

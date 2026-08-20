@@ -88,11 +88,18 @@ returns a private `str` subclass and returns an instance of that subclass unchan
 this, `build_vios_document` — which delegates to `build_lpar_document`, both decorated — would
 escape `name` twice and send `R&amp;amp;D`.
 
-**`documents.py` decorates all 23 builders; `jobs.py` decorates one function.** They differ
+**`documents.py` decorates all 26 builders; `jobs.py` decorates one function.** They differ
 because `jobs.py` renders XML in exactly one place: every `*_job` builder returns
 `build_job_request(...)`, so one decorator is the module's whole encoding boundary. `documents.py`
 has no such choke point — each builder renders its own template — so the invariant there is
 "every public builder carries the decorator", and a test asserts exactly that by reflection.
+
+The figure was 23 when this record was accepted. `build_logon_request_document`,
+`build_brokered_file_document`, and `build_linked_optical_media_document` arrived with #284, which
+moved `client.py`'s three request bodies here rather than escaping them where they stood (see
+Consequences). It is pinned by
+`tests/unit/test_xml_escaping.py::test_the_recorded_builder_count_matches_the_module`, which
+recomputes it from the module and reddens on this sentence when a builder is added.
 
 **Closed-vocabulary parameters keep their `ValueError`.** Escaping and validation are not
 alternatives: validation gives a better message and rejects a value the HMC would refuse anyway,
@@ -169,13 +176,28 @@ document builders outside the supported reusable API, so removing it is not a co
 0039's prose at line 578 names that parameter as a free string the body carries; that detail is
 superseded here.
 
-Three sibling interpolation sites remain outside this record's surface, all in `client.py`:
-`LOGON_REQUEST_TEMPLATE` (`{user}`, `{password}`), `_broker_file_create` (`{filename}`), and
-`_broker_import` (`{media_name}`, `{broker_uri}`). They are the same defect — a logon password
-containing `&` cannot authenticate, reproduced in this checkout — and they are tracked as #284
-rather than folded in here, because #263's scope is the document and job builders and the fix for
-`client.py` is the same primitive applied to a different module. `pcm.py` was checked and is not
-affected: it interpolates only a validated field name and a literal `true`/`false`.
+**The three sibling interpolation sites in `client.py` were closed by #284, under this record
+rather than beside it.** `LOGON_REQUEST_TEMPLATE` (`{user}`, `{password}`), `_broker_file_create`
+(`{filename}`), and `_broker_iso_import` (`{media_name}`, `{broker_uri}`) were the same defect. Two
+consequences were reproduced before the fix: a logon password containing `&` could not
+authenticate, and a user name containing `</UserID><UserID>` produced a *well-formed* body carrying
+two identities into the PUT to `/rest/api/web/Logon`. They were deferred out of #263 because that
+issue's scope was the document and job builders.
+
+`escapes_string_arguments` could not be placed on the client methods as they stood, and the reason
+is where the values come from rather than an accident of shape: `logon()` reads its user and
+password from `self.config`, so no argument-boundary decorator on that method can see them at all.
+Each body therefore became a module-level builder here — `build_logon_request_document`,
+`build_brokered_file_document`, and `build_linked_optical_media_document` — carrying the decorator
+like every other builder, with `client.py` calling it. Escaping inline at the five interpolation
+sites is the alternative this record rejects in principle, and it would also have left the sites
+outside the reflective harness: that harness discovers sync public `build_*` / `*_job` functions
+returning `str`, which is exactly why it never reached a coroutine on `HMCClient`. All three
+documents render byte-for-byte what they rendered before for input free of the five
+metacharacters, so nothing about the wire format changes.
+
+`pcm.py` was checked and is not affected: it interpolates only a validated field name and a
+literal `true`/`false`.
 
 ## Considered & rejected
 
