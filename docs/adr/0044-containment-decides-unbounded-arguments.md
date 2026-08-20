@@ -6,12 +6,12 @@ Accepted (2026-08-19)
 
 ## Context
 
-`UNBOUNDED_ARGUMENTS` (`src/hmc_mcp/tool_registry.py:96`) lists public argument
+`UNBOUNDED_ARGUMENTS`, in `src/hmc_mcp/tool_registry.py`, lists public argument
 names a `targets` allowlist cannot bound. A tool accepting one cannot declare
 `exhaustive_targets=True`, so only `all-targets` grants it.
 
-The guardrail comment carrying the rule says
-(`tests/app/test_tool_security.py:1390-1392`):
+The guardrail comment carrying the rule, above `_PAYLOAD_SOURCE_ARGUMENTS` in
+`tests/app/test_tool_security.py`, said:
 
 > The line against UNBOUNDED_ARGUMENTS is *which side* the named thing lives on.
 > `file_path` is a file on the **HMC's own** filesystem, so the policy is meant
@@ -40,7 +40,7 @@ derived by the server through the HMC's own containment from one"
 #264 proposes instead that the distinction is write-versus-read — of the *file*,
 not of the target. It is not that:
 `hmc_restore_lpar_profiles` only reads its `file_path` and is non-exhaustive
-(`src/hmc_mcp/server_profiles.py:78-83`). Containment explains that directly —
+(`server_profiles.hmc_restore_lpar_profiles`). Containment explains that directly —
 `rstprofdata -f` takes an absolute path anywhere on the console filesystem, and
 the declared `-m` system does not constrain it, so the same string names the same
 console file whichever system is passed. Reading an uncontained resource is still
@@ -61,7 +61,9 @@ to and not on whether it is written.
 `backup_name` stays out of the list and `hmc_restore_vios` keeps
 `exhaustive_targets=True`, and the server closes the gap that classification
 would otherwise leave open. `server_vios._validate_backup_name` refuses four
-shapes before the command is built, and none of them can name a catalog entry:
+shapes before the command is built. The claim is not that no catalog could hold
+such a name — it is that the tool cannot treat any of them as one, because each
+can denote something else:
 
 - empty, or differing from its own stripped form — a padded `" .. "` would
   otherwise slip a dot-segment past a naive check;
@@ -94,8 +96,8 @@ refusal: ADR 0039 needed one because a URL path reaches an HTTP router that may
 decode before routing, and this value reaches an SSH command line that nothing in
 between decodes.
 
-`hmc_restore_vios` declares `exhaustive_targets` by omission — `tool()` defaults
-it to `True` (`src/hmc_mcp/tool_registry.py:314`) — so nothing at the tool shows a
+`hmc_restore_vios` declares `exhaustive_targets` by omission — `tool_module`'s
+`tool()` decorator defaults it to `True` — so nothing at the tool shows a
 classification was made. The guardrail comment is therefore rewritten to state the
 rule above, and a test asserts the declaration and the guard together, so removing
 either fails on the other.
@@ -123,11 +125,13 @@ either fails on the other.
   The pairing is held by a test asserting the classification and the refusal
   together instead, and by the rule text now naming `backup_name` explicitly —
   which is itself checked, since the guardrail comment is what drifted last time.
-- A caller probing for catalog escapes *is* observable. `authorized()` runs the
-  dispatch authorizer before the handler (`src/hmc_mcp/tool_registry.py:193`), so
-  each probe emits an ADR 0040 `allow` record for `vios.restore` against the
-  declared VIOS and only then hits the refusal. The audit stream shows an allowed
-  dispatch that produced no restore, which is the shape a probe takes here.
+- A refused `backup_name` is *not* invisible to the audit layer. `authorized()`
+  runs the dispatch authorizer before the handler, in `tool_registry.authorized`,
+  so the authorization decision for `vios.restore` against the declared VIOS is
+  recorded and only then does the refusal fire. What that record does not carry is
+  the refusal itself or the rejected value, so the stream shows an authorized
+  dispatch and nothing distinguishing it from one that ran. Making a rejected
+  argument legible in the audit stream is a broader change than this record owns.
 - The command this reasons about is the one this repository builds. Whether
   `chviosbackup` is the HMC's actual command name is a separate open question
   (#289); the classification turns on the call's shape — a VIOS selector plus a
@@ -162,14 +166,16 @@ either fails on the other.
   wider change than this record is entitled to make.
 - **Verify the name against the catalog** — run `lsviosbackup -id <uuid>` first,
   which this repository already does and parses in `hmc_list_vios_backups`, and
-  refuse a `backup_name` the listing does not contain. Rejected *for the decision
-  as it stands*, not in general: while `-id` scopes the operation, a bare name
-  already resolves in the selected catalog, so the round-trip and the TOCTOU
-  window between listing and restore buy the classification nothing. The
-  qualifier matters, because it is exactly the branch where this record reopens:
-  if #283 finds a bare `-file` resolving outside the selected catalog, listing
-  membership becomes evidence the string guard cannot supply, and #283 names it as
-  the remedy to weigh there.
+  refuse a `backup_name` the listing does not contain. Rejected, and not because the premise
+  makes it unnecessary — that would be circular. It is rejected because it does
+  not establish the premise either: a name present in the listing is still
+  resolved by `-file` however the HMC resolves it, so a listing check would be
+  evidence about the catalog's *contents*, never about where `-file` looks. Only
+  a real HMC settles that, which is #283. What the round-trip does buy is a
+  narrower window if the premise turns out false — worth weighing there, and
+  recorded on #283 for that reason, but not worth an SSH call and a TOCTOU gap on
+  every restore to hedge a premise the tool's own target selector already rests
+  on.
 - **Record the containment as an HMC-side fact and change no code.** The cheapest
   option, and the first draft of this record. Rejected because the fact is not
   established (#283) — the substitution ADR 0039 names as its own recurring error,

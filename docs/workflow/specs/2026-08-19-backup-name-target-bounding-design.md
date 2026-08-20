@@ -96,12 +96,13 @@ backup of that VIOS — every entry in the catalog belongs to the declared VIOS,
 it is inside the grant by construction. Whether the HMC imposes further validation
 (#283). Local-file disclosure through a different argument — `iso_source` is #261.
 
-**Observability.** `authorized()` calls the dispatch authorizer before the
-handler (`src/hmc_mcp/tool_registry.py:193`), so a refused `backup_name` has
-already produced an ADR 0040 `allow` record for `vios.restore` against the
-declared VIOS. A caller probing for catalog escapes therefore appears in the audit
-stream as a run of allowed dispatches that produced no restore. No new audit path
-is needed, and none is added.
+**Observability.** `tool_registry.authorized` calls the dispatch authorizer
+before the handler, so the authorization decision for `vios.restore` against the
+declared VIOS is recorded before a refused `backup_name` raises. The record does
+not carry the refusal or the rejected value, so the stream shows an authorized
+dispatch and nothing marking it as one that never ran. Accepted as-is: making a
+rejected argument legible in the audit stream is a broader change than this issue
+owns, and the grant is still required to reach the handler at all.
 
 ## Testing
 
