@@ -58,8 +58,9 @@ is lost.
 - Whether restoring an `ssp`-type entry reaches the cluster, which would make
   `hmc_restore_vios`'s own declaration wrong —
   [#282](https://github.com/randomparity/hmc-mcp/issues/282).
-- Whether `chviosbackup`/`lsviosbackup` are the HMC's actual command names —
-  IBM documents `chviosbk`/`lsviosbk` —
+- Whether `chviosbackup`/`lsviosbackup` are the HMC's actual command names — IBM's
+  HMC command index names `chviosbk`/`lsviosbk`, and its guidance names
+  `rstviosbk` for restore rather than an `-operation restore` mode —
   [#289](https://github.com/randomparity/hmc-mcp/issues/289). The classification
   turns on the call's shape, which that question does not change.
 - `file_path`'s classification on the profile pair, settled by ADR 0036 and

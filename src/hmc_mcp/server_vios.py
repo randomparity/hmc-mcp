@@ -366,11 +366,13 @@ def _validate_backup_name(backup_name: str) -> None:
 
     ADR 0044 keeps ``hmc_restore_vios`` bounded by the VIOS its ``-id`` selector
     names, which holds only while the value is a name resolved inside that VIOS's
-    own backup catalog. Four shapes could break that and none can name a catalog
-    entry: an empty or padded value, one carrying a path separator, one made only
-    of dots, and one starting with ``-`` — which the CLI reads as an option, and
-    which ``shlex.quote`` passes through bare because it holds no shell
-    metacharacter.
+    own backup catalog. Four shapes are refused, not because no catalog could hold
+    such a name but because the tool cannot treat any of them as one: an empty or
+    padded value, one carrying a path separator, one made only of dots, and one
+    starting with ``-``. The last is refused for what is *unknown* about it — how
+    the HMC CLI parses a bare leading dash in this position is not established
+    here, and ``shlex.quote`` offers no cover because such a value holds no shell
+    metacharacter and is emitted unquoted.
 
     Deliberately no character-set or length rule, so a catalog entry named outside
     whatever grammar the HMC enforces stays restorable. ADR 0039 made the same call

@@ -69,25 +69,31 @@ can denote something else:
   otherwise slip a dot-segment past a naive check;
 - containing `/` or `\`;
 - consisting only of dots;
-- starting with `-`, which the CLI reads as an option rather than a value.
-  `shlex.quote` does not cover this one: `-operation` holds no shell
-  metacharacter, so quoting passes it through bare.
+- starting with `-`. This one is refused for what is *unknown* about it: how the
+  HMC CLI parses a bare leading dash in this position is not established here, and
+  `shlex.quote` offers no cover, since such a value carries no shell metacharacter
+  and is emitted unquoted.
 
 What survives is a bare name, which can denote only an entry in the catalog
 `-id` selects.
 
-**The one premise this rests on, stated rather than buried.** That `-id` scopes
-the operation. It is not verifiable here and it is not eliminable: it is the same
-premise that makes `vios_name_or_uuid` a target selector at all, so a record that
-refused it would be refusing the tool's existing classification, not this one.
-What the guard removes is the *additional* premise the first draft of this record
-needed — that the HMC would itself reject a path-shaped value — which is
-unverified and was avoidable. #283 owns confirming both against a real HMC.
+**What this still rests on, stated rather than buried.** That `-id` scopes the
+operation, and that the call this reasons about is the one the repository builds
+(#289 asks whether `chviosbackup` is even the HMC's command name). Neither is
+verifiable here, and the first is not eliminable: it is the same premise that
+makes `vios_name_or_uuid` a target selector at all, so a record refusing it would
+be refusing the tool's existing classification rather than this one. The second
+changes the spelling of the call, not its shape — a VIOS selector plus a backup
+name — which is what the classification turns on. What the guard removes is the
+*additional* premise the first draft needed, that the HMC would itself reject a
+path-shaped value. #283 owns confirming these against a real HMC.
 
 The refusal is narrow by choice: those four shapes and no character-set or length
-rule. ADR 0039 made the same call for `job_href`, refusing dot-segments and
-declining to require a UUID shape, because refusing a legitimate identifier trades
-a regression for reach the narrow refusal has already removed. A catalog entry
+rule. ADR 0039 made the same call for its dot-segment guard on caller-supplied
+request paths — the guard that closes the `job_href` variant — refusing
+dot-segments while declining to require a UUID shape, because refusing a
+legitimate identifier trades a regression for reach the narrow refusal has
+already removed. A catalog entry
 named outside whatever grammar the HMC enforces stays restorable here.
 
 `shlex.quote` stays and is unrelated — it governs shell metacharacters, a

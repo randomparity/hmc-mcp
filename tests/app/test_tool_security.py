@@ -1477,8 +1477,11 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
     bounded side.
     """
     source = Path(tool_registry.__file__).read_text(encoding="utf-8")
-    head, _, _ = source.partition("UNBOUNDED_ARGUMENTS: frozenset")
-    comment = head[head.rindex("# Public argument names that carry the identity") :]
+    head, anchor, _ = source.partition("UNBOUNDED_ARGUMENTS: frozenset")
+    assert anchor, "UNBOUNDED_ARGUMENTS was renamed or reformatted; re-anchor this check"
+    opening = "# Public argument names that carry the identity"
+    assert opening in head, f"the comment opening {opening!r} moved; re-anchor this check"
+    comment = head[head.rindex(opening) :]
 
     undocumented = sorted(name for name in UNBOUNDED_ARGUMENTS if f"`{name}`" not in comment)
     assert not undocumented, (
@@ -1498,9 +1501,10 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
     # the replacement in, so this file's rule text cannot drift back or fall
     # silent about the case that exposed it.
     own_source = Path(__file__).read_text(encoding="utf-8")
-    _, _, guardrail = own_source.partition("# The line against UNBOUNDED_ARGUMENTS")
-    guardrail, _, _ = guardrail.partition("_PAYLOAD_SOURCE_ARGUMENTS = frozenset")
-    assert guardrail, "the UNBOUNDED_ARGUMENTS guardrail comment has gone missing"
+    _, opened, guardrail = own_source.partition("# The line against UNBOUNDED_ARGUMENTS")
+    assert opened, "the UNBOUNDED_ARGUMENTS guardrail comment has gone missing"
+    guardrail, closed, _ = guardrail.partition("_PAYLOAD_SOURCE_ARGUMENTS = frozenset")
+    assert closed, "_PAYLOAD_SOURCE_ARGUMENTS was renamed; re-anchor this check"
     assert "*which side* the named thing lives on" not in guardrail, (
         "the guardrail comment has returned to the side-of-the-filesystem rule "
         "that ADR 0044 retired; it answers `backup_name` wrongly."
@@ -1531,9 +1535,10 @@ def test_backup_name_stays_bounded_only_while_the_catalog_guard_holds(monkeypatc
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
     vios_uuid = "00000000-0000-0000-0000-000000000003"
-    # One shape per refused route, not the full set: tests/vios/test_vios_backup.py
-    # owns exhaustive coverage, and a second copy of that list here would be two
-    # lists free to disagree — the defect this whole change is about.
+    # A representative sample, not the full set and not one per refused route:
+    # tests/vios/test_vios_backup.py owns exhaustive coverage of all four, and a
+    # second copy of that list here would be two lists free to disagree — which is
+    # the defect this whole change is about.
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
