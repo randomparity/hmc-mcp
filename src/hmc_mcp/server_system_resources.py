@@ -37,7 +37,12 @@ def hmc_list_dedicated_pcie_slots(
     system_name_or_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized dedicated PCIe slots with stable DRC identities."""
+    """List normalized dedicated PCIe slots with stable DRC identities.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return asdict(
         _run(
             lambda: list_dedicated_slots(
@@ -53,7 +58,13 @@ def hmc_list_sriov_adapters(
     adapter_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV adapters, or report capability unavailable."""
+    """List normalized SR-IOV adapters, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        adapter_id: Optional exact adapter selector.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return asdict(
         _run(
             lambda: list_sriov_adapters(
@@ -74,7 +85,14 @@ def hmc_list_sriov_physical_ports(
     physical_port_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV physical ports, or report capability unavailable."""
+    """List normalized SR-IOV physical ports, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        adapter_id: Optional parent adapter selector.
+        physical_port_id: Optional exact physical-port selector.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return asdict(
         _run(
             lambda: list_sriov_physical_ports(
@@ -99,7 +117,15 @@ def hmc_list_sriov_logical_ports(
     logical_port_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """List normalized SR-IOV logical ports, or report capability unavailable."""
+    """List normalized SR-IOV logical ports, or report capability unavailable.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        adapter_id: Optional parent adapter selector.
+        physical_port_id: Optional parent physical-port selector.
+        logical_port_id: Optional exact logical-port selector.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return asdict(
         _run(
             lambda: list_sriov_logical_ports(
