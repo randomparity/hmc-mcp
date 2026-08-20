@@ -171,26 +171,42 @@ then restores blocking mode — `O_NONBLOCK` is a property of the open file desc
 it leaves a genuinely blocking, genuinely full pipe. Teardown closes the read end, which wakes a
 blocked writer with `EPIPE`, then joins the sink.
 
+Each proof that involves a wedged destination drives its work on a **thread the test can
+abandon**, and asserts that the thread returned within a bound. Run in the main thread, the
+pre-change behaviour would hang the whole suite rather than fail one test; run this way, it
+reddens. Confirmed by reverting the enqueue to a synchronous write and watching each of them
+fail rather than stall.
+
 | # | proves | shape |
 |---|---|---|
-| 1 | a full pipe does not block `submit` | fill the pipe, monkeypatch `sys.stderr` onto it, submit `capacity + 200` lines, assert every call returned and the wall clock stayed under 10 s |
-| 2 | a full pipe does not block a **tool dispatch** | same pipe, a policy-gated application, drive `capacity + 200` denied calls through the dispatch wrapper, assert each returns its ADR 0038/0039 error and the wall clock stayed under 30 s |
-| 3 | drops are visible | after test 1's overflow, drain the pipe, submit one more line, read until a `records-dropped` line with `count > 0` appears *before* that line |
-| 4 | an absent, broken, or closed stream counts a drop | `sys.stderr = None`, and a stream raising `OSError` / `ValueError`; assert the next successful write is preceded by a marker |
-| 5 | shutdown loses nothing when the destination is read | ordinary pipe, submit N lines, `close()`, assert all N arrived and `close()` returned |
-| 6 | shutdown does not hang when it is not | full pipe, submit, `close()`, assert it returned within `drain_timeout + 1 s` |
-| 7 | `server._warn` does not block | full pipe, call `_warn` with four lines, assert it returned and wrote nothing to stdout |
-| 8 | ordering is preserved | submit N distinguishable lines to a drained pipe, assert they arrive in submission order |
-| 9 | `EVENTS` still equals the `Literal`, now with three values | existing test extended |
+| 1 | a full pipe does not block `submit` | fill the pipe, point `sys.stderr` at it, submit `capacity + 200` lines on a worker, assert it returned inside 10 s |
+| 2 | a full pipe does not block a **tool dispatch** | same pipe, a policy-gated authorizer, 400 denied calls through `dispatch_authorizer`, assert the worker returned and every call still raised its ADR 0038 error |
+| 3 | drops are visible and the arithmetic closes | after test 1's overflow, free the pipe and submit one more line; assert `sum(marker counts) + lines written == lines submitted`, that a marker precedes what follows it, and that the queue did overflow. The conservation law rather than a fixed count, because how many land before the writer is first scheduled is not deterministic |
+| 4 | an absent, broken, closed, or otherwise unwritable stream counts a drop | parametrized over `None`, `ValueError`, `OSError`, and an unforeseen exception; assert the next successful write is preceded by a `count: 1` marker — which also proves the writer thread survived |
+| 5 | shutdown loses nothing when the destination is read | fill the queue to capacity, `close()`, assert every line arrived in order |
+| 6 | shutdown does not hang when it is not | full pipe, submit, `close()`, assert it returned |
+| 7 | `server._warn` does not block | full pipe, `_warn` with three lines on a worker, assert it returned |
+| 8 | a closed sink writes nothing more and still counts | `close()`, submit, assert nothing further was written and the loss was counted; `close()` twice is safe |
+| 9 | a failed marker write is still owed | two drops against a hostile stream, then a working one; assert one marker carrying `count: 2` |
 | 10 | the marker is one physical line of ASCII JSON | assert it parses, is ASCII, and carries exactly `time`, `event`, `count` |
+| 11 | `EVENTS` still equals the `Literal`, now with three values | existing test extended |
 
-Existing tests in `tests/unit/test_audit.py` and `tests/app/test_authorization_audit*.py` that read
-`capsys` immediately after emitting a record now call `_AuditHandler.flush()` (through a
-module-level helper) first. That is not a weakened assertion — it is the assertion the new
-asynchronous contract permits, and `drain` returning `False` fails the test.
+Existing tests that read `capsys` immediately after emitting a record now wait for the sink
+first — through a module-level `_flush()`, or through `_AuditHandler.flush()` where the point is
+that `logging.shutdown`'s call is bounded. That is not a weakened assertion; it is the assertion
+the asynchronous contract permits, and a drain that times out fails the test.
+`tests/app/test_capability_ceiling.py`'s unusable-stderr start proof is repointed: it patched
+`server.sys`, and `_warn` no longer resolves the stream at all.
 
-`tests/conftest.py`'s existing audit-isolation fixture is extended to drain and reset the sink
-between tests, so a blocked writer in one test cannot leak into the next.
+`tests/conftest.py` gains the filled-pipe fixture and extends the audit-isolation fixture to
+settle the sink against a throwaway stream between tests — a writer thread scheduled after a
+test's redirection is undone would otherwise land in the next test's captured output.
+
+One trap is worth recording, because it cost a review cycle: a `sys.stderr` redirection installed
+by a *fixture* does not reliably survive to the writer. The writer thread may not be scheduled
+until after the test body returns, and fixture finalizers run in an order that can undo the patch
+first. Every wedged-pipe test therefore owns the redirection and the sink's `close()` in its own
+frame, closing before restoring.
 
 ## Acceptance criteria
 

@@ -36,6 +36,8 @@ Spec test -> node id. This map is checked by
   269a test_an_undrained_pipe_does_not_block_the_submitting_thread
   269b test_an_overflowing_queue_reports_what_it_lost
   269c test_the_drop_marker_is_one_ascii_line_of_the_same_grammar
+  269f test_a_closed_sink_writes_nothing_more_and_still_counts_the_loss
+  269g test_a_marker_that_cannot_be_written_is_still_owed
   269d test_shutdown_delivers_everything_queued_when_the_destination_is_read
   269e test_shutdown_returns_even_when_the_destination_never_drains
 
@@ -362,7 +364,10 @@ def test_a_record_reaches_stderr_and_not_stdout(capsys):
     """Spec 9."""
     audit.install_audit_sink()
     audit.record_ownership_override(system="sys-a", lpar="db-01", agent_id="agent-7")
-    _flush()
+    # Through the handler's own `flush`, which is what `logging.shutdown` calls at
+    # interpreter exit — and the reason that call cannot become the hang #269 is
+    # about, since it is the sink's bounded drain rather than an unbounded join.
+    logging.getLogger(audit.AUDIT_LOGGER_NAME).handlers[0].flush()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err.strip())["event"] == "ownership-override"
@@ -706,6 +711,62 @@ def test_an_overflowing_queue_reports_what_it_lost(full_stderr_pipe):
     assert records.index(markers[0]) < records.index(written[-1]), (
         "a marker reports lines missing *above* it, so it must precede them"
     )
+
+
+def test_a_closed_sink_writes_nothing_more_and_still_counts_the_loss(monkeypatch):
+    """`atexit` closes the sink; anything after that is lost, and known to be.
+
+    ADR 0043 states it as a limit rather than designing around it: there is no
+    writer left to carry a marker, so the count is real and unreportable. Closing
+    twice must also be safe — the second call has no writer to join.
+    """
+    landed = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", landed)
+    sink = audit._StderrSink(4, 1.0)
+    sink.submit('{"n":0}\n')
+    sink.close()
+    assert landed.getvalue() == '{"n":0}\n', "close must deliver what was queued"
+
+    sink.close()
+    sink.submit('{"n":"after"}\n')
+    assert sink.drain(1.0), "a closed sink has nothing left to wait for"
+    assert landed.getvalue() == '{"n":0}\n', "a closed sink must write nothing more"
+    with sink._state:
+        assert sink._dropped == 1, "loss after close is counted, not ignored"
+
+
+def test_a_marker_that_cannot_be_written_is_still_owed(monkeypatch):
+    """The count survives its own failed report, and is not double-counted.
+
+    The marker is written like any other line, so it can fail like any other line.
+    Restoring what it was owed is what keeps the arithmetic honest across a
+    destination that goes away and comes back.
+    """
+    hostile = _Hostile(OSError("broken pipe"))
+    monkeypatch.setattr(sys, "stderr", hostile)
+    sink = audit._StderrSink(4, 1.0)
+    try:
+        sink.submit("lost-one\n")
+        assert sink.drain(1.0)
+        # The next line's marker write fails too, so one owed becomes two rather
+        # than being forgotten or counted twice.
+        sink.submit("lost-two\n")
+        assert sink.drain(1.0)
+
+        landed = io.StringIO()
+        monkeypatch.setattr(sys, "stderr", landed)
+        sink.submit('{"n":"ok"}\n')
+        assert sink.drain(1.0)
+    finally:
+        sink.close()
+
+    lines = landed.getvalue().splitlines()
+    assert json.loads(lines[0]) == {
+        "time": json.loads(lines[0])["time"],
+        "event": "records-dropped",
+        "count": 2,
+    }
+    assert json.loads(lines[1]) == {"n": "ok"}
 
 
 def test_the_drop_marker_is_one_ascii_line_of_the_same_grammar():

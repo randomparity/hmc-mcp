@@ -369,11 +369,11 @@ class _StderrSink:
         points by then.
         """
         with self._state:
-            writer = self._writer
+            writer, already_closing = self._writer, self._closed
+            self._closed = True
             if writer is None:
                 return
-            if not self._closed:
-                self._closed = True
+            if not already_closing:
                 self._queue.put_nowait(_SENTINEL)
         writer.join(timeout=self._drain_timeout)
         with self._state:
@@ -392,14 +392,13 @@ class _StderrSink:
         """Drain the queue onto stderr until the sentinel arrives."""
         while True:
             item = self._queue.get()
-            if item is _SENTINEL:
-                self._report_drops()
-                return
             self._report_drops()
-            if not self._write(item):
-                with self._state:
-                    self._dropped += 1
+            if item is _SENTINEL:
+                return
+            landed = self._write(item)
             with self._state:
+                if not landed:
+                    self._dropped += 1
                 self._pending -= 1
                 self._state.notify_all()
 
