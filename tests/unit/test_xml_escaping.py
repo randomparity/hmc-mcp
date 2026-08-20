@@ -27,7 +27,7 @@ import pytest
 from defusedxml import ElementTree as DET
 
 from hmc_mcp import documents, jobs
-from hmc_mcp.xmlutil import localname
+from hmc_mcp.xmlutil import escape_xml, localname
 
 # A value an operator could plausibly type that carries all five XML
 # metacharacters at once. No tab, newline, or carriage return: an XML parser
@@ -346,6 +346,22 @@ def test_repository_password_with_an_ampersand_stays_well_formed():
         if localname(el.tag) == "ParameterValue"
     ]
     assert "a&b<c" in values
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "lpar1",
+        "hdisk5",
+        "dc=example,dc=com",
+        "https://hmc:12443/rest/api/uom/LogicalPartition/1",
+        "7042-CR8*212345A",
+        "",
+    ],
+)
+def test_escaping_is_the_identity_for_ordinary_values(value):
+    """Byte-for-byte-unchanged documents rest on this, not on spot checks."""
+    assert escape_xml(value) == value
 
 
 def test_valid_input_is_unchanged_by_escaping():
