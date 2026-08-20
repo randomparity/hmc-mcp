@@ -63,7 +63,8 @@ there.
 1. Add model tests pinning `resource_kind`, explicit capability/reason, managed-system plus local
    selector identities, parent IDs, `Decimal | None` percentage fields, and dataclass serialization.
    Add operation tests that mock `resolve_ssh_names`, prove dedicated row normalization, reject a
-   blank `drc_index`, preserve empty optional values as `None`, and prove SR-IOV operations return
+   blank `drc_index`, preserve empty optional values as `None`, prove assigned and unassigned slots
+   both retain unknown availability, and prove SR-IOV operations return
    unavailable without calling an SSH inventory command. Adapter, physical-port, and logical-port
    selector filters remain represented verbatim in the result scope and are never treated as proof
    that a record exists.

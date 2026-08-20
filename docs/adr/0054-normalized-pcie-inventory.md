@@ -19,7 +19,8 @@ optional unavailable reason. Only a successful exact evidence-admitted projectio
 `available`; command failures and malformed rows remain errors.
 
 Dedicated-slot records use managed-system identity plus `drc_index`; optional description and owner
-are explicit values or `None`. SR-IOV record schemas preserve the ADR 0053 identity hierarchy and
+are explicit values or `None`, and availability remains explicit unknown rather than being inferred
+from an empty owner. SR-IOV record schemas preserve the ADR 0053 identity hierarchy and
 type all currently unadmitted attributes as unknown. Until a version-labelled fixture admits an
 exact read projection, SR-IOV operations return capability unavailable without issuing a command.
 Capacity values are decimal percentages or unknown, never bytes, bandwidth, or weights.

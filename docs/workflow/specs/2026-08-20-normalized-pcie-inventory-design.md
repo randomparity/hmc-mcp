@@ -50,7 +50,7 @@ existence.
 
 | Item | Exact fields in order |
 |---|---|
-| `DedicatedSlot` | `system: str`, `drc_index: str`, `description: str | None`, `owner_lpar: str | None` |
+| `DedicatedSlot` | `system: str`, `drc_index: str`, `description: str | None`, `owner_lpar: str | None`, `availability: str | None` |
 | `SriovAdapter` | `system: str`, `adapter_id: str`, `mode: str | None`, `location_code: str | None`, `owner_lpar: str | None`, `logical_ports_in_use: int | None`, `logical_ports_available: int | None` |
 | `SriovPhysicalPort` | `system: str`, `adapter_id: str`, `physical_port_id: str`, `location_code: str | None`, `owner_lpar: str | None`, `minimum_capacity_granularity_percent: Decimal | None`, `logical_ports_in_use: int | None`, `logical_ports_available: int | None` |
 | `SriovLogicalPort` | `system: str`, `adapter_id: str`, `physical_port_id: str | None`, `logical_port_id: str`, `owner_lpar: str | None`, `owner_lpar_id: str | None`, `capacity_percent: Decimal | None`, `maximum_capacity_percent: Decimal | None`, `compatibility: str | None` |
@@ -58,12 +58,17 @@ existence.
 Issue #212 explicitly requires mode, availability, ownership, location, capacity, compatibility,
 and unknown-field categories in the stable result. The corresponding optional fields above name
 those requested categories; they do not claim an HMC read projection or a closed value vocabulary.
-ADR 0053 admits no rows from which to populate them today, so every one remains `None`. Populating
-one requires a version-labelled fixture and a reviewed schema revision. Stable identity is system
+ADR 0053 admits no SR-IOV rows from which to populate those category slots today, so every SR-IOV
+optional field remains `None`. Populating one requires a version-labelled fixture and a reviewed
+schema revision. Stable identity is system
 plus `adapter_id` for an adapter, adapter
 identity plus `physical_port_id` for a physical port, and adapter identity plus `logical_port_id`
 for a logical port; `physical_port_id` on the logical record preserves hierarchy but is not part of
 that identity.
+
+Dedicated-slot `availability` likewise remains `None`: ADR 0053 admits owner but no availability
+field, and an empty owner does not prove that a slot is assignable. Callers must not infer
+availability from `owner_lpar`.
 
 Operation signatures are:
 
@@ -99,7 +104,8 @@ at the collection level.
 ## Testing
 
 Focused tests first prove the fixed command, exact header, header-only result, missing optional
-fields, missing identity rejection, and lossless owner/identity normalization. Model tests pin
+fields, missing identity rejection, lossless owner/identity normalization, and the rule that both
+assigned and unassigned rows retain `availability is None`. Model tests pin
 every row in the `Schema` table, hierarchy selectors, `Decimal` percentage capacity, explicit
 unknowns, and serialization. Contract
 tests pin reusable API exports, MCP signatures/security metadata, CLI commands/JSON output, and the
