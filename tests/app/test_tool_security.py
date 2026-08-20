@@ -13,12 +13,13 @@ import asyncio
 from collections.abc import Iterator
 from dataclasses import dataclass, fields as dataclass_fields, is_dataclass
 from pathlib import Path
+from unittest.mock import patch
 from typing import get_args, get_type_hints
 
 import pytest
 from pydantic import BaseModel
 
-from hmc_mcp import server_command, server_permissions
+from hmc_mcp import server_command, server_permissions, server_vios, tool_registry
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
@@ -1387,11 +1388,19 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 # mutates only the resources its selectors declare, and constraining where the
 # payload comes from is a different control (ingress) this policy does not offer.
 #
-# The line against UNBOUNDED_ARGUMENTS is *which side* the named thing lives on.
-# `file_path` is a file on the **HMC's own** filesystem, so the policy is meant
-# to bound it and cannot — that makes its tool unbounded. Every name below is a
-# remote host or a source outside the HMC, which no `targets` table could reach
-# under any design, so refusing the tool would buy nothing.
+# The line against UNBOUNDED_ARGUMENTS is *not* which side the named thing lives
+# on. It is whether a `targets` table can bound the identity, which for an
+# HMC-side file reduces to ADR 0039's containment question: is the resource
+# reached from a declared selector, or not? `file_path` fails it because
+# `bkprofdata -f` and `rstprofdata -f` take an absolute console path the declared
+# `-m` system does not constrain — which is why the tool that only *reads* that
+# path is unbounded too, and why "the file is written" is not the rule.
+# `backup_name` on `hmc_restore_vios` passes it, and ADR 0044 records why; the
+# side of the filesystem decided neither case.
+#
+# Every name below is a remote host or a source outside the HMC, which no
+# `targets` table could reach under any design, so refusing the tool would buy
+# nothing.
 #
 # `iso_source` is the awkward one and is classified explicitly rather than left
 # out: with an http(s) scheme it is a remote URL like the rest, and with anything
@@ -1451,3 +1460,74 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
     # contradict the one UNBOUNDED_ARGUMENTS encodes: a name cannot both be
     # outside the dimension and be the reason a tool is refused by it.
     assert not (_PAYLOAD_SOURCE_ARGUMENTS & UNBOUNDED_ARGUMENTS)
+
+
+def test_every_unbounded_name_carries_its_reason_beside_the_set():
+    """G15: the list and the prose beside it cannot drift apart unnoticed.
+
+    #264 was that drift: the comment stated the line as which side of the HMC a
+    name lives on, while the set was maintained on ADR 0039's containment
+    question, and `backup_name` fell in the gap between them. A name added to the
+    set without a reason written beside it is how the next one happens, so this
+    fails the author rather than the reader.
+
+    `backup_name` is named too, although it is deliberately *not* a member: it is
+    the case that made the criterion explicit, and a comment that stopped
+    mentioning it would have lost the only worked example of a name on the
+    bounded side.
+    """
+    source = Path(tool_registry.__file__).read_text(encoding="utf-8")
+    head, _, _ = source.partition("UNBOUNDED_ARGUMENTS: frozenset")
+    comment = head[head.rindex("# Public argument names that carry the identity") :]
+
+    undocumented = sorted(name for name in UNBOUNDED_ARGUMENTS if f"`{name}`" not in comment)
+    assert not undocumented, (
+        f"these names are in UNBOUNDED_ARGUMENTS with no reason recorded beside "
+        f"the set: {undocumented}. Add the bullet saying what identity the name "
+        "carries and why no targets table can bound it."
+    )
+    assert "`backup_name`" in comment, (
+        "the UNBOUNDED_ARGUMENTS comment no longer explains why `backup_name` is "
+        "not a member; see ADR 0044."
+    )
+
+
+def test_backup_name_stays_bounded_only_while_the_catalog_guard_holds(monkeypatch):
+    """G15: `hmc_restore_vios`'s classification and its guard stand or fall together.
+
+    ADR 0044 keeps this tool bounded because `chviosbackup -id` selects the
+    catalog `-file` resolves in. `test_the_tools_a_targets_table_cannot_bound_are_exactly_these`
+    already pins the declaration; what nothing pinned is the refusal the
+    declaration depends on. Delete the guard and the classification becomes an
+    assumption about the HMC — so this asserts both, and reddens on either.
+
+    `asyncssh.connect` is patched to raise rather than mocked to succeed: if the
+    guard were removed, each call would fall through to the SSH layer, and this
+    makes that a loud failure here instead of a socket attempt from the suite.
+    """
+    assert TOOL_SECURITY["hmc_restore_vios"].exhaustive_targets
+    assert "backup_name" not in UNBOUNDED_ARGUMENTS
+
+    monkeypatch.setenv("HMC_HOST", "hmc.test")
+    monkeypatch.setenv("HMC_USER", "hscroot")
+    monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    vios_uuid = "00000000-0000-0000-0000-000000000003"
+    escapes = [
+        "",
+        "   ",
+        "../other/x.tar",
+        "/data/viosbackup/x.tar",
+        "a\\b.tar",
+        ".",
+        "..",
+        " .. ",
+        " backup.tar ",
+        "-operation",
+    ]
+
+    with patch(
+        "hmc_mcp.ssh.asyncssh.connect", side_effect=AssertionError("reached the SSH layer")
+    ):
+        for escape in escapes:
+            with pytest.raises(ValueError, match="backup_name"):
+                server_vios.hmc_restore_vios(vios_uuid, escape)
