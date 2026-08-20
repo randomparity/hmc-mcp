@@ -124,7 +124,7 @@ The written document is a single grant under the policy name `legacy-equivalent`
 - **`targets = "all-targets"`.** The only value that covers an omitted optional selector, and the
   only one that grants a tool no `targets` table can bound. That set is defined by a predicate
   rather than by a remembered figure: an ordinary tool — every tool but `hmc_run_command` — whose
-  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **26** of 129, of which 24
+  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **26** of 133, of which 24
   are reachable by the target check at all; the other two, `hmc_effective_permissions` and
   `hmc_list_configured_hosts`, declare no connection argument, so `authorized` never wraps them
   and the dimension cannot reach them (ADR 0038). The count is stated because it is useful and

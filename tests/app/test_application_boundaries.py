@@ -57,16 +57,16 @@ def test_create_mcp_returns_independent_complete_applications():
     from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
     # ADR 0041 made the policy mandatory. The legacy-equivalent one registers exactly
-    # the surface the no-argument call used to, so the 129 below is unchanged rather
-    # than adjusted to fit — G2 in tests/app/test_fail_closed_startup.py pins that.
+    # the surface the no-argument call used to. ADR 0054 adds four read-only normalized
+    # PCIe inventory tools, so the live total is 133.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 129
-    assert len(asyncio.run(second.list_tools())) == 129
+    assert len(asyncio.run(first.list_tools())) == 133
+    assert len(asyncio.run(second.list_tools())) == 133
 
 
 def test_operations_do_not_import_application_modules():

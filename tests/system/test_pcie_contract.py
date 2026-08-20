@@ -265,7 +265,7 @@ def _canonical_ast(value: object) -> object:
     return value
 
 
-def test_only_strict_parser_changes_production_module() -> None:
+def test_only_pcie_contract_readers_change_production_module() -> None:
     source = (ROOT / "src" / "hmc_mcp" / "ssh_commands.py").read_text()
     current = ast.parse(source)
     parser = next(
@@ -274,6 +274,13 @@ def test_only_strict_parser_changes_production_module() -> None:
         if isinstance(node, ast.FunctionDef) and node.name == "parse_hmc_delimited_rows"
     )
     current.body.remove(parser)
+    dedicated_reader = next(
+        node
+        for node in current.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "list_dedicated_pcie_slot_rows"
+    )
+    current.body.remove(dedicated_reader)
     canonical = json.dumps(_canonical_ast(current), separators=(",", ":"))
     baseline_digest = hashlib.sha256(canonical.encode()).hexdigest()
     assert (

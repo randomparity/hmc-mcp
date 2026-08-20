@@ -479,6 +479,21 @@ async def list_io_slots(
     return _parse_lshwres_output(output)
 
 
+async def list_dedicated_pcie_slot_rows(
+    config: HMCConfig,
+    system_name: str,
+) -> list[dict[str, str]]:
+    """Read the exact dedicated-slot projection admitted by ADR 0053."""
+    fields = ("drc_index", "description", "lpar_name")
+    projection = ",".join(fields)
+    command = (
+        f"lshwres -r io --rsubtype slot -m {shlex.quote(system_name)} "
+        f"-F {projection} --header"
+    )
+    output = await run_hmc_command(config, command)
+    return parse_hmc_delimited_rows(output, fields)
+
+
 async def list_fc_ports(
     config: HMCConfig,
     system_name: str,
