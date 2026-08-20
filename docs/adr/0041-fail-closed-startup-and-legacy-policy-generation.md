@@ -131,13 +131,22 @@ The written document is a single grant under the policy name `legacy-equivalent`
   pinned by `tests/unit/test_legacy_policy.py::test_the_recorded_unboundable_count_matches_the_registry`,
   which recomputes it from the live registry and reddens on this sentence when a tool is added.
 
-  ADR 0039 fixed the concept, not this number. It describes the same set as "the 17 selector-less
-  console tools, and eight more" and as "`hmc_remove_ldap_config` and the other 24 non-exhaustive
-  tools" — 25 either way, and never as "unboundable", so citing that word to it was
-  uncheckable. It is also 25 for a reason worth recording: the ADR 0039 file predates the
-  `exhaustive_targets` field it reasons about, so its figure was a forecast rather than a
-  measurement, and its own line 291 already disagrees with it at "all 19 selector-less tools".
-  This record derives the figure instead of inheriting it.
+  ADR 0039 gives the classification this predicate reads, and states a **different population**:
+  "The 17 selector-less console tools, and eight more, require their own grant" — **25**, and its
+  own §Context fixes what those 17 are, "17 with `target_kind = "console"` (including
+  `hmc_remove_ldap_config`, `destructive`, and `hmc_run_command`), plus the two
+  `connection_argument = None` tools the wrapper never wraps". So 25 counts the escape hatch in
+  and the connection-less pair out, which is right for ADR 0039's question — what a table-only
+  policy still registers and then denies. This record asks a different one: what the generated
+  grant has to cover. The two differ in both directions, and reconcile exactly:
+
+  **25** (ADR 0039) **− 1** `hmc_run_command`, which the generator never emits **+ 2**
+  `hmc_effective_permissions` and `hmc_list_configured_hosts`, which the generated policy grants
+  like any other ordinary tool **= 26**.
+
+  ADR 0039's figure is a measurement of its own set, not a stale count of this one, and its
+  "all 19 selector-less tools" elsewhere is a third population (the 17 plus that pair) rather than
+  a contradiction. Cite it for the classification; derive the count here.
 
 **The same generator composes the two scripts.** `scripts/smoke_mcp.py` and
 `scripts/live_test_runner.py` compile a legacy-equivalent policy in memory over

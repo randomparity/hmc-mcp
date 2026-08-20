@@ -340,6 +340,32 @@ def test_the_recorded_unboundable_count_matches_the_registry():
     assert int(recorded.group(2)) == len(ordinary)
     assert int(recorded.group(3)) == len(reachable)
 
+    # The reconciliation against ADR 0039's different population, pinned the same way.
+    # ADR 0039 counts the escape hatch in and the connection-less pair out; this record
+    # does the reverse, and the arithmetic that bridges them is in the ADR as prose. It
+    # is checked here so a reader who recomputes it cannot find it stale.
+    connectionless = {
+        name for name in unboundable if TOOL_SECURITY[name].connection_argument is None
+    }
+    bridge = re.search(
+        r"\*\*(\d+)\*\* \(ADR 0039\) \*\*− (\d+)\*\* `hmc_run_command`.*?"
+        r"\*\*\+ (\d+)\*\*.*?\*\*= (\d+)\*\*",
+        text,
+        flags=re.DOTALL,
+    )
+    assert bridge is not None, "ADR 0041 no longer states the ADR 0039 reconciliation"
+    adr39, minus, plus, total = (int(group) for group in bridge.groups())
+
+    assert minus == 1, "hmc_run_command is one tool"
+    assert plus == len(connectionless), (
+        f"ADR 0041 adds {plus} connection-less tools to ADR 0039's population; the "
+        f"registry has {len(connectionless)}: {sorted(connectionless)}"
+    )
+    # ADR 0039's own figure is immutable, so it is derived rather than trusted: its
+    # population is this one, minus the pair it excludes, plus the hatch it includes.
+    assert adr39 == len(unboundable) - len(connectionless) + 1
+    assert adr39 - minus + plus == total == len(unboundable)
+
 
 # ---------------------------------------------------------------------------
 # Inventory guard — see the module docstring
