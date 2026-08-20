@@ -119,12 +119,14 @@ aliases, available-capacity fields, or aggregation behavior across families.
 | Assign/unassign SR-IOV logical port | Add `<property>+=adapter_id=A:phys_port_id=P:capacity=C[:max_capacity=M]`; remove `<property>-=config_id=K`; `<property>` is exactly `sriov_eth_logical_ports` or `sriov_roce_logical_ports`; colon separates name/value properties, comma separates records, and omitted optional properties have no empty placeholders | `chsyscfg -r prof -m SYSTEM -i name=PROFILE,lpar_id=ID,<property>+=adapter_id=A:phys_port_id=P:capacity=C[:max_capacity=M]`; removal uses `<property>-=config_id=K`; read back `lssyscfg -r prof -m SYSTEM --filter "lpar_ids=ID,profile_names=PROFILE" -F <property>=config_id:adapter_id:phys_port_id:logical_port_id:capacity:max_capacity`; effective state remains unchanged until apply/activation | Add: `chhwres -r sriov -m SYSTEM --rsubtype logport -o a --id LPAR_ID -a adapter_id=A,phys_port_id=P,logical_port_type=TYPE,capacity=C[,max_capacity=M]`; remove uses `-o r --id LPAR_ID -a adapter_id=A,logical_port_id=L`; read back by adapter + logical-port ID | Any unavailable precondition or command failure is an error; do not mutate |
 | Switch adapter shared/dedicated mode | Not an LPAR create operation | System-scoped only after inventory proves dependent logical ports and owners absent | Shared: `chhwres -r sriov -m SYSTEM --rsubtype adapter -o a -a slot_id=DRC[,adapter_id=A]`; dedicated: same with `-o r -a slot_id=DRC`; read back `adapter_id,slot_id,config_state` and require the documented shared/dedicated value; never infer safety from one LPAR's state | Any unavailable inventory or command failure is an error; do not mutate |
 
-Before any operation, query `lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state`.
+Before any LPAR-targeted dedicated-slot or logical-port operation, query
+`lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state`.
 `Not Activated` selects profile-only behavior. `Running` selects a dynamic path only when
 `rmc_state=active`; no additional DLPAR-capability field is claimed. Every other state/value is
 unsupported for mutation. Before switching adapter
-mode, read adapter, physical-port, and logical-port inventory and require no logical-port row for
-the adapter and no dedicated-slot owner; missing or unknown inventory is an error. Profile
+mode, do not select behavior from any one LPAR's state. Read adapter, physical-port, logical-port,
+and dedicated-slot inventory and require no logical-port row for the adapter and no dedicated-slot
+owner; missing or unknown inventory is an error. Profile
 readback compares the selected property for the exact profile and LPAR ID. Effective readback
 compares the same stable inventory identity and owner after the command.
 
@@ -140,7 +142,8 @@ part of the ordinary contract; conflict override requires an explicit later poli
 
 ## Capability and error behavior
 
-Command success with no non-empty rows means `available` with an empty collection. This change
+Command success whose validated `--header` is followed by zero data rows means `available` with an
+empty collection. Successful output with no header or only blank content is malformed. This change
 admits no HMC error signature as proof of `capability-unavailable`: every non-success remains an
 error unless later version-labelled evidence supplies the exact command, exit status, diagnostic,
 and classifier test. Authentication, authorization, transport, timeout, malformed successful
@@ -159,10 +162,12 @@ Tests must prove:
    command and exact declared columns, while every `contract-evidence` has exact admitted claims;
 2. each resource's stable identity fields survive parsing, including empty owner attributes;
 3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
-4. malformed column counts, duplicate/blank fields, and invalid delimiters fail clearly;
+4. malformed column counts, duplicate/blank fields, invalid delimiters, and successful output
+   without a header fail clearly, while a validated header with no data is available-empty;
 5. the state matrix contains create-time, inactive, running, and capability-unavailable outcomes
    plus exact selectors, attributes, preconditions, and readbacks for dedicated slots, logical
-   ports, and adapter-mode transitions;
+   ports, and adapter-mode transitions, distinguishing LPAR state selection from adapter mode's
+   system-scoped inventory/owner preconditions;
 6. a diff-scoped no-mutation check confirms #211 adds no command execution, mutation function,
    effect metadata, server/CLI/API export, or parser-to-SSH call. The existing
    `set_sriov_adapter_mode` function is baseline, not a failure;

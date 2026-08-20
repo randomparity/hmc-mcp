@@ -162,17 +162,21 @@ mistaken for live capture; identities and units are executable assertions.
 1. Add characterization tests that read the already-reviewed spec and require all three operation
    rows, all four state columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic
    templates, profile record grammar, stable readback identities, error/no-fallback wording, and
-   the explicit disposition of the conflicting existing adapter-mode function to #214.
+   the explicit disposition of the conflicting existing adapter-mode function to #214. Assert
+   LPAR state selection applies only to LPAR-targeted operations, adapter mode uses system-scoped
+   inventory/owner preconditions, header-only success is available-empty, and blank success is
+   malformed.
 2. Add a repository-only structural no-mutation test. When Git metadata or `main` is unavailable,
    skip with `repository-only no-mutation guard requires Git metadata and main`; make no packaging
    claim. Otherwise reject changed or untracked production paths except
    `src/hmc_mcp/ssh_commands.py`; parse that file and `git show main:src/hmc_mcp/ssh_commands.py`
-   with `ast`; require the only new top-level definition to be `parse_hmc_delimited_rows` and the
-   only new imported names to be `csv` and `Sequence`; require no removed definition/import;
+   with `ast`; require the only new top-level definition to be `parse_hmc_delimited_rows`, no new
+   imported names because baseline already imports `csv` and `Sequence`, and no removed
+   definition/import;
    require the parser's call targets to be exactly the reviewed stdlib/builtin/method allowlist
-   (`tuple`, `any`, `len`, `set`, `csv.reader`, `list`, `enumerate`, `dict`, `zip`, `text.splitlines`,
-   `line.strip`, and `rows.append`). This excludes a new mutation helper, export, project-call alias,
-   or parser-to-SSH path structurally rather than by substring.
+   (`tuple`, `any`, `len`, `set`, `csv.reader`, `list`, `enumerate`, `dict`, `zip`,
+   `field.strip`, `text.splitlines`, `line.strip`, and `rows.append`). This excludes a new mutation
+   helper, export, project-call alias, or parser-to-SSH path structurally rather than by substring.
 3. Run the focused test; expect green against the reviewed spec. Temporarily add a call to the
    existing SSH executor inside the parser and confirm the AST guard fails, then restore and rerun
    green. Temporarily remove one required matrix token from the actual spec, confirm the
