@@ -552,11 +552,18 @@ def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys
     A ceiling of only ``hmc_run_command`` composes zero tools, so counting
     before the toggle would emit a false empty-surface line. Started with the
     flag, the served surface is exactly the escape hatch.
+
+    Since ADR 0043 the diagnostic lands on the sink's writer thread, so a test
+    that reads its content waits for it. Without the drain this asserts against
+    whatever happened to have been written by then, which on a loaded runner is
+    nothing at all.
     """
     import hmc_mcp.server as server_app
+    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(True, policy)
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == {"hmc_run_command"}
 
@@ -567,11 +574,16 @@ def test_the_serve_path_counts_after_the_toggle_and_writes_only_to_stderr(capsys
 
 
 def test_the_serve_path_warns_once_on_a_genuinely_empty_surface(capsys):
-    """R10a: the empty-surface line suppresses the withheld-inspection line."""
+    """R10a: the empty-surface line suppresses the withheld-inspection line.
+
+    Drained before reading for the reason the test above gives.
+    """
     import hmc_mcp.server as server_app
+    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
     application = server_app._serve_application(False, policy)
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == set()
 
