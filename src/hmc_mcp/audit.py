@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import queue
+import re
 import sys
 import threading
 from collections.abc import Callable
@@ -519,6 +520,61 @@ class _AuditHandler(logging.Handler):
         the bound is what keeps that from becoming the hang this sink removes.
         """
         _SINK.drain(_DRAIN_TIMEOUT)
+
+
+#: What a rendered line may not carry if this stream is to keep its shape. The C0
+#: controls — which carry ESC, and which ``str.splitlines`` treats as breaks even
+#: though ``split("\n")`` does not — plus DEL, the Unicode line and paragraph
+#: separators, and the bidirectional overrides. The same hazards
+#: ``json.dumps(..., ensure_ascii=True)`` neutralises for the record grammar,
+#: named directly rather than by escaping every non-ASCII character: a UTF-8 path
+#: in a traceback is worth keeping readable, an ESC is not worth keeping at all.
+_UNSAFE_IN_LINE: Final = re.compile(
+    r"[\x00-\x1f\x7f\u2028\u2029\u202a-\u202e\u2066-\u2069]"
+)
+
+
+def _as_escape(match: re.Match[str]) -> str:
+    return f"\\u{ord(match.group()):04x}"
+
+
+class StreamSafeFormatter(logging.Formatter):
+    """Render a foreign record so that no line of it can pass for a record.
+
+    ADR 0051 put a second kind of text on the stream ADR 0040 defined, and that
+    stream's grammar is one physical line of ASCII JSON per record. A rendered
+    exception carries whatever the exception's ``str()`` carries — under ADR 0042's
+    threat model, HMC-returned text that this package does not trust — so a
+    ``logging.Formatter`` alone would let a newline followed by ``{"event": …}``
+    land at column 0 and parse as an authorization record. Verified as a real
+    delta rather than assumed: through the ``RichHandler`` this replaces the same
+    text was indented into the message column and wrapped, so column 0 was
+    unreachable.
+
+    Two rules, both on **every physical line** of the rendering:
+
+    - a fixed *prefix* the caller supplies, which must not begin a JSON object, so
+      a reader splitting the stream into lines never sees a forged record;
+    - :data:`_UNSAFE_IN_LINE` replaced by its ``\\uXXXX`` escape, so a terminal
+      never sees a raw ESC and no separator this formatter did not write can
+      introduce a line.
+
+    The rendering stays one string, and therefore one queue item and one write:
+    the prefix bounds what a line can *say*, not how many writes it takes.
+    """
+
+    def __init__(self, fmt: str, prefix: str) -> None:
+        super().__init__(fmt)
+        self._prefix = prefix
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        return "\n".join(
+            self._prefix + _UNSAFE_IN_LINE.sub(_as_escape, line)
+            # `or [""]` so an empty rendering is still a marked line rather than a
+            # bare newline, which is the one shape the prefix would otherwise miss.
+            for line in (rendered.splitlines() or [""])
+        )
 
 
 def sink_handler() -> logging.Handler:

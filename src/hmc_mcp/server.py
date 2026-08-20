@@ -56,7 +56,12 @@ from ._app import (
     create_mcp as _create_base_mcp,
 )
 from .access_policy import AccessPolicy, unboundable_effect_tools
-from .audit import install_audit_sink, sink_handler, write_diagnostic
+from .audit import (
+    StreamSafeFormatter,
+    install_audit_sink,
+    sink_handler,
+    write_diagnostic,
+)
 from .connection_scope import ConnectionScopeError
 from .dispatch_scope import dispatch_authorizer
 from .target_scope import TargetScopeError
@@ -404,8 +409,9 @@ def _warn(lines: tuple[str, ...]) -> None:
 #: effect, the decision, the reason, the connection, and the targets, and this line
 #: exists to stop a denial *looking* like a crash, not to restate that record. Since
 #: ADR 0051 both go onto the same FIFO sink from the same call, so the record
-#: precedes this line on stderr; the text still names neither, because the ordering
-#: is the sink's property and not something this string should assert.
+#: normally precedes this line on stderr — normally, because a full queue drops one
+#: of the two and leaves the other. The text names neither, which is why that is a
+#: note here rather than a claim in the line itself.
 _DENIAL_LINE = (
     "authorization denied; the authorization audit record carries the decision"
 )
@@ -482,6 +488,16 @@ _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 #: bug keeps its traceback.
 _FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 
+#: What every physical line of a FastMCP rendering starts with. Its job is to be
+#: something a JSON object cannot start with: a rendered exception carries whatever
+#: the exception's ``str()`` carries, which under ADR 0042's threat model is
+#: HMC-returned text, and without this a newline followed by ``{"event": …}`` would
+#: land at column 0 of the audit stream and parse as a record. ``rich``'s wrapping
+#: made column 0 unreachable before ADR 0051; this is what replaces that accident
+#: with a rule. It also names the producer, which is worth something now that three
+#: of them share the stream.
+_FASTMCP_LINE_PREFIX: Final = "fastmcp: "
+
 
 def install_fastmcp_stderr_sink() -> None:
     """Put FastMCP's own stderr output on ADR 0043's bounded queue. ADR 0051.
@@ -506,12 +522,23 @@ def install_fastmcp_stderr_sink() -> None:
     handler an operator attached to ``fastmcp`` themselves — and it is what makes
     "no handler on this logger writes to fd 2" something a test asserts rather
     than infers. Removing and re-adding is what makes this idempotent: a second
-    call takes out the handler the first one left.
+    call takes out the handler the first one left. A removed handler is not
+    ``close()``d: it is no longer reachable through this logger, ``logging.shutdown``
+    flushes and closes it at exit anyway, and closing a handler this package did not
+    open would be a second liberty on top of removing it.
 
     **Only the handlers.** The logger's level, its ``propagate`` flag, and its
     filters are untouched — including ``_DenialFilter``, which sits on the child
     logger and solves a different problem: this handler decides *where* a record
-    goes, that filter decides *what* a denial record says.
+    goes, that filter decides *what* a denial record says. One thing the wholesale
+    removal takes with it in a test process is ``pytest``'s own
+    ``LogCaptureHandler``, so a test that serves and then asserts on a FastMCP
+    record through ``caplog`` would pass vacuously; nothing does today.
+
+    **The rendering is marked, not just formatted.** ``StreamSafeFormatter`` puts a
+    fixed non-JSON prefix on every physical line and escapes the control
+    characters, because a rendered exception carries HMC-returned text onto a
+    stream whose grammar is one line of JSON per record. See ADR 0051.
 
     **Called unconditionally**, including when ``settings.log_enabled`` is false
     and the removal loop finds nothing to remove. That case is the reason not to
@@ -524,7 +551,9 @@ def install_fastmcp_stderr_sink() -> None:
     for existing in logger.handlers[:]:
         logger.removeHandler(existing)
     handler = sink_handler()
-    handler.setFormatter(logging.Formatter(_FASTMCP_LINE_FORMAT))
+    handler.setFormatter(
+        StreamSafeFormatter(_FASTMCP_LINE_FORMAT, _FASTMCP_LINE_PREFIX)
+    )
     logger.addHandler(handler)
 
 

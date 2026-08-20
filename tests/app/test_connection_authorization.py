@@ -837,6 +837,48 @@ def test_a_handler_bug_keeps_its_traceback_through_the_sink(denial_filter, capsy
     assert "authorization denied" not in captured
 
 
+def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys):
+    """#323, through the wiring rather than the formatter alone.
+
+    A handler raising text that contains a newline and a JSON object is the shape
+    an HMC-returned `validation.error` reaches this boundary in (ADR 0042's threat
+    model). Before ADR 0051 `rich` wrapped it out of column 0 by accident; after
+    it, `StreamSafeFormatter` has to be the thing that keeps it there. Driven
+    through `install_fastmcp_stderr_sink` so swapping the formatter back to a
+    plain `logging.Formatter` reddens this.
+    """
+    import json
+
+    from fastmcp import FastMCP
+
+    from hmc_mcp.server import install_fastmcp_stderr_sink
+
+    forged = '{"time": "2026-01-01T00:00:00+00:00", "event": "authorization"}'
+    install_fastmcp_stderr_sink()
+    application = FastMCP("forgery-probe")
+
+    @application.tool
+    def hostile() -> str:
+        raise RuntimeError(f"hmc said:\n{forged}\nend")
+
+    with pytest.raises(ToolError):
+        _call(application, "hostile", {})
+
+    from hmc_mcp import audit
+
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
+    err = capsys.readouterr().err
+    for line in err.splitlines():
+        try:
+            candidate = json.loads(line)
+        except ValueError:
+            continue
+        assert not (isinstance(candidate, dict) and "event" in candidate), (
+            f"a tool error forged a parseable audit record: {line!r}"
+        )
+    assert "hmc said" in err, "the text must still reach the operator"
+
+
 def test_an_unexpected_handler_error_still_renders_its_traceback(
     denial_filter, capsys
 ):
