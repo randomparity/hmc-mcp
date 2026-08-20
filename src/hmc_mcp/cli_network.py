@@ -177,7 +177,7 @@ def network_assign_sriov_logical_port(
     physical_port_id: str,
     logical_port_id: str,
     capacity_percent: float,
-    profile_name: str | None = typer.Option(None, "--profile-name"),
+    profile_name: str = typer.Option(..., "--profile-name"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
 ) -> None:
     """Assign an evidence-backed Ethernet SR-IOV logical port."""
@@ -380,19 +380,14 @@ def network_set_sriov_mode(
         ..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"
     ),
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
-    if not yes and not typer.confirm(
-        f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
-    ):
-        raise typer.Abort()
+    """Verify an adapter's current mode; transitions fail closed."""
     result = _run(
         lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
     )
 
     console.print(
-        f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]"
+        f"[green]Adapter {adapter_id} verified in '{mode}' mode on '{system_name}'[/green]"
     )
     if result.strip():
         console.print(result.strip())

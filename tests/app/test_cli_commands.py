@@ -2269,7 +2269,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ("chsyscfg", "name=lpar1", "lpar_proc_compat_mode=POWER10"),
         ),
         (
-            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov", "--yes"],
+            ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
         (
@@ -2981,7 +2981,7 @@ def test_metrics_set_prefs_no_flags_exits_2(fake_hmc):
 def test_network_set_sriov_mode_rejects_invalid_mode(fake_hmc):
     result = RUNNER.invoke(
         cli.app,
-        ["network", "set-sriov-mode", "system-1", "adapter-1", "invalid", "--yes"],
+        ["network", "set-sriov-mode", "system-1", "adapter-1", "invalid"],
     )
 
     assert result.exit_code == 2

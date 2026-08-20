@@ -518,6 +518,20 @@ async def list_sriov_adapter_rows(
     return _parse_admitted_rows(await run_hmc_command(config, command), fields)
 
 
+async def read_sriov_environment(
+    config: HMCConfig, system_name: str
+) -> tuple[str, str]:
+    """Return the exact HMC release and managed-system model admission inputs."""
+    version = (await run_hmc_command(config, "lshmc -V")).strip()
+    model = (
+        await run_hmc_command(
+            config,
+            f"lssyscfg -r sys -m {shlex.quote(system_name)} -F type_model",
+        )
+    ).strip()
+    return version, model
+
+
 async def list_sriov_physical_port_rows(
     config: HMCConfig, system_name: str, adapter_id: str
 ) -> list[dict[str, str]]:

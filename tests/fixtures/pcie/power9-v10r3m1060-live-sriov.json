@@ -18,6 +18,38 @@
       "stderr": ""
     },
     {
+      "name": "physical-ports",
+      "command": "lshwres -r sriov --rsubtype physport -m system-a --level roce --filter adapter_ids=1 -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports --header",
+      "fields": ["adapter_id", "phys_port_id", "phys_port_type", "phys_port_loc", "state", "config_logical_ports", "phys_port_max_logical_ports", "curr_eth_logical_ports"],
+      "exit_status": 0,
+      "stdout": "adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports\n1,0,eth,U<location-a>-P1-C4-T1,1,1,60,1\n1,1,eth,U<location-a>-P1-C4-T2,1,0,60,0\n",
+      "stderr": ""
+    },
+    {
+      "name": "effective-logical-ports-before",
+      "command": "lshwres -r sriov --rsubtype logport -m system-a --level eth --filter adapter_ids=1 -F config_id,lpar_name,lpar_id,lpar_state,adapter_id,logical_port_id,logical_port_type,phys_port_id,functional_state,capacity,max_capacity --header",
+      "fields": ["config_id", "lpar_name", "lpar_id", "lpar_state", "adapter_id", "logical_port_id", "logical_port_type", "phys_port_id", "functional_state", "capacity", "max_capacity"],
+      "exit_status": 0,
+      "stdout": "config_id,lpar_name,lpar_id,lpar_state,adapter_id,logical_port_id,logical_port_type,phys_port_id,functional_state,capacity,max_capacity\n0,lpar-b,2,Running,1,27004001,eth,0,1,100.0,100.0\n",
+      "stderr": ""
+    },
+    {
+      "name": "lpar-state",
+      "command": "lssyscfg -r lpar -m system-a --filter lpar_names=lpar-c -F name,lpar_id,state,rmc_state --header",
+      "fields": ["name", "lpar_id", "state", "rmc_state"],
+      "exit_status": 0,
+      "stdout": "name,lpar_id,state,rmc_state\nlpar-c,3,Not Activated,inactive\n",
+      "stderr": ""
+    },
+    {
+      "name": "profile-before",
+      "command": "lssyscfg -r prof -m system-a --filter lpar_names=lpar-c,profile_names=default_profile -F name,sriov_eth_logical_ports --header",
+      "fields": ["name", "sriov_eth_logical_ports"],
+      "exit_status": 0,
+      "stdout": "name,sriov_eth_logical_ports\ndefault_profile,none\n",
+      "stderr": ""
+    },
+    {
       "name": "dynamic-assign",
       "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-c -a adapter_id=1,phys_port_id=1,logical_port_id=27004002,logical_port_type=eth,capacity=2.0",
       "fields": [],
@@ -31,6 +63,30 @@
       "fields": [],
       "exit_status": 1,
       "stdout": "HSCL127D: HSCL1288 logical port 27004002 is already assigned to the partition.",
+      "stderr": ""
+    },
+    {
+      "name": "foreign-owner-silent-reassignment",
+      "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-vios -a adapter_id=1,phys_port_id=1,logical_port_id=27004002,logical_port_type=eth,capacity=2.0",
+      "fields": [],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "capacity-below-minimum",
+      "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-c -a adapter_id=1,phys_port_id=0,logical_port_id=27004003,logical_port_type=eth,capacity=0.5",
+      "fields": [],
+      "exit_status": 1,
+      "stdout": "HSCL127D: HSCL1295 capacity 0.5 is outside the valid range 1.0 to 100.0.",
+      "stderr": ""
+    },
+    {
+      "name": "capacity-exhausted",
+      "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-c -a adapter_id=1,phys_port_id=0,logical_port_id=27004003,logical_port_type=eth,capacity=1.0",
+      "fields": [],
+      "exit_status": 1,
+      "stdout": "HSCL127D: HSCL1293 total capacity would exceed 100.0; current capacity is 100.0.",
       "stderr": ""
     },
     {

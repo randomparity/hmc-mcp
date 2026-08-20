@@ -240,11 +240,7 @@ def hmc_set_sriov_adapter_mode(
     mode: SriovMode,
     profile: str | None = None,
 ) -> str:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
-
-    Runs ``chhwres -r sriov -m <system_name> -o s --id <adapter_id>
-    -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
-    command output.
+    """Verify that a physical adapter is already in the requested mode.
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
@@ -257,8 +253,8 @@ def hmc_set_sriov_adapter_mode(
       - ``"sriov"``      — enable SR-IOV mode (shared virtual functions)
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
-    WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
+    Mode transitions are not admitted by the available same-family evidence and
+    fail closed without mutation.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -282,7 +278,7 @@ def hmc_assign_sriov_logical_port(
     physical_port_id: str,
     logical_port_id: str,
     capacity_percent: float,
-    profile_name: str | None = None,
+    profile_name: str,
     ownership_override: bool = False,
     profile: str | None = None,
 ) -> dict[str, Any]:
@@ -295,7 +291,7 @@ def hmc_assign_sriov_logical_port(
         physical_port_id: Normalized parent physical-port ID.
         logical_port_id: Normalized unconfigured logical-port ID.
         capacity_percent: Requested percentage capacity from 1 through 100.
-        profile_name: Optional profile whose unchanged state is also verified.
+        profile_name: Exact profile whose unchanged state is verified.
         ownership_override: Permit a separately approved ADR 0011 ownership override.
         profile: TOML connection profile name.
     """
