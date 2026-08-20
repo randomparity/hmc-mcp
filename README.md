@@ -467,11 +467,16 @@ Four rules explain why:
   filesystem, three adapter tools take a VIOS *partition ID* (a slot number
   reused on every system in the fleet), and the two job tools accept a
   `job_href` whose path replaces the job UUID outright. Each of those needs a
-  grant whose targets are `"all-targets"`. `hmc_effective_permissions` reports
-  `exhaustive_targets: false` for every one of them. Naming such a tool in a
-  grant's `tools` beside a table is refused at startup — except
-  `hmc_effective_permissions` and `hmc_list_configured_hosts`, which open no HMC
-  connection and so are never reached by this check at all.
+  grant whose targets are `"all-targets"`. So do `hmc_effective_permissions` and
+  `hmc_list_configured_hosts`, which read local state rather than an HMC and so
+  have nothing a table could bind either. `hmc_effective_permissions` reports
+  `exhaustive_targets: false` for every one of them. Naming any such tool in a
+  grant's `tools` beside a table is refused at startup, with no exceptions.
+
+  **A table-only policy therefore denies `hmc_effective_permissions` itself**, so
+  a client has no way to ask the server what it may do. Give it the second grant
+  above — that is what the `effects = ["read"]` / `"all-targets"` grant in the
+  example is for — or expect the startup warning naming it.
 - **An LPAR name is unique within a system, not across the fleet.** For the
   tools that also take a `system_name_or_uuid` the rule above pins it. For those
   that do not — and for the migration tools, which name only the *destination*
@@ -491,6 +496,7 @@ JSON-RPC channel, and nothing inside the process can detect that.
 | The served surface has no tools | The policy withholds everything reachable; nothing the server is asked to do will succeed. Suppresses the next line. |
 | The policy withholds `hmc_effective_permissions` | The server cannot report its own permissions to a client. Any policy that neither grants the `read` effect class nor names the tool in a grant's `tools` causes this. |
 | `--enable-arbitrary-command` was passed but the policy does not grant `hmc_run_command` | The flag and the ceiling compose conjunctively, so the escape hatch is not exposed. Name it in a grant's `tools` to allow it. |
+| A grant's `targets` table cannot bind some of the tools it reaches | One line per such grant, naming them. Those tools are registered and advertised, and every call to them is denied — a table cannot bound them, so only an `"all-targets"` grant reaches them. Watch for `hmc_effective_permissions` in the list: when it is there, the server cannot report its own permissions even though the policy grants the tool. |
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
 > exposes enabled tools — including user administration — to anyone who can reach the

@@ -19,15 +19,19 @@ ownership check inside the handler, which runs whether or not a policy is select
 on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
 still produce those, and only those.
 
-Three other things produce no record, by design:
+Two other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
   reaches the boundary;
-- `tools/list`, which discloses the whole ceiling in one call;
-- `hmc_list_configured_hosts` and `hmc_effective_permissions`, which declare no
-  connection argument. The second is worth knowing about: it returns the policy's name
-  and source and every grant's constraints, so the most informative read the server
-  offers is one it does not record.
+- `tools/list`, which discloses the whole ceiling in one call.
+
+`hmc_list_configured_hosts` and `hmc_effective_permissions` declare no connection
+argument and used to be a third case. They are recorded now: the target dimension
+decides for them, so a `targets` table denies both with reason `target-unboundable`
+and an `"all-targets"` grant permits them. Their `connection` object reads
+`"state": "absent"` with a **null** `"resolved"`, which is what distinguishes a tool
+with no connection argument from a caller who omitted `profile` — the latter resolves
+to `"<default>"`.
 
 **An empty audit stream is therefore not evidence that nothing was attempted.**
 
