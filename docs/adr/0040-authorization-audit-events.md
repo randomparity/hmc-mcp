@@ -428,6 +428,11 @@ out-of-band. This sits in Residuals rather than Consequences because, unlike the
 or `connection.resolved`, it describes a gap a later change could close (a drop counter, a health
 signal) rather than a choice already made here.
 
+> **Narrowed by [ADR 0043](0043-non-blocking-stderr-diagnostics.md)** (2026-08-19). The sink counts
+> every dropped line and emits a `records-dropped` record carrying the count ahead of the next line
+> it *successfully* writes. Counting is unconditional; reporting needs a destination that accepts a
+> write again, so a stream that never recovers still loses silently.
+
 **An undrained stderr blocks the write, and therefore the call.** The handler's guards cover a
 destination that raises. They do not cover one that is open, healthy, and not being read: under
 the stdio transport the client usually owns fd 2 as a pipe, and a full pipe makes `write()` block
@@ -439,6 +444,11 @@ deliberately. The remedies are a bounded queue or a non-blocking descriptor, bot
 machinery with their own failure modes and neither of which #218 asks for, so this ships as
 option one: the deployment keeps fd 2 drained. Filed as #269 so the other two are decided rather
 than never considered.
+
+> **Closed by [ADR 0043](0043-non-blocking-stderr-diagnostics.md)** (2026-08-19). The bounded queue
+> was chosen and `server._warn` moved onto it, so no stderr write remains on the dispatch path or
+> the start path. Delivery is now asynchronous and droppable-with-a-count; ADR 0043 states that
+> trade. Everything else in this record still governs.
 
 **Retention, integrity, and export are the deployment's.** The record is written to a process
 logging sink and is neither persisted, sequenced, nor signed. #218's open questions already place

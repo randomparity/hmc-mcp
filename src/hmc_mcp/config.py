@@ -211,6 +211,82 @@ def config_dir() -> Path:
     return base / "hmc-mcp"
 
 
+def _selected_config_path(config_path: Path | None) -> Path | None:
+    """Return *config_path*, or the platform-native path when it is None.
+
+    Raises ConfigError when the platform-native path cannot be resolved:
+    :func:`resolve_config_path` reaches ``Path.home()``, which raises
+    RuntimeError under a uid with no passwd entry and no HOME — a container or a
+    systemd unit. ``access_policy.load_access_policy`` guards the same case.
+    """
+    if config_path is not None:
+        return config_path
+    try:
+        return resolve_config_path()
+    except (RuntimeError, ValueError) as exc:
+        raise ConfigError(f"cannot resolve the config path: {exc}") from exc
+
+
+def _read_config_document(path: Path) -> dict[str, Any]:
+    """Read and parse *path*, converting every failure into a ConfigError.
+
+    Returns ``{}`` when the file is absent: an absent config file is an empty
+    configuration everywhere it is read. There is deliberately no ``exists()``
+    pre-check — that is a TOCTOU, and the absent case is the FileNotFoundError
+    arm below.
+
+    Every other failure is a ConfigError naming *path*, so the callers that
+    document ConfigError as their failure type tell the truth and a
+    ``try/except ConfigError`` around one of them actually catches. This is the
+    single read-and-parse for config.toml; see
+    ``access_policy.load_access_policy`` for the same conversion over the
+    access-policy file.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        # A directory at the path or an unreadable mode lands in OSError;
+        # ValueError covers an unusable path string, such as an embedded null
+        # byte, which read_text raises before it reaches the filesystem.
+        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    except RecursionError as exc:
+        # tomllib recurses on nested arrays and inline tables, so a deeply nested
+        # document exhausts the stack before it can report a syntax error. A
+        # RecursionError carries no message, hence the fixed clause.
+        raise ConfigError(
+            f"{path}: TOML parse error: document nesting is too deep"
+        ) from exc
+
+
+def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
+    """Validate and return the ``profiles`` table as ``dict[str, Any]``.
+
+    ``raw`` is the parsed value of the top-level ``profiles`` key (or None when
+    absent). Mirrors :func:`_coerce_nicknames` for the other half of profile
+    selection: without it ``doc.get("profiles", {}).keys()`` raises an
+    AttributeError from the middle of a dict access when the key is not a table,
+    and ``name not in profiles`` quietly degrades into a substring test.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"{path}: 'profiles' must be a table of profile name to settings, "
+            f"got {type(raw).__name__}"
+        )
+    # TOML keys are always strings; str() states that for the type checker, which
+    # sees only the untyped mapping the isinstance check above narrowed to.
+    return {str(name): entry for name, entry in raw.items()}
+
+
 def list_profiles_with_default(
     config_path: Path | None = None,
 ) -> tuple[list[str], str | None]:
@@ -218,33 +294,25 @@ def list_profiles_with_default(
 
     Never resolves secrets — safe for diagnostics.
     Returns ([], None) when the file is absent or path is None.
-    Raises ConfigError on TOML parse errors.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
+    path = _selected_config_path(config_path)
+    if path is None:
         return [], None
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    names = list(doc.get("profiles", {}).keys())
-    default = doc.get("default_profile")
-    return names, default
+    doc = _read_config_document(path)
+    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
+        "default_profile"
+    )
 
 
 def list_profiles(config_path: Path | None = None) -> list[str]:
     """Return profile names from the config file; empty list when absent.
 
     Never resolves secrets — safe for tab-completion and diagnostics.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
-        return []
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    return list(doc.get("profiles", {}).keys())
+    return list_profiles_with_default(config_path=config_path)[0]
+
 
 def _coerce_nicknames(raw: Any, path: str | Path | None) -> dict[str, str]:
     """Validate and return the ``nicknames`` table as ``dict[str, str]``.
@@ -275,16 +343,12 @@ def list_nicknames(config_path: Path | None = None) -> dict[str, str]:
 
     Never resolves secrets - safe for diagnostics and display.
     Returns ``{}`` when the file is absent or path is None.
-    Raises ConfigError on TOML parse errors or a malformed nicknames table.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
+    path = _selected_config_path(config_path)
+    if path is None:
         return {}
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    return _coerce_nicknames(doc.get("nicknames"), path)
+    return _coerce_nicknames(_read_config_document(path).get("nicknames"), path)
 
 
 def list_profiles_and_nicknames(
@@ -304,44 +368,11 @@ def list_profiles_and_nicknames(
     arrive as one recognizable type rather than as an OSError or an
     AttributeError from the middle of a dict access.
     """
-    try:
-        path = config_path if config_path is not None else resolve_config_path()
-    except (RuntimeError, ValueError) as exc:
-        # resolve_config_path() reaches Path.home(), which raises RuntimeError
-        # under a uid with no passwd entry and no HOME — a container or systemd
-        # unit. access_policy.load_access_policy guards the same case.
-        raise ConfigError(f"cannot resolve the config path: {exc}") from exc
-    if path is None or not path.exists():
+    path = _selected_config_path(config_path)
+    if path is None:
         return [], {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
-    except OSError as exc:
-        # The exists() check above is a TOCTOU, and a directory or an unreadable
-        # mode lands here.
-        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
-    try:
-        doc = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    except RecursionError as exc:
-        # tomllib recurses on nested arrays and inline tables, so a deeply nested
-        # document exhausts the stack before it can report a syntax error. A
-        # RecursionError carries no message, hence the fixed clause. Same guard
-        # as load_access_policy, for the same call.
-        raise ConfigError(
-            f"{path}: TOML parse error: document nesting is too deep"
-        ) from exc
-    profiles = doc.get("profiles", {})
-    if not isinstance(profiles, dict):
-        raise ConfigError(
-            f"{path}: 'profiles' must be a table of profile name to settings, "
-            f"got {type(profiles).__name__}"
-        )
-    # TOML keys are always strings; str() states that for the type checker, which
-    # sees only the untyped mapping the isinstance check above narrowed to.
-    return [str(name) for name in profiles], _coerce_nicknames(
+    doc = _read_config_document(path)
+    return list(_coerce_profiles(doc.get("profiles"), path)), _coerce_nicknames(
         doc.get("nicknames"), path
     )
 
@@ -371,22 +402,17 @@ def load_profile(
         HMCConfig populated from the selected profile with env-var overrides.
 
     Raises:
-        ConfigError: When the file cannot be parsed, no profile is selected,
-            the selected profile is absent, or secret config is invalid.
+        ConfigError: When the file cannot be read, decoded, or parsed, when a
+            table it needs is malformed, when no profile is selected, when the
+            selected profile is absent, or when secret config is invalid.
     """
-    path = config_path if config_path is not None else resolve_config_path()
+    path = _selected_config_path(config_path)
 
     # Determine selected profile name
     name = profile or os.environ.get("HMC_PROFILE")
-    doc: dict[str, Any] = {}
-
-    if path is not None and path.exists():
-        try:
-            doc = tomllib.loads(path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-        if name is None:
-            name = doc.get("default_profile")
+    doc: dict[str, Any] = {} if path is None else _read_config_document(path)
+    if name is None:
+        name = doc.get("default_profile")
 
     if name is None:
         raise ConfigError(
@@ -394,7 +420,7 @@ def load_profile(
             "--profile / HMC_PROFILE supplied"
         )
 
-    profiles = doc.get("profiles", {})
+    profiles = _coerce_profiles(doc.get("profiles"), path)
 
     # Validate the nicknames table structure whenever the key is
     # present, so a malformed table is a ConfigError regardless of
@@ -427,7 +453,15 @@ def load_profile(
                 f"available nicknames: {nickname_names}"
               )
 
-    entry = dict(profiles[name])
+    selected = profiles[name]
+    if not isinstance(selected, dict):
+        # Without this, dict() on a non-table raises a bare ValueError whose
+        # message is about update sequences, not about the config file.
+        raise ConfigError(
+            f"{path}: profile {name!r} must be a table of settings, "
+            f"got {type(selected).__name__}"
+        )
+    entry = dict(selected)
 
     # Validate and resolve secret fields
     if "password" in entry and "password_env" in entry:

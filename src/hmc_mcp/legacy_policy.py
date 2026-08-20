@@ -148,12 +148,12 @@ def legacy_tools(
 def legacy_connections() -> tuple[str, ...]:
     """The default connection, then every configured profile key.
 
-    Read through ``list_profiles_and_nicknames`` rather than ``list_profiles``: only the
-    former converts every failure into a ``ConfigError`` — an unresolvable home, an
-    unreadable or non-UTF-8 or unparseable file, a malformed table — and a generator that
-    swallowed one would write a policy granting less than it claims. The nicknames half is
-    discarded: ADR 0030 resolves an alias to its target before ADR 0038 compares it, so a
-    granted nickname could never match.
+    Read through ``list_profiles_and_nicknames`` for its single read: every reader now
+    converts every failure into a ``ConfigError`` — an unresolvable home, an unreadable or
+    non-UTF-8 or unparseable file, a malformed table — and a generator that swallowed one
+    would write a policy granting less than it claims. The nicknames half is discarded:
+    ADR 0030 resolves an alias to its target before ADR 0038 compares it, so a granted
+    nickname could never match.
 
     ``DEFAULT_CONNECTION_TOKEN`` is always present — under ``HMC_HOST`` every token
     collapses to it, and an omitted ``profile`` argument means it — and is filtered out of

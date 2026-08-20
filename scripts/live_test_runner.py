@@ -38,6 +38,7 @@ from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
+from hmc_mcp.ssh_commands import validate_lpar_description
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
@@ -1042,6 +1043,23 @@ async def mutate_virtual_networking(client: Client, state: RunState) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _unrestorable_description(text: str) -> str | None:
+    """Return why *text* cannot be written back, or ``None`` when it can.
+
+    Defers to the server's own validator rather than restating its rules, so a
+    baseline description the CLI cannot round-trip (non-ASCII, a control
+    character, or a character the HMC's ``-i`` attribute record treats as
+    structure — ADR 0045) is skipped rather than failing the restore.
+    """
+    if not text:
+        return None
+    try:
+        validate_lpar_description(text)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
 async def mutate_lpar_properties(client: Client, state: RunState) -> None:
     context = state.context
     print("\n=== ST10: LPAR Properties Mutations ===")
@@ -1069,18 +1087,15 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
     )
     record(state, 10, "hmc_get_lpar_description (verify)", st, data)
 
-    # Restore only if the original description is printable ASCII (non-ASCII
-    # descriptions cannot be round-tripped through the CLI set command).
+    # Restore only if the original description can survive the CLI set command.
     _restore_desc = str(orig_desc) if orig_desc else ""
-    if _restore_desc and (
-        not _restore_desc.isascii()
-        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in _restore_desc)
-    ):
+    _blocked = _unrestorable_description(_restore_desc)
+    if _blocked:
         skip(
             state,
             10,
             "hmc_set_lpar_description (restore)",
-            "original description contains non-ASCII/non-printable chars — cannot restore via CLI",
+            f"original description cannot be restored via CLI: {_blocked}",
         )
     else:
         st, data = await call(
@@ -1755,20 +1770,18 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
 
     baseline = context.lp3_baseline
 
-    # Restore description — only if original was printable ASCII (same guard as ST10)
+    # Restore description — only if the original survives the CLI (same guard as ST10)
     orig_desc = baseline.get("description", "")
     if isinstance(orig_desc, dict):
         orig_desc = orig_desc.get("description") or ""
     _restore_desc = str(orig_desc) if orig_desc else ""
-    if _restore_desc and (
-        not _restore_desc.isascii()
-        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in _restore_desc)
-    ):
+    _blocked = _unrestorable_description(_restore_desc)
+    if _blocked:
         skip(
             state,
             15,
             "hmc_set_lpar_description (restore)",
-            "original description contains non-ASCII/non-printable chars — cannot restore via CLI",
+            f"original description cannot be restored via CLI: {_blocked}",
         )
     else:
         st, data = await call(

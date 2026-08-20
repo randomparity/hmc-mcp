@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,8 @@ from .access_policy import AccessPolicyError
 from .cli_app import _fail, _policy_file, config_app, console, err_console
 from .config import (
     ConfigError,
+    _coerce_profiles,
+    _read_config_document,
     config_dir,
     list_nicknames,
     list_profiles_with_default,
@@ -157,16 +158,18 @@ def config_show(
     # Read the raw TOML dict to determine credential presence WITHOUT
     # resolving password_env (load_profile() resolves it, which requires
     # the env var to be present — a production secret may not be set locally).
+    # Through config's one read-and-parse, so an unreadable, non-UTF-8, or
+    # malformed file reaches _fail as a ConfigError rather than a traceback.
     try:
-        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        _fail(ConfigError(f"{config_path}: TOML parse error: {exc}"))
+        raw = _read_config_document(config_path)
+        profiles_raw = _coerce_profiles(raw.get("profiles"), config_path)
+    except ConfigError as exc:
+        _fail(exc)
 
     # When effective_profile is None, load_profile() uses default_profile.
     # Resolve the same name here so the raw dict lookup and the display agree
     # with load_profile(), and surface a nickname resolution transparently.
     requested = effective_profile or raw.get("default_profile")
-    profiles_raw = raw.get("profiles", {})
 
     try:
         nicknames = list_nicknames(config_path=config_path)

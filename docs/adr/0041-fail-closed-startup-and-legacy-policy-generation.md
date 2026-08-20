@@ -207,6 +207,12 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   no environment variable — so an operator meeting a non-draining client can neither reduce
   record volume nor redirect it. #267 (a routine denial renders a traceback) is on every
   deployment's path for the same reason.
+
+  > **Superseded in part by [ADR 0043](0043-non-blocking-stderr-diagnostics.md)**
+  > (2026-08-19). "Something must drain fd 2" is no longer a precondition of the default: the
+  > sink writes from a bounded queue on its own thread, so a non-draining client costs records
+  > — counted and reported — rather than the server's liveness. The rest of this residual
+  > stands, including the #270 lever and #267.
 - **The generator is the onboarding path for fresh installs too, and its output is the widest
   policy this system expresses.** A first run reaches the same refusal an upgrade does, and
   `legacy-equivalent` names a history a new deployment does not have: 129 tools including every
