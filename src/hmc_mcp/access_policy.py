@@ -346,16 +346,12 @@ def _compile_grant(
                     f"{where}: no granted tool declares a target selector of kind "
                     f"{kind!r}, so the constraint could never match"
                 )
+        # Named tools only, unchanged: naming tool X beside a table it cannot
+        # bound makes the grant dead for X, which for a named tool is the whole
+        # point of the grant, so it is refused outright.
         for tool in model.tools:
             security = tool_security[tool]
             if security.connection_argument is None:
-                # Never wrapped by `tool_registry.authorized`, so no authorizer
-                # ever runs on it and the target dimension structurally cannot
-                # reach it. A grant naming it beside a table is bounded by the
-                # ceiling alone — which is exactly how it behaved before ADR 0039
-                # — so it is not dead and must not fail the load. Failing here
-                # would refuse to start a server over a working grant, and would
-                # do it for `hmc_effective_permissions` in particular.
                 continue
             if not security.exhaustive_targets:
                 raise AccessPolicyError(
@@ -375,6 +371,31 @@ def _compile_grant(
                         f"kind {selector.kind!r}; add it to targets or use "
                         f'targets = "{ALL_TARGETS_TOKEN}"'
                     )
+
+        # #279: an effect class can resolve to tools a table cannot bound too, and
+        # the same refusal applies when *none* of what it resolves to can ever be
+        # authorized under the table — the true analogue of the named-tool case
+        # above, where the one tool named is the whole grant. A *mixed* resolved
+        # set — some bindable, some not, the common case since every effect class
+        # currently carries at least one non-exhaustive tool — is deliberately not
+        # refused here: doing so would discard every working grant reaching a
+        # bindable majority to diagnose an unreachable minority. That minority is
+        # still surfaced, at startup rather than at load, by
+        # `unboundable_effect_tools` below, which a compiled grant retains enough
+        # information for even though refusal here would have prevented it from
+        # compiling at all.
+        connection_bound = sorted(
+            tool for tool in resolved if tool_security[tool].connection_argument
+        )
+        unbound = [
+            tool for tool in connection_bound if not tool_security[tool].exhaustive_targets
+        ]
+        if connection_bound and unbound == connection_bound:
+            raise AccessPolicyError(
+                f"{where}: tool {unbound[0]!r} has no target selector that a "
+                "targets table can bound, so this grant could never authorize it; "
+                f'grant it under targets = "{ALL_TARGETS_TOKEN}" instead'
+            )
 
     connections: frozenset[str | None] = frozenset(
         None if name == DEFAULT_CONNECTION_TOKEN else name
@@ -432,6 +453,47 @@ def compile_access_policy(
 
     tools: frozenset[str] = frozenset().union(*(grant.tools for grant in grants))
     return AccessPolicy(name=name, source=source, grants=grants, tools=tools)
+
+
+def unboundable_effect_tools(
+    policy: AccessPolicy, tool_security: Mapping[str, ToolSecurity]
+) -> tuple[str, ...]:
+    """One diagnostic line per grant whose table cannot bind part of its reach.
+
+    #279: ``_compile_grant`` refuses a grant outright only when its table could
+    never authorize *anything* it reaches (every connection-bound tool
+    non-exhaustive) — a *mixed* grant, reaching some tools the table binds and
+    some it cannot, still loads, because refusing it would discard the working
+    majority to diagnose an unreachable minority. This is that minority's
+    diagnostic: the tools this policy grants that a dispatch will deny on every
+    call, regardless of argument, under the ``target-unboundable`` reason
+    (``target_scope.py``) — named here so an operator learns it once, at
+    startup, rather than one denial at a time.
+
+    Read from the already-compiled policy rather than computed inside
+    ``_compile_grant``: the two questions ("does this rule out the whole
+    grant" and "what does this leave permanently unreachable") are independent,
+    and answering the second does not require re-deriving the resolved set.
+    """
+    lines: list[str] = []
+    for index, grant in enumerate(policy.grants):
+        if isinstance(grant.targets, AllTargets):
+            continue
+        unbound = sorted(
+            tool
+            for tool in grant.tools
+            if tool_security[tool].connection_argument
+            and not tool_security[tool].exhaustive_targets
+        )
+        if unbound:
+            names = ", ".join(repr(tool) for tool in unbound)
+            lines.append(
+                f"policy {policy.name!r}: grant {index}: a targets table cannot "
+                f"bind {names}; calls to them will always be denied. Grant them "
+                f'under targets = "{ALL_TARGETS_TOKEN}" instead, or remove them '
+                "from this grant."
+            )
+    return tuple(lines)
 
 
 def resolve_access_policy_path() -> Path:

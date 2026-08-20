@@ -48,7 +48,7 @@ from ._app import (
     ceiling_aware_instructions,
     create_mcp as _create_base_mcp,
 )
-from .access_policy import AccessPolicy
+from .access_policy import AccessPolicy, unboundable_effect_tools
 from .audit import install_audit_sink, write_diagnostic
 from .dispatch_scope import dispatch_authorizer
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
@@ -329,13 +329,21 @@ def _startup_warnings(
     """The stderr lines describing what this server will and will not expose.
 
     Every input exists only here — the served registry, the policy, and the
-    escape-hatch flag — which is why the three warnings share one function. An
+    escape-hatch flag — which is why these warnings share one function. An
     empty surface already implies the inspection tool is absent, so it replaces
     that line rather than printing beside it.
 
     ADR 0041 retired a fourth: a policy file that existed but had not been
     selected. No server starts without a policy now, so the condition it
     described is unreachable, and ``_unselected_policy_file`` went with it.
+
+    #279 adds a fifth: one line per grant whose targets table cannot bind part
+    of what it reaches, most often through an effect class. `access_policy.py`
+    already refuses a grant outright when a table binds *none* of what it
+    reaches; a grant reaching a mix is deliberately not refused (that would
+    discard a working majority to diagnose an unreachable minority), so its
+    dead subset is surfaced here instead — this is where a compiled policy's
+    consequences are already reported, and where an operator already looks.
     """
     lines: list[str] = []
     if tool_count == 0:
@@ -355,6 +363,10 @@ def _startup_warnings(
             f"{access_policy.name!r} does not grant hmc_run_command, so it is not "
             "exposed. Name it in a grant's tools to allow it."
         )
+    lines.extend(
+        f"warning: {message}"
+        for message in unboundable_effect_tools(access_policy, TOOL_SECURITY)
+    )
     return tuple(lines)
 
 

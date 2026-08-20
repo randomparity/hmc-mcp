@@ -19,8 +19,10 @@ from hmc_mcp.access_policy import (
     compile_access_policy,
     load_access_policy,
     resolve_access_policy_path,
+    unboundable_effect_tools,
 )
 from hmc_mcp.server import TOOL_SECURITY
+from hmc_mcp.tool_registry import TargetSelector, ToolSecurity
 
 
 def _document(**grant: object) -> dict[str, object]:
@@ -372,6 +374,22 @@ def test_inert_console_constraint_on_the_escape_hatch_is_rejected() -> None:
 
 
 def test_coverage_rule_binds_explicitly_named_tools_only() -> None:
+    """The optional-selector coverage rule binds a grant's named tools only.
+
+    `hmc_delete_lpar` is `destructive` and requires 'lpar' beside 'managed_system'
+    (ADR 0039 supersedes A7). Naming it directly against a table missing 'lpar' is
+    refused for that reason. An index change to the `destructive` effect class
+    must not turn an unedited file's coverage math into a refusal `hmc_delete_lpar`
+    never earned, so reaching it only through `effects` must not inherit the
+    requirement: the same table under the effect class validates, and permits
+    `hmc_delete_lpar`.
+
+    `destructive` also resolves to `hmc_backup_lpar_profiles`, `exhaustive_targets`
+    ``False``. That does not refuse the grant (#279: a *mixed* resolved set is
+    diagnosed at startup, not refused at load — see
+    ``test_a_mixed_effect_grant_loads_and_warns_at_startup`` below), so
+    `hmc_delete_lpar`'s exemption from the coverage rule is visible here too.
+    """
     with pytest.raises(AccessPolicyError) as raised:
         _compile(
             _document(
@@ -383,8 +401,6 @@ def test_coverage_rule_binds_explicitly_named_tools_only() -> None:
     assert "hmc_delete_lpar" in str(raised.value)
     assert "'lpar'" in str(raised.value)
 
-    # The same table under an effect class validates: an index change alone must
-    # not make an unedited file stop loading.
     policy = _compile(
         _document(
             effects=["destructive"],
@@ -477,6 +493,85 @@ def test_a_composite_a_table_cannot_bound_is_refused_at_load() -> None:
         )
 
     assert "'hmc_provision_lpar'" in str(raised.value)
+    assert "all-targets" in str(raised.value)
+
+
+def test_a_mixed_effect_grant_loads_and_warns_at_startup() -> None:
+    """#279: a mixed effect-resolved set loads; its dead subset is diagnosed later.
+
+    `mutate` resolves `hmc_provision_lpar` and four siblings that are
+    `exhaustive_targets=False`, alongside 41 tools this table binds correctly.
+    Before the fix, the exhaustiveness check ignored effect-resolved tools
+    entirely, so this grant loaded with no diagnostic at all -- every one of
+    the five is silently dead at dispatch under `target-unboundable`
+    (target_scope.py). Refusing the whole grant over the five, mirroring the
+    named-tool rule, would instead discard the 41 working tools to diagnose
+    the 5 dead ones -- so the fix is a load-clean warning naming exactly the
+    five, not a refusal.
+    """
+    policy = _compile(
+        _document(
+            effects=["mutate"],
+            connections=["lab"],
+            targets={"managed_system": ["S1"]},
+        )
+    )
+    assert policy.permits_tool("hmc_provision_lpar") is True
+    assert policy.permits_tool("hmc_add_vfc_adapter") is True
+
+    warnings = unboundable_effect_tools(policy, TOOL_SECURITY)
+    assert len(warnings) == 1
+    message = warnings[0]
+    for offender in (
+        "hmc_add_vfc_adapter",
+        "hmc_add_vscsi_adapter",
+        "hmc_attach_disk_to_lpar",
+        "hmc_configure_ldap",
+        "hmc_provision_lpar",
+    ):
+        assert repr(offender) in message
+    assert "all-targets" in message
+
+
+def test_a_wholly_dead_effect_grant_is_refused_at_load() -> None:
+    """The refusal `unboundable_effect_tools` exists beside: nothing works at all.
+
+    No live effect class is wholly `exhaustive_targets=False` today -- every one
+    of `read`/`mutate`/`destructive` carries a bindable majority (confirmed
+    against the full registry: 37/18, 41/5, 25/3 exhaustive-to-not) -- so this
+    branch has no real-registry trigger to reproduce against. A synthetic
+    one-tool registry exercises it directly: the shape ADR 0039 already refused
+    for a *named* tool (`test_a_composite_a_table_cannot_bound_is_refused_at_load`),
+    now refused the same way when a grant reaches it only by naming its effect
+    class and nothing else is reachable to redeem the grant.
+    """
+    fake_security = {
+        "widget_mutate": ToolSecurity(
+            effect="mutate",
+            operation="widget.mutate",
+            target_kind="managed_system",
+            targets=(
+                TargetSelector(
+                    kind="managed_system", argument="system", required=True
+                ),
+            ),
+            exhaustive_targets=False,
+        ),
+    }
+
+    with pytest.raises(AccessPolicyError) as raised:
+        compile_access_policy(
+            _document(
+                effects=["mutate"],
+                connections=["lab"],
+                targets={"managed_system": ["S1"]},
+            ),
+            "lab",
+            fake_security,
+            "access-policy.toml",
+        )
+
+    assert "'widget_mutate'" in str(raised.value)
     assert "all-targets" in str(raised.value)
 
 
@@ -702,6 +797,7 @@ def test_module_exposes_no_mutator() -> None:
         "resolve_access_policy_path",
         "compile_access_policy",
         "load_access_policy",
+        "unboundable_effect_tools",
     }
 
     methods = {
