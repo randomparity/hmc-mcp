@@ -313,10 +313,15 @@ def _compile_grant(
     """
     for tool in model.tools:
         if tool not in tool_security:
+            # The bare generator command would collide here: this policy already
+            # exists on disk (it was just read and compiled), and the generator
+            # never overwrites (ADR 0041, cli_config.py's `_write_exclusive`). Name
+            # the scratch-path-and-merge flow that actually regenerates one.
             raise AccessPolicyError(
                 f"{where}: unknown tool {tool!r}; if this policy predates a tool "
-                "rename or removal, regenerate it with "
-                "'hmc-mcp config init-access-policy' and review the result"
+                "rename or removal, regenerate it to a scratch path with "
+                "'hmc-mcp config init-access-policy --output PATH', diff that "
+                "against this file, and merge the change by hand"
             )
 
     resolved = _resolve_tools(model, tool_security)
