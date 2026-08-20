@@ -25,12 +25,18 @@ Spec test -> node id:
   32  test_gates_requires_a_policy_and_returns_both
   33  test_authorized_leaves_the_connectionless_handlers_unwrapped
   34  test_the_no_policy_warning_is_retired
+
+#269 / ADR 0043, against a real filled pipe (fixture in tests/conftest.py):
+  269f test_a_wedged_stderr_does_not_block_a_dispatch
+  269g test_startup_warnings_do_not_block_a_start
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -470,3 +476,68 @@ def test_an_unreadable_connection_token_has_no_reason_code_of_its_own(records):
     assert records[0]["reason"] == "connection-not-granted"
     assert records[0]["connection"]["state"] == "unreadable"
     assert records[0]["connection"]["selector"] is None
+
+
+def _drive(work, seconds: float = 15.0) -> bool:
+    """Run *work* on a thread this test can abandon, and say whether it returned.
+
+    The pre-ADR-0043 code does not return here at all: a synchronous write to a
+    full, undrained pipe blocks forever. Running it in the main thread would hang
+    the suite rather than fail it, so the bound is the assertion.
+    """
+    returned = threading.Event()
+
+    def run() -> None:
+        work()
+        returned.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    return returned.wait(seconds)
+
+
+def test_a_wedged_stderr_does_not_block_a_dispatch(full_stderr_pipe):
+    """#269, at the boundary it is actually about.
+
+    `dispatch_authorizer` emits its record from inside `authorize`, ahead of the
+    denial and ahead of the handler, so a blocking write there stalls the call and
+    every call queued behind it. Driven against a genuinely full pipe — 64 KiB of
+    padding and nothing reading it — over more calls than the ADR's 120-170 figure
+    needs to fill one, with the ADR 0038/0039 error still raised each time.
+    """
+    audit.install_audit_sink()
+    saved, sys.stderr = sys.stderr, full_stderr_pipe.stream
+    denials: list[object] = []
+    try:
+        returned = _drive(
+            lambda: denials.extend(_authorize(profile="prod") for _ in range(400))
+        )
+    finally:
+        full_stderr_pipe.read_available()
+        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        sys.stderr = saved
+
+    assert returned, "an undrained stderr pipe blocked the dispatch boundary (#269)"
+    assert len(denials) == 400
+    assert all(isinstance(error, ConnectionScopeError) for error in denials), (
+        "the denial itself must be unchanged by how its record was delivered"
+    )
+
+
+def test_startup_warnings_do_not_block_a_start(full_stderr_pipe):
+    """The same guarantee for `server._warn`, which #269 names first.
+
+    Bounded to four lines once per start, so it was called "a start nobody
+    reaches" rather than fixed — but it is a second writer to the same descriptor
+    with the same missing case, so ADR 0043 moved it onto the same sink.
+    """
+    saved, sys.stderr = sys.stderr, full_stderr_pipe.stream
+    try:
+        returned = _drive(
+            lambda: server_app._warn(("warning: one", "warning: two", "warning: three"))
+        )
+    finally:
+        full_stderr_pipe.read_available()
+        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        sys.stderr = saved
+
+    assert returned, "an undrained stderr pipe blocked a server start (#269)"

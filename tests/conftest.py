@@ -1,11 +1,17 @@
 """Shared pytest fixtures for the hmc-mcp suite."""
 
+import io
 import logging
+import os
+import select
+import sys
+from dataclasses import dataclass
 
 import httpx
 import pytest
 import respx
 
+from hmc_mcp import audit
 from hmc_mcp.audit import AUDIT_LOGGER_NAME
 from hmc_mcp.config import HMCConfig
 
@@ -52,6 +58,83 @@ def isolate_audit_logging():
         logger.setLevel(saved_level)
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
+        # ADR 0043 made delivery asynchronous, so a record emitted here can still
+        # be in flight after the test returns. Settle the sink and clear anything
+        # it is owed, or one test's records land in another test's captured output
+        # — or, when the writer is only scheduled after the test's `sys.stderr`
+        # redirection is undone, on the console. Settling it against a throwaway
+        # stream is what keeps that late write somewhere harmless; a test that
+        # cares about the content has already waited for it with an explicit
+        # `flush`/`drain`.
+        stderr, sys.stderr = sys.stderr, io.StringIO()
+        try:
+            audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        finally:
+            sys.stderr = stderr
+        with audit._SINK._state:
+            audit._SINK._dropped = 0
+
+
+@dataclass
+class FullPipe:
+    """A pipe whose buffer is full and whose write end blocks. See ADR 0043.
+
+    `stream` is what a test puts on `sys.stderr`; `read_fd` is the end nothing is
+    reading, which is what makes the next write block.
+    """
+
+    stream: object
+    read_fd: int
+    capacity: int
+
+    def read_available(self) -> bytes:
+        """Drain whatever is buffered, freeing the writer. Never blocks.
+
+        A bare ``os.read`` would block once the buffer is empty, which is exactly
+        the state this leaves behind — so it would hang the *test* on the second
+        call instead of the server on the first.
+        """
+        chunks: list[bytes] = []
+        while select.select([self.read_fd], [], [], 0.1)[0]:
+            chunk = os.read(self.read_fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
+@pytest.fixture
+def full_stderr_pipe():
+    """A genuinely full, genuinely blocking pipe — not a mock of one.
+
+    `O_NONBLOCK` is a property of the open file description rather than of the
+    descriptor, so setting it, writing until `BlockingIOError`, and clearing it
+    again leaves the buffer full *and* the descriptor blocking. That is the exact
+    condition issue #269 describes: `write()` neither returns nor raises.
+
+    Teardown closes the read end first, which wakes a blocked writer with `EPIPE`
+    — an `OSError` the sink already treats as a drop — so the daemon thread is
+    never left parked on a descriptor the next test cannot free.
+    """
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(write_fd, False)
+    capacity = 0
+    try:
+        while True:
+            capacity += os.write(write_fd, b"x" * 4096)
+    except BlockingIOError:
+        pass
+    os.set_blocking(write_fd, True)
+    stream = os.fdopen(write_fd, "w")
+    try:
+        yield FullPipe(stream=stream, read_fd=read_fd, capacity=capacity)
+    finally:
+        os.close(read_fd)
+        audit._SINK.drain(audit._DRAIN_TIMEOUT)
+        try:
+            stream.close()
+        except OSError:
+            pass
 
 
 BASE = "https://hmc.test:12443"

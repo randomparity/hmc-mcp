@@ -11,8 +11,8 @@ document is the contract those records keep. The decision behind it is
 them, since ADR 0041 made a policy mandatory. Before it, a server started without
 `--access-policy NAME` had no authorizer on any dispatch path and emitted no authorization
 record at all, for the same reason it enforced nothing at all. There is no such server now,
-so every deployment writes one record per decision, and the fd 2 requirement below applies
-to every deployment rather than only to those that opted in.
+so every deployment writes one record per decision, and the delivery guarantee below
+applies to every deployment rather than only to those that opted in.
 
 **`ownership-override` records are not policy-gated.** They come from the ADR 0011
 ownership check inside the handler, which runs whether or not a policy is selected — and
@@ -98,6 +98,22 @@ nulls — an ownership check on a token parsed from an LPAR description is not a
 access-policy decision, and empty fields would read as one. It does not say **which
 HMC** the override applied to; that is issue #271.
 
+### `event: "records-dropped"`
+
+Emitted by the sink itself, not by a decision, when lines were lost since the previous
+such marker. It appears immediately **before** the next line that lands, so it reads as
+"N lines are missing above this point".
+
+```json
+{"time":"2026-08-19T22:14:03.881271+00:00","event":"records-dropped","count":37}
+```
+
+It carries no `policy`, `attribution`, or anything a caller supplied — it describes the
+sink's queue. Because it comes from the sink rather than the `hmc_mcp.audit` logger, it is
+not affected by the level you set on that logger, and it is not produced at all when you
+attach your own handler: your handler has no such queue. See
+[ADR 0043](adr/0043-non-blocking-stderr-diagnostics.md).
+
 ## Reason codes
 
 | code | decision | meaning |
@@ -160,6 +176,11 @@ record still reaches `logging.lastResort` on stderr, which is what a CLI user se
 handler to `hmc_mcp.audit` **before** calling `main_stdio` / `main_http` — the server
 defers to a handler that is already there and will not add a second.
 
+> The non-blocking guarantee is the **shipped sink's**, not the logger's. Your handler is
+> called on the dispatch path, synchronously, so if it can block then so can the call.
+> `logging.lastResort` — what a CLI process with no sink installed uses — is synchronous
+> for the same reason.
+
 > Setting the level from the `hmc-mcp serve` command line is **not** possible today;
 > that path exposes no logging option. The lever works for an in-process caller that
 > configures the logger first. Issue #270 covers the gap.
@@ -183,10 +204,25 @@ signed, and retention and export are yours. A record is written *before* the den
 raised and *before* a permitted handler runs, so a permitted call is recorded as
 **authorized**, not as **succeeded**.
 
-If the destination is absent, broken, or closed, the record is dropped silently — no
-counter, no marker. That keeps a diagnostic from failing a call, but it means an empty
-stream is not evidence of an idle server. A destination that is open but never drained
-is a different case: the write blocks (issue #269), so fd 2 must be drained.
+**Records are droppable, and delivery is asynchronous.** Since
+[ADR 0043](adr/0043-non-blocking-stderr-diagnostics.md) a record is handed to a bounded
+in-memory queue (1024 lines) drained by one background thread, so nothing on the dispatch
+path waits on the destination. A destination that is absent, broken, closed, or simply not
+being read costs records rather than costing the server: the queue fills and further lines
+are dropped.
+
+A drop is never silent. The count is carried in-band, ahead of the next line that lands:
+
+```json
+{"time": "2026-08-19T22:14:03.881271+00:00", "event": "records-dropped", "count": 37}
+```
+
+Read it as *37 lines are missing above this point*. Two limits worth knowing: `count` is
+lines rather than records, because the startup warnings share this queue; and reporting
+needs a destination that accepts a write again, so a stream that never recovers — or a
+process killed with `SIGKILL` — still loses without a marker. An empty stream is therefore
+still not evidence of an idle server. A record may also reach stderr slightly after the
+tool result reaches the client; order among records is preserved.
 
 **The record is readable by the party it is about, and it says more than the denial does.**
 Under stdio the MCP client owns the server's stderr, so a client can read the records describing
@@ -200,9 +236,11 @@ names only, and `hmc_list_configured_hosts` offers a client more; if your profil
 sensitive, withhold that tool by policy and route this stream somewhere the client cannot read.
 
 Who has to do that depends on the transport, and under stdio it is not you. The MCP
-client spawns the server and owns fd 2, so "drain it" binds the client rather than the
-operator deploying it — choose one that reads its child's stderr. Under `--http` it is
-whatever supervisor or journal collects the unit's stderr. Since ADR 0041 made a policy
-mandatory this applies to every deployment, and an ungranted caller can drive the writes
-at call rate, because the record precedes the denial. There is no in-process lever to
-reduce the volume from `hmc-mcp serve` either — see issue #270.
+client spawns the server and owns fd 2, so whether the stream is read binds the client
+rather than the operator deploying it — choose one that reads its child's stderr. Under
+`--http` it is whatever supervisor or journal collects the unit's stderr. Since ADR 0041
+made a policy mandatory this applies to every deployment, and an ungranted caller can drive
+the writes at call rate, because the record precedes the denial. That caller can therefore
+make records drop — bounded to the queue, visible as a `records-dropped` count, and never
+able to stall a call. There is no in-process lever to reduce the volume from
+`hmc-mcp serve` either — see issue #270.
