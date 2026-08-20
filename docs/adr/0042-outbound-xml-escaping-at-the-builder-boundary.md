@@ -65,10 +65,18 @@ chooses an encoding per interpolation site, and moving a value from an element t
 cannot introduce a defect. The cost is that `>` and the quote characters are escaped in text
 positions where XML does not require it; that is invisible after parsing.
 
+`escape_xml` **rejects** rather than escapes a value carrying a character outside the XML 1.0
+`Char` production — a control character other than tab, newline, or carriage return, or a lone
+surrogate. No encoding of those parses, so escaping one only moves the failure downstream: a NUL
+in a user name yields a document the HMC refuses with an opaque error, and a lone surrogate raises
+`UnicodeEncodeError` out of the transport layer with nothing naming the cause. Refusing at the
+boundary keeps the contract every parameter meets down to *escape or reject*, and the message
+names the codepoint and its offset.
+
 `xmlutil.escapes_string_arguments` is a decorator that applies `escape_xml` to every string a
-caller passes — including strings inside a `list` (`physical_volumes`) or a `dict` (the
-job-parameter mapping) — before the wrapped builder runs. Every other argument type passes
-through untouched.
+caller passes, and to strings one level inside a `list` (`physical_volumes`), a `dict` (the
+job-parameter mapping), or a dataclass (`LparResources`, `PasswordPolicySettings`), before the
+wrapped builder runs. Every other argument type passes through untouched.
 
 **Escaping at the boundary rather than per interpolation site is the whole point.** After the
 decorator runs, the function body holds no unescaped caller value, so the number of times it
@@ -88,7 +96,12 @@ has no such choke point — each builder renders its own template — so the inv
 
 **Closed-vocabulary parameters keep their `ValueError`.** Escaping and validation are not
 alternatives: validation gives a better message and rejects a value the HMC would refuse anyway,
-while escaping covers the free-text parameters no vocabulary can constrain. The contract each
+while escaping covers the free-text parameters no vocabulary can constrain. One site needs the
+validation for correctness rather than for its message — `build_vscsi_mapping_document`
+interpolates `storage_kind` as an element *name*, and no encoding makes a name safe. The
+`STORAGE_KINDS` check is what protects it, and it still fires because escaping is the identity on
+the two legal values. No other caller value reaches an element name, a namespace URI, a comment,
+a CDATA section, a processing instruction, or a DTD. The contract each
 string-carrying parameter now meets is *escape or reject*, and the harness asserts that disjunction
 rather than assuming which arm applies.
 
@@ -114,12 +127,17 @@ reports `'a&lt;b'`. The value is still recognizable and the existing tests that 
 value does not appear verbatim in a message continue to hold for `sharing_mode`, which travels
 inside `LparResources` and is not touched by the decorator.
 
-The decorator escapes strings in `list` and `dict` arguments but does not recurse into dataclass
-or `TypedDict` arguments. Nothing needs it today: `LparResources.sharing_mode` is the only string
-field on either dataclass and it is a closed vocabulary, and `RepositorySource` reaches the wire
-through `build_job_request`'s `dict`, which is covered. If a free-text string field is added to
-`LparResources` or `PasswordPolicySettings`, the harness synthesizes it and the case fails — the
-recurrence guard reports the gap rather than the decorator silently growing to cover it.
+The decorator escapes one level of nesting — list members, dict keys and values, dataclass fields
+— and does not descend further. That covers every argument shape the builders accept:
+`RepositorySource` is a `TypedDict`, so it arrives as a plain `dict`. A builder that took a nested
+container would need a new branch, and the harness would report it as a failing case rather than
+letting it through.
+
+The round trip a caller gets back from a parser is exact for every value the boundary accepts,
+with one exception that belongs to XML rather than to this change: a carriage return in element
+text reads back as a newline, and a tab or newline inside an attribute value reads back as a
+space. That is XML's own attribute-value and line-end normalization. The harness payload excludes
+those characters for that reason.
 
 `build_vscsi_mapping_document` and `build_virtual_optical_mapping_document` lose `vios_lpar_link`.
 Both accepted it and neither rendered it, and no caller in the tree passed it; the harness surfaced

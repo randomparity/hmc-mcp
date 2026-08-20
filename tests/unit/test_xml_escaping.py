@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import re
 import types
 import typing
 from typing import Any, Literal, get_args, get_origin, get_type_hints
@@ -27,7 +28,7 @@ import pytest
 from defusedxml import ElementTree as DET
 
 from hmc_mcp import documents, jobs
-from hmc_mcp.xmlutil import escape_xml, localname
+from hmc_mcp.xmlutil import escape_xml, escapes_string_arguments, localname
 
 # A value an operator could plausibly type that carries all five XML
 # metacharacters at once. No tab, newline, or carriage return: an XML parser
@@ -362,6 +363,46 @@ def test_repository_password_with_an_ampersand_stays_well_formed():
 def test_escaping_is_the_identity_for_ordinary_values(value):
     """Byte-for-byte-unchanged documents rest on this, not on spot checks."""
     assert escape_xml(value) == value
+
+
+@pytest.mark.parametrize(
+    ("value", "codepoint"),
+    [
+        ("a\x00b", "U+0000"),
+        ("a\x0bb", "U+000B"),
+        ("a\x1fb", "U+001F"),
+        ("a\ud800b", "U+D800"),
+        ("a\ufffeb", "U+FFFE"),
+    ],
+)
+def test_characters_xml_cannot_carry_are_rejected(value, codepoint):
+    """Escaping cannot rescue these, so the boundary refuses them by name."""
+    with pytest.raises(ValueError, match=re.escape(codepoint)):
+        documents.build_hmc_user_document(username=value)
+
+
+@pytest.mark.parametrize(
+    "value", ["a\tb", "a\nb", "a\rb", "caf\u00e9", "\U0001f600"]
+)
+def test_characters_xml_can_carry_are_accepted(value):
+    xml = documents.build_hmc_user_document(username=value)
+
+    assert DET.fromstring(xml.encode("utf-8")) is not None
+
+
+def test_dataclass_members_are_escaped_too():
+    """LparResources and PasswordPolicySettings reach a builder by value."""
+
+    @dataclasses.dataclass(frozen=True)
+    class Fixture:
+        label: str = ""
+        count: int = 0
+
+    @escapes_string_arguments
+    def build(fixture: Fixture) -> str:
+        return f"<x n={fixture.count}>{fixture.label}</x>"
+
+    assert build(Fixture(label="a&b", count=1)) == "<x n=1>a&amp;b</x>"
 
 
 def test_valid_input_is_unchanged_by_escaping():

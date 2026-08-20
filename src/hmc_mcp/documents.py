@@ -780,6 +780,10 @@ def build_vscsi_mapping_document(
     the DiskName). lpar_link is the Atom SELF href of the client LPAR the
     storage is mapped to. target_device optionally pins the vtscsi name.
     """
+    # storage_kind is the one caller value that becomes an element *name*
+    # below, and escaping cannot make a name safe. This check, not the
+    # escaping decorator, is what protects that site; it still fires because
+    # escaping is the identity on the two legal values.
     if storage_kind not in STORAGE_KINDS:
         raise ValueError(
             f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"

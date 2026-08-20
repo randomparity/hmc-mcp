@@ -28,12 +28,17 @@ package's only encoding boundary for those templates; see ADR 0042.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
+import re
 from collections.abc import Callable
 from typing import Any, ParamSpec, cast
 
 # Element is used only as a type annotation; all XML parsing uses defusedxml.
 from xml.etree.ElementTree import Element  # nosec B405
+
+# saxutils.escape only serializes; it parses nothing, so the xml.sax parser
+# advisory does not apply. All parsing in this module goes through defusedxml.
 from xml.sax.saxutils import escape  # nosec B406
 
 from defusedxml import ElementTree as DET
@@ -65,6 +70,16 @@ def localname(tag: str) -> str:
 # pick an encoding per interpolation site.
 _ATTRIBUTE_ENTITIES = {'"': "&quot;", "'": "&apos;"}
 
+# The complement of the XML 1.0 Char production. Escaping cannot rescue these:
+# a NUL or a lone surrogate in a value produces a document the HMC rejects, or
+# raises UnicodeEncodeError from the transport layer with nothing naming the
+# cause. They are refused at the boundary instead, which keeps the contract
+# every builder parameter meets down to "escape or reject".
+_ILLEGAL_XML_CHARACTERS = re.compile(
+    "[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd"
+    "\U00010000-\U0010ffff]"
+)
+
 
 class _EscapedXmlText(str):
     """A string already escaped for XML output.
@@ -82,9 +97,26 @@ def escape_xml(value: str) -> str:
 
     The result is safe as element character data and as a quoted attribute
     value. Escaping an already-escaped value returns it unchanged.
+
+    A value carrying a character XML 1.0 cannot represent — a control
+    character other than tab, newline, or carriage return, or a lone
+    surrogate — is rejected rather than escaped, because no encoding of it
+    parses.
+
+    The round trip through a parser is exact for every value this accepts
+    except whitespace: a carriage return in element text reads back as a
+    newline, and a tab or newline inside an attribute value reads back as a
+    space. That is XML's own normalization, not this function's.
     """
     if isinstance(value, _EscapedXmlText):
         return value
+    illegal = _ILLEGAL_XML_CHARACTERS.search(value)
+    if illegal is not None:
+        raise ValueError(
+            f"Cannot build an XML document from a value containing "
+            f"U+{ord(illegal.group()):04X} at offset {illegal.start()}: XML 1.0 "
+            f"has no representation for it. Remove the character from the value."
+        )
     return _EscapedXmlText(escape(value, _ATTRIBUTE_ENTITIES))
 
 
@@ -94,11 +126,23 @@ def _escape_item(value: object) -> object:
 
 
 def _escape_argument(value: object) -> object:
-    """Escape the strings in one builder argument, including list and dict members."""
+    """Escape the strings in one builder argument, at one level of nesting.
+
+    Lists, dicts, and dataclass instances are the argument shapes the builders
+    accept, so each has a branch: ``physical_volumes``, the job-parameter
+    mapping, and ``LparResources`` / ``PasswordPolicySettings`` respectively.
+    """
     if isinstance(value, list):
         return [_escape_item(item) for item in value]
     if isinstance(value, dict):
         return {_escape_item(key): _escape_item(item) for key, item in value.items()}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        escaped_fields = {
+            f.name: escape_xml(member)
+            for f in dataclasses.fields(value)
+            if isinstance(member := getattr(value, f.name), str)
+        }
+        return dataclasses.replace(value, **escaped_fields) if escaped_fields else value
     return _escape_item(value)
 
 
@@ -111,9 +155,9 @@ def escapes_string_arguments(func: Callable[_P, str]) -> Callable[_P, str]:
     Escaping at the boundary rather than at each interpolation site is what
     makes the document builders correct by construction: the function body
     never holds an unescaped caller value, so the number of times it
-    interpolates one does not matter. Strings inside lists and dicts are
-    escaped too, which covers ``physical_volumes`` and the job-parameter
-    mapping; every other argument type is passed through untouched.
+    interpolates one does not matter. Strings one level inside a list, a dict,
+    or a dataclass are escaped too; every other argument type is passed
+    through untouched.
 
     A closed-vocabulary argument is escaped before the builder validates it,
     so a rejection message quotes the escaped form of an illegal value.
