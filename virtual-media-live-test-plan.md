@@ -446,8 +446,10 @@ thread.start()
 server.shutdown()
 ```
 
-The upload tool's HTTP path uses `httpx` with `MAX_REDIRECTS=5` and `READ_TIMEOUT=300s`,
-which handles a localhost server without any special configuration.
+The upload tool's HTTP path uses `httpx` with `READ_TIMEOUT=300s` and does not follow
+redirects (ADR 0050). The server's host must also be on the operator's allowlist —
+`HMC_ISO_URL_ALLOWLIST=localhost:18765` — which the runner sets for its own run in
+`_allow_iso_host()`; without it every upload is refused.
 
 ### VG Free-Space Field Names
 
