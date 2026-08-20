@@ -21,28 +21,34 @@ from .ssh import HMCCLIError, run_hmc_command
 # HMC CLI -i attribute record grammar (see ADR 0045)
 # ---------------------------------------------------------------------- #
 # `chsyscfg`/`mksyscfg` take their configuration as one `-i` argument holding
-# an attribute record: `name=lpar1,description=web tier`.  Two characters carry
+# an attribute record: `name=lpar1,description=web tier`.  Three characters carry
 # that record's structure, and the HMC splits the record itself *after* the
 # shell has finished with the argument — so `shlex.quote` cannot protect them.
 
 _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ",": ("a comma", "a comma separates one attribute from the next"),
     "=": ("an equals sign", "an equals sign separates an attribute name from its value"),
-}
-
-# Attributes whose value is an HMC object name.  These carry two further
-# rejections that `set_lpar_description` has always applied to `lpar_name`.
-# They are deliberately not applied to every value: a description legitimately
-# contains spaces (ADR 0011's ownership token does) and semicolons.
-_OBJECT_NAME_ATTRIBUTES = frozenset({"name", "lpar_name", "profile_name"})
-_OBJECT_NAME_UNSAFE: dict[str, tuple[str, str]] = {
-    " ": ("a space", "a space may make the HMC's internal -i parser tokenise incorrectly"),
-    ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
+    '"': (
+        "a double quote",
+        "a double quote is the HMC's own escape for a value containing a comma, "
+        "so it opens a quoted region that swallows the attributes after it",
+    ),
 }
 
 # An HMC attribute name, optionally carrying the `+` append operator that
 # `chsyscfg -r prof` uses to extend a list attribute (`io_slots+=…`).
 _ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*\+?$")
+
+# Characters `set_lpar_description` has always refused in the LPAR name it
+# writes a description for.  Neither is record structure — IBM's own escaping
+# note shows an unquoted `name=No comma name` — so this rejection is not part
+# of the record grammar and is deliberately not extended to the other records.
+# It is kept at its historical site, unchanged, because widening or dropping a
+# public tool's accepted input is not this module's call to make.  See ADR 0045.
+_DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
+    " ": ("a space", "a space may make the HMC's internal -i parser tokenise incorrectly"),
+    ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
+}
 
 
 def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
@@ -56,19 +62,34 @@ def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
     Callers still wrap the result in :func:`shlex.quote`.  The two mechanisms
     protect different layers and neither substitutes for the other:
     ``shlex.quote`` keeps the record a single word for the *remote shell*; this
-    function keeps the record's own ``,`` and ``=`` delimiters meaningful for
-    the *HMC's* parser, which runs afterwards on the already-unquoted text.
+    function keeps the record's own ``,``, ``=``, and ``"`` structure meaningful
+    for the *HMC's* parser, which runs afterwards on the already-unquoted text.
+
+    The rejection message quotes the offending value back to the caller.  Every
+    attribute reaching this function today carries a name, an enumerated mode,
+    or a number; do not route a credential attribute (``chhmcusr -i
+    "name=…,passwd=…"``) through it without redacting the value first.
 
     Raises:
-        HMCCLIError: If *pairs* is empty, an attribute name is malformed, or a
-            value contains a character the record's parser treats as structure.
-            The message names the attribute, the character, and its effect.
+        HMCCLIError: If *pairs* is empty, repeats an attribute, names a
+            malformed attribute, or carries a value containing a character the
+            record's parser treats as structure.  The message names the
+            attribute, the character, and its effect.
     """
     if not pairs:
         raise HMCCLIError(
             "cannot build an HMC CLI -i attribute record with no attributes; "
             "at least one attribute is required"
         )
+    seen: set[str] = set()
+    for attribute, _value in pairs:
+        if attribute in seen:
+            raise HMCCLIError(
+                f"HMC CLI -i attribute {attribute!r} appears twice in one "
+                "record; the HMC's handling of a repeated attribute is "
+                "undefined, so the record is refused rather than sent"
+            )
+        seen.add(attribute)
     return ",".join(
         f"{attribute}={_validated_value(attribute, value)}"
         for attribute, value in pairs
@@ -83,16 +104,21 @@ def _validated_value(attribute: str, value: object) -> str:
             "lower-case identifier, optionally with the '+' append operator"
         )
     text = str(value)
-    forbidden = dict(_RECORD_DELIMITERS)
-    if attribute in _OBJECT_NAME_ATTRIBUTES:
-        forbidden.update(_OBJECT_NAME_UNSAFE)
-    for character, (name, reason) in forbidden.items():
+    for character, (name, reason) in _RECORD_DELIMITERS.items():
         if character in text:
             raise HMCCLIError(
                 f"HMC CLI -i attribute {attribute!r} value {text!r} contains "
                 f"{name} ({character!r}); {reason}, so the value would alter "
                 f"the record's structure. Remove {name} from the value."
             )
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
+        raise HMCCLIError(
+            f"HMC CLI -i attribute {attribute!r} value {text!r} contains a "
+            "control character; the record is one line and the same data "
+            "format is read one record per line by the -f file form, so a "
+            "newline may terminate the record and a NUL may truncate it. "
+            "Remove the control character from the value."
+        )
     return text
 
 
@@ -585,15 +611,24 @@ async def set_lpar_description(
     command output.
 
     Raises ``ValueError`` if *description* is not printable ASCII or carries a
-    ``,`` or ``=``; see :func:`validate_lpar_description` for the constraint
-    and error code.
+    ``,``, ``=``, or ``"``; see :func:`validate_lpar_description` for the
+    constraint and error code.
 
     Raises :class:`HMCCLIError` if *lpar_name* contains a character that would
     corrupt the ``chsyscfg -i`` attribute record; see
     :func:`build_attribute_record`, which enforces the record grammar for both
     fields so the guard cannot be present at one and absent at its neighbour.
+    A space or a semicolon in *lpar_name* is refused too — a restriction this
+    function has always carried and that ADR 0045 deliberately kept here rather
+    than extending to the other records, where it would refuse HMC-legal names.
     """
     validate_lpar_description(description)
+    for character, (name, reason) in _DESCRIPTION_TARGET_UNSAFE.items():
+        if character in lpar_name:
+            raise HMCCLIError(
+                f"LPAR name {lpar_name!r} contains {name} ({character!r}); "
+                f"cannot safely write description via chsyscfg -i ({reason})"
+            )
     record = build_attribute_record(
         [("name", lpar_name), ("description", description)]
     )

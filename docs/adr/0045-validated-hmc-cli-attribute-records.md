@@ -7,10 +7,14 @@ Accepted (2026-08-19)
 ## Context
 
 `chsyscfg` and `mksyscfg` take their configuration as a single `-i` argument holding an
-attribute record: `name=lpar1,description=web tier`. Two characters carry that record's
+attribute record: `name=lpar1,description=web tier`. Three characters carry that record's
 structure. A comma ends one attribute and starts the next; an equals sign ends an attribute
-name and starts its value. The HMC splits the record itself, after the shell has finished with
-the argument.
+name and starts its value; a double quote is IBM's documented escape for a value that has to
+contain a comma, so it opens a region in which the following commas are not separators — IBM's
+own note gives `chsyscfg -m CS6520 -r lpar -i "name=No comma name,\"new_name=comma, name\""`. A
+control character is structure by a fourth route: the record is a single line, and the `-f` file
+form reads the same data format one record per line. The HMC splits all of this itself, after
+the shell has finished with the argument.
 
 `src/hmc_mcp/ssh_commands.py` built six such records by f-string and wrapped each in
 `shlex.quote`. A comment at the `mksyscfg` site said that quoting stopped special characters
@@ -47,23 +51,33 @@ sequence of `(attribute, value)` pairs, validates each attribute name and each r
 against the record grammar, and returns the joined record. All six `-i` sites call it. No site
 composes a record by f-string any more.
 
-**The grammar rejects; it does not encode.** A value carrying `,` or `=` is refused with
-`HMCCLIError`, naming the field, the offending character, and what that character does to the
-record. The HMC CLI's own escape convention for values containing commas (wrapping the value in
-double quotes inside the record) is not adopted: it would have to survive `shlex.quote`, the
+**The grammar rejects; it does not encode.** A value carrying `,`, `=`, `"`, or a control
+character is refused with `HMCCLIError`, naming the field, the offending character, and what
+that character does to the record. The HMC's own escape convention — wrapping the value in
+double quotes inside the record — is not adopted: it would have to survive `shlex.quote`, the
 remote shell, and the HMC's parser in agreement, and none of that is testable here without a
-live HMC. Refusal is verifiable from the client alone.
+live HMC. Refusal is verifiable from the client alone. Rejecting `"` rather than emitting it is
+what makes the rejection complete: an unadopted escape character left in a caller's value is
+still an escape character to the parser.
 
-**Attributes carrying an HMC object name are held to the stricter set that already applied to
-one of them.** `name`, `lpar_name`, and `profile_name` additionally reject a space and a
-semicolon, preserving verbatim the four rejections `set_lpar_description` performed on
-`lpar_name` and extending them to the object names in the other five records. Every other
-attribute rejects only the two structural characters, because a description legitimately
-contains spaces — the ownership token of ADR 0011 is `[hmc-mcp owner:<id> created:<date>]` — and
-semicolons are not record structure.
+**A repeated attribute is refused.** `build_attribute_record` rejects a record naming the same
+attribute twice. What the HMC does with a duplicate is the one thing this change could not
+verify, so the component that owns the grammar should not be the one that produces such a
+record.
+
+**The grammar covers record structure and nothing else.** Space and semicolon are *not* record
+structure: IBM's example above passes `name=No comma name` unquoted. `set_lpar_description`
+has always refused both in the LPAR name it writes a description for, and it still does, at that
+one site, unchanged. That rejection is deliberately not moved into the builder. Doing so would
+extend it to `create_lpar_via_cli`, `set_lpar_msp`, `set_lpar_proc_compat`, `sync_lpar_profile`,
+and `assign_profile_io_slot`, whose `lpar_name` and `profile_name` arrive from HMC name
+resolution — so on any HMC with a space in a partition or profile name those five tools would
+stop working, with no caller workaround, over a restriction whose own stated reason ("*may*
+corrupt the parser") is hedged and unverified. Narrowing five public tools is not something a
+record-grammar change gets to do on the way past. See the residual below.
 
 **`validate_lpar_description` reads the same table.** It keeps raising `ValueError` for a
-description carrying `,` or `=`, iterating the builder's own delimiter table rather than
+description carrying `,`, `=`, or `"`, iterating the builder's own delimiter table rather than
 restating it. The tool layer calls it before UUID resolution, so a bad description is refused
 without an HMC round trip; the builder refuses the same value again inside
 `set_lpar_description` for callers that bypass the tool. Two layers, one table.
@@ -73,15 +87,22 @@ shell word, `build_attribute_record` the record's own delimiters — because it 
 whoever writes the seventh record site will read.
 
 **A test enforces the coupling.** `tests/unit/test_i_record_grammar.py` parses every module
-under `src/hmc_mcp/` and fails any function that builds a command string containing the `-i`
-flag without calling `build_attribute_record`. A new record site that skips the builder reddens
-the suite rather than waiting for a reviewer to notice.
+under `src/hmc_mcp/` and `scripts/`, finds each function whose own string literals name
+`chsyscfg` or `mksyscfg` *and* carry the `-i` flag, and follows the expression interpolated
+directly after that flag: it must be a `build_attribute_record` call, or a local name assigned
+from one. A function that builds one record through the builder and a second by f-string fails,
+because the check is per payload rather than per function.
+
+Its reach is bounded and worth stating. It reads literals in the function itself, so hoisting
+the command template to a module constant, or routing the record through a shared command
+helper, would take a new site out of its view. It is a guard against the next author repeating
+the f-string that is already in the file, not a proof that no such site can exist.
 
 ## Consequences
 
-**`hmc_set_lpar_description` narrows its accepted input.** A description containing `,` or `=`
-succeeds today and is refused after this change, with `ValueError` naming the character. This is
-a public MCP tool contract change and the reason this record exists.
+**`hmc_set_lpar_description` narrows its accepted input.** A description containing `,`, `=`, or
+`"` succeeds today and is refused after this change, with `ValueError` naming the character. This
+is a public MCP tool contract change and the reason this record exists.
 
 The narrowing is not a loss of reachable function. Such a description never reached the HMC as a
 description: the HMC parsed the text after the first comma or the second equals sign as further
@@ -98,6 +119,19 @@ The same narrowing applies to `profile_name` in `create_lpar_via_cli` and
 `assign_profile_io_slot`, to `mode` in `set_lpar_proc_compat`, and to `drc_index` in
 `assign_profile_io_slot`. Each of those is a name or an enumerated value on the HMC side; none
 has a documented form containing a record delimiter.
+
+**No tool narrows on anything that is not record structure.** The space and semicolon rejections
+stay where they were, so `hmc_create_lpar`, `hmc_set_lpar_msp`, `hmc_set_lpar_proc_compat`,
+`hmc_sync_lpar_profile`, and `hmc_assign_profile_io_slot` keep accepting every name they accept
+today, including a name with a space. Control characters are the exception, and they are
+structure: a newline can terminate the record and a NUL can truncate it inside the HMC, so the
+partition acted on would differ from the one the caller named. No HMC object name has a
+documented form containing one.
+
+**Errors quote the offending value.** `build_attribute_record`'s message includes the rejected
+value, which reaches MCP callers and audit logs. Every attribute routed through it today carries
+a name, an enumerated mode, or a number. Its docstring says not to route a credential attribute
+(`chhmcusr -i "name=…,passwd=…"`) through it without redacting first.
 
 **Error type stays split by layer, deliberately.** `validate_lpar_description` raises
 `ValueError` and the builder raises `HMCCLIError`. That is the split the module already had —
@@ -121,6 +155,24 @@ HMC's multi-device syntax for it is comma-separated — so the record grammar an
 own grammar disagree, and resolving that needs the HMC-side answer this change did not need.
 Tracked as issue #285.
 
+`--filter lpar_names=<name>` is the same name/value syntax and is untouched. It appears on eight
+`lssyscfg`/`lshwres`/`chhwres` reads and selects which partition a command acts on, so a value
+carrying its structure would misdirect a mutation rather than add an attribute to one. It is
+pre-existing, outside this record's `-i` subject, and folded into #285's scope.
+
+Two questions about the grammar remain unverified, both answered fail-closed rather than left
+open. Whether the HMC treats a newline inside an `-i` record as a record separator: the `-f`
+file form documents one record per line, so a control character is refused. Whether a backslash
+escapes anything inside the record: no IBM source found says it does, so it is *not* refused,
+and a value containing one still reaches the HMC. If a live HMC ever shows otherwise, the fix is
+one entry in `_RECORD_DELIMITERS`.
+
+The space and semicolon rejection on `set_lpar_description`'s `lpar_name` is itself unverified
+and, for the space, contradicted by IBM's `name=No comma name` example. This change kept it
+rather than widening a public tool's accepted input as a side effect of a security fix. Settling
+it — verify against a live HMC, then either remove it or give it a sourced reason — is issue
+#288.
+
 Whether the HMC errors or silently accepts a duplicate attribute is still unverified. It bounds
 how bad the old behaviour was, not whether the new behaviour is correct.
 
@@ -138,12 +190,16 @@ shell across three parsers, and this change had no live HMC to confirm that agre
 encoder that is wrong fails open, silently, with the caller's text landing as structure — the
 exact failure being fixed. A rejection that is wrong fails closed and is visible.
 
-**One forbidden set for every value.** Simpler, and it was rejected because it is wrong in both
-directions: applying the name set everywhere would refuse descriptions containing spaces,
-including ADR 0011's ownership token, and applying the description set everywhere would drop
-four rejections `lpar_name` performs today. The two sets exist because the two kinds of value
-differ.
+**Derive the strict set from the attribute name** — treat `name`, `lpar_name`, and
+`profile_name` as object names and refuse a space and a semicolon in them everywhere. This was
+the first shape written here and it is wrong. It reads as a tidy generalization of the guard
+`set_lpar_description` already had, but a space is not record structure, so the rule it
+generalizes is not the rule this record is about. The effect would be to narrow five more public
+tools on values that arrive from HMC name resolution — breaking them outright on any HMC with a
+space in a partition name — on the strength of a hedged, unverified comment. A security fix does
+not get to carry an unrelated restriction along with it.
 
-**A per-call-site `strict=` parameter naming which fields get the name set.** Rejected: it puts
-the decision at the call site, which is where the original omission happened. Deriving it from
-the attribute name keeps the record grammar's rules inside the record grammar's owner.
+**A per-call-site `strict=` parameter naming which fields get the extra rejections.** Rejected
+for the same reason the previous alternative is: with space and semicolon out of the record
+grammar, there is no second set for a parameter to select, and the one site that keeps them
+states them itself in four lines.

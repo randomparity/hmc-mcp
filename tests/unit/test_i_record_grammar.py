@@ -34,7 +34,8 @@ from hmc_mcp.ssh_commands import (
     validate_lpar_description,
 )
 
-SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "hmc_mcp"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+SCANNED_ROOTS = (_REPO_ROOT / "src" / "hmc_mcp", _REPO_ROOT / "scripts")
 
 
 def _config() -> HMCConfig:
@@ -79,10 +80,15 @@ def test_build_attribute_record_allows_an_append_operator():
 
 @pytest.mark.parametrize(
     ("bad", "wording"),
-    [(",", "comma"), ("=", "equals sign")],
+    [(",", "comma"), ("=", "equals sign"), ('"', "double quote")],
 )
 def test_build_attribute_record_rejects_record_delimiters(bad, wording):
-    """A structural character in any value is refused, naming char and field."""
+    """A structural character in any value is refused, naming char and field.
+
+    The double quote is structure too: it is the HMC's own escape for a value
+    containing a comma, so a value carrying one opens a quoted region that
+    swallows the attributes after it.
+    """
     with pytest.raises(HMCCLIError) as excinfo:
         build_attribute_record([("name", "lpar1"), ("description", f"x{bad}y")])
     message = str(excinfo.value)
@@ -90,25 +96,34 @@ def test_build_attribute_record_rejects_record_delimiters(bad, wording):
     assert "description" in message
 
 
-@pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])
-@pytest.mark.parametrize("attribute", ["name", "lpar_name", "profile_name"])
-def test_build_attribute_record_rejects_unsafe_characters_in_object_names(
-    attribute, bad, wording
-):
-    """Attributes carrying an HMC object name also refuse a space and a ';'."""
-    with pytest.raises(HMCCLIError) as excinfo:
-        build_attribute_record([(attribute, f"lp{bad}ar")])
-    message = str(excinfo.value)
-    assert wording in message
-    assert attribute in message
+@pytest.mark.parametrize("control", ["\n", "\r", "\x00", "\x1b", "\x7f"])
+def test_build_attribute_record_rejects_control_characters(control):
+    """A control character is refused in every value, not only descriptions.
+
+    The record is one line, and the ``-f`` file form reads the same data format
+    one record per line — so a newline may terminate the record and a NUL may
+    truncate it inside the HMC, acting on a different partition than the one
+    the caller named.
+    """
+    with pytest.raises(HMCCLIError, match="control character"):
+        build_attribute_record([("name", f"lp{control}ar")])
 
 
-def test_build_attribute_record_allows_spaces_in_a_description():
-    """A description keeps spaces — the ownership token of ADR 0011 needs them."""
-    record = build_attribute_record(
-        [("name", "lpar1"), ("description", "[hmc-mcp owner:agent-a created:2026-08-19]")]
-    )
-    assert record == "name=lpar1,description=[hmc-mcp owner:agent-a created:2026-08-19]"
+@pytest.mark.parametrize(
+    "value",
+    [
+        "No comma name",  # spaces are legal in an unquoted HMC name value
+        "lpar;name",
+        "[hmc-mcp owner:agent-a created:2026-08-19]",
+    ],
+)
+def test_build_attribute_record_keeps_characters_that_are_not_structure(value):
+    """The grammar refuses record structure only, not everything unusual.
+
+    IBM's own escaping note shows an unquoted ``name=No comma name``, so a
+    space is not structure.  ADR 0011's ownership token needs spaces too.
+    """
+    assert build_attribute_record([("name", value)]) == f"name={value}"
 
 
 def test_build_attribute_record_rejects_a_malformed_attribute_name():
@@ -117,10 +132,33 @@ def test_build_attribute_record_rejects_a_malformed_attribute_name():
         build_attribute_record([("na me", "lpar1")])
 
 
+def test_build_attribute_record_rejects_a_repeated_attribute():
+    """A record naming one attribute twice is refused, not sent.
+
+    ADR 0045 records that the HMC's handling of a duplicate attribute was never
+    verified; the component that owns the grammar should not be the one that
+    produces such a record.
+    """
+    with pytest.raises(HMCCLIError, match="appears twice"):
+        build_attribute_record([("name", "lp1"), ("name", "lp2")])
+
+
 def test_build_attribute_record_rejects_an_empty_record():
     """A record with no attributes is a caller bug, not an empty command."""
     with pytest.raises(HMCCLIError, match="at least one attribute"):
         build_attribute_record([])
+
+
+@pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])
+def test_set_lpar_description_keeps_its_historical_lpar_name_rejections(bad, wording):
+    """Space and ';' stay refused where they always were, and only there.
+
+    Neither is record structure, so the builder does not refuse them; extending
+    the rejection to the other five records would refuse HMC-legal names on
+    tools that accept them today (ADR 0045).
+    """
+    with pytest.raises(HMCCLIError, match=wording):
+        asyncio.run(set_lpar_description(_config(), "sys", f"lp{bad}ar", "text"))
 
 
 # ---------------------------------------------------------------------- #
@@ -128,7 +166,10 @@ def test_build_attribute_record_rejects_an_empty_record():
 # ---------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize(("bad", "wording"), [(",", "comma"), ("=", "equals sign")])
+@pytest.mark.parametrize(
+    ("bad", "wording"),
+    [(",", "comma"), ("=", "equals sign"), ('"', "double quote")],
+)
 def test_validate_lpar_description_rejects_record_delimiters(bad, wording):
     """The description validator refuses record structure with ValueError."""
     with pytest.raises(ValueError) as excinfo:
@@ -268,23 +309,76 @@ def _builds_an_i_record(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return names_a_command and carries_the_flag
 
 
-def _calls_builder(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when *func* calls :func:`build_attribute_record`."""
+def _is_builder_call(node: ast.AST) -> bool:
+    """True when *node* is a call to :func:`build_attribute_record`."""
+    if not isinstance(node, ast.Call):
+        return False
+    callee = node.func
+    if isinstance(callee, ast.Name):
+        return callee.id == BUILDER_NAME
+    return isinstance(callee, ast.Attribute) and callee.attr == BUILDER_NAME
+
+
+def _unwrap_shlex_quote(node: ast.AST) -> ast.AST:
+    """Return the argument of a ``shlex.quote(...)`` call, else *node*."""
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "quote"
+        and len(node.args) == 1
+    ):
+        return node.args[0]
+    return node
+
+
+def _builder_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Return the local names assigned from a builder call inside *func*."""
+    names: set[str] = set()
     for node in ast.walk(func):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Assign) or not _is_builder_call(node.value):
             continue
-        callee = node.func
-        if isinstance(callee, ast.Name) and callee.id == BUILDER_NAME:
-            return True
-        if isinstance(callee, ast.Attribute) and callee.attr == BUILDER_NAME:
-            return True
-    return False
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
+
+
+def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Return the ``-i`` payload expressions in *func* not built by the builder.
+
+    Follows the value actually interpolated after the ``-i`` flag rather than
+    asking whether the builder is called anywhere in the function, so a
+    function that builds one record correctly and a second by f-string is still
+    reported.
+    """
+    bound = _builder_bound_names(func)
+    skip = _docstring_nodes(func)
+    unguarded: list[str] = []
+    for node in ast.walk(func):
+        if not isinstance(node, ast.JoinedStr) or id(node) in skip:
+            continue
+        parts = node.values
+        for index, part in enumerate(parts[:-1]):
+            text = _static_text(part)
+            if not text.rstrip().endswith("-i"):
+                continue
+            payload = parts[index + 1]
+            if not isinstance(payload, ast.FormattedValue):
+                unguarded.append(ast.unparse(part))
+                continue
+            expression = _unwrap_shlex_quote(payload.value)
+            guarded = _is_builder_call(expression) or (
+                isinstance(expression, ast.Name) and expression.id in bound
+            )
+            if not guarded:
+                unguarded.append(ast.unparse(payload.value))
+    return unguarded
 
 
 def _record_building_functions() -> list[tuple[str, ast.AST]]:
     """Return every ``(qualified name, node)`` that builds an ``-i`` record."""
     found: list[tuple[str, ast.AST]] = []
-    for path in sorted(SRC_ROOT.rglob("*.py")):
+    for path in sorted(p for root in SCANNED_ROOTS for p in root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -295,7 +389,7 @@ def _record_building_functions() -> list[tuple[str, ast.AST]]:
 
 
 def test_every_i_record_site_is_built_by_the_shared_builder():
-    """A function that builds a ``-i`` command must call the record builder.
+    """Every value interpolated after ``-i`` must come from the record builder.
 
     This is the recurrence guard.  ``shlex.quote`` around an f-string looks
     safe and is not; the only durable defence is that the record grammar has
@@ -304,11 +398,15 @@ def test_every_i_record_site_is_built_by_the_shared_builder():
     sites = _record_building_functions()
     assert sites, "no -i record sites found — the AST scan stopped working"
 
-    skipping = [name for name, node in sites if not _calls_builder(node)]
+    skipping = {
+        name: unguarded
+        for name, node in sites
+        if (unguarded := _unguarded_i_values(node))
+    }
     assert not skipping, (
-        f"these functions build an HMC CLI -i attribute record without "
-        f"{BUILDER_NAME}(): {skipping}. shlex.quote protects the shell word "
-        f"only; the record's own ',' and '=' delimiters need the builder."
+        f"these -i payloads are not built by {BUILDER_NAME}(): {skipping}. "
+        f"shlex.quote protects the shell word only; the record's own ',', '=' "
+        f"and '\"' structure needs the builder."
     )
 
 
