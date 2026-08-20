@@ -29,6 +29,12 @@ CONNECT_TIMEOUT = 30.0
 READ_TIMEOUT = 300.0
 MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 * 1024  # 100 GiB
 DEFAULT_CHUNK_SIZE = 8192
+# The upload's chunk is a *wire* unit, not a read hint: httpcore issues one
+# `network_stream.write` per chunk an async iterator yields
+# (`httpcore/_async/http11.py:157-166`), where a `bytes` body produced one write
+# for the whole payload. 8 KiB would make a 20 GiB ISO 2.6 million writes.
+# 64 KiB is httpx's own streaming unit (`AsyncIteratorByteStream.CHUNK_SIZE`).
+UPLOAD_CHUNK_SIZE = 64 * 1024
 
 
 
@@ -398,15 +404,15 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
 
 
 async def _aiter_file_chunks(
-    handle: BinaryIO, chunk_size: int = DEFAULT_CHUNK_SIZE
+    handle: BinaryIO, chunk_size: int = UPLOAD_CHUNK_SIZE
 ) -> AsyncIterator[bytes]:
     """Yield *handle*'s remaining bytes in ``chunk_size`` pieces.
 
     The upload body httpx accepts from an ``AsyncClient`` is an async iterator —
     a file object or a sync generator raises ``RuntimeError`` at send time — so
     the file is read here rather than handed over. *handle* is left open and
-    closed by the caller, which keeps the staged file's lifetime bound to the
-    ``with`` block that also survives an upload failure.
+    closed by the caller, which is what guarantees the descriptor is released on
+    every outcome rather than at some later finalization of this generator.
     """
     while chunk := handle.read(chunk_size):
         yield chunk
@@ -502,7 +508,7 @@ async def upload_iso(
 
         # Upload content, streamed from the staged file. The download bound is
         # 100 GiB, so reading it back whole would size an allocation in this
-        # shared process by the ISO an operator happened to name (ADR 0053).
+        # shared process by the ISO an operator happened to name (ADR 0052).
         with iso_path.open("rb") as f:
             await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
 

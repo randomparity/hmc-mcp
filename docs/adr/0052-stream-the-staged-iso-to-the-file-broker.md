@@ -1,4 +1,4 @@
-# 0053 — `hmc_upload_iso` streams the staged ISO to the file broker
+# 0052 — `hmc_upload_iso` streams the staged ISO to the file broker
 
 ## Status
 
@@ -78,12 +78,27 @@ it, `Transfer-Encoding: chunked` and no length. ADR 0031 records that the
 brokered upload requires `Content-Length`, so the header is load-bearing.
 
 **The body is consumed exactly once and is never replayed.** This is the risk
-streaming introduces: a retry against an exhausted async generator sends an
-*empty* body under an unchanged `Content-Length` — *verified* by probe, the
-second send produced `b""` with the header intact. That would upload a truncated
-ISO while the caller's returned SHA-256 still described the whole download:
-silent corruption, worse than the memory fault being fixed. Nothing in this path
-can retry, and each of these was read from source rather than assumed:
+streaming introduces, and it is worth stating at its true size rather than its
+scariest one. Two guards sit under it, both *verified* here:
+
+- Re-sending the **same** `Request` raises `httpx.StreamConsumed`
+  (`httpx/_content.py:75-77` — `AsyncIteratorByteStream.__aiter__` raises when
+  the stream was already consumed and wraps an async generator).
+- Building a **new** `Request` around the exhausted generator does *not* raise:
+  the new stream object iterates an exhausted generator and yields nothing, so
+  the body is empty under the `Content-Length` that was passed in — reproduced
+  by probe. But h11 refuses to send it: against a real socket, a body shorter
+  than the declared length raises
+  `LocalProtocolError: Too little data for declared Content-Length`. Reproduced
+  by probe on a loopback server.
+
+So a truncated ISO cannot reach the HMC *quietly* — the request fails loudly at
+the transport instead. What remains is that the failure would be confusing and
+the operation would still be wrong, and that the guarantee rests on the length
+and the body coming from the same source. That is enough reason to keep
+single-send as a design constraint rather than adding an executable guard whose
+job h11 already does. Nothing in this path can retry, and each of these was read
+from source rather than assumed:
 
 - `HMCClient._request` (`client.py`) sends once, and its `except` arms only
   translate `httpx.TimeoutException` / `TransportError` into `HMCTransportError`
@@ -103,15 +118,31 @@ future retry, redirect-following, or shared client must make the body
 re-creatable (a factory per attempt) in the same change.
 
 **The handle is opened by `upload_iso`, not by the generator.** The `with` block
-spans the upload and closes before the `finally` arm unlinks the temp file, so
-the staged file's lifetime stays tied to a block that survives an upload failure
-— and no handle is left open to block the unlink.
+spans the upload, so the descriptor is released deterministically on every
+outcome rather than whenever the generator is finalized. That is a descriptor
+leak this guards, not an unlink: on POSIX an open handle does not prevent
+`unlink`, so `assert not staged.exists()` cannot see a leaked one. The test that
+holds the opened handle and asserts `handle.closed` is what pins it — with the
+`with` replaced by a bare `open()`, every other assertion in the file stays
+green.
 
 ## Consequences
 
 **Memory used by the upload no longer scales with the ISO.** It is one chunk at
-a time, `DEFAULT_CHUNK_SIZE` (8 KiB) — the constant the download loop already
-uses, reused rather than duplicated as a second knob.
+a time, `UPLOAD_CHUNK_SIZE` (64 KiB).
+
+**The upload gets its own chunk constant rather than reusing the download's.**
+Reusing `DEFAULT_CHUNK_SIZE` (8 KiB) looked like avoiding a second knob, and
+that reasoning was wrong: the two constants measure different things. The
+download's is a read hint over an already-buffered response, while the upload's
+is a *wire* unit — httpcore issues one `network_stream.write` per chunk an async
+iterator yields (`httpcore/_async/http11.py:157-166`), where a `bytes` body
+produced one write for the whole payload. At 8 KiB a 20 GiB ISO is 2.6 million
+writes. Measured on the development host over loopback, a 256 MiB PUT ran at
+431 MB/s with 8 KiB chunks and 2428 MB/s with 64 KiB — loopback exaggerates it,
+since a real upload is link-bound, but the per-write overhead is real and the
+fix costs nothing. 64 KiB is httpx's own streaming unit
+(`AsyncIteratorByteStream.CHUNK_SIZE`). Memory stays bounded either way.
 
 **`MAX_DOWNLOAD_SIZE_BYTES` is unchanged at 100 GiB, deliberately.** It is an
 operator-visible bound and changing it is a separate decision (see below). What
@@ -122,15 +153,23 @@ have bounded all along.
 **The shape now matches what the code does.** Download streams, upload streams;
 there is no line in the middle that undoes the one above it.
 
-**Unchanged, and pinned by test so it stays that way:** broker cleanup on every
-outcome, the media-name collision refusal, and temp-file removal on both the
-success and the failure path. The last of these had no assertion before this
-change; streaming is exactly what could have broken it (an open handle at unlink
-time), so it now has one.
+**Unchanged, and now pinned by test:** broker cleanup on every outcome and the
+media-name collision refusal.
 
-**Still open, filed separately:** the media-name collision check runs *after* the
-download, so a large fetch precedes a refusal that could have come first
-(#325). This ADR does not touch it.
+**One thing was not unchanged, and an earlier draft of this ADR said it was.**
+Temp-file removal did *not* happen on every failure path: the download landed
+before the collision check, but the `try` whose `finally` unlinks began after
+it, so a `media_name` that already existed — or any failure reading the
+repository — returned an error with the whole staged download still on disk, up
+to the 100 GiB bound and repeatable at will. The leak predates this change; the
+false claim did not. The cleanup arm now opens immediately after the download,
+and three tests pin it: the collision path, a failing repository read, and the
+descriptor the upload streams from.
+
+**Still open, filed separately:** the media-name collision check still runs
+*after* the download, so a large fetch precedes a refusal that could have come
+first (#325). Moving the check would close that; this change only stops the
+fetch being *stranded*, and leaves the ordering to #325.
 
 **The proof is a shape test, not a memory measurement.** `_broker_file_upload`'s
 body is asserted to leave the process as an async-only stream carrying the

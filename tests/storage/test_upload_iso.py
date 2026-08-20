@@ -16,7 +16,7 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.config import parse_iso_url_allowlist
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_storage import (
-    DEFAULT_CHUNK_SIZE,
+    UPLOAD_CHUNK_SIZE,
     upload_iso,
     _download_iso_from_url,
 )
@@ -402,11 +402,11 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     a file that passes it and is then read whole is a 100 GiB allocation in a
     process shared by every caller of every tool. What replaces that read is
     asserted here at the seam where it happened: the argument is an async
-    iterator rather than `bytes`, no single chunk exceeds `DEFAULT_CHUNK_SIZE`,
+    iterator rather than `bytes`, no single chunk exceeds `UPLOAD_CHUNK_SIZE`,
     more than one chunk is produced, and the chunks reassemble to exactly the
     staged bytes under the length the broker is told to expect.
     """
-    payload = b"ISO payload block\n" * 2000  # spans several chunks
+    payload = b"ISO payload block\n" * 12000  # spans several 64 KiB chunks
     download = stage_download(payload)
     captured: dict[str, object] = {}
 
@@ -436,7 +436,7 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
     assert captured["is_async_iterator"] is True
     assert captured["is_bytes"] is False
     assert len(chunks) > 1
-    assert max(len(chunk) for chunk in chunks) <= DEFAULT_CHUNK_SIZE
+    assert max(len(chunk) for chunk in chunks) <= UPLOAD_CHUNK_SIZE
     assert b"".join(chunks) == payload
     assert captured["length"] == len(payload)
     assert result["sha256"] == hashlib.sha256(payload).hexdigest()

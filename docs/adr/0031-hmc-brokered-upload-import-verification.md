@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amended 2026-08-20 by ADR 0053 — see *Amendment* below; the decision
+Accepted. Amended 2026-08-20 by ADR 0052 — see *Amendment* below; the decision
 recorded here stands, one signature it lists has changed.
 
 ## Context
@@ -139,7 +139,7 @@ The fixtures are designed to be updated after live verification against real HMC
 
 - **Block on live HMC verification.** Documentation-based verification provides sufficient confidence to proceed with implementation. Live verification will refine the fixtures and surface any version-specific differences.
 
-## Amendment (2026-08-20, ADR 0053, issue #308)
+## Amendment (2026-08-20, ADR 0052, issue #308)
 
 `_broker_file_upload` no longer takes the content as `bytes`. Its signature is
 now:
@@ -154,16 +154,16 @@ primitives private all stand — this is how the body is supplied, not what is
 sent. `Content-Length` is now passed in rather than derived with `len(content)`,
 because there is no materialized body to measure.
 
-The reason is recorded in ADR 0053: the sole caller, `upload_iso`, was reading
+The reason is recorded in ADR 0052: the sole caller, `upload_iso`, was reading
 the entire staged ISO into memory to satisfy the old `bytes` parameter, bounded
 only by a 100 GiB download limit. The body is now streamed from the staged file
 in chunks. `content` must be an **async** iterator (httpx's `AsyncClient`
-refuses a sync one), and it is consumed exactly once — ADR 0053 records what was
+refuses a sync one), and it is consumed exactly once — ADR 0052 records what was
 checked to establish that nothing in this path replays a sent request.
 
 ## References
 
-- ADR 0053: `hmc_upload_iso` streams the staged ISO to the file broker
+- ADR 0052: `hmc_upload_iso` streams the staged ISO to the file broker
 - Issue #201: Verify HMC media-upload, checksum, and import capabilities
 - Issue #200: Media upload saga (parent epic)
 - Issue #203: Public media upload API (follow-up)
