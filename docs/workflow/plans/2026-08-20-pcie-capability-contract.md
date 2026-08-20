@@ -191,9 +191,10 @@ mistaken for live capture; identities and units are executable assertions.
    admits its grammar and exact readback fields; cross-family composition is forbidden;
    header-only success is available-empty; and blank success is malformed.
 2. Add a structural no-mutation test. Parse `src/hmc_mcp/ssh_commands.py` with `ast`, remove only
-   the top-level `parse_hmc_delimited_rows` node, and require the SHA-256 of `ast.dump` to equal the
+   the top-level `parse_hmc_delimited_rows` node, serialize node types and non-empty semantic fields
+   while excluding interpreter-added empty fields, and require the canonical SHA-256 to equal the
    reviewed `main` baseline digest
-   `feb6c7347133ca5da9dabb973326b95fb180c459c6e98c56b5ce68a298ee4f14`. This executes in shallow
+   `764a1641542cfdda52428bcc6c6ad9f1c60535999cd580fb02236bed9faca8e2`. This executes in shallow
    CI and pins imports, constants, executable module statements, and every pre-existing function
    body. Separately require the parser's call
    targets to be exactly the reviewed stdlib/builtin/method allowlist

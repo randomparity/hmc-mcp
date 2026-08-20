@@ -252,18 +252,33 @@ def _call_name(node: ast.Call) -> str:
     return ".".join(reversed(parts))
 
 
+def _canonical_ast(value: object) -> object:
+    if isinstance(value, ast.AST):
+        fields = []
+        for name in value._fields:
+            item = _canonical_ast(getattr(value, name, None))
+            if item not in (None, [], ()):
+                fields.append((name, item))
+        return (type(value).__name__, fields)
+    if isinstance(value, list):
+        return [_canonical_ast(item) for item in value]
+    return value
+
+
 def test_only_strict_parser_changes_production_module() -> None:
-    current = ast.parse((ROOT / "src" / "hmc_mcp" / "ssh_commands.py").read_text())
+    source = (ROOT / "src" / "hmc_mcp" / "ssh_commands.py").read_text()
+    current = ast.parse(source)
     parser = next(
         node
         for node in current.body
         if isinstance(node, ast.FunctionDef) and node.name == "parse_hmc_delimited_rows"
     )
     current.body.remove(parser)
-    baseline_digest = hashlib.sha256(ast.dump(current).encode()).hexdigest()
+    canonical = json.dumps(_canonical_ast(current), separators=(",", ":"))
+    baseline_digest = hashlib.sha256(canonical.encode()).hexdigest()
     assert (
         baseline_digest
-        == "feb6c7347133ca5da9dabb973326b95fb180c459c6e98c56b5ce68a298ee4f14"  # pragma: allowlist secret
+        == "764a1641542cfdda52428bcc6c6ad9f1c60535999cd580fb02236bed9faca8e2"  # pragma: allowlist secret
     )
     calls = {
         _call_name(node) for node in ast.walk(parser) if isinstance(node, ast.Call)
