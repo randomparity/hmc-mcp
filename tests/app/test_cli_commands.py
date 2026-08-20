@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import pytest
+import typer
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -1918,6 +1919,64 @@ def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatc
     assert "Deleted storage mapping map-1" in result.stdout
     assert seen == {"vios": VIOS_UUID, "mapping_uuid": "map-1"}
     assert direct_client.entered
+
+
+def test_storage_detach_mapping_reports_one_failure_and_exits_1(
+    direct_client, monkeypatch
+):
+    """A failing detach reports once, on stderr, and exits 1.
+
+    The command used to wrap ``_run`` in ``except Exception``, which caught
+    ``_run``'s own ``typer.Exit`` sentinel -- ``typer.Exit`` subclasses
+    ``RuntimeError`` -- and printed a second, information-free line on stdout.
+    """
+
+    async def fake_detach(_hmc, vios, mapping_uuid):
+        raise HMCError("mapping is in use")
+
+    monkeypatch.setattr(
+        "hmc_mcp.operations_storage.detach_storage_mapping", fake_detach
+    )
+
+    result = RUNNER.invoke(
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "map-1", "--confirm"]
+    )
+
+    assert result.exit_code == 1
+    assert "Error: mapping is in use" in result.stderr
+    assert "Failed to delete storage mapping" not in result.stdout
+    assert "Deleted storage mapping" not in result.stdout
+
+
+def test_run_propagates_a_typer_exit_code_unchanged():
+    """``_run`` must not rewrite a closure's chosen exit code to 1.
+
+    ``typer.Exit`` subclasses ``RuntimeError``, so the catch-all would otherwise
+    route the sentinel through ``_fail`` and report exit 1 -- turning a usage
+    error (code 2) into a generic failure.
+    """
+
+    async def _go() -> None:
+        raise typer.Exit(code=2)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_app._run(_go)
+
+    assert excinfo.value.exit_code == 2
+
+
+def test_with_client_propagates_a_typer_exit_code_unchanged(monkeypatch):
+    """``_with_client`` shares ``_run``'s control-flow passthrough."""
+
+    def boom(_factory, _fn):
+        raise typer.Exit(code=2)
+
+    monkeypatch.setattr("hmc_mcp.cli_app.run_with_client", boom)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        cli_app._with_client(lambda hmc: None)
+
+    assert excinfo.value.exit_code == 2
 
 
 def test_storage_upload_iso_reports_an_existing_duplicate(direct_client, monkeypatch):
