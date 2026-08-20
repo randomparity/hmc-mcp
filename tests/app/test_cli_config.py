@@ -10,6 +10,8 @@ Spec item -> node id:
   R11a test_init_access_policy_output_redirects_the_write
   R9b  test_init_access_policy_refuses_a_key_that_cannot_be_a_connection
   R11  test_a_write_failure_after_the_create_leaves_no_partial_file
+  287  test_init_access_policy_output_collision_names_a_different_remedy
+  287  test_init_access_policy_output_at_the_default_path_uses_output_case
 
 `config_dir()` is steered by patching `sys.platform` to "linux" and setting
 XDG_CONFIG_HOME, which is this module's established idiom: on darwin `config_dir()`
@@ -469,6 +471,63 @@ def test_init_access_policy_refuses_to_overwrite_and_names_the_remedy(
     assert second.exit_code == 1
     assert target.read_bytes() == before
     assert "--output" in second.output
+
+
+def test_init_access_policy_output_collision_names_a_different_remedy(
+    tmp_path, monkeypatch
+):
+    """#287: a scratch --output collision is not the default-path failure.
+
+    The operator already used --output once; telling them to "write to a scratch path
+    with --output PATH" again is circular — it is exactly the action that just failed.
+    The message must name a remedy that differs from it (delete the file, or choose a
+    different --output PATH) and must not claim the colliding file is a reviewed
+    policy, since it may just be a stale scratch file from an earlier attempt.
+    """
+    scratch = tmp_path / "scratch" / "new-policy.toml"
+
+    first = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+    assert first.exit_code == 0, first.output
+    before = scratch.read_bytes()
+
+    second = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+    # rich hard-wraps a non-tty at 80 columns, so a long path may carry an inserted
+    # newline; flatten before checking for path substrings.
+    flattened = second.output.replace("\n", "")
+
+    assert second.exit_code == 1
+    assert scratch.read_bytes() == before
+    assert str(scratch) in flattened
+    assert "write to a scratch path with --output PATH" not in flattened
+    assert "reviewed policy" not in flattened
+
+
+def test_init_access_policy_output_at_the_default_path_uses_output_case(
+    tmp_path, monkeypatch
+):
+    """#287: the discriminator is whether --output was passed, not the resolved path.
+
+    An operator can point --output directly at the platform-native path. Comparing
+    the resolved target against the platform default would misclassify this as the
+    "reviewed policy" case even though the operator explicitly named the path with
+    --output; the handler must key off the presence of --output itself.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    default_target = tmp_path / "hmc-mcp" / "access-policy.toml"
+
+    with patch.object(sys, "platform", "linux"):
+        first = RUNNER.invoke(
+            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
+        )
+        assert first.exit_code == 0, first.output
+        second = RUNNER.invoke(
+            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
+        )
+
+    flattened = second.output.replace("\n", "")
+    assert second.exit_code == 1
+    assert "write to a scratch path with --output PATH" not in flattened
+    assert "reviewed policy" not in flattened
 
 
 def test_init_access_policy_output_redirects_the_write(tmp_path, monkeypatch):
