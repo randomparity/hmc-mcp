@@ -77,7 +77,10 @@ def parse_hmc_delimited_rows(
     if not records:
         raise ValueError("HMC delimited output is missing its header")
     try:
-        parsed = list(csv.reader(records, delimiter=delimiter, strict=True))
+        parsed = [
+            list(csv.reader([line], delimiter=delimiter, strict=True))[0]
+            for line in records
+        ]
     except csv.Error as error:
         raise ValueError(f"malformed HMC delimited output: {error}") from error
     if tuple(parsed[0]) != expected:

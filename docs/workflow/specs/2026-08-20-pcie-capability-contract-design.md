@@ -100,7 +100,8 @@ between, or after records contribute no row. The first nonblank record is exactl
 is removed before data parsing; a header-only stream is an available empty collection. A repeated
 header among data is an ordinary data row, not silently discarded. Each nonblank line is parsed
 with Python's `csv.reader` using the one-character delimiter, `strict=True`, and standard
-double-quote escaping. Unterminated quotes and characters after a closing quote are malformed.
+double-quote escaping. Each physical line is parsed independently; a quote cannot continue onto
+another line. Unterminated quotes and characters after a closing quote are malformed.
 Unquoted and quoted values have surrounding whitespace retained; only the blank-line predicate
 uses `str.strip()`. A delimiter-only line is a row of empty values and is valid only when its
 column count matches. A quoted delimiter remains inside one value. Header validation requires an

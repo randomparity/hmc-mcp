@@ -77,7 +77,7 @@ def parse_hmc_delimited_rows(
     records = [line for line in text.splitlines() if line.strip()]
     if not records:
         raise ValueError("HMC delimited output is missing its header")
-    parsed = list(csv.reader(records, delimiter=delimiter, strict=True))
+        parsed = [list(csv.reader([line], delimiter=delimiter, strict=True))[0] for line in records]
     if tuple(parsed[0]) != expected:
         raise ValueError("HMC delimited header does not match the requested fields")
 

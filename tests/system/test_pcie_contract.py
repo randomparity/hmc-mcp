@@ -83,7 +83,10 @@ def test_parser_rejects_invalid_contract(
         parse_hmc_delimited_rows(text, fields, delimiter)
 
 
-@pytest.mark.parametrize("text", ["", " \n\t", "a,c\n1,2", "a,b\n1", 'a,b\n1,"bad'])
+@pytest.mark.parametrize(
+    "text",
+    ["", " \n\t", "a,c\n1,2", "a,b\n1", 'a,b\n1,"bad', 'a,b\n1,"x\ny"'],
+)
 def test_parser_rejects_malformed_output(text: str) -> None:
     with pytest.raises(ValueError):
         parse_hmc_delimited_rows(text, ("a", "b"))
