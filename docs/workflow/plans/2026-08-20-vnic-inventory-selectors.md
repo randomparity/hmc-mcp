@@ -43,13 +43,22 @@ state. MCP, CLI, and Python API only adapt that operation.
 LPAR authorization.
 
 **Interfaces:** Define `VnicBackingSelector`, `VnicBackingSnapshot`, `VnicSnapshot`,
-`VnicChangeResult`, `VnicCapabilityError`, `VnicPartialError`, and async `add_vnic(...)` /
-`remove_vnic(...)` signatures from the spec. `VnicChangeResult.changed` is `bool | None`; it also
-defines `mutation_dispatched`, always-present immutable `vnic_before`, `backing_before`,
-`vnic_after`, and `backing_after` tuple fields, separate vNIC/backing after-read flags, output, and
-ordered error strings. Empty tuple plus a successful flag means verified absence; ambiguous rows
-remain observable. The exact ordered field names are transcribed in the spec. Task 3 consumes these
-exact names.
+`VnicChangeResult`, `VnicCapabilityError`, and `VnicPartialError`. Implement
+`add_vnic(hmc: HMCClient, system: str, lpar: str, selector: VnicBackingSelector,
+port_vlan_id: int, *, ownership_override: bool = False) -> VnicChangeResult` and
+`remove_vnic(hmc: HMCClient, system: str, lpar: str, slot_num: str, *,
+ownership_override: bool = False) -> VnicChangeResult`. `VnicChangeResult` has these ordered fields:
+`operation: Literal["add", "remove"]`, `mutation_dispatched: bool`, `changed: bool | None`,
+`selector: VnicBackingSelector | None`, `slot_num: str | None`,
+`vnic_before: tuple[VnicSnapshot, ...]`, `backing_before: tuple[VnicBackingSnapshot, ...]`,
+`vnic_after: tuple[VnicSnapshot, ...]`, `backing_after: tuple[VnicBackingSnapshot, ...]`,
+`vnic_after_read_succeeded: bool`, `backing_after_read_succeeded: bool`, `output: str`, and
+`errors: tuple[str, ...]`. Empty tuple plus a successful flag means verified absence; ambiguous
+rows remain observable. Every add result retains the requested selector; its slot is required for
+unchanged/changed outcomes and retained on partial outcomes whenever observed. Every remove result
+retains the requested slot; its selector is absent only for an already-absent no-op, otherwise the
+captured selector survives partial failures. Once dispatch occurs, no later failed read clears
+known selector, slot, or tuple evidence. Task 3 consumes these exact names and types.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
    mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
