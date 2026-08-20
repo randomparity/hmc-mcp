@@ -22,6 +22,7 @@ from collections.abc import Container
 from typing import Any
 
 from .access_policy import DEFAULT_CONNECTION_TOKEN
+from .audit import MAX_VALUE_LENGTH
 from .config import ConfigError, list_profiles_and_nicknames
 
 
@@ -141,6 +142,24 @@ def connection_permitted(connection: str | None, grant_connections: Container) -
     return connection in grant_connections
 
 
+def _bounded(token: Any) -> Any:
+    """The caller's token as the denial renders it: absent-or-default, and bounded.
+
+    Bounded to ``audit.MAX_VALUE_LENGTH`` rather than to a second constant, because the
+    *same* value in the *same* call is already truncated there — a message and a record
+    that disagree about how much of a caller's input they will echo is an asymmetry with
+    no reason behind it. Unbounded, an untrusted client could put a multi-megabyte
+    ``profile`` into a denial that FastMCP renders back to it and, under the accepted
+    #267, prints to stderr as well. That mattered less when only policy-using
+    deployments reached this path; ADR 0041 makes it every deployment.
+    """
+    if token is None or token == "":
+        return DEFAULT_CONNECTION_TOKEN
+    if isinstance(token, str):
+        return token[:MAX_VALUE_LENGTH]
+    return token
+
+
 def connection_denial(
     tool: str, policy_name: str, argument: str, token: Any, connection: str | None
 ) -> ConnectionScopeError:
@@ -157,9 +176,7 @@ def connection_denial(
             # that value is a profile key read from config.toml, and a denial is
             # one probe. repr() also neutralizes any control character a caller
             # puts in it.
-            connection=repr(
-                DEFAULT_CONNECTION_TOKEN if token is None or token == "" else token
-            ),
+            connection=repr(_bounded(token)),
             policy=repr(policy_name),
             clause=_clause(argument, collapsed),
         )

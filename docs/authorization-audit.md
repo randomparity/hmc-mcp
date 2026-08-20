@@ -7,11 +7,12 @@ document is the contract those records keep. The decision behind it is
 
 ## What you get, and when you get nothing
 
-**`authorization` records** exist only for calls the access policy authorizes, which
-means a policy must be selected. Without `--access-policy NAME` no authorizer is on any
-dispatch path, so `hmc-mcp serve` installs the sink and emits no authorization record at
-all — for the same reason it enforces nothing at all. That default is what issue #225
-changes.
+**`authorization` records** exist for calls the access policy authorizes — which is all of
+them, since ADR 0041 made a policy mandatory. Before it, a server started without
+`--access-policy NAME` had no authorizer on any dispatch path and emitted no authorization
+record at all, for the same reason it enforced nothing at all. There is no such server now,
+so every deployment writes one record per decision, and the fd 2 requirement below applies
+to every deployment rather than only to those that opted in.
 
 **`ownership-override` records are not policy-gated.** They come from the ADR 0011
 ownership check inside the handler, which runs whether or not a policy is selected — and
@@ -185,4 +186,23 @@ raised and *before* a permitted handler runs, so a permitted call is recorded as
 If the destination is absent, broken, or closed, the record is dropped silently — no
 counter, no marker. That keeps a diagnostic from failing a call, but it means an empty
 stream is not evidence of an idle server. A destination that is open but never drained
-is a different case: the write blocks (issue #269), so keep fd 2 drained.
+is a different case: the write blocks (issue #269), so fd 2 must be drained.
+
+**The record is readable by the party it is about, and it says more than the denial does.**
+Under stdio the MCP client owns the server's stderr, so a client can read the records describing
+its own calls. That matters for one field: `connection.resolved` carries the profile key a token
+resolved to, or `<unresolved>` when it named nothing configured. The denial *message* withholds
+that distinction on purpose — ADR 0038 makes an unresolvable token and a withheld one deny
+identically, so a caller cannot use denials to test membership of `config.toml` — and the record
+does not. A caller reading the stream therefore learns which of its guesses name configured
+profiles, and a correctly-guessed nickname yields the profile key it targets. The disclosure is
+names only, and `hmc_list_configured_hosts` offers a client more; if your profile inventory is
+sensitive, withhold that tool by policy and route this stream somewhere the client cannot read.
+
+Who has to do that depends on the transport, and under stdio it is not you. The MCP
+client spawns the server and owns fd 2, so "drain it" binds the client rather than the
+operator deploying it — choose one that reads its child's stderr. Under `--http` it is
+whatever supervisor or journal collects the unit's stderr. Since ADR 0041 made a policy
+mandatory this applies to every deployment, and an ungranted caller can drive the writes
+at call rate, because the record precedes the denial. There is no in-process lever to
+reduce the volume from `hmc-mcp serve` either — see issue #270.

@@ -54,9 +54,17 @@ class _ScriptedClient:
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
-    async def configure(enabled: bool, application) -> None:
+    async def configure(enabled, application, *, permits=None, authorize=None) -> None:
         assert enabled is True
-        assert application is runner.mcp
+        # The old assertion here was `application is runner.mcp`. ADR 0041 removed that
+        # module-level object, and the identity check had nothing left to compare
+        # against — so this asserts the property the runner actually needs instead:
+        # the toggle is handed the gates of the policy the runner composed, and that
+        # policy grants the escape hatch. Called with neither, `permits=None` would
+        # register the tool whatever the policy said and `authorize=None` would leave
+        # its handler unwrapped, which is how a live run stops being evidence.
+        assert permits is not None and authorize is not None
+        assert permits("hmc_run_command") is True
         return None
 
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)

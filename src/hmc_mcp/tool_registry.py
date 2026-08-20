@@ -166,13 +166,15 @@ def authorized(
     name: str,
     security: ToolSecurity,
     handler: Callable[..., Any],
-    authorize: Authorize | None,
+    authorize: Authorize,
 ) -> Callable[..., Any]:
     """Return *handler*, or a wrapper that authorizes the call before running it.
 
     The wrapper — not the registration site — decides: a tool declaring no
-    connection argument, and every tool when no policy is selected, registers
-    unwrapped, so no site can be handed an authorizer it forgets to apply.
+    connection argument registers unwrapped, so no site can be handed an
+    authorizer it forgets to apply. *authorize* is required since ADR 0041;
+    the arm that returned a bare handler because no policy was selected
+    described a composition that no longer exists.
 
     Arguments are bound against the handler's own signature rather than read out
     of ``kwargs``, so a selector passed positionally or left to its default is
@@ -180,7 +182,7 @@ def authorized(
     ``inspect.signature`` and FastMCP's schema generation follow, so the
     registered tool's name, description, and parameter schema are unchanged.
     """
-    if authorize is None or security.connection_argument is None:
+    if security.connection_argument is None:
         return handler
     signature = inspect.signature(handler)
 
@@ -342,19 +344,21 @@ def tool_module():
     def register_tools(
         mcp: FastMCP,
         *,
-        permits: Callable[[str], bool] | None = None,
-        authorize: Authorize | None = None,
+        permits: Callable[[str], bool],
+        authorize: Authorize,
     ) -> None:
         """Register this module's tools, skipping any the ceiling withholds.
 
         *permits* is the access policy's ceiling question and *authorize* its
-        dispatch-time question. ``None`` means no ceiling and no authorization,
-        which is what a caller composing without a policy passes. Both are taken
-        as callables rather than the policy object because ``access_policy``
+        dispatch-time question. Both are required since ADR 0041: this is the
+        bulk registration site, and while they defaulted to ``None`` a caller
+        that omitted them registered a module's entire tool set with no ceiling
+        and no authorizer, silently and without error. Both are taken as
+        callables rather than the policy object because ``access_policy``
         imports this module; see ADR 0037 and ADR 0038.
         """
         for definition in definitions:
-            if permits is not None and not permits(definition.name):
+            if not permits(definition.name):
                 continue
             mcp.tool(
                 authorized(

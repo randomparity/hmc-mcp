@@ -1,4 +1,21 @@
-"""Tests for hmc-mcp config init/list/show commands (issue #125)."""
+"""Tests for hmc-mcp config init/list/show/init-access-policy commands.
+
+The first three are issue #125. `init-access-policy` is issue #225; it covers
+docs/workflow/specs/2026-08-19-fail-closed-startup-design.md.
+
+Spec item -> node id:
+  R11  test_init_access_policy_writes_a_loadable_policy_at_0600
+  R11  test_init_access_policy_refuses_to_overwrite_and_names_the_remedy
+  R11  test_init_access_policy_reports_an_unresolvable_config_home
+  R11a test_init_access_policy_output_redirects_the_write
+  R9b  test_init_access_policy_refuses_a_key_that_cannot_be_a_connection
+  R11  test_a_write_failure_after_the_create_leaves_no_partial_file
+
+`config_dir()` is steered by patching `sys.platform` to "linux" and setting
+XDG_CONFIG_HOME, which is this module's established idiom: on darwin `config_dir()`
+reads `Path.home()` with no environment override, so without it these tests would
+write into the developer's own config directory.
+"""
 
 from __future__ import annotations
 
@@ -351,3 +368,151 @@ def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
     assert data["resolved_from"] == "staging"
     assert data["host"] == "stg-hmc.example.com"
     assert "prod-hmc.example.com" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# config init-access-policy (issue #225)
+# ---------------------------------------------------------------------------
+
+POLICY_ARGV = ["config", "init-access-policy"]
+
+
+def _generate(tmp_path, monkeypatch, *extra):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        return RUNNER.invoke(cli.app, [*POLICY_ARGV, *extra])
+
+
+def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypatch):
+    """R11: the file a server has to read, created the way `config init` creates one."""
+    from hmc_mcp.access_policy import load_access_policy
+    from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME
+    from hmc_mcp.server import TOOL_SECURITY
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0, result.output
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    assert target.exists()
+    assert "access-policy.toml" in result.output
+
+    # Loaded through the real loader, not re-parsed here: the claim is that a server
+    # could start on this file.
+    policy = load_access_policy(LEGACY_POLICY_NAME, TOOL_SECURITY, path=target)
+    assert policy.tools == frozenset(set(TOOL_SECURITY) - {"hmc_run_command"})
+
+    if sys.platform != "win32":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_init_access_policy_refuses_to_overwrite_and_names_the_remedy(
+    tmp_path, monkeypatch
+):
+    """R11: it cannot destroy a reviewed policy, and it says what to do instead.
+
+    R5's refusal points every operator here unconditionally — nothing at that point
+    distinguishes an upgrade from a first run — so the deployment that already has an
+    authored-but-unselected file arrives at this error, and a bare "already exists"
+    would be a dead end.
+    """
+    first = _generate(tmp_path, monkeypatch)
+    assert first.exit_code == 0, first.output
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    before = target.read_bytes()
+
+    second = _generate(tmp_path, monkeypatch)
+
+    assert second.exit_code == 1
+    assert target.read_bytes() == before
+    assert "--output" in second.output
+
+
+def test_init_access_policy_output_redirects_the_write(tmp_path, monkeypatch):
+    """R11a: the only way to regenerate, since the command cannot overwrite."""
+    scratch = tmp_path / "scratch" / "new-policy.toml"
+
+    result = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+
+    assert result.exit_code == 0, result.output
+    assert scratch.exists()
+    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+    if sys.platform != "win32":
+        assert stat.S_IMODE(scratch.stat().st_mode) == 0o600
+
+
+def test_init_access_policy_refuses_a_key_that_cannot_be_a_connection(
+    tmp_path, monkeypatch
+):
+    """R9b: escaping makes it parse; ADR 0036's entry rules still have to pass.
+
+    `[profiles." prod"]` is legal TOML that `load_profile` resolves today, so this is a
+    working deployment. The generation must fail before any file exists rather than
+    leave one that refuses to load, and the message must reach past the policy document
+    the operator never wrote to the config key they did.
+    """
+    config_dir = tmp_path / "hmc-mcp"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
+    )
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 1
+    assert not (config_dir / "access-policy.toml").exists()
+    output = result.output
+    assert "config.toml" in output
+    assert "padded" in output
+
+
+def test_init_access_policy_reports_an_unresolvable_config_home(tmp_path, monkeypatch):
+    """R11: the generator resolves the same path `serve` does, under the same guard."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+
+    def _no_home(cls):
+        raise RuntimeError("Could not determine home directory")
+
+    monkeypatch.setattr(Path, "home", classmethod(_no_home))
+
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, POLICY_ARGV)
+
+    assert result.exit_code == 1
+    assert "HOME" in result.output or "XDG_CONFIG_HOME" in result.output
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="exercises the POSIX fdopen path")
+def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monkeypatch):
+    """R11: O_EXCL alone only covers a failure at `open`.
+
+    ENOSPC, EDQUOT or EIO after the descriptor exists would otherwise leave a truncated
+    file — which exists, so the command's own no-overwrite rule refuses to regenerate
+    over it, and does not compile, so `serve` refuses too. That is a deployment that can
+    neither start nor recover without a manual delete.
+    """
+    import hmc_mcp.cli_config as cli_config
+
+    def _explode(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(cli_config.os, "fdopen", _explode)
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 1
+    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+
+
+def test_every_spec_numbered_test_named_in_the_header_still_exists():
+    """A header naming a deleted test is worse than no header (see #224)."""
+    import re
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    header = source.split('"""', 2)[1]
+
+    named = set(re.findall(r"^  \w+\s+(test_\w+)$", header, flags=re.MULTILINE))
+    defined = set(re.findall(r"^def (test_\w+)", source, flags=re.MULTILINE))
+
+    assert named, "the header maps no test; the guard would pass vacuously"
+    assert named <= defined, f"named but not defined: {sorted(named - defined)}"

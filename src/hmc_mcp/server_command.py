@@ -44,21 +44,30 @@ async def configure_arbitrary_command_tool(
     enabled: bool,
     mcp: FastMCP,
     *,
-    permits: Callable[[str], bool] | None = None,
-    authorize: Authorize | None = None,
+    permits: Callable[[str], bool],
+    authorize: Authorize,
 ) -> None:
     """Make escape-hatch registration match the requested capability state.
 
     The ``--enable-arbitrary-command`` flag is the outer gate and *permits* is
     the access policy's ceiling; per ADR 0036 they compose conjunctively, so the
-    tool is registered only when both admit it. ``None`` means no ceiling.
+    tool is registered only when both admit it.
 
     *authorize* is the same dispatch-time gate the domain registration sites
     take, applied through the same helper — this is the site that registers the
     one ``arbitrary-command`` tool, so it is the one that least tolerates an
-    exemption. ``None`` means no policy is selected.
+    exemption.
+
+    Both gates are **required** since ADR 0041, and this is the only registration
+    site where that matters as more than tidiness: it is the one that runs outside
+    ``create_mcp``. While they defaulted to ``None``, calling this on an
+    application composed from a read-only policy registered ``hmc_run_command``
+    with no ceiling check and no authorizer at all — the fail-open ADR 0041 claims
+    to have removed, surviving at the highest-risk tool in the package. ADR 0038
+    left them optional on the cost of updating a dozen call sites; every
+    non-test caller now passes both, so that cost is gone.
     """
-    permitted = enabled and (permits is None or permits("hmc_run_command"))
+    permitted = enabled and permits("hmc_run_command")
     registered = await mcp.local_provider.get_tool("hmc_run_command") is not None
     if permitted and not registered:
         mcp.tool(

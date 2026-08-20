@@ -15,6 +15,13 @@ from hmc_mcp.tool_registry import (
     tool_module,
     validate_security,
 )
+# Both gates are required since ADR 0041: `register_tools` is the bulk registration
+# site, and while they defaulted to None a caller that omitted them registered a
+# module's whole tool set with no ceiling and no authorizer. These tests are about
+# collection and isolation rather than about the policy, so they pass gates that admit
+# everything and wrap nothing.
+_GATES = {"permits": lambda _name: True, "authorize": lambda *_args: None}
+
 
 
 def _tool_names(application) -> set[str]:
@@ -45,8 +52,8 @@ def test_tool_modules_collect_definitions_in_isolation():
 
     first_application = create_mcp()
     second_application = create_mcp()
-    first_register(first_application)
-    second_register(second_application)
+    first_register(first_application, **_GATES)
+    second_register(second_application, **_GATES)
 
     assert _tool_names(first_application) == {"first_handler"}
     assert _tool_names(second_application) == {"second_handler"}
@@ -65,7 +72,7 @@ def test_tool_module_derives_annotations_and_preserves_handler():
         return "ok"
 
     application = create_mcp()
-    register_tools(application)
+    register_tools(application, **_GATES)
     registered = asyncio.run(application.list_tools())
 
     assert status() == "ok"
@@ -89,8 +96,8 @@ def test_same_definitions_register_on_independent_applications():
 
     first = create_mcp()
     second = create_mcp()
-    register_tools(first)
-    register_tools(second)
+    register_tools(first, **_GATES)
+    register_tools(second, **_GATES)
 
     assert _tool_names(first) == {"ping"}
     assert _tool_names(second) == {"ping"}
