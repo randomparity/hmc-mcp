@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import pathlib
 import re
 import types
 import typing
@@ -42,6 +43,13 @@ PAYLOAD = "R&D <a> \"b\" 'c'"
 BENIGN = "benign"
 
 BUILDER_MODULES = (documents, jobs)
+
+ADR_0042 = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "docs"
+    / "adr"
+    / "0042-outbound-xml-escaping-at-the-builder-boundary.md"
+)
 
 
 class UnsupportedAnnotation(TypeError):
@@ -282,6 +290,24 @@ def test_closed_vocabularies_reject_metacharacters(builder, parameter):
     kwargs[parameter] = PAYLOAD
     with pytest.raises(ValueError):
         builder(**kwargs)
+
+
+def test_the_recorded_builder_count_matches_the_module():
+    """ADR 0042 states the figure; a new builder must not leave it stale.
+
+    The count is load-bearing prose rather than decoration: it is how the
+    record claims the "every public builder carries the decorator" invariant
+    covers the whole module. Recomputing it here reddens the sentence rather
+    than letting it drift, which is what happened to it once already (#284).
+    """
+    recorded = re.search(
+        r"`documents\.py` decorates all (\d+) builders",
+        ADR_0042.read_text(encoding="utf-8"),
+    )
+    assert recorded is not None, "ADR 0042 no longer states the builder count"
+
+    actual = len([name for module, name, _ in _builders() if module is documents])
+    assert int(recorded.group(1)) == actual
 
 
 def test_every_documents_builder_escapes_its_arguments():
