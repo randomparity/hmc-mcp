@@ -62,7 +62,9 @@ removed rather than aliased.
 
 SSH adds strict collectors for version-labelled vNIC and `vnicbkdev` key/value rows and a VIOS
 identity projection. `No results were found.` is available-empty only for the admitted read. A
-malformed identity, decimal, duplicated slot/logical port, or conflicting parent fails closed.
+malformed identity or decimal fails closed. Duplicate vNIC slots fail. Logical ports conflict only
+on complete `(system, adapter_id, logical_port_id)` identity. Repeated observations of that
+identity deduplicate only when parent and compared capacity agree.
 Before serialization, fields embedded in ADR 0057's slash-delimited backing value reject `/`.
 Every caller field entering ADR 0045's HMC attribute record rejects ASCII controls, comma, equals,
 and double quote. Other shell metacharacters are permitted and remain data because the completed
