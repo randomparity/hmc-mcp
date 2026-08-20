@@ -34,8 +34,6 @@ from .config import (
     _load_profile_from_document,
     _read_config_document,
     config_dir,
-    list_nicknames,
-    list_profiles_with_default,
     resolve_config_path,
 )
 
@@ -109,10 +107,20 @@ def config_list() -> None:
         console.print(f"No config file found at {would_be}")
         return
 
+    # Read and parse config.toml exactly once for this command (issue #300): the
+    # profile names, the (default) marker, and the nicknames all derive from the
+    # same parsed document, so a file edited between what used to be two separate
+    # reads cannot produce a nickname column computed against a different profile
+    # set than the names printed above it. Same approach issue #295 used for
+    # config_show and hmc_list_configured_hosts.
     try:
-        names, default = list_profiles_with_default(config_path=config_path)
+        raw = _read_config_document(config_path)
+        names = list(_coerce_profiles(raw.get("profiles"), config_path))
+        nicknames = _coerce_nicknames(raw.get("nicknames"), config_path)
     except ConfigError as exc:
         _fail(exc)
+
+    default = raw.get("default_profile")
 
     if not names:
         console.print("No profiles defined in config file.")
@@ -124,11 +132,6 @@ def config_list() -> None:
 
     # Surface nicknames (secret-free): each maps to a profile key, flagged if
     # its target does not exist.
-    try:
-        nicknames = list_nicknames(config_path=config_path)
-    except ConfigError as exc:
-        _fail(exc)
-
     for nick, target in nicknames.items():
         status = "" if target in names else "  (no such profile)"
         console.print(f"{nick} -> {target}{status}")
