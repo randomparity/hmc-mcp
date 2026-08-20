@@ -153,55 +153,54 @@ repository** before exiting. The 7000 MiB repository must be live when ST17 exit
 
 ---
 
-### ST18 — ISO Upload via Local Path and via HTTP
+### ST18 — ISO Upload via HTTP
 
-**Intent:** Exercise `hmc_upload_iso` with **both** supported source types:
-1. **Local path** — `~/Downloads/ubuntu-26.04-live-server-ppc64el.iso`
-2. **HTTP URL** — same ISO served by a local `http.server` process started by the test
+**Intent:** Exercise `hmc_upload_iso` against its only accepted source type, an
+`http`/`https` URL — here `~/Downloads/ubuntu-26.04-live-server-ppc64el.iso` served by a
+local `http.server` thread the runner starts. ADR 0049 removed the local-path source: a
+value that is not an http(s) URL is refused before anything is read.
 
-This verifies the two distinct upload code paths in `operations_storage.upload_iso` (local
-file vs. HTTP download). The SHA-256 deduplication behaviour is also validated: the second
-upload of the same content returns `status="existing"`.
+The SHA-256 deduplication behaviour is also validated: the second upload of the same
+content returns `status="existing"`.
 
-After both upload paths are confirmed, the ISO is deleted and re-uploaded (local path) so
-the repository holds a single clean copy ready for ST19.
+After both uploads are confirmed, the ISO is deleted and re-uploaded so the repository
+holds a single clean copy ready for ST19.
 
 **Expected Outcomes:**
-- Local path upload: `status` is `"uploaded"`, `MediaName` matches requested name
-- HTTP URL upload of the same ISO: `status` is `"existing"` (deduplication fires)
+- First upload: `status` is `"uploaded"`, `MediaName` matches requested name
+- Second upload of the same URL under another name: `status` is `"existing"`
 - `hmc_list_optical_media` shows exactly one entry
 - `hmc_delete_optical_media` succeeds on the unmounted media
-- Re-upload (local path) succeeds; `context.vmedia_iso_name` is set
+- Re-upload succeeds; `context.vmedia_iso_name` is set
 
 **Todo List:**
 1. Guard: if `context.vmedia_repo_created` is False, skip all steps.
 2. Resolve `iso_path = str(Path.home() / "Downloads" / "ubuntu-26.04-live-server-ppc64el.iso")`.
    If the file does not exist, record FAIL and skip the rest of ST18 and ST19.
-3. Call `hmc_upload_iso(vios_uuid, vg_uuid, media_name="ubuntu-26.04-test.iso",
-   iso_source=iso_path)`. This will take several minutes — print a progress note before
+3. Start a Python `http.server.HTTPServer` in a daemon thread serving that directory on
+   `localhost:18765`, giving the URL
+   `http://localhost:18765/ubuntu-26.04-live-server-ppc64el.iso`. The server is started
+   once per process and is not shut down — ST20 uploads from it too. If the bind fails,
+   record FAIL and skip the rest of ST18.
+4. Call `hmc_upload_iso(vios_uuid, vg_uuid, media_name="ubuntu-26.04-test.iso",
+   iso_source=<url>)`. This will take several minutes — print a progress note before
    calling. Record PASS/FAIL; capture `status` field.
-4. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert one entry; capture
+5. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert one entry; capture
    `MediaName` into `context.vmedia_iso_name`.
-5. **HTTP server upload test:**
-   a. Start a Python `http.server.HTTPServer` in a background thread serving the
-      `~/Downloads` directory on `localhost:18765`.
-   b. Construct the URL: `http://localhost:18765/ubuntu-26.04-live-server-ppc64el.iso`
-   c. Call `hmc_upload_iso(vios_uuid, vg_uuid,
-      media_name="ubuntu-26.04-http-test.iso", iso_source=<url>)`.
-      Expect `status="existing"` because the SHA-256 matches the already-uploaded ISO.
-   d. Stop the HTTP server thread.
-   e. Record PASS if status is `"existing"`, FAIL otherwise.
-6. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert still exactly one entry
+6. Call `hmc_upload_iso(vios_uuid, vg_uuid, media_name="ubuntu-26.04-http-test.iso",
+   iso_source=<url>)`. Expect `status="existing"` because the SHA-256 matches the
+   already-uploaded ISO. Record PASS if status is `"existing"`, FAIL otherwise.
+7. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert still exactly one entry
    (deduplication did not add a second copy).
-7. Call `hmc_delete_optical_media(vios_uuid, vg_uuid, media_name="ubuntu-26.04-test.iso")`.
-8. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert empty.
-9. Re-upload via local path (same as step 3) to restore the media for ST19.
-   Update `context.vmedia_iso_name` from the result.
+8. Call `hmc_delete_optical_media(vios_uuid, vg_uuid, media_name="ubuntu-26.04-test.iso")`.
+9. Call `hmc_list_optical_media(vios_uuid, vg_uuid)`. Assert empty.
+10. Re-upload from the same URL (as step 4) to restore the media for ST19.
+    Update `context.vmedia_iso_name` from the result.
 
 **Relevant Context:**
-- `hmc_upload_iso` MCP tool; `operations_storage.upload_iso` handles both source types
+- `hmc_upload_iso` MCP tool; `operations_storage.upload_iso` accepts http(s) URLs only
 - Use Python stdlib `http.server.HTTPServer` + `threading.Thread` — no Flask dependency
-- Upload timeout is 300 s read timeout; the ISO is large; step 3 may take minutes
+- Upload timeout is 300 s read timeout; the ISO is large; step 4 may take minutes
 - SHA-256 deduplication: second upload of identical bytes → `status="existing"`,
   returns prior `media_name` without touching the repository
 
@@ -286,8 +285,8 @@ at the end.
 
 **Todo List:**
 1. Guard: if `context.vmedia_repo_created` is False, skip all steps.
-2. Re-upload the ISO: `hmc_upload_iso(vios_uuid, vg_uuid,
-   media_name="ubuntu-26.04-test.iso", iso_source=iso_path)`.
+2. Re-upload the ISO from the ST18 HTTP server: `hmc_upload_iso(vios_uuid, vg_uuid,
+   media_name="ubuntu-26.04-test.iso", iso_source=<url>)`.
    Update `context.vmedia_iso_name`. Record PASS/FAIL. Skip remainder on FAIL.
 3. Power off lp3 (it may already be off after ST15):
    `hmc_power_off_lpar(lpar_name_or_uuid="ltczz386-lp3", immediate=True, wait=True)`.
