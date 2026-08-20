@@ -75,9 +75,9 @@ SHARING_MODES = frozenset(get_args(SharingMode))
 # These match IBM HMC boot device types and are used to construct
 # PendingBootString values for boot order operations.
 BOOT_DEVICE_SELECTORS: tuple[BootDeviceSelector, ...] = (
-    "cd",  # Optical/CD-ROM device
-    "disk",  # Disk device (SCSI, direct-attached, SAN)
-    "network",  # Network boot (PXE, NIM, etc.)
+    "cd",      # Optical/CD-ROM device
+    "disk",    # Disk device (SCSI, direct-attached, SAN)
+    "network", # Network boot (PXE, NIM, etc.)
 )
 
 # Type alias for boot device selectors used in PendingBootString construction.
@@ -852,7 +852,6 @@ def build_virtual_optical_mapping_document(
 </VirtualIOServer>
 """
 
-
 # ====================================================================== #
 # Virtual Network (child of ManagedSystem)
 #
@@ -925,9 +924,7 @@ def build_media_repository_document(size_mib: int, vg_name: str = "") -> str:
 
 
 @escapes_string_arguments
-def build_virtual_optical_media_document(
-    media_name: str, size_mib: int, vg_name: str = ""
-) -> str:
+def build_virtual_optical_media_document(media_name: str, size_mib: int, vg_name: str = "") -> str:
     """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
 
     Only blank optical media can be created via the API; media_name is the
@@ -970,11 +967,8 @@ def build_media_repository_delete_document(vg_name: str = "") -> str:
   </MediaRepositories>"""
     return _document_envelope("VolumeGroup", body)
 
-
 @escapes_string_arguments
-def build_virtual_optical_media_delete_document(
-    media_name: str, vg_name: str = ""
-) -> str:
+def build_virtual_optical_media_delete_document(media_name: str, vg_name: str = "") -> str:
     """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST).
 
     vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
@@ -1263,16 +1257,16 @@ def build_ldap_config_document(
 
 def _build_pending_boot_string(devices: list[str]) -> str:
     """Build a PendingBootString from validated boot device selectors.
-
+    
     Args:
         devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-
+        
     Returns:
         Space-separated string of device selectors.
     """
     if not devices:
         raise ValueError("Boot order must contain at least one device")
-
+    
     # Validate all selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
@@ -1280,47 +1274,47 @@ def _build_pending_boot_string(devices: list[str]) -> str:
                 f"Invalid boot device selector: {device!r}. "
                 f"Must be one of: {BOOT_DEVICE_SELECTORS}"
             )
-
+    
     return " ".join(devices)
 
 
 @escapes_string_arguments
 def build_boot_order_document(devices: list[str]) -> str:
     """Build a LogicalPartition document to set LPAR boot order.
-
+    
     This document sets the PendingBootString which controls the boot device
     priority for the next LPAR boot. Changes take effect on the next activation
     (no reboot is required - this is a profile-only change).
-
+    
     Args:
         devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
                  The first device is tried first, then the second, etc.
-
+                 
     Returns:
         XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-
+        
     Example:
         >>> xml = build_boot_order_document(["network", "cd", "disk"])
         >>> "PendingBootString" in xml
         True
     """
     pending_boot_string = _build_pending_boot_string(devices)
-
+    
     body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
-
+    
     return _lpar_envelope(body)
 
 
 @escapes_string_arguments
 def build_clear_boot_order_document() -> str:
     """Build a LogicalPartition document to clear LPAR boot order.
-
+    
     This document clears the PendingBootString, restoring the HMC default
     boot behavior. Changes take effect on the next activation.
-
+    
     Returns:
         XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
     """
     body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
-
+    
     return _lpar_envelope(body)

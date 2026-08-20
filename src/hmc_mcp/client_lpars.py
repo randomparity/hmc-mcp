@@ -144,10 +144,7 @@ class LparsMixin:
         """
         path = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
         xml = await self._post(
-            path,
-            lpar_xml,
-            resource_type="LogicalPartition",
-            include_schema_version=False,
+            path, lpar_xml, resource_type="LogicalPartition", include_schema_version=False
         )
         entries = _parse_feed(xml, path) if xml else []
         return entries[0] if entries else None

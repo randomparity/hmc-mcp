@@ -53,12 +53,7 @@ def hmc_list_users(
     return _run(_go)
 
 
-@tool(
-    effect="read",
-    operation="user.get",
-    target_kind="user",
-    extra_targets=(("user", "name"),),
-)
+@tool(effect="read", operation="user.get", target_kind="user", extra_targets=(("user", "name"),))
 def hmc_get_user(
     name: str,
     profile: str | None = None,

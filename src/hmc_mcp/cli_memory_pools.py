@@ -1,4 +1,5 @@
-"""CLI commands for shared memory pools (HMC CLI via SSH)."""
+"""CLI commands for shared memory pools (HMC CLI via SSH).
+"""
 
 from __future__ import annotations
 
@@ -62,8 +63,6 @@ def memory_pools_remove(
     config = _ssh_config()
     result = _run(lambda: remove_memory_pool(config, system_name, pool_name))
 
-    console.print(
-        f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]"
-    )
+    console.print(f"[green]Memory pool '{pool_name}' removed from '{system_name}'[/green]")
     if result.strip():
         console.print(result.strip())
