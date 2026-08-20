@@ -107,20 +107,24 @@ async def list_dedicated_slots(
     items: list[DedicatedSlot] = []
     for row in rows:
         drc_index = row["drc_index"]
-        if not drc_index:
+        if not drc_index.strip():
             raise ValueError("dedicated PCIe slot row has a blank drc_index")
         items.append(
             DedicatedSlot(
                 system=system_name,
                 drc_index=drc_index,
-                description=row["description"] or None,
-                owner_lpar=row["lpar_name"] or None,
+                description=_optional_text(row["description"]),
+                owner_lpar=_optional_text(row["lpar_name"]),
                 availability=None,
             )
         )
     return InventoryResult(
         "dedicated_slot", "available", system_name, InventorySelector(), items, None
     )
+
+
+def _optional_text(value: str) -> str | None:
+    return value if value.strip() else None
 
 
 async def list_sriov_adapters(

@@ -61,9 +61,7 @@ async def test_dedicated_slot_reader_accepts_header_only_output() -> None:
     ],
 )
 async def test_dedicated_slot_reader_rejects_schema_drift(output: str) -> None:
-    with patch(
-        "hmc_mcp.ssh_commands.run_hmc_command", AsyncMock(return_value=output)
-    ):
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", AsyncMock(return_value=output)):
         with pytest.raises(ValueError, match="header|columns"):
             await list_dedicated_pcie_slot_rows(_config(), "sys1")
 
@@ -75,7 +73,10 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
         {"drc_index": "21010004", "description": "", "lpar_name": ""},
     ]
     with (
-        patch("hmc_mcp.operations_pcie.resolve_ssh_names", AsyncMock(return_value=("sys1", None))),
+        patch(
+            "hmc_mcp.operations_pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
         patch(
             "hmc_mcp.operations_pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
@@ -98,7 +99,10 @@ async def test_dedicated_inventory_normalizes_identity_owner_and_unknowns() -> N
 async def test_dedicated_inventory_rejects_blank_identity() -> None:
     rows = [{"drc_index": "", "description": "slot", "lpar_name": ""}]
     with (
-        patch("hmc_mcp.operations_pcie.resolve_ssh_names", AsyncMock(return_value=("sys1", None))),
+        patch(
+            "hmc_mcp.operations_pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
         patch(
             "hmc_mcp.operations_pcie.list_dedicated_pcie_slot_rows",
             AsyncMock(return_value=rows),
@@ -109,13 +113,49 @@ async def test_dedicated_inventory_rejects_blank_identity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dedicated_inventory_rejects_whitespace_identity_and_normalizes_optionals() -> (
+    None
+):
+    rows = [{"drc_index": "   ", "description": " ", "lpar_name": "\t"}]
+    with (
+        patch(
+            "hmc_mcp.operations_pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.list_dedicated_pcie_slot_rows",
+            AsyncMock(return_value=rows),
+        ),
+    ):
+        with pytest.raises(ValueError, match="drc_index"):
+            await list_dedicated_slots(_config(), "sys1")
+
+
+@pytest.mark.asyncio
+async def test_dedicated_inventory_normalizes_whitespace_optional_fields() -> None:
+    rows = [{"drc_index": "21010004", "description": " ", "lpar_name": "\t"}]
+    with (
+        patch(
+            "hmc_mcp.operations_pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.list_dedicated_pcie_slot_rows",
+            AsyncMock(return_value=rows),
+        ),
+    ):
+        result = await list_dedicated_slots(_config(), "sys1")
+
+    assert result.items[0].description is None
+    assert result.items[0].owner_lpar is None
+
+
+@pytest.mark.asyncio
 async def test_sriov_inventories_fail_closed_without_issuing_inventory_reads() -> None:
     resolver = AsyncMock(return_value=("sys1", None))
     with patch("hmc_mcp.operations_pcie.resolve_ssh_names", resolver):
         adapter = await list_sriov_adapters(_config(), "system-uuid", "a1")
-        physical = await list_sriov_physical_ports(
-            _config(), "system-uuid", "a1", "p2"
-        )
+        physical = await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p2")
         logical = await list_sriov_logical_ports(
             _config(), "system-uuid", "a1", "p2", "l3"
         )

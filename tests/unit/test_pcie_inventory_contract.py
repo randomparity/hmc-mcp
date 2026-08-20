@@ -89,8 +89,16 @@ def test_models_preserve_hierarchy_percentage_units_and_explicit_unknowns() -> N
         "sys1", "a1", "p2", None, None, None, Decimal("0.25"), None, None
     )
     logical = SriovLogicalPort(
-        "sys1", "a1", "p2", "l3", None, None, None, Decimal("10.25"),
-        Decimal("20.50"), None
+        "sys1",
+        "a1",
+        "p2",
+        "l3",
+        None,
+        None,
+        None,
+        Decimal("10.25"),
+        Decimal("20.50"),
+        None,
     )
     assert physical.minimum_capacity_granularity_percent == Decimal("0.25")
     assert logical.capacity_percent == Decimal("10.25")
@@ -113,7 +121,9 @@ def test_supported_api_exports_inventory_contract_directly() -> None:
         "list_sriov_physical_ports",
     ):
         assert name in api.__all__
-        assert getattr(api, name) is getattr(__import__("hmc_mcp.operations_pcie", fromlist=[name]), name)
+        assert getattr(api, name) is getattr(
+            __import__("hmc_mcp.operations_pcie", fromlist=[name]), name
+        )
 
 
 def test_mcp_tools_have_managed_system_read_metadata() -> None:
@@ -193,14 +203,67 @@ def test_cli_logical_inventory_forwards_selectors_and_prints_json() -> None:
         response = CliRunner().invoke(
             app,
             [
-                "network", "list-sriov-logical-ports", "sys1", "--adapter-id", "a1",
-                "--physical-port-id", "p2", "--logical-port-id", "l3", "--json",
+                "network",
+                "list-sriov-logical-ports",
+                "sys1",
+                "--adapter-id",
+                "a1",
+                "--physical-port-id",
+                "p2",
+                "--logical-port-id",
+                "l3",
+                "--json",
             ],
         )
 
     assert response.exit_code == 0, response.output
     assert json.loads(response.stdout) == asdict(result)
     assert operation.await_args.args[2:] == ("a1", "p2", "l3")
+
+
+def test_cli_text_mode_reports_unavailable_capability() -> None:
+    result = InventoryResult(
+        "sriov_adapter",
+        "capability-unavailable",
+        "sys1",
+        InventorySelector(),
+        [],
+        "ADR 0053 admits selectors but no SR-IOV read projection",
+    )
+    with patch(
+        "hmc_mcp.cli_network.list_sriov_adapters",
+        AsyncMock(return_value=result),
+    ):
+        response = CliRunner().invoke(app, ["network", "list-sriov-adapters", "sys1"])
+
+    assert response.exit_code == 0, response.output
+    assert "Capability unavailable" in response.stdout
+    assert result.unavailable_reason in response.stdout
+    assert not response.stdout.lstrip().startswith("{")
+
+
+def test_cli_text_mode_distinguishes_available_empty_and_records() -> None:
+    empty = InventoryResult(
+        "dedicated_slot", "available", "sys1", InventorySelector(), [], None
+    )
+    item = DedicatedSlot("sys1", "21010003", "PCIe slot", "lpar1", None)
+    populated = InventoryResult(
+        "dedicated_slot", "available", "sys1", InventorySelector(), [item], None
+    )
+    operation = AsyncMock(side_effect=[empty, populated])
+    with patch("hmc_mcp.cli_network.list_dedicated_slots", operation):
+        empty_response = CliRunner().invoke(
+            app, ["network", "list-dedicated-pcie-slots", "sys1"]
+        )
+        item_response = CliRunner().invoke(
+            app, ["network", "list-dedicated-pcie-slots", "sys1"]
+        )
+
+    assert empty_response.exit_code == 0
+    assert "available; no items found" in empty_response.stdout
+    assert item_response.exit_code == 0
+    assert "21010003" in item_response.stdout
+    assert "lpar1" in item_response.stdout
 
 
 def test_cli_registers_all_normalized_inventory_commands() -> None:

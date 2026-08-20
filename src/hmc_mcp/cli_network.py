@@ -43,8 +43,26 @@ from .operations_ssh_network import (
 from .ssh_commands import PciClass, list_io_slots
 
 
-def _print_pcie_inventory(result) -> None:
-    _print_json(asdict(result))
+def _print_pcie_inventory(result, as_json: bool) -> None:
+    if as_json:
+        _print_json(asdict(result))
+        return
+    if result.capability == "capability-unavailable":
+        console.print(f"Capability unavailable: {result.unavailable_reason}")
+        return
+    if not result.items:
+        console.print(f"{result.resource_kind} available; no items found")
+        return
+
+    rows = [asdict(item) for item in result.items]
+    table = Table(title=f"{result.resource_kind} inventory on {result.system}")
+    for field_name in rows[0]:
+        table.add_column(field_name)
+    for row in rows:
+        table.add_row(
+            *(str(value) if value is not None else "-" for value in row.values())
+        )
+    console.print(table)
 
 
 @network_app.command("list-dedicated-pcie-slots")
@@ -54,7 +72,7 @@ def network_list_dedicated_pcie_slots(
 ) -> None:
     """List normalized dedicated PCIe slots on a managed system."""
     result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
-    _print_pcie_inventory(result)
+    _print_pcie_inventory(result, as_json)
 
 
 @network_app.command("list-sriov-adapters")
@@ -64,10 +82,8 @@ def network_list_sriov_adapters(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """List normalized SR-IOV adapters or their unavailable capability."""
-    result = _run(
-        lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id)
-    )
-    _print_pcie_inventory(result)
+    result = _run(lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id))
+    _print_pcie_inventory(result, as_json)
 
 
 @network_app.command("list-sriov-physical-ports")
@@ -83,7 +99,7 @@ def network_list_sriov_physical_ports(
             _ssh_config(), system_name, adapter_id, physical_port_id
         )
     )
-    _print_pcie_inventory(result)
+    _print_pcie_inventory(result, as_json)
 
 
 @network_app.command("list-sriov-logical-ports")
@@ -104,7 +120,7 @@ def network_list_sriov_logical_ports(
             logical_port_id,
         )
     )
-    _print_pcie_inventory(result)
+    _print_pcie_inventory(result, as_json)
 
 
 @network_app.command("list-switches")
