@@ -41,12 +41,12 @@ stage. A warning that must fail the suite remains a pytest failure under existin
 configuration; ordinary warning detail is available through the verbose path.
 
 On any pytest non-zero exit, the runner copies pytest's complete combined bytes
-from a disk-backed temporary file to `sys.stderr.buffer` in bounded chunks,
-without decoding, and exits with the same positive exit code. Undecodable or
-large plugin/test output therefore cannot replace the original failure through a
-decoder or an in-memory duplicate. If pytest is terminated by a signal, the
-runner re-emits the captured diagnostics and exits non-zero; exact shell signal
-encoding is outside this command's portable contract.
+to `sys.stderr.buffer` without decoding. It captures at most 1 MiB in a temporary
+file; at the limit it replays that prefix and switches to live passthrough, so a
+noisy child cannot exhaust temporary storage. Negative child return codes map to
+the conventional `128 + signal` shell status. On an interactive interruption,
+the runner gives pytest three seconds to finish its diagnostic before
+terminating and then killing it if necessary, drains the pipe, and exits 130.
 
 `just test-verbose` invokes pytest directly with `-q` and
 `--cov-report=term-missing`. It retains live pytest output, the full coverage
@@ -66,15 +66,14 @@ def main() -> int: ...
 
 The runner exposes no pytest argument-forwarding surface: focused and diagnostic
 runs use pytest directly, as the existing `--no-cov` guidance already requires.
-Within a `TemporaryFile`, the runner invokes
-`[sys.executable, "-m", "pytest"]`, directs stdout to that file, and redirects
-stderr to stdout. Both streams remain disk-backed in observed order for
-byte-for-byte failure replay. On failure the runner seeks to the beginning and
-uses `shutil.copyfileobj` with a fixed chunk length to write to
-`sys.stderr.buffer`; on success it reads none of the captured output. The
-subprocess inherits the repository working directory and environment, so pytest
-and coverage continue reading `pyproject.toml`; the runner changes no coverage
-or pytest environment variable.
+The runner invokes `[sys.executable, "-m", "pytest"]` with a combined output
+pipe and reads fixed-size binary chunks. Up to 1 MiB remains disk-backed for
+byte-for-byte failure replay; output beyond that threshold switches the command
+to live stderr passthrough after replaying the prefix in order. The subprocess
+inherits the repository working directory so pytest and coverage read
+`pyproject.toml`. It removes `PYTEST_ADDOPTS`, `COVERAGE_RCFILE`, and
+`COVERAGE_FILE` from the child environment so local overrides cannot narrow the
+canonical suite, disable coverage, or redirect its data file.
 
 ## Coverage configuration
 
@@ -106,9 +105,9 @@ that path; `just verify` continues to select `smoke`.
 ## Error handling and cleanup
 
 - Pytest failures are replayed without truncation and retain their exit code.
-- The temporary output file is closed and removed on success, failure, runner
-  exception, and handled interruption; replay holds only one fixed-size chunk in
-  memory.
+- The temporary output file is capped at 1 MiB and closed on success, failure,
+  runner exception, and handled interruption; replay holds one fixed-size chunk
+  in memory.
 - The runner never pipes a guardrail through a filtering command.
 
 ## Tests
@@ -119,10 +118,12 @@ processes. They prove:
 - a successful suite prints only the fixed compact semantic summary;
 - pytest failure output is replayed completely and its exit code is preserved;
 - undecodable failure bytes are replayed unchanged without a runner traceback;
-- a constructed large binary failure is replayed through bounded reads, and the
-  temporary capture is closed on success and failure;
+- capture switches to ordered live passthrough at the 1 MiB storage limit, and
+  the temporary file is closed on success and failure;
 - the child command is exactly `sys.executable -m pytest`, combines stderr into
-  stdout into a temporary binary file, and does not override the environment;
+  stdout, and removes only pytest/coverage override variables;
+- a real process-group interrupt preserves pytest's diagnostic and exits 130,
+  while signal return codes use conventional shell encoding;
 - default smoke output contains only count, while verbose output lists live
   registry names;
 - canonical and verbose recipes retain the coverage gate and verification

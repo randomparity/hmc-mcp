@@ -27,10 +27,11 @@ interface, so the quiet path must not extract data from its wording or layout.
 
 The canonical test recipe will call a repository-owned Python runner. The runner
 will execute pytest with combined output captured and the terminal coverage
-report disabled. On success it will discard the captured presentation and print
-one fixed summary stating that the tests and configured coverage gate passed. On
-failure it will replay the captured combined output and return pytest's exit
-status.
+report disabled. It removes environment variables that can override pytest or
+coverage configuration. On success it will discard the captured presentation
+and print one fixed summary stating that the tests and configured coverage gate
+passed. On failure it will replay the combined output and preserve the child
+status, including conventional shell encoding for signal termination.
 
 `just test-verbose` will invoke pytest directly with the missing-lines coverage
 report enabled. The smoke script will print only its handshake and tool count by
@@ -51,6 +52,9 @@ only for that presentation choice and its terminal-report consequence.
   and percentage rather than adding a structured post-processing stage.
 - A failed run is intentionally noisy because its full combined diagnostic is
   the information needed to act.
+- Capture is capped at 1 MiB. At that threshold the runner replays the captured
+  prefix and switches to live passthrough, trading quiet pathological success
+  output for bounded storage and complete ordered diagnostics.
 - The runner waits for pytest to finish before printing output. This trades live
   progress for context conservation on the canonical agent path; the verbose
   recipe remains available for long-running interactive diagnosis.

@@ -4,10 +4,12 @@ import importlib.util
 import inspect
 import io
 import os
+import signal
+import time
+from typing import Any
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -24,9 +26,9 @@ class TrackingTemporaryFile(io.BytesIO):
 
     def __init__(self) -> None:
         super().__init__()
-        self.read_sizes: list[int] = []
+        self.read_sizes: list[int | None] = []
 
-    def read(self, size: int = -1) -> bytes:
+    def read(self, size: int | None = -1) -> bytes:
         self.read_sizes.append(size)
         return super().read(size)
 
@@ -38,9 +40,10 @@ class RecordingBuffer(io.BytesIO):
         super().__init__()
         self.chunks: list[bytes] = []
 
-    def write(self, data: bytes) -> int:
-        self.chunks.append(data)
-        return super().write(data)
+    def write(self, data: Any) -> int:
+        chunk = bytes(data)
+        self.chunks.append(chunk)
+        return super().write(chunk)
 
 
 class BinaryStderr:
@@ -56,15 +59,21 @@ def _stub_pytest(
     calls: list[tuple[list[str], dict[str, object]]] = []
     temporary_file = TrackingTemporaryFile()
 
-    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
-        captured_output = kwargs["stdout"]
-        assert isinstance(captured_output, TrackingTemporaryFile)
-        captured_output.write(output)
+    class FakeProcess:
+        stdout = io.BytesIO(output)
+
+        def __init__(self) -> None:
+            self.returncode = returncode
+
+        def wait(self, timeout: int | None = None) -> int:
+            return self.returncode
+
+    def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
         calls.append((command, kwargs))
-        return SimpleNamespace(returncode=returncode)
+        return FakeProcess()
 
     monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
-    monkeypatch.setattr(run_tests.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", fake_popen)
     return calls, temporary_file
 
 
@@ -74,8 +83,7 @@ def _assert_pytest_invocation(
     assert len(calls) == 1
     command, kwargs = calls[0]
     assert command == [sys.executable, "-m", "pytest"]
-    assert kwargs["check"] is False
-    assert kwargs["stdout"] is output
+    assert kwargs["stdout"] is subprocess.PIPE
     assert kwargs["stderr"] is subprocess.STDOUT
     environment = kwargs["env"]
     assert isinstance(environment, dict)
@@ -163,15 +171,29 @@ def test_interruption_replays_captured_output_without_traceback(
     stderr = BinaryStderr()
     temporary_file = TrackingTemporaryFile()
 
-    def interrupt_pytest(_command: list[str], **kwargs: object) -> None:
-        captured_output = kwargs["stdout"]
-        assert captured_output is temporary_file
-        captured_output.write(output)
-        raise KeyboardInterrupt
+    class InterruptingStream(io.BytesIO):
+        def __init__(self) -> None:
+            super().__init__(output)
+            self.read_count = 0
+
+        def read(self, size: int | None = -1) -> bytes:
+            self.read_count += 1
+            if self.read_count == 2:
+                raise KeyboardInterrupt
+            return super().read(size)
+
+    class InterruptedProcess:
+        stdout = InterruptingStream()
+        returncode = 2
+
+        def wait(self, timeout: int | None = None) -> int:
+            return self.returncode
 
     monkeypatch.setattr(run_tests.sys, "stderr", stderr)
     monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
-    monkeypatch.setattr(run_tests.subprocess, "run", interrupt_pytest)
+    monkeypatch.setattr(
+        run_tests.subprocess, "Popen", lambda _command, **_kwargs: InterruptedProcess()
+    )
 
     assert run_tests.main() == 130
 
@@ -181,3 +203,48 @@ def test_interruption_replays_captured_output_without_traceback(
 
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
+
+
+def test_signal_return_code_maps_to_shell_status() -> None:
+    assert run_tests._exit_status(-signal.SIGTERM) == 128 + signal.SIGTERM
+
+
+def test_capture_limit_is_bounded() -> None:
+    assert 0 < run_tests.CAPTURE_LIMIT <= 4 * 1024 * 1024
+
+
+def test_capture_switches_to_live_output_at_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = b"prefix"
+    overflow = b"overflow"
+    stderr = BinaryStderr()
+    output = TrackingTemporaryFile()
+    monkeypatch.setattr(run_tests, "CAPTURE_LIMIT", len(prefix))
+    monkeypatch.setattr(run_tests, "CHUNK_SIZE", len(prefix))
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+
+    assert run_tests._capture(io.BytesIO(prefix + overflow), output)
+
+    assert output.getvalue() == prefix
+    assert stderr.buffer.getvalue() == prefix + overflow
+
+
+def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
+    tmp_path.joinpath("test_slow.py").write_text(
+        "import time\n\ndef test_slow():\n    time.sleep(30)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(MODULE_PATH)],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    time.sleep(1)
+    os.killpg(process.pid, signal.SIGINT)
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode == 130
+    assert stdout == b""
+    assert b"KeyboardInterrupt" in stderr
