@@ -32,16 +32,18 @@ from .operations_pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
     unassign_dedicated_pcie_slot,
+    assign_sriov_logical_port,
+    set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
 )
 from .operations_ssh_network import (
-    SriovMode,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
-    set_sriov_adapter_mode,
 )
+from .ssh_commands import SriovMode
 from .ssh_commands import PciClass, list_io_slots
 
 
@@ -165,6 +167,62 @@ def network_list_sriov_logical_ports(
         )
     )
     _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("assign-sriov-logical-port")
+def network_assign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: float,
+    profile_name: str | None = typer.Option(None, "--profile-name"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Assign an evidence-backed Ethernet SR-IOV logical port."""
+    from decimal import Decimal
+
+    result = _with_client(
+        lambda hmc: assign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            Decimal(str(capacity_percent)),
+            profile_name=profile_name,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
+
+
+@network_app.command("unassign-sriov-logical-port")
+def network_unassign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Unassign a profile logical port on a Not Activated LPAR."""
+    result = _with_client(
+        lambda hmc: unassign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
 
 
 @network_app.command("list-switches")

@@ -1105,7 +1105,9 @@ def test_lpars_decommission_confirmed_prompt_names_target_and_executes(fake_hmc)
     )
 
     assert result.exit_code == 0, result.output
-    assert f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
+    assert (
+        f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
+    )
     assert "decommissioned successfully" in result.stdout
     names = [name for name, _, _ in fake_hmc.calls]
     assert "delete_logical_partition" in names
@@ -1181,7 +1183,9 @@ def test_lpars_decommission_incomplete_json_result_exits_1_after_rendering(fake_
     assert payload["dry_run"] is False
     assert payload["steps"][-1]["step"] == "delete_lpar"
     assert payload["steps"][-1]["status"] == "error"
-    assert "simulated delete_logical_partition failure" in payload["steps"][-1]["result"]
+    assert (
+        "simulated delete_logical_partition failure" in payload["steps"][-1]["result"]
+    )
 
 
 def test_lpars_decommission_denies_foreign_owned_partition(fake_hmc, monkeypatch):
@@ -1237,7 +1241,10 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
                     "adapters": [
                         {"type": "ClientNetworkAdapter", "uuid": "adapter-1"},
                         {"type": "VirtualSCSIClientAdapter", "uuid": "adapter-1"},
-                        {"type": "VirtualFibreChannelClientAdapter", "uuid": "adapter-1"},
+                        {
+                            "type": "VirtualFibreChannelClientAdapter",
+                            "uuid": "adapter-1",
+                        },
                         {"type": "VirtualNICDedicated", "uuid": "adapter-1"},
                     ]
                 },
@@ -1592,7 +1599,16 @@ def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "delete-disk", VIOS_UUID, "--vg", VG_UUID, "--name", "bootvol", "--yes"],
+        [
+            "storage",
+            "delete-disk",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "bootvol",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -2254,7 +2270,7 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
         ),
         (
             ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov", "--yes"],
-            ("chhwres", "P1-C1", "sriov"),
+            ("lshwres", "sriov", "adapter"),
         ),
         (
             [
@@ -2285,6 +2301,9 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
 
     async def fake(_config, command):
         commands.append(command)
+        if "--rsubtype adapter" in command:
+            fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
+            return f"{fields}\nP1-C1,1,sriov,1,U,2,120,120,running\n"
         if command.startswith("lssyscfg"):
             return "vioserver\n"
         return "updated\n"

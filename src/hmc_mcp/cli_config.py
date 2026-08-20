@@ -180,7 +180,11 @@ def config_show(
     # branch only runs when the requested name is not already a profile key.
     resolved_name = requested
     resolved_from: str | None = None
-    if requested is not None and requested not in profiles_raw and requested in nicknames:
+    if (
+        requested is not None
+        and requested not in profiles_raw
+        and requested in nicknames
+    ):
         target = nicknames[requested]
         if target in profiles_raw:
             resolved_name = target

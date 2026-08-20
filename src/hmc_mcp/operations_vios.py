@@ -28,6 +28,4 @@ async def power_vios(
         job = await hmc.power_on_vios(vios_uuid)
     else:
         job = await hmc.power_off_vios(vios_uuid, immediate=immediate)
-    return await wait_for_submitted_job(
-        hmc, job, wait, timeout_seconds, poll_interval
-    )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)

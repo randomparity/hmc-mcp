@@ -169,6 +169,7 @@ from .server_storage import (
     hmc_list_shared_storage_pools as hmc_list_shared_storage_pools,
 )
 from .server_network import (
+    hmc_assign_sriov_logical_port as hmc_assign_sriov_logical_port,
     hmc_add_vnic as hmc_add_vnic,
     hmc_create_virtual_network as hmc_create_virtual_network,
     hmc_delete_virtual_network as hmc_delete_virtual_network,
@@ -180,6 +181,7 @@ from .server_network import (
     hmc_list_vnics as hmc_list_vnics,
     hmc_remove_vnic as hmc_remove_vnic,
     hmc_set_sriov_adapter_mode as hmc_set_sriov_adapter_mode,
+    hmc_unassign_sriov_logical_port as hmc_unassign_sriov_logical_port,
 )
 from .server_lpm import (
     hmc_migrate_abort_lpar as hmc_migrate_abort_lpar,

@@ -213,9 +213,7 @@ def hmc_delete_virtual_disk(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await delete_virtual_disk(
-                hmc, vios_name_or_uuid, vg_uuid, disk_name
-            )
+            return await delete_virtual_disk(hmc, vios_name_or_uuid, vg_uuid, disk_name)
 
     return _run(_go)
 
@@ -338,8 +336,8 @@ def hmc_delete_media_repository(
             await delete_media_repository(hmc, vios_name_or_uuid, vg_uuid)
         return f"Deleted media repository from VolumeGroup {vg_uuid}"
 
-
     return _run(_go)
+
 
 @tool(effect="destructive", operation="media.delete", target_kind="vios")
 def hmc_delete_optical_media(
@@ -412,6 +410,7 @@ def hmc_list_optical_media(
 
     return _run(_go)
 
+
 @tool(effect="read", operation="storage.list_mappings", target_kind="vios")
 def hmc_list_storage_mappings(
     vios_name_or_uuid: str,
@@ -432,7 +431,9 @@ def hmc_list_storage_mappings(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_storage_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+            return await list_storage_mappings(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid
+            )
 
     return _run(_go)
 
@@ -579,7 +580,9 @@ def hmc_create_logical_unit(
     return _run(_go)
 
 
-@tool(effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster")
+@tool(
+    effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster"
+)
 def hmc_delete_logical_unit(
     cluster_uuid: str,
     lu_udid: str,
@@ -617,6 +620,7 @@ def hmc_delete_logical_unit(
             )
 
     return _run(_go)
+
 
 @tool(effect="mutate", operation="media.upload_iso", target_kind="vios")
 def hmc_upload_iso(
@@ -656,9 +660,12 @@ def hmc_upload_iso(
             if the download exceeds the size bound.
         FileExistsError: If media_name already exists in the repository.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await upload_iso(hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source)
+            return await upload_iso(
+                hmc, vios_name_or_uuid, vg_uuid, media_name, iso_source
+            )
 
     return _run(_go)
 
@@ -683,10 +690,14 @@ def hmc_list_optical_mappings(
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            mappings = await list_optical_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+            mappings = await list_optical_mappings(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid
+            )
             return mappings if limit is None else mappings[:limit]
+
     return _run(_go)
 
 
@@ -710,9 +721,13 @@ def hmc_mount_optical_media(
         target_device: Optional vtscsi target device name to pin the mapping.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await mount_optical_media(hmc, vios_name_or_uuid, media_name, lpar_name_or_uuid, target_device)
+            return await mount_optical_media(
+                hmc, vios_name_or_uuid, media_name, lpar_name_or_uuid, target_device
+            )
+
     return _run(_go)
 
 
@@ -736,10 +751,14 @@ def hmc_unmount_optical_media(
         media_name: Name of the VirtualOpticalMedia (ISO) to unmount.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            await unmount_optical_media(hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name)
+            await unmount_optical_media(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name
+            )
             return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
+
     return _run(_go)
 
 
@@ -763,8 +782,12 @@ def hmc_detach_optical_mapping(
         media_name: Name of the VirtualOpticalMedia (ISO) to detach.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            await detach_optical_mapping(hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name)
+            await detach_optical_mapping(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name
+            )
             return f"Detached {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
+
     return _run(_go)

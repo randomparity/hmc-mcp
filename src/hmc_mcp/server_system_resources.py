@@ -139,7 +139,11 @@ def hmc_list_sriov_logical_ports(
     )
 
 
-@tool(effect="read", operation="system.get_proc_compat_modes", target_kind="managed_system")
+@tool(
+    effect="read",
+    operation="system.get_proc_compat_modes",
+    target_kind="managed_system",
+)
 def hmc_get_proc_compat_modes(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[str]:
@@ -193,7 +197,9 @@ def hmc_list_memory_pools(
     )
 
 
-@tool(effect="destructive", operation="memory_pool.remove", target_kind="managed_system")
+@tool(
+    effect="destructive", operation="memory_pool.remove", target_kind="managed_system"
+)
 def hmc_remove_memory_pool(
     system_name_or_uuid: str, pool_name: str, profile: str | None = None
 ) -> str:

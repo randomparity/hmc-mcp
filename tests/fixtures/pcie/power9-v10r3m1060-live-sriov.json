@@ -1,0 +1,45 @@
+{
+  "record_kind": "live-capture",
+  "evidence_kind": "live-capture",
+  "documentation_family": "Power9",
+  "hmc_release": "V10R3 M1060 build 2408210051",
+  "system_model": "8375-42A",
+  "source_url": "https://github.com/randomparity/hmc-mcp/issues/214#issuecomment-5359635063",
+  "source_locator": "WORK:CROSS-SYSTEM-EVIDENCE:RESULT and WORK:CROSS-SYSTEM-EVIDENCE:PHASE2",
+  "claim_summary": "Same-family SR-IOV reads, dynamic assignment, errors, and profile unassignment.",
+  "support": "captured",
+  "probes": [
+    {
+      "name": "adapter",
+      "command": "lshwres -r sriov --rsubtype adapter -m system-a -F adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status --header",
+      "fields": ["adapter_id", "slot_id", "config_state", "functional_state", "phys_loc", "phys_ports", "logical_ports", "adapter_max_logical_ports", "sriov_status"],
+      "exit_status": 0,
+      "stdout": "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status\n1,21010020,sriov,1,U<location-a>-P1-C4,2,120,120,running\n",
+      "stderr": ""
+    },
+    {
+      "name": "dynamic-assign",
+      "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-c -a adapter_id=1,phys_port_id=1,logical_port_id=27004002,logical_port_type=eth,capacity=2.0",
+      "fields": [],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "duplicate-assign",
+      "command": "chhwres -r sriov --rsubtype logport -m system-a -o a -p lpar-c -a adapter_id=1,phys_port_id=1,logical_port_id=27004002,logical_port_type=eth,capacity=2.0",
+      "fields": [],
+      "exit_status": 1,
+      "stdout": "HSCL127D: HSCL1288 logical port 27004002 is already assigned to the partition.",
+      "stderr": ""
+    },
+    {
+      "name": "profile-unassign-repeat",
+      "command": "chsyscfg -r prof -m system-a -i name=default_profile,lpar_name=lpar-c,sriov_eth_logical_ports=none",
+      "fields": [],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}
