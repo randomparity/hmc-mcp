@@ -1093,6 +1093,7 @@ _NOT_EXHAUSTIVE = frozenset({
     "hmc_create_lpar",
     "hmc_modify_lpar",
     "hmc_restore_lpar_profiles",
+    "hmc_restore_vios",
     "hmc_provision_lpar",
     # Selectors, but one of them is a per-system slot number the fleet-wide
     # `vios` allowlist cannot pin down.
@@ -1139,6 +1140,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_modify_lpar",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
+        "hmc_restore_vios",
         "hmc_wait_for_job",
     }
 
@@ -1532,20 +1534,19 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
     )
 
 
-def test_backup_name_stays_bounded_only_while_the_catalog_guard_holds(monkeypatch):
-    """G15: `hmc_restore_vios`'s classification and its guard stand or fall together.
+def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypatch):
+    """G15: SSP effect scope does not undo the backup-name containment guard.
 
-    ADR 0044 keeps this tool bounded because `chviosbackup -id` selects the
-    catalog `-file` resolves in. `test_the_tools_a_targets_table_cannot_bound_are_exactly_these`
-    already pins the declaration; what nothing pinned is the refusal the
-    declaration depends on. Delete the guard and the classification becomes an
-    assumption about the HMC — so this asserts both, and reddens on either.
+    Live-HMC evidence for #282 established that an SSP restore is cluster-scoped,
+    so one VIOS selector cannot bound every resource the operation affects. ADR
+    0044 independently keeps ``backup_name`` bounded because it is a catalog name,
+    and its validation remains required after the tool becomes non-exhaustive.
 
     `asyncssh.connect` is patched to raise rather than mocked to succeed: if the
     guard were removed, each call would fall through to the SSH layer, and this
     makes that a loud failure here instead of a socket attempt from the suite.
     """
-    assert TOOL_SECURITY["hmc_restore_vios"].exhaustive_targets
+    assert not TOOL_SECURITY["hmc_restore_vios"].exhaustive_targets
     assert "backup_name" not in UNBOUNDED_ARGUMENTS
 
     monkeypatch.setenv("HMC_HOST", "hmc.test")

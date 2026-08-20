@@ -395,7 +395,13 @@ def _validate_backup_name(backup_name: str) -> None:
         )
 
 
-@tool(effect="destructive", operation="vios.restore", target_kind="vios")
+@tool(
+    effect="destructive",
+    operation="vios.restore",
+    target_kind="vios",
+    # An SSP restore can affect the cluster beyond the selected VIOS (#282).
+    exhaustive_targets=False,
+)
 def hmc_restore_vios(
     vios_name_or_uuid: str,
     backup_name: str,
