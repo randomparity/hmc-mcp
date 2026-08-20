@@ -791,8 +791,38 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
 | `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |
 | `hmc_list_io_slots`         | List physical I/O slots on a system |
+| `hmc_list_dedicated_pcie_slots` | List normalized dedicated PCIe slots with stable DRC identities |
+| `hmc_list_sriov_adapters` | Report normalized SR-IOV adapter inventory capability and selectors |
+| `hmc_list_sriov_physical_ports` | Report normalized SR-IOV physical-port inventory capability and selectors |
+| `hmc_list_sriov_logical_ports` | Report normalized SR-IOV logical-port inventory capability and selectors |
 | `hmc_list_memory_pools`     | List shared memory pools on a system |
 | `hmc_remove_memory_pool`    | Remove a shared memory pool from a system |
+
+Normalized PCIe inventories share this envelope:
+
+- `resource_kind`: `dedicated_slot`, `sriov_adapter`, `sriov_physical_port`, or
+  `sriov_logical_port`;
+- `capability`: `available` or `capability-unavailable`;
+- `system`: the resolved managed-system name;
+- `selector`: nullable `adapter_id`, `physical_port_id`, and `logical_port_id` values copied from
+  the request;
+- `items`: stable records for the selected resource kind; and
+- `unavailable_reason`: `null` when available, otherwise a stable evidence-bound explanation.
+
+Dedicated-slot identity is `(system, drc_index)`. Its `description` and `owner_lpar` come from the
+exact ADR 0053 projection; `availability` remains `null` because an empty owner does not prove that
+a slot is assignable. SR-IOV identities are `(system, adapter_id)`, adapter identity plus
+`physical_port_id`, and adapter identity plus `logical_port_id`. Their mode, availability,
+ownership/use, location, capacity, and compatibility category fields are explicit nullable values.
+ADR 0053 admits selectors and percentage capacity semantics but no SR-IOV read projection, so these
+three collections currently return `capability-unavailable` with no items and perform no inventory
+command. Percentage fields use decimal percentages, never bytes, bandwidth, or integer weights.
+
+The CLI equivalents are `hmc-mcp network list-dedicated-pcie-slots`, `list-sriov-adapters`,
+`list-sriov-physical-ports`, and `list-sriov-logical-ports`. All accept `--json`; the SR-IOV
+commands accept the applicable `--adapter-id`, `--physical-port-id`, and `--logical-port-id`
+selectors. The older `hmc_list_io_slots` / `network list-io-slots` surface remains raw and is not
+the normalized contract.
 
 **Escape hatch**
 

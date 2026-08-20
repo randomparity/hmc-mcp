@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-08-20. Acceptance requires focused contract tests and `just verify` to pass.
+Accepted on 2026-08-20 after focused contract tests and `just verify` passed.
 
 ## Context
 
