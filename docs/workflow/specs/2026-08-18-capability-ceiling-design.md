@@ -145,6 +145,28 @@ derived from `ceiling_enforced` and share its verification, so no output can pai
 of tool enforcement with a registry that exceeds the ceiling. ADR 0037 records the same
 derivation.
 
+> **Amended by [ADR 0047](../../adr/0047-per-dimension-enforcement-labels.md)**
+> (2026-08-19). **The encoding this requirement froze was wrong, and issue #254 is the
+> report of it.** "Both are `()` otherwise" makes a drifted registry drop all three
+> dimensions from a report that goes on enumerating the connections and targets its grants
+> name — reproduced against `main` at `c5d0b58`, alongside a live denial proving the
+> connection dimension was enforcing at the time the report said nothing was. The error is
+> that `ceiling_enforced` verifies the **tool** dimension and this requirement spent that
+> one verification on three labels. R16 now reads:
+>
+> `enforced_dimensions` and `declared_only_dimensions` partition `("tools", "connections",
+> "targets")` whenever a policy is selected, and are both `()` when none is. `"tools"` is
+> enforced exactly when `ceiling_enforced` is `True`. `"connections"` and `"targets"` are
+> enforced together, exactly when every reported tool that requires the dispatch wrapper
+> (ADR 0038, ADR 0039) is registered carrying it — withheld for a name outside the
+> authoritative index, and for a tool declaring target selectors but no connection
+> argument. Each label is verified against the registry being reported, so no output pairs
+> a claim of enforcement in a dimension with a registry that is not performing it, and none
+> withholds a label for a dimension that is.
+>
+> The rest of this specification is unaffected; R14's `ceiling_enforced` definition and
+> R17's closed value allowlist are unchanged, and no field is added or removed.
+
 **R17 — Inspection carries no credential, stated as a closed allowlist.** The output
 contains exactly the fields of `EffectivePermissions` and nothing else, and every string
 value in it is drawn from one of five sources: (a) a tool name, operation, effect, or
@@ -335,6 +357,12 @@ warning. R9a is asserted at the entry point: `main_stdio` with
 application whose registry lacks it. R14's drift case is asserted directly:
 `configure_arbitrary_command_tool(True, app)` with no predicate, then
 `ceiling_enforced is False` with a non-null `policy_name` and empty dimension tuples. `README.md` is updated in the same change (R22).
+
+> **Amended by [ADR 0047](../../adr/0047-per-dimension-enforcement-labels.md)**
+> (2026-08-19). The drift case now asserts `enforced_dimensions == ["connections",
+> "targets"]` and `declared_only_dimensions == ["tools"]` — the empty tuples above were the
+> defect — and pairs the payload assertion with a live denial on an ungranted connection,
+> so the claim is checked against the server's behaviour rather than against itself.
 
 Existing tests that change: `tests/app/test_application_boundaries.py` (128 → 129),
 `tests/app/test_tool_security.py` (G10 becomes a two-name allowance),
