@@ -1,66 +1,72 @@
 # SR-IOV logical-port assignment design
 
 Issue: [#214](https://github.com/randomparity/hmc-mcp/issues/214)  
-Decision: [ADR 0056](../../adr/0056-fail-closed-sriov-logical-port-assignment.md)
+Decision: [ADR 0056](../../adr/0056-evidence-bounded-sriov-logical-port-assignment.md)
 
-## Goal and constraints
+## Goal and evidence boundary
 
-Expose assign/unassign logical-port and adapter-mode operations keyed by issue #212's normalized
-identities. Before any mutation, validate adapter mode, physical/logical-port identity, capacity,
-availability, ownership, and ADR 0053 LPAR state/capability; retries must be idempotent and results
-must carry verified before/after state. ADR 0053 currently admits none of the SR-IOV read projections
-needed to prove those conditions, so the only evidence-backed implementation is capability-
-unavailable before mutation. No dependency or migration is added. Python 3.11 remains the minimum.
+Expose inventory-driven assign/unassign with normalized identities. Same-family issue #214 captures
+admit POWER9/HMC V10R3 M1060 reads, dynamic assign, and Not Activated profile unassign. Running
+dynamic unassign, successful unclaimed dynamic removal, and adapter-mode mutation remain
+capability-unavailable. Python 3.11 remains the floor; no dependency or migration is added.
 
-## Public contracts
+## Inventory and models
 
-`assign_sriov_logical_port` and `unassign_sriov_logical_port` accept an HMC client, system and LPAR
-name-or-UUID selectors, `adapter_id`, `physical_port_id`, `logical_port_id`, `capacity_percent`, and
-an optional `ownership_override`. The operations validate selectors and a percentage in `(0, 100]`
-with at most two decimal places, resolve the LPAR, enforce ADR 0011 ownership, then raise
-`SriovLogicalPortCapabilityUnavailableError` with a stable ADR 0053 reason. They issue no SR-IOV
-inventory or mutation command while the capability matrix is unavailable.
+SSH collectors read exact captured fields for adapter, `--level roce` physical port, `--level eth`
+configured logical port, default unconfigured logical identity, LPAR state/RMC, and one profile's
+Ethernet property. Strict CSV parsing rejects header/width faults. Key/value parsing requires
+identities. Decimal capacity preserves precision. Public models use stable fields; internal
+snapshots retain mode, state, counts, functional state, profile, and RMC needed by policy.
 
-`set_sriov_adapter_mode` keeps its established Python name but changes from a raw SSH mutation into
-a fail-closed operation accepting the normalized system selector, adapter ID, and `sriov` or
-`dedicated`. Its MCP/CLI contract remains available under the existing name, but now returns the
-same explicit capability error before SSH. This is replacement, not a compatibility shim.
+## Operation contracts
 
-The immutable `SriovLogicalPortAssignmentResult` defines the eventual successful shape: system,
-LPAR, adapter/physical/logical-port identities, requested capacity, and separate profile/effective
-before and after logical-port records. Current operations cannot construct it because no field may
-be inferred. MCP tools use `target_kind="lpar"`; CLI commands mirror their parameters; all four
-operations are re-exported from the supported Python API.
+`assign_sriov_logical_port(hmc, system, lpar, adapter_id, physical_port_id, logical_port_id,
+capacity_percent, *, ownership_override=False)` supports dynamic assignment for `Not Activated` or
+`Running` with active RMC. Capacity is finite, 1–100, at most two decimals. Preflight requires a
+healthy SR-IOV adapter, active physical port, remaining capacity, matching unconfigured port, and no
+foreign owner. Same-owner/same-capacity returns unchanged; other ownership conflicts. Readback
+requires effective owner/identity/capacity and unchanged profile state.
 
-## Transport boundary
+Remaining percentage is `100 - sum(capacity)` across one complete same-snapshot configured
+`--level eth` inventory filtered to the selected adapter and physical port. Every contributing row
+must carry unique logical identity, matching parent identity, and finite capacity; missing,
+duplicate, malformed, or negative totals fail closed before mutation. Logical-port counts are not
+used as percentage capacity.
 
-`ssh_commands.py` removes the conflicting executable adapter helper and adds no replacement
-mutation builder. Documented command grammar remains in ADR 0053 until a supported operation can
-validate and verify it. System/LPAR resolution and ADR 0011 ownership may perform their established
-reads; the new path issues no SR-IOV inventory or mutation command.
+`unassign_sriov_logical_port(hmc, system, lpar, profile_name, adapter_id, physical_port_id,
+logical_port_id, *, ownership_override=False)` supports only `Not Activated` profile state. `none`
+is unchanged. A single exact profile record changes to `none`; mismatched/multiple records fail.
+Running/unsupported states fail before mutation. No dynamic remove or `--force` is emitted.
 
-## Errors and idempotency
+Both return immutable `SriovLogicalPortChangeResult` with operation/path/change flag, selector,
+verified effective/profile before and after snapshots, and output. Once a mutation command is
+dispatched, success, nonzero exit, timeout, and transport failure all trigger best-effort effective
+and profile reconciliation. Any command or reconciliation failure raises
+`SriovLogicalPortPartialError` carrying the verified before state, every after state that could be
+read, and the original cause. Validation, policy, conflict, and capability errors precede writes.
 
-Blank selectors, unknown modes, non-finite capacity, capacity outside `(0, 100]`, or more than two
-decimal places fail before resolution. Missing/ambiguous system or LPAR selectors retain existing
-resolver errors. Foreign/malformed ownership fails before capability reporting unless an audited
-override is supplied. All otherwise-valid calls terminate at the same capability error and perform
-no SSH mutation, making retries side-effect-free. No before/after result is returned until every
-field can be populated from dedicated readback.
+`set_sriov_adapter_mode` and CLI `set-sriov-mode` remain the single names. Same-mode is unchanged;
+an actual transition is unavailable. The raw SSH mutation and wrapper are removed.
 
-## Threat model
+## Presentation surfaces
 
-Added boundaries are authenticated MCP/CLI/Python arguments that can request external HMC mutation;
-the actor is an authenticated local operator or automation identity. Selector/capacity validation,
-ADR 0011 ownership authorization, shell quoting, attribute-record validation, and capability
-fail-closed behavior control this boundary. Existing SSH credentials and transport remain trusted.
-Failure text exposes only operation, selector category, and the public ADR reason. Compromised HMC
-credentials, HMC-side authorization policy, and races after a future preflight are out of scope;
-this version sends no mutation and therefore creates no such race.
+Assign/unassign MCP tools use mutate effect and `target_kind="lpar"`; adapter mode remains
+managed-system scoped. CLI adds `assign-sriov-logical-port` and `unassign-sriov-logical-port` while
+replacing `set-sriov-mode` in place. The Python API exports operations, results/errors, and mode.
+Adapters serialize dataclasses and contain no policy.
 
-## Testing
+## Threat model and errors
 
-Focused tests prove input validation, ownership ordering and override forwarding, zero SR-IOV
-inventory/mutation commands, stable capability errors, MCP security metadata and schemas, CLI
-registration, supported API exports, and removal of the old raw helper behavior. Existing fixtures
-continue to prove selectors and percentage units. `just verify` is the final guardrail.
+Authenticated input can request HMC mutation. Controls are validation, shell quoting/record guards,
+ADR 0011 ownership, immediate preflight inventory, foreign-owner refusal, and post-readback.
+Operators are untrusted for selector freshness; HMC and configured credentials are trusted peers.
+Errors expose selectors/public diagnostics, never credentials. A read/mutation race can occur;
+readback detects divergence but cannot roll back. No `--force`, multi-record profile rewrite,
+dynamic unassign, mode transition, RoCE logical mutation, or cross-family inference is in scope.
+
+## Verification
+
+Sanitized fixtures preserve provenance, commands, fields, stdout/stderr, and exit status. Tests
+cover parsing, empty/malformed/failure, every precondition, silent-reassignment prevention,
+duplicate no-op, supported writes, partial errors, unsupported cells, MCP security/schema, CLI,
+API exports, and raw-mode removal. Run the required focused suite, smoke, and `just verify`.

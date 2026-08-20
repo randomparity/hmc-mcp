@@ -5,6 +5,9 @@
 Accepted on 2026-08-20 after the documentation-backed evidence records, strict parser/error tests,
 state-matrix characterization, structural no-mutation check, and full `just verify` passed.
 
+> **Partially superseded by [0056](0056-evidence-bounded-sriov-logical-port-assignment.md)**
+> (2026-08-20) for captured POWER9/HMC V10R3 M1060 SR-IOV projections and mutation cells.
+
 ## Context
 
 The repository exposes raw physical-slot rows and a profile-only slot append, while its SR-IOV
