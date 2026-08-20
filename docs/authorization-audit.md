@@ -198,8 +198,11 @@ Three things to know if you consume this stream:
   process can detect that. The same caveat applies to the startup warnings.
 - **Skip a line that does not parse rather than failing on it.** `hmc_mcp.audit` is
   reserved for these records and that is checked inside this package, but a dependency
-  or your own code can still log there, and other writers share stderr — FastMCP renders
-  a traceback panel for a routine denial today (issue #267).
+  or your own code can still log there, and other writers share stderr. Since
+  [ADR 0051](adr/0051-fastmcp-logging-through-the-bounded-sink.md) FastMCP's own records
+  arrive on the same queue as these — one concise line for a denial, a plain traceback for
+  a genuine handler bug — and its startup banner is written straight to the stream by
+  `rich` before serving begins.
 
 ## What this is not
 
@@ -221,8 +224,9 @@ A drop is never silent. The count is carried in-band, ahead of the next line tha
 {"time": "2026-08-19T22:14:03.881271+00:00", "event": "records-dropped", "count": 37}
 ```
 
-Read it as *37 lines are missing above this point*. Two limits worth knowing: `count` is
-lines rather than records, because the startup warnings share this queue; and reporting
+Read it as *37 items are missing above this point*. Two limits worth knowing: `count` is
+items rather than records, because the startup warnings and — since ADR 0051 — FastMCP's own
+records share this queue, so a non-zero count does not mean audit records were lost; and reporting
 needs a destination that accepts a write again, so a stream that never recovers — or a
 process killed with `SIGKILL` — still loses without a marker. An empty stream is therefore
 still not evidence of an idle server. A record may also reach stderr slightly after the
@@ -244,7 +248,8 @@ client spawns the server and owns fd 2, so whether the stream is read binds the 
 rather than the operator deploying it — choose one that reads its child's stderr. Under
 `--http` it is whatever supervisor or journal collects the unit's stderr. Since ADR 0041
 made a policy mandatory this applies to every deployment, and an ungranted caller can drive
-the writes at call rate, because the record precedes the denial. That caller can therefore
-make records drop — bounded to the queue, visible as a `records-dropped` count, and never
-able to stall a call. There is no in-process lever to reduce the volume from
+the writes at call rate, because the record precedes the denial. Since ADR 0051 a denied call
+puts *two* items on the queue — this record, then FastMCP's one-line denial — so the queue
+fills in about half the calls it used to. That caller can therefore make records drop —
+bounded to the queue, visible as a `records-dropped` count, and never able to stall a call. There is no in-process lever to reduce the volume from
 `hmc-mcp serve` either — see issue #270.
