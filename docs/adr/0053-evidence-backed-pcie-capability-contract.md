@@ -24,15 +24,16 @@ claims are deliberately narrower than the union of those pages:
 
 | Family | Reference section | Admitted evidence |
 |---|---|---|
-| V8 | `chsyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
-| V9 | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
-| V10 | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
-| V11 | `chhwres` SR-IOV attributes | the V10 contract plus current documented operation and unit confirmation |
+| Power8 docs | `chsyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
+| Power9 docs | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
+| Power10 docs | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
+| Power11 docs | `chhwres` SR-IOV attributes | the Power10 contract plus current documented operation and unit confirmation |
 
-The version-labelled repository fixtures added by this change will retain the exact URL, command,
-fields, and sanitized excerpt that backs each admitted claim; no field is admitted merely because
-another family documents it. The status becomes Accepted only after those fixtures and their
-parser tests exist and pass.
+The version-labelled repository evidence added by this change will retain the exact URL, command,
+fields, and sanitized source excerpt that backs each admitted claim. Synthetic parser examples are
+labelled separately and never presented as command output. No field is admitted merely because
+another family documents it. The status becomes Accepted only after those artifacts and their
+tests exist and pass.
 
 ## Decision
 

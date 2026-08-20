@@ -28,12 +28,14 @@ Create one JSON fixture per documented command family and version family under
 - an IBM documentation URL;
 - the exact read-only command with explicit `-F` field order;
 - `fields`, matching that order exactly;
-- sanitized raw `stdout`, including the first nonblank header record and data records, using the
-  command's comma delimiter;
+- a sanitized `source_excerpt` copied from the cited command reference;
+- `parser_examples`, explicitly labelled `synthetic`, containing a header and data records using
+  the command's comma delimiter;
 - `capacity_unit` where capacity fields occur.
 
-The fixtures are executable evidence, not opaque snapshots. Tests load every file, validate its
-metadata, and parse every row against the declared field count. A Power-generation documentation
+The source excerpts are evidence; parser examples are test vectors and never claim to be raw HMC
+output. Tests load every file, validate its metadata and non-empty source excerpt, and parse every
+synthetic row against the declared field count. A Power-generation documentation
 family is not presented as an HMC software release: `hmc_release=not-established` forbids a test or
 downstream caller from claiming release-specific availability. This prevents field-order drift,
 accidental identity substitutions, undocumented unit changes, and false version precision.
@@ -43,22 +45,25 @@ accidental identity substitutions, undocumented unit changes, and false version 
 | Resource | Exact `-F` field order | Stable identity |
 |---|---|---|
 | Dedicated slot | `drc_index,description,lpar_name` | system + `drc_index` |
-| SR-IOV adapter | `adapter_id,slot_id` | system + `adapter_id` |
+| SR-IOV adapter | `adapter_id,slot_id,config_state` | system + `adapter_id` |
 | Physical port | `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity` | system + `adapter_id` + `phys_port_id` |
 | Logical port | `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity` | system + `adapter_id` + `logical_port_id` |
 
-The exact commands use `-F <comma-list> --header` with that order and a comma delimiter. The
-fixtures preserve the returned header and data separately, so the parser checks the HMC header
-against the independent matrix before parsing data. The admitted family matrix is:
+The exact physical-port command includes `--level eth`; RoCE and converged-Ethernet fields remain
+unknown until separate evidence is admitted. Commands use `-F <comma-list> --header` with the
+declared order and a comma delimiter. The
+synthetic examples preserve header and data in one raw string, so the parser checks the first
+nonblank header against the independent matrix before parsing data. The admitted family matrix is:
 
 | Documentation family | Dedicated slot | Adapter | Physical port | Logical port |
 |---|---|---|---|---|
 | Power8 | documented | unknown | unknown | profile-only evidence |
 | Power9 | documented | documented | documented | documented |
-| Power10 | documented | documented | documented | documented |
-| Power11 | documented | documented | documented | documented |
+| Power10 | unknown | unknown | unknown | mutation/unit evidence only |
+| Power11 | unknown | unknown | unknown | mutation/unit evidence only |
 
-Each `documented` cell requires a fixture with the exact family-specific IBM URL and command.
+Each `documented` cell requires a fixture with the exact family-specific IBM read-command URL,
+section, selected fields, and source excerpt.
 `profile-only evidence` admits only `chsyscfg`/`lssyscfg` profile properties, not live inventory.
 `unknown` means no claim and requires fail-closed behavior; it does not mean unsupported. A future
 unsupported cell is written explicitly as `unsupported` with source evidence; omission is invalid.
@@ -105,13 +110,14 @@ aliases, available-capacity fields, or aggregation behavior across families.
 
 | Operation | Create time | Inactive/shut down | Running | Capability unavailable |
 |---|---|---|---|---|
-| Assign/unassign dedicated slot | Add/remove `<drc_index>//0` in profile `io_slots` before create; read back `lssyscfg -r prof -m SYSTEM -F io_slots` | `chsyscfg -r prof -m SYSTEM -i name=PROFILE,lpar_id=ID,io_slots+=/-=<drc_index>//0`; read back the profile; effective state remains unchanged until apply/activation | `chhwres -r io -m SYSTEM -o a/r --id LPAR_ID -l DRC_INDEX`; only with a verified RMC/DLPAR-capable running LPAR; read back slot owner by `drc_index` | Any unavailable precondition or command failure is an error; do not fall back to a profile-only success |
+| Assign/unassign dedicated slot | Add/remove `<drc_index>//0` in profile `io_slots` before create; read back `lssyscfg -r prof -m SYSTEM --filter "lpar_ids=ID,profile_names=PROFILE" -F io_slots` | `chsyscfg -r prof -m SYSTEM -i name=PROFILE,lpar_id=ID,io_slots+=/-=<drc_index>//0`; read back with the exact LPAR/profile filter; effective state remains unchanged until apply/activation | `chhwres -r io -m SYSTEM -o a/r --id LPAR_ID -l DRC_INDEX`; only for `state=Running,rmc_state=active`; read back slot owner by `drc_index` | Any unavailable precondition or command failure is an error; do not fall back to a profile-only success |
 | Assign/unassign SR-IOV logical port | Add/remove a property record in `sriov_eth_logical_ports` or `sriov_roce_logical_ports`; required add selectors are `adapter_id`, `phys_port_id`, and type-specific capacity; read back the same profile property | `chsyscfg -r prof -m SYSTEM -i name=PROFILE,lpar_id=ID,<property>+=/-=<record>`; removal includes `adapter_id` and `logical_port_id`; effective state remains unchanged until apply/activation | Add: `chhwres -r sriov -m SYSTEM --rsubtype logport -o a --id LPAR_ID -a adapter_id=A,phys_port_id=P,logical_port_type=TYPE,capacity=C[,max_capacity=M]`; remove uses `-o r --id LPAR_ID -a adapter_id=A,logical_port_id=L`; read back by adapter + logical-port ID | Any unavailable precondition or command failure is an error; do not mutate |
-| Switch adapter shared/dedicated mode | Not an LPAR create operation | System-scoped only after inventory proves dependent logical ports and owners absent | Shared: `chhwres -r sriov -m SYSTEM --rsubtype adapter -o a -a slot_id=DRC[,adapter_id=A]`; dedicated: same with `-o r -a slot_id=DRC`; read back adapter ID, slot ID, and mode; never infer safety from one LPAR's state | Any unavailable inventory or command failure is an error; do not mutate |
+| Switch adapter shared/dedicated mode | Not an LPAR create operation | System-scoped only after inventory proves dependent logical ports and owners absent | Shared: `chhwres -r sriov -m SYSTEM --rsubtype adapter -o a -a slot_id=DRC[,adapter_id=A]`; dedicated: same with `-o r -a slot_id=DRC`; read back `adapter_id,slot_id,config_state` and require the documented shared/dedicated value; never infer safety from one LPAR's state | Any unavailable inventory or command failure is an error; do not mutate |
 
 Before any operation, query `lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state`.
 `Not Activated` selects profile-only behavior. `Running` selects a dynamic path only when
-`rmc_state=active`; every other state/value is unsupported for mutation. Before switching adapter
+`rmc_state=active`; no additional DLPAR-capability field is claimed. Every other state/value is
+unsupported for mutation. Before switching adapter
 mode, read adapter, physical-port, and logical-port inventory and require no logical-port row for
 the adapter and no dedicated-slot owner; missing or unknown inventory is an error. Profile
 readback compares the selected property for the exact profile and LPAR ID. Effective readback
