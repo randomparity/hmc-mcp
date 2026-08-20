@@ -47,6 +47,9 @@ Failover and optional priority/max-capacity inputs remain unavailable.
 
 ## Considered & rejected
 
+- **Do nothing and retain the current public contract.** verified: issue #215 hardware Findings 2,
+  6, and 7 show that backing devices are required and that the existing add and remove command
+  forms fail on the admitted family; retaining them preserves a phantom mutation surface.
 - **Retain the opaque string behind a typed wrapper.** judgment: callers could still smuggle
   unvalidated topology through the public boundary.
 - **Let callers select a logical-port ID.** verified: issue #215 hardware Finding 4 shows the HMC
@@ -60,4 +63,3 @@ Failover and optional priority/max-capacity inputs remain unavailable.
   optional values.
 - **Trust command success without readback.** verified: issue #215 Findings 4 and 5 provide the
   vNIC and per-backing-device projections needed to verify identity and Operational state.
-
