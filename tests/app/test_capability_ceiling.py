@@ -13,7 +13,11 @@ from fastmcp import FastMCP
 
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.legacy_policy import compile_legacy_policy
-from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.server import (
+    PERMISSIONS_TOOL_NAME,
+    TOOL_SECURITY,
+    create_mcp,
+)
 
 
 def _legacy(*, include_arbitrary_command: bool = False):
@@ -946,3 +950,112 @@ def test_a_name_outside_the_index_is_reported_as_unbounded():
 
     assert reported.effect == UNKNOWN
     assert reported.exhaustive_targets is False
+
+
+TOOLS_ONLY_GRANT = [
+    {"tools": ["hmc_list_systems"], "connections": ["lab"], "targets": "all-targets"}
+]
+
+
+def _initialize(application):
+    """The instructions and the tool set one client session actually receives.
+
+    Both read from the same session, because the defect ADR 0048 records is a
+    disagreement between two halves of one `initialize` exchange; comparing a
+    string from one composition against a registry from another could not see it.
+    """
+    from fastmcp import Client
+
+    async def _go():
+        async with Client(application) as client:
+            tools = await client.list_tools()
+            return client.initialize_result.instructions, {tool.name for tool in tools}
+
+    return asyncio.run(_go())
+
+
+def _indexed_names(text: str) -> set[str]:
+    """Whole tool names in *text* that the authoritative index carries.
+
+    Whole names, not substrings: `hmc_get_lpar` occurs inside
+    `hmc_get_lpar_description`, so a containment test would read a correction
+    naming the second as also covering the first.
+    """
+    import re
+
+    return set(re.findall(r"\bhmc_[a-z0-9_]+\b", text)) & set(TOOL_SECURITY)
+
+
+def _split_correction(instructions: str) -> tuple[str, str]:
+    """The recommendation prose and the ceiling correction appended to it."""
+    from hmc_mcp._app import CEILING_HEADING
+
+    prose, _heading, correction = instructions.partition(CEILING_HEADING)
+    return prose, correction
+
+
+def test_the_instructions_shipped_at_initialize_recommend_no_withheld_tool():
+    """ADR 0048: the self-description agrees with the registry it ships beside.
+
+    The reproduction from #255, as a test. Against `main` at 4a633a9 this policy
+    delivered a 5314-character instructions string recommending 18 indexed tools
+    while `tools/list` carried exactly one, with no correction anywhere in the
+    text — and a `tools`-only grant is the shape that can also withhold
+    `hmc_effective_permissions`, so the client had no second opinion to consult.
+    """
+    from hmc_mcp._app import CEILING_HEADING
+
+    policy = _policy(TOOLS_ONLY_GRANT)
+    instructions, names = _initialize(create_mcp(policy))
+    prose, correction = _split_correction(instructions)
+
+    assert names == {"hmc_list_systems"}
+    assert PERMISSIONS_TOOL_NAME not in names
+    assert CEILING_HEADING in instructions
+
+    recommended = _indexed_names(prose)
+    assert len(recommended) > 1, "the prose must still recommend tools by name"
+    assert recommended - names - _indexed_names(correction) == set()
+    # The correction cannot recommend a tool this very policy shape withholds.
+    assert PERMISSIONS_TOOL_NAME not in correction
+    assert "`tools/list` is the authoritative set" in correction
+
+
+def test_a_legacy_ceiling_ships_the_instructions_unqualified():
+    """ADR 0048: the common case pays nothing — byte-identical to the prose.
+
+    The legacy-equivalent policy admits all 18 names the prose recommends, so it
+    is the shape that reaches this code and changes nothing. A `read`-only grant
+    is deliberately not asserted here: it withholds `hmc_create_lpar` and
+    `hmc_provision_lpar`, which the composite section recommends as bullets, and
+    the test below pins the suffix it earns.
+    """
+    from hmc_mcp._app import CEILING_HEADING, INSTRUCTIONS
+
+    instructions, _names_ = _initialize(create_mcp(_legacy()))
+
+    assert instructions == INSTRUCTIONS
+    assert CEILING_HEADING not in instructions
+
+
+def test_a_read_only_ceiling_corrects_the_write_recommendations_it_withholds():
+    """ADR 0048: a partial ceiling names what it withholds, and points at the tool.
+
+    `hmc_effective_permissions` is a read tool, so an effects grant reaches it —
+    the arm where the extra sentence is earned, opposite the tools-only one above.
+    """
+    from hmc_mcp._app import CEILING_HEADING
+
+    instructions, names = _initialize(create_mcp(_policy(READ_ONLY_GRANT)))
+    _prose, correction = _split_correction(instructions)
+    named = _indexed_names(correction)
+
+    assert CEILING_HEADING in instructions
+    assert PERMISSIONS_TOOL_NAME in names
+    assert f"Call {PERMISSIONS_TOOL_NAME}" in correction
+    for withheld in ("hmc_create_lpar", "hmc_provision_lpar", "hmc_migrate_lpar"):
+        assert withheld not in names
+        assert withheld in named
+    for granted in ("hmc_lpar_summary", "hmc_capacity_report", "hmc_fleet_health"):
+        assert granted in names
+        assert granted not in named
