@@ -662,6 +662,8 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 > the command runs, so a UUID that cannot be resolved surfaces as an error
 > rather than being passed through to the CLI. The opt-in `hmc_run_command`
 > tool is the exception — it runs whatever command you give it verbatim.
+> See [docs/hmc-cli-cheatsheet.md](docs/hmc-cli-cheatsheet.md) for a concise
+> reference to all HMC CLI commands used by this project.
 
 **VIOS administration**
 
