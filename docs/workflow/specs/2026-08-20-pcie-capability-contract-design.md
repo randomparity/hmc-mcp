@@ -19,26 +19,31 @@ output. A future live capture may add another labelled fixture without changing 
 
 ## Evidence representation
 
-Create one JSON fixture per documented command family and version family under
-`tests/fixtures/pcie/`. Every fixture contains:
+Create one JSON evidence record per admitted command or contract family under
+`tests/fixtures/pcie/`. Every record contains:
 
 - `evidence_kind`: `documentation`;
 - `documentation_family`: one of `Power8`, `Power9`, `Power10`, `Power11`;
 - `hmc_release`: an exact release when the source names one, otherwise `not-established`;
 - an IBM documentation URL;
-- the exact read-only command with explicit `-F` field order;
-- `fields`, matching that order exactly;
-- a sanitized `source_excerpt` copied from the cited command reference;
-- `parser_examples`, explicitly labelled `synthetic`, containing a header and data records using
-  the command's comma delimiter;
+- a faithful sanitized `source_excerpt` grounded in the cited command reference;
 - `capacity_unit` where capacity fields occur.
 
+The `record_kind` discriminates two closed shapes. A `read-fixture` additionally contains
+`support: documented`, the exact read-only `command` with explicit `-F` field order, `fields`
+matching that order exactly, and `parser_examples` explicitly labelled `synthetic` with a header
+and data records using the command's comma delimiter. A `contract-evidence` contains
+`support: unknown` and an exact `admitted_claims` string array; it has no command, fields, or
+parser example because the source establishes mutation and unit rules but no admitted read
+inventory. Adding parser data to such a record would invent evidence.
+
 The source excerpts are evidence; parser examples are test vectors and never claim to be raw HMC
-output. Tests load every file, validate its metadata and non-empty source excerpt, and parse every
-synthetic row against the declared field count. A Power-generation documentation
-family is not presented as an HMC software release: `hmc_release=not-established` forbids a test or
-downstream caller from claiming release-specific availability. This prevents field-order drift,
-accidental identity substitutions, undocumented unit changes, and false version precision.
+output. Tests load every file, validate its exact closed shape and exact reviewed provenance, and
+parse every `read-fixture` synthetic row against the declared field count. A Power-generation
+documentation family is not presented as an HMC software release:
+`hmc_release=not-established` forbids a test or downstream caller from claiming release-specific
+availability. This prevents field-order drift, accidental identity substitutions, undocumented
+unit changes, and false version precision.
 
 ## Read command contract
 
@@ -148,9 +153,10 @@ not an unassigned resource.
 
 Tests must prove:
 
-1. all evidence fixtures use allowed documentation-family labels, an exact HMC release or
-   `not-established`, HTTPS IBM sources, read-only `lshwres`/`lssyscfg` commands, exact declared
-   columns, and explicit capacity units;
+1. all evidence records use the closed shape for their `record_kind`, allowed
+   documentation-family labels, an exact HMC release or `not-established`, HTTPS IBM sources,
+   and exact reviewed provenance; every `read-fixture` has a read-only `lshwres`/`lssyscfg`
+   command and exact declared columns, while every `contract-evidence` has exact admitted claims;
 2. each resource's stable identity fields survive parsing, including empty owner attributes;
 3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
 4. malformed column counts, duplicate/blank fields, and invalid delimiters fail clearly;

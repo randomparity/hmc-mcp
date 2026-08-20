@@ -105,61 +105,38 @@ available-empty; the parser never executes a command.
 **Interfaces**
 
 - Consumes `parse_hmc_delimited_rows` from Task 1.
-- Provides evidence records with keys `evidence_kind`, `documentation_family`, `hmc_release`,
-  `source_url`, `source_section`, `command`, `fields`, `source_excerpt`, `parser_examples`, and
-  optional `capacity_unit`.
+- Provides the spec's two closed evidence-record shapes, discriminated by `record_kind`.
 - Task 3 relies on these tests proving every documented/unknown matrix cell and state contract.
 
-1. Add failing parameterized tests that enumerate the exact expected record names and require:
-   allowed documentation families; `hmc_release` exact or `not-established`; IBM HTTPS source;
-   read-only command; exact fields; non-empty source excerpt; synthetic example label; parser
-   success; stable identity fields; and `percent` for all capacity-bearing records.
+1. Add failing parameterized tests that enumerate the exact expected record names and compare
+   every loaded JSON object with the canonical values below. Also require parser success, stable
+   identity fields, and `percent` for all capacity-bearing records.
 2. Run the focused test; expect missing-fixture failures.
 3. Add exactly these records (source text drift is a stop condition: if the named section no
    longer contains the excerpt, do not substitute another claim without returning to design):
 
 | File | Kind | URL/section | Command/fields or admitted claim |
 |---|---|---|---|
-| `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg`, profile examples | `lssyscfg -r prof -m sys1 -F io_slots,sriov_eth_logical_ports --header`; those two fields |
-| `power9-io-slot.json` | `read-fixture` | ADR 0053 Power9 `lshwres`, physical-I/O example | `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header` |
-| `power9-sriov-adapter.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | adapter command; `adapter_id,slot_id,config_state` |
-| `power9-sriov-physport.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | physical-port `--level eth`; fields from the spec |
-| `power9-sriov-logport.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | logical-port `--level eth`; fields from the spec |
-| `power10-sriov-contract.json` | `contract-evidence` | ADR 0053 Power10 `chhwres`, SR-IOV attributes/examples | adapter/logical-port mutation templates; percentage and granularity claims; read support `unknown` |
-| `power11-sriov-contract.json` | `contract-evidence` | ADR 0053 Power11 `chhwres`, SR-IOV attributes/examples | same admitted current contract; read support `unknown` |
+| `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg`; `Partition profile properties` | command `lssyscfg -r prof -m sys1 -F io_slots,sriov_eth_logical_ports --header`; fields `io_slots,sriov_eth_logical_ports`; excerpt `Profile output exposes the io_slots and sriov_eth_logical_ports properties.`; stdout `io_slots,sriov_eth_logical_ports\n21010003//0,1/0/27004001/10.25/20.50\n` |
+| `power9-io-slot.json` | `read-fixture` | `https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm`; `EXAMPLES — physical I/O slots` | command `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header`; fields `drc_index,description,lpar_name`; excerpt `List the DRC index, description, and owning partition for each physical I/O slot.`; stdout `drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n` |
+| `power9-sriov-adapter.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV adapters` | command `lshwres -r sriov --rsubtype adapter -m sys1 -F adapter_id,slot_id,config_state --header`; fields `adapter_id,slot_id,config_state`; excerpt `SR-IOV adapter output identifies adapters, slots, and configuration state.`; stdout `adapter_id,slot_id,config_state\n1,21010202,1\n` |
+| `power9-sriov-physport.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV physical ports` | command `lshwres -r sriov --rsubtype physport --level eth -m sys1 -F adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity --header`; fields `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity`; excerpt `Ethernet physical-port output identifies its adapter, port, state, location, and minimum capacity granularity.`; stdout `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity\n1,0,1,U78D5-P1-C1-T1,0.25\n`; unit `percent` |
+| `power9-sriov-logport.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV logical ports` | command `lshwres -r sriov --rsubtype logport --level eth -m sys1 -F adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity --header`; fields `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity`; excerpt `Ethernet logical-port output identifies its adapter, physical port, logical-port DRC index, owner, and capacities.`; stdout `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity\n1,0,27004001,7,lpar1,10.25,20.50\n1,0,27004002,,,10.25,20.50\n`; unit `percent` |
+| `power10-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres`; `SR-IOV attributes and examples` | excerpt `SR-IOV operations select slots, adapters, and logical ports and express capacity and minimum granularity as percentages.`; exact claims `adapter mode uses -o a/r with slot_id`, `logical-port operations use adapter_id and logical_port_id`, `capacity, max_capacity, and minimum granularity are percent with up to two decimals`; unit `percent` |
+| `power11-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres`; `SR-IOV attributes and examples` | same excerpt and exact claims as Power10; unit `percent` |
 
-   A `read-fixture` payload is exactly:
-
-```json
-{
-  "record_kind": "read-fixture",
-  "evidence_kind": "documentation",
-  "documentation_family": "Power9",
-  "hmc_release": "not-established",
-  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
-  "source_section": "EXAMPLES — physical I/O slots",
-  "support": "documented",
-  "command": "lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header",
-  "fields": ["drc_index", "description", "lpar_name"],
-  "source_excerpt": "List the DRC index, description, and owning partition for each physical I/O slot",
-  "parser_examples": {
-    "kind": "synthetic",
-    "stdout": "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n"
-  }
-}
-```
-
-   The other `read-fixture` records use the exact matrix fields and synthetic values `adapter_id=1`,
-   `slot_id=21010202`, `config_state=1`, `phys_port_id=0`, `state=1`,
-   `phys_port_loc=U78D5-P1-C1-T1`, `min_eth_capacity_granularity=0.25`,
-   `logical_port_id=27004001`, `lpar_id=7`, `lpar_name=lpar1`, `capacity=10.25`, and
-   `max_capacity=20.50` where applicable. Empty-owner variants set both owner columns empty.
-   Capacity-bearing records add `"capacity_unit": "percent"`.
+   Every `read-fixture` uses the table's literal values and exactly these common keys:
+   `record_kind: "read-fixture"`, `evidence_kind: "documentation"`,
+   `documentation_family` equal to the filename's family, `hmc_release: "not-established"`,
+   `support: "documented"`, and the table's literal `source_url`, `source_section`, `command`,
+   `fields`, and `source_excerpt`. Its `parser_examples` is exactly
+   `{"kind": "synthetic", "stdout": <table stdout>}`. Capacity-bearing records add
+   `"capacity_unit": "percent"` and others omit it.
 
    A `contract-evidence` record omits parser fields and contains exactly `record_kind`,
    `evidence_kind`, `documentation_family`, `hmc_release`, `source_url`, `source_section`,
    `support: "unknown"`, non-empty `source_excerpt`, `capacity_unit: "percent"`, and an
-   `admitted_claims` string array copied from ADR 0053. It never contains synthetic stdout.
+   `admitted_claims` string array in the table's order. It never contains synthetic stdout.
 4. Extend tests to load decimal examples through `Decimal` and prove two-decimal precision without
    converting to float. Assert the logical-port identity is adapter plus logical-port ID and that
    an empty owner value survives parsing.
@@ -182,21 +159,24 @@ mistaken for live capture; identities and units are executable assertions.
 - Provides a test-readable matrix assertion and the accepted ADR status.
 - No later task may alter mutation code or exports.
 
-1. Add failing tests that read the spec and require all three operation rows, all four state
-   columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic templates, profile record
-   grammar, stable readback identities, error/no-fallback wording, and the explicit disposition of
-   the conflicting existing adapter-mode function to #214.
-2. Add a repository-only diff-scoped test. When `git rev-parse --show-toplevel` fails, skip with
-   `repository-only no-mutation guard requires Git metadata`; make no packaging claim. Otherwise
-   inspect `git diff main -- src/hmc_mcp` (committed, staged, and unstaged tracked source together)
-   plus `git ls-files --others --exclude-standard -- src/hmc_mcp`. Reject any changed production
-   path other than `src/hmc_mcp/ssh_commands.py`, any untracked production file, or added line
-   containing `run_hmc_command`, `@tool`, `server`, `cli`, or `api` export syntax. Limit token
-   scanning to added lines outside the parser function so the pre-existing baseline is ignored.
-3. Run the focused test; expect green against the reviewed spec. Add a temporary comment containing
-   `run_hmc_command` inside the new parser, run the exact guard and confirm failure, remove it, then
-   rerun green. Temporarily remove one required matrix token from the test's in-memory text,
-   confirm failure, and restore.
+1. Add characterization tests that read the already-reviewed spec and require all three operation
+   rows, all four state columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic
+   templates, profile record grammar, stable readback identities, error/no-fallback wording, and
+   the explicit disposition of the conflicting existing adapter-mode function to #214.
+2. Add a repository-only structural no-mutation test. When Git metadata or `main` is unavailable,
+   skip with `repository-only no-mutation guard requires Git metadata and main`; make no packaging
+   claim. Otherwise reject changed or untracked production paths except
+   `src/hmc_mcp/ssh_commands.py`; parse that file and `git show main:src/hmc_mcp/ssh_commands.py`
+   with `ast`; require the only new top-level definition to be `parse_hmc_delimited_rows` and the
+   only new imported names to be `csv` and `Sequence`; require no removed definition/import;
+   require the parser's call targets to be exactly the reviewed stdlib/builtin/method allowlist
+   (`tuple`, `any`, `len`, `set`, `csv.reader`, `list`, `enumerate`, `dict`, `zip`, `text.splitlines`,
+   `line.strip`, and `rows.append`). This excludes a new mutation helper, export, project-call alias,
+   or parser-to-SSH path structurally rather than by substring.
+3. Run the focused test; expect green against the reviewed spec. Temporarily add a call to the
+   existing SSH executor inside the parser and confirm the AST guard fails, then restore and rerun
+   green. Temporarily remove one required matrix token from the actual spec, confirm the
+   characterization test fails, restore the spec, and rerun green.
 4. Run `just verify`; expect green. Change ADR 0053 Status to `Accepted` and state that the
    evidence, parser/error tests, state-matrix test, no-mutation check, and full guardrail passed on
    2026-08-20.
