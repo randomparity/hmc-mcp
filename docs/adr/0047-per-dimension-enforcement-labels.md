@@ -74,6 +74,19 @@ the registry being reported, the way `ceiling_enforced` already checks the tool 
   `all-targets` — so an unwrapped tool costs this label when it declares selectors, or when
   a table grant reaches it.
 
+  > **Amended by #297** (2026-08-19). **The rule stated above is right; the mechanism it was
+  > written against is gone, and the implementation that read `policy` no longer exists.**
+  > `authorized` wraps every tool since #297, so nothing escapes the target check and the
+  > question reduces to the same one `connections` asks — does every reported tool carry the
+  > wrapper — with no exemption, because a tool that opens no connection still acts on
+  > resources a table either can or cannot bound. `_targets_enforced` therefore no longer
+  > takes the policy and no longer inspects a grant's targets to decide the label. The rule
+  > and the connection rule still differ, and the difference is still the one this record
+  > found: `_connections_enforced` skips a tool declaring no connection argument and
+  > `_targets_enforced` does not, so an unwrapped connection-less tool costs the target label
+  > alone. `tests/app/test_capability_ceiling.py` pins that with a direct `describe` call —
+  > no composed application reaches the state any more.
+
 **The two tuples partition the three dimensions whenever a policy is selected.** A
 dimension appears in exactly one of them, so the report can no longer drop a dimension it
 is still enumerating grants for. With no policy selected both are empty — nothing is
@@ -101,6 +114,13 @@ fail-closed default `_permission` already applies to `exhaustive_targets`.
 **A tool declaring target selectors but no connection argument withholds the target
 label.** No such tool is in the index today and a guard test pins that; the branch is what
 keeps the label honest if one is ever added.
+
+> **Amended by #297** (2026-08-19). **This paragraph and its guard test are removed, because the
+> state they defend against is no longer dangerous.** Such a tool is wrapped now and its selectors
+> *are* checked at dispatch, so declaring selectors without a connection argument costs nothing and
+> needs no special branch — the surviving rule, "an unwrapped tool withholds the target label",
+> subsumes it. The guard test in `tests/app/test_capability_ceiling.py` went with it rather than
+> being left asserting an index property that no longer guards anything.
 
 **ADR 0037 and R16 are amended in place, and say they were wrong.** Both are accepted,
 non-superseded records that describe the defective encoding as the intended one. Their
@@ -137,6 +157,16 @@ registration gate, warning placement, and disclosure argument all still govern.
   — it stops the report claiming the target dimension is enforced in that state, which is
   the whole of what #254 owns. The gap itself is ADR 0039's and is tracked as #297, which
   the test pinning the permit above gives a witness already in the suite.
+
+  > **Amended by #297** (2026-08-19). **The consequence above no longer holds: a table-only
+  > policy reports `targets` as *enforced*, and the gap it made visible is closed rather than
+  > only reported.** `authorized` wraps every tool, so `targets_permitted`'s refusal reaches the
+  > two connection-less tools and the table denies them — which is what this bullet said it
+  > should do. The witness test flipped with it: it asserted the permit and now asserts the
+  > denial. What this entry claimed for itself is unchanged and was correct while it stood — it
+  > described the state honestly rather than closing it, and the honest description is what made
+  > the gap findable. The one reading to retire is "a table-only policy reports `targets` as
+  > declared-only": that state is now unreachable through `create_mcp`.
 - **ADR 0038's unsafe direction is closed for `describe`, and narrowed rather than closed
   overall.** ADR 0038 recorded that a caller passing `permits` but omitting `authorize`
   would keep `ceiling_enforced` true and so claim connection enforcement over an
@@ -175,12 +205,22 @@ registration gate, warning placement, and disclosure argument all still govern.
   state a shipped policy reaches: the two connection-less tools make the connection
   dimension vacuous and the target dimension unenforced *at the same time*, so one answer
   cannot be right for both. Rejected on the evidence above.
+
+  > **Amended by #297** (2026-08-19). The witness changed and the rejection stands. No shipped
+  > policy reaches that state now — both tools are wrapped — but the two questions still differ,
+  > because `_connections_enforced` exempts a tool declaring no connection argument and
+  > `_targets_enforced` exempts nothing. An unwrapped connection-less tool, which only a direct
+  > caller of `describe` can now produce, still separates the two answers.
 - **Close the table-grant gap here** by wrapping every tool rather than only the
   connection-bearing ones. Rejected as out of #254's scope and as a change to an
   enforcement path, not a report: it would alter which calls are denied under existing
   policies, which belongs in an entry that can price that against ADR 0039's decision to
   key the wrapper on the connection argument. Reporting the state honestly is what makes
   the gap findable in the meantime.
+
+  > **Taken by #297** (2026-08-19). Deferred rather than refused, and this is where it landed:
+  > ADR 0039's amendment prices the change against its own decision, as this bullet asked. The
+  > rejection's reasoning is unchanged — it was about scope, not about the mechanism.
 - **Gate the connection and target labels on "a policy is selected" alone**, without
   reading the callables. One line, and it fixes the direction #254 reports. Rejected
   because it swaps the safe error for the unsafe one: it would assert connection

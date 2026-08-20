@@ -144,6 +144,17 @@ The written document is a single grant under the policy name `legacy-equivalent`
   `hmc_effective_permissions` and `hmc_list_configured_hosts`, which the generated policy grants
   like any other ordinary tool **= 26**.
 
+  > **Amended by #297** (2026-08-19). **The two populations are now one: all 26 are reachable by
+  > the target check.** "`authorized` never wraps them and the dimension cannot reach them" was the
+  > only thing separating 24 from 26, and #297 wraps every tool. The generated policy is unchanged
+  > — it emits `all-targets` throughout and already granted both tools as ordinary ones, which is
+  > exactly why 26 was the right count for *this* record's question. What changes is that ADR
+  > 0039's question now has the same answer for them: a table-only policy registers both and denies
+  > every call to them, so its own population goes from **25** to **27** — every non-exhaustive
+  > tool in the registry, with nothing left out for either reason. The reconciliation above is
+  > unchanged as arithmetic; what it reconciles is now one exemption (`hmc_run_command`, which the
+  > generator never emits) rather than two.
+
   ADR 0039's figure is a measurement of its own set, not a stale count of this one, and its
   "all 19 selector-less tools" elsewhere is a third population (the 17 plus that pair) rather than
   a contradiction. Cite it for the classification; derive the count here.

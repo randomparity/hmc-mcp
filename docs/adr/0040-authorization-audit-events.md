@@ -67,6 +67,16 @@ Two calls reach that function without producing a decision, and neither produces
   the most informative read this server offers is also one it does not record. That follows from
   the ceiling governing it, not from a choice made here — but the oracle residual below should be
   read knowing it.
+
+  > **Amended by #297** (2026-08-19). **This case is gone: both tools now produce one record per
+  > call, like every other tool.** Its premise was that `tool_registry.authorized` returned their
+  > handlers unwrapped, and #297 wraps every tool so the target dimension can reach them. A
+  > decision is reached, so the totality rule this section states applies unchanged, and the
+  > paragraph above inverts — the most informative read this server offers *is* recorded now,
+  > including when a `targets` table denies it. The `connection` object renders `state: "absent"`
+  > with a **null** `resolved`, which is the pair that distinguishes a tool with no connection
+  > argument from a caller who omitted `profile`: the latter resolves to `"<default>"`. Only the
+  > malformed-call bullet below remains a no-record case.
 - A malformed call, where a declared connection or selector argument is absent from the bound
   arguments and the indexing raises `KeyError`. ADR 0038 and ADR 0039 both fixed that indexing
   deliberately, and a `KeyError` there is a defect in the registration path rather than an
