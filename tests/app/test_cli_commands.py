@@ -2272,26 +2272,6 @@ def test_lpm_recovery_command_rejects_invalid_timing_before_submission(fake_hmc)
             ["network", "set-sriov-mode", "sys1", "P1-C1", "sriov"],
             ("lshwres", "sriov", "adapter"),
         ),
-        (
-            [
-                "network",
-                "add-vnic",
-                "sys1",
-                "lpar1",
-                "--capacity",
-                "20",
-                "--virtual-switch-name",
-                "ETHERNET0",
-                "--vlan",
-                "100",
-                "--yes",
-            ],
-            ("chhwres", "lpar1", "20", "ETHERNET0", "100"),
-        ),
-        (
-            ["network", "remove-vnic", "sys1", "lpar1", "4", "--yes"],
-            ("chhwres", "lpar1", "4"),
-        ),
     ],
 )
 def test_destructive_ssh_commands_delegate_valid_arguments(
@@ -2318,6 +2298,31 @@ def test_destructive_ssh_commands_delegate_valid_arguments(
 
     assert result.exit_code == 0, result.output
     assert all(fragment in commands[-1] for fragment in command_fragments)
+
+
+def test_add_vnic_cli_replaces_legacy_options():
+    result = RUNNER.invoke(cli.app, ["network", "add-vnic", "--help"])
+
+    assert result.exit_code == 0
+    for option in (
+        "--vios-name",
+        "--vios-lpar-id",
+        "--adapter-id",
+        "--physical-port-id",
+        "--capacity-percent",
+        "--port-vlan-id",
+    ):
+        assert option in result.output
+    for legacy in ("--backing-devices", "--virtual-switch-name", "--capacity "):
+        assert legacy not in result.output
+
+
+def test_remove_vnic_cli_names_slot_selector():
+    result = RUNNER.invoke(cli.app, ["network", "remove-vnic", "--help"])
+
+    assert result.exit_code == 0
+    assert "slot_num" in result.output
+    assert "vnic_id" not in result.output
 
 
 # --------------------------------------------------------------------------- #

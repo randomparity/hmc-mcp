@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from decimal import Decimal
 
 import typer
 from rich.table import Table
@@ -37,6 +38,7 @@ from .operations_pcie import (
     unassign_sriov_logical_port,
 )
 from .operations_ssh_network import (
+    VnicBackingSelector,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
@@ -409,57 +411,58 @@ def network_list_vnics(
 def network_add_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
-    virtual_switch_name: str = typer.Option(
-        ..., "--virtual-switch-name", help="Virtual switch name"
-    ),
-    vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
-    backing_devices: str | None = typer.Option(
-        None, "--backing-devices", help="Backing devices (opaque string, v1 only)"
-    ),
+    vios_name: str = typer.Option(..., "--vios-name"),
+    vios_lpar_id: str = typer.Option(..., "--vios-lpar-id"),
+    adapter_id: str = typer.Option(..., "--adapter-id"),
+    physical_port_id: str = typer.Option(..., "--physical-port-id"),
+    capacity_percent: float = typer.Option(..., "--capacity-percent"),
+    port_vlan_id: int = typer.Option(..., "--port-vlan-id"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
+    """Add and verify a vNIC with one typed SR-IOV backing selector."""
     if not yes and not typer.confirm(
-        f"Add vNIC (capacity={capacity}, switch={virtual_switch_name}, vlan={vlan}) "
+        f"Add vNIC (VIOS={vios_name}, adapter={adapter_id}, "
+        f"port={physical_port_id}, capacity={capacity_percent}, vlan={port_vlan_id}) "
         f"to '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
-    result = _run(
-        lambda: add_vnic(
-            _ssh_config(),
+    result = _with_client(
+        lambda hmc: add_vnic(
+            hmc,
             system_name,
             lpar,
-            capacity,
-            virtual_switch_name,
-            vlan,
-            backing_devices,
+            VnicBackingSelector(
+                vios_name,
+                vios_lpar_id,
+                adapter_id,
+                physical_port_id,
+                Decimal(str(capacity_percent)),
+            ),
+            port_vlan_id,
         )
     )
 
     console.print(f"[green]vNIC added to '{lpar}' on '{system_name}'[/green]")
-    if result.strip():
-        console.print(result.strip())
+    _print_json(asdict(result))
 
 
 @network_app.command("remove-vnic")
 def network_remove_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    vnic_id: str = typer.Argument(..., help="vNIC ID (from list-vnics)"),
+    slot_num: str = typer.Argument(..., help="vNIC slot number (from list-vnics)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
     if not yes and not typer.confirm(
-        f"Remove vNIC {vnic_id} from '{lpar}' on '{system_name}'?"
+        f"Remove vNIC slot {slot_num} from '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
-    result = _run(lambda: remove_vnic(_ssh_config(), system_name, lpar, vnic_id))
+    result = _with_client(lambda hmc: remove_vnic(hmc, system_name, lpar, slot_num))
 
     console.print(
-        f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system_name}'[/green]"
+        f"[green]vNIC slot {slot_num} removed from '{lpar}' on '{system_name}'[/green]"
     )
-    if result.strip():
-        console.print(result.strip())
+    _print_json(asdict(result))
