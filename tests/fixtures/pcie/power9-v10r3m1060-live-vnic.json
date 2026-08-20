@@ -1,0 +1,39 @@
+{
+  "record_kind": "live-capture",
+  "evidence_kind": "live-capture",
+  "documentation_family": "Power9",
+  "hmc_release": "V10R3 M1060 build 2408210051",
+  "system_model": "8375-42A",
+  "source_url": "https://github.com/randomparity/hmc-mcp/issues/215#issuecomment-5360673085",
+  "source_locator": "WORK:TRAJECTORY hardware verification findings 2 through 7",
+  "claim_summary": "Live vNIC add, readback, backing-device inventory, and slot removal grammar.",
+  "support": "captured",
+  "probes": [
+    {
+      "name": "vnic-readback",
+      "command": "lshwres -r virtualio --rsubtype vnic --level lpar -m system-a --filter lpar_names=client-a -F lpar_name,lpar_id,slot_num,desired_mode,curr_mode,auto_priority_failover,port_vlan_id,pvid_priority,allowed_vlan_ids,mac_addr,allowed_os_mac_addrs,backing_devices,backing_device_states --header",
+      "fields": ["lpar_name", "lpar_id", "slot_num", "desired_mode", "curr_mode", "auto_priority_failover", "port_vlan_id", "pvid_priority", "allowed_vlan_ids", "mac_addr", "allowed_os_mac_addrs", "backing_devices", "backing_device_states"],
+      "exit_status": 0,
+      "stdout": "lpar_name,lpar_id,slot_num,desired_mode,curr_mode,auto_priority_failover,port_vlan_id,pvid_priority,allowed_vlan_ids,mac_addr,allowed_os_mac_addrs,backing_devices,backing_device_states\nclient-a,3,2,ded,ded,1,0,0,all,eaadf2188302,all,sriov/vios-a/100/1/1/27004003/2.0/2.0/50/100.0/100.0,sriov/27004003/1/Operational\n",
+      "stderr": ""
+    },
+    {
+      "name": "vnic-backing-readback",
+      "command": "lshwres -r virtualio --rsubtype vnicbkdev -m system-a -F lpar_name,lpar_id,type,adapter_id,physical_port_id,logical_port_id,capacity,desired_capacity,max_capacity,desired_max_capacity,failover_priority,is_active,status --header",
+      "fields": ["lpar_name", "lpar_id", "type", "adapter_id", "physical_port_id", "logical_port_id", "capacity", "desired_capacity", "max_capacity", "desired_max_capacity", "failover_priority", "is_active", "status"],
+      "exit_status": 0,
+      "stdout": "lpar_name,lpar_id,type,adapter_id,physical_port_id,logical_port_id,capacity,desired_capacity,max_capacity,desired_max_capacity,failover_priority,is_active,status\nvios-a,100,sriov,1,1,27004003,2.0,2.0,100.0,100.0,50,1,Operational\n",
+      "stderr": ""
+    },
+    {
+      "name": "vnic-add",
+      "command": "chhwres -r virtualio --rsubtype vnic -o a -m system-a -p client-a -a port_vlan_id=0,backing_devices=sriov/vios-a/100/1/1/2",
+      "fields": [], "exit_status": 0, "stdout": "", "stderr": ""
+    },
+    {
+      "name": "vnic-remove",
+      "command": "chhwres -r virtualio --rsubtype vnic -o r -m system-a -p client-a -s 2",
+      "fields": [], "exit_status": 0, "stdout": "", "stderr": ""
+    }
+  ]
+}

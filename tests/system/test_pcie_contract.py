@@ -21,6 +21,7 @@ EXPECTED_FIXTURES = {
     "power10-sriov-contract.json",
     "power11-sriov-contract.json",
     "power9-v10r3m1060-live-sriov.json",
+    "power9-v10r3m1060-live-vnic.json",
 }
 P9_URL = (
     "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm"
@@ -174,6 +175,26 @@ def test_evidence_pins_identity_and_capacity_semantics() -> None:
     records = {
         path.stem: json.loads(path.read_text()) for path in FIXTURES.glob("*.json")
     }
+    vnic = records["power9-v10r3m1060-live-vnic"]
+    assert vnic["probes"][0]["fields"][-2:] == [
+        "backing_devices",
+        "backing_device_states",
+    ]
+    assert vnic["probes"][1]["fields"] == [
+        "lpar_name",
+        "lpar_id",
+        "type",
+        "adapter_id",
+        "physical_port_id",
+        "logical_port_id",
+        "capacity",
+        "desired_capacity",
+        "max_capacity",
+        "desired_max_capacity",
+        "failover_priority",
+        "is_active",
+        "status",
+    ]
     slot = records["power9-io-slot"]
     rows = parse_hmc_delimited_rows(slot["parser_examples"]["stdout"], slot["fields"])
     assert [row["drc_index"] for row in rows] == ["21010003", "21010004"]
