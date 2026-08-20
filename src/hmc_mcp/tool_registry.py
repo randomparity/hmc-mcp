@@ -161,6 +161,27 @@ class ToolDefinition:
 # to permit and raises to deny. See ADR 0038.
 Authorize = Callable[[str, ToolSecurity, Mapping[str, Any]], None]
 
+# Set on the wrapper `authorized` builds, and read by `is_authorized_wrapper`.
+# An attribute rather than a signature or code-object shape: `functools.wraps`
+# makes the wrapper indistinguishable from its handler by every attribute it
+# copies, and this one is set afterwards, on the object this module created.
+_AUTHORIZED_MARKER = "__hmc_dispatch_authorized__"
+
+
+def is_authorized_wrapper(handler: object) -> bool:
+    """True when *handler* is the dispatch-time authorization wrapper itself.
+
+    The witness a caller needs to establish that a registered callable will run
+    the connection and target checks (ADR 0038, ADR 0039) before the handler.
+    It lives beside :func:`authorized` because the wrapper and its recogniser
+    drift the moment they live apart.
+
+    Takes an ``object`` rather than a callable: a caller reading a registry back
+    may hold something that is not a function at all, and "not the wrapper" is
+    the honest answer for it rather than a type error.
+    """
+    return getattr(handler, _AUTHORIZED_MARKER, False) is True
+
 
 def authorized(
     name: str,
@@ -193,6 +214,9 @@ def authorized(
         authorize(name, security, bound.arguments)
         return handler(*args, **kwargs)
 
+    # After `functools.wraps`, which updates `guarded.__dict__` from the
+    # handler's and would otherwise overwrite this.
+    setattr(guarded, _AUTHORIZED_MARKER, True)
     return guarded
 
 

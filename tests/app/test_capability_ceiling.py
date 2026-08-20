@@ -178,6 +178,20 @@ def test_inspection_reports_effects_source_and_dimensions():
     assert "hmc_list_systems" in grant["tools"]
 
 
+def _guarded_stub(name: str = "hmc_list_systems"):
+    """A registered callable built the way composition builds one.
+
+    Through `authorized` rather than by setting the marker by hand: a stub that
+    forged the witness would let the recogniser rot without a test noticing.
+    """
+    from hmc_mcp.tool_registry import authorized
+
+    def handler(profile: str | None = None) -> str:
+        return "ok"
+
+    return authorized(name, TOOL_SECURITY[name], handler, lambda *_args: None)
+
+
 def test_inspection_reports_no_policy_honestly():
     """R14, R16, retargeted by ADR 0041: no *composed* application reaches this arm.
 
@@ -186,12 +200,16 @@ def test_inspection_reports_no_policy_honestly():
     parameter rather than narrowing the public report's schema. What changed is the
     route: `create_mcp()` no longer produces an application to ask, so the honest
     null-reporting is asserted against `describe` itself.
+
+    Both dimension tuples are empty here and that is not the partition ADR 0047
+    imposes elsewhere: with no policy selected nothing is declared, so nothing can
+    be declared-only either.
     """
     from dataclasses import asdict
 
     from hmc_mcp.server_permissions import describe
 
-    result = asdict(describe(["hmc_list_systems"], None, TOOL_SECURITY))
+    result = asdict(describe({"hmc_list_systems": _guarded_stub()}, None, TOOL_SECURITY))
 
     assert result["policy_name"] is None
     assert result["policy_source"] is None
@@ -350,8 +368,18 @@ def test_inspection_tracks_the_arbitrary_command_toggle():
     assert result["ceiling_enforced"] is True
 
 
-def test_a_registry_that_drifted_past_its_ceiling_claims_no_enforcement():
-    """R14, R16: a policy name with no enforcement claim is the honest reading."""
+def test_a_registry_that_drifted_past_its_ceiling_demotes_only_the_tool_dimension():
+    """R14, R16 as amended by ADR 0047: drift is a fact about one dimension.
+
+    Before that amendment both tuples derived from `ceiling_enforced`, so this
+    state reported `enforced_dimensions == []` *and*
+    `declared_only_dimensions == []`: all three dimensions vanished from a report
+    that went on enumerating connections and targets in `declared_grants`. The
+    live denial below is the evidence that the silence was wrong — the connection
+    dimension is enforcing, under the very policy the report names.
+    """
+    from fastmcp.exceptions import ToolError
+
     policy = _policy(READ_ONLY_GRANT)
     application = create_mcp(policy)
     _configure(application, True)  # no predicate: the fail-open call shape
@@ -361,8 +389,156 @@ def test_a_registry_that_drifted_past_its_ceiling_claims_no_enforcement():
     assert "hmc_run_command" in [tool["name"] for tool in result["tools"]]
     assert result["policy_name"] == "test"
     assert result["ceiling_enforced"] is False
-    assert result["enforced_dimensions"] == []
-    assert result["declared_only_dimensions"] == []
+    assert result["enforced_dimensions"] == ["connections", "targets"]
+    assert result["declared_only_dimensions"] == ["tools"]
+
+    async def _ungranted_connection():
+        from fastmcp import Client
+
+        async with Client(application) as client:
+            return await client.call_tool("hmc_list_systems", {"profile": "prod"})
+
+    with pytest.raises(ToolError, match="not permitted on connection 'prod'"):
+        asyncio.run(_ungranted_connection())
+
+
+def test_the_two_dimension_tuples_partition_every_dimension_under_a_policy():
+    """ADR 0047: a selected policy never leaves a dimension out of both tuples.
+
+    The property the old encoding broke. Asserted over the enforcing composition
+    and the drifted one together, since the bug was visible only in the second.
+    """
+    from hmc_mcp.server_permissions import DIMENSIONS
+
+    enforcing = create_mcp(_policy(READ_ONLY_GRANT))
+    drifted = create_mcp(_policy(READ_ONLY_GRANT))
+    _configure(drifted, True)
+
+    for application in (enforcing, drifted):
+        result = _inspect(application)
+        enforced = result["enforced_dimensions"]
+        declared_only = result["declared_only_dimensions"]
+
+        assert set(enforced).isdisjoint(declared_only)
+        assert sorted([*enforced, *declared_only]) == sorted(DIMENSIONS)
+
+
+def test_an_unwrapped_connection_bearing_tool_withholds_the_dispatch_claim():
+    """ADR 0047: closes the unsafe direction ADR 0038 left open.
+
+    A registry inside its ceiling whose connection-bearing tool never went
+    through `authorized` used to report all three dimensions enforced, because
+    `ceiling_enforced` re-checks the tool dimension only. The claim now rests on
+    the registered callable, which is the only thing that can carry the check.
+    """
+    from hmc_mcp.server_permissions import describe
+
+    def hmc_list_systems(profile: str | None = None) -> str:
+        return "ok"
+
+    result = describe({"hmc_list_systems": hmc_list_systems}, _legacy(), TOOL_SECURITY)
+
+    assert result.ceiling_enforced is True
+    assert result.enforced_dimensions == ("tools",)
+    assert result.declared_only_dimensions == ("connections", "targets")
+
+
+def test_a_name_outside_the_index_withholds_every_enforcement_claim():
+    """ADR 0047: nothing establishes an unindexed name is bounded or guarded.
+
+    The same fail-closed default `_permission` applies to `exhaustive_targets`.
+    """
+    from hmc_mcp.server_permissions import describe
+
+    def hmc_not_in_the_index() -> str:
+        return "ok"
+
+    result = describe(
+        {"hmc_not_in_the_index": hmc_not_in_the_index}, _legacy(), TOOL_SECURITY
+    )
+
+    assert result.ceiling_enforced is False
+    assert result.enforced_dimensions == ()
+    assert result.declared_only_dimensions == ("tools", "connections", "targets")
+
+
+def test_targets_without_a_connection_argument_withhold_the_dispatch_claim():
+    """ADR 0047: `authorized` keys the wrapper on the connection argument alone.
+
+    So a tool declaring selectors but no connection argument would register
+    unwrapped and have its targets enforced by nothing. No such tool is in the
+    index — the guard below pins that — and this is the branch that keeps the
+    label honest if one is ever added.
+    """
+    from dataclasses import replace
+
+    from hmc_mcp.server_permissions import describe
+
+    def hmc_list_lpars(profile: str | None = None) -> str:
+        return "ok"
+
+    security = TOOL_SECURITY["hmc_list_lpars"]
+    assert security.targets, "the fixture needs a tool that declares selectors"
+    index = {**TOOL_SECURITY, "hmc_list_lpars": replace(security, connection_argument=None)}
+
+    result = describe({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index)
+
+    assert result.ceiling_enforced is True
+    assert result.enforced_dimensions == ("tools",)
+    assert result.declared_only_dimensions == ("connections", "targets")
+
+
+def test_no_indexed_tool_declares_targets_without_a_connection_argument():
+    """ADR 0047: the assumption the branch above defends, asserted on the index.
+
+    Target scope is applied by the same wrapper as connection scope, so a tool
+    in this state is one whose declared selectors constrain nothing at dispatch.
+    """
+    unguardable = {
+        name
+        for name, security in TOOL_SECURITY.items()
+        if security.targets and security.connection_argument is None
+    }
+
+    assert unguardable == set()
+
+
+def test_the_authorization_witness_is_not_forged_by_functools_wraps():
+    """ADR 0047: `__wrapped__` is set by any decorator; the marker is not.
+
+    `is_authorized_wrapper` is what `describe` believes, so a witness an
+    unrelated decorator could set would make the enforcement label meaningless.
+    """
+    import functools
+
+    from hmc_mcp.tool_registry import authorized, is_authorized_wrapper
+
+    def handler(profile: str | None = None) -> str:
+        return "ok"
+
+    @functools.wraps(handler)
+    def unrelated(*args, **kwargs):
+        return handler(*args, **kwargs)
+
+    security = TOOL_SECURITY["hmc_list_systems"]
+    guarded = authorized("hmc_list_systems", security, handler, lambda *_args: None)
+    local_only = authorized(
+        "hmc_effective_permissions",
+        TOOL_SECURITY["hmc_effective_permissions"],
+        handler,
+        lambda *_args: None,
+    )
+
+    assert is_authorized_wrapper(guarded) is True
+    assert getattr(unrelated, "__wrapped__", None) is not None
+    assert is_authorized_wrapper(unrelated) is False
+    assert is_authorized_wrapper(handler) is False
+    # A tool with no connection argument registers unwrapped by design.
+    assert local_only is handler
+    assert is_authorized_wrapper(local_only) is False
+    # A registration carrying no callable at all — what `describe` reads when a
+    # provider hands back a `Tool` that is not a `FunctionTool`.
+    assert is_authorized_wrapper(None) is False
 
 
 @pytest.mark.parametrize("entry_point", ["main_stdio", "main_http"])
