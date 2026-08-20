@@ -53,6 +53,8 @@ flags, output, and ordered error strings. Task 3 consumes these exact names.
    refusal, successful add correlation, mutation failure, readback mismatch, absent remove retry,
    zero/multiple/degraded remove correlation refusal, successful remove, command timeout with one
    failed reconciliation read, and command failure with both reads failed and every cause retained.
+   Add table-driven add/remove cases for all six reconciliation rows and the captured HMC-only VLAN
+   rejection as a partial error.
    Run `uv run pytest -q tests/network/test_vnic_operations.py`; expect collection or
    assertion failures against the old raw-output API.
 2. Implement immutable models and the smallest orchestration satisfying each test. Re-run the

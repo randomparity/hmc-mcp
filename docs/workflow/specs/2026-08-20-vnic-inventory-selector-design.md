@@ -29,8 +29,10 @@ vNIC/backing after-read success flags, raw mutation output, and an ordered tuple
 error strings whose first member is the original dispatch/readback cause. `changed=None` means a
 dispatched mutation could not be reconciled; it never means unchanged. A successful after-read
 that proves absence uses a true read flag with an absent snapshot, while a failed read uses a false
-flag, so those states cannot collapse. `VnicPartialError` carries that complete result. Validation
-and capability failures occur before writes; any post-dispatch failure is partial.
+flag, so those states cannot collapse. `VnicPartialError` carries that complete result. Local
+validation and admitted environment/inventory capability failures occur before writes; any
+post-dispatch failure is partial. An HMC-only rejection such as the captured VLAN-restriction
+diagnostic is partial because no admitted projection can prove that restriction before dispatch.
 
 The MCP add tool exposes scalar fields for the selector because JSON tool schemas should not
 require callers to encode Python dataclasses. CLI exposes corresponding named options. Both adapt
@@ -68,6 +70,26 @@ times out, or one read fails. The result retains every failure. If both reads fa
 false, both after snapshots are absent, `changed` is unknown, and the original mutation cause plus
 both read causes remain ordered in `errors`. No field fabricates an after state.
 
+Reconciliation uses this total decision table. “Final” means add has one matching vNIC plus one
+correlated active Operational backing, or remove has neither the captured slot nor its backing.
+“Before” means add has neither newly matching object, or remove still has the exact captured pair.
+Every other successful-read combination is contradictory or degraded.
+
+| Dispatch/read evidence | `changed` | Result |
+|---|---:|---|
+| Both reads succeed and prove Final; command succeeded | `True` | return result |
+| Both reads succeed and prove Final; command raised | `True` | partial error |
+| Both reads succeed and prove Before | `False` | partial error |
+| Both reads succeed but contradict or show degraded/ambiguous state | `None` | partial error |
+| Exactly one read succeeds, whatever it shows | `None` | partial error |
+| Neither read succeeds | `None` | partial error |
+
+Each successful projection populates its after snapshot, including verified absence; each failed
+projection leaves its after snapshot absent and its flag false. Errors are ordered: dispatch cause,
+vNIC read cause, backing read cause, then one verification-mismatch description. A dispatched
+command returns normally only in the first row; every other row raises `VnicPartialError`, even if
+one projection suggests the requested transition occurred.
+
 ## Error handling and threat model
 
 Authenticated MCP/CLI/API callers can cause HMC mutation and control every selector string. The
@@ -88,7 +110,9 @@ Add sanitized version-labelled fixtures for baseline/add/remove vNIC and backing
 captured failure diagnostics. Unit tests prove strict parsing, command grammar and quoting,
 validation, exact retries, capacity aggregation, relationship failures, successful correlation,
 remove verification, command timeout with one failed after-read, and command failure with both
-after-reads failed and every cause retained. MCP/schema, CLI, and public API tests prove replacement
+after-reads failed and every cause retained. Table-driven tests cover every reconciliation row for
+both operations, including contradictory successful reads and the captured HMC-only VLAN
+restriction diagnostic. MCP/schema, CLI, and public API tests prove replacement
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the
 implementation and pass after it, then run `just verify` bare.
