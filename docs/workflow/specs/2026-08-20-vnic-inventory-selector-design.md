@@ -23,9 +23,14 @@ adapter, physical/logical port, desired/current capacity, activity, and status.
 
 `add_vnic(hmc, system, lpar, selector, port_vlan_id, *, ownership_override=False)` and
 `remove_vnic(hmc, system, lpar, slot_num, *, ownership_override=False)` return immutable
-`VnicChangeResult`. The result records operation, changed, selector or slot, verified before and
-after snapshots, and raw mutation output. `VnicPartialError` carries that result. Validation and
-capability failures occur before writes; any post-dispatch failure is partial.
+`VnicChangeResult`. The result records operation, whether mutation was dispatched,
+`changed: bool | None`, selector or slot, optional verified before/after snapshots, independent
+vNIC/backing after-read success flags, raw mutation output, and an ordered tuple of public-safe
+error strings whose first member is the original dispatch/readback cause. `changed=None` means a
+dispatched mutation could not be reconciled; it never means unchanged. A successful after-read
+that proves absence uses a true read flag with an absent snapshot, while a failed read uses a false
+flag, so those states cannot collapse. `VnicPartialError` carries that complete result. Validation
+and capability failures occur before writes; any post-dispatch failure is partial.
 
 The MCP add tool exposes scalar fields for the selector because JSON tool schemas should not
 require callers to encode Python dataclasses. CLI exposes corresponding named options. Both adapt
@@ -58,6 +63,11 @@ captured backing identity absent. Read/mutation races yield partial errors; no r
 attempted. An authorized operator can reuse the slot between preflight and dispatch, in which case
 the replacement can be removed and cannot be restored by this workflow.
 
+After dispatch, vNIC and backing reconciliation run independently even if the command raises,
+times out, or one read fails. The result retains every failure. If both reads fail, both flags are
+false, both after snapshots are absent, `changed` is unknown, and the original mutation cause plus
+both read causes remain ordered in `errors`. No field fabricates an after state.
+
 ## Error handling and threat model
 
 Authenticated MCP/CLI/API callers can cause HMC mutation and control every selector string. The
@@ -77,7 +87,8 @@ authorization policy changes. Existing ADR 0011 ownership remains the authorizat
 Add sanitized version-labelled fixtures for baseline/add/remove vNIC and backing rows plus the
 captured failure diagnostics. Unit tests prove strict parsing, command grammar and quoting,
 validation, exact retries, capacity aggregation, relationship failures, successful correlation,
-remove verification, and partial errors. MCP/schema, CLI, and public API tests prove replacement
+remove verification, command timeout with one failed after-read, and command failure with both
+after-reads failed and every cause retained. MCP/schema, CLI, and public API tests prove replacement
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the
 implementation and pass after it, then run `just verify` bare.
