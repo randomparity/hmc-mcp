@@ -313,15 +313,23 @@ def _compile_grant(
     """
     for tool in model.tools:
         if tool not in tool_security:
-            # The bare generator command would collide here: this policy already
+            # The direct fix comes first: remove or rename the stale entry, no
+            # generation required. The generator is discovery only, scoped to the
+            # tool name, with the same "widest policy" caveat cli_app.py's sibling
+            # startup refusal already carries — this hint must not read as "copy
+            # this document in", the one thing ADR 0036 asked every message here to
+            # avoid. The bare command would collide besides: this policy already
             # exists on disk (it was just read and compiled), and the generator
-            # never overwrites (ADR 0041, cli_config.py's `_write_exclusive`). Name
-            # the scratch-path-and-merge flow that actually regenerates one.
+            # never overwrites (ADR 0041, cli_config.py's `_write_exclusive`), so
+            # the scratch path is a concrete example, not a placeholder to reuse
+            # across retries.
             raise AccessPolicyError(
-                f"{where}: unknown tool {tool!r}; if this policy predates a tool "
-                "rename or removal, regenerate it to a scratch path with "
-                "'hmc-mcp config init-access-policy --output PATH', diff that "
-                "against this file, and merge the change by hand"
+                f"{where}: unknown tool {tool!r}; remove this entry or replace it "
+                "with the tool's current name. To find current names, generate a "
+                "reference copy with\n"
+                "    hmc-mcp config init-access-policy --output /tmp/access-policy.new\n"
+                "and diff it against this file — that document grants the widest "
+                "policy this system expresses, so copy only the tool name you need"
             )
 
     resolved = _resolve_tools(model, tool_security)

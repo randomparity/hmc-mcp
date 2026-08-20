@@ -327,21 +327,26 @@ def test_unknown_tool_is_rejected() -> None:
 
 def test_unknown_tool_error_names_the_regeneration_remedy() -> None:
     """A tool a later release retired or renamed must not fail with only the bare
-    name: the operator needs the remedy that actually regenerates a policy. The
-    bare 'init-access-policy' collides here — the file already exists, since it
-    was just read and compiled, and the generator never overwrites (ADR 0041) —
-    so the hint must name the scratch-path-and-merge flow, not the bare command.
+    name. The message must lead with the direct fix (remove or rename the stale
+    entry, no generation required) and frame the generator as scoped discovery
+    only, carrying the same "widest policy" caveat cli_app.py's sibling startup
+    refusal already gives the generator — never bare, which would read as "copy
+    this document in". The bare command would collide besides: the file already
+    exists, since it was just read and compiled, and the generator never
+    overwrites (ADR 0041), so the scratch path is a concrete example, not a
+    placeholder that invites a same-path retry.
     """
-    with pytest.raises(
-        AccessPolicyError,
-        match=r"init-access-policy --output PATH.*diff.*merge",
-    ) as excinfo:
+    with pytest.raises(AccessPolicyError) as excinfo:
         _compile(
             _document(
                 tools=["hmc_create_lpars"], connections=["lab"], targets="all-targets"
             )
         )
-    assert "hmc_create_lpars" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "hmc_create_lpars" in message
+    assert "remove this entry or replace it with the tool's current name" in message
+    assert "init-access-policy --output /tmp/access-policy.new" in message
+    assert "widest policy" in message
 
 
 def test_targets_kind_no_granted_tool_declares_is_rejected() -> None:
