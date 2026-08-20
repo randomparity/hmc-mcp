@@ -174,7 +174,7 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
         {
             "adapter_id": "a1",
             "phys_port_id": "p2",
-            "logical_port_id": "l3",
+            "logical_port_id": "l5",
             "functional_state": "1",
             "lpar_name": "lpar",
             "lpar_id": "2",
@@ -202,7 +202,20 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
         ),
         patch(
             "hmc_mcp.operations_pcie.list_sriov_unconfigured_logical_port_rows",
-            AsyncMock(return_value=[]),
+            AsyncMock(
+                return_value=[
+                    {
+                        "adapter_id": "a1",
+                        "logical_port_id": "l3",
+                        "location_code": "U1-T2-S3",
+                    },
+                    {
+                        "adapter_id": "a1",
+                        "logical_port_id": "l4",
+                        "location_code": "U1-T2-S4",
+                    },
+                ]
+            ),
         ),
     ):
         adapter = await list_sriov_adapters(_config(), "system-uuid", "a1")

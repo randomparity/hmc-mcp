@@ -701,8 +701,7 @@ async def list_sriov_logical_ports(
             None,
         )
         for row in selected_unconfigured
-        if physical_port_id is None
-        or physical_id(row) == physical_port_id
+        if (physical_port_id is None or physical_id(row) == physical_port_id)
         and (logical_port_id is None or row.get("logical_port_id") == logical_port_id)
     )
     return InventoryResult(
