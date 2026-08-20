@@ -7,7 +7,8 @@ tests that pin the identities, percentage units, operation matrix, unavailable-c
 behavior, and no-mutation boundary defined by ADR 0053 and the design spec.
 
 The parser is one small reusable boundary in `ssh_commands.py`; it does not execute SSH. JSON
-evidence records keep IBM source excerpts separate from explicitly synthetic parser examples.
+evidence records keep exact IBM source locators and editorial claim summaries separate from
+explicitly synthetic parser examples.
 System tests validate the records and the durable operation contract.
 
 **Tech stack:** Python 3.11+, stdlib `csv`/`io`/`json`, pytest, Markdown, `just verify`.
@@ -20,8 +21,8 @@ Use it for every red, green, and bite run below; bare `just verify` owns coverag
 - Supported repository range remains HMC V8–V11, but Power-generation documentation is not
   represented as a precise HMC software release. Use `hmc_release: "not-established"` unless the
   source itself names an exact release.
-- Evidence sources are HTTPS IBM pages. Synthetic examples are labelled `synthetic` and never
-  described as live HMC output.
+- Evidence sources are HTTPS IBM pages. Exact source locators are distinct from editorial claim
+  summaries. Synthetic examples are labelled `synthetic` and never described as live HMC output.
 - Exact common fields are those in the design; unknown family/resource cells remain unknown.
 - Capacity values are decimal percentages with up to two decimal places; no byte, bandwidth,
   zero, sum, or availability inference is added.
@@ -114,34 +115,52 @@ available-empty; the parser never executes a command.
    every loaded JSON object with the canonical values below. Also require parser success, stable
    identity fields, and `percent` for all capacity-bearing records.
 2. Run the focused test; expect missing-fixture failures.
-3. Add exactly these records (source text drift is a stop condition: if the named section no
-   longer contains the excerpt, do not substitute another claim without returning to design):
+3. Add exactly these records. If a cited reference no longer contains every literal token in its
+   `source_locator`, stop and return to design; do not substitute another claim:
 
-| File | Kind | URL/section | Command/fields or admitted claim |
+| File | Kind | URL | Exact locator and claim summary |
 |---|---|---|---|
-| `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg`; `Partition profile properties` | command `lssyscfg -r prof -m sys1 -F io_slots,sriov_eth_logical_ports --header`; fields `io_slots,sriov_eth_logical_ports`; excerpt `Profile output exposes the io_slots and sriov_eth_logical_ports properties.`; stdout `io_slots,sriov_eth_logical_ports\n21010003//0,1/0/27004001/10.25/20.50\n` |
-| `power9-io-slot.json` | `read-fixture` | `https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm`; `EXAMPLES — physical I/O slots` | command `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header`; fields `drc_index,description,lpar_name`; excerpt `List the DRC index, description, and owning partition for each physical I/O slot.`; stdout `drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n` |
-| `power9-sriov-adapter.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV adapters` | command `lshwres -r sriov --rsubtype adapter -m sys1 -F adapter_id,slot_id,config_state --header`; fields `adapter_id,slot_id,config_state`; excerpt `SR-IOV adapter output identifies adapters, slots, and configuration state.`; stdout `adapter_id,slot_id,config_state\n1,21010202,1\n` |
-| `power9-sriov-physport.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV physical ports` | command `lshwres -r sriov --rsubtype physport --level eth -m sys1 -F adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity --header`; fields `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity`; excerpt `Ethernet physical-port output identifies its adapter, port, state, location, and minimum capacity granularity.`; stdout `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity\n1,0,1,U78D5-P1-C1-T1,0.25\n`; unit `percent` |
-| `power9-sriov-logport.json` | `read-fixture` | same exact URL; `SYNOPSIS — SR-IOV logical ports` | command `lshwres -r sriov --rsubtype logport --level eth -m sys1 -F adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity --header`; fields `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity`; excerpt `Ethernet logical-port output identifies its adapter, physical port, logical-port DRC index, owner, and capacities.`; stdout `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity\n1,0,27004001,7,lpar1,10.25,20.50\n1,0,27004002,,,10.25,20.50\n`; unit `percent` |
-| `power10-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres`; `SR-IOV attributes and examples` | excerpt `SR-IOV operations select slots, adapters, and logical ports and express capacity and minimum granularity as percentages.`; exact claims `adapter mode uses -o a/r with slot_id`, `logical-port operations use adapter_id and logical_port_id`, `capacity, max_capacity, and minimum granularity are percent with up to two decimals`; unit `percent` |
-| `power11-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres`; `SR-IOV attributes and examples` | same excerpt and exact claims as Power10; unit `percent` |
+| `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg` | locator `lssyscfg > -r prof > -F > sriov_eth_logical_ports`; summary `Profile output exposes the Ethernet SR-IOV logical-port property.` |
+| `power8-profile-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg` | locator `chsyscfg > -r prof > io_slots,sriov_eth_logical_ports,sriov_roce_logical_ports`; summary `Profile mutation grammar covers dedicated slots and SR-IOV logical ports.` |
+| `power9-io-slot.json` | `read-fixture` | `https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm` | locator `lshwres > -r io > --rsubtype slot > -F > drc_index,description,lpar_name`; summary `Physical-I/O slot output exposes identity, description, and owner.` |
+| `power9-sriov-adapter.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype adapter > adapter_ids`; summary `SR-IOV adapter inventory has an adapter-ID selector.` |
+| `power9-sriov-physport.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype physport > adapter_ids,phys_port_ids`; summary `SR-IOV physical-port inventory has adapter- and physical-port-ID selectors.` |
+| `power9-sriov-logport.json` | `read-fixture` | same exact URL | locator `lshwres > -r sriov > --rsubtype logport > --level eth > adapter_ids,logical_port_ids,phys_port_ids`; summary `Ethernet logical-port inventory has stable adapter, physical-port, and logical-port selectors.` |
+| `power10-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres` | locator `chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity`; summary `The mutation contract selects stable SR-IOV identities and uses percentage capacities.` |
+| `power11-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres` | same locator and summary as Power10 |
+
+   The canonical read commands, fields, and synthetic stdout are:
+
+| File | Command | Fields | Synthetic stdout |
+|---|---|---|---|
+| `power8-profile.json` | `lssyscfg -r prof -m sys1 -F sriov_eth_logical_ports --header` | `sriov_eth_logical_ports` | `sriov_eth_logical_ports\n1/0/27004001/10.25/20.50\n` |
+| `power9-io-slot.json` | `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header` | `drc_index,description,lpar_name` | `drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n` |
+| `power9-sriov-adapter.json` | `lshwres -r sriov --rsubtype adapter -m sys1 -F adapter_id --header` | `adapter_id` | `adapter_id\n1\n` |
+| `power9-sriov-physport.json` | `lshwres -r sriov --rsubtype physport --level eth -m sys1 -F adapter_id,phys_port_id --header` | `adapter_id,phys_port_id` | `adapter_id,phys_port_id\n1,0\n` |
+| `power9-sriov-logport.json` | `lshwres -r sriov --rsubtype logport --level eth -m sys1 -F adapter_id,phys_port_id,logical_port_id --header` | `adapter_id,phys_port_id,logical_port_id` | `adapter_id,phys_port_id,logical_port_id\n1,0,27004001\n` |
 
    Every `read-fixture` uses the table's literal values and exactly these common keys:
    `record_kind: "read-fixture"`, `evidence_kind: "documentation"`,
    `documentation_family` equal to the filename's family, `hmc_release: "not-established"`,
-   `support: "documented"`, and the table's literal `source_url`, `source_section`, `command`,
-   `fields`, and `source_excerpt`. Its `parser_examples` is exactly
-   `{"kind": "synthetic", "stdout": <table stdout>}`. Capacity-bearing records add
-   `"capacity_unit": "percent"` and others omit it.
+   `support: "documented"`, and the tables' literal `source_url`, `source_locator`,
+   `claim_summary`, `command`, and `fields`. Its `parser_examples` is exactly
+   `{"kind": "synthetic", "stdout": <table stdout>}`. Read fixtures omit `capacity_unit`
+   because this source set does not establish capacity read fields.
 
    A `contract-evidence` record omits parser fields and contains exactly `record_kind`,
-   `evidence_kind`, `documentation_family`, `hmc_release`, `source_url`, `source_section`,
-   `support: "unknown"`, non-empty `source_excerpt`, `capacity_unit: "percent"`, and an
-   `admitted_claims` string array in the table's order. It never contains synthetic stdout.
-4. Extend tests to load decimal examples through `Decimal` and prove two-decimal precision without
-   converting to float. Assert the logical-port identity is adapter plus logical-port ID and that
-   an empty owner value survives parsing.
+   `evidence_kind`, `documentation_family`, `hmc_release`, `source_url`, `source_locator`,
+   `claim_summary`, `support: "unknown"`, `capacity_unit: "percent"`, and an
+   For Power10 and Power11, `admitted_claims` contains, in this order,
+   `dedicated-slot dynamic operations use -r io -o a/r -l`,
+   `adapter mode uses -o a/r with slot_id`,
+   `logical-port operations use adapter_id and logical_port_id`, and
+   `capacity, max_capacity, and minimum granularity are percent with up to two decimals`.
+   For Power8 it contains, in order, `dedicated-slot profiles use io_slots` and
+   `logical-port profiles use sriov_eth_logical_ports or sriov_roce_logical_ports` and omits
+   `capacity_unit`. Contract-evidence never contains synthetic stdout.
+4. Assert the logical-port identity is adapter plus logical-port ID. Load the contract-evidence
+   two-decimal capacity claim and prove with `Decimal("10.25")` that tests do not convert capacity
+   semantics to float. Use a separate synthetic parser case to prove an empty value survives.
 5. Run the focused test; expect green. Change one fixture identity field, confirm its test fails,
    restore, and rerun green.
 6. Run `just verify`; expect green. Commit:

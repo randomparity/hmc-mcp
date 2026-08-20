@@ -16,6 +16,7 @@ fields, so treating an unlabelled sample or absent field as a stable contract wo
 drift indistinguishable from an empty resource. The documentation evidence compared on
 2026-08-20 is the IBM
 [Power8 `lssyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg),
+[Power8 `chsyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg),
 [Power9 `lshwres`](https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm),
 [Power10 `chhwres`](https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres),
 and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres)
@@ -24,21 +25,23 @@ claims are deliberately narrower than the union of those pages:
 
 | Family | Reference section | Admitted evidence |
 |---|---|---|
-| Power8 docs | `lssyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
+| Power8 docs | `lssyscfg` / `chsyscfg` partition/profile properties | SR-IOV logical-port readback; `io_slots` and SR-IOV profile mutation grammar |
 | Power9 docs | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
 | Power10 docs | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
 | Power11 docs | `chhwres` SR-IOV attributes | the Power10 contract plus current documented operation and unit confirmation |
 
 The version-labelled repository evidence added by this change will retain the exact URL, command,
-fields, and sanitized source excerpt that backs each admitted claim. Synthetic parser examples are
-labelled separately and never presented as command output. No field is admitted merely because
+fields, a machine-checkable source locator made from command/option/attribute labels, and a
+separately labelled editorial claim summary. Synthetic parser examples are labelled separately and
+never presented as command output. No field is admitted merely because
 another family documents it. The status becomes Accepted only after those artifacts and their
 tests exist and pass.
 
 ## Decision
 
 Repository fixtures are version-labelled evidence records: each names the IBM documentation
-family, resource command, selected fields, and sanitized output. Parsers consume only explicit
+family, resource command, selected fields, exact source locator, editorial claim summary, and
+explicitly synthetic parser example. Parsers consume only explicit
 `-F` column order and retain empty columns. Stable identities are:
 
 - dedicated slot: managed-system identity plus `drc_index`;

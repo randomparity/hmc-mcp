@@ -26,7 +26,9 @@ Create one JSON evidence record per admitted command or contract family under
 - `documentation_family`: one of `Power8`, `Power9`, `Power10`, `Power11`;
 - `hmc_release`: an exact release when the source names one, otherwise `not-established`;
 - an IBM documentation URL;
-- a faithful sanitized `source_excerpt` grounded in the cited command reference;
+- a `source_locator` composed only of exact command, option, section, or attribute labels that a
+  reviewer can match in the cited reference;
+- a separately labelled editorial `claim_summary`;
 - `capacity_unit` where capacity fields occur.
 
 The `record_kind` discriminates two closed shapes. A `read-fixture` additionally contains
@@ -37,8 +39,9 @@ and data records using the command's comma delimiter. A `contract-evidence` cont
 parser example because the source establishes mutation and unit rules but no admitted read
 inventory. Adding parser data to such a record would invent evidence.
 
-The source excerpts are evidence; parser examples are test vectors and never claim to be raw HMC
-output. Tests load every file, validate its exact closed shape and exact reviewed provenance, and
+Source locators navigate evidence; claim summaries are repository prose, not quotations. Parser
+examples are test vectors and never claim to be raw HMC output. Tests load every file, validate
+its exact closed shape and exact reviewed provenance, and
 parse every `read-fixture` synthetic row against the declared field count. A Power-generation
 documentation family is not presented as an HMC software release:
 `hmc_release=not-established` forbids a test or downstream caller from claiming release-specific
@@ -50,9 +53,9 @@ unit changes, and false version precision.
 | Resource | Exact `-F` field order | Stable identity |
 |---|---|---|
 | Dedicated slot | `drc_index,description,lpar_name` | system + `drc_index` |
-| SR-IOV adapter | `adapter_id,slot_id,config_state` | system + `adapter_id` |
-| Physical port | `adapter_id,phys_port_id,state,phys_port_loc,min_eth_capacity_granularity` | system + `adapter_id` + `phys_port_id` |
-| Logical port | `adapter_id,phys_port_id,logical_port_id,lpar_id,lpar_name,capacity,max_capacity` | system + `adapter_id` + `logical_port_id` |
+| SR-IOV adapter | `adapter_id` | system + `adapter_id` |
+| Physical port | `adapter_id,phys_port_id` | system + `adapter_id` + `phys_port_id` |
+| Logical port | `adapter_id,phys_port_id,logical_port_id` | system + `adapter_id` + `logical_port_id` |
 
 The exact physical-port command includes `--level eth`; RoCE and converged-Ethernet fields remain
 unknown until separate evidence is admitted. Commands use `-F <comma-list> --header` with the
@@ -62,23 +65,25 @@ nonblank header against the independent matrix before parsing data. The admitted
 
 | Documentation family | Dedicated slot | Adapter | Physical port | Logical port |
 |---|---|---|---|---|
-| Power8 | profile-only evidence | unknown | unknown | profile-only evidence |
+| Power8 | unknown | unknown | unknown | profile-only evidence |
 | Power9 | documented | documented | documented | documented |
 | Power10 | unknown | unknown | unknown | mutation/unit evidence only |
 | Power11 | unknown | unknown | unknown | mutation/unit evidence only |
 
 Each `documented` cell requires a fixture with the exact family-specific IBM read-command URL,
-section, selected fields, and source excerpt.
+source locator, selected fields, and claim summary.
 `profile-only evidence` admits only `chsyscfg`/`lssyscfg` profile properties, not live inventory.
 `unknown` means no claim and requires fail-closed behavior; it does not mean unsupported. A future
 unsupported cell is written explicitly as `unsupported` with source evidence; omission is invalid.
-The common field matrix applies only where a cell is `documented`. Later fields require a separate
-per-family optional-field matrix. These documentation-backed cells do not prove exact HMC release
+The common field matrix applies only where a cell is `documented`. Configuration state, location,
+owner, capacity, and granularity read fields remain unknown because the reviewed read reference
+does not enumerate them; mutation attributes do not prove read availability. Later fields require
+a separate per-family optional-field matrix. These documentation-backed cells do not prove exact HMC release
 availability; #212 must preserve capability-unavailable/error behavior rather than infer it.
 
 Exact fixture field names are the compatibility boundary for #212. Additional HMC fields are
-ignored until a new labelled fixture and contract test admits them. Empty owner columns mean
-unassigned only when the command succeeded and the row otherwise has its required identity.
+ignored until a new labelled fixture and contract test admits them. Empty parsed values are
+retained, but this evidence set does not admit an owner read field.
 
 The parser is presentation-neutral: `parse_hmc_delimited_rows(text, fields, delimiter=",")`
 returns dictionaries with whitespace preserved only inside values and empty strings retained.
@@ -112,6 +117,14 @@ bytes, Mbps, or an arbitrary weight. This contract does not generalize undocumen
 aliases, available-capacity fields, or aggregation behavior across families.
 
 ## LPAR-state-by-operation matrix
+
+The matrix combines IBM-backed command grammar with repository safety policy. Source locators pin
+the command/resource/attribute tokens. Choosing profile-only behavior for `Not Activated`, dynamic
+behavior only for `Running` with active RMC, rejecting every other state, and failing closed are
+explicit safety policy; they are not presented as quotations or HMC availability evidence.
+The Power8 `chsyscfg` contract-evidence record backs profile attribute grammar. The Power10 and
+Power11 `chhwres` contract-evidence records back dedicated-slot, adapter-mode, and logical-port
+dynamic grammar plus capacity units. Their mutation attributes do not widen the read-field matrix.
 
 | Operation | Create time | Inactive/shut down | Running | Capability unavailable |
 |---|---|---|---|---|
@@ -160,7 +173,7 @@ Tests must prove:
    documentation-family labels, an exact HMC release or `not-established`, HTTPS IBM sources,
    and exact reviewed provenance; every `read-fixture` has a read-only `lshwres`/`lssyscfg`
    command and exact declared columns, while every `contract-evidence` has exact admitted claims;
-2. each resource's stable identity fields survive parsing, including empty owner attributes;
+2. each resource's stable identity fields survive parsing, and generic empty values are retained;
 3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
 4. malformed column counts, duplicate/blank fields, invalid delimiters, and successful output
    without a header fail clearly, while a validated header with no data is available-empty;
