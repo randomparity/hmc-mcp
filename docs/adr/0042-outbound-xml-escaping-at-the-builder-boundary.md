@@ -131,10 +131,10 @@ superseded here.
 Three sibling interpolation sites remain outside this record's surface, all in `client.py`:
 `LOGON_REQUEST_TEMPLATE` (`{user}`, `{password}`), `_broker_file_create` (`{filename}`), and
 `_broker_import` (`{media_name}`, `{broker_uri}`). They are the same defect — a logon password
-containing `&` cannot authenticate — and they are tracked separately rather than folded in here,
-because #263's scope is the document and job builders and the fix for `client.py` is the same
-primitive applied to a different module. `pcm.py` was checked and is not affected: it interpolates
-only a validated field name and a literal `true`/`false`.
+containing `&` cannot authenticate, reproduced in this checkout — and they are tracked as #284
+rather than folded in here, because #263's scope is the document and job builders and the fix for
+`client.py` is the same primitive applied to a different module. `pcm.py` was checked and is not
+affected: it interpolates only a validated field name and a literal `true`/`false`.
 
 ## Considered & rejected
 
