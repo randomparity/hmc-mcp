@@ -290,7 +290,12 @@ def _snapshot(row: dict[str, str]) -> SriovLogicalPortSnapshot:
 
 async def _require_admitted_environment(config: HMCConfig, system_name: str) -> None:
     version, model = await read_sriov_environment(config, system_name)
-    if _ADMITTED_HMC_RELEASE not in version or model != _ADMITTED_SYSTEM_MODEL:
+    normalized = " ".join(version.split()).lower()
+    admitted = _ADMITTED_HMC_RELEASE.lower() in normalized or all(
+        marker in normalized
+        for marker in ("version: 10", "release: 3", "service pack: 1060")
+    )
+    if not admitted or model != _ADMITTED_SYSTEM_MODEL:
         raise SriovLogicalPortCapabilityError(
             "SR-IOV operations are admitted only for HMC V10R3 M1060 "
             "with managed-system model 8375-42A"
@@ -365,8 +370,11 @@ async def assign_sriov_logical_port(
             raise ValueError(
                 "logical port is already assigned with a different capacity"
             )
+        profile = (
+            await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
+        )["sriov_eth_logical_ports"]
         return SriovLogicalPortChangeResult(
-            "assign", "dynamic", False, selector, before, before, None, None, ""
+            "assign", "dynamic", False, selector, before, before, profile, profile, ""
         )
     candidates = await list_sriov_unconfigured_logical_port_rows(config, system_name)
     port_location = physical[0]["phys_port_loc"] + "-S"
@@ -425,11 +433,14 @@ async def assign_sriov_logical_port(
             row for row in after_rows if row["logical_port_id"] == logical_port_id
         ]
         after = _snapshot(after_match[0]) if len(after_match) == 1 else None
+    except Exception as caught:
+        read_error = caught
+    try:
         profile_after = (
             await read_sriov_profile_ports(config, system_name, lpar_name, profile_name)
         )["sriov_eth_logical_ports"]
     except Exception as caught:
-        read_error = caught
+        read_error = read_error or caught
     result = SriovLogicalPortChangeResult(
         "assign",
         "dynamic",
@@ -553,7 +564,12 @@ async def list_sriov_adapters(
 ) -> InventoryResult[SriovAdapter]:
     """Return the evidence-bounded SR-IOV adapter capability state."""
     system_name = await _system_name(config, system)
-    await _require_admitted_environment(config, system_name)
+    try:
+        await _require_admitted_environment(config, system_name)
+    except SriovLogicalPortCapabilityError as caught:
+        return _unavailable(
+            "sriov_adapter", system_name, InventorySelector(adapter_id), str(caught)
+        )
     rows = await list_sriov_adapter_rows(config, system_name)
     items = [
         SriovAdapter(
@@ -588,7 +604,10 @@ async def list_sriov_physical_ports(
     """Return the evidence-bounded SR-IOV physical-port capability state."""
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id)
-    await _require_admitted_environment(config, system_name)
+    try:
+        await _require_admitted_environment(config, system_name)
+    except SriovLogicalPortCapabilityError as caught:
+        return _unavailable("sriov_physical_port", system_name, selector, str(caught))
     if adapter_id is None:
         raise ValueError("adapter_id is required for SR-IOV physical-port inventory")
     rows = await list_sriov_physical_port_rows(config, system_name, adapter_id)
@@ -600,7 +619,7 @@ async def list_sriov_physical_ports(
             row["state"],
             row["phys_port_loc"],
             None,
-            Decimal(row["min_capacity"]),
+            None,
             None,
             None,
         )
@@ -622,7 +641,10 @@ async def list_sriov_logical_ports(
     """Return the evidence-bounded SR-IOV logical-port capability state."""
     system_name = await _system_name(config, system)
     selector = InventorySelector(adapter_id, physical_port_id, logical_port_id)
-    await _require_admitted_environment(config, system_name)
+    try:
+        await _require_admitted_environment(config, system_name)
+    except SriovLogicalPortCapabilityError as caught:
+        return _unavailable("sriov_logical_port", system_name, selector, str(caught))
     if adapter_id is None:
         raise ValueError("adapter_id is required for SR-IOV logical-port inventory")
     configured = await list_sriov_configured_logical_port_rows(
@@ -645,6 +667,25 @@ async def list_sriov_logical_ports(
         if (physical_port_id is None or row["phys_port_id"] == physical_port_id)
         and (logical_port_id is None or row["logical_port_id"] == logical_port_id)
     ]
+    unconfigured = await list_sriov_unconfigured_logical_port_rows(config, system_name)
+    items.extend(
+        SriovLogicalPort(
+            system_name,
+            row["adapter_id"],
+            None,
+            row["logical_port_id"],
+            "unconfigured",
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        for row in unconfigured
+        if row.get("adapter_id") == adapter_id
+        and physical_port_id is None
+        and (logical_port_id is None or row.get("logical_port_id") == logical_port_id)
+    )
     return InventoryResult(
         "sriov_logical_port", "available", system_name, selector, items, None
     )
@@ -654,6 +695,7 @@ def _unavailable(
     resource_kind: ResourceKind,
     system: str,
     selector: InventorySelector,
+    reason: str = SRIOV_UNAVAILABLE_REASON,
 ) -> InventoryResult:
     return InventoryResult(
         resource_kind,
@@ -661,5 +703,5 @@ def _unavailable(
         system,
         selector,
         [],
-        SRIOV_UNAVAILABLE_REASON,
+        reason,
     )

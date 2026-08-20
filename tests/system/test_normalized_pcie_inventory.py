@@ -200,6 +200,10 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
             "hmc_mcp.operations_pcie.list_sriov_configured_logical_port_rows",
             AsyncMock(return_value=logical_rows),
         ),
+        patch(
+            "hmc_mcp.operations_pcie.list_sriov_unconfigured_logical_port_rows",
+            AsyncMock(return_value=[]),
+        ),
     ):
         adapter = await list_sriov_adapters(_config(), "system-uuid", "a1")
         physical = await list_sriov_physical_ports(_config(), "system-uuid", "a1", "p2")
