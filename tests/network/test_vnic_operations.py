@@ -414,6 +414,51 @@ async def test_add_verified_retry_is_unchanged(monkeypatch: pytest.MonkeyPatch) 
     mutate.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_add_verified_retry_resolves_before_new_allocation_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_sriov_configured_logical_port_rows",
+        AsyncMock(
+            return_value=[
+                {
+                    "adapter_id": "1",
+                    "logical_port_id": "3",
+                    "phys_port_id": "1",
+                    "capacity": "60",
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(return_value=[_vnic(capacity="60", desired_capacity="60")]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(return_value=[_backing(capacity="60", desired_capacity="60")]),
+    )
+    mutate = AsyncMock()
+    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+
+    result = await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("60")),
+        7,
+    )
+
+    assert (result.changed, result.slot_num, result.mutation_dispatched) == (
+        False,
+        "2",
+        False,
+    )
+    mutate.assert_not_awaited()
+
+
 @pytest.mark.parametrize("projection", ["direct", "backing"])
 @pytest.mark.asyncio
 async def test_add_rejects_identical_duplicates_within_one_projection(
@@ -523,6 +568,37 @@ async def test_add_successfully_correlates_new_slot(
 
 
 @pytest.mark.asyncio
+async def test_add_ignores_unrelated_equal_selector_backing_for_target_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    unrelated = _backing(logical="9")
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(side_effect=[[], [_vnic()]]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(side_effect=[[unrelated], [unrelated, _backing()]]),
+    )
+    mutation = AsyncMock(return_value="created")
+    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutation)
+
+    result = await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        7,
+    )
+
+    assert result.changed is True
+    assert result.backing_before == ()
+    assert tuple(item.logical_port_id for item in result.backing_after) == ("3",)
+    mutation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_add_before_state_after_dispatch_is_known_unchanged_partial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -616,7 +692,7 @@ async def test_add_reconciliation_decision_table(
 
 
 @pytest.mark.asyncio
-async def test_add_retry_refuses_extra_selector_matching_degraded_backing(
+async def test_add_retry_ignores_unrelated_selector_matching_degraded_backing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _common(monkeypatch)
@@ -631,20 +707,21 @@ async def test_add_retry_refuses_extra_selector_matching_degraded_backing(
     mutate = AsyncMock()
     monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
 
-    with pytest.raises(VnicCapabilityError, match="ambiguous or degraded"):
-        await add_vnic(
-            _hmc(),
-            "system-a",
-            "client-a",
-            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
-            7,
-        )
+    result = await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        7,
+    )
 
+    assert result.changed is False
+    assert tuple(item.logical_port_id for item in result.backing_before) == ("3",)
     mutate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_add_final_refuses_extra_selector_matching_degraded_backing(
+async def test_add_final_ignores_unrelated_selector_matching_degraded_backing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _common(monkeypatch)
@@ -663,7 +740,36 @@ async def test_add_final_refuses_extra_selector_matching_degraded_backing(
         AsyncMock(return_value="created"),
     )
 
-    with pytest.raises(VnicPartialError) as caught:
+    result = await add_vnic(
+        _hmc(),
+        "system-a",
+        "client-a",
+        VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+        7,
+    )
+
+    assert result.changed is True
+    assert result.slot_num == "2"
+    assert tuple(item.logical_port_id for item in result.backing_after) == ("3",)
+
+
+@pytest.mark.asyncio
+async def test_add_retry_refuses_degraded_correlated_target_backing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(return_value=[_vnic()]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(return_value=[_backing(status="Degraded")]),
+    )
+    mutation = AsyncMock()
+    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutation)
+
+    with pytest.raises(VnicCapabilityError, match="ambiguous or degraded"):
         await add_vnic(
             _hmc(),
             "system-a",
@@ -672,14 +778,7 @@ async def test_add_final_refuses_extra_selector_matching_degraded_backing(
             7,
         )
 
-    result = caught.value.result
-    assert result.changed is None
-    assert result.slot_num == "2"
-    assert len(result.backing_after) == 2
-    assert {item.status for item in result.backing_after} == {
-        "Operational",
-        "Degraded",
-    }
+    mutation.assert_not_awaited()
 
 
 @pytest.mark.asyncio

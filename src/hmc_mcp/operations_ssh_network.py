@@ -301,10 +301,16 @@ def _matching_vnics(
     )
 
 
-def _matching_backings(
-    backings: tuple[VnicBackingSnapshot, ...], selector: VnicBackingSelector
+def _correlated_matching_backings(
+    vnics: tuple[VnicSnapshot, ...],
+    backings: tuple[VnicBackingSnapshot, ...],
+    selector: VnicBackingSelector,
 ) -> tuple[VnicBackingSnapshot, ...]:
-    return tuple(item for item in backings if _matches(item, selector))
+    return tuple(
+        item
+        for item in backings
+        if _matches(item, selector) and any(_correlated(vnic, item) for vnic in vnics)
+    )
 
 
 async def _preflight_add(
@@ -313,7 +319,13 @@ async def _preflight_add(
     lpar: str,
     selector: VnicBackingSelector,
     override: bool,
-) -> tuple[str, str, tuple[VnicSnapshot, ...], tuple[VnicBackingSnapshot, ...]]:
+) -> tuple[
+    str,
+    str,
+    tuple[VnicSnapshot, ...],
+    tuple[VnicBackingSnapshot, ...],
+    Decimal,
+]:
     system_name, lpar_name = await _resolve(hmc, system, lpar, override)
     config = hmc.config
     await _require_admitted_environment(config, system_name)
@@ -379,9 +391,7 @@ async def _preflight_add(
         ),
         Decimal(),
     )
-    if total + selector.capacity_percent > 100:
-        raise ValueError(f"capacity exhausted: {total}% used of 100%")
-    return system_name, lpar_name, before, backings
+    return system_name, lpar_name, before, backings, total
 
 
 async def _after(
@@ -433,12 +443,18 @@ async def add_vnic(
     selector = _validated(selector)
     if isinstance(port_vlan_id, bool) or not 0 <= port_vlan_id <= 4094:
         raise ValueError("port_vlan_id must be between 0 and 4094")
-    system_name, lpar_name, before, backing_before = await _preflight_add(
-        hmc, system, lpar, selector, ownership_override
-    )
-    pairs = _pairs(before, backing_before, selector, port_vlan_id)
+    (
+        system_name,
+        lpar_name,
+        before,
+        all_backing_before,
+        used_capacity,
+    ) = await _preflight_add(hmc, system, lpar, selector, ownership_override)
     candidates = _matching_vnics(before, selector, port_vlan_id)
-    matching_backing_before = _matching_backings(backing_before, selector)
+    matching_backing_before = _correlated_matching_backings(
+        candidates, all_backing_before, selector
+    )
+    pairs = _pairs(candidates, matching_backing_before, selector, port_vlan_id)
     if len(pairs) == 1 and len(candidates) == 1 and len(matching_backing_before) == 1:
         return VnicChangeResult(
             "add",
@@ -459,6 +475,8 @@ async def add_vnic(
         raise VnicCapabilityError(
             "existing matching vNIC inventory is ambiguous or degraded"
         )
+    if used_capacity + selector.capacity_percent > 100:
+        raise ValueError(f"capacity exhausted: {used_capacity}% used of 100%")
     payload = _add_payload(selector)
     output = ""
     errors: list[str] = []
@@ -493,7 +511,11 @@ async def add_vnic(
     )
     slot = observed_new[0].slot_num if len(observed_new) == 1 else None
     matching_after = _matching_vnics(after, selector, port_vlan_id) if v_ok else ()
-    matching_backing_after = _matching_backings(backing_after, selector) if b_ok else ()
+    matching_backing_after = (
+        _correlated_matching_backings(matching_after, backing_after, selector)
+        if b_ok and v_ok
+        else ()
+    )
     final = (
         v_ok
         and b_ok
