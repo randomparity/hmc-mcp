@@ -59,15 +59,16 @@ table, warnings, and failure diagnostics.
 abstraction. Its public-to-tests boundary is:
 
 ```python
-def main(args: list[str] | None = None) -> int: ...
+def main() -> int: ...
 ```
 
-Additional arguments are forwarded to pytest. The canonical recipe supplies
-none. The runner invokes `[sys.executable, "-m", "pytest", *args]` with stderr
-redirected to stdout. Both streams remain available in observed order for
-failure replay. The subprocess inherits the repository working directory and
-environment, so pytest and coverage continue reading `pyproject.toml`; the
-runner changes no coverage or pytest environment variable.
+The runner exposes no pytest argument-forwarding surface: focused and diagnostic
+runs use pytest directly, as the existing `--no-cov` guidance already requires.
+The runner invokes `[sys.executable, "-m", "pytest"]` with stderr redirected to
+stdout. Both streams remain available in observed order for failure replay. The
+subprocess inherits the repository working directory and environment, so pytest
+and coverage continue reading `pyproject.toml`; the runner changes no coverage
+or pytest environment variable.
 
 ## Coverage configuration
 
@@ -108,7 +109,8 @@ processes. They prove:
 
 - a successful suite prints only the fixed compact semantic summary;
 - pytest failure output is replayed completely and its exit code is preserved;
-- pytest arguments reach the child without changing its environment;
+- the child command is exactly `sys.executable -m pytest`, combines stderr into
+  stdout, captures text, and does not override the environment;
 - default smoke output contains only count, while verbose output lists live
   registry names;
 - canonical and verbose recipes retain the coverage gate and verification
