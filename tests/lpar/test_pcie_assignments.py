@@ -87,6 +87,23 @@ async def test_dry_run_preserves_stable_assignment_order() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None:
+    validation = AsyncMock(side_effect=RuntimeError("concurrent inventory change"))
+    with patch(
+        "hmc_mcp.operations_assignments.prevalidate_lpar_pcie_assignments", validation
+    ):
+        result = await apply_lpar_pcie_assignments(
+            AsyncMock(),
+            "sys",
+            "created-lpar",
+            LparPcieAssignments(),
+            prevalidated=True,
+        )
+    validation.assert_not_awaited()
+    assert result.workflow_completed is True
+
+
+@pytest.mark.asyncio
 async def test_first_assignment_failure_skips_remaining_steps() -> None:
     assignments = LparPcieAssignments(sriov=(_sriov(),), vnics=(_vnic(),))
     sriov = AsyncMock(side_effect=RuntimeError("stale inventory"))

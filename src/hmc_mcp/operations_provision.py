@@ -495,7 +495,7 @@ async def provision_lpar(
         return _provision_result(creation, created_uuid, steps, False)
 
     assignment_result = await apply_lpar_pcie_assignments(
-        hmc, system_name_or_uuid, name, assignments
+        hmc, system_name_or_uuid, name, assignments, prevalidated=True
     )
     steps.extend(
         _step(item.step, item.status, item.result) for item in assignment_result.steps

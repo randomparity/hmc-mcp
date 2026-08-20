@@ -140,7 +140,7 @@ def hmc_create_lpar(
                         creation.warnings,
                     )
                 assignment_result = await apply_lpar_pcie_assignments(
-                    hmc, system_name_or_uuid, name, assignments
+                    hmc, system_name_or_uuid, name, assignments, prevalidated=True
                 )
                 steps.extend(assignment_result.steps)
                 return LparPcieWorkflowResult(
@@ -202,19 +202,23 @@ def hmc_modify_lpar(
                 await prevalidate_lpar_pcie_assignments(
                     hmc, system_name_or_uuid, assignments
                 )
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            try:
-                modified = await hmc.modify_logical_partition(lpar_uuid, xml)
-            except HMCError as exc:
-                _check_lpar_write_error(exc)
-                raise
-            steps = [AssignmentStep("resources", "ok", modified)]
+            modified = None
+            steps: list[AssignmentStep] = []
+            if resources != LparResources():
+                lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+                try:
+                    modified = await hmc.modify_logical_partition(lpar_uuid, xml)
+                except HMCError as exc:
+                    _check_lpar_write_error(exc)
+                    raise
+                steps.append(AssignmentStep("resources", "ok", modified))
             assignment_result = await apply_lpar_pcie_assignments(
                 hmc,
                 system_name_or_uuid or "",
                 lpar_name_or_uuid,
                 assignments,
                 ownership_override=ownership_override,
+                prevalidated=True,
             )
             steps.extend(assignment_result.steps)
             return LparPcieWorkflowResult(

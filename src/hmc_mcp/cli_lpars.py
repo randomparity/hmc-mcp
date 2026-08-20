@@ -552,7 +552,9 @@ def lpars_create(
             )
             if creation.lpar is None:
                 return creation, None
-            outcome = await apply_lpar_pcie_assignments(hmc, system, name, assignments)
+            outcome = await apply_lpar_pcie_assignments(
+                hmc, system, name, assignments, prevalidated=True
+            )
             return creation, outcome
 
     result, assignment_result = _run(_go)
@@ -563,6 +565,8 @@ def lpars_create(
         err_console.print(f"[yellow]Warning: {warning}[/yellow]")
     if assignment_result is not None and assignment_result.steps:
         _print_json(asdict(assignment_result))
+        if not assignment_result.workflow_completed:
+            raise typer.Exit(1)
 
 
 @lpars_app.command("modify")
@@ -702,6 +706,7 @@ def lpars_modify(
                 selector,
                 assignments,
                 ownership_override=ownership_override,
+                prevalidated=True,
             )
             return uuid, {
                 "resources": updated,

@@ -277,9 +277,11 @@ async def apply_lpar_pcie_assignments(
     *,
     dry_run: bool = False,
     ownership_override: bool = False,
+    prevalidated: bool = False,
 ) -> AssignmentResult:
     """Apply requests in stable order and expose partial state without rollback."""
-    await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
+    if not prevalidated:
+        await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
     names = _request_names(assignments)
     if dry_run:
         return AssignmentResult(
