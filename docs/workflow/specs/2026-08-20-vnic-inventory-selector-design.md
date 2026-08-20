@@ -1,6 +1,6 @@
 # vNIC inventory selector design
 
-Issue: [#215](https://github.com/randomparity/hmc-mcp/issues/215)  
+Issue: [#215](https://github.com/randomparity/hmc-mcp/issues/215)
 Decision: [ADR 0057](../../adr/0057-evidence-bounded-vnic-backing-selection.md)
 
 ## Goal and constraints
