@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, BinaryIO
 
 
 from .client import HMCClient
@@ -396,6 +397,21 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
                 raise
 
 
+async def _aiter_file_chunks(
+    handle: BinaryIO, chunk_size: int = DEFAULT_CHUNK_SIZE
+) -> AsyncIterator[bytes]:
+    """Yield *handle*'s remaining bytes in ``chunk_size`` pieces.
+
+    The upload body httpx accepts from an ``AsyncClient`` is an async iterator —
+    a file object or a sync generator raises ``RuntimeError`` at send time — so
+    the file is read here rather than handed over. *handle* is left open and
+    closed by the caller, which keeps the staged file's lifetime bound to the
+    ``with`` block that also survives an upload failure.
+    """
+    while chunk := handle.read(chunk_size):
+        yield chunk
+
+
 async def list_optical_media(
     hmc: HMCClient, vios: str, vg_uuid: str
 ) -> list[dict[str, Any]]:
@@ -480,10 +496,11 @@ async def upload_iso(
         # Create brokered file handle
         broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
 
-        # Upload content
+        # Upload content, streamed from the staged file. The download bound is
+        # 100 GiB, so reading it back whole would size an allocation in this
+        # shared process by the ISO an operator happened to name (ADR 0053).
         with iso_path.open("rb") as f:
-            content = f.read()
-        await hmc._broker_file_upload(broker_uri, content)
+            await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
 
         # Import into media repository
         await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
