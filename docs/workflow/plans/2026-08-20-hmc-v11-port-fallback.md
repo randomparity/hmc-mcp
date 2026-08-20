@@ -41,7 +41,12 @@ ty, and the repository `just` recipes.
 - `src/hmc_mcp/config.py`: change the default port only; retain existing
   precedence and `base_url` contract.
 - `src/hmc_mcp/client.py`: record fallback eligibility and implement the bounded
-  logon retry plus cleanup/error behavior.
+  logon retry, cleanup/error behavior, and private active REST base.
+- `src/hmc_mcp/client_contracts.py` and `src/hmc_mcp/client_network.py`: declare
+  the private active-base attribute required by typed mixin boundaries.
+- `src/hmc_mcp/client_pcm.py`, `src/hmc_mcp/client_storage.py`, and
+  `src/hmc_mcp/client_network.py`: use the active base at the five existing sites
+  that expand relative links or generate absolute REST relationship links.
 - `tests/unit/test_config.py`: prove default and explicit TOML/environment port
   provenance.
 - `tests/unit/test_client.py`: prove retry gates, cleanup, success, and bounded
@@ -91,6 +96,8 @@ is distinguishable without a new public setting.
   `HMCTransportError`.
 - Preserves `logon() -> str`, `is_logged_on`, context-manager cleanup, request
   headers, timeout, and TLS settings for all callers.
+- Produces `_rest_base_url: str` for existing mixins; it matches the current HTTP
+  client's destination and is not part of the supported API.
 
 ### Steps
 
@@ -110,6 +117,9 @@ is distinguishable without a new public setting.
    explicit 443 and 12443 never retry; HTTP 401 never retries; a failed retry
    preserves the existing sanitized transport error without including the
    configured password.
+   Also make the failed client's `aclose()` raise and, separately, suspend it
+   while cancelling a direct `logon()` task; each case must propagate its
+   exception/cancellation with zero 12443 client constructions or requests.
 4. Run
    `uv run --no-sync pytest -q --no-cov tests/unit/test_client.py`; expect the
    fallback tests to fail because `logon()` currently makes one attempt.
@@ -123,32 +133,45 @@ is distinguishable without a new public setting.
 7. Split the existing exchange into private
    `async def _logon_once(self, body: str) -> str`, preserving status, parsing,
    token, and header behavior. Keep XML creation before the retry boundary.
-8. In `logon()`, catch only `HMCTransportError` from the first `_logon_once`.
+8. Initialize `_rest_base_url` from the created HTTP client's normalized base.
+   In `logon()`, catch only `HMCTransportError` from the first `_logon_once`.
    When ineligible, re-raise. When eligible, disable further fallback, close the
-   first client, replace it with `_new_http_client(12443)`, and call
-   `_logon_once` once and let any second `HMCTransportError` retain the existing
-   error behavior.
-9. Add a close-failure case by making the failed 443 client's `aclose()` raise;
-   assert the close failure surfaces and no 12443 client or request is created.
-10. Run the focused client tests; expect all to pass.
+   first client with the existing ordinary `aclose()` call, and only after that
+   call returns replace it with `_new_http_client(12443)`. Then update
+   `_rest_base_url` from that client, and call `_logon_once` once. Let any second
+   `HMCTransportError` retain the existing error behavior.
+9. Add `_rest_base_url: str` to `PcmClient`, `StorageClient`, and the local
+    network-client protocol. Replace only the five `self.config.base_url` sites
+    in `client_pcm.py`, `client_storage.py`, and `client_network.py` with it.
+10. Add focused assertions for all five active-base sites: PCM relative-link
+    expansion in `tests/unit/test_client.py`; `get_lpar_link`, volume-group URL
+    expansion, and optical-mapping relationship generation in
+    `tests/unit/test_client_domain_mixins.py` and the directly owning storage
+    suites; and the virtual-switch relationship in
+    `tests/unit/test_client_domain_mixins.py`. Prove each targets 12443 after
+    fallback, and prove an absolute HMC-supplied PCM link remains unchanged.
 11. Run
+    `rg -n 'self\.config\.base_url' src/hmc_mcp/client_pcm.py src/hmc_mcp/client_storage.py src/hmc_mcp/client_network.py`;
+    expect no matches, structurally guarding all five migrations.
+12. Run the focused client and affected mixin/storage tests; expect all to pass.
+13. Run
    `uv run --no-sync pytest -q --no-cov tests/unit/test_config.py tests/unit/test_client.py`;
    expect all focused tests to pass.
-12. Complete the repository-wide classification from step 1: migrate every
+14. Complete the repository-wide classification from step 1: migrate every
    remaining implicit-default route/assertion to 443, make every intended
    legacy case explicit, and rerun `rg -n '12443' tests`. Record the
    classification of every remaining match in the commit review; none may rely
    on omission.
-13. Run `just test`; expect the configured suite and exact coverage gate to
+15. Run `just test`; expect the configured suite and exact coverage gate to
    pass.
-14. Commit Tasks 1–2 together as `fix: prefer the HMC V11 REST port` because the
+16. Commit Tasks 1–2 together as `fix: prefer the HMC V11 REST port` because the
    new default without fallback is not the approved independently usable slice.
 
 ### Acceptance
 
 Fallback happens once and only for implicit-port logon transport failure; all
-other failures and explicit ports preserve existing behavior, and cleanup owns
-the active client.
+other failures and explicit ports preserve existing behavior, cleanup owns the
+active client, and every locally constructed REST URL follows its active base.
 
 ## Task 3: Operator documentation
 
