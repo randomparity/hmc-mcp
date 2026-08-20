@@ -285,7 +285,7 @@ def test_only_pcie_contract_readers_change_production_module() -> None:
     baseline_digest = hashlib.sha256(canonical.encode()).hexdigest()
     assert (
         baseline_digest
-        == "764a1641542cfdda52428bcc6c6ad9f1c60535999cd580fb02236bed9faca8e2"  # pragma: allowlist secret
+        == "666ca3cd7c54f798ae3803e07f6ea583bb9ecf5afb05dbe79c0c871de8d10bec"  # pragma: allowlist secret
     )
     calls = {
         _call_name(node) for node in ast.walk(parser) if isinstance(node, ast.Call)

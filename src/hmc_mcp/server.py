@@ -223,10 +223,11 @@ from .server_updates import (
     hmc_vios_update as hmc_vios_update,
 )
 from .server_profiles import (
-    hmc_assign_profile_io_slot as hmc_assign_profile_io_slot,
+    hmc_assign_dedicated_pcie_slot as hmc_assign_dedicated_pcie_slot,
     hmc_backup_lpar_profiles as hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles as hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile as hmc_sync_lpar_profile,
+    hmc_unassign_dedicated_pcie_slot as hmc_unassign_dedicated_pcie_slot,
 )
 from .server_lpar_config import (
     hmc_get_lpar_description as hmc_get_lpar_description,

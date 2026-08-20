@@ -73,13 +73,16 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DedicatedSlot",
         "InventoryResult",
         "InventorySelector",
+        "PcieAssignmentUnavailableError",
         "SriovAdapter",
         "SriovLogicalPort",
         "SriovPhysicalPort",
+        "assign_dedicated_pcie_slot",
         "list_dedicated_slots",
         "list_sriov_adapters",
         "list_sriov_logical_ports",
         "list_sriov_physical_ports",
+        "unassign_dedicated_pcie_slot",
         "attach_disk_to_lpar",
         "provision_lpar",
         "ProvisionNetwork",
@@ -187,13 +190,16 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "DedicatedSlot",
             "InventoryResult",
             "InventorySelector",
+            "PcieAssignmentUnavailableError",
             "SriovAdapter",
             "SriovLogicalPort",
             "SriovPhysicalPort",
+            "assign_dedicated_pcie_slot",
             "list_dedicated_slots",
             "list_sriov_adapters",
             "list_sriov_logical_ports",
             "list_sriov_physical_ports",
+            "unassign_dedicated_pcie_slot",
         },
         "hmc_mcp.operations_provision": {
             "AttachDiskResult",
@@ -281,8 +287,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     expected_digest = (
-            "56f9cecf636d6804e250697f2e7ea5982"  # pragma: allowlist secret
-            "38dd317516a243262e9756f9194cb93"  # pragma: allowlist secret
+            "517057f4a7a22d60198b8ba45d307434"  # pragma: allowlist secret
+            "6e1688a5467a4c0fb20092bc4761c310"  # pragma: allowlist secret
     )
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
