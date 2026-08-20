@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+
 import pytest
 import typer
+from click import unstyle
 from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
@@ -2307,6 +2309,7 @@ def test_add_vnic_cli_replaces_legacy_options():
     result = RUNNER.invoke(cli.app, ["network", "add-vnic", "--help"])
 
     assert result.exit_code == 0
+    output = unstyle(result.output)
     for option in (
         "--vios-name",
         "--vios-lpar-id",
@@ -2315,9 +2318,9 @@ def test_add_vnic_cli_replaces_legacy_options():
         "--capacity-percent",
         "--port-vlan-id",
     ):
-        assert option in result.output
+        assert option in output
     for legacy in ("--backing-devices", "--virtual-switch-name", "--capacity "):
-        assert legacy not in result.output
+        assert legacy not in output
 
 
 def test_remove_vnic_cli_names_slot_selector():
@@ -2333,7 +2336,7 @@ def test_vnic_mutation_cli_exposes_ownership_override(command):
     result = RUNNER.invoke(cli.app, ["network", command, "--help"])
 
     assert result.exit_code == 0
-    assert "--ownership-override" in result.output
+    assert "--ownership-override" in unstyle(result.output)
 
 
 def _vnic_result(operation: str) -> VnicChangeResult:
@@ -2364,9 +2367,22 @@ def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     result = RUNNER.invoke(
         cli.app,
         [
-            "network", "add-vnic", "system", "lpar", "--vios-name", "vios1",
-            "--vios-lpar-id", "2", "--adapter-id", "1", "--physical-port-id", "0",
-            "--capacity-percent", "20.25", "--port-vlan-id", "100",
+            "network",
+            "add-vnic",
+            "system",
+            "lpar",
+            "--vios-name",
+            "vios1",
+            "--vios-lpar-id",
+            "2",
+            "--adapter-id",
+            "1",
+            "--physical-port-id",
+            "0",
+            "--capacity-percent",
+            "20.25",
+            "--port-vlan-id",
+            "100",
             "--ownership-override",
         ],
         input="y\n",
@@ -2389,7 +2405,11 @@ def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypa
     result = RUNNER.invoke(
         cli.app,
         [
-            "network", "remove-vnic", "system", "lpar", "4",
+            "network",
+            "remove-vnic",
+            "system",
+            "lpar",
+            "4",
             "--ownership-override",
         ],
         input="y\n",
