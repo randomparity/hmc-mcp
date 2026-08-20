@@ -4,7 +4,7 @@
   "documentation_family": "Power11",
   "hmc_release": "not-established",
   "source_url": "https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres",
-  "source_locator": "chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity",
+  "source_locator": "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity",
   "claim_summary": "The mutation contract selects stable SR-IOV identities and uses percentage capacities.",
   "support": "unknown",
   "capacity_unit": "percent",

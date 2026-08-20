@@ -22,6 +22,48 @@ EXPECTED_FIXTURES = {
     "power10-sriov-contract.json",
     "power11-sriov-contract.json",
 }
+P9_URL = (
+    "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm"
+)
+EXPECTED_PROVENANCE = {
+    "power8-profile.json": (
+        "https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg",
+        "lssyscfg > -r prof > -F > sriov_eth_logical_ports",
+    ),
+    "power8-profile-contract.json": (
+        "https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg",
+        "chsyscfg > -r prof > io_slots,sriov_eth_logical_ports",
+    ),
+    "power9-io-slot.json": (
+        P9_URL,
+        "lshwres > -r io > --rsubtype slot > -F > drc_index,description,lpar_name",
+    ),
+    "power9-sriov-adapter.json": (
+        P9_URL,
+        "lshwres > -r sriov > --rsubtype adapter > adapter_ids",
+    ),
+    "power9-sriov-physport.json": (
+        P9_URL,
+        "lshwres > -r sriov > --rsubtype physport > --level eth > adapter_ids,phys_port_ids",
+    ),
+    "power9-sriov-logport.json": (
+        P9_URL,
+        "lshwres > -r sriov > --rsubtype logport > --level eth > "
+        "adapter_ids,logical_port_ids,phys_port_ids",
+    ),
+    "power10-sriov-contract.json": (
+        "https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres",
+        "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+        "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+        "min_eth_capacity_granularity",
+    ),
+    "power11-sriov-contract.json": (
+        "https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres",
+        "chhwres > -r io > -o a/r > -l; chhwres > -r sriov > "
+        "slot_id,adapter_id,logical_port_id,capacity,max_capacity,"
+        "min_eth_capacity_granularity",
+    ),
+}
 
 
 @pytest.mark.parametrize(
@@ -78,7 +120,9 @@ def test_evidence_records_have_closed_versioned_shapes() -> None:
         "claim_summary",
         "support",
     }
-    for record in _evidence_records():
+    for name, record in zip(
+        sorted(EXPECTED_FIXTURES), _evidence_records(), strict=True
+    ):
         assert record["evidence_kind"] == "documentation"
         assert record["documentation_family"] in {
             "Power8",
@@ -89,6 +133,9 @@ def test_evidence_records_have_closed_versioned_shapes() -> None:
         assert record["hmc_release"] == "not-established"
         assert str(record["source_url"]).startswith("https://www.ibm.com/")
         assert record["source_locator"] and record["claim_summary"]
+        assert (record["source_url"], record["source_locator"]) == EXPECTED_PROVENANCE[
+            name
+        ]
         if record["record_kind"] == "read-fixture":
             assert set(record) == common | {"command", "fields", "parser_examples"}
             assert record["support"] == "documented"
@@ -114,8 +161,38 @@ def test_evidence_pins_identity_and_capacity_semantics() -> None:
     assert records["power9-sriov-logport"]["admitted_claims"][0] == (
         "system + adapter_id + logical_port_id selectors"
     )
+    assert records["power8-profile"]["command"] == (
+        "lssyscfg -r prof -m sys1 -F sriov_eth_logical_ports --header"
+    )
+    assert records["power8-profile"]["fields"] == ["sriov_eth_logical_ports"]
+    assert records["power9-io-slot"]["command"] == (
+        "lshwres -r io --rsubtype slot -m sys1 "
+        "-F drc_index,description,lpar_name --header"
+    )
+    assert records["power9-io-slot"]["fields"] == [
+        "drc_index",
+        "description",
+        "lpar_name",
+    ]
+    assert records["power9-sriov-adapter"]["admitted_claims"] == [
+        "system + adapter_id selector",
+        "read fields remain unknown",
+    ]
+    assert records["power9-sriov-physport"]["admitted_claims"] == [
+        "system + adapter_id + phys_port_id selectors",
+        "physical-port selector grammar uses --level eth",
+        "read fields remain unknown",
+    ]
+    expected_capacity_claims = [
+        "dedicated-slot dynamic operations use -r io -o a/r -l",
+        "adapter mode uses -o a/r with slot_id",
+        "logical-port operations use adapter_id and logical_port_id",
+        "capacity, max_capacity, and minimum granularity are percent with up to two decimals",
+    ]
     for family in ("power10-sriov-contract", "power11-sriov-contract"):
         assert records[family]["capacity_unit"] == "percent"
+        assert records[family]["admitted_claims"] == expected_capacity_claims
+        assert "two decimals" in records[family]["admitted_claims"][-1]
         assert Decimal("10.25").as_tuple().exponent == -2
 
 
@@ -127,18 +204,37 @@ def test_operation_matrix_fails_closed_without_same_family_readback() -> None:
         / "specs"
         / "2026-08-20-pcie-capability-contract-design.md"
     ).read_text()
-    required = (
-        "Create time",
-        "Inactive/shut down",
-        "Running",
-        "Capability unavailable",
-        "do not compose Power10/11 mutation evidence with Power9 read evidence",
+    rows = {
+        columns[0]: columns[1:]
+        for line in spec.splitlines()
+        if line.startswith("| Assign/unassign") or line.startswith("| Switch adapter")
+        if len(columns := [part.strip() for part in line.strip("|").split("|")]) == 5
+    }
+    assert set(rows) == {
+        "Assign/unassign dedicated slot",
+        "Assign/unassign SR-IOV logical port",
+        "Switch adapter shared/dedicated mode",
+    }
+    assert all(len(outcomes) == 4 for outcomes in rows.values())
+    assert (
+        "do not compose Power10/11 mutation evidence with Power9 read evidence"
+        in rows["Assign/unassign dedicated slot"][2]
+    )
+    assert all(
+        "do not mutate" in outcome
+        for outcome in rows["Assign/unassign SR-IOV logical port"]
+    )
+    assert all(
+        "do not mutate" in outcome
+        for outcome in rows["Switch adapter shared/dedicated mode"][1:]
+    )
+    for token in (
+        "lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state",
         "RoCE profile grammar is unknown",
         "every non-success",
         "available-empty",
         "Issue #214 owns replacing or removing that path",
-    )
-    for token in required:
+    ):
         assert token in spec
 
 
