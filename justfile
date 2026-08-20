@@ -4,7 +4,8 @@
 #   just verify   # full ad-hoc verification (tests + MCP handshake + CLI)
 #   just test             # quiet suite summary
 #   just test-verbose     # pytest diagnostics and missing-lines coverage
-#   just smoke    # MCP handshake / tool count
+#   just smoke             # MCP handshake / tool count
+#   just smoke-verbose     # MCP handshake / exposed tool names
 
 # synchronize locked dependencies and install repository hooks
 setup:
@@ -47,9 +48,13 @@ test:
 test-verbose:
     uv run --no-sync pytest -q --cov-report=term-missing
 
-# MCP stdio handshake (lists exposed tools)
+# MCP stdio handshake (reports exposed tool count)
 smoke:
     uv run --no-sync python scripts/smoke_mcp.py
+
+# MCP stdio handshake with the full exposed tool registry
+smoke-verbose:
+    uv run --no-sync python scripts/smoke_mcp.py --verbose
 
 # construct a fresh wheel and source distribution
 build:

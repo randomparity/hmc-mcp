@@ -143,6 +143,8 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "static",
         "test",
         "test-verbose",
+        "smoke",
+        "smoke-verbose",
     ):
         assert f"\n{recipe}:" in justfile
     assert "\nstatic: lint typecheck secrets workflow-security env-vars nicknames\n" in justfile
@@ -161,6 +163,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     assert (
         "\ntest-verbose:\n"
         "    uv run --no-sync pytest -q --cov-report=term-missing\n"
+        in justfile
+    )
+    assert "\nsmoke:\n    uv run --no-sync python scripts/smoke_mcp.py\n" in justfile
+    assert (
+        "\nsmoke-verbose:\n"
+        "    uv run --no-sync python scripts/smoke_mcp.py --verbose\n"
         in justfile
     )
     assert "--baseline .secrets.baseline --no-verify --" in justfile

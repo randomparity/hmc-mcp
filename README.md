@@ -843,26 +843,27 @@ hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve \
 ### 1. Unit tests (no HMC needed)
 
 The client and XML parser are tested against an HMC mocked with
-[respx](https://lundberg.github.io/respx/) — no real hardware required:
+[respx](https://lundberg.github.io/respx/) — no real hardware required. The
+default command reports only the configured test and coverage result:
 
 ```bash
-uv run pytest -q
-# ...............                    [100%]
-# 15 passed in 0.10s
+just test
+# test: passed; configured coverage gate passed
 ```
+
+Use `just test-verbose` for native pytest diagnostics and missing-lines coverage.
 
 ### 2. MCP protocol smoke test (no HMC needed)
 
-Verifies the server actually speaks MCP over stdio and lists every tool. It
-connects with a real FastMCP client and prints the tools:
+Verifies the server actually speaks MCP over stdio. It connects with a real
+FastMCP client and reports the exposed tool count:
 
 ```bash
-uv run python scripts/smoke_mcp.py
-# Connected. <N> tools exposed:
-#   - hmc_console_info
-#   - hmc_list_systems
-#   ...
+just smoke
+# Connected. <N> tools exposed.
 ```
+
+Use `just smoke-verbose` to list every exposed tool when diagnosing the registry.
 
 ### 3. Live check against a real HMC
 
