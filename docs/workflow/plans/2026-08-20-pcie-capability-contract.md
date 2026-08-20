@@ -188,9 +188,10 @@ mistaken for live capture; identities and units are executable assertions.
    rows, all four state columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic
    templates, profile record grammar, stable identities, error/no-fallback wording, and
    the explicit disposition of the conflicting existing adapter-mode function to #214. Assert
-   LPAR state selection applies only to LPAR-targeted operations; profile dedicated-slot,
-   logical-port, and adapter-mode mutation are capability-unavailable until their exact readback
-   fields are admitted; header-only success is available-empty; and blank success is malformed.
+   LPAR state selection applies only to LPAR-targeted operations; every dedicated-slot,
+   logical-port, and adapter-mode mutation path is capability-unavailable until the same family
+   admits its grammar and exact readback fields; cross-family composition is forbidden;
+   header-only success is available-empty; and blank success is malformed.
 2. Add a repository-only structural no-mutation test. Without Git metadata, skip with
    `repository-only no-mutation guard requires Git metadata`; make no packaging claim. With Git
    metadata, resolve `main` locally or `origin/main` in CI and fail if neither exists. Reject

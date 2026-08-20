@@ -25,7 +25,7 @@ claims are deliberately narrower than the union of those pages:
 
 | Family | Reference section | Admitted evidence |
 |---|---|---|
-| Power8 docs | `lssyscfg` / `chsyscfg` partition/profile properties | SR-IOV logical-port readback; `io_slots` and SR-IOV profile mutation grammar |
+| Power8 docs | `lssyscfg` / `chsyscfg` partition/profile properties | Ethernet SR-IOV logical-port profile-property readback; `io_slots` and Ethernet SR-IOV profile mutation grammar; RoCE and live inventory unknown |
 | Power9 docs | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
 | Power10 docs | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
 | Power11 docs | `chhwres` SR-IOV attributes | the Power10 contract plus current documented operation and unit confirmation |
@@ -65,8 +65,9 @@ contract errors. The contract records but does not implement mutation. Dynamic l
 operations use
 `chhwres -r sriov --rsubtype logport`; profile/create-time logical ports use the documented
 `sriov_eth_logical_ports` profile attribute; Power8 RoCE profile grammar remains unknown.
-Dedicated slots use dynamic `chhwres -r io` with `-l <slot-DRC-index>` only where the HMC permits
-DLPAR. Dedicated-slot profile grammar is recorded, but profile mutation remains
+Dedicated-slot dynamic grammar uses `chhwres -r io` with `-l <slot-DRC-index>`, but mutation remains
+capability-unavailable until one documentation family admits both that grammar and exact readback.
+Dedicated-slot profile grammar is recorded, but profile mutation likewise remains
 capability-unavailable until exact `io_slots` readback is admitted. A profile change never claims
 to alter effective running state.
 
