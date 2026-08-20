@@ -38,6 +38,20 @@ validation and admitted environment/inventory capability failures occur before w
 post-dispatch failure is partial. An HMC-only rejection such as the captured VLAN-restriction
 diagnostic is partial because no admitted projection can prove that restriction before dispatch.
 
+Result requiredness is operation-specific:
+
+| Outcome | `selector` | `slot_num` | Evidence retained |
+|---|---|---|---|
+| Add unchanged | requested, required | matched existing slot, required | exact before pair in both before and after tuples |
+| Add changed | requested, required | newly verified slot, required | baseline matches plus verified new pair |
+| Add partial | requested, required | verified observed slot when known, otherwise `None` | every successful before/after projection, including ambiguous rows |
+| Remove unchanged because absent | `None` | requested slot, required | successful empty before/after tuples |
+| Remove changed | captured selector, required | requested slot, required | exact before pair and verified empty after tuples |
+| Remove partial | captured selector when preflight found the slot, otherwise `None` | requested slot, required | every successful before/after projection, including ambiguous rows |
+
+Pre-dispatch validation/capability exceptions do not manufacture a change result. Once dispatch
+occurs, requested/captured selector and slot evidence are never cleared by a later failed read.
+
 The MCP add tool exposes scalar fields for the selector because JSON tool schemas should not
 require callers to encode Python dataclasses. CLI exposes corresponding named options. Both adapt
 to the presentation-neutral operation. The Python API exports the dataclasses, errors, and
@@ -49,19 +63,22 @@ removed rather than aliased.
 SSH adds strict collectors for version-labelled vNIC and `vnicbkdev` key/value rows and a VIOS
 identity projection. `No results were found.` is available-empty only for the admitted read. A
 malformed identity, decimal, duplicated slot/logical port, or conflicting parent fails closed.
-Before serialization, every VIOS/adapter/port/LPAR component rejects ASCII controls and the HMC
-record delimiters `/`, `,`, `=`, and `"` identified by ADR 0045. Other shell metacharacters are
-permitted and remain data because the complete attribute record and each standalone argument are
-shell-quoted; grammar validation and shell quoting are separate controls.
+Before serialization, fields embedded in ADR 0057's slash-delimited backing value reject `/`.
+Every caller field entering ADR 0045's HMC attribute record rejects ASCII controls, comma, equals,
+and double quote. Other shell metacharacters are permitted and remain data because the completed
+record and each standalone argument are shell-quoted for the remote shell. Nested backing grammar,
+HMC attribute-record grammar, and remote-shell quoting are three separate controls.
 
 Add authorizes the target LPAR, checks the environment, requires nonblank selector components,
 finite one-to-100 capacity with at most two decimals, and VLAN 0–4094. It verifies exact VIOS
-name/ID/type, healthy adapter, active physical port, and remaining percentage. Capacity sums unique
-logical-port IDs from direct SR-IOV rows and vNIC backing rows so an identity observed in both is
-counted once. A repeated identity must have the same adapter, physical parent, and percentage:
-direct-row `capacity` must equal backing-row `desired_capacity`; otherwise preflight fails. Within
-one backing row, `capacity` and `desired_capacity` may differ, and the reserved percentage uses
-`desired_capacity`. Add is ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
+name/ID/type, healthy adapter, active physical port, and remaining percentage. Capacity reconciles
+on the complete admitted identity `(system, adapter_id, logical_port_id)` and sums only identities
+whose physical parent is the selected port. Direct and backing observations deduplicate only on
+that key. A repeated identity must have the same physical parent and percentage: direct-row
+`capacity` must equal backing-row `desired_capacity`; otherwise preflight fails. The VIOS is a
+backing attribute, never a replacement identity component. Within one backing row, `capacity` and
+`desired_capacity` may differ, and the reserved percentage uses `desired_capacity`. Add is
+ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
 port, and capacity is unchanged only when exactly one active, Operational backing row correlates
 to its logical port. Multiple matches or incomplete/degraded correlation fail closed without a
 second add. The contract deliberately cannot create a second identical vNIC. Mutation serializes
@@ -127,7 +144,9 @@ after-reads failed and every cause retained. Table-driven tests cover every reco
 both operations, including contradictory successful reads and the captured HMC-only VLAN
 restriction diagnostic. Parser/orchestration tests retain multiple ambiguous rows, reject
 conflicting cross-projection capacity and every HMC delimiter including double quote, and
-separately prove other shell metacharacters remain quoted data. MCP/schema,
+cover the same bare logical-port ID on two adapters without conflation. Result tests enforce every
+row of the requiredness/evidence-retention table. Delimiter tests separately prove other shell
+metacharacters remain quoted data. MCP/schema,
 CLI, and public API tests prove replacement
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the

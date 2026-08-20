@@ -57,8 +57,9 @@ spec. Task 3 consumes these exact names.
    failed reconciliation read, and command failure with both reads failed and every cause retained.
    Add table-driven add/remove cases for all six reconciliation rows and the captured HMC-only VLAN
    rejection as a partial error. Add ambiguous-row retention, conflicting cross-projection
-   capacity, every HMC delimiter including double quote, successful-dispatch mismatch error
-   ordering, and separately other-shell-metacharacter quoting cases.
+   capacity, same logical-port ID on different adapters, every layer-specific HMC delimiter,
+   successful-dispatch mismatch error ordering, every result-field invariant, and separately
+   other-shell-metacharacter quoting cases.
    Run `uv run pytest -q tests/network/test_vnic_operations.py`; expect collection or
    assertion failures against the old raw-output API.
 2. Implement immutable models and the smallest orchestration satisfying each test. Re-run the
