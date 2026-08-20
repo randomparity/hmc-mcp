@@ -187,8 +187,13 @@ async def test_logon_body_carries_escaped_credentials_to_the_transport(mock_hmc)
     async with HMCClient(make_config(user=user, password=metacharacters)):
         pass
 
-    body = mock_hmc.calls[0].request.content.decode("utf-8")
-    parsed = DET.fromstring(body.encode("utf-8"))
+    logon = next(
+        call
+        for call in mock_hmc.calls
+        if call.request.method == "PUT"
+        and call.request.url.path == "/rest/api/web/Logon"
+    )
+    parsed = DET.fromstring(logon.request.content)
     assert [el.text for el in parsed.iter() if localname(el.tag) == "UserID"] == [user]
     assert [el.text for el in parsed.iter() if localname(el.tag) == "Password"] == [
         metacharacters

@@ -5,8 +5,8 @@ VIOS / managed-system create and modify (LogicalPartition and ManagedSystem
 documents), DLPAR processor/memory change documents, virtual adapters
 (vSCSI / vFC / network), storage (volume groups, virtual disks, vSCSI
 mappings), networking (virtual networks), virtual media (media repository,
-optical media), and web resources (HMC users, password policies, LDAP
-configuration).
+optical media, brokered file upload and ISO import), and web resources
+(session logon, HMC users, password policies, LDAP configuration).
 
 The HMC creates an LPAR from a PUT of a LogicalPartition document to
 /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition, and modifies one with a
@@ -985,7 +985,8 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 #          naming that broker URI.
 #
 # Neither document carries schemaVersion, so they render their own envelope
-# rather than going through _document_envelope.
+# rather than going through _document_envelope. Both are transport
+# primitives for #203's future public API and are not exposed today.
 # ====================================================================== #
 
 
@@ -993,8 +994,9 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 def build_brokered_file_document(filename: str) -> str:
     """BrokeredFile document creating an upload handle (create POST).
 
-    The exact structure is version-dependent; this is the shape ADR 0031
-    recorded against a real HMC.
+    ADR 0031 derived this shape from IBM's REST API documentation and the
+    existing uom patterns rather than from a live HMC, so the exact structure
+    is version-dependent and still unverified against hardware.
     """
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <BrokeredFile xmlns="{UOM_NS}">
