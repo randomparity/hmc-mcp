@@ -10,7 +10,7 @@ transport-only logon failure, while preserving explicit port authority.
 `HMCConfig` keeps existing constructor/environment/TOML precedence and uses
 Pydantic field provenance to distinguish omission from an explicit value.
 `HMCClient` owns the bounded fallback because it owns session establishment and
-HTTP-client cleanup. ADR 0058 and the linked design spec define the contract.
+HTTP-client cleanup. ADR 0059 and the linked design spec define the contract.
 
 ## Tech stack
 
@@ -210,7 +210,7 @@ cost and override behavior are explicit.
    CLI checks to pass with zero warnings.
 3. Run `UV_NO_SYNC=1 uv run prek run --all-files`; expect every hook to pass.
 4. Re-read `git diff main...HEAD` for naming, complexity, credential leakage,
-   and conformance to ADR 0058. Commit any evidence-backed correction separately.
+   and conformance to ADR 0059. Commit any evidence-backed correction separately.
 
 ### Acceptance
 

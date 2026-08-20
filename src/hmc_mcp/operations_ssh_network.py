@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
 
@@ -32,11 +32,13 @@ from hmc_mcp.ssh_selectors import resolve_ssh_names
 
 @dataclass(frozen=True)
 class VnicBackingSelector:
-    vios_name: str
-    vios_lpar_id: str
-    adapter_id: str
-    physical_port_id: str
-    capacity_percent: Decimal
+    vios_name: str = field(metadata={"description": "VIOS partition name."})
+    vios_lpar_id: str = field(metadata={"description": "VIOS partition ID."})
+    adapter_id: str = field(metadata={"description": "SR-IOV adapter identifier."})
+    physical_port_id: str = field(metadata={"description": "Physical-port identifier."})
+    capacity_percent: Decimal = field(
+        metadata={"description": "Requested decimal capacity percentage."}
+    )
 
 
 @dataclass(frozen=True)

@@ -614,7 +614,7 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 
 | Tool                  | Description |
 |-----------------------|-------------|
-| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
+| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + declarative PCIe assignments + power on in one call; validates name/VLAN/VG and all assignment preconditions before create; `dry_run=True` checks preconditions only; per-step results retain recoverable partial state without automatic rollback. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
 | `hmc_decommission_lpar` | **End-to-end LPAR decommission workflow**: inventory the selected system-scoped target, enforce ADR 0011 ownership, report adapters and observed storage mappings, power off, detach adapters, and delete the LPAR; `dry_run=True` previews only. It does not delete storage mappings, backing storage, or perform rollback. |
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
 | `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |

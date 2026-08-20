@@ -196,7 +196,11 @@ def test_a_table_grant_never_reaches_a_selector_less_destructive_tool():
     assert _authorize(grants, "hmc_delete_lpar", _delete()) is None
 
 
-def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound():
+@pytest.mark.parametrize(
+    "tool",
+    ["hmc_create_lpar", "hmc_modify_lpar", "hmc_provision_lpar"],
+)
+def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound(tool):
     grants = [
         {
             "effects": ["mutate"],
@@ -207,9 +211,10 @@ def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound():
     with pytest.raises(TargetScopeError, match="all-targets"):
         _authorize(
             grants,
-            "hmc_provision_lpar",
+            tool,
             {
                 "system_name_or_uuid": "sys-1",
+                "lpar_name_or_uuid": "victim",
                 "name": "new-lpar",
                 "network": None,
                 "storage": None,

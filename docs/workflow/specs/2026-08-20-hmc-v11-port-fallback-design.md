@@ -22,7 +22,7 @@
 
 ## Architecture and decision
 
-[ADR 0058](../../adr/0058-prefer-hmc-v11-rest-port-with-bounded-legacy-fallback.md)
+[ADR 0059](../../adr/0059-prefer-hmc-v11-rest-port-with-bounded-legacy-fallback.md)
 governs the connection policy. `HMCConfig.port` defaults to 443. Pydantic's
 `model_fields_set` is the existing provenance signal: observed with the locked
 environment, an omitted field is absent, while constructor and `HMC_PORT` values
@@ -55,7 +55,7 @@ token to the message.
 The selected approach is preferred over preserving 12443 because it works with
 the current HMC release, and over unconditional 443 because the project still
 supports older HMCs. A generic request-level retry or preflight probe would widen
-the behavior beyond session establishment and was rejected by ADR 0058.
+the behavior beyond session establishment and was rejected by ADR 0059.
 
 ## Components and data flow
 

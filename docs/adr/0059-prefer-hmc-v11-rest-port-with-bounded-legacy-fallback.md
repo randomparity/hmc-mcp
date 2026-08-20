@@ -1,4 +1,4 @@
-# ADR 0058: Prefer the HMC V11 REST port with bounded legacy fallback
+# ADR 0059: Prefer the HMC V11 REST port with bounded legacy fallback
 
 ## Status
 

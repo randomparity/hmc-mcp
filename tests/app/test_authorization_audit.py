@@ -331,7 +331,12 @@ def test_a_non_selector_argument_never_appears(records):
     """Spec 23. `name` is deliberately excluded from REQUIRED_TARGET_ARGUMENTS."""
     security = TOOL_SECURITY["hmc_create_lpar"]
     assert "name" not in {selector.argument for selector in security.targets}
-    dispatch_authorizer(_policy(LAB_TARGETS))(
+    grant = [{
+        "tools": ["hmc_create_lpar"],
+        "connections": ["lab"],
+        "targets": "all-targets",
+    }]
+    dispatch_authorizer(_policy(grant))(
         "hmc_create_lpar",
         security,
         {"name": SENTINEL_ARG, "system_name_or_uuid": "sys-a", "profile": "lab"},

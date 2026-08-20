@@ -111,6 +111,15 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "add_vnic",
         "remove_vnic",
         "SriovMode",
+        "AssignmentResult",
+        "AssignmentStep",
+        "DedicatedPcieAssignment",
+        "LparPcieAssignments",
+        "LparPcieWorkflowResult",
+        "SriovLogicalPortAssignment",
+        "VnicAssignment",
+        "apply_lpar_pcie_assignments",
+        "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
@@ -159,6 +168,17 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_adapters",
         },
         "hmc_mcp.operations_capacity": {"capacity_report", "find_placement"},
+        "hmc_mcp.operations_assignments": {
+            "AssignmentResult",
+            "AssignmentStep",
+            "DedicatedPcieAssignment",
+            "LparPcieAssignments",
+            "LparPcieWorkflowResult",
+            "SriovLogicalPortAssignment",
+            "VnicAssignment",
+            "apply_lpar_pcie_assignments",
+            "prevalidate_lpar_pcie_assignments",
+        },
         "hmc_mcp.operations_composite": {"lpar_summary", "system_summary"},
         "hmc_mcp.operations_decommission": {
             "DecommissionResult",
@@ -293,8 +313,9 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by ADR 0058, which changed ``HMCConfig.port``'s default from
-        12443 to 443. Before that, ADR 0054 added the normalized PCIe inventory models and
+    Last moved by ADR 0059, which changed ``HMCConfig.port``'s default from
+    12443 to 443. ADR 0058 added declarative LPAR PCIe assignments, and ADR 0054
+    added the normalized PCIe inventory models and
     operations. Before that, ADR 0050 added ``HMCConfig.iso_url_allowlist`` — a
     pydantic model's ``__init__`` signature is derived from its fields, so a new
     setting moves the digest even though no operation's parameters changed.
@@ -317,7 +338,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "b8f95873d81c67e9d52a5837236e847d0926a99bb1cfa2e04c577c3ee4650ddc"  # pragma: allowlist secret
+    expected_digest = "81acaf5031216727f762c7e8c3471d96c1442e5d9215da212917a25f3ed94ccd"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
