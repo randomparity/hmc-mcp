@@ -412,12 +412,8 @@ def storage_detach_mapping(
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations_storage import detach_storage_mapping
             await detach_storage_mapping(hmc, vios, mapping_uuid)
-    try:
-        _run(_go)
-        console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
-    except Exception as e:
-        console.print(f"[red]Failed to delete storage mapping: {e}[/red]")
-        raise typer.Exit(1)
+    _run(_go)
+    console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
 @storage_app.command("upload-iso")

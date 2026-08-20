@@ -198,12 +198,14 @@ def _ssh_config() -> HMCConfig:
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure, routing failures to the CLI error path.
 
-    typer.Abort propagates so typer renders its own "Aborted." message;
-    any other exception is reported via _fail and exits with code 1.
+    typer.Abort and typer.Exit are click's control-flow signals, not failures --
+    both subclass RuntimeError, so they must be re-raised before the catch-all or
+    "Aborted." is swallowed and a chosen exit code is rewritten to 1. Any other
+    exception is reported via _fail and exits with code 1.
     """
     try:
         return asyncio.run(fn())
-    except typer.Abort:
+    except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:
         _fail(exc)
@@ -214,10 +216,12 @@ def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
 
     Collapses the pervasive ``async def _go`` + ``X = _run(_go)`` idiom into
     one line for the common case where the body is a single client call.
+
+    Control-flow signals pass through untouched, as in :func:`_run`.
     """
     try:
         return run_with_client(_client, fn)
-    except typer.Abort:
+    except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:
         _fail(exc)
