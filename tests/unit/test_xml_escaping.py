@@ -1,0 +1,359 @@
+"""Metacharacter round-trip harness for every HMC XML request builder.
+
+The builders are discovered by reflection over ``hmc_mcp.documents`` and
+``hmc_mcp.jobs`` rather than listed by hand, so a builder added later is
+covered without anyone remembering to extend this file. A builder whose
+signature this harness cannot synthesize arguments for is a collection error,
+not a silent skip.
+
+For each string-carrying parameter the harness asserts one of two outcomes:
+
+* the builder rejects the value with ``ValueError`` (closed vocabularies keep
+  their existing validation), or
+* the document is well-formed, the value parses back exactly, and the document
+  has the same element/attribute structure as one built from a benign value —
+  which is what makes element injection impossible rather than merely unlikely.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import inspect
+import types
+import typing
+from typing import Any, Literal, get_args, get_origin, get_type_hints
+
+import pytest
+from defusedxml import ElementTree as DET
+
+from hmc_mcp import documents, jobs
+from hmc_mcp.xmlutil import localname
+
+# A value an operator could plausibly type that carries all five XML
+# metacharacters at once. No tab, newline, or carriage return: an XML parser
+# normalizes those inside an attribute value, so they would not round-trip
+# through the builders that emit Atom hrefs.
+PAYLOAD = "R&D <a> \"b\" 'c'"
+BENIGN = "benign"
+
+BUILDER_MODULES = (documents, jobs)
+
+
+class UnsupportedAnnotation(TypeError):
+    """A builder parameter this harness cannot synthesize a value for."""
+
+
+# --------------------------------------------------------------------- #
+# Discovery
+# --------------------------------------------------------------------- #
+
+
+def _is_builder(name: str, obj: object, module: types.ModuleType) -> bool:
+    """A public function in *module* that renders an XML request document."""
+    return (
+        inspect.isfunction(obj)
+        and not inspect.iscoroutinefunction(obj)
+        and not name.startswith("_")
+        and (name.startswith("build_") or name.endswith("_job"))
+        and getattr(obj, "__module__", None) == module.__name__
+        and get_type_hints(obj).get("return") is str
+    )
+
+
+def _builders() -> list[tuple[types.ModuleType, str, Any]]:
+    found = []
+    for module in BUILDER_MODULES:
+        for name, obj in vars(module).items():
+            if _is_builder(name, obj, module):
+                found.append((module, name, obj))
+    return found
+
+
+# --------------------------------------------------------------------- #
+# Annotation inspection
+# --------------------------------------------------------------------- #
+
+
+def _unwrap(annotation: Any) -> Any:
+    """Strip Optional from an annotation.
+
+    ``get_type_hints`` already resolves string annotations and strips
+    ``Annotated`` and ``NotRequired``, so a union is all that is left.
+    """
+    if get_origin(annotation) in (typing.Union, types.UnionType):
+        members = [a for a in get_args(annotation) if a is not type(None)]
+        if len(members) != 1:
+            raise UnsupportedAnnotation(annotation)
+        return _unwrap(members[0])
+    return annotation
+
+
+def _is_typed_dict(annotation: Any) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, dict)
+
+
+def _member_hints(annotation: Any) -> dict[str, Any]:
+    """Field-name -> annotation for a dataclass or TypedDict."""
+    return get_type_hints(annotation)
+
+
+def _carries_string(annotation: Any) -> bool:
+    """Whether a caller can put a free-form string into this annotation."""
+    annotation = _unwrap(annotation)
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return False
+    if annotation is str:
+        return True
+    if origin in (list, dict):
+        return any(_carries_string(arg) for arg in get_args(annotation))
+    if dataclasses.is_dataclass(annotation) or _is_typed_dict(annotation):
+        return any(_carries_string(h) for h in _member_hints(annotation).values())
+    return False
+
+
+def _is_closed_vocabulary(annotation: Any) -> bool:
+    return get_origin(_unwrap(annotation)) is Literal
+
+
+def _sample(annotation: Any, *, tainted: bool) -> Any:
+    """Build a call value for *annotation*, carrying PAYLOAD when tainted."""
+    annotation = _unwrap(annotation)
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return get_args(annotation)[0]
+    if annotation is str:
+        return PAYLOAD if tainted else BENIGN
+    if annotation is bool:
+        return True
+    if annotation is int:
+        return 4
+    if annotation is float:
+        return 1.0
+    if origin is list:
+        (item,) = get_args(annotation)
+        return [_sample(item, tainted=tainted)]
+    if origin is dict:
+        key, value = get_args(annotation)
+        return {_sample(key, tainted=tainted): _sample(value, tainted=tainted)}
+    if dataclasses.is_dataclass(annotation) or _is_typed_dict(annotation):
+        members = {
+            name: _sample(hint, tainted=tainted)
+            for name, hint in _member_hints(annotation).items()
+            if _carries_string(hint) or _is_closed_vocabulary(hint)
+        }
+        return annotation(**members)
+    raise UnsupportedAnnotation(annotation)
+
+
+def _call_kwargs(builder: Any, tainted_parameter: str | None) -> dict[str, Any]:
+    """Benign values for every required parameter, plus one tainted parameter."""
+    kwargs: dict[str, Any] = {}
+    hints = get_type_hints(builder)
+    for name, parameter in inspect.signature(builder).parameters.items():
+        annotation = hints[name]
+        if name == tainted_parameter:
+            kwargs[name] = _sample(annotation, tainted=True)
+        elif parameter.default is inspect.Parameter.empty:
+            kwargs[name] = _sample(annotation, tainted=False)
+    return kwargs
+
+
+def _parameter_cases(predicate: Any) -> list[tuple[str, Any, str]]:
+    """(test id, builder, parameter name) for every parameter *predicate* selects."""
+    cases = []
+    for module, name, builder in _builders():
+        hints = get_type_hints(builder)
+        module_name = module.__name__.rsplit(".", 1)[-1]
+        for parameter in inspect.signature(builder).parameters:
+            if predicate(hints[parameter]):
+                cases.append((f"{module_name}.{name}.{parameter}", builder, parameter))
+    return cases
+
+
+STRING_CASES = _parameter_cases(_carries_string)
+VOCABULARY_CASES = _parameter_cases(_is_closed_vocabulary)
+
+
+# --------------------------------------------------------------------- #
+# Document inspection
+# --------------------------------------------------------------------- #
+
+
+def _structure(xml: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Element path and attribute names for every element, in document order."""
+    signature: list[tuple[str, tuple[str, ...]]] = []
+
+    def walk(element: Any, path: str) -> None:
+        here = f"{path}/{localname(element.tag)}"
+        signature.append((here, tuple(sorted(localname(k) for k in element.attrib))))
+        for child in element:
+            walk(child, here)
+
+    walk(DET.fromstring(xml.encode("utf-8")), "")
+    return signature
+
+
+def _values(xml: str) -> list[str]:
+    """Every element text and attribute value in a document, as parsed."""
+    parsed = []
+    for element in DET.fromstring(xml.encode("utf-8")).iter():
+        if element.text:
+            parsed.append(element.text)
+        parsed.extend(element.attrib.values())
+    return parsed
+
+
+# --------------------------------------------------------------------- #
+# Tests
+# --------------------------------------------------------------------- #
+
+
+def test_builders_are_discovered():
+    """The harness is worthless if reflection quietly finds nothing."""
+    names = {name for _, name, _ in _builders()}
+    assert {
+        "build_hmc_user_document",
+        "build_ldap_config_document",
+        "build_vscsi_mapping_document",
+        "build_job_request",
+        "migrate_lpar_job",
+        "update_hmc_job",
+    } <= names
+    assert len(STRING_CASES) >= 40
+
+
+@pytest.mark.parametrize(
+    ("builder", "parameter"),
+    [(builder, parameter) for _, builder, parameter in STRING_CASES],
+    ids=[case_id for case_id, _, _ in STRING_CASES],
+)
+def test_metacharacters_round_trip_without_changing_structure(builder, parameter):
+    try:
+        tainted = builder(**_call_kwargs(builder, parameter))
+    except ValueError:
+        # A closed vocabulary refused the value outright: no document was
+        # produced, so neither malformed output nor injection is reachable.
+        return
+
+    assert PAYLOAD in _values(tainted), (
+        f"{builder.__name__}({parameter}=...) did not round-trip the value"
+    )
+
+    benign_kwargs = _call_kwargs(builder, None)
+    benign_kwargs[parameter] = _sample(
+        get_type_hints(builder)[parameter], tainted=False
+    )
+    assert _structure(tainted) == _structure(builder(**benign_kwargs)), (
+        f"{builder.__name__}({parameter}=...) changed the document structure"
+    )
+
+
+@pytest.mark.parametrize(
+    ("builder", "parameter"),
+    [(builder, parameter) for _, builder, parameter in VOCABULARY_CASES],
+    ids=[case_id for case_id, _, _ in VOCABULARY_CASES],
+)
+def test_closed_vocabularies_reject_metacharacters(builder, parameter):
+    kwargs = _call_kwargs(builder, None)
+    kwargs[parameter] = PAYLOAD
+    with pytest.raises(ValueError):
+        builder(**kwargs)
+
+
+def test_every_documents_builder_escapes_its_arguments():
+    """documents.py has no single rendering choke point, so each builder wraps."""
+    unprotected = [
+        name
+        for module, name, builder in _builders()
+        if module is documents
+        and not getattr(builder, "__xml_escaped_arguments__", False)
+    ]
+    assert unprotected == []
+
+
+def test_job_request_is_the_jobs_module_choke_point():
+    """Every jobs.py builder renders through build_job_request, which wraps."""
+    assert getattr(jobs.build_job_request, "__xml_escaped_arguments__", False)
+
+
+# --------------------------------------------------------------------- #
+# The concrete reproductions recorded on issue #263
+# --------------------------------------------------------------------- #
+
+
+def test_ldap_search_filter_accepts_an_ordinary_conjunction():
+    search_filter = "(&(objectClass=person)(uid=*))"
+    xml = documents.build_ldap_config_document(search_filter=search_filter)
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    found = [el.text for el in parsed.iter() if localname(el.tag) == "SearchFilter"]
+    assert found == [search_filter]
+
+
+def test_hmc_user_description_cannot_add_a_second_user_id():
+    xml = documents.build_hmc_user_document(
+        username="alice",
+        description="</Description><UserID>root</UserID><Description>x",
+    )
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    user_ids = [el.text for el in parsed.iter() if localname(el.tag) == "UserID"]
+    assert user_ids == ["alice"]
+
+
+def test_vscsi_target_device_cannot_add_a_second_lpar_href():
+    xml = documents.build_vscsi_mapping_document(
+        storage_kind="VirtualDisk",
+        storage_name="disk1",
+        lpar_link="https://h/LP/AUTH",
+        target_device='x</TargetDevice><AssociatedLogicalPartition '
+        'xmlns="http://www.w3.org/2005/Atom" rel="related" href="https://h/LP/EVIL"/>'
+        "<TargetDevice>y",
+    )
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    hrefs = [
+        el.attrib.get("href")
+        for el in parsed.iter()
+        if localname(el.tag) == "AssociatedLogicalPartition"
+    ]
+    assert hrefs == ["https://h/LP/AUTH"]
+
+
+def test_job_parameter_value_cannot_add_a_target_managed_system():
+    xml = jobs.migrate_lpar_job(
+        target_system="AUTHORIZED",
+        target_profile_name="p</ParameterValue></JobParameter>"
+        "<JobParameter><ParameterName>TargetManagedSystemName</ParameterName>"
+        "<ParameterValue>EVIL",
+    )
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    names = [
+        el.text for el in parsed.iter() if localname(el.tag) == "ParameterName"
+    ]
+    assert names.count("TargetManagedSystemName") == 1
+
+
+def test_repository_password_with_an_ampersand_stays_well_formed():
+    xml = jobs.update_hmc_job(
+        {"type": "sftp", "host": "h", "path": "/p", "user": "u", "sftp_pw": "a&b<c"}
+    )
+
+    values = [
+        el.text for el in DET.fromstring(xml.encode("utf-8")).iter()
+        if localname(el.tag) == "ParameterValue"
+    ]
+    assert "a&b<c" in values
+
+
+def test_valid_input_is_unchanged_by_escaping():
+    """Escaping must be invisible to every caller that was already correct."""
+    assert '<PartitionName kb="CUR" kxe="false">lpar1</PartitionName>' in (
+        documents.build_lpar_document(name="lpar1")
+    )
+    assert (
+        "<ParameterValue kb=\"CUR\" kxe=\"false\">false</ParameterValue>"
+        in jobs.power_on_lpar_job()
+    )

@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, get_args
 
-from .xmlutil import ATOM_NS, WEB_NS
+from .xmlutil import ATOM_NS, WEB_NS, escapes_string_arguments
 
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
@@ -373,6 +373,7 @@ def _lpar_envelope(body: str) -> str:
     return _document_envelope("LogicalPartition", body)
 
 
+@escapes_string_arguments
 def build_lpar_document(
     name: str | None,
     partition_type: PartitionType = "AIX/Linux",
@@ -460,6 +461,7 @@ VIOS_DEFAULT_RESOURCES = LparResources(
 )
 
 
+@escapes_string_arguments
 def build_vios_document(
     name: str,
     resources: LparResources = VIOS_DEFAULT_RESOURCES,
@@ -476,6 +478,7 @@ def build_vios_document(
     )
 
 
+@escapes_string_arguments
 def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionProcessorConfiguration.
 
@@ -495,6 +498,7 @@ def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionMemoryConfiguration.
 
@@ -513,6 +517,7 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_managed_system_document(
     new_name: str | None = None,
     power_off_policy: PowerOffPolicy | None = None,
@@ -636,6 +641,7 @@ def _adapter_document(
     return _document_envelope(root_element, body)
 
 
+@escapes_string_arguments
 def build_vscsi_adapter_document(
     vios_partition_id: int,
     vios_slot: int,
@@ -657,6 +663,7 @@ def build_vscsi_adapter_document(
     )
 
 
+@escapes_string_arguments
 def build_vfc_adapter_document(
     vios_partition_id: int,
     vios_slot: int,
@@ -677,6 +684,7 @@ def build_vfc_adapter_document(
     )
 
 
+@escapes_string_arguments
 def build_client_network_adapter_document(
     port_vlan_id: int,
     slot_number: int | None = None,
@@ -724,6 +732,7 @@ def build_client_network_adapter_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
@@ -742,6 +751,7 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
@@ -756,11 +766,11 @@ def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_vscsi_mapping_document(
     storage_kind: StorageKind,
     storage_name: str,
     lpar_link: str,
-    vios_lpar_link: str | None = None,
     target_device: str | None = None,
 ) -> str:
     """A VirtualIOServer document carrying a VirtualSCSIMapping (for POST).
@@ -801,10 +811,10 @@ def build_vscsi_mapping_document(
 """
 
 
+@escapes_string_arguments
 def build_virtual_optical_mapping_document(
     media_name: str,
     lpar_link: str,
-    vios_lpar_link: str | None = None,
     target_device: str | None = None,
 ) -> str:
     """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
@@ -847,6 +857,7 @@ def build_virtual_optical_mapping_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_virtual_network_document(
     name: str,
     vlan_id: int,
@@ -887,6 +898,7 @@ def build_virtual_network_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_media_repository_document(size_mib: int) -> str:
     """VolumeGroup document carrying a VirtualMediaRepository (create POST).
 
@@ -901,6 +913,7 @@ def build_media_repository_document(size_mib: int) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_virtual_optical_media_document(media_name: str, size_mib: int) -> str:
     """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
 
@@ -920,6 +933,7 @@ def build_virtual_optical_media_document(media_name: str, size_mib: int) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_media_repository_delete_document() -> str:
     """VolumeGroup document marking the VirtualMediaRepository for deletion (POST)."""
     body = """  <Metadata><Atom/></Metadata>
@@ -929,6 +943,7 @@ def build_media_repository_delete_document() -> str:
   </VirtualMediaRepository>"""
     return _document_envelope("VolumeGroup", body)
 
+@escapes_string_arguments
 def build_virtual_optical_media_delete_document(media_name: str) -> str:
     """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
@@ -942,6 +957,7 @@ def build_virtual_optical_media_delete_document(media_name: str) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_virtual_disk_delete_document(disk_name: str) -> str:
     """VolumeGroup document marking a VirtualDisk for deletion (POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
@@ -964,6 +980,7 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_hmc_user_document(
     username: str | None = None,
     taskrole: TaskRole | None = None,
@@ -1011,6 +1028,7 @@ def build_hmc_user_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_password_policy_document(
     policy_name: str | None = None,
     settings: PasswordPolicySettings = PasswordPolicySettings(),
@@ -1075,6 +1093,7 @@ def build_password_policy_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_ldap_config_document(
     server_url: str | None = None,
     base_dn: str | None = None,
@@ -1155,6 +1174,7 @@ def _build_pending_boot_string(devices: list[str]) -> str:
     return " ".join(devices)
 
 
+@escapes_string_arguments
 def build_boot_order_document(devices: list[str]) -> str:
     """Build a LogicalPartition document to set LPAR boot order.
     
@@ -1181,6 +1201,7 @@ def build_boot_order_document(devices: list[str]) -> str:
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_clear_boot_order_document() -> str:
     """Build a LogicalPartition document to clear LPAR boot order.
     
