@@ -1,10 +1,13 @@
 """Run pytest with compact success output and complete failure diagnostics."""
 
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from typing import BinaryIO
+
+_PYTEST_ENVIRONMENT_OVERRIDES = {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
 
 
 def _replay(output: BinaryIO) -> None:
@@ -14,11 +17,17 @@ def _replay(output: BinaryIO) -> None:
 
 def main() -> int:
     """Run the configured pytest suite and report its result compactly."""
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _PYTEST_ENVIRONMENT_OVERRIDES
+    }
     with tempfile.TemporaryFile() as output:
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "pytest"],
                 check=False,
+                env=environment,
                 stdout=output,
                 stderr=subprocess.STDOUT,
             )

@@ -3,6 +3,7 @@
 import importlib.util
 import inspect
 import io
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,7 +77,13 @@ def _assert_pytest_invocation(
     assert kwargs["check"] is False
     assert kwargs["stdout"] is output
     assert kwargs["stderr"] is subprocess.STDOUT
-    assert "env" not in kwargs
+    environment = kwargs["env"]
+    assert isinstance(environment, dict)
+    assert environment == {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTEST_ADDOPTS", "COVERAGE_RCFILE", "COVERAGE_FILE"}
+    }
     assert "cwd" not in kwargs
 
 
