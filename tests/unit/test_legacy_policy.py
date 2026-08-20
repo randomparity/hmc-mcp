@@ -18,6 +18,7 @@ Spec item -> node id:
   R9b  test_compiling_a_document_that_would_not_load_raises
   R9b  test_the_rendered_text_is_what_gets_compiled
   R9b  test_rendered_text_with_an_illegal_entry_is_rejected
+  --   test_the_recorded_unboundable_count_matches_the_registry
 
 The inventory guard below is per-module by construction, as the one in
 ``tests/unit/test_audit.py`` is: it reads this file and asserts every node id named
@@ -288,6 +289,56 @@ def test_rendered_text_with_an_illegal_entry_is_rejected():
 
     with pytest.raises(AccessPolicyError, match="padded"):
         compile_rendered_policy(text, TOOL_SECURITY)
+
+
+def test_the_recorded_unboundable_count_matches_the_registry():
+    """ADR 0041's count of tools no `targets` table can bound is recomputed here.
+
+    Not a spec requirement — this exists because the figure it replaced was wrong and
+    nothing reddened. ADR 0039 states the same set as 25 in two places while its own
+    earlier line says 19 selector-less tools; the live registry says 26. A bare integer
+    in an immutable record rots the first time a tool is added, and no test in the repo
+    could see it.
+
+    So the assertion runs the other way round: the predicate is evaluated against the
+    live registry, and the ADR's sentence has to agree with it. Adding a tool with
+    `exhaustive_targets=False` reddens this and names the record to update.
+    """
+    record = (
+        Path(__file__).parents[2]
+        / "docs"
+        / "adr"
+        / "0041-fail-closed-startup-and-legacy-policy-generation.md"
+    )
+    ordinary = {
+        name: security
+        for name, security in TOOL_SECURITY.items()
+        if name != "hmc_run_command"
+    }
+    unboundable = {
+        name for name, security in ordinary.items() if not security.exhaustive_targets
+    }
+    reachable = {
+        name for name in unboundable if ordinary[name].connection_argument is not None
+    }
+
+    text = record.read_text(encoding="utf-8")
+    recorded = re.search(
+        r"`ToolSecurity.exhaustive_targets` is `False`\. On this branch that is \*\*(\d+)\*\* "
+        r"of (\d+), of which (\d+)",
+        text,
+    )
+    assert recorded is not None, (
+        "ADR 0041 no longer states the unboundable count in the form this guard reads; "
+        "update the guard and the record together, or the number stops being checked"
+    )
+
+    assert int(recorded.group(1)) == len(unboundable), (
+        f"ADR 0041 records {recorded.group(1)} unboundable tools; the registry has "
+        f"{len(unboundable)}. Update the record."
+    )
+    assert int(recorded.group(2)) == len(ordinary)
+    assert int(recorded.group(3)) == len(reachable)
 
 
 # ---------------------------------------------------------------------------

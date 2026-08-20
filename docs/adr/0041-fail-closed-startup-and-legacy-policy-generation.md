@@ -122,7 +122,22 @@ The written document is a single grant under the policy name `legacy-equivalent`
   `["<default>"]` alone; an unreadable or malformed one fails the command with the `ConfigError`
   rather than generating a policy that quietly grants less than it claims.
 - **`targets = "all-targets"`.** The only value that covers an omitted optional selector, and the
-  only one that grants the 25 tools ADR 0039 records as unboundable by any table.
+  only one that grants a tool no `targets` table can bound. That set is defined by a predicate
+  rather than by a remembered figure: an ordinary tool — every tool but `hmc_run_command` — whose
+  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **26** of 129, of which 24
+  are reachable by the target check at all; the other two, `hmc_effective_permissions` and
+  `hmc_list_configured_hosts`, declare no connection argument, so `authorized` never wraps them
+  and the dimension cannot reach them (ADR 0038). The count is stated because it is useful and
+  pinned by `tests/unit/test_legacy_policy.py::test_the_recorded_unboundable_count_matches_the_registry`,
+  which recomputes it from the live registry and reddens on this sentence when a tool is added.
+
+  ADR 0039 fixed the concept, not this number. It describes the same set as "the 17 selector-less
+  console tools, and eight more" and as "`hmc_remove_ldap_config` and the other 24 non-exhaustive
+  tools" — 25 either way, and never as "unboundable", so citing that word to it was
+  uncheckable. It is also 25 for a reason worth recording: the ADR 0039 file predates the
+  `exhaustive_targets` field it reasons about, so its figure was a forecast rather than a
+  measurement, and its own line 291 already disagrees with it at "all 19 selector-less tools".
+  This record derives the figure instead of inheriting it.
 
 **The same generator composes the two scripts.** `scripts/smoke_mcp.py` and
 `scripts/live_test_runner.py` compile a legacy-equivalent policy in memory over
