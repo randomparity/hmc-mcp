@@ -358,9 +358,9 @@ def config_init_access_policy(
         if output is not None:
             _fail(
                 FileExistsError(
-                    f"Output path already exists: {target}. This command does not "
-                    "overwrite a file it did not just create. Delete it, or pass a "
-                    "different --output PATH."
+                    f"Output path already exists: {target}. This command never "
+                    "overwrites an existing file. Delete it, or pass a different "
+                    "--output PATH."
                 )
             )
         _fail(
