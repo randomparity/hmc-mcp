@@ -12,6 +12,9 @@ System tests validate the records and the durable operation contract.
 
 **Tech stack:** Python 3.11+, stdlib `csv`/`io`/`json`, pytest, Markdown, `just verify`.
 
+**Focused test command:** `uv run --no-sync pytest -q --no-cov tests/system/test_pcie_contract.py`.
+Use it for every red, green, and bite run below; bare `just verify` owns coverage enforcement.
+
 ## Global constraints
 
 - Supported repository range remains HMC V8–V11, but Power-generation documentation is not
@@ -52,8 +55,7 @@ System tests validate the records and the durable operation contract.
 1. Add failing tests for empty/duplicate/blank fields, invalid delimiters, missing or wrong header,
    header-only output, empty/blank input, quoted commas, empty values, whitespace preservation,
    blank lines, final-newline absence, delimiter-only rows, and column-count mismatch.
-2. Run `uv run --no-sync pytest -q tests/system/test_pcie_contract.py`; expect failures because the
-   parser is absent.
+2. Run the focused test command; expect failures because the parser is absent.
 3. Add the parser:
 
 ```python
@@ -113,10 +115,51 @@ available-empty; the parser never executes a command.
    read-only command; exact fields; non-empty source excerpt; synthetic example label; parser
    success; stable identity fields; and `percent` for all capacity-bearing records.
 2. Run the focused test; expect missing-fixture failures.
-3. Add records for Power8 profile-only slot/logical evidence, Power9 dedicated-slot, adapter,
-   physical-port, and logical-port evidence, plus Power10/Power11 mutation/unit evidence records.
-   For unknown cells, add metadata-only records with `support: "unknown"`, a source excerpt that
-   explains the bounded evidence, and no invented parser output.
+3. Add exactly these records (source text drift is a stop condition: if the named section no
+   longer contains the excerpt, do not substitute another claim without returning to design):
+
+| File | Kind | URL/section | Command/fields or admitted claim |
+|---|---|---|---|
+| `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg`, profile examples | `lssyscfg -r prof -m sys1 -F io_slots,sriov_eth_logical_ports --header`; those two fields |
+| `power9-io-slot.json` | `read-fixture` | ADR 0053 Power9 `lshwres`, physical-I/O example | `lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header` |
+| `power9-sriov-adapter.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | adapter command; `adapter_id,slot_id,config_state` |
+| `power9-sriov-physport.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | physical-port `--level eth`; fields from the spec |
+| `power9-sriov-logport.json` | `read-fixture` | same URL, SR-IOV synopsis/filters | logical-port `--level eth`; fields from the spec |
+| `power10-sriov-contract.json` | `contract-evidence` | ADR 0053 Power10 `chhwres`, SR-IOV attributes/examples | adapter/logical-port mutation templates; percentage and granularity claims; read support `unknown` |
+| `power11-sriov-contract.json` | `contract-evidence` | ADR 0053 Power11 `chhwres`, SR-IOV attributes/examples | same admitted current contract; read support `unknown` |
+
+   A `read-fixture` payload is exactly:
+
+```json
+{
+  "record_kind": "read-fixture",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power9",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
+  "source_section": "EXAMPLES — physical I/O slots",
+  "support": "documented",
+  "command": "lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header",
+  "fields": ["drc_index", "description", "lpar_name"],
+  "source_excerpt": "List the DRC index, description, and owning partition for each physical I/O slot",
+  "parser_examples": {
+    "kind": "synthetic",
+    "stdout": "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n"
+  }
+}
+```
+
+   The other `read-fixture` records use the exact matrix fields and synthetic values `adapter_id=1`,
+   `slot_id=21010202`, `config_state=1`, `phys_port_id=0`, `state=1`,
+   `phys_port_loc=U78D5-P1-C1-T1`, `min_eth_capacity_granularity=0.25`,
+   `logical_port_id=27004001`, `lpar_id=7`, `lpar_name=lpar1`, `capacity=10.25`, and
+   `max_capacity=20.50` where applicable. Empty-owner variants set both owner columns empty.
+   Capacity-bearing records add `"capacity_unit": "percent"`.
+
+   A `contract-evidence` record omits parser fields and contains exactly `record_kind`,
+   `evidence_kind`, `documentation_family`, `hmc_release`, `source_url`, `source_section`,
+   `support: "unknown"`, non-empty `source_excerpt`, `capacity_unit: "percent"`, and an
+   `admitted_claims` string array copied from ADR 0053. It never contains synthetic stdout.
 4. Extend tests to load decimal examples through `Decimal` and prove two-decimal precision without
    converting to float. Assert the logical-port identity is adapter plus logical-port ID and that
    an empty owner value survives parsing.
@@ -143,12 +186,17 @@ mistaken for live capture; identities and units are executable assertions.
    columns, exact `lssyscfg` state/profile reads, exact `chhwres` dynamic templates, profile record
    grammar, stable readback identities, error/no-fallback wording, and the explicit disposition of
    the conflicting existing adapter-mode function to #214.
-2. Add a diff-scoped test using `git diff main...HEAD --name-only` and `git diff main...HEAD --`
-   when `.git` is available. It must reject changes outside the allowed paths and reject added
-   `run_hmc_command`, server/CLI/API exports, or `@tool` metadata. Skip only in source distributions
-   without Git metadata; artifact validation separately proves the test and docs are packaged.
-3. Run the focused test; expect green against the reviewed spec. Temporarily remove one required
-   matrix token in the test's in-memory text, confirm failure, and restore.
+2. Add a repository-only diff-scoped test. When `git rev-parse --show-toplevel` fails, skip with
+   `repository-only no-mutation guard requires Git metadata`; make no packaging claim. Otherwise
+   inspect `git diff main -- src/hmc_mcp` (committed, staged, and unstaged tracked source together)
+   plus `git ls-files --others --exclude-standard -- src/hmc_mcp`. Reject any changed production
+   path other than `src/hmc_mcp/ssh_commands.py`, any untracked production file, or added line
+   containing `run_hmc_command`, `@tool`, `server`, `cli`, or `api` export syntax. Limit token
+   scanning to added lines outside the parser function so the pre-existing baseline is ignored.
+3. Run the focused test; expect green against the reviewed spec. Add a temporary comment containing
+   `run_hmc_command` inside the new parser, run the exact guard and confirm failure, remove it, then
+   rerun green. Temporarily remove one required matrix token from the test's in-memory text,
+   confirm failure, and restore.
 4. Run `just verify`; expect green. Change ADR 0053 Status to `Accepted` and state that the
    evidence, parser/error tests, state-matrix test, no-mutation check, and full guardrail passed on
    2026-08-20.
