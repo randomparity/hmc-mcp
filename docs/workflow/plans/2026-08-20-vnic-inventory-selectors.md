@@ -44,9 +44,9 @@ LPAR authorization.
 
 **Interfaces:** Define `VnicBackingSelector`, `VnicBackingSnapshot`, `VnicSnapshot`,
 `VnicChangeResult`, `VnicCapabilityError`, and `VnicPartialError`. Implement
-`add_vnic(hmc: HMCClient, system: str, lpar: str, selector: VnicBackingSelector,
+`async def add_vnic(hmc: HMCClient, system: str, lpar: str, selector: VnicBackingSelector,
 port_vlan_id: int, *, ownership_override: bool = False) -> VnicChangeResult` and
-`remove_vnic(hmc: HMCClient, system: str, lpar: str, slot_num: str, *,
+`async def remove_vnic(hmc: HMCClient, system: str, lpar: str, slot_num: str, *,
 ownership_override: bool = False) -> VnicChangeResult`. `VnicChangeResult` has these ordered fields:
 `operation: Literal["add", "remove"]`, `mutation_dispatched: bool`, `changed: bool | None`,
 `selector: VnicBackingSelector | None`, `slot_num: str | None`,
@@ -58,7 +58,9 @@ rows remain observable. Every add result retains the requested selector; its slo
 unchanged/changed outcomes and retained on partial outcomes whenever observed. Every remove result
 retains the requested slot; its selector is absent only for an already-absent no-op, otherwise the
 captured selector survives partial failures. Once dispatch occurs, no later failed read clears
-known selector, slot, or tuple evidence. Task 3 consumes these exact names and types.
+known selector, slot, or tuple evidence. Every add result, including partial results, has
+`operation="add"`; every remove result has `operation="remove"`. Task 3 consumes these exact names
+and types.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
    mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
