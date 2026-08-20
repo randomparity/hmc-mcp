@@ -43,9 +43,10 @@ Add authorizes the target LPAR, checks the environment, requires nonblank select
 finite one-to-100 capacity with at most two decimals, and VLAN 0–4094. It verifies exact VIOS
 name/ID/type, healthy adapter, active physical port, and remaining percentage. Capacity sums unique
 logical-port IDs from direct SR-IOV rows and vNIC backing rows so an identity observed in both is
-counted once. An exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical port, and capacity
-is unchanged; more than one is ambiguous. Mutation serializes the captured single-backing grammar
-and uses `-p`.
+counted once. Add is ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
+port, and capacity is unchanged; more than one is ambiguous. The contract deliberately cannot
+create a second identical vNIC. Mutation serializes the captured single-backing grammar and uses
+`-p`.
 
 After add, compare target vNIC snapshots before/after. Require one new slot matching the request,
 one allocated logical-port ID, and one matching `vnicbkdev` row with `is_active=1` and
@@ -77,4 +78,3 @@ remove verification, and partial errors. MCP/schema, CLI, and public API tests p
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the
 implementation and pass after it, then run `just verify` bare.
-

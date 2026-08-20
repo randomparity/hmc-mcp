@@ -23,9 +23,10 @@ allocates the logical port; the result exposes it only after correlated readback
 
 Before add, require the ADR 0056 environment, a healthy SR-IOV adapter, an available matching
 physical port, a matching VIOS identity, and enough capacity across admitted logical-port and vNIC
-backing inventories. An exact existing target-LPAR vNIC is an unchanged retry; ambiguous matches
-fail closed. Add uses the captured `-p` grammar. After dispatch, exactly one new vNIC slot must
-match the selector and VLAN, and exactly one Operational backing row must match its logical port.
+backing inventories. Add is an ensure-one operation: one exact existing target-LPAR vNIC is an
+unchanged retry; multiple exact matches are ambiguous and fail closed. Add uses the captured `-p`
+grammar. After dispatch, exactly one new vNIC slot must match the selector and VLAN, and exactly
+one Operational backing row must match its logical port.
 
 Remove accepts the stable `slot_num` read identity. An absent target slot is unchanged. Otherwise
 capture its backing logical ports, use the captured `-p ... -s ...` grammar, and require both the
@@ -43,7 +44,9 @@ MCP, CLI, and Python callers receive one typed contract and stable dataclass res
 raw command output. The public add signature is intentionally breaking because the project is
 pre-release and two old command forms are live-proven invalid. Capacity validation may still race
 another operator; post-readback detects divergence but cannot undo a successful HMC allocation.
-Failover and optional priority/max-capacity inputs remain unavailable.
+The ensure-one contract cannot create a second vNIC identical in target LPAR, VLAN, and backing
+selector; callers needing parallel vNICs must choose distinguishable topology. Failover and
+optional priority/max-capacity inputs remain unavailable.
 
 ## Considered & rejected
 
