@@ -2078,20 +2078,43 @@ async def vmedia_short_repo_lifecycle(client: Client, state: RunState) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ST18 — ISO Upload via Local Path and via HTTP
+# ST18 — ISO Upload via HTTP
 # ---------------------------------------------------------------------------
 
-_ISO_PATH = str(Path.home() / "Downloads" / "ubuntu-26.04-live-server-ppc64el.iso")
+_ISO_FILENAME = "ubuntu-26.04-live-server-ppc64el.iso"
+_ISO_PATH = str(Path.home() / "Downloads" / _ISO_FILENAME)
 _ISO_MEDIA_NAME = "ubuntu-26.04-test.iso"
 _HTTP_PORT = 18765
+_ISO_URL = f"http://localhost:{_HTTP_PORT}/{_ISO_FILENAME}"
+
+_iso_http_server: http.server.HTTPServer | None = None
+
+
+def _serve_iso_over_http() -> None:
+    """Publish the local ISO at ``_ISO_URL``, once per process.
+
+    ADR 0049 made an http(s) URL the only source ``hmc_upload_iso`` accepts, so
+    every upload step below goes through this server rather than handing the tool
+    a path. The serving thread is a daemon and is never shut down: ST20 re-uploads
+    long after ST18 has returned, and the process exit reclaims it.
+    """
+    global _iso_http_server
+    if _iso_http_server is not None:
+        return
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler,
+        directory=str(Path(_ISO_PATH).parent),
+    )
+    _iso_http_server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
+    threading.Thread(target=_iso_http_server.serve_forever, daemon=True).start()
 
 
 async def vmedia_upload_iso(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST18: ISO Upload via Local Path and via HTTP ===")
+    print("\n=== ST18: ISO Upload via HTTP ===")
 
     _skip_names = [
-        "hmc_upload_iso (local path)",
+        "hmc_upload_iso (http)",
         "hmc_list_optical_media (post-upload)",
         "hmc_upload_iso (http dedup)",
         "hmc_list_optical_media (post-http)",
@@ -2123,17 +2146,34 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
 
     record(state, 18, "iso_file_check", "PASS", f"ISO found: {_ISO_PATH}")
 
-    # Step 3 — Upload via local path
-    print("  ⏳ Uploading ISO via local path (may take several minutes)…")
+    try:
+        _serve_iso_over_http()
+    except OSError as exc:
+        record(
+            state,
+            18,
+            "iso_http_server",
+            "FAIL",
+            str(exc),
+            f"HTTP server could not bind to port {_HTTP_PORT}",
+        )
+        for name in _skip_names:
+            skip(state, 18, name, f"no HTTP server on port {_HTTP_PORT}")
+        return
+
+    record(state, 18, "iso_http_server", "PASS", f"serving {_ISO_URL}")
+
+    # Step 3 — Upload via HTTP
+    print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) — may take several minutes…")
     st, data = await call(
         client,
         "hmc_upload_iso",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
         media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_PATH,
+        iso_source=_ISO_URL,
     )
-    record(state, 18, "hmc_upload_iso (local path)", st, data)
+    record(state, 18, "hmc_upload_iso (http)", st, data)
 
     # Step 4 — Confirm entry in media list
     st, data = await call(
@@ -2155,63 +2195,35 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
                 data[0].get("MediaName") or _ISO_MEDIA_NAME
             )
 
-    # Step 5 — HTTP server deduplication test
-    _http_server: http.server.HTTPServer | None = None
-    try:
-        try:
-            handler = functools.partial(
-                http.server.SimpleHTTPRequestHandler,
-                directory=str(Path.home() / "Downloads"),
-            )
-            _http_server = http.server.HTTPServer(("localhost", _HTTP_PORT), handler)
-            thread = threading.Thread(target=_http_server.serve_forever, daemon=True)
-            thread.start()
-
-            iso_url = (
-                f"http://localhost:{_HTTP_PORT}/ubuntu-26.04-live-server-ppc64el.iso"
-            )
-            print(f"  ⏳ Uploading ISO via HTTP ({iso_url}) — expect dedup hit…")
-            st_http, data_http = await call(
-                client,
-                "hmc_upload_iso",
-                vios_name_or_uuid=vios,
-                vg_uuid=vg,
-                media_name="ubuntu-26.04-http-test.iso",
-                iso_source=iso_url,
-            )
-            http_status = (
-                data_http.get("status") if isinstance(data_http, dict) else ""
-            )
-            if st_http == "PASS" and http_status == "existing":
-                record(
-                    state,
-                    18,
-                    "hmc_upload_iso (http dedup)",
-                    "PASS",
-                    data_http,
-                    "status=existing — deduplication fired as expected",
-                )
-            else:
-                record(
-                    state,
-                    18,
-                    "hmc_upload_iso (http dedup)",
-                    st_http,
-                    data_http,
-                    f"expected status=existing, got status={http_status!r}",
-                )
-        except OSError as exc:
-            record(
-                state,
-                18,
-                "hmc_upload_iso (http dedup)",
-                "FAIL",
-                str(exc),
-                f"HTTP server could not bind to port {_HTTP_PORT}",
-            )
-    finally:
-        if _http_server is not None:
-            _http_server.shutdown()
+    # Step 5 — Re-upload the same content under a second name (dedup check)
+    print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) again — expect dedup hit…")
+    st_http, data_http = await call(
+        client,
+        "hmc_upload_iso",
+        vios_name_or_uuid=vios,
+        vg_uuid=vg,
+        media_name="ubuntu-26.04-http-test.iso",
+        iso_source=_ISO_URL,
+    )
+    http_status = data_http.get("status") if isinstance(data_http, dict) else ""
+    if st_http == "PASS" and http_status == "existing":
+        record(
+            state,
+            18,
+            "hmc_upload_iso (http dedup)",
+            "PASS",
+            data_http,
+            "status=existing — deduplication fired as expected",
+        )
+    else:
+        record(
+            state,
+            18,
+            "hmc_upload_iso (http dedup)",
+            st_http,
+            data_http,
+            f"expected status=existing, got status={http_status!r}",
+        )
 
     # Step 6 — Confirm still exactly one media entry
     st, data = await call(
@@ -2251,7 +2263,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
         vios_name_or_uuid=vios,
         vg_uuid=vg,
         media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_PATH,
+        iso_source=_ISO_URL,
     )
     record(state, 18, "hmc_upload_iso (re-upload for ST19)", st, data)
     if st == "PASS" and isinstance(data, dict):
@@ -2440,13 +2452,19 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
 
     # Step 2 — Re-upload ISO (was deleted at end of ST19)
     print("  ⏳ Re-uploading ISO for boot test (may take several minutes)…")
+    try:
+        _serve_iso_over_http()
+    except OSError as exc:
+        for name in _skip_names:
+            skip(state, 20, name, f"no HTTP server on port {_HTTP_PORT}: {exc}")
+        return
     st, data = await call(
         client,
         "hmc_upload_iso",
         vios_name_or_uuid=vios,
         vg_uuid=vg,
         media_name=_ISO_MEDIA_NAME,
-        iso_source=_ISO_PATH,
+        iso_source=_ISO_URL,
     )
     record(state, 20, "hmc_upload_iso (re-upload for boot test)", st, data)
     if st == "PASS" and isinstance(data, dict):
