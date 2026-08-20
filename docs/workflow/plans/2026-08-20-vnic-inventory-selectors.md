@@ -46,7 +46,8 @@ LPAR authorization.
 `VnicChangeResult`, `VnicCapabilityError`, `VnicPartialError`, and async `add_vnic(...)` /
 `remove_vnic(...)` signatures from the spec. `VnicChangeResult.changed` is `bool | None`; it also
 defines `mutation_dispatched`, optional before/after snapshots, separate vNIC/backing after-read
-flags, output, and ordered error strings. Task 3 consumes these exact names.
+flags, output, and ordered error strings. The exact ordered field names are transcribed in the
+spec. Task 3 consumes these exact names.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
    mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
@@ -54,7 +55,8 @@ flags, output, and ordered error strings. Task 3 consumes these exact names.
    zero/multiple/degraded remove correlation refusal, successful remove, command timeout with one
    failed reconciliation read, and command failure with both reads failed and every cause retained.
    Add table-driven add/remove cases for all six reconciliation rows and the captured HMC-only VLAN
-   rejection as a partial error.
+   rejection as a partial error. Add conflicting cross-projection capacity, HMC delimiter, and
+   separately shell-metacharacter quoting cases.
    Run `uv run pytest -q tests/network/test_vnic_operations.py`; expect collection or
    assertion failures against the old raw-output API.
 2. Implement immutable models and the smallest orchestration satisfying each test. Re-run the

@@ -23,10 +23,12 @@ adapter, physical/logical port, desired/current capacity, activity, and status.
 
 `add_vnic(hmc, system, lpar, selector, port_vlan_id, *, ownership_override=False)` and
 `remove_vnic(hmc, system, lpar, slot_num, *, ownership_override=False)` return immutable
-`VnicChangeResult`. The result records operation, whether mutation was dispatched,
-`changed: bool | None`, selector or slot, optional verified before/after snapshots, independent
-vNIC/backing after-read success flags, raw mutation output, and an ordered tuple of public-safe
-error strings whose first member is the original dispatch/readback cause. `changed=None` means a
+`VnicChangeResult`. Its ordered fields are `operation`, `mutation_dispatched`, `changed`,
+`selector`, `slot_num`, `vnic_before`, `backing_before`, `vnic_after`, `backing_after`,
+`vnic_after_read_succeeded`, `backing_after_read_succeeded`, `output`, and `errors`.
+`changed: bool | None`; selector/slot and all four typed snapshots are nullable; read flags are
+bool; output is str; errors is an ordered tuple of public-safe strings whose first member is the
+original dispatch/readback cause. `changed=None` means a
 dispatched mutation could not be reconciled; it never means unchanged. A successful after-read
 that proves absence uses a true read flag with an absent snapshot, while a failed read uses a false
 flag, so those states cannot collapse. `VnicPartialError` carries that complete result. Local
@@ -45,12 +47,18 @@ removed rather than aliased.
 SSH adds strict collectors for version-labelled vNIC and `vnicbkdev` key/value rows and a VIOS
 identity projection. `No results were found.` is available-empty only for the admitted read. A
 malformed identity, decimal, duplicated slot/logical port, or conflicting parent fails closed.
+Before serialization, every VIOS/adapter/port/LPAR component rejects ASCII controls and the HMC
+record delimiters `/`, `,`, and `=`. Shell metacharacters are permitted and remain data because the
+complete attribute record and each standalone argument are shell-quoted.
 
 Add authorizes the target LPAR, checks the environment, requires nonblank selector components,
 finite one-to-100 capacity with at most two decimals, and VLAN 0–4094. It verifies exact VIOS
 name/ID/type, healthy adapter, active physical port, and remaining percentage. Capacity sums unique
 logical-port IDs from direct SR-IOV rows and vNIC backing rows so an identity observed in both is
-counted once. Add is ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
+counted once. A repeated identity must have the same adapter, physical parent, and percentage:
+direct-row `capacity` must equal backing-row `desired_capacity`; otherwise preflight fails. Within
+one backing row, `capacity` and `desired_capacity` may differ, and the reserved percentage uses
+`desired_capacity`. Add is ensure-one: an exact vNIC match on target LPAR, VLAN, VIOS, adapter, physical
 port, and capacity is unchanged only when exactly one active, Operational backing row correlates
 to its logical port. Multiple matches or incomplete/degraded correlation fail closed without a
 second add. The contract deliberately cannot create a second identical vNIC. Mutation serializes
@@ -84,8 +92,9 @@ Every other successful-read combination is contradictory or degraded.
 | Exactly one read succeeds, whatever it shows | `None` | partial error |
 | Neither read succeeds | `None` | partial error |
 
-Each successful projection populates its after snapshot, including verified absence; each failed
-projection leaves its after snapshot absent and its flag false. Errors are ordered: dispatch cause,
+Each successful projection populates its matching `vnic_after` or `backing_after`; successful
+absence is its read flag true and snapshot `None`. Each failed projection leaves its snapshot
+`None` and its flag false. Errors are ordered: dispatch cause,
 vNIC read cause, backing read cause, then one verification-mismatch description. A dispatched
 command returns normally only in the first row; every other row raises `VnicPartialError`, even if
 one projection suggests the requested transition occurred.
@@ -112,7 +121,9 @@ validation, exact retries, capacity aggregation, relationship failures, successf
 remove verification, command timeout with one failed after-read, and command failure with both
 after-reads failed and every cause retained. Table-driven tests cover every reconciliation row for
 both operations, including contradictory successful reads and the captured HMC-only VLAN
-restriction diagnostic. MCP/schema, CLI, and public API tests prove replacement
+restriction diagnostic. Parser/orchestration tests reject conflicting cross-projection capacity
+and HMC delimiters while separately proving shell metacharacters remain quoted data. MCP/schema,
+CLI, and public API tests prove replacement
 and absence of the old names. System contract tests enforce evidence metadata and family boundary.
 README documents typed inputs and verified outputs. Run focused tests, verify they fail before the
 implementation and pass after it, then run `just verify` bare.
