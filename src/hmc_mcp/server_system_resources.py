@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _ssh_with_client
+from ._app import _run, _ssh_with_client
+from .common import build_config
+from .operations_pcie import (
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
+)
 from .ssh_commands import (
     PciClass,
     get_proc_compat_modes,
@@ -17,6 +26,91 @@ from .ssh_commands import (
 
 
 tool, register_tools, tool_security = tool_module()
+
+
+@tool(
+    effect="read",
+    operation="pcie.list_dedicated_slots",
+    target_kind="managed_system",
+)
+def hmc_list_dedicated_pcie_slots(
+    system_name_or_uuid: str,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """List normalized dedicated PCIe slots with stable DRC identities."""
+    return asdict(
+        _run(
+            lambda: list_dedicated_slots(
+                build_config(profile=profile), system_name_or_uuid
+            )
+        )
+    )
+
+
+@tool(effect="read", operation="pcie.list_sriov_adapters", target_kind="managed_system")
+def hmc_list_sriov_adapters(
+    system_name_or_uuid: str,
+    adapter_id: str | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """List normalized SR-IOV adapters, or report capability unavailable."""
+    return asdict(
+        _run(
+            lambda: list_sriov_adapters(
+                build_config(profile=profile), system_name_or_uuid, adapter_id
+            )
+        )
+    )
+
+
+@tool(
+    effect="read",
+    operation="pcie.list_sriov_physical_ports",
+    target_kind="managed_system",
+)
+def hmc_list_sriov_physical_ports(
+    system_name_or_uuid: str,
+    adapter_id: str | None = None,
+    physical_port_id: str | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """List normalized SR-IOV physical ports, or report capability unavailable."""
+    return asdict(
+        _run(
+            lambda: list_sriov_physical_ports(
+                build_config(profile=profile),
+                system_name_or_uuid,
+                adapter_id,
+                physical_port_id,
+            )
+        )
+    )
+
+
+@tool(
+    effect="read",
+    operation="pcie.list_sriov_logical_ports",
+    target_kind="managed_system",
+)
+def hmc_list_sriov_logical_ports(
+    system_name_or_uuid: str,
+    adapter_id: str | None = None,
+    physical_port_id: str | None = None,
+    logical_port_id: str | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """List normalized SR-IOV logical ports, or report capability unavailable."""
+    return asdict(
+        _run(
+            lambda: list_sriov_logical_ports(
+                build_config(profile=profile),
+                system_name_or_uuid,
+                adapter_id,
+                physical_port_id,
+                logical_port_id,
+            )
+        )
+    )
 
 
 @tool(effect="read", operation="system.get_proc_compat_modes", target_kind="managed_system")

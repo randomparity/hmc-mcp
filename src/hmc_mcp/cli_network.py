@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import typer
 from rich.table import Table
 
@@ -23,6 +25,12 @@ from .operations_network import (
     list_virtual_networks,
     list_virtual_switches,
 )
+from .operations_pcie import (
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
+)
 from .operations_ssh_network import (
     SriovMode,
     add_vnic,
@@ -33,6 +41,70 @@ from .operations_ssh_network import (
     set_sriov_adapter_mode,
 )
 from .ssh_commands import PciClass, list_io_slots
+
+
+def _print_pcie_inventory(result) -> None:
+    _print_json(asdict(result))
+
+
+@network_app.command("list-dedicated-pcie-slots")
+def network_list_dedicated_pcie_slots(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized dedicated PCIe slots on a managed system."""
+    result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
+    _print_pcie_inventory(result)
+
+
+@network_app.command("list-sriov-adapters")
+def network_list_sriov_adapters(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV adapters or their unavailable capability."""
+    result = _run(
+        lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id)
+    )
+    _print_pcie_inventory(result)
+
+
+@network_app.command("list-sriov-physical-ports")
+def network_list_sriov_physical_ports(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    physical_port_id: str | None = typer.Option(None, "--physical-port-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV physical ports or their unavailable capability."""
+    result = _run(
+        lambda: list_sriov_physical_ports(
+            _ssh_config(), system_name, adapter_id, physical_port_id
+        )
+    )
+    _print_pcie_inventory(result)
+
+
+@network_app.command("list-sriov-logical-ports")
+def network_list_sriov_logical_ports(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    physical_port_id: str | None = typer.Option(None, "--physical-port-id"),
+    logical_port_id: str | None = typer.Option(None, "--logical-port-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV logical ports or their unavailable capability."""
+    result = _run(
+        lambda: list_sriov_logical_ports(
+            _ssh_config(),
+            system_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+        )
+    )
+    _print_pcie_inventory(result)
 
 
 @network_app.command("list-switches")

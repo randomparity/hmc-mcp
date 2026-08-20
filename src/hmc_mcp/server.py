@@ -238,8 +238,12 @@ from .server_lpar_config import (
 )
 from .server_system_resources import (
     hmc_get_proc_compat_modes as hmc_get_proc_compat_modes,
+    hmc_list_dedicated_pcie_slots as hmc_list_dedicated_pcie_slots,
     hmc_list_io_slots as hmc_list_io_slots,
     hmc_list_memory_pools as hmc_list_memory_pools,
+    hmc_list_sriov_adapters as hmc_list_sriov_adapters,
+    hmc_list_sriov_logical_ports as hmc_list_sriov_logical_ports,
+    hmc_list_sriov_physical_ports as hmc_list_sriov_physical_ports,
     hmc_remove_memory_pool as hmc_remove_memory_pool,
 )
 from .server_composite import (
