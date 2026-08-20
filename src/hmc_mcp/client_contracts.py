@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
@@ -111,6 +112,8 @@ class StorageClient(Protocol):
 
     config: HMCConfig
 
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any: ...
+
     async def _get(
         self,
         path: str,
@@ -138,6 +141,18 @@ class StorageClient(Protocol):
 
     def get_lpar_link(self, lpar_uuid: str) -> str: ...
 
-    async def _post_volume_group_op(
-        self, vios_uuid: str, vg_uuid: str, xml: str
+    async def _get_vg_raw_xml(
+        self, vios_uuid: str, vg_uuid: str
+    ) -> tuple[str, ET.Element]: ...
+
+    async def _post_vg_xml(
+        self, vios_uuid: str, vg_uuid: str, vg_elem: ET.Element
     ) -> dict[str, Any] | None: ...
+
+    def _build_mr_element(self, size_mib: int) -> ET.Element: ...
+
+    def _insert_mr_at_correct_position(
+        self, vg_elem: ET.Element, mr_elem: ET.Element
+    ) -> None: ...
+
+    def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None: ...

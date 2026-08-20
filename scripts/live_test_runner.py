@@ -62,6 +62,50 @@ def _load_dotenv() -> None:
             os.environ[key] = val
 
 
+def _bootstrap_config() -> None:
+    """Populate HMC_* env vars from config.toml profile, then .env fallback.
+
+    Priority (highest first):
+      1. Already-set HMC_* environment variables
+      2. ~/.config/hmc-mcp/config.toml default profile
+      3. Local .env file (legacy key=value pairs)
+
+    Exits with a clear message when no usable credentials are found.
+    """
+    from hmc_mcp.config import ConfigError, load_profile, resolve_config_path
+
+    # Try the TOML config first.
+    try:
+        cfg = load_profile()
+        # Inject values that are not already set by the environment.
+        mapping = {
+            "HMC_HOST": cfg.host,
+            "HMC_PORT": str(cfg.port),
+            "HMC_USER": cfg.user,
+            "HMC_PASSWORD": cfg.password,
+            "HMC_VERIFY_SSL": str(cfg.verify_ssl).lower(),
+            "HMC_SCHEMA_VERSION": cfg.schema_version,
+        }
+        for key, val in mapping.items():
+            if val and key not in os.environ:
+                os.environ[key] = val
+        config_path = resolve_config_path()
+        print(f"  Credentials loaded from {config_path} (profile: {cfg.host})")
+        return
+    except ConfigError as exc:
+        print(f"  ⚠️  config.toml: {exc} — falling back to .env")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠️  config.toml load failed: {exc} — falling back to .env")
+
+    # Fallback: local .env
+    _load_dotenv()
+
+    if not os.environ.get("HMC_PASSWORD"):
+        print("❌  No HMC credentials found.")
+        print("   Configure ~/.config/hmc-mcp/config.toml or a local .env file.")
+        sys.exit(1)
+
+
 def _ensure_schema_version() -> None:
     """Warn if HMC_SCHEMA_VERSION is absent; exit so the operator sets it explicitly.
 
@@ -3011,6 +3055,7 @@ async def main(
 
 
 if __name__ == "__main__":
+    _bootstrap_config()
     _ensure_schema_version()
     # Parse args: optional positional subtask number, optional --group <name>,
     # optional --results-file <path>

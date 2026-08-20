@@ -24,9 +24,9 @@ from hmc_mcp.operations_storage import (
 # Test constants
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 VG_UUID = "vg-uuid-002"
-MEDIA_NAME = "test-image.iso"
+MEDIA_NAME = "test_image.iso"
 ISO_HOST = "images.test"
-ISO_URL = f"https://{ISO_HOST}/test-image.iso"
+ISO_URL = f"https://{ISO_HOST}/test_image.iso"
 TEST_CONTENT = b"Test ISO content for upload\n" * 100
 TEST_SHA256 = hashlib.sha256(TEST_CONTENT).hexdigest()
 
@@ -153,7 +153,7 @@ async def test_upload_iso_accepts_both_supported_schemes(
     """
     broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-scheme"
     download = stage_download()
-    url = f"{scheme}://images.test/test-image.iso"
+    url = f"{scheme}://images.test/test_image.iso"
 
     mock_hmc.post(VG_PATH).mock(
         side_effect=[

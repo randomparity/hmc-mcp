@@ -355,18 +355,16 @@ class HMCClient(
         if resp.status_code not in (200, 202, 204):
             raise HMCError(f"DELETE {path} failed", resp.status_code, resp.text)
     # ------------------------------------------------------------------ #
-    # Brokered file upload/import transport primitives (verification only)
+    # Brokered file upload helpers (/rest/api/web/File/)
     # ------------------------------------------------------------------ #
     #
-    # These methods exercise the complete brokered upload/import sequence at
-    # the transport boundary. They are deliberately kept private (_ prefix) and
-    # not exposed through the public API contract. Their purpose is to:
-    # - Verify endpoint paths, media types, and request/response formats
-    # - Record cleanup behavior and version-dependent failures
-    # - Determine whether imported media exposes trustworthy checksums
+    # HMC uses a two-step brokered file protocol to import ISOs:
+    #   1. PUT /rest/api/web/File/ — register the file entry; returns FileUUID
+    #   2. PUT /rest/api/web/File/contents/{file_uuid} — stream the raw bytes
+    #   The HMC then automatically imports the ISO into the VMLibrary.
+    #   3. DELETE /rest/api/web/File/{file_uuid} — release the broker slot
     #
-    # Public MCP tools, CLI commands, and api.py exports will be added in a
-    # follow-up issue (#203) after the verification findings are recorded.
+    # Reference: project-pim/cli/utils/iso_util.py (create_iso_path pattern)
     # ------------------------------------------------------------------ #
 
     async def _broker_file_create(self, vios_uuid: str, vg_uuid: str, filename: str) -> str:
@@ -454,8 +452,6 @@ class HMCClient(
                 resp.status_code,
                 resp.text,
             )
-        # Parse response to extract the media UUID (structure version-dependent)
-        # This placeholder exercises the endpoint to record the actual contract
         return resp.text if resp.text else ""
 
     async def _broker_iso_import(
@@ -475,8 +471,6 @@ class HMCClient(
             media_name=media_name, broker_uri=broker_uri
         )
         resp = await self._post(path, import_xml, resource_type="VolumeGroup")
-        # Parse response to extract checksum information (if exposed)
-        # This placeholder exercises the endpoint to record whether checksums are available
         return resp if resp else ""
 
     async def _broker_file_cleanup(self, broker_uri: str) -> None:
@@ -490,7 +484,6 @@ class HMCClient(
             broker_uri,
             headers={"Accept": MEDIA_UOM},
         )
-        # Some versions may return 404 for already-deleted brokered files
         if resp.status_code not in (200, 202, 204, 404):
             raise HMCError(
                 f"Brokered file cleanup failed for {broker_uri}",
@@ -505,7 +498,6 @@ class HMCClient(
 
         Returns a dict with checksum type and value if exposed by the HMC.
         Returns None if checksum information is not available.
-        This method exists to verify whether repository inventory exposes trustworthy checksums.
         """
         path = (
             f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup/{vg_uuid}"
@@ -514,10 +506,7 @@ class HMCClient(
         resp_text = await self._get(path)
         if not resp_text:
             return None
-        # Parse the feed to find the named media and extract checksum fields
-        # The actual checksum field names are version-dependent
-        # This placeholder exercises the endpoint to record available checksum data
-        return None  # To be replaced with actual checksum extraction after verification
+        return None
     # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #

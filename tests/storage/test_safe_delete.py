@@ -34,12 +34,33 @@ NONEMPTY_REPO_FEED = """<?xml version="1.0" encoding="UTF-8"?>
   <entry>
     <content>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <VirtualMediaRepository>
-          <VirtualOpticalMedia>
-            <MediaName>test-image.iso</MediaName>
-            <MediaSize>4500</MediaSize>
-          </VirtualOpticalMedia>
-        </VirtualMediaRepository>
+        <MediaRepositories>
+          <VirtualMediaRepository>
+            <VirtualOpticalMedia>
+              <MediaName>test-image.iso</MediaName>
+              <MediaSize>4500</MediaSize>
+            </VirtualOpticalMedia>
+          </VirtualMediaRepository>
+        </MediaRepositories>
+      </VolumeGroup>
+    </content>
+  </entry>
+</feed>"""
+
+MEDIA_VG_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <content>
+      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <MediaRepositories>
+          <VirtualMediaRepository>
+            <RepositoryName>VMLibrary</RepositoryName>
+            <VirtualOpticalMedia>
+              <MediaName>test-image.iso</MediaName>
+              <MediaSize>4500</MediaSize>
+            </VirtualOpticalMedia>
+          </VirtualMediaRepository>
+        </MediaRepositories>
       </VolumeGroup>
     </content>
   </entry>
@@ -123,9 +144,18 @@ async def test_delete_optical_media_refuses_when_mounted(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_delete_optical_media_succeeds_when_unmounted(mock_hmc):
-    """delete_optical_media succeeds when no optical mappings reference it."""
+    """delete_optical_media succeeds when no optical mappings reference it.
+
+    delete_optical_media:
+      1. GETs ViosStorageDetail path (list_optical_mappings) — returns no mappings.
+      2. GETs VG_PATH (hmc.delete_optical_media read step) — returns MEDIA_VG_FEED.
+      3. POSTs VG_PATH with the media node removed.
+    """
     mock_hmc.get(VIOS_PATH).mock(
         return_value=httpx.Response(200, text=NO_MAPPINGS_FEED)
+    )
+    mock_hmc.get(VG_PATH).mock(
+        return_value=httpx.Response(200, text=MEDIA_VG_FEED)
     )
     mock_hmc.post(VG_PATH).mock(
         return_value=httpx.Response(200, text=EMPTY_REPO_FEED)
