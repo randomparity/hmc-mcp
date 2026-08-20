@@ -4,6 +4,10 @@
 
 Accepted
 
+> **Term-missing presentation superseded by
+> [0054](0054-structured-quiet-verification-output.md)** (2026-08-20). The exact
+> coverage-gate decision remains accepted.
+
 ## Context
 
 `pyproject.toml` declared the package coverage floor as `--cov-fail-under=90` in

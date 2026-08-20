@@ -6,6 +6,11 @@ Accepted
 
 ## Context
 
+[ADR 0034](0034-exact-coverage-gate.md) requires exact package coverage
+enforcement and also selected `term-missing` presentation. This record
+supersedes only that presentation choice; ADR 0034's source, floor, precision,
+denominator, configuration-source, and guard decisions remain accepted.
+
 The canonical `just test` command currently emits pytest progress, a per-file
 missing-lines coverage table, warnings, and a final summary. A successful run
 produces roughly 13.5 KiB across 192 lines on the current 2,449-test suite. The
@@ -36,7 +41,8 @@ The global pytest `addopts` will replace `--cov-report=term-missing` with an
 empty `--cov-report=` selector; `test-verbose` will opt back into
 `--cov-report=term-missing`. The `--cov` source, exact 90% floor, precision,
 denominator, configuration source, and their guards remain unchanged. Only
-coverage presentation changes.
+coverage presentation changes, and this scoped decision supersedes ADR 0034
+only for that presentation choice and its terminal-report consequence.
 
 ## Consequences
 
