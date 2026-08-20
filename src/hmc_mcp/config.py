@@ -377,40 +377,21 @@ def list_profiles_and_nicknames(
     )
 
 
-def load_profile(
+def _load_profile_from_document(
+    doc: dict[str, Any],
+    path: Path | None,
     profile: str | None = None,
-    config_path: Path | None = None,
 ) -> HMCConfig:
-    """Load and return an HMCConfig for the selected profile.
+    """Build an HMCConfig for *profile* from an already-parsed *doc*.
 
-    Profile selection order:
-      1. explicit ``profile`` argument
-      2. ``HMC_PROFILE`` environment variable
-      3. ``default_profile`` key in the TOML file
-      4. ConfigError
-
-    Precedence (highest to lowest):
-      explicit HMCConfig constructor args > HMC_* env vars > TOML profile values
-
-    Checkout-local .env files are NOT loaded.
-
-    Args:
-        profile: Profile name to select, or None to use env/TOML default.
-        config_path: Override the config file path (for testing).
-
-    Returns:
-        HMCConfig populated from the selected profile with env-var overrides.
-
-    Raises:
-        ConfigError: When the file cannot be read, decoded, or parsed, when a
-            table it needs is malformed, when no profile is selected, when the
-            selected profile is absent, or when secret config is invalid.
+    Shared by :func:`load_profile`, which reads and parses *path* itself, and
+    by a caller that already holds the parsed document for this invocation —
+    such as ``config_show``, which needs the same document for credential
+    presence and nickname resolution and must not parse ``config.toml`` a
+    second time to also select a profile (issue #295). *path* is used only for
+    error messages; it is not re-read here.
     """
-    path = _selected_config_path(config_path)
-
-    # Determine selected profile name
     name = profile or os.environ.get("HMC_PROFILE")
-    doc: dict[str, Any] = {} if path is None else _read_config_document(path)
     if name is None:
         name = doc.get("default_profile")
 
@@ -488,3 +469,37 @@ def load_profile(
         if (env_prefix + k.upper()) not in os.environ
     }
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
+
+
+def load_profile(
+    profile: str | None = None,
+    config_path: Path | None = None,
+) -> HMCConfig:
+    """Load and return an HMCConfig for the selected profile.
+
+    Profile selection order:
+      1. explicit ``profile`` argument
+      2. ``HMC_PROFILE`` environment variable
+      3. ``default_profile`` key in the TOML file
+      4. ConfigError
+
+    Precedence (highest to lowest):
+      explicit HMCConfig constructor args > HMC_* env vars > TOML profile values
+
+    Checkout-local .env files are NOT loaded.
+
+    Args:
+        profile: Profile name to select, or None to use env/TOML default.
+        config_path: Override the config file path (for testing).
+
+    Returns:
+        HMCConfig populated from the selected profile with env-var overrides.
+
+    Raises:
+        ConfigError: When the file cannot be read, decoded, or parsed, when a
+            table it needs is malformed, when no profile is selected, when the
+            selected profile is absent, or when secret config is invalid.
+    """
+    path = _selected_config_path(config_path)
+    doc: dict[str, Any] = {} if path is None else _read_config_document(path)
+    return _load_profile_from_document(doc, path, profile)

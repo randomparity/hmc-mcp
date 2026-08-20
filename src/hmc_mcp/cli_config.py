@@ -29,12 +29,13 @@ from .access_policy import AccessPolicyError
 from .cli_app import _fail, _policy_file, config_app, console, err_console
 from .config import (
     ConfigError,
+    _coerce_nicknames,
     _coerce_profiles,
+    _load_profile_from_document,
     _read_config_document,
     config_dir,
     list_nicknames,
     list_profiles_with_default,
-    load_profile,
     resolve_config_path,
 )
 
@@ -155,14 +156,15 @@ def config_show(
     if config_path is None:
         _fail(ConfigError(f"No config file found at {config_dir() / 'config.toml'}"))
 
-    # Read the raw TOML dict to determine credential presence WITHOUT
-    # resolving password_env (load_profile() resolves it, which requires
-    # the env var to be present — a production secret may not be set locally).
-    # Through config's one read-and-parse, so an unreadable, non-UTF-8, or
-    # malformed file reaches _fail as a ConfigError rather than a traceback.
+    # Read and parse config.toml exactly once for this command (issue #295): the
+    # raw document backs credential-presence booleans and nickname resolution
+    # below, and is handed to _load_profile_from_document() rather than letting
+    # load_profile() parse the same file over again. An unreadable, non-UTF-8,
+    # or malformed file reaches _fail as a ConfigError rather than a traceback.
     try:
         raw = _read_config_document(config_path)
         profiles_raw = _coerce_profiles(raw.get("profiles"), config_path)
+        nicknames = _coerce_nicknames(raw.get("nicknames"), config_path)
     except ConfigError as exc:
         _fail(exc)
 
@@ -170,11 +172,6 @@ def config_show(
     # Resolve the same name here so the raw dict lookup and the display agree
     # with load_profile(), and surface a nickname resolution transparently.
     requested = effective_profile or raw.get("default_profile")
-
-    try:
-        nicknames = list_nicknames(config_path=config_path)
-    except ConfigError as exc:
-        _fail(exc)
 
     # One level deep, case-sensitive; a profile key always wins because this
     # branch only runs when the requested name is not already a profile key.
@@ -195,11 +192,12 @@ def config_show(
     )
     ssh_key_configured = bool(profile_dict.get("ssh_key_file"))
 
-    # Load the full HMCConfig for non-secret fields. This call may raise
-    # ConfigError (unknown profile, no default, etc.) — that is the intended
-    # error path for those conditions.
+    # Build the full HMCConfig for non-secret fields from the document already
+    # read above, not a re-parse of config.toml. This call may raise ConfigError
+    # (unknown profile, no default, etc.) — that is the intended error path for
+    # those conditions.
     try:
-        cfg = load_profile(profile=effective_profile, config_path=config_path)
+        cfg = _load_profile_from_document(raw, config_path, effective_profile)
     except ConfigError as exc:
         _fail(exc)
 

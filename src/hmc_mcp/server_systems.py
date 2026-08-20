@@ -19,9 +19,9 @@ from .common import (
 )
 from .config import (
     HMCConfig,
+    _coerce_nicknames,
     _coerce_profiles,
     _read_config_document,
-    list_nicknames,
     resolve_config_path,
 )
 from .documents import (
@@ -173,8 +173,10 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     # dangling target without resolving any credential. A malformed table raises
     # a ConfigError (a ValueError the MCP boundary surfaces as an error result);
     # it must NOT be swallowed into an empty inventory, which would hide a broken
-    # config while nickname-based connections silently fail.
-    nicknames = list_nicknames(config_path=config_path)
+    # config while nickname-based connections silently fail. Read from the
+    # document already parsed above (issue #295) rather than re-reading
+    # config.toml — the two halves of this inventory must come from one read.
+    nicknames = _coerce_nicknames(doc.get("nicknames"), config_path)
     profile_keys = set(profiles_raw)
     nickname_entries = [
           {"name": nick, "target": target, "target_exists": target in profile_keys}
