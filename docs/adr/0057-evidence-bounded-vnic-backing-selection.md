@@ -29,11 +29,12 @@ matching vNIC without that verified backing state fail closed without another ad
 captured `-p` grammar. After dispatch, exactly one new vNIC slot must match the selector and VLAN,
 and exactly one active, Operational backing row must match its logical port.
 
-Remove accepts the stable `slot_num` read identity. An absent target slot is unchanged. Otherwise
-capture its backing logical ports, use the captured `-p ... -s ...` grammar, and require both the
-slot and those backing rows to disappear. Every exception after dispatch triggers best-effort
-reconciliation and raises a structured partial error carrying verified before/after state. There
-is no rollback promise.
+Remove accepts the reported `slot_num` read identity. An absent target slot is unchanged.
+Otherwise require exactly one correlated active, Operational backing row, capture its logical-port
+identity, use the captured `-p ... -s ...` grammar, and require both the slot and that backing row
+to disappear. Zero, multiple, degraded, or uncorrelatable backing rows fail before mutation. Every
+exception after dispatch triggers best-effort reconciliation and raises a structured partial error
+carrying verified before/after state. There is no rollback promise.
 
 These guarantees apply only to POWER9 8375-42A under HMC V10R3 M1060. Other environments fail
 before mutation. Preserve exact strings and decimal percentages; reject malformed, duplicate, or
@@ -45,6 +46,8 @@ MCP, CLI, and Python callers receive one typed contract and stable dataclass res
 raw command output. The public add signature is intentionally breaking because the project is
 pre-release and two old command forms are live-proven invalid. Capacity validation may still race
 another operator; post-readback detects divergence but cannot undo a successful HMC allocation.
+An authorized operator can remove and recreate a slot between preflight and `-s`; the command can
+then remove the replacement vNIC, and reconciliation can report but cannot restore it.
 The ensure-one contract cannot create a second vNIC identical in target LPAR, VLAN, and backing
 selector; callers needing parallel vNICs must choose distinguishable topology. Failover and
 optional priority/max-capacity inputs remain unavailable.

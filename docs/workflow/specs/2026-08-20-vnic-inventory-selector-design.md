@@ -51,10 +51,12 @@ the captured single-backing grammar and uses `-p`.
 
 After add, compare target vNIC snapshots before/after. Require one new slot matching the request,
 one allocated logical-port ID, and one matching `vnicbkdev` row with `is_active=1` and
-`status=Operational`. Remove first resolves one target-LPAR slot and captures its backing logical
-ports. Absence is unchanged. Mutation uses `-p` and `-s`. Verification requires the slot and all
-captured backing identities absent. Read/mutation races yield partial errors; no rollback is
-attempted.
+`status=Operational`. Remove first resolves one target-LPAR slot and requires exactly one
+correlated active, Operational backing row; zero, multiple, or degraded correlation fails before
+mutation. Absence is unchanged. Mutation uses `-p` and `-s`. Verification requires the slot and
+captured backing identity absent. Read/mutation races yield partial errors; no rollback is
+attempted. An authorized operator can reuse the slot between preflight and dispatch, in which case
+the replacement can be removed and cannot be restored by this workflow.
 
 ## Error handling and threat model
 

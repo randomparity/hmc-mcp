@@ -48,8 +48,8 @@ LPAR authorization.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
    mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
-   refusal, successful add correlation,
-   mutation failure, readback mismatch, absent remove retry, successful remove, and remove partial
+   refusal, successful add correlation, mutation failure, readback mismatch, absent remove retry,
+   zero/multiple/degraded remove correlation refusal, successful remove, and remove partial
    failure. Run `uv run pytest -q tests/network/test_vnic_operations.py`; expect collection or
    assertion failures against the old raw-output API.
 2. Implement immutable models and the smallest orchestration satisfying each test. Re-run the
