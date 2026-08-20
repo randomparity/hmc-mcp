@@ -141,6 +141,8 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "env-vars",
         "nicknames",
         "static",
+        "test",
+        "test-verbose",
     ):
         assert f"\n{recipe}:" in justfile
     assert "\nstatic: lint typecheck secrets workflow-security env-vars nicknames\n" in justfile
@@ -151,6 +153,16 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         in justfile
     )
     assert "\nverify: static test smoke build verify-artifacts\n" in justfile
+    assert (
+        "\ntest:\n"
+        "    uv run --no-sync python scripts/run_tests.py\n"
+        in justfile
+    )
+    assert (
+        "\ntest-verbose:\n"
+        "    uv run --no-sync pytest -q --cov-report=term-missing\n"
+        in justfile
+    )
     assert "--baseline .secrets.baseline --no-verify --" in justfile
     assert "uv run --no-sync hmc-mcp metrics --help" in justfile
 
@@ -732,7 +744,7 @@ def _write_gate_project(root: Path, report: dict, covered: int) -> None:
         "\n"
         "[tool.pytest.ini_options]\n"
         'pythonpath = ["."]\n'
-        'addopts = "--cov=gatepkg --cov-report=term"\n'
+        'addopts = "--cov=gatepkg --cov-report="\n'
         "\n"
         "[tool.coverage.report]\n" + report_toml + "\n"
     )
@@ -769,6 +781,8 @@ def test_coverage_gate_declares_one_exact_floor() -> None:
     # substring: "--cov=hmc_mcp/config.py" contains "--cov=hmc_mcp" and would
     # narrow the measured source to one file, giving a total near 100%.
     assert "--cov=hmc_mcp" in addopts.split()
+    assert "--cov-report=" in addopts.split()
+    assert "term-missing" not in addopts
     # Each of these silently disarms the gate: a command-line floor or precision
     # overrides the configured one, --no-cov switches measurement off, and
     # --cov-config sends coverage.py to a different file entirely.
@@ -864,7 +878,10 @@ def test_coverage_gate_is_not_defeated_at_the_invocation_sites() -> None:
     assert len(sources) >= 2
     # Same idiom as test_justfile_exposes_one_composed_verification_graph, which
     # pins `build` and `verify-artifacts` this way.
-    assert "\ntest:\n    uv run --no-sync pytest -q\n" in sources["justfile"], (
+    assert (
+        "\ntest:\n    uv run --no-sync python scripts/run_tests.py\n"
+        in sources["justfile"]
+    ), (
         "the `test` recipe body is pinned because it runs the package-wide coverage "
         "gate; any edit to it -- including one unrelated to coverage -- has to be "
         "made here too, so the gate cannot be disabled by a recipe change alone"

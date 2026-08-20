@@ -2,7 +2,8 @@
 #
 # These give the workspace a single entry point for "suite green":
 #   just verify   # full ad-hoc verification (tests + MCP handshake + CLI)
-#   just test     # pytest only
+#   just test             # quiet suite summary
+#   just test-verbose     # pytest diagnostics and missing-lines coverage
 #   just smoke    # MCP handshake / tool count
 
 # synchronize locked dependencies and install repository hooks
@@ -38,9 +39,13 @@ nicknames:
 # local and hosted static-analysis gate
 static: lint typecheck secrets workflow-security env-vars nicknames
 
-# run the full pytest suite
+# run the full pytest suite with one semantic summary
 test:
-    uv run --no-sync pytest -q
+    uv run --no-sync python scripts/run_tests.py
+
+# run the full pytest suite with native diagnostics
+test-verbose:
+    uv run --no-sync pytest -q --cov-report=term-missing
 
 # MCP stdio handshake (lists exposed tools)
 smoke:
