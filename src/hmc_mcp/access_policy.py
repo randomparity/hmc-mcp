@@ -313,7 +313,11 @@ def _compile_grant(
     """
     for tool in model.tools:
         if tool not in tool_security:
-            raise AccessPolicyError(f"{where}: unknown tool {tool!r}")
+            raise AccessPolicyError(
+                f"{where}: unknown tool {tool!r}; if this policy predates a tool "
+                "rename or removal, regenerate it with "
+                "'hmc-mcp config init-access-policy' and review the result"
+            )
 
     resolved = _resolve_tools(model, tool_security)
 

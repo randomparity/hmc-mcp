@@ -325,6 +325,26 @@ def test_unknown_tool_is_rejected() -> None:
         )
 
 
+def test_unknown_tool_error_names_the_regeneration_remedy() -> None:
+    """A tool a later release retired or renamed must not fail with only the bare
+    name: the operator needs to know regeneration is the fix, and the exact
+    command, or the message reads as a dead end rather than an upgrade hazard.
+    """
+    with pytest.raises(
+        AccessPolicyError, match="hmc-mcp config init-access-policy"
+    ) as excinfo:
+        _compile(
+            _document(
+                tools=["hmc_create_lpars"], connections=["lab"], targets="all-targets"
+            )
+        )
+    message = str(excinfo.value)
+    assert "hmc_create_lpars" in message
+    # No host, credential, or filesystem-path leakage beyond the policy source
+    # name the caller already passed in ("access-policy.toml" in this test).
+    assert "/" not in message.replace("access-policy.toml", "")
+
+
 def test_targets_kind_no_granted_tool_declares_is_rejected() -> None:
     with pytest.raises(AccessPolicyError, match="could never match"):
         _compile(
