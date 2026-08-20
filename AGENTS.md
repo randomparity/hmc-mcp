@@ -99,7 +99,7 @@ Use the quiet recipes by default so successful checks do not consume agent
 context. Failures still replay their complete diagnostics.
 
 ```sh
-just test          # tests + exact coverage gate; one-line success
+just test          # tests + exact coverage gate; compact success summary
 just smoke         # MCP handshake; tool count only
 just verify        # full pre-push guardrail
 ```
