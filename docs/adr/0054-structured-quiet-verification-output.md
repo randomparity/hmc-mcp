@@ -32,8 +32,11 @@ report enabled. The smoke script will print only its handshake and tool count by
 default and accept `--verbose` to list tool names; `just smoke-verbose` will use
 that flag. `just verify` will continue to depend on the canonical quiet recipes.
 
-The coverage source, exact 90% floor, precision, and configuration-location
-guards remain unchanged. Only coverage presentation changes.
+The global pytest `addopts` will replace `--cov-report=term-missing` with an
+empty `--cov-report=` selector; `test-verbose` will opt back into
+`--cov-report=term-missing`. The `--cov` source, exact 90% floor, precision,
+denominator, configuration source, and their guards remain unchanged. Only
+coverage presentation changes.
 
 ## Consequences
 
