@@ -1,6 +1,7 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import asyncio
+import traceback
 import warnings
 from unittest.mock import AsyncMock
 
@@ -233,6 +234,34 @@ async def test_logon_failure_never_quotes_the_credentials(mock_hmc):
     # The fragment rather than the whole value: an escaped or partially
     # rendered leak would slip past a check for the exact string.
     assert "unleakable" not in reported
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ConnectError("connection refused"), httpx.ConnectTimeout("")],
+    ids=["transport", "timeout"],
+)
+async def test_a_failed_logon_traceback_carries_no_credential(failure, mock_hmc):
+    """The body holds the credential, so no diagnostic about sending it may.
+
+    Formatted over the whole chain rather than the raised message alone:
+    ``_request`` re-raises ``from`` the httpx error, whose request object holds
+    the rendered body, and a rendered traceback is where that would surface.
+    """
+    leaky = "unleakable&<value>"
+    mock_hmc.put("/rest/api/web/Logon").mock(side_effect=failure)
+
+    with pytest.raises(HMCTransportError) as raised:
+        async with HMCClient(make_config(password=leaky)):
+            pass
+
+    rendered = "".join(
+        traceback.format_exception(
+            type(raised.value), raised.value, raised.value.__traceback__
+        )
+    )
+    assert "unleakable" not in rendered
 
 
 @pytest.mark.asyncio
