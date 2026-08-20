@@ -23,16 +23,20 @@ Create one JSON fixture per documented command family and version family under
 `tests/fixtures/pcie/`. Every fixture contains:
 
 - `evidence_kind`: `documentation`;
-- `hmc_family`: one of `V8`, `V9`, `V10`, `V11`;
+- `documentation_family`: one of `Power8`, `Power9`, `Power10`, `Power11`;
+- `hmc_release`: an exact release when the source names one, otherwise `not-established`;
 - an IBM documentation URL;
 - the exact read-only command with explicit `-F` field order;
 - `fields`, matching that order exactly;
-- sanitized `stdout` rows using the command's comma delimiter;
+- sanitized raw `stdout`, including the first nonblank header record and data records, using the
+  command's comma delimiter;
 - `capacity_unit` where capacity fields occur.
 
 The fixtures are executable evidence, not opaque snapshots. Tests load every file, validate its
-metadata, and parse every row against the declared field count. This prevents field-order drift,
-accidental identity substitutions, and undocumented unit changes.
+metadata, and parse every row against the declared field count. A Power-generation documentation
+family is not presented as an HMC software release: `hmc_release=not-established` forbids a test or
+downstream caller from claiming release-specific availability. This prevents field-order drift,
+accidental identity substitutions, undocumented unit changes, and false version precision.
 
 ## Read command contract
 
@@ -47,17 +51,20 @@ The exact commands use `-F <comma-list> --header` with that order and a comma de
 fixtures preserve the returned header and data separately, so the parser checks the HMC header
 against the independent matrix before parsing data. The admitted family matrix is:
 
-| Family | Dedicated slot | Adapter | Physical port | Logical port |
+| Documentation family | Dedicated slot | Adapter | Physical port | Logical port |
 |---|---|---|---|---|
-| V8 | documented | documented | documented | documented |
-| V9 | documented | documented | documented | documented |
-| V10 | documented | documented | documented | documented |
-| V11 | documented | documented | documented | documented |
+| Power8 | documented | unknown | unknown | profile-only evidence |
+| Power9 | documented | documented | documented | documented |
+| Power10 | documented | documented | documented | documented |
+| Power11 | documented | documented | documented | documented |
 
-Each `documented` cell requires a fixture with the exact family-specific IBM URL and command. A
-future unsupported cell is written explicitly as `unsupported` with source evidence; omission is
-invalid. The common field matrix is intentionally minimal: it contains only fields admitted for
-all four supported families. Later fields require a separate per-family optional-field matrix.
+Each `documented` cell requires a fixture with the exact family-specific IBM URL and command.
+`profile-only evidence` admits only `chsyscfg`/`lssyscfg` profile properties, not live inventory.
+`unknown` means no claim and requires fail-closed behavior; it does not mean unsupported. A future
+unsupported cell is written explicitly as `unsupported` with source evidence; omission is invalid.
+The common field matrix applies only where a cell is `documented`. Later fields require a separate
+per-family optional-field matrix. These documentation-backed cells do not prove exact HMC release
+availability; #212 must preserve capability-unavailable/error behavior rather than infer it.
 
 Exact fixture field names are the compatibility boundary for #212. Additional HMC fields are
 ignored until a new labelled fixture and contract test admits them. Empty owner columns mean
@@ -69,13 +76,17 @@ It rejects an empty field list, duplicate/blank field names, a non-single-charac
 and rows whose column count differs from the field count. It is used for fixture proof now and
 can be reused by #212's explicit `-F` read commands.
 
-Row tokenization uses `str.splitlines()`. Empty input, a final newline, blank lines, and
-whitespace-only lines between records contribute no row. Each non-blank line is parsed with
-Python's `csv.reader` using the one-character delimiter and standard double-quote escaping.
+Row tokenization uses `str.splitlines()`. Empty input or only blank lines is malformed because a
+`--header` command must return a header. A final newline and blank or whitespace-only lines before,
+between, or after records contribute no row. The first nonblank record is exactly one header and
+is removed before data parsing; a header-only stream is an available empty collection. A repeated
+header among data is an ordinary data row, not silently discarded. Each nonblank line is parsed
+with Python's `csv.reader` using the one-character delimiter and standard double-quote escaping.
 Unquoted and quoted values have surrounding whitespace retained; only the blank-line predicate
 uses `str.strip()`. A delimiter-only line is a row of empty values and is valid only when its
 column count matches. A quoted delimiter remains inside one value. Header validation requires an
-exact value-for-value match with the canonical field list before data rows are accepted.
+exact value-for-value match with the canonical field list before data rows are accepted. A final
+record needs no newline.
 
 ## Identity and units
 
@@ -98,6 +109,20 @@ aliases, available-capacity fields, or aggregation behavior across families.
 | Assign/unassign SR-IOV logical port | Add/remove a property record in `sriov_eth_logical_ports` or `sriov_roce_logical_ports`; required add selectors are `adapter_id`, `phys_port_id`, and type-specific capacity; read back the same profile property | `chsyscfg -r prof -m SYSTEM -i name=PROFILE,lpar_id=ID,<property>+=/-=<record>`; removal includes `adapter_id` and `logical_port_id`; effective state remains unchanged until apply/activation | Add: `chhwres -r sriov -m SYSTEM --rsubtype logport -o a --id LPAR_ID -a adapter_id=A,phys_port_id=P,logical_port_type=TYPE,capacity=C[,max_capacity=M]`; remove uses `-o r --id LPAR_ID -a adapter_id=A,logical_port_id=L`; read back by adapter + logical-port ID | Any unavailable precondition or command failure is an error; do not mutate |
 | Switch adapter shared/dedicated mode | Not an LPAR create operation | System-scoped only after inventory proves dependent logical ports and owners absent | Shared: `chhwres -r sriov -m SYSTEM --rsubtype adapter -o a -a slot_id=DRC[,adapter_id=A]`; dedicated: same with `-o r -a slot_id=DRC`; read back adapter ID, slot ID, and mode; never infer safety from one LPAR's state | Any unavailable inventory or command failure is an error; do not mutate |
 
+Before any operation, query `lssyscfg -r lpar -m SYSTEM --filter lpar_ids=ID -F state,rmc_state`.
+`Not Activated` selects profile-only behavior. `Running` selects a dynamic path only when
+`rmc_state=active`; every other state/value is unsupported for mutation. Before switching adapter
+mode, read adapter, physical-port, and logical-port inventory and require no logical-port row for
+the adapter and no dedicated-slot owner; missing or unknown inventory is an error. Profile
+readback compares the selected property for the exact profile and LPAR ID. Effective readback
+compares the same stable inventory identity and owner after the command.
+
+The IBM command references establish adapter-mode switching as `-o a/r -a slot_id=...`. The
+existing public `set_sriov_adapter_mode` implementation uses a conflicting `-o s --id ...`
+command. This issue does not change mutation, so the baseline remains callable but is explicitly
+not evidence-backed by this contract. Issue #214 owns replacing or removing that path before it
+uses adapter mode as a logical-port precondition; downstream code must not compose it as-is.
+
 Create-time and profile operations are declarative. Dynamic operations are effective-state
 operations. Downstream result schemas must report these two states separately. `--force` is not
 part of the ordinary contract; conflict override requires an explicit later policy decision.
@@ -117,8 +142,9 @@ not an unassigned resource.
 
 Tests must prove:
 
-1. all evidence fixtures use allowed version labels, HTTPS IBM sources, read-only `lshwres`
-   commands, exact declared columns, and explicit capacity units;
+1. all evidence fixtures use allowed documentation-family labels, an exact HMC release or
+   `not-established`, HTTPS IBM sources, read-only `lshwres`/`lssyscfg` commands, exact declared
+   columns, and explicit capacity units;
 2. each resource's stable identity fields survive parsing, including empty owner attributes;
 3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
 4. malformed column counts, duplicate/blank fields, and invalid delimiters fail clearly;
@@ -132,8 +158,9 @@ Tests must prove:
 
 ## Security boundary
 
-The generic parser will eventually consume SSH output that the repository did not produce. It
-does not execute values, build shell commands, or deserialize objects; it only separates bounded
-fixture rows into caller-supplied columns and rejects shape mismatches. Existing SSH quoting and
+The generic parser proves documentation fixtures in this issue. If #212 later applies it to SSH
+output, #212 owns byte/row/field bounds at that external boundary. This parser does not claim an
+input bound, execute values, build shell commands, or deserialize objects; it only separates rows
+into caller-supplied columns and rejects shape mismatches. Existing SSH quoting and
 attribute-record validation remain unchanged. Mutation commands and authorization are outside
 this change and remain owned by #213–#216.
