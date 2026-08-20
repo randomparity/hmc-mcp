@@ -57,8 +57,9 @@ unit changes, and false version precision.
 | Physical port | No admitted read fields | system + `adapter_id` + `phys_port_id` selectors |
 | Logical port | No admitted read fields | system + `adapter_id` + `logical_port_id` selectors |
 
-The exact physical-port command includes `--level eth`; RoCE and converged-Ethernet fields remain
-unknown until separate evidence is admitted. Commands use `-F <comma-list> --header` with the
+Physical-port selector grammar includes `--level eth` but admits no `-F` projection; RoCE and
+converged-Ethernet fields remain unknown until separate evidence is admitted. Documented read
+commands use `-F <comma-list> --header` with the
 declared order and a comma delimiter. The
 synthetic examples preserve header and data in one raw string, so the parser checks the first
 nonblank header against the independent matrix before parsing data. The admitted family matrix is:
@@ -132,7 +133,7 @@ dynamic grammar plus capacity units. Their mutation attributes do not widen the 
 | Operation | Create time | Inactive/shut down | Running | Capability unavailable |
 |---|---|---|---|---|
 | Assign/unassign dedicated slot | Profile grammar is documented, but mutation is capability-unavailable until exact `io_slots` readback is admitted; do not mutate | Profile grammar is documented, but mutation is capability-unavailable until exact `io_slots` readback is admitted; do not mutate | `chhwres -r io -m SYSTEM -o a/r --id LPAR_ID -l DRC_INDEX`; only for `state=Running,rmc_state=active`; read back slot owner by documented `drc_index,description,lpar_name` | Any unavailable precondition or command failure is an error; do not fall back to a profile-only success |
-| Assign/unassign SR-IOV logical port | Profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; do not mutate | Profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; do not mutate | Dynamic grammar is documented, but mutation is capability-unavailable until exact precondition/readback fields are admitted; do not mutate | Any unavailable precondition or command failure is an error; do not mutate |
+| Assign/unassign SR-IOV logical port | Ethernet profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; RoCE profile grammar is unknown; do not mutate | Ethernet profile grammar is documented, but mutation is capability-unavailable until exact readback fields are admitted; RoCE profile grammar is unknown; do not mutate | Dynamic grammar is documented, but mutation is capability-unavailable until exact precondition/readback fields are admitted; do not mutate | Any unavailable precondition or command failure is an error; do not mutate |
 | Switch adapter shared/dedicated mode | Not an LPAR create operation | Capability-unavailable until exact dependency, owner, and adapter-state read fields are admitted; do not mutate | Command grammar is documented, but mutation is capability-unavailable until exact dependency, owner, and adapter-state read fields are admitted; never infer safety from one LPAR's state; do not mutate | Any unavailable inventory or command failure is an error; do not mutate |
 
 Before any LPAR-targeted dedicated-slot or logical-port operation, query
@@ -175,7 +176,9 @@ Tests must prove:
    documentation-family labels, an exact HMC release or `not-established`, HTTPS IBM sources,
    and exact reviewed provenance; every `read-fixture` has a read-only `lshwres`/`lssyscfg`
    command and exact declared columns, while every `contract-evidence` has exact admitted claims;
-2. each resource's stable identity fields survive parsing, and generic empty values are retained;
+2. documented read-fixture identities survive parsing and generic empty values are retained;
+   selector-only SR-IOV records pin exact stable identity strings and contain no parser data or
+   read fields;
 3. decimal capacity examples retain two-decimal precision and are labelled `percent`;
 4. malformed column counts, duplicate/blank fields, invalid delimiters, unterminated quotes,
    characters after closing quotes, and successful output without a header fail clearly, while a

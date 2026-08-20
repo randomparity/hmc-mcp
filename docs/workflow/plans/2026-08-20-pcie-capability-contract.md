@@ -122,10 +122,10 @@ available-empty; the parser never executes a command.
 | File | Kind | URL | Exact locator and claim summary |
 |---|---|---|---|
 | `power8-profile.json` | `read-fixture` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg` | locator `lssyscfg > -r prof > -F > sriov_eth_logical_ports`; summary `Profile output exposes the Ethernet SR-IOV logical-port property.` |
-| `power8-profile-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg` | locator `chsyscfg > -r prof > io_slots,sriov_eth_logical_ports,sriov_roce_logical_ports`; summary `Profile mutation grammar covers dedicated slots and SR-IOV logical ports.` |
+| `power8-profile-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg` | locator `chsyscfg > -r prof > io_slots,sriov_eth_logical_ports`; summary `Profile mutation grammar covers dedicated slots and Ethernet SR-IOV logical ports; RoCE remains unknown.` |
 | `power9-io-slot.json` | `read-fixture` | `https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm` | locator `lshwres > -r io > --rsubtype slot > -F > drc_index,description,lpar_name`; summary `Physical-I/O slot output exposes identity, description, and owner.` |
 | `power9-sriov-adapter.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype adapter > adapter_ids`; summary `SR-IOV adapter inventory has an adapter-ID selector, but no read projection is admitted.` |
-| `power9-sriov-physport.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype physport > adapter_ids,phys_port_ids`; summary `SR-IOV physical-port inventory has stable selectors, but no read projection is admitted.` |
+| `power9-sriov-physport.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype physport > --level eth > adapter_ids,phys_port_ids`; summary `Ethernet physical-port inventory has stable selectors, but no read projection is admitted.` |
 | `power9-sriov-logport.json` | `contract-evidence` | same exact URL | locator `lshwres > -r sriov > --rsubtype logport > --level eth > adapter_ids,logical_port_ids,phys_port_ids`; summary `Ethernet logical-port inventory has stable selectors, but no read projection is admitted.` |
 | `power10-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres` | locator `chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity`; summary `The mutation contract selects stable SR-IOV identities and uses percentage capacities.` |
 | `power11-sriov-contract.json` | `contract-evidence` | `https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres` | same locator and summary as Power10 |
@@ -150,7 +150,7 @@ available-empty; the parser never executes a command.
    `claim_summary`, `support: "unknown"`, `capacity_unit: "percent"`, and an
    For the Power9 adapter record, `admitted_claims` is
    `["system + adapter_id selector", "read fields remain unknown"]`; for physical port it is
-   `["system + adapter_id + phys_port_id selectors", "read fields remain unknown"]`; for logical
+   `["system + adapter_id + phys_port_id selectors", "physical-port selector grammar uses --level eth", "read fields remain unknown"]`; for logical
    port it is `["system + adapter_id + logical_port_id selectors", "read fields remain unknown"]`.
    These records omit `capacity_unit`. For Power10 and Power11, `admitted_claims` contains, in this
    order,
@@ -159,8 +159,9 @@ available-empty; the parser never executes a command.
    `logical-port operations use adapter_id and logical_port_id`, and
    `capacity, max_capacity, and minimum granularity are percent with up to two decimals`.
    For Power8 it contains, in order, `dedicated-slot profiles use io_slots` and
-   `logical-port profiles use sriov_eth_logical_ports or sriov_roce_logical_ports` and omits
-   `capacity_unit`. Contract-evidence never contains synthetic stdout.
+   `logical-port profiles use sriov_eth_logical_ports`; it also records
+   `sriov_roce_logical_ports remains unknown` and omits `capacity_unit`. Contract-evidence never
+   contains synthetic stdout.
 4. Assert the logical-port selector identity is adapter plus logical-port ID. Load the contract-evidence
    two-decimal capacity claim and prove with `Decimal("10.25")` that tests do not convert capacity
    semantics to float. Use a separate synthetic parser case to prove an empty value survives.

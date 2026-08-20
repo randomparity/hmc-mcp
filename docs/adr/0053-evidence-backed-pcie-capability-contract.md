@@ -64,17 +64,20 @@ unavailable capability must fail closed and must not mutate. Malformed successfu
 contract errors. The contract records but does not implement mutation. Dynamic logical-port
 operations use
 `chhwres -r sriov --rsubtype logport`; profile/create-time logical ports use the documented
-`sriov_eth_logical_ports` / `sriov_roce_logical_ports` profile attributes; dedicated slots use
-dynamic `chhwres -r io` with `-l <slot-DRC-index>` only where the HMC permits DLPAR and otherwise change
-`io_slots` in the profile. A profile change never claims to alter effective running state.
+`sriov_eth_logical_ports` profile attribute; Power8 RoCE profile grammar remains unknown.
+Dedicated slots use dynamic `chhwres -r io` with `-l <slot-DRC-index>` only where the HMC permits
+DLPAR. Dedicated-slot profile grammar is recorded, but profile mutation remains
+capability-unavailable until exact `io_slots` readback is admitted. A profile change never claims
+to alter effective running state.
 
 ## Consequences
 
 Downstream code can normalize inventories without guessing identifiers or units, and it can
 fail closed when a required capability or selected field is unavailable. Version additions are
-additive fixture cases rather than changes to identity. Mutation code must select dynamic versus
-profile paths from the documented state matrix and verify the same identity fields after each
-operation. This issue provides no live-mutation proof and no public mutation API.
+additive fixture cases rather than changes to identity. Mutation code must select only an
+available path from the documented state matrix and verify the same identity fields after each
+operation; it must not select a profile path whose readback remains unknown. This issue provides
+no live-mutation proof and no public mutation API.
 
 Every newly supported HMC family or newly admitted field adds a labelled evidence fixture and
 contract-test maintenance obligation. That cost is deliberate: it makes compatibility changes
