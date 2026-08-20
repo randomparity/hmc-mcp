@@ -39,10 +39,16 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import socket
 from collections.abc import Callable, Mapping
 
 from fastmcp import FastMCP
+
+# The exact logger object FastMCP renders a failed tool call through, taken by
+# reference rather than by name so that a FastMCP that moves it breaks loudly at
+# import instead of quietly restoring the traceback panel #267 is about.
+from fastmcp.server.server import logger as _fastmcp_logger
 
 from ._app import (
     ceiling_aware_instructions,
@@ -50,7 +56,9 @@ from ._app import (
 )
 from .access_policy import AccessPolicy, unboundable_effect_tools
 from .audit import install_audit_sink, write_diagnostic
+from .connection_scope import ConnectionScopeError
 from .dispatch_scope import dispatch_authorizer
+from .target_scope import TargetScopeError
 from .tool_registry import Authorize, ToolSecurity, build_tool_security
 from . import (
     server_adapters,
@@ -390,6 +398,69 @@ def _warn(lines: tuple[str, ...]) -> None:
         write_diagnostic(line)
 
 
+#: What the concise line says. Fixed text with nothing interpolated: the
+#: authorization audit record (ADR 0040) already carries the policy, the tool, the
+#: effect, the decision, the reason, the connection, and the targets, and this line
+#: exists to stop a denial *looking* like a crash, not to restate that record. The
+#: audit record is submitted to an async sink while this line is written straight
+#: through by FastMCP's own handler, so the two orderings on stderr are not fixed
+#: and this text does not claim one.
+_DENIAL_LINE = (
+    "authorization denied; the authorization audit record carries the decision"
+)
+
+
+class _DenialFilter(logging.Filter):
+    """Rewrite FastMCP's tool-error record when the error is a policy denial.
+
+    ADR 0046. Two facts about FastMCP make this work, and both are pinned by
+    ``fastmcp-slim==3.4.7`` and asserted on captured stderr by
+    ``tests/app/test_connection_authorization.py``:
+
+    - ``FastMCP._call_tool`` logs an unhandled handler exception through
+      ``fastmcp.server.server.logger`` — imported by object below, so a version
+      that moves or renames it fails at import rather than silently rendering
+      panels again;
+    - ``configure_logging`` routes a record to its traceback handler on
+      ``record.exc_info is not None`` and to its plain handler otherwise, so
+      clearing ``exc_info`` is how a record asks for one line.
+
+    Only a record whose exception *is* a scope error is touched, which is what
+    keeps this from being the blanket suppression #267 rejected: a handler bug
+    raises something else and keeps its panel.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        error = record.exc_info[1] if record.exc_info else None
+        if not isinstance(error, ConnectionScopeError | TargetScopeError):
+            return True
+        record.exc_info = None
+        # Set at format time, so normally still unset here; cleared anyway
+        # because a cached rendering would survive the line above.
+        record.exc_text = None
+        record.msg = _DENIAL_LINE
+        record.args = None
+        record.levelno = logging.WARNING
+        record.levelname = "WARNING"
+        return True
+
+
+def install_denial_log_filter() -> None:
+    """Install the filter on the logger FastMCP renders tool errors through.
+
+    Separate from ``create_mcp`` and called beside ``install_audit_sink`` for the
+    same reason it is: composing an application must not mutate global logging
+    state (ADR 0040). Idempotent, so a process that serves twice adds one filter.
+
+    A logger filter rather than a handler filter: ``configure_logging`` removes
+    and re-adds the ``fastmcp`` logger's handlers on every call, so a filter
+    attached to a handler is discarded by the next reconfiguration, while a
+    filter on the emitting logger is not.
+    """
+    if not any(isinstance(each, _DenialFilter) for each in _fastmcp_logger.filters):
+        _fastmcp_logger.addFilter(_DenialFilter())
+
+
 def _serve_application(
     enable_arbitrary_command: bool, access_policy: AccessPolicy
 ) -> FastMCP:
@@ -412,6 +483,7 @@ def _serve_application(
     # to stderr for the same reason. Composing an application must not mutate
     # global logging state (ADR 0040).
     install_audit_sink()
+    install_denial_log_filter()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
 
