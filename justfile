@@ -2,8 +2,10 @@
 #
 # These give the workspace a single entry point for "suite green":
 #   just verify   # full ad-hoc verification (tests + MCP handshake + CLI)
-#   just test     # pytest only
-#   just smoke    # MCP handshake / tool count
+#   just test             # quiet suite summary
+#   just test-verbose     # pytest diagnostics and missing-lines coverage
+#   just smoke             # MCP handshake / tool count
+#   just smoke-verbose     # MCP handshake / exposed tool names
 
 # synchronize locked dependencies and install repository hooks
 setup:
@@ -38,13 +40,21 @@ nicknames:
 # local and hosted static-analysis gate
 static: lint typecheck secrets workflow-security env-vars nicknames
 
-# run the full pytest suite
+# run the full pytest suite with one semantic summary
 test:
-    uv run --no-sync pytest -q
+    uv run --no-sync python scripts/run_tests.py
 
-# MCP stdio handshake (lists exposed tools)
+# run the full pytest suite with native diagnostics
+test-verbose:
+    uv run --no-sync pytest -q --cov-report=term-missing
+
+# MCP stdio handshake (reports exposed tool count)
 smoke:
     uv run --no-sync python scripts/smoke_mcp.py
+
+# MCP stdio handshake with the full exposed tool registry
+smoke-verbose:
+    uv run --no-sync python scripts/smoke_mcp.py --verbose
 
 # construct a fresh wheel and source distribution
 build:

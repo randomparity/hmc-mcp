@@ -6,6 +6,7 @@ compiles and composes. It does not serialize TOML, so a *rendering* defect is no
 caught here — ``tests/unit/test_legacy_policy.py`` owns that round trip.
 """
 
+import argparse
 import asyncio
 
 from fastmcp import Client
@@ -15,16 +16,30 @@ from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 
-async def main() -> None:
+async def _run_smoke(verbose: bool) -> None:
     # Composed here rather than at module scope: since ADR 0041 nothing in the package
     # holds an application at import, and this script is inside the guard that checks it.
     mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
     async with Client(mcp) as client:
         tools = await client.list_tools()
-        print(f"Connected. {len(tools)} tools exposed:")
-        for t in tools:
-            print(f"  - {t.name}")
+        suffix = ":" if verbose else "."
+        print(f"Connected. {len(tools)} tools exposed{suffix}")
+        if verbose:
+            for tool in tools:
+                print(f"  - {tool.name}")
+
+
+def main(args: list[str] | None = None) -> None:
+    """Perform an MCP protocol handshake and report the exposed tools."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="list every exposed tool after the handshake",
+    )
+    parsed_args = parser.parse_args(args)
+    asyncio.run(_run_smoke(parsed_args.verbose))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

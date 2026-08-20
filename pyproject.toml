@@ -65,7 +65,7 @@ include = ["src/hmc_mcp"]
 pythonpath = ["tests"]
 # Package-wide coverage gate lives in [tool.coverage.report]. Run a focused
 # subset with `--no-cov` when package-wide coverage is not meaningful.
-addopts = "--cov=hmc_mcp --cov-report=term-missing"
+addopts = "--cov=hmc_mcp --cov-report="
 
 [tool.coverage.report]
 fail_under = 90
