@@ -369,6 +369,44 @@ async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
 
 
 @pytest.mark.asyncio
+async def test_upload_iso_streams_a_zero_byte_file_as_an_empty_body(
+    mock_hmc, stage_download
+):
+    """A staged file with no bytes still uploads, as it did when read whole.
+
+    Nothing rejects a zero-byte download, so this is reachable. The generator
+    yields nothing for it, which is a body shape `content=b""` never produced —
+    worth pinning, because an empty async iterator is the one input that could
+    have made httpx fall back to a chunked body with no length at all.
+    """
+    download = stage_download(b"")
+
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-empty-file"
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    uploaded = mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    request = uploaded.calls.last.request
+    assert request.content == b""
+    assert request.headers["Content-Length"] == "0"
+    assert "Transfer-Encoding" not in request.headers
+    assert result["media_size_bytes"] == 0
+    assert result["sha256"] == hashlib.sha256(b"").hexdigest()
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
 async def test_upload_iso_empty_repository(mock_hmc, stage_download):
     """Upload ISO succeeds when repository is empty (media not found after import)."""
     broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-empty"
