@@ -475,24 +475,28 @@ async def upload_iso(
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
-    # Check for name collision
-    existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-    for media in existing_media:
-        if media.get("MediaName") == media_name:
-            raise FileExistsError(
-                f"Media name '{media_name}' already exists in repository. "
-                "Use a different name or delete the existing media first."
-            )
-
-    # Check for duplicate content (same SHA-256 under different name)
-    # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
-    # so we cannot perform duplicate detection via server-side checksums.
-    # The client-side SHA-256 is computed for future deduplication features,
-    # but we cannot skip upload based on existing content without a server-side
-    # checksum to compare against.
-
+    # Everything after the download is inside the try: the `finally` arm unlinks
+    # the staged file, and the collision check below raises on an input a caller
+    # supplies. With the check outside, a name that already exists left the whole
+    # download — up to the 100 GiB bound — on the server's temp filesystem.
     broker_uri: str | None = None
     try:
+        # Check for name collision
+        existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
+        for media in existing_media:
+            if media.get("MediaName") == media_name:
+                raise FileExistsError(
+                    f"Media name '{media_name}' already exists in repository. "
+                    "Use a different name or delete the existing media first."
+                )
+
+        # Check for duplicate content (same SHA-256 under different name)
+        # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
+        # so we cannot perform duplicate detection via server-side checksums.
+        # The client-side SHA-256 is computed for future deduplication features,
+        # but we cannot skip upload based on existing content without a
+        # server-side checksum to compare against.
+
         # Create brokered file handle
         broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
 

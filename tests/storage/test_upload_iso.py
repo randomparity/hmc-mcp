@@ -135,8 +135,7 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     assert result["media"]["MediaName"] == MEDIA_NAME
     assert result["existing_name"] is None
     download.assert_awaited_once_with(ISO_URL)
-    # The staged download is removed on the way out, and streaming the file to
-    # the broker must not keep a handle open that would prevent it (#308).
+    # The staged download is removed on the way out.
     staged, _, _ = download.return_value
     assert not staged.exists()
 
@@ -275,8 +274,14 @@ async def test_upload_iso_refusal_reveals_nothing_about_the_server_filesystem(
 
 @pytest.mark.asyncio
 async def test_upload_iso_name_collision(mock_hmc, stage_download):
-    """Upload ISO fails when media name already exists in repository."""
-    stage_download()
+    """Upload ISO fails when media name already exists, and drops the download.
+
+    The refusal happens after the fetch, so without the cleanup arm covering it
+    a caller could leave an arbitrarily large staged file behind by naming media
+    that already exists — repeatedly, and without ever reaching the broker. That
+    the fetch happens at all before the refusal is #325, and is not this test.
+    """
+    download = stage_download()
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(
@@ -287,6 +292,77 @@ async def test_upload_iso_name_collision(mock_hmc, stage_download):
             await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
 
         assert f"Media name '{MEDIA_NAME}' already exists" in str(exc_info.value)
+
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_drops_the_download_when_the_repository_read_fails(
+    mock_hmc, stage_download
+):
+    """A failure reading the repository does not strand the staged file either.
+
+    The collision check's HMC call is the other way out of `upload_iso` between
+    the download and the broker sequence — an unreachable HMC, an expired
+    session, an unparseable feed. It leaves nothing behind.
+    """
+    download = stage_download()
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(
+            side_effect=HMCError("GET VolumeGroup failed", 500, "")
+        )
+
+        with pytest.raises(HMCError):
+            await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_closes_the_handle_it_streamed_from(
+    mock_hmc, stage_download, monkeypatch
+):
+    """The handle the upload streamed from is closed when the call returns.
+
+    `assert not staged.exists()` cannot stand in for this. On POSIX an open
+    descriptor does not block an unlink, so replacing the `with` block with a
+    bare `open()` that is never closed leaves every other assertion in this file
+    green while leaking a descriptor per upload. This test holds the handle
+    `upload_iso` opened and asserts its state directly.
+    """
+    download = stage_download()
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-handle"
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    handles = []
+    real_open = Path.open
+
+    def _recording_open(self, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", _recording_open)
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    staged, _, _ = download.return_value
+    opened = [handle for handle in handles if handle.name == str(staged)]
+    assert opened, "upload_iso never opened the staged file"
+    assert all(handle.closed for handle in opened)
 
 
 @pytest.mark.asyncio
