@@ -272,6 +272,42 @@ def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
     assert "cannot be read" in result.output
 
 
+def test_list_non_table_profiles_key_error(tmp_path, monkeypatch):
+    """`profiles = "x"` exits 1 instead of an AttributeError traceback (#257, #300).
+
+    `config list` now derives `names` from `_coerce_profiles` directly rather
+    than through `list_profiles_with_default` (#300); this pins that the
+    error handling PR #294 unified survives that change.
+    """
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "'profiles' must be a" in result.output
+
+
+def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
+    """`nicknames = "x"` exits 1 instead of an AttributeError traceback (#300).
+
+    `config list` now derives `nicknames` from `_coerce_nicknames` directly
+    rather than through `list_nicknames` (#300); this pins that the error
+    handling PR #294 unified survives that change.
+    """
+    _write_toml(
+        tmp_path / "hmc-mcp" / "config.toml",
+        "nicknames = 'not-a-table'\n\n[profiles.prod]\nhost='h'\nuser='u'\n"
+        "password='p'  # pragma: allowlist secret\n",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "'nicknames' must be a" in result.output
+
+
 def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
     """show exits 1 when no --profile, no HMC_PROFILE, no default_profile in TOML."""
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NO_DEFAULT_TOML)
@@ -446,6 +482,38 @@ def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
         patch.object(sys, "platform", "linux"),
     ):
         result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+
+    assert result.exit_code == 0, result.output
+    assert counter.call_count == 1
+
+
+def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
+    """config list parses config.toml once, not twice (#300).
+
+    Same technique as test_show_reads_config_document_exactly_once: patch the
+    shared choke point `_read_config_document` in both the owning module and
+    `hmc_mcp.cli_config`'s own imported name, so a read from either call site
+    reaches the same counter. `config list` calls no other module-level
+    reader (no `load_profile`), so both reads previously came from
+    `cli_config`'s own call sites — patching the module-owned name alone
+    would not have observed the second one.
+    """
+    from unittest.mock import MagicMock
+
+    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.config as config_mod
+
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+
+    counter = MagicMock(wraps=config_mod._read_config_document)
+    with (
+        patch.object(config_mod, "_read_config_document", counter),
+        patch.object(cli_config_mod, "_read_config_document", counter),
+        patch.object(sys, "platform", "linux"),
+    ):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
 
     assert result.exit_code == 0, result.output
     assert counter.call_count == 1
