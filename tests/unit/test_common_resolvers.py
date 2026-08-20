@@ -1,8 +1,35 @@
 from unittest.mock import AsyncMock
+from pathlib import Path
 
 import pytest
 
-from hmc_mcp.common import resolve_lpar_uuid, resolve_vios_uuid
+from hmc_mcp import common
+from hmc_mcp.common import build_config, resolve_lpar_uuid, resolve_vios_uuid
+from hmc_mcp.config import HMCConfig
+
+
+@pytest.mark.parametrize(
+    ("base", "port_is_explicit"),
+    [
+        (HMCConfig(host="h", user="u", password="p", _env_file=None), False),
+        (
+            HMCConfig(
+                host="h", user="u", password="p", port=12443, _env_file=None
+            ),
+            True,
+        ),
+    ],
+)
+def test_build_config_preserves_port_provenance_across_unrelated_override(
+    monkeypatch, base, port_is_explicit
+):
+    monkeypatch.delenv("HMC_HOST", raising=False)
+    monkeypatch.setattr(common, "resolve_config_path", lambda: Path("config.toml"))
+    monkeypatch.setattr(common, "load_profile", lambda profile=None: base)
+
+    config = build_config(profile="prod", verify_ssl=True)
+
+    assert ("port" in config.model_fields_set) is port_is_explicit
 
 
 @pytest.mark.asyncio

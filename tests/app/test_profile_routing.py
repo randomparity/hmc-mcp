@@ -133,13 +133,13 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         respx.mock(assert_all_called=False) as router_a,
     ):
         # Alpha profile → hmc-a.test
-        router_a.put("https://hmc-a.test:12443/rest/api/web/Logon").mock(
+        router_a.put("https://hmc-a.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(200, text=LOGON)
         )
-        router_a.delete("https://hmc-a.test:12443/rest/api/web/Logon").mock(
+        router_a.delete("https://hmc-a.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(204)
         )
-        router_a.get("https://hmc-a.test:12443/rest/api/uom/ManagementConsole").mock(
+        router_a.get("https://hmc-a.test/rest/api/uom/ManagementConsole").mock(
             return_value=httpx.Response(200, text=CONSOLE_A)
         )
 
@@ -151,13 +151,13 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         respx.mock(assert_all_called=False) as router_b,
     ):
         # Beta profile → hmc-b.test
-        router_b.put("https://hmc-b.test:12443/rest/api/web/Logon").mock(
+        router_b.put("https://hmc-b.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(200, text=LOGON)
         )
-        router_b.delete("https://hmc-b.test:12443/rest/api/web/Logon").mock(
+        router_b.delete("https://hmc-b.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(204)
         )
-        router_b.get("https://hmc-b.test:12443/rest/api/uom/ManagementConsole").mock(
+        router_b.get("https://hmc-b.test/rest/api/uom/ManagementConsole").mock(
             return_value=httpx.Response(200, text=CONSOLE_B)
         )
 

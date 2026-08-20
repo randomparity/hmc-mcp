@@ -9,7 +9,7 @@ import respx
 
 from hmc_mcp.server import hmc_create_lpar
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 SYSTEM_UUID = "aaaa0000-0000-0000-0000-000000000001"
 LPAR_UUID = "bbbb0000-0000-0000-0000-000000000001"
 

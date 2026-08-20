@@ -47,6 +47,7 @@ class LpmHarness(LpmMixin):
 class NetworkHarness(NetworkMixin):
     def __init__(self) -> None:
         self.config = HMCConfig(host="hmc.test", user="user", password="password")
+        self._rest_base_url = "https://hmc.test:12443"
         self._get = AsyncMock(return_value="")
         self._put = AsyncMock(return_value="")
         self._delete = AsyncMock(return_value=None)
@@ -62,9 +63,11 @@ class TemplatesHarness(TemplatesMixin):
 class StorageHarness(StorageMixin):
     def __init__(self) -> None:
         self.config = HMCConfig(host="hmc.test", user="user", password="password")
+        self._rest_base_url = "https://hmc.test:12443"
         self._get = AsyncMock(return_value="")
         self._put = AsyncMock(return_value="")
         self._post = AsyncMock(return_value="")
+        self._request = AsyncMock(return_value=httpx.Response(200))
 
 
 class SystemsHarness(SystemsMixin):
@@ -322,7 +325,12 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
     assert await client.list_virtual_switches("system-1") == []
     assert await client.list_virtual_networks("system-1") == []
     assert await client.list_network_bridges("system-1") == []
-    assert await client.create_virtual_network("system-1", "net", 100, 0) is None
+    assert (
+        await client.create_virtual_network(
+            "system-1", "net", 100, 0, switch_uuid="switch-1"
+        )
+        is None
+    )
     await client.delete_virtual_network("system-1", "network-1")
 
     assert [call.args[1] for call in client._get.await_args_list] == [
@@ -331,6 +339,11 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
         "NetworkBridge",
     ]
     client._put.assert_awaited_once()
+    assert (
+        "https://hmc.test:12443/rest/api/uom/ManagedSystem/system-1/"
+        "VirtualSwitch/switch-1"
+        in client._put.await_args.args[1]
+    )
     assert client._put.await_args.kwargs == {
         "resource_type": "VirtualNetwork",
         "include_schema_version": False,
@@ -377,7 +390,9 @@ async def test_templates_mixin_routes_deployment_job():
 async def test_storage_mixin_routes_schema_sensitive_operations():
     client = StorageHarness()
 
-    assert client.get_lpar_link("lpar-1").endswith("/LogicalPartition/lpar-1")
+    assert client.get_lpar_link("lpar-1") == (
+        "https://hmc.test:12443/rest/api/uom/LogicalPartition/lpar-1"
+    )
     assert await client.list_volume_groups("vios-1") == []
     assert await client.create_virtual_disk("vios-1", "vg-1", "disk", 1024) is None
 
@@ -391,6 +406,38 @@ async def test_storage_mixin_routes_schema_sensitive_operations():
         "resource_type": "VolumeGroup",
         "include_schema_version": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_storage_mixin_uses_active_base_for_volume_group_url():
+    client = StorageHarness()
+    client._get.return_value = '<VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
+
+    url, _ = await client._get_vg_raw_xml("vios-1", "vg-1")
+
+    assert url == (
+        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/"
+        "VolumeGroup/vg-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_storage_mixin_uses_active_base_in_optical_mapping():
+    client = StorageHarness()
+    system_uuid = "11111111-1111-1111-1111-111111111111"
+    client._get.return_value = """<VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <AssociatedManagedSystem href="https://source.example/rest/api/uom/ManagedSystem/{system_uuid}"/>
+      <VirtualSCSIMappings/>
+    </VirtualIOServer>""".format(system_uuid=system_uuid)
+
+    await client.create_optical_mapping("vios-1", "install.iso", "lpar-1")
+
+    body = client._request.await_args.kwargs["content"]
+    assert (
+        f"https://hmc.test:12443/rest/api/uom/ManagedSystem/{system_uuid}/"
+        "LogicalPartition/lpar-1"
+        in body
+    )
 
 
 @pytest.mark.asyncio

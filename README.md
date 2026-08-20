@@ -84,6 +84,7 @@ default_profile = "prod"
 
 [profiles.prod]
 host = "hmc.example.com"
+port = 443                         # optional; omit to allow legacy fallback
 user = "admin"
 password_env = "HMC_PROD_PASSWORD"   # resolved from the environment at runtime  # pragma: allowlist secret
 
@@ -139,7 +140,7 @@ and no target is itself a nickname.
 |-------------------|----------------------|-------------------|-----------|
 | Profile           | `HMC_PROFILE`        | `--profile`       | —         |
 | HMC host / IP     | `HMC_HOST`           | `--host`          | —         |
-| REST port         | `HMC_PORT`           | —                 | `12443`   |
+| REST port         | `HMC_PORT`           | —                 | `443`     |
 | User              | `HMC_USER`           | `--user, -u`      | —         |
 | Password          | `HMC_PASSWORD`       | `--password, -p`  | —         |
 | Verify TLS        | `HMC_VERIFY_SSL`     | `--verify-ssl`    | `false`   |
@@ -148,6 +149,15 @@ and no target is itself a nickname.
 | SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
 | Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmc-mcp` |
 | Schema version    | `HMC_SCHEMA_VERSION` | —                 | _(unset)_ |
+
+When the REST port is omitted, hmc-mcp tries port 443 and retries logon once on
+legacy port 12443 only if the first attempt fails at the transport layer. Setting
+`port` in TOML or `HMC_PORT` selects that port explicitly: a connection failure
+is returned immediately and never falls back. On an older HMC, leaving the port
+unset can therefore add the duration of the failed 443 attempt. `HMC_TIMEOUT`
+applies to each HTTP timeout phase rather than to the combined two-attempt wall
+clock time. If a 443 logon response is lost, that unreachable attempt may leave
+a server-side session until the HMC expires it.
 
 See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.

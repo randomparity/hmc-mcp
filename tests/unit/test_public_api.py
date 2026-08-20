@@ -313,7 +313,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0058, which added declarative LPAR PCIe assignments. ADR 0054
+    Last moved by ADR 0059, which changed ``HMCConfig.port``'s default from
+    12443 to 443. ADR 0058 added declarative LPAR PCIe assignments, and ADR 0054
     added the normalized PCIe inventory models and
     operations. Before that, ADR 0050 added ``HMCConfig.iso_url_allowlist`` — a
     pydantic model's ``__init__`` signature is derived from its fields, so a new
@@ -337,7 +338,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "135947049bb30f551de143904ba26c855a64dda4beda4822b9fc446f59f26128"  # pragma: allowlist secret
+    expected_digest = "81acaf5031216727f762c7e8c3471d96c1442e5d9215da212917a25f3ed94ccd"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

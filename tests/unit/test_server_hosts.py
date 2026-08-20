@@ -69,7 +69,7 @@ def test_single_profile_is_default(tmp_path):
     assert p["host"] == "hmc.example.com"
     assert p["user"] == "admin"
     assert p["is_default"] is True
-    assert p["port"] == 12443       # HMCConfig default
+    assert p["port"] == 443         # HMCConfig default
     assert p["verify_ssl"] is False  # HMCConfig default
 
 

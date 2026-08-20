@@ -52,8 +52,12 @@ def build_config(profile: str | None = None, **overrides: Any) -> HMCConfig:
             try:
                 base = load_profile(profile=profile)
                 if filtered:
-                    # Merge overrides on top of the loaded profile values
-                    merged = {k: getattr(base, k) for k in base.model_fields}
+                    # Preserve which profile fields were actually supplied. In
+                    # particular, an omitted port must remain distinguishable
+                    # from an explicit port equal to the default.
+                    merged = {
+                        key: getattr(base, key) for key in base.model_fields_set
+                    }
                     merged.update(filtered)
                     base = HMCConfig(
                         _env_file=None,  # ty: ignore[unknown-argument]

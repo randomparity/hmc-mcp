@@ -53,7 +53,7 @@ class StorageMixin:
     # ------------------------------------------------------------------ #
     def get_lpar_link(self: StorageClient, lpar_uuid: str) -> str:
         """Atom SELF href for an LPAR (used when building mappings)."""
-        return f"{self.config.base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
+        return f"{self._rest_base_url}/rest/api/uom/LogicalPartition/{lpar_uuid}"
 
     async def list_volume_groups(
         self: StorageClient, vios_uuid: str
@@ -266,7 +266,7 @@ class StorageMixin:
                     200,
                     raw[:500],
                 )
-        url = f"{self.config.base_url}{path}"
+        url = f"{self._rest_base_url}{path}"
         return url, vg_elem
 
     async def _post_vg_xml(
@@ -702,7 +702,7 @@ class StorageMixin:
 
         # Step 4 — Build the new mapping XML element and append it
         lpar_link = (
-            f"{self.config.base_url}/rest/api/uom/ManagedSystem/{sys_uuid}"
+            f"{self._rest_base_url}/rest/api/uom/ManagedSystem/{sys_uuid}"
             f"/LogicalPartition/{lpar_uuid}"
         )
         mount_type = "r"  # read-only optical media

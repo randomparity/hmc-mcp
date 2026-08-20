@@ -16,6 +16,7 @@ from .documents import build_virtual_network_document
 
 class NetworkMixin:
     config: HMCConfig
+    _rest_base_url: str
     _get: Callable[..., Awaitable[str]]
     _put: Callable[..., Awaitable[str]]
     _delete: Callable[..., Awaitable[None]]
@@ -59,7 +60,7 @@ class NetworkMixin:
         switch_link = None
         if switch_uuid:
             switch_link = (
-                f"{self.config.base_url}/rest/api/uom/ManagedSystem/"
+                f"{self._rest_base_url}/rest/api/uom/ManagedSystem/"
                 f"{system_uuid}/VirtualSwitch/{switch_uuid}"
             )
         xml = build_virtual_network_document(

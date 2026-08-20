@@ -170,7 +170,7 @@ def full_stderr_pipe():
             pass
 
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test:443"
 
 LOGON_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <LogonResponse xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/mc/2012_10/">

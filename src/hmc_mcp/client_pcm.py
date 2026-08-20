@@ -131,7 +131,7 @@ class PcmMixin:
         keep ~2h, aggregated longer); callers that treat expiry as 'no data'
         catch HMCError and translate it (see hmc_processed_metrics).
         """
-        url = link if link.startswith("http") else f"{self.config.base_url}{link}"
+        url = link if link.startswith("http") else f"{self._rest_base_url}{link}"
         resp = await self._request("GET", url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             raise HMCError(f"GET {url} failed", resp.status_code, resp.text[:500])
