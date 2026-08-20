@@ -10,14 +10,27 @@ The repository exposes raw physical-slot rows and a profile-only slot append, wh
 surface does not enumerate adapters, physical ports, or logical ports. Downstream inventory and
 mutation work needs one falsifiable interpretation of HMC CLI identities, capacity units,
 partition state, and unsupported capability behavior. IBM's Power8 through Power11 command
-references agree on the resource families but add fields over time, so treating an unlabelled
-sample or absent field as a stable contract would make version drift indistinguishable from an
-empty resource. The documentation evidence compared on 2026-08-20 is the IBM
+references expose related resource families through different commands and version-specific
+fields, so treating an unlabelled sample or absent field as a stable contract would make version
+drift indistinguishable from an empty resource. The documentation evidence compared on
+2026-08-20 is the IBM
 [Power8 `chsyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg),
 [Power9 `lshwres`](https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm),
 [Power10 `chhwres`](https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres),
 and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9080-HEU?topic=commands-chhwres)
-references. The evidence is documentation-backed; it is not a live-HMC capture.
+references. The evidence is documentation-backed; it is not a live-HMC capture. The admitted
+claims are deliberately narrower than the union of those pages:
+
+| Family | Reference section | Admitted evidence |
+|---|---|---|
+| V8 | `chsyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
+| V9 | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
+| V10 | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
+| V11 | `chhwres` SR-IOV attributes | the V10 contract plus current documented operation and unit confirmation |
+
+The version-labelled repository fixtures retain the exact URL, command, fields, and sanitized
+excerpt that backs each admitted claim; no field is admitted merely because another family
+documents it.
 
 ## Decision
 
@@ -34,10 +47,12 @@ Names, location codes, MAC addresses, and partition names are attributes, not id
 SR-IOV `capacity`, `max_capacity`, and physical-port minimum granularities are percentages with
 up to two decimal places. They are never bytes, bandwidth, or whole-number weights.
 
-Read commands may report capability unavailable distinctly from an empty result. Unsupported
-resource/subtype or selected-field failures are capability-unavailable; successful zero-row
-output is an available empty collection; malformed successful rows are contract errors. The
-contract records but does not implement mutation. Dynamic logical-port operations use
+Read commands may report capability unavailable distinctly from an empty result. An
+evidence-admitted resource, subtype, or field rejected by the applicable HMC with an unambiguous
+documented unsupported diagnostic is capability-unavailable. Unknown or misspelled fields,
+malformed selections, and ambiguous failures are contract errors. Successful zero-row output is
+an available empty collection; malformed successful rows are contract errors. The contract
+records but does not implement mutation. Dynamic logical-port operations use
 `chhwres -r sriov --rsubtype logport`; profile/create-time logical ports use the documented
 `sriov_eth_logical_ports` / `sriov_roce_logical_ports` profile attributes; dedicated slots use
 dynamic `chhwres -r io --rsubtype slot` only where the HMC permits DLPAR and otherwise change
@@ -57,12 +72,11 @@ reviewable instead of allowing a downstream parser to widen the contract implici
 
 ## Considered & rejected
 
-- **Normalize the current unqualified raw rows.** verified: the versioned IBM Power8 `chsyscfg`,
-  Power9 `lshwres`, Power10 `chhwres`, and Power11 `chhwres` pages linked in Context were compared
-  on 2026-08-20 using their documented `io_slots`, `adapter_id`, `phys_port_id`,
-  `logical_port_id`, `capacity`, `max_capacity`, and `migratable` fields. They retain the resource
-  families while later pages add fields; absent fields therefore cannot safely mean absent
-  resources.
+- **Normalize the current unqualified raw rows.** verified: the versioned IBM references and
+  sections in Context were compared on 2026-08-20. They place dedicated-slot profile evidence,
+  inventory selectors, and SR-IOV mutation/unit evidence in different versioned command
+  contracts; the repository evidence fixtures preserve each family-specific excerpt. A field
+  admitted for one family therefore cannot safely be assumed present in another.
 - **Use location codes or partition names as identifiers.** verified: IBM's `chhwres` and
   `chsyscfg` command references select slots by DRC index and SR-IOV resources by adapter,
   physical-port, and logical-port IDs; names and locations are descriptive fields.
