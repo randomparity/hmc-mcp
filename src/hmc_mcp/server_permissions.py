@@ -44,11 +44,6 @@ UNKNOWN = "unknown"
 # is still enumerating grants for (ADR 0047).
 DIMENSIONS: tuple[str, ...] = ("tools", "connections", "targets")
 
-# The two the dispatch wrapper decides together: `authorized` applies one
-# wrapper that runs the connection check and the target check, so no registry
-# can have one without the other.
-DISPATCH_DIMENSIONS: frozenset[str] = frozenset({"connections", "targets"})
-
 
 @dataclass(frozen=True)
 class ToolPermission:
@@ -145,33 +140,63 @@ def _declared_grant(grant: Grant) -> DeclaredGrant:
     )
 
 
-def _dispatch_enforced(
+def _bounded_by_a_table(policy: AccessPolicy, name: str) -> bool:
+    """True when some grant reaching *name* constrains it with a targets table."""
+    return any(
+        not isinstance(grant.targets, AllTargets)
+        for grant in policy.grants_for(name)
+    )
+
+
+def _connections_enforced(
     handlers: Mapping[str, object],
     tool_security: Mapping[str, ToolSecurity],
 ) -> bool:
-    """True when every reported tool that needs the dispatch wrapper carries it.
+    """True when every reported tool that routes a connection is guarded.
 
-    Checked against the registry being reported, the way ``ceiling_enforced``
-    checks the tool dimension, so the connection and target labels rest on
-    evidence about connections and targets rather than on the tool ceiling.
+    A tool declaring no connection argument opens no HMC connection, so this
+    dimension has nothing to say about it — ADR 0037 records both such tools as
+    local-only by construction.
+    """
+    for name, handler in handlers.items():
+        security = tool_security.get(name)
+        if security is None:
+            # A name the index does not carry could route a connection with no
+            # guard, and nothing here can tell — the fail-closed default
+            # `_permission` already applies to `exhaustive_targets`.
+            return False
+        if security.connection_argument is None:
+            continue
+        if not is_authorized_wrapper(handler):
+            return False
+    return True
 
-    Two states withhold the claim. A name the authoritative index does not carry
-    could need the wrapper and be missing it, and nothing here can tell — the
-    same fail-closed default :func:`_permission` applies to ``exhaustive_targets``.
-    And a tool declaring target selectors but no connection argument would
-    register unwrapped, since :func:`authorized` keys the wrapper on the
-    connection argument alone: no such tool exists in the index today, and this
-    is what keeps the target label honest if one is ever added.
+
+def _targets_enforced(
+    handlers: Mapping[str, object],
+    policy: AccessPolicy,
+    tool_security: Mapping[str, ToolSecurity],
+) -> bool:
+    """True when no reported tool escapes a target constraint a grant declares.
+
+    `authorized` keys the wrapper on the connection argument alone, so a tool
+    declaring none registers unwrapped and no target check runs for it. That is
+    sound only while no grant reaching it declares a target constraint that
+    would have decided anything, and `target_scope.targets_permitted` says when
+    one would: it denies a non-exhaustive tool under a `targets` table, and it
+    denies any tool whose extracted selector value is unreadable even under
+    `all-targets`. So an unwrapped tool costs this label when it declares
+    selectors, or when a table grant reaches it.
     """
     for name, handler in handlers.items():
         security = tool_security.get(name)
         if security is None:
             return False
-        if security.connection_argument is None:
-            if security.targets:
+        if security.connection_argument is not None:
+            if not is_authorized_wrapper(handler):
                 return False
             continue
-        if not is_authorized_wrapper(handler):
+        if security.targets or _bounded_by_a_table(policy, name):
             return False
     return True
 
@@ -200,9 +225,9 @@ def describe(
     With no policy selected both are empty: nothing is declared, so nothing is
     declared-only either.
 
-    An empty *handlers* satisfies both checks vacuously, and deliberately: a
-    registry holding nothing cannot exceed any ceiling nor skip any wrapper, so
-    a policy denying everything is enforced maximally rather than not at all.
+    An empty *handlers* satisfies all three checks vacuously, and deliberately:
+    a registry holding nothing cannot exceed any ceiling nor skip any wrapper,
+    so a policy denying everything is enforced maximally rather than not at all.
     The state is unreachable through the tool — its own registration is what
     makes *handlers* non-empty — so this only binds a direct caller of
     :func:`describe`.
@@ -210,12 +235,17 @@ def describe(
     names = sorted(handlers)
     tools = tuple(_permission(name, tool_security) for name in names)
     ceiling = policy is not None and all(policy.permits_tool(name) for name in names)
-    dispatch = policy is not None and _dispatch_enforced(handlers, tool_security)
-    enforced = tuple(
-        dimension
-        for dimension in DIMENSIONS
-        if (dispatch if dimension in DISPATCH_DIMENSIONS else ceiling)
-    )
+    enforced_by_dimension = {
+        "tools": ceiling,
+        "connections": (
+            policy is not None and _connections_enforced(handlers, tool_security)
+        ),
+        "targets": (
+            policy is not None
+            and _targets_enforced(handlers, policy, tool_security)
+        ),
+    }
+    enforced = tuple(d for d in DIMENSIONS if enforced_by_dimension[d])
     return EffectivePermissions(
         policy_name=None if policy is None else policy.name,
         policy_source=None if policy is None else policy.source,

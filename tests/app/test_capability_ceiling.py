@@ -462,13 +462,16 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
     assert result.declared_only_dimensions == ("tools", "connections", "targets")
 
 
-def test_targets_without_a_connection_argument_withhold_the_dispatch_claim():
+def test_targets_without_a_connection_argument_cost_only_the_target_label():
     """ADR 0047: `authorized` keys the wrapper on the connection argument alone.
 
     So a tool declaring selectors but no connection argument would register
-    unwrapped and have its targets enforced by nothing. No such tool is in the
-    index — the guard below pins that — and this is the branch that keeps the
-    label honest if one is ever added.
+    unwrapped and have its selectors checked by nothing — including the
+    unreadable-value denial `targets_permitted` applies even under `all-targets`.
+    The connection dimension is untouched: such a tool routes no connection, so
+    that dimension has nothing to say about it. No such tool is in the index —
+    the guard below pins that — and this branch keeps the label honest if one is
+    ever added.
     """
     from dataclasses import replace
 
@@ -484,8 +487,8 @@ def test_targets_without_a_connection_argument_withhold_the_dispatch_claim():
     result = describe({"hmc_list_lpars": hmc_list_lpars}, _legacy(), index)
 
     assert result.ceiling_enforced is True
-    assert result.enforced_dimensions == ("tools",)
-    assert result.declared_only_dimensions == ("connections", "targets")
+    assert result.enforced_dimensions == ("tools", "connections")
+    assert result.declared_only_dimensions == ("targets",)
 
 
 def test_no_indexed_tool_declares_targets_without_a_connection_argument():
@@ -501,6 +504,55 @@ def test_no_indexed_tool_declares_targets_without_a_connection_argument():
     }
 
     assert unguardable == set()
+
+
+TABLE_GRANT = [
+    {"effects": ["read"], "connections": ["<default>"], "targets": {"lpar": ["db-01"]}}
+]
+
+
+def test_a_table_grant_over_a_connectionless_tool_reports_targets_declared_only():
+    """ADR 0047: the target label follows the constraint, not the tool count.
+
+    `hmc_effective_permissions` and `hmc_list_configured_hosts` declare no
+    connection argument, so `authorized` registers them unwrapped and no target
+    check runs for them. A `targets` table cannot bound a non-exhaustive tool
+    (ADR 0039), so under this policy the table *should* deny both — and instead
+    permits them, as the live call below shows. That gap is ADR 0039's and is
+    tracked as #297, not closed here; what this pins is that the report stops
+    calling the target dimension enforced while it is being skipped. The
+    permitted call is asserted deliberately — when #297 closes it, this line
+    fails and points at the label that has to be revisited with it.
+    """
+    application = create_mcp(_policy(TABLE_GRANT))
+    result = _inspect(application)
+
+    assert result["ceiling_enforced"] is True
+    assert result["enforced_dimensions"] == ["tools", "connections"]
+    assert result["declared_only_dimensions"] == ["targets"]
+
+    async def _connectionless_call():
+        from fastmcp import Client
+
+        async with Client(application) as client:
+            return await client.call_tool("hmc_list_configured_hosts", {})
+
+    # Permitted despite the table, which is the skipped decision the label reports.
+    assert asyncio.run(_connectionless_call()) is not None
+
+
+def test_an_all_targets_grant_over_the_same_registry_enforces_targets():
+    """ADR 0047: the previous test's label is about the table, not the tools.
+
+    Same two unwrapped tools, same registry shape, an `all-targets` grant
+    instead — `targets_permitted` returns true for them under it, so nothing is
+    skipped and the label is earned. Without this pair the target label could be
+    hard-coded false and the previous test would not notice.
+    """
+    result = _inspect(create_mcp(_policy(READ_ONLY_GRANT)))
+
+    assert result["enforced_dimensions"] == ["tools", "connections", "targets"]
+    assert result["declared_only_dimensions"] == []
 
 
 def test_the_authorization_witness_is_not_forged_by_functools_wraps():

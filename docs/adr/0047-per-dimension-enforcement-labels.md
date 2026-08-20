@@ -59,10 +59,20 @@ the registry being reported, the way `ceiling_enforced` already checks the tool 
 - `tools` is enforced when a policy is selected and every reported name satisfies
   `permits_tool`. Unchanged; `ceiling_enforced` keeps exactly this meaning and stays the
   field that reports it.
-- `connections` and `targets` are enforced when a policy is selected and every reported
-  tool that needs the dispatch wrapper carries it. They move together and are decided
-  together because `authorized` applies **one** wrapper that runs both checks: no registry
-  can have one without the other.
+- `connections` is enforced when a policy is selected and every reported tool that *routes*
+  a connection carries the dispatch wrapper. A tool declaring no connection argument opens
+  no HMC connection, so this dimension has nothing to say about it — ADR 0037 already
+  records both such tools as local-only by construction.
+- `targets` is enforced when a policy is selected and no reported tool escapes a target
+  constraint a grant declares. That is *not* the same question as the connection one, and
+  an earlier draft of this record that decided the two together was wrong: `authorized`
+  keys its wrapper on the connection argument alone, so a tool declaring none registers
+  unwrapped and no target check runs for it, while the connection dimension is genuinely
+  vacuous for that same tool. `target_scope.targets_permitted` says when the skipped check
+  would have decided something — it denies a non-exhaustive tool under a `targets` table,
+  and it denies any tool whose extracted selector value is unreadable even under
+  `all-targets` — so an unwrapped tool costs this label when it declares selectors, or when
+  a table grant reaches it.
 
 **The two tuples partition the three dimensions whenever a policy is selected.** A
 dimension appears in exactly one of them, so the report can no longer drop a dimension it
@@ -84,15 +94,13 @@ could not see it could not answer the question this record is about. The handler
 `FunctionTool` and not on the `Tool` base the provider is typed to return, and a
 registration carrying no callable cannot witness the wrapper.
 
-**Two states withhold the connection and target claim**, both fail-closed:
+**A name the authoritative index does not carry withholds both dispatch labels**, since it
+could need the wrapper and be missing it with nothing here able to tell — the same
+fail-closed default `_permission` already applies to `exhaustive_targets`.
 
-- a name the authoritative index does not carry, which could need the wrapper and be
-  missing it with nothing here able to tell — the same default `_permission` already
-  applies to `exhaustive_targets`;
-- a tool declaring target selectors but **no** connection argument, which would register
-  unwrapped because `authorized` keys the wrapper on the connection argument alone. No such
-  tool is in the index today and a guard test pins that, but the branch is what keeps the
-  target label honest if one is ever added.
+**A tool declaring target selectors but no connection argument withholds the target
+label.** No such tool is in the index today and a guard test pins that; the branch is what
+keeps the label honest if one is ever added.
 
 **ADR 0037 and R16 are amended in place, and say they were wrong.** Both are accepted,
 non-superseded records that describe the defective encoding as the intended one. Their
@@ -117,6 +125,18 @@ registration gate, warning placement, and disclosure argument all still govern.
   same answer to the question the field is asked (*does this constrain calls to this
   server?*), and one tuple answering it for every dimension was judged better than a third
   field splitting the reasons. A reader who needs the reason has `ceiling_enforced`.
+- **A table-only policy reports `targets` as declared-only, because it is — and the
+  underlying enforcement gap is made visible here, not closed.** Writing this record's
+  target rule surfaced a live gap in ADR 0039's design: `hmc_effective_permissions` and
+  `hmc_list_configured_hosts` declare no connection argument, so they register unwrapped
+  and no target check runs for them, while `targets_permitted` would deny both under a
+  `targets` table since neither is `exhaustive_targets`. Reproduced: a read grant carrying
+  `targets = {lpar = ["db-01"]}` composes an application on which both tools are called
+  successfully, disclosing the policy and every configured host and user to a client whose
+  operator believed the policy bounded to one LPAR. This entry changes no enforcement path
+  — it stops the report claiming the target dimension is enforced in that state, which is
+  the whole of what #254 owns. The gap itself is ADR 0039's and is tracked as #297, which
+  the test pinning the permit above gives a witness already in the suite.
 - **ADR 0038's unsafe direction is closed for `describe`, and narrowed rather than closed
   overall.** ADR 0038 recorded that a caller passing `permits` but omitting `authorize`
   would keep `ceiling_enforced` true and so claim connection enforcement over an
@@ -150,6 +170,17 @@ registration gate, warning placement, and disclosure argument all still govern.
   because `DECLARED_ONLY_DIMENSIONS` has been `()` since #223, so it is a no-op that leaves
   the reproduced misreport untouched. Its reasoning — that whether a dimension is enforced
   is not a fact about whether one registry drifted — is what this record implements.
+- **Decide `connections` and `targets` together, on the presence of the one wrapper that
+  runs both checks.** This record's first draft did exactly that, and it was wrong in a
+  state a shipped policy reaches: the two connection-less tools make the connection
+  dimension vacuous and the target dimension unenforced *at the same time*, so one answer
+  cannot be right for both. Rejected on the evidence above.
+- **Close the table-grant gap here** by wrapping every tool rather than only the
+  connection-bearing ones. Rejected as out of #254's scope and as a change to an
+  enforcement path, not a report: it would alter which calls are denied under existing
+  policies, which belongs in an entry that can price that against ADR 0039's decision to
+  key the wrapper on the connection argument. Reporting the state honestly is what makes
+  the gap findable in the meantime.
 - **Gate the connection and target labels on "a policy is selected" alone**, without
   reading the callables. One line, and it fixes the direction #254 reports. Rejected
   because it swaps the safe error for the unsafe one: it would assert connection

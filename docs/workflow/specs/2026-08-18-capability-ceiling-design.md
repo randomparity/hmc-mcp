@@ -156,13 +156,15 @@ derivation.
 >
 > `enforced_dimensions` and `declared_only_dimensions` partition `("tools", "connections",
 > "targets")` whenever a policy is selected, and are both `()` when none is. `"tools"` is
-> enforced exactly when `ceiling_enforced` is `True`. `"connections"` and `"targets"` are
-> enforced together, exactly when every reported tool that requires the dispatch wrapper
-> (ADR 0038, ADR 0039) is registered carrying it — withheld for a name outside the
-> authoritative index, and for a tool declaring target selectors but no connection
-> argument. Each label is verified against the registry being reported, so no output pairs
-> a claim of enforcement in a dimension with a registry that is not performing it, and none
-> withholds a label for a dimension that is.
+> enforced exactly when `ceiling_enforced` is `True`. `"connections"` is enforced exactly
+> when every reported tool that routes a connection is registered carrying the dispatch
+> wrapper (ADR 0038). `"targets"` is enforced exactly when no reported tool escapes a
+> target constraint a grant declares (ADR 0039): a tool with no connection argument
+> registers unwrapped, so it costs this label when it declares selectors or when a
+> `targets` table reaches it. Both dispatch labels are withheld for a name outside the
+> authoritative index. Each label is verified against the registry being reported, so no
+> output pairs a claim of enforcement in a dimension with a registry that is not performing
+> it, and none withholds a label for a dimension that is.
 >
 > The rest of this specification is unaffected; R14's `ceiling_enforced` definition and
 > R17's closed value allowlist are unchanged, and no field is added or removed.
