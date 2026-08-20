@@ -36,7 +36,7 @@ from .operations_assignments import (
     AssignmentStep,
     LparPcieAssignments,
     LparPcieWorkflowResult,
-    apply_lpar_pcie_assignments,
+    _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 
@@ -44,7 +44,13 @@ from .operations_assignments import (
 tool, register_tools, tool_security = tool_module()
 
 
-@tool(effect="mutate", operation="lpar.create", target_kind="managed_system")
+# vNIC assignments name a nested VIOS that target extraction cannot authorize.
+@tool(
+    effect="mutate",
+    operation="lpar.create",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_create_lpar(
     system_name_or_uuid: str,
     name: str,
@@ -139,8 +145,8 @@ def hmc_create_lpar(
                         tuple(steps),
                         creation.warnings,
                     )
-                assignment_result = await apply_lpar_pcie_assignments(
-                    hmc, system_name_or_uuid, name, assignments, prevalidated=True
+                assignment_result = await _apply_validated_lpar_pcie_assignments(
+                    hmc, system_name_or_uuid, name, assignments
                 )
                 steps.extend(assignment_result.steps)
                 return LparPcieWorkflowResult(
@@ -158,7 +164,13 @@ def hmc_create_lpar(
     return _run(_go)
 
 
-@tool(effect="mutate", operation="lpar.modify", target_kind="lpar")
+# Assignment collections can name both a managed system and a nested VIOS.
+@tool(
+    effect="mutate",
+    operation="lpar.modify",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_modify_lpar(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
@@ -212,13 +224,12 @@ def hmc_modify_lpar(
                     _check_lpar_write_error(exc)
                     raise
                 steps.append(AssignmentStep("resources", "ok", modified))
-            assignment_result = await apply_lpar_pcie_assignments(
+            assignment_result = await _apply_validated_lpar_pcie_assignments(
                 hmc,
                 system_name_or_uuid or "",
                 lpar_name_or_uuid,
                 assignments,
                 ownership_override=ownership_override,
-                prevalidated=True,
             )
             steps.extend(assignment_result.steps)
             return LparPcieWorkflowResult(

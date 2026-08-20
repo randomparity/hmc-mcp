@@ -10,6 +10,7 @@ from hmc_mcp.operations_assignments import (
     LparPcieAssignments,
     SriovLogicalPortAssignment,
     VnicAssignment,
+    _apply_validated_lpar_pcie_assignments,
     apply_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
@@ -79,7 +80,7 @@ async def test_dry_run_preserves_stable_assignment_order() -> None:
         "hmc_mcp.operations_assignments.prevalidate_lpar_pcie_assignments",
         AsyncMock(),
     ):
-        result = await apply_lpar_pcie_assignments(
+        result = await _apply_validated_lpar_pcie_assignments(
             AsyncMock(), "sys", "lpar", assignments, dry_run=True
         )
     assert [step.step for step in result.steps] == ["sriov[0]", "vnic[0]"]
@@ -92,15 +93,27 @@ async def test_prevalidated_post_create_path_does_not_repeat_inventory() -> None
     with patch(
         "hmc_mcp.operations_assignments.prevalidate_lpar_pcie_assignments", validation
     ):
-        result = await apply_lpar_pcie_assignments(
+        result = await _apply_validated_lpar_pcie_assignments(
             AsyncMock(),
             "sys",
             "created-lpar",
             LparPcieAssignments(),
-            prevalidated=True,
         )
     validation.assert_not_awaited()
     assert result.workflow_completed is True
+
+
+@pytest.mark.asyncio
+async def test_public_apply_cannot_bypass_validation() -> None:
+    validation = AsyncMock(side_effect=ValueError("unsafe collection"))
+    with patch(
+        "hmc_mcp.operations_assignments.prevalidate_lpar_pcie_assignments", validation
+    ):
+        with pytest.raises(ValueError, match="unsafe collection"):
+            await apply_lpar_pcie_assignments(
+                AsyncMock(), "sys", "lpar", LparPcieAssignments()
+            )
+    validation.assert_awaited_once()
 
 
 @pytest.mark.asyncio

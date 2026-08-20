@@ -277,11 +277,29 @@ async def apply_lpar_pcie_assignments(
     *,
     dry_run: bool = False,
     ownership_override: bool = False,
-    prevalidated: bool = False,
 ) -> AssignmentResult:
     """Apply requests in stable order and expose partial state without rollback."""
-    if not prevalidated:
-        await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
+    await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
+    return await _apply_validated_lpar_pcie_assignments(
+        hmc,
+        system,
+        lpar,
+        assignments,
+        dry_run=dry_run,
+        ownership_override=ownership_override,
+    )
+
+
+async def _apply_validated_lpar_pcie_assignments(
+    hmc: HMCClient,
+    system: str,
+    lpar: str,
+    assignments: LparPcieAssignments,
+    *,
+    dry_run: bool = False,
+    ownership_override: bool = False,
+) -> AssignmentResult:
+    """Execute a collection validated by the enclosing atomic workflow."""
     names = _request_names(assignments)
     if dry_run:
         return AssignmentResult(

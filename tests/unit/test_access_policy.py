@@ -270,7 +270,7 @@ def test_effect_class_plus_named_tool_unions_the_ceiling() -> None:
                     {
                         "tools": ["hmc_create_lpar"],
                         "connections": ["lab"],
-                        "targets": {"managed_system": ["S1"]},
+                        "targets": "all-targets",
                     },
                 ]
             }
@@ -295,15 +295,11 @@ def test_arbitrary_command_needs_its_own_name() -> None:
     )
     assert broad.permits_tool("hmc_run_command") is False
     assert broad.tools == {
-        name
-        for name, sec in TOOL_SECURITY.items()
-        if sec.effect != "arbitrary-command"
+        name for name, sec in TOOL_SECURITY.items() if sec.effect != "arbitrary-command"
     }
 
     named = _compile(
-        _document(
-            tools=["hmc_run_command"], connections=["lab"], targets="all-targets"
-        )
+        _document(tools=["hmc_run_command"], connections=["lab"], targets="all-targets")
     )
     assert named.permits_tool("hmc_run_command") is True
 
@@ -571,9 +567,7 @@ def test_a_wholly_dead_effect_grant_is_refused_at_load() -> None:
             operation="widget.mutate",
             target_kind="managed_system",
             targets=(
-                TargetSelector(
-                    kind="managed_system", argument="system", required=True
-                ),
+                TargetSelector(kind="managed_system", argument="system", required=True),
             ),
             exhaustive_targets=False,
         ),
@@ -987,9 +981,7 @@ def test_unresolvable_default_path_is_an_access_policy_error(monkeypatch) -> Non
     def _explode() -> object:
         raise RuntimeError("Could not determine home directory.")
 
-    monkeypatch.setattr(
-        "hmc_mcp.access_policy.resolve_access_policy_path", _explode
-    )
+    monkeypatch.setattr("hmc_mcp.access_policy.resolve_access_policy_path", _explode)
 
     with pytest.raises(AccessPolicyError, match="cannot resolve the access-policy"):
         load_access_policy("lab", TOOL_SECURITY)

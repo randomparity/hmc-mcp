@@ -25,7 +25,7 @@ from .operations_lpar import (
 from .operations_storage import create_virtual_disk, map_storage
 from .operations_assignments import (
     LparPcieAssignments,
-    apply_lpar_pcie_assignments,
+    _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 
@@ -494,8 +494,8 @@ async def provision_lpar(
         _skip_steps(steps, [*assignment_names, *(["power_on"] if power_on else [])])
         return _provision_result(creation, created_uuid, steps, False)
 
-    assignment_result = await apply_lpar_pcie_assignments(
-        hmc, system_name_or_uuid, name, assignments, prevalidated=True
+    assignment_result = await _apply_validated_lpar_pcie_assignments(
+        hmc, system_name_or_uuid, name, assignments
     )
     steps.extend(
         _step(item.step, item.status, item.result) for item in assignment_result.steps

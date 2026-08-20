@@ -337,7 +337,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "e67fcf810341c70aa813287148688ff4a8e79e86b38854a18b7543499078de7b"  # pragma: allowlist secret
+    expected_digest = "135947049bb30f551de143904ba26c855a64dda4beda4822b9fc446f59f26128"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

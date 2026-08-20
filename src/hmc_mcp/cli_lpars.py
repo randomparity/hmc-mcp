@@ -41,7 +41,7 @@ from .operations_lpar import (
 )
 from .operations_assignments import (
     LparPcieAssignments,
-    apply_lpar_pcie_assignments,
+    _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
 from .operations_decommission import decommission_lpar
@@ -552,8 +552,8 @@ def lpars_create(
             )
             if creation.lpar is None:
                 return creation, None
-            outcome = await apply_lpar_pcie_assignments(
-                hmc, system, name, assignments, prevalidated=True
+            outcome = await _apply_validated_lpar_pcie_assignments(
+                hmc, system, name, assignments
             )
             return creation, outcome
 
@@ -700,13 +700,12 @@ def lpars_modify(
                 if has_resource_changes
                 else None
             )
-            assignment_result = await apply_lpar_pcie_assignments(
+            assignment_result = await _apply_validated_lpar_pcie_assignments(
                 hmc,
                 cast(str, system),
                 selector,
                 assignments,
                 ownership_override=ownership_override,
-                prevalidated=True,
             )
             return uuid, {
                 "resources": updated,

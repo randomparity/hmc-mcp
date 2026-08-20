@@ -42,6 +42,8 @@ Callers can declare mixed assignments once and can safely inspect partial state 
 Prevalidation narrows avoidable failures but cannot prevent a concurrent operator from consuming
 capacity; the composed operations' readback and partial errors remain authoritative.  A request
 containing a dedicated slot currently fails before create instead of exposing a phantom feature.
+Because a vNIC request names a nested VIOS that MCP target extraction cannot enumerate, create,
+modify, and provision are non-exhaustive target tools and require an `all-targets` policy grant.
 
 ## Considered & rejected
 
