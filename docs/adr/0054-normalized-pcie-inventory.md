@@ -29,6 +29,8 @@ Issue #212 requires the stable schema to name mode, availability, ownership/use,
 capacity, compatibility, and unknown categories. Their nullable schema slots are requirement-backed
 categories, not read-field claims: every one remains unknown until same-family evidence admits its
 projection. No closed mode or compatibility classifier is defined by this decision.
+Every item schema has its own nullable availability field; collection capability does not substitute
+for per-resource availability.
 
 The normative schema table, closed literals, selectors, and invariants are in the linked design's
 `Schema` section. They are part of this decision: adapters may not invent a second shape or widen
