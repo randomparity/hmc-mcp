@@ -218,3 +218,39 @@ async def test_sriov_inventories_use_admitted_read_projections() -> None:
     assert adapter.selector.adapter_id == "a1"
     assert physical.selector.physical_port_id == "p2"
     assert logical.selector.logical_port_id == "l3"
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_logical_port_requires_unique_physical_parent() -> None:
+    with (
+        patch(
+            "hmc_mcp.operations_pcie.resolve_ssh_names",
+            AsyncMock(return_value=("sys1", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.read_sriov_environment",
+            AsyncMock(return_value=("V10R3 M1060", "8375-42A")),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.list_sriov_configured_logical_port_rows",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.list_sriov_unconfigured_logical_port_rows",
+            AsyncMock(
+                return_value=[
+                    {
+                        "adapter_id": "a1",
+                        "logical_port_id": "l3",
+                        "location_code": "unknown",
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "hmc_mcp.operations_pcie.list_sriov_physical_port_rows",
+            AsyncMock(return_value=[]),
+        ),
+        pytest.raises(RuntimeError, match="ambiguous physical-port parent"),
+    ):
+        await list_sriov_logical_ports(_config(), "system-uuid", "a1")

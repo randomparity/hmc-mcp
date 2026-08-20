@@ -680,6 +680,13 @@ async def list_sriov_logical_ports(
         ]
         return matches[0] if len(matches) == 1 else None
 
+    selected_unconfigured = [
+        row for row in unconfigured if row.get("adapter_id") == adapter_id
+    ]
+    if any(physical_id(row) is None for row in selected_unconfigured):
+        raise SriovLogicalPortCapabilityError(
+            "unconfigured logical-port inventory has an ambiguous physical-port parent"
+        )
     items.extend(
         SriovLogicalPort(
             system_name,
@@ -693,9 +700,9 @@ async def list_sriov_logical_ports(
             None,
             None,
         )
-        for row in unconfigured
-        if row.get("adapter_id") == adapter_id
-        and (physical_port_id is None or physical_id(row) == physical_port_id)
+        for row in selected_unconfigured
+        if physical_port_id is None
+        or physical_id(row) == physical_port_id
         and (logical_port_id is None or row.get("logical_port_id") == logical_port_id)
     )
     return InventoryResult(
