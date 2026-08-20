@@ -217,7 +217,25 @@ def test_permission_error_reading_config(tmp_path):
     cfg.write_text("[profiles.x]\nhost = 'h'\nuser = 'u'\n", encoding="utf-8")
     with patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg), \
          patch.object(Path, "read_text", side_effect=PermissionError("Permission denied")):
-        with pytest.raises(ValueError, match="cannot read config file"):
+        with pytest.raises(ValueError, match="cannot be read"):
+            hmc_list_configured_hosts()
+
+
+def test_non_utf8_config(tmp_path):
+    """A non-UTF-8 config file → ValueError, not a UnicodeDecodeError (#257)."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_bytes(b'[profiles.x]\nhost = "caf\xe9"\n')
+    with patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg):
+        with pytest.raises(ValueError, match="is not valid UTF-8"):
+            hmc_list_configured_hosts()
+
+
+def test_non_table_profiles_key(tmp_path):
+    """`profiles = "x"` → ValueError, not an AttributeError on .items() (#257)."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("profiles = 'not-a-table'\n", encoding="utf-8")
+    with patch("hmc_mcp.server_systems.resolve_config_path", return_value=cfg):
+        with pytest.raises(ValueError, match="'profiles' must be a table"):
             hmc_list_configured_hosts()
 
 

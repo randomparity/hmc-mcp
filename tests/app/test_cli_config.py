@@ -226,6 +226,50 @@ def test_show_absent_config_file_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
+def test_show_unreadable_config_file_error(tmp_path, monkeypatch):
+    """An unreadable config.toml exits 1 with a message, not a traceback (#257)."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    try:
+        with patch.object(sys, "platform", "linux"):
+            result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+    finally:
+        cfg.chmod(0o600)
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "cannot be read" in result.output
+
+
+def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
+    """`profiles = "x"` exits 1 instead of an AttributeError traceback (#257)."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    # Substring stops short of the table/of wrap: rich hard-folds at 80 columns.
+    assert "'profiles' must be a" in result.output
+
+
+def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
+    """`config list` reports an unreadable file rather than raising (#257)."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with patch.object(sys, "platform", "linux"):
+            result = RUNNER.invoke(cli.app, ["config", "list"])
+    finally:
+        cfg.chmod(0o600)
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "cannot be read" in result.output
+
+
 def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
     """show exits 1 when no --profile, no HMC_PROFILE, no default_profile in TOML."""
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NO_DEFAULT_TOML)
