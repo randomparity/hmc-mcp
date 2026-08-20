@@ -41,12 +41,12 @@ stage. A warning that must fail the suite remains a pytest failure under existin
 configuration; ordinary warning detail is available through the verbose path.
 
 On any pytest non-zero exit, the runner copies pytest's complete combined bytes
-to `sys.stderr.buffer` without decoding. It captures at most 1 MiB in a temporary
-file; at the limit it replays that prefix and switches to live passthrough, so a
-noisy child cannot exhaust temporary storage. Negative child return codes map to
-the conventional `128 + signal` shell status. On an interactive interruption,
-the runner gives pytest three seconds to finish its diagnostic before
-terminating and then killing it if necessary, drains the pipe, and exits 130.
+from a disk-backed temporary file to `sys.stderr.buffer` without decoding.
+Negative child return codes map to the conventional `128 + signal` shell status.
+On an interactive interruption, the runner gives pytest three seconds to finish
+its diagnostic before terminating and then killing it if necessary, then exits
+130. Pytest writes directly to the file, so diagnostic production cannot block
+behind an undrained pipe during settlement.
 
 `just test-verbose` invokes pytest directly with `-q` and
 `--cov-report=term-missing`. It retains live pytest output, the full coverage
@@ -66,14 +66,14 @@ def main() -> int: ...
 
 The runner exposes no pytest argument-forwarding surface: focused and diagnostic
 runs use pytest directly, as the existing `--no-cov` guidance already requires.
-The runner invokes `[sys.executable, "-m", "pytest"]` with a combined output
-pipe and reads fixed-size binary chunks. Up to 1 MiB remains disk-backed for
-byte-for-byte failure replay; output beyond that threshold switches the command
-to live stderr passthrough after replaying the prefix in order. The subprocess
-inherits the repository working directory so pytest and coverage read
-`pyproject.toml`. It removes `PYTEST_ADDOPTS`, `COVERAGE_RCFILE`, and
-`COVERAGE_FILE` from the child environment so local overrides cannot narrow the
-canonical suite, disable coverage, or redirect its data file.
+The runner invokes `[sys.executable, "-m", "pytest"]` with combined output
+written directly to a disk-backed `TemporaryFile`. This preserves byte order,
+keeps arbitrary successful output out of agent context, and avoids an OS pipe
+that could block interrupt diagnostics. The subprocess inherits the repository
+working directory so pytest and coverage read `pyproject.toml`. It removes
+`PYTEST_ADDOPTS`, `COVERAGE_RCFILE`, and `COVERAGE_FILE` from the child
+environment so local overrides cannot narrow the canonical suite, disable
+coverage, or redirect its data file.
 
 ## Coverage configuration
 
@@ -105,9 +105,8 @@ that path; `just verify` continues to select `smoke`.
 ## Error handling and cleanup
 
 - Pytest failures are replayed without truncation and retain their exit code.
-- The temporary output file is capped at 1 MiB and closed on success, failure,
-  runner exception, and handled interruption; replay holds one fixed-size chunk
-  in memory.
+- The temporary output file is closed on success, failure, runner exception, and
+  handled interruption; replay holds one fixed-size chunk in memory.
 - The runner never pipes a guardrail through a filtering command.
 
 ## Tests
@@ -118,8 +117,8 @@ processes. They prove:
 - a successful suite prints only the fixed compact semantic summary;
 - pytest failure output is replayed completely and its exit code is preserved;
 - undecodable failure bytes are replayed unchanged without a runner traceback;
-- capture switches to ordered live passthrough at the 1 MiB storage limit, and
-  the temporary file is closed on success and failure;
+- successful output larger than 1 MiB remains hidden, failure output replays in
+  bounded chunks, and the temporary file closes on success and failure;
 - the child command is exactly `sys.executable -m pytest`, combines stderr into
   stdout, and removes only pytest/coverage override variables;
 - a real process-group interrupt preserves pytest's diagnostic and exits 130,

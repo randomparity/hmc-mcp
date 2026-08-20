@@ -52,9 +52,10 @@ only for that presentation choice and its terminal-report consequence.
   and percentage rather than adding a structured post-processing stage.
 - A failed run is intentionally noisy because its full combined diagnostic is
   the information needed to act.
-- Capture is capped at 1 MiB. At that threshold the runner replays the captured
-  prefix and switches to live passthrough, trading quiet pathological success
-  output for bounded storage and complete ordered diagnostics.
+- Capture is disk-backed and therefore may grow with child output. This is the
+  necessary trade for guaranteeing both quiet arbitrary success and complete
+  arbitrary failure diagnostics in one test run; a live fallback would violate
+  the command's primary context-conservation contract.
 - The runner waits for pytest to finish before printing output. This trades live
   progress for context conservation on the canonical agent path; the verbose
   recipe remains available for long-running interactive diagnosis.

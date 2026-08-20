@@ -60,8 +60,6 @@ def _stub_pytest(
     temporary_file = TrackingTemporaryFile()
 
     class FakeProcess:
-        stdout = io.BytesIO(output)
-
         def __init__(self) -> None:
             self.returncode = returncode
 
@@ -69,6 +67,9 @@ def _stub_pytest(
             return self.returncode
 
     def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
+        captured_output = kwargs["stdout"]
+        assert isinstance(captured_output, TrackingTemporaryFile)
+        captured_output.write(output)
         calls.append((command, kwargs))
         return FakeProcess()
 
@@ -83,7 +84,7 @@ def _assert_pytest_invocation(
     assert len(calls) == 1
     command, kwargs = calls[0]
     assert command == [sys.executable, "-m", "pytest"]
-    assert kwargs["stdout"] is subprocess.PIPE
+    assert kwargs["stdout"] is output
     assert kwargs["stderr"] is subprocess.STDOUT
     environment = kwargs["env"]
     assert isinstance(environment, dict)
@@ -110,6 +111,19 @@ def test_success_hides_noisy_pytest_output(
     assert "noisy pytest output" not in captured.err
     _assert_pytest_invocation(calls, temporary_file)
     assert temporary_file.read_sizes == []
+    assert temporary_file.closed
+
+
+def test_success_hides_output_larger_than_one_mebibyte(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _calls, temporary_file = _stub_pytest(monkeypatch, b"x" * (2 * 1024 * 1024), 0)
+
+    assert run_tests.main() == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "test: passed; configured coverage gate passed\n"
+    assert captured.err == ""
     assert temporary_file.closed
 
 
@@ -171,22 +185,15 @@ def test_interruption_replays_captured_output_without_traceback(
     stderr = BinaryStderr()
     temporary_file = TrackingTemporaryFile()
 
-    class InterruptingStream(io.BytesIO):
-        def __init__(self) -> None:
-            super().__init__(output)
-            self.read_count = 0
-
-        def read(self, size: int | None = -1) -> bytes:
-            self.read_count += 1
-            if self.read_count == 2:
-                raise KeyboardInterrupt
-            return super().read(size)
-
     class InterruptedProcess:
-        stdout = InterruptingStream()
         returncode = 2
+        wait_count = 0
 
         def wait(self, timeout: int | None = None) -> int:
+            self.wait_count += 1
+            if self.wait_count == 1:
+                temporary_file.write(output)
+                raise KeyboardInterrupt
             return self.returncode
 
     monkeypatch.setattr(run_tests.sys, "stderr", stderr)
@@ -207,27 +214,6 @@ def test_main_accepts_no_arguments() -> None:
 
 def test_signal_return_code_maps_to_shell_status() -> None:
     assert run_tests._exit_status(-signal.SIGTERM) == 128 + signal.SIGTERM
-
-
-def test_capture_limit_is_bounded() -> None:
-    assert 0 < run_tests.CAPTURE_LIMIT <= 4 * 1024 * 1024
-
-
-def test_capture_switches_to_live_output_at_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    prefix = b"prefix"
-    overflow = b"overflow"
-    stderr = BinaryStderr()
-    output = TrackingTemporaryFile()
-    monkeypatch.setattr(run_tests, "CAPTURE_LIMIT", len(prefix))
-    monkeypatch.setattr(run_tests, "CHUNK_SIZE", len(prefix))
-    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
-
-    assert run_tests._capture(io.BytesIO(prefix + overflow), output)
-
-    assert output.getvalue() == prefix
-    assert stderr.buffer.getvalue() == prefix + overflow
 
 
 def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
