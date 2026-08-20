@@ -99,9 +99,7 @@ def test_one_grants_connection_cannot_combine_with_anothers_targets():
     the loop moved into its own module.
     """
     with pytest.raises(TargetScopeError):
-        _authorize(
-            SPLIT_GRANTS, "hmc_delete_lpar", _delete(system="sys-2", lpar="other")
-        )
+        _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete(system="sys-2", lpar="other"))
 
 
 def test_the_mirror_direction_is_refused_too():
@@ -115,7 +113,10 @@ def test_the_mirror_direction_is_refused_too():
 
 def test_each_grant_still_permits_the_call_it_describes():
     """The split grants are not simply inert: both halves work whole."""
-    assert _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete()) is None
+    assert (
+        _authorize(SPLIT_GRANTS, "hmc_delete_lpar", _delete())
+        is None
+    )
     assert (
         _authorize(
             SPLIT_GRANTS,
@@ -168,9 +169,7 @@ def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
         _authorize(grants, "hmc_power_off_lpar", arguments)
 
     assert (
-        _authorize(
-            grants, "hmc_power_off_lpar", {**arguments, "system_name_or_uuid": "sys-1"}
-        )
+        _authorize(grants, "hmc_power_off_lpar", {**arguments, "system_name_or_uuid": "sys-1"})
         is None
     )
 
@@ -532,20 +531,14 @@ def test_a_read_tool_is_denied_on_a_target_outside_the_table():
     with pytest.raises(TargetScopeError):
         _authorize(grants, "hmc_get_lpar", args)
 
-    assert (
-        _authorize(grants, "hmc_get_lpar", {**args, "lpar_name_or_uuid": "victim"})
-        is None
-    )
+    assert _authorize(grants, "hmc_get_lpar", {**args, "lpar_name_or_uuid": "victim"}) is None
 
 
 def test_an_unpinned_list_call_is_denied():
-    """ "Every partition on every system" is not what a narrow table granted."""
+    """"Every partition on every system" is not what a narrow table granted."""
     grants = [
-        {
-            "effects": ["read"],
-            "connections": ["lab"],
-            "targets": {"managed_system": ["sys-1"]},
-        }
+        {"effects": ["read"], "connections": ["lab"],
+         "targets": {"managed_system": ["sys-1"]}}
     ]
     with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
         _authorize(
