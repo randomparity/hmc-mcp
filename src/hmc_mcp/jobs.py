@@ -17,7 +17,7 @@ from typing_extensions import TypedDict
 from pydantic import Field
 
 from .errors import HMCError
-from .xmlutil import WEB_NS
+from .xmlutil import WEB_NS, escapes_string_arguments
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
@@ -254,12 +254,17 @@ _PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
     </JobParameter>"""
 
 
+@escapes_string_arguments
 def build_job_request(
     operation: str,
     group: str,
     parameters: dict[str, str] | None = None,
 ) -> str:
-    """Build the JobRequest XML for a do/* operation."""
+    """Build the JobRequest XML for a do/* operation.
+
+    Every ``*_job`` builder in this module renders through here, so this one
+    decorator is the module's whole encoding boundary (ADR 0042).
+    """
     params_xml = ""
     if parameters:
         params_xml = "\n".join(
