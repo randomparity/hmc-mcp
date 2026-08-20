@@ -1090,6 +1090,8 @@ _NOT_EXHAUSTIVE = frozenset({
     "hmc_run_command",
     # Selectors, but they do not name every resource the call acts on.
     "hmc_backup_lpar_profiles",
+    "hmc_create_lpar",
+    "hmc_modify_lpar",
     "hmc_restore_lpar_profiles",
     "hmc_provision_lpar",
     # Selectors, but one of them is a per-system slot number the fleet-wide
@@ -1132,7 +1134,9 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_add_vscsi_adapter",
         "hmc_attach_disk_to_lpar",
         "hmc_backup_lpar_profiles",
+        "hmc_create_lpar",
         "hmc_get_job",
+        "hmc_modify_lpar",
         "hmc_provision_lpar",
         "hmc_restore_lpar_profiles",
         "hmc_wait_for_job",

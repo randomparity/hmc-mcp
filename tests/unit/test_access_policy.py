@@ -270,7 +270,7 @@ def test_effect_class_plus_named_tool_unions_the_ceiling() -> None:
                     {
                         "tools": ["hmc_create_lpar"],
                         "connections": ["lab"],
-                        "targets": {"managed_system": ["S1"]},
+                        "targets": "all-targets",
                     },
                 ]
             }
