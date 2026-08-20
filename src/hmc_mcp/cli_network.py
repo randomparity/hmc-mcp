@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from dataclasses import asdict
 from decimal import Decimal
+import sys
 
 import typer
 from rich.table import Table
@@ -48,6 +50,12 @@ from .operations_ssh_network import (
 )
 from .ssh_commands import SriovMode
 from .ssh_commands import PciClass, list_io_slots
+
+
+def _confirm_on_stderr(prompt: str) -> bool:
+    """Keep confirmation prompts and terminal input echoes off JSON stdout."""
+    with redirect_stdout(sys.stderr):
+        return typer.confirm(prompt, err=True)
 
 
 def _print_pcie_inventory(result, as_json: bool) -> None:
@@ -422,7 +430,7 @@ def network_add_vnic(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Add and verify a vNIC with one typed SR-IOV backing selector."""
-    if not yes and not typer.confirm(
+    if not yes and not _confirm_on_stderr(
         f"Add vNIC (VIOS={vios_name}, adapter={adapter_id}, "
         f"port={physical_port_id}, capacity={capacity_percent}, vlan={port_vlan_id}) "
         f"to '{lpar}' on '{system_name}'?"
@@ -464,7 +472,7 @@ def network_remove_vnic(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
-    if not yes and not typer.confirm(
+    if not yes and not _confirm_on_stderr(
         f"Remove vNIC slot {slot_num} from '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()

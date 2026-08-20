@@ -2354,7 +2354,7 @@ def _vnic_result(operation: str) -> VnicChangeResult:
     )
 
 
-def test_add_vnic_cli_stdout_is_one_json_document_and_forwards_override(monkeypatch):
+def test_add_vnic_cli_default_confirmation_keeps_stdout_json(monkeypatch):
     operation = AsyncMock(return_value=_vnic_result("add"))
     monkeypatch.setattr("hmc_mcp.cli_network.add_vnic", operation)
     monkeypatch.setattr(
@@ -2367,16 +2367,18 @@ def test_add_vnic_cli_stdout_is_one_json_document_and_forwards_override(monkeypa
             "network", "add-vnic", "system", "lpar", "--vios-name", "vios1",
             "--vios-lpar-id", "2", "--adapter-id", "1", "--physical-port-id", "0",
             "--capacity-percent", "20.25", "--port-vlan-id", "100",
-            "--ownership-override", "--yes",
+            "--ownership-override",
         ],
+        input="y\n",
     )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["operation"] == "add"
+    assert "Add vNIC" in result.stderr
     assert operation.await_args.kwargs == {"ownership_override": True}
 
 
-def test_remove_vnic_cli_partial_stdout_retains_one_json_document(monkeypatch):
+def test_remove_vnic_cli_default_confirmation_keeps_partial_stdout_json(monkeypatch):
     partial = VnicPartialError("incomplete", _vnic_result("remove"))
     operation = AsyncMock(side_effect=partial)
     monkeypatch.setattr("hmc_mcp.cli_network.remove_vnic", operation)
@@ -2388,12 +2390,14 @@ def test_remove_vnic_cli_partial_stdout_retains_one_json_document(monkeypatch):
         cli.app,
         [
             "network", "remove-vnic", "system", "lpar", "4",
-            "--ownership-override", "--yes",
+            "--ownership-override",
         ],
+        input="y\n",
     )
 
     assert result.exit_code == 1
     assert json.loads(result.stdout)["operation"] == "remove"
+    assert "Remove vNIC" in result.stderr
     assert operation.await_args.kwargs == {"ownership_override": True}
 
 
