@@ -180,7 +180,9 @@ def targets_permitted(
     return True
 
 
-def denial_reason(security: ToolSecurity, extracted: tuple[Selected, ...]) -> Reason:
+def denial_reason(
+    security: ToolSecurity, extracted: tuple[Selected, ...]
+) -> Reason:
     """Which of the four target-denial cases applies, as an audit reason code.
 
     The single owner of that selection. ``target_denial`` reads it rather than
@@ -252,10 +254,7 @@ def target_denial(
         # anything. The argument name is enough to act on.
         return TargetScopeError(
             _UNREADABLE_VALUE.format(
-                tool=tool,
-                policy=repr(policy_name),
-                argument=repr(argument),
-                kind=kind,
+                tool=tool, policy=repr(policy_name), argument=repr(argument), kind=kind,
             )
         )
     if reason == "target-unboundable":
@@ -268,11 +267,8 @@ def target_denial(
         kind, argument, _value = next(item for item in extracted if item[2] is ABSENT)
         return TargetScopeError(
             _MISSING.format(
-                tool=tool,
-                policy=repr(policy_name),
-                kind=kind,
-                argument=repr(argument),
-                sentinel=ALL_TARGETS_TOKEN,
+                tool=tool, policy=repr(policy_name), kind=kind,
+                argument=repr(argument), sentinel=ALL_TARGETS_TOKEN,
             )
         )
     return TargetScopeError(

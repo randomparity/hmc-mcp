@@ -127,12 +127,8 @@ class HMCConfig(BaseSettings):
     port: int = Field(default=12443, description="HMC REST API port")
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
-    ssh_key_file: str | None = Field(
-        default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)"
-    )
-    verify_ssl: bool = Field(
-        default=False, description="Verify the HMC TLS certificate"
-    )
+    ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
+    verify_ssl: bool = Field(default=False, description="Verify the HMC TLS certificate")
     timeout: float = Field(default=60.0, description="HTTP timeout in seconds")
     ssh_timeout: float = Field(
         default=300.0,
@@ -245,7 +241,9 @@ class HMCConfig(BaseSettings):
         if require_password and not self.password:
             missing.append("password (HMC_PASSWORD / --password)")
         if missing:
-            raise ValueError("Missing HMC configuration: " + ", ".join(missing))
+            raise ValueError(
+                "Missing HMC configuration: " + ", ".join(missing)
+            )
 
 
 class ConfigError(ValueError):
@@ -383,7 +381,9 @@ def list_profiles_with_default(
     if path is None:
         return [], None
     doc = _read_config_document(path)
-    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get("default_profile")
+    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
+        "default_profile"
+    )
 
 
 def list_profiles(config_path: Path | None = None) -> list[str]:
@@ -505,7 +505,7 @@ def _load_profile_from_document(
                     f"nickname {name!r} targets missing profile {target!r} "
                     f"in {path}; available profiles: {profile_names}; "
                     f"available nicknames: {nickname_names}"
-                )
+                  )
         else:
             profile_names = ", ".join(sorted(profiles)) or "(none)"
             nickname_names = ", ".join(sorted(nicknames)) or "(none)"
@@ -513,7 +513,7 @@ def _load_profile_from_document(
                 f"profile {name!r} not found in {path}; "
                 f"available profiles: {profile_names}; "
                 f"available nicknames: {nickname_names}"
-            )
+              )
 
     selected = profiles[name]
     if not isinstance(selected, dict):
@@ -545,7 +545,9 @@ def _load_profile_from_document(
     # otherwise the TOML value would win over the env var.
     env_prefix = "HMC_"
     filtered_entry = {
-        k: v for k, v in entry.items() if (env_prefix + k.upper()) not in os.environ
+        k: v
+        for k, v in entry.items()
+        if (env_prefix + k.upper()) not in os.environ
     }
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
 

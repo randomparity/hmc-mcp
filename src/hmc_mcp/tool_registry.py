@@ -48,25 +48,23 @@ _OPERATION = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 # a tool cannot omit a target it accepts an identity for. Deliberately excludes
 # `name` (a user on hmc_create_user, a new partition on hmc_create_lpar) and
 # sub-resource arguments, which are addressed through their owning resource.
-REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType(
-    {
-        "lpar_name_or_uuid": "lpar",
-        "lpar_uuid": "lpar",
-        "system_name_or_uuid": "managed_system",
-        "target_system_name_or_uuid": "managed_system",
-        "vios_name_or_uuid": "vios",
-        "vios_uuid": "vios",
-        "vios_partition_id": "vios",
-        "cluster_uuid": "cluster",
-        "ssp_uuid": "shared_storage_pool",
-        "console_uuid": "console",
-        "job_uuid": "job",
-        "template_uuid": "template",
-        "draft_template_uuid": "template",
-        "policy_name": "password_policy",
-        "resource_name_or_uuid": "metric_resource",
-    }
-)
+REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
+    "lpar_name_or_uuid": "lpar",
+    "lpar_uuid": "lpar",
+    "system_name_or_uuid": "managed_system",
+    "target_system_name_or_uuid": "managed_system",
+    "vios_name_or_uuid": "vios",
+    "vios_uuid": "vios",
+    "vios_partition_id": "vios",
+    "cluster_uuid": "cluster",
+    "ssp_uuid": "shared_storage_pool",
+    "console_uuid": "console",
+    "job_uuid": "job",
+    "template_uuid": "template",
+    "draft_template_uuid": "template",
+    "policy_name": "password_policy",
+    "resource_name_or_uuid": "metric_resource",
+})
 
 # Public argument names that carry the identity of an HMC-side resource no
 # allowlist can pin down. A tool accepting one cannot declare
@@ -111,28 +109,24 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType(
 # moved between them while they lived in different files would drift silently.
 # No runtime path reads this one; the boolean it justifies is what the authorizer
 # reads. The ADR 0039 guardrail in tests/app/test_tool_security.py enforces it.
-UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset(
-    {
-        "cmd",
-        "file_path",
-        "job_href",
-        "vios_partition_id",
-    }
-)
+UNBOUNDED_ARGUMENTS: frozenset[str] = frozenset({
+    "cmd",
+    "file_path",
+    "job_href",
+    "vios_partition_id",
+})
 
 # (readOnlyHint, destructiveHint) per effect class, held as immutable values
 # rather than shared ToolAnnotations instances: the model is mutable, so a shared
 # instance would let one in-place edit re-flag every tool of that class. `mutate`
 # leaves destructiveHint unset — MCP defaults it to true, and asserting false
 # would newly invite a client to auto-approve every mutating tool.
-_ANNOTATIONS: Mapping[str, tuple[bool, bool | None]] = MappingProxyType(
-    {
-        "read": (True, None),
-        "mutate": (False, None),
-        "destructive": (False, True),
-        "arbitrary-command": (False, True),
-    }
-)
+_ANNOTATIONS: Mapping[str, tuple[bool, bool | None]] = MappingProxyType({
+    "read": (True, None),
+    "mutate": (False, None),
+    "destructive": (False, True),
+    "arbitrary-command": (False, True),
+})
 
 
 @dataclass(frozen=True)
@@ -287,9 +281,7 @@ def build_targets(
     ]
     for kind, argument in extra_targets:
         parameter = parameters.get(argument)
-        required = (
-            parameter is not None and parameter.default is inspect.Parameter.empty
-        )
+        required = parameter is not None and parameter.default is inspect.Parameter.empty
         selectors.append(TargetSelector(kind, argument, required))
     return tuple(selectors)
 

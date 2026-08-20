@@ -114,12 +114,7 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     return _run(_go)
 
 
-@tool(
-    effect="read",
-    operation="config.list_hosts",
-    target_kind="none",
-    connection_argument=None,
-)
+@tool(effect="read", operation="config.list_hosts", target_kind="none", connection_argument=None)
 def hmc_list_configured_hosts() -> dict[str, Any]:
     """List all configured HMC profiles from the platform-native TOML config.
 
@@ -184,15 +179,15 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     nicknames = _coerce_nicknames(doc.get("nicknames"), config_path)
     profile_keys = set(profiles_raw)
     nickname_entries = [
-        {"name": nick, "target": target, "target_exists": target in profile_keys}
-        for nick, target in nicknames.items()
-    ]
+          {"name": nick, "target": target, "target_exists": target in profile_keys}
+          for nick, target in nicknames.items()
+      ]
 
     return {
-        "profiles": profiles,
-        "nicknames": nickname_entries,
-        "config_file": str(config_path),
-    }
+          "profiles": profiles,
+          "nicknames": nickname_entries,
+          "config_file": str(config_path),
+      }
 
 
 @tool(effect="read", operation="system.list", target_kind="console")

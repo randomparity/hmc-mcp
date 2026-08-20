@@ -211,9 +211,7 @@ def hmc_aggregated_metrics(
     )
 
 
-@tool(
-    effect="read", operation="metrics.aggregated_links", target_kind="metric_resource"
-)
+@tool(effect="read", operation="metrics.aggregated_links", target_kind="metric_resource")
 def hmc_aggregated_metric_links(
     category: PcmCategory,
     resource_name_or_uuid: str,

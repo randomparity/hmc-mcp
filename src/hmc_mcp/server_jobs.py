@@ -72,7 +72,6 @@ def hmc_list_recent_jobs(
             work or network transfer.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
-
     async def operation():
         async with client_from_env(profile) as hmc:
             return await hmc.list_uom("Job")

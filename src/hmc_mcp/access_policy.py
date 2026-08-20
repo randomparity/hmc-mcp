@@ -210,7 +210,9 @@ def _render_error(source: str, error: Mapping[str, Any]) -> str:
         # Recover the field from the loc. Messages from this module's own
         # validators already name their field, so they are left alone.
         if error["type"] != "value_error":
-            key = next((item for item in loc[consumed:] if isinstance(item, str)), None)
+            key = next(
+                (item for item in loc[consumed:] if isinstance(item, str)), None
+            )
             if key is not None:
                 message = f"{key!r}: {message}"
         parts.append(message)
@@ -403,7 +405,8 @@ def _compile_grant(
             )
 
     connections: frozenset[str | None] = frozenset(
-        None if name == DEFAULT_CONNECTION_TOKEN else name for name in model.connections
+        None if name == DEFAULT_CONNECTION_TOKEN else name
+        for name in model.connections
     )
     targets: AllTargets | Mapping[TargetKind, frozenset[str]] = (
         ALL_TARGETS
@@ -436,9 +439,7 @@ def compile_access_policy(
         # repr each name, as every other operator-authored string in this module
         # is rendered, so a policy name carrying a control character cannot forge
         # a line in whatever startup log surfaces this message.
-        available = (
-            ", ".join(repr(name) for name in sorted(parsed.policies)) or "(none)"
-        )
+        available = ", ".join(repr(name) for name in sorted(parsed.policies)) or "(none)"
         raise AccessPolicyError(
             f"{source}: policy {name!r} not found; available policies: {available}"
         )
@@ -486,7 +487,9 @@ def unboundable_effect_tools(
         if isinstance(grant.targets, AllTargets):
             continue
         unbound = sorted(
-            tool for tool in grant.tools if not tool_security[tool].exhaustive_targets
+            tool
+            for tool in grant.tools
+            if not tool_security[tool].exhaustive_targets
         )
         if unbound:
             names = ", ".join(repr(tool) for tool in unbound)
