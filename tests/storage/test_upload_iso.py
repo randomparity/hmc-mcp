@@ -3,6 +3,7 @@
 import functools
 import hashlib
 import socket
+from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,7 +15,11 @@ from conftest import make_config
 from hmc_mcp.client import HMCClient
 from hmc_mcp.config import parse_iso_url_allowlist
 from hmc_mcp.errors import HMCError
-from hmc_mcp.operations_storage import upload_iso, _download_iso_from_url
+from hmc_mcp.operations_storage import (
+    UPLOAD_CHUNK_SIZE,
+    upload_iso,
+    _download_iso_from_url,
+)
 
 # Test constants
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
@@ -130,6 +135,9 @@ async def test_upload_iso_success(mock_hmc, stage_download):
     assert result["media"]["MediaName"] == MEDIA_NAME
     assert result["existing_name"] is None
     download.assert_awaited_once_with(ISO_URL)
+    # The staged download is removed on the way out.
+    staged, _, _ = download.return_value
+    assert not staged.exists()
 
 
 @pytest.mark.asyncio
@@ -266,8 +274,14 @@ async def test_upload_iso_refusal_reveals_nothing_about_the_server_filesystem(
 
 @pytest.mark.asyncio
 async def test_upload_iso_name_collision(mock_hmc, stage_download):
-    """Upload ISO fails when media name already exists in repository."""
-    stage_download()
+    """Upload ISO fails when media name already exists, and drops the download.
+
+    The refusal happens after the fetch, so without the cleanup arm covering it
+    a caller could leave an arbitrarily large staged file behind by naming media
+    that already exists — repeatedly, and without ever reaching the broker. That
+    the fetch happens at all before the refusal is #325, and is not this test.
+    """
+    download = stage_download()
     config = make_config(iso_url_allowlist=ISO_HOST)
     async with HMCClient(config) as hmc:
         hmc.list_optical_media = AsyncMock(
@@ -279,12 +293,83 @@ async def test_upload_iso_name_collision(mock_hmc, stage_download):
 
         assert f"Media name '{MEDIA_NAME}' already exists" in str(exc_info.value)
 
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_drops_the_download_when_the_repository_read_fails(
+    mock_hmc, stage_download
+):
+    """A failure reading the repository does not strand the staged file either.
+
+    The collision check's HMC call is the other way out of `upload_iso` between
+    the download and the broker sequence — an unreachable HMC, an expired
+    session, an unparseable feed. It leaves nothing behind.
+    """
+    download = stage_download()
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(
+            side_effect=HMCError("GET VolumeGroup failed", 500, "")
+        )
+
+        with pytest.raises(HMCError):
+            await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_closes_the_handle_it_streamed_from(
+    mock_hmc, stage_download, monkeypatch
+):
+    """The handle the upload streamed from is closed when the call returns.
+
+    `assert not staged.exists()` cannot stand in for this. On POSIX an open
+    descriptor does not block an unlink, so replacing the `with` block with a
+    bare `open()` that is never closed leaves every other assertion in this file
+    green while leaking a descriptor per upload. This test holds the handle
+    `upload_iso` opened and asserts its state directly.
+    """
+    download = stage_download()
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-handle"
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    handles = []
+    real_open = Path.open
+
+    def _recording_open(self, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", _recording_open)
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+        await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    staged, _, _ = download.return_value
+    opened = [handle for handle in handles if handle.name == str(staged)]
+    assert opened, "upload_iso never opened the staged file"
+    assert all(handle.closed for handle in opened)
+
 
 @pytest.mark.asyncio
 async def test_upload_iso_broker_cleanup_on_error(mock_hmc, stage_download):
     """Upload ISO cleans up broker resources when import fails."""
     broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-error"
-    stage_download()
+    download = stage_download()
 
     mock_hmc.post(VG_PATH).mock(
         side_effect=[
@@ -301,6 +386,100 @@ async def test_upload_iso_broker_cleanup_on_error(mock_hmc, stage_download):
 
         with pytest.raises(HMCError):
             await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    # Cleanup runs on the failure path too, staged file included (#308).
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_streams_the_staged_file_in_bounded_chunks(
+    mock_hmc, stage_download
+):
+    """#308: the broker is handed a chunked stream, never the whole ISO.
+
+    The bound the download enforces is `MAX_DOWNLOAD_SIZE_BYTES` — 100 GiB — so
+    a file that passes it and is then read whole is a 100 GiB allocation in a
+    process shared by every caller of every tool. What replaces that read is
+    asserted here at the seam where it happened: the argument is an async
+    iterator rather than `bytes`, no single chunk exceeds `UPLOAD_CHUNK_SIZE`,
+    more than one chunk is produced, and the chunks reassemble to exactly the
+    staged bytes under the length the broker is told to expect.
+    """
+    payload = b"ISO payload block\n" * 12000  # spans several 64 KiB chunks
+    download = stage_download(payload)
+    captured: dict[str, object] = {}
+
+    async def _capture(broker_uri: str, content: object, content_length: int) -> str:
+        captured["is_async_iterator"] = isinstance(content, AsyncIterator)
+        captured["is_bytes"] = isinstance(content, (bytes, bytearray))
+        captured["chunks"] = [chunk async for chunk in content]  # type: ignore[union-attr]
+        captured["length"] = content_length
+        return ""
+
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-stream"
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+        hmc._broker_file_upload = _capture
+        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    chunks = captured["chunks"]
+    assert captured["is_async_iterator"] is True
+    assert captured["is_bytes"] is False
+    assert len(chunks) > 1
+    assert max(len(chunk) for chunk in chunks) <= UPLOAD_CHUNK_SIZE
+    assert b"".join(chunks) == payload
+    assert captured["length"] == len(payload)
+    assert result["sha256"] == hashlib.sha256(payload).hexdigest()
+    staged, _, _ = download.return_value
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_streams_a_zero_byte_file_as_an_empty_body(
+    mock_hmc, stage_download
+):
+    """A staged file with no bytes still uploads, as it did when read whole.
+
+    Nothing rejects a zero-byte download, so this is reachable. The generator
+    yields nothing for it, which is a body shape `content=b""` never produced —
+    worth pinning, because an empty async iterator is the one input that could
+    have made httpx fall back to a chunked body with no length at all.
+    """
+    download = stage_download(b"")
+
+    broker_uri = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-empty-file"
+    mock_hmc.post(VG_PATH).mock(
+        side_effect=[
+            httpx.Response(201, text=CREATE_RESPONSE, headers={"Location": broker_uri}),
+            httpx.Response(200, text=IMPORT_RESPONSE),
+        ]
+    )
+    uploaded = mock_hmc.put(broker_uri).mock(return_value=httpx.Response(200, text=""))
+    mock_hmc.delete(broker_uri).mock(return_value=httpx.Response(204, text=""))
+
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+        result = await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
+
+    request = uploaded.calls.last.request
+    assert request.content == b""
+    assert request.headers["Content-Length"] == "0"
+    assert "Transfer-Encoding" not in request.headers
+    assert result["media_size_bytes"] == 0
+    assert result["sha256"] == hashlib.sha256(b"").hexdigest()
+    staged, _, _ = download.return_value
+    assert not staged.exists()
 
 
 @pytest.mark.asyncio
@@ -798,7 +977,16 @@ async def test_upload_iso_uploads_from_an_allowlisted_url_end_to_end(
     assert result["sha256"] == TEST_SHA256
     assert result["media_size_bytes"] == len(TEST_CONTENT)
     assert [str(request.url) for request in requests] == [ISO_URL]
-    assert uploaded.calls.last.request.content == TEST_CONTENT
+    # The bytes that reached the HMC are the bytes the returned digest describes.
+    # Streaming makes that a claim worth pinning: a stream is consumed once, so a
+    # body that ended early would upload a truncated ISO under a digest that
+    # still described the whole download (#308).
+    uploaded_body = uploaded.calls.last.request.content
+    assert uploaded_body == TEST_CONTENT
+    assert hashlib.sha256(uploaded_body).hexdigest() == result["sha256"]
+    assert uploaded.calls.last.request.headers["Content-Length"] == str(
+        len(uploaded_body)
+    )
 
 
 @pytest.mark.asyncio

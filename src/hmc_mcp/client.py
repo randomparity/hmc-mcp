@@ -10,6 +10,7 @@ into :class:`HMCClient` by inheritance.
 from __future__ import annotations
 
 import warnings
+from collections.abc import AsyncIterator
 from typing import Any
 import re
 from urllib.parse import unquote, urlparse
@@ -398,11 +399,44 @@ class HMCClient(
             )
         return location
 
-    async def _broker_file_upload(self, broker_uri: str, content: bytes) -> str:
-        """Upload content to a brokered file (verification primitive).
+    async def _broker_file_upload(
+        self,
+        broker_uri: str,
+        content: AsyncIterator[bytes],
+        content_length: int,
+    ) -> str:
+        """Stream content to a brokered file (verification primitive).
 
-        Streams the content to the broker URI and returns the final media UUID.
-        This method exists to verify the upload endpoint behavior and response format.
+        Sends the chunks *content* yields to the broker URI and returns the final
+        media UUID. This method exists to verify the upload endpoint behavior and
+        response format. It never buffers the body: an ISO that passes the
+        caller's size bound may be tens of gigabytes, and this process is shared
+        by every caller of every tool (ADR 0052, #308).
+
+        ``content`` must be an **async** iterator, and ``content_length`` the
+        exact total it will yield. Both are constraints of the transport, not
+        style, verified against httpx 0.28.1:
+
+        - A file object or a sync generator becomes an ``IteratorByteStream``,
+          which is a ``SyncByteStream``; ``AsyncClient._send_single_request``
+          raises ``RuntimeError`` on one. Only an async iterator reaches the wire.
+        - ``encode_content`` would set ``Transfer-Encoding: chunked`` for an
+          iterator body, but ``Request._prepare`` skips that when an explicit
+          ``Content-Length`` is already present — which is why the HMC, whose
+          brokered upload requires ``Content-Length`` (ADR 0031), still gets one.
+
+        The stream is consumed exactly once and cannot be replayed. Nothing in
+        this path retries: ``_request`` sends once and only translates transport
+        errors, ``AsyncClient`` is constructed without ``follow_redirects`` (so a
+        3xx is returned, not re-sent), and the default transport does not retry a
+        sent request. Re-sending the same ``Request`` raises ``StreamConsumed``;
+        a *new* request around the exhausted iterator would send an empty body,
+        which h11 then refuses against the unchanged ``Content-Length``. So a
+        replay fails loudly rather than uploading a truncated ISO under a
+        SHA-256 describing the whole file — but it still fails. If a retry,
+        redirect-following, or a shared client is ever added above this method,
+        the body must become re-creatable (a factory per attempt) in the same
+        change.
         """
         resp = await self._request(
             "PUT",
@@ -410,7 +444,7 @@ class HMCClient(
             content=content,
             headers={
                 "Content-Type": "application/octet-stream",
-                "Content-Length": str(len(content)),
+                "Content-Length": str(content_length),
                 "Accept": MEDIA_UOM,
             },
         )

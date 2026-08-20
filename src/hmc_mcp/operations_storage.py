@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, BinaryIO
 
 
 from .client import HMCClient
@@ -28,6 +29,12 @@ CONNECT_TIMEOUT = 30.0
 READ_TIMEOUT = 300.0
 MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 * 1024  # 100 GiB
 DEFAULT_CHUNK_SIZE = 8192
+# The upload's chunk is a *wire* unit, not a read hint: httpcore issues one
+# `network_stream.write` per chunk an async iterator yields
+# (`httpcore/_async/http11.py:157-166`), where a `bytes` body produced one write
+# for the whole payload. 8 KiB would make a 20 GiB ISO 2.6 million writes.
+# 64 KiB is httpx's own streaming unit (`AsyncIteratorByteStream.CHUNK_SIZE`).
+UPLOAD_CHUNK_SIZE = 64 * 1024
 
 
 
@@ -396,6 +403,21 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
                 raise
 
 
+async def _aiter_file_chunks(
+    handle: BinaryIO, chunk_size: int = UPLOAD_CHUNK_SIZE
+) -> AsyncIterator[bytes]:
+    """Yield *handle*'s remaining bytes in ``chunk_size`` pieces.
+
+    The upload body httpx accepts from an ``AsyncClient`` is an async iterator —
+    a file object or a sync generator raises ``RuntimeError`` at send time — so
+    the file is read here rather than handed over. *handle* is left open and
+    closed by the caller, which is what guarantees the descriptor is released on
+    every outcome rather than at some later finalization of this generator.
+    """
+    while chunk := handle.read(chunk_size):
+        yield chunk
+
+
 async def list_optical_media(
     hmc: HMCClient, vios: str, vg_uuid: str
 ) -> list[dict[str, Any]]:
@@ -459,31 +481,36 @@ async def upload_iso(
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
-    # Check for name collision
-    existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-    for media in existing_media:
-        if media.get("MediaName") == media_name:
-            raise FileExistsError(
-                f"Media name '{media_name}' already exists in repository. "
-                "Use a different name or delete the existing media first."
-            )
-
-    # Check for duplicate content (same SHA-256 under different name)
-    # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
-    # so we cannot perform duplicate detection via server-side checksums.
-    # The client-side SHA-256 is computed for future deduplication features,
-    # but we cannot skip upload based on existing content without a server-side
-    # checksum to compare against.
-
+    # Everything after the download is inside the try: the `finally` arm unlinks
+    # the staged file, and the collision check below raises on an input a caller
+    # supplies. With the check outside, a name that already exists left the whole
+    # download — up to the 100 GiB bound — on the server's temp filesystem.
     broker_uri: str | None = None
     try:
+        # Check for name collision
+        existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
+        for media in existing_media:
+            if media.get("MediaName") == media_name:
+                raise FileExistsError(
+                    f"Media name '{media_name}' already exists in repository. "
+                    "Use a different name or delete the existing media first."
+                )
+
+        # Check for duplicate content (same SHA-256 under different name)
+        # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
+        # so we cannot perform duplicate detection via server-side checksums.
+        # The client-side SHA-256 is computed for future deduplication features,
+        # but we cannot skip upload based on existing content without a
+        # server-side checksum to compare against.
+
         # Create brokered file handle
         broker_uri = await hmc._broker_file_create(vios_uuid, vg_uuid, media_name)
 
-        # Upload content
+        # Upload content, streamed from the staged file. The download bound is
+        # 100 GiB, so reading it back whole would size an allocation in this
+        # shared process by the ISO an operator happened to name (ADR 0052).
         with iso_path.open("rb") as f:
-            content = f.read()
-        await hmc._broker_file_upload(broker_uri, content)
+            await hmc._broker_file_upload(broker_uri, _aiter_file_chunks(f), file_size)
 
         # Import into media repository
         await hmc._broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri)
