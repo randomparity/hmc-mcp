@@ -435,7 +435,11 @@ async def add_vnic(
     pairs = _pairs(before, backing_before, selector, port_vlan_id)
     candidates = _matching_vnics(before, selector, port_vlan_id)
     matching_backing_before = _matching_backings(backing_before, selector)
-    if len(pairs) == 1 and len(candidates) == 1:
+    if (
+        len(pairs) == 1
+        and len(candidates) == 1
+        and len(matching_backing_before) == 1
+    ):
         return VnicChangeResult(
             "add",
             False,
@@ -451,7 +455,7 @@ async def add_vnic(
             "",
             (),
         )
-    if pairs or candidates:
+    if pairs or candidates or matching_backing_before:
         raise VnicCapabilityError(
             "existing matching vNIC inventory is ambiguous or degraded"
         )
@@ -488,15 +492,20 @@ async def add_vnic(
         else []
     )
     slot = observed_new[0].slot_num if len(observed_new) == 1 else None
-    final = v_ok and b_ok and len(observed_new) == 1 and len(new_pairs) == 1
-    unchanged = v_ok and b_ok and after == before and backing_after == backing_before
-    changed: bool | None = True if final else False if unchanged else None
+    matching_after = _matching_vnics(after, selector, port_vlan_id) if v_ok else ()
+    matching_backing_after = _matching_backings(backing_after, selector) if b_ok else ()
+    final = (
+        v_ok
+        and b_ok
+        and len(observed_new) == 1
+        and len(new_pairs) == 1
+        and len(matching_backing_after) == 1
+    )
+    changed: bool | None = True if final else None
     if not final:
         errors.append(
             "add reconciliation did not prove exactly one new active Operational backing"
         )
-    matching_after = _matching_vnics(after, selector, port_vlan_id) if v_ok else ()
-    matching_backing_after = _matching_backings(backing_after, selector) if b_ok else ()
     result = VnicChangeResult(
         "add",
         True,

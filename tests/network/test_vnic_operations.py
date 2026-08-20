@@ -226,6 +226,107 @@ async def test_add_successfully_correlates_new_slot(
 
 
 @pytest.mark.asyncio
+async def test_add_unchanged_reads_after_dispatch_are_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(side_effect=[[], []]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(side_effect=[[], []]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.add_vnic_backing", AsyncMock()
+    )
+
+    with pytest.raises(VnicPartialError) as caught:
+        await add_vnic(
+            _hmc(),
+            "system-a",
+            "client-a",
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            7,
+        )
+
+    result = caught.value.result
+    assert result.mutation_dispatched
+    assert result.changed is None
+    assert result.slot_num is None
+    assert result.vnic_after == ()
+    assert result.backing_after == ()
+
+
+@pytest.mark.asyncio
+async def test_add_retry_refuses_extra_selector_matching_degraded_backing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(return_value=[_vnic()]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(return_value=[_backing(), _backing(logical="4", is_active="0")]),
+    )
+    mutate = AsyncMock()
+    monkeypatch.setattr("hmc_mcp.operations_ssh_network.add_vnic_backing", mutate)
+
+    with pytest.raises(VnicCapabilityError, match="ambiguous or degraded"):
+        await add_vnic(
+            _hmc(),
+            "system-a",
+            "client-a",
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            7,
+        )
+
+    mutate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_final_refuses_extra_selector_matching_degraded_backing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _common(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_rows",
+        AsyncMock(side_effect=[[], [_vnic()]]),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.list_vnic_backing_rows",
+        AsyncMock(
+            side_effect=[[], [_backing(), _backing(logical="4", status="Degraded")]]
+        ),
+    )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_ssh_network.add_vnic_backing",
+        AsyncMock(return_value="created"),
+    )
+
+    with pytest.raises(VnicPartialError) as caught:
+        await add_vnic(
+            _hmc(),
+            "system-a",
+            "client-a",
+            VnicBackingSelector("vios-a", "100", "1", "1", Decimal("2")),
+            7,
+        )
+
+    result = caught.value.result
+    assert result.changed is None
+    assert result.slot_num == "2"
+    assert len(result.backing_after) == 2
+    assert {item.status for item in result.backing_after} == {
+        "Operational",
+        "Degraded",
+    }
+
+
+@pytest.mark.asyncio
 async def test_add_rejects_two_new_matching_vnics_despite_one_operational_backing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
