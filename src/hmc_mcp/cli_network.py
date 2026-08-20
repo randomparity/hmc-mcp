@@ -32,16 +32,18 @@ from .operations_pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
     unassign_dedicated_pcie_slot,
+    assign_sriov_logical_port,
+    set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
 )
 from .operations_ssh_network import (
-    SriovMode,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
-    set_sriov_adapter_mode,
 )
+from .ssh_commands import SriovMode
 from .ssh_commands import PciClass, list_io_slots
 
 
@@ -165,6 +167,62 @@ def network_list_sriov_logical_ports(
         )
     )
     _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("assign-sriov-logical-port")
+def network_assign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: float,
+    profile_name: str = typer.Option(..., "--profile-name"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Assign an evidence-backed Ethernet SR-IOV logical port."""
+    from decimal import Decimal
+
+    result = _with_client(
+        lambda hmc: assign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            Decimal(str(capacity_percent)),
+            profile_name=profile_name,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
+
+
+@network_app.command("unassign-sriov-logical-port")
+def network_unassign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Unassign a profile logical port on a Not Activated LPAR."""
+    result = _with_client(
+        lambda hmc: unassign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
 
 
 @network_app.command("list-switches")
@@ -322,19 +380,14 @@ def network_set_sriov_mode(
         ..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"
     ),
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
-    if not yes and not typer.confirm(
-        f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
-    ):
-        raise typer.Abort()
+    """Verify an adapter's current mode; transitions fail closed."""
     result = _run(
         lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
     )
 
     console.print(
-        f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]"
+        f"[green]Adapter {adapter_id} verified in '{mode}' mode on '{system_name}'[/green]"
     )
     if result.strip():
         console.print(result.strip())

@@ -40,20 +40,24 @@ def _hmc_env(monkeypatch):
 
 
 def test_set_sriov_mode_sriov(monkeypatch, mock_hmc):
-    """hmc_set_sriov_adapter_mode issues chhwres with mode=sriov."""
+    """The in-place tool returns unchanged after evidence-backed readback."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("Command completed successfully.\n")
+    fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
+    conn_mock = _make_ssh_mock(
+        f"{fields}\n{ADAPTER_ID},1,sriov,1,U,2,120,120,running\n"
+    )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+    ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "sriov")
 
-    expected_cmd = (
-        f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
-        f" -a sriov_adapter_mode=sriov"
-    )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
-    assert "completed successfully" in result
+    command = conn_mock.run.await_args.args[0]
+    assert "lshwres -r sriov --rsubtype adapter" in command
+    assert "chhwres" not in command
+    assert "already in sriov mode" in result
 
 
 # ---------------------------------------------------------------------- #
@@ -65,17 +69,21 @@ def test_set_sriov_mode_dedicated(monkeypatch, mock_hmc):
     """hmc_set_sriov_adapter_mode issues chhwres with mode=dedicated."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("")
+    fields = "adapter_id,slot_id,config_state,functional_state,phys_loc,phys_ports,logical_ports,adapter_max_logical_ports,sriov_status"
+    conn_mock = _make_ssh_mock(
+        f"{fields}\n{ADAPTER_ID},1,dedicated,1,U,2,120,120,stopped\n"
+    )
 
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock),
+        patch("hmc_mcp.operations_pcie._require_admitted_environment"),
+    ):
         result = hmc_set_sriov_adapter_mode(SYSTEM_UUID, ADAPTER_ID, "dedicated")
 
-    expected_cmd = (
-        f"chhwres -r sriov -m {SYSTEM_NAME} -o s --id {ADAPTER_ID}"
-        f" -a sriov_adapter_mode=dedicated"
-    )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
-    assert result == ""
+    command = conn_mock.run.await_args.args[0]
+    assert "lshwres -r sriov --rsubtype adapter" in command
+    assert "chhwres" not in command
+    assert "already in dedicated mode" in result
 
 
 # ---------------------------------------------------------------------- #

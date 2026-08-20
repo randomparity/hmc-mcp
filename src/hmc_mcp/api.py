@@ -3,7 +3,12 @@
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.documents import BootDeviceSelector, LparResources, PartitionType, StorageKind
+from hmc_mcp.documents import (
+    BootDeviceSelector,
+    LparResources,
+    PartitionType,
+    StorageKind,
+)
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, LuType
 from hmc_mcp.operations_adapters import (
@@ -70,6 +75,13 @@ from hmc_mcp.operations_pcie import (
     list_sriov_logical_ports,
     list_sriov_physical_ports,
     unassign_dedicated_pcie_slot,
+    SriovLogicalPortCapabilityError,
+    SriovLogicalPortChangeResult,
+    SriovLogicalPortPartialError,
+    SriovLogicalPortSnapshot,
+    assign_sriov_logical_port,
+    set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
 )
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
@@ -85,7 +97,6 @@ from hmc_mcp.operations_ssh_network import (
     list_sea_adapters,
     list_vnics,
     remove_vnic,
-    set_sriov_adapter_mode,
 )
 from .operations_storage import (
     create_logical_unit,
@@ -182,6 +193,13 @@ __all__ = [
     "list_sriov_logical_ports",
     "list_sriov_physical_ports",
     "unassign_dedicated_pcie_slot",
+    "SriovLogicalPortCapabilityError",
+    "SriovLogicalPortChangeResult",
+    "SriovLogicalPortPartialError",
+    "SriovLogicalPortSnapshot",
+    "assign_sriov_logical_port",
+    "set_sriov_adapter_mode",
+    "unassign_sriov_logical_port",
     "attach_disk_to_lpar",
     "provision_lpar",
     "ProvisionNetwork",

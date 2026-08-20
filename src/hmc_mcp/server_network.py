@@ -20,13 +20,17 @@ from .operations_network import (
     list_virtual_switches,
 )
 from .operations_ssh_network import (
-    SriovMode,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
+)
+from .operations_pcie import (
+    SriovMode,
+    assign_sriov_logical_port,
     set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
 )
 
 
@@ -116,7 +120,11 @@ def hmc_create_virtual_network(
     return _run(_go)
 
 
-@tool(effect="destructive", operation="network.delete_network", target_kind="managed_system")
+@tool(
+    effect="destructive",
+    operation="network.delete_network",
+    target_kind="managed_system",
+)
 def hmc_delete_virtual_network(
     system_name_or_uuid: str, network_uuid: str, profile: str | None = None
 ) -> str:
@@ -232,11 +240,7 @@ def hmc_set_sriov_adapter_mode(
     mode: SriovMode,
     profile: str | None = None,
 ) -> str:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
-
-    Runs ``chhwres -r sriov -m <system_name> -o s --id <adapter_id>
-    -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
-    command output.
+    """Verify that a physical adapter is already in the requested mode.
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
@@ -249,8 +253,8 @@ def hmc_set_sriov_adapter_mode(
       - ``"sriov"``      — enable SR-IOV mode (shared virtual functions)
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
-    WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
+    Mode transitions are not admitted by the available same-family evidence and
+    fail closed without mutation.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -264,6 +268,96 @@ def hmc_set_sriov_adapter_mode(
             build_config(profile=profile), system_name_or_uuid, adapter_id, mode
         )
     )
+
+
+@tool(effect="mutate", operation="sriov.assign_logical_port", target_kind="lpar")
+def hmc_assign_sriov_logical_port(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: float,
+    profile_name: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Assign an evidence-backed Ethernet SR-IOV logical port.
+
+    Args:
+        system_name_or_uuid: Managed system name or UUID.
+        lpar_name_or_uuid: Target partition name or UUID.
+        adapter_id: Normalized SR-IOV adapter ID.
+        physical_port_id: Normalized parent physical-port ID.
+        logical_port_id: Normalized unconfigured logical-port ID.
+        capacity_percent: Requested percentage capacity from 1 through 100.
+        profile_name: Exact profile whose unchanged state is verified.
+        ownership_override: Permit a separately approved ADR 0011 ownership override.
+        profile: TOML connection profile name.
+    """
+    from dataclasses import asdict
+    from decimal import Decimal
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return asdict(
+                await assign_sriov_logical_port(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    adapter_id,
+                    physical_port_id,
+                    logical_port_id,
+                    Decimal(str(capacity_percent)),
+                    profile_name=profile_name,
+                    ownership_override=ownership_override,
+                )
+            )
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="sriov.unassign_logical_port", target_kind="lpar")
+def hmc_unassign_sriov_logical_port(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Unassign a profile logical port on a Not Activated LPAR.
+
+    Args:
+        system_name_or_uuid: Managed system name or UUID.
+        lpar_name_or_uuid: Target partition name or UUID.
+        profile_name: Exact partition profile to update and verify.
+        adapter_id: Normalized SR-IOV adapter ID.
+        physical_port_id: Normalized parent physical-port ID.
+        logical_port_id: Normalized logical-port ID to remove.
+        ownership_override: Permit a separately approved ADR 0011 ownership override.
+        profile: TOML connection profile name.
+    """
+    from dataclasses import asdict
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return asdict(
+                await unassign_sriov_logical_port(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    profile_name,
+                    adapter_id,
+                    physical_port_id,
+                    logical_port_id,
+                    ownership_override=ownership_override,
+                )
+            )
+
+    return _run(_go)
 
 
 @tool(effect="read", operation="vnic.list", target_kind="lpar")

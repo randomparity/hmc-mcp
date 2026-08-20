@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +20,7 @@ EXPECTED_FIXTURES = {
     "power9-sriov-physport.json",
     "power10-sriov-contract.json",
     "power11-sriov-contract.json",
+    "power9-v10r3m1060-live-sriov.json",
 }
 P9_URL = (
     "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm"
@@ -126,6 +126,23 @@ def test_evidence_records_have_closed_versioned_shapes() -> None:
     for name, record in zip(
         sorted(EXPECTED_FIXTURES), _evidence_records(), strict=True
     ):
+        if record["record_kind"] == "live-capture":
+            assert record["evidence_kind"] == "live-capture"
+            assert record["hmc_release"] == "V10R3 M1060 build 2408210051"
+            assert record["system_model"] == "8375-42A"
+            assert record["support"] == "captured"
+            assert str(record["source_url"]).startswith("https://github.com/")
+            assert record["probes"]
+            for probe in record["probes"]:
+                assert set(probe) == {
+                    "name",
+                    "command",
+                    "fields",
+                    "exit_status",
+                    "stdout",
+                    "stderr",
+                }
+            continue
         assert record["evidence_kind"] == "documentation"
         assert record["documentation_family"] in {
             "Power8",
@@ -265,44 +282,19 @@ def _canonical_ast(value: object) -> object:
     return value
 
 
-def test_only_pcie_contract_readers_change_production_module() -> None:
+def test_sriov_mutation_surface_replaces_legacy_mode_and_never_forces() -> None:
     source = (ROOT / "src" / "hmc_mcp" / "ssh_commands.py").read_text()
     current = ast.parse(source)
-    parser = next(
-        node
+    functions = {
+        node.name: node
         for node in current.body
-        if isinstance(node, ast.FunctionDef) and node.name == "parse_hmc_delimited_rows"
-    )
-    current.body.remove(parser)
-    dedicated_reader = next(
-        node
-        for node in current.body
-        if isinstance(node, ast.AsyncFunctionDef)
-        and node.name == "list_dedicated_pcie_slot_rows"
-    )
-    current.body.remove(dedicated_reader)
-    canonical = json.dumps(_canonical_ast(current), separators=(",", ":"))
-    baseline_digest = hashlib.sha256(canonical.encode()).hexdigest()
-    assert (
-        baseline_digest
-        == "666ca3cd7c54f798ae3803e07f6ea583bb9ecf5afb05dbe79c0c871de8d10bec"  # pragma: allowlist secret
-    )
-    calls = {
-        _call_name(node) for node in ast.walk(parser) if isinstance(node, ast.Call)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert calls == {
-        "any",
-        "csv.reader",
-        "dict",
-        "enumerate",
-        "field.strip",
-        "len",
-        "line.strip",
-        "list",
-        "rows.append",
-        "set",
-        "text.splitlines",
-        "tuple",
-        "ValueError",
-        "zip",
-    }
+    assert "set_sriov_adapter_mode" not in functions
+    for name in (
+        "assign_sriov_logical_port_dynamic",
+        "unassign_sriov_logical_port_profile",
+    ):
+        rendered = ast.unparse(functions[name])
+        assert "--force" not in rendered
+    assert "-o s --id" not in source

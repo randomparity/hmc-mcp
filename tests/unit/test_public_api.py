@@ -83,6 +83,13 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_sriov_logical_ports",
         "list_sriov_physical_ports",
         "unassign_dedicated_pcie_slot",
+        "SriovLogicalPortCapabilityError",
+        "SriovLogicalPortChangeResult",
+        "SriovLogicalPortPartialError",
+        "SriovLogicalPortSnapshot",
+        "assign_sriov_logical_port",
+        "set_sriov_adapter_mode",
+        "unassign_sriov_logical_port",
         "attach_disk_to_lpar",
         "provision_lpar",
         "ProvisionNetwork",
@@ -130,7 +137,12 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
         "hmc_mcp.client": {"HMCClient"},
         "hmc_mcp.client_adapters": {"AdapterType"},
         "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
-        "hmc_mcp.documents": {"BootDeviceSelector", "LparResources", "PartitionType", "StorageKind"},
+        "hmc_mcp.documents": {
+            "BootDeviceSelector",
+            "LparResources",
+            "PartitionType",
+            "StorageKind",
+        },
         "hmc_mcp.errors": {"HMCError", "HMCTransportError"},
         "hmc_mcp.jobs": {"DeviceType", "LuType"},
         "hmc_mcp.operations_adapters": {
@@ -200,6 +212,13 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_sriov_logical_ports",
             "list_sriov_physical_ports",
             "unassign_dedicated_pcie_slot",
+            "SriovLogicalPortCapabilityError",
+            "SriovLogicalPortChangeResult",
+            "SriovLogicalPortPartialError",
+            "SriovLogicalPortSnapshot",
+            "assign_sriov_logical_port",
+            "set_sriov_adapter_mode",
+            "unassign_sriov_logical_port",
         },
         "hmc_mcp.operations_provision": {
             "AttachDiskResult",
@@ -215,7 +234,6 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_sea_adapters",
             "list_vnics",
             "remove_vnic",
-            "set_sriov_adapter_mode",
         },
         "hmc_mcp.operations_storage": {
             "create_logical_unit",
@@ -286,10 +304,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = (
-            "517057f4a7a22d60198b8ba45d307434"  # pragma: allowlist secret
-            "6e1688a5467a4c0fb20092bc4761c310"  # pragma: allowlist secret
-    )
+    expected_digest = "f4051ea65c566e358ed3340bf0dac7498f1933bc5d88191ee1dd856e2fa45a28"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
