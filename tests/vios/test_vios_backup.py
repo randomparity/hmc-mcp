@@ -155,6 +155,64 @@ def test_restore_vios_runs_correct_command(monkeypatch):
     assert "Restore completed" in result
 
 
+@pytest.mark.parametrize(
+    "backup_name",
+    [
+        "",
+        "   ",
+        "../other/x.tar",
+        "/data/viosbackup/x.tar",
+        "a\\b.tar",
+        ".",
+        "..",
+        " .. ",
+        " backup.tar ",
+        "-operation",
+    ],
+    ids=[
+        "empty",
+        "whitespace-only",
+        "dot-segment",
+        "absolute-path",
+        "backslash",
+        "single-dot",
+        "double-dot",
+        "padded-double-dot",
+        "padded-name",
+        "option-shaped",
+    ],
+)
+def test_restore_vios_refuses_a_name_that_could_leave_the_catalog(monkeypatch, backup_name):
+    """A backup_name is a name in the declared VIOS's catalog, not a path.
+
+    ADR 0044 keeps `hmc_restore_vios` bounded because `-id` selects the catalog
+    the name resolves in. That holds only while the value cannot denote anything
+    outside it, so this refusal is what the classification rests on rather than an
+    assumption about what the HMC does with a path-shaped `-file`.
+
+    The option-shaped case is the one that is easy to miss: `shlex.quote` leaves
+    `-operation` bare because it holds no shell metacharacter, so without this the
+    value would reach the CLI as a flag rather than as a file name.
+    """
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="backup_name"):
+        hmc_restore_vios(VIOS_UUID, backup_name)
+
+
+@pytest.mark.parametrize(
+    "backup_name", ["vios1_backup_001", "nim_resources.tar", "cfgbackup.tar.gz", "a-b_c.1"]
+)
+def test_restore_vios_admits_an_ordinary_catalog_name(monkeypatch, backup_name):
+    """The refusal is narrow: every shape the catalog can hold still restores."""
+    _hmc_env(monkeypatch)
+    conn_mock = _make_ssh_mock("Restore completed successfully.\n")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
+        hmc_restore_vios(VIOS_UUID, backup_name)
+
+    assert f"-file {backup_name}" in conn_mock.run.call_args[0][0]
+
+
 def test_restore_vios_returns_cli_output(monkeypatch):
     """hmc_restore_vios returns the raw SSH stdout verbatim."""
     _hmc_env(monkeypatch)

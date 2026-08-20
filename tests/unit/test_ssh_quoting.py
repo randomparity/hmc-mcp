@@ -180,15 +180,21 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
 
 
 def test_restore_vios_quotes_hostile_backup_name(monkeypatch):
-    """hmc_restore_vios shell-quotes a hostile backup_name (no REST resolution)."""
+    """hmc_restore_vios shell-quotes a hostile backup_name (no REST resolution).
+
+    The hostile value carries a shell metacharacter but no path separator: ADR
+    0044's containment guard refuses a separator-bearing name before the command
+    is built, so a value with one would never reach the quoting this asserts.
+    Quoting and containment are separate controls and this proves the first.
+    """
     _hmc_env(monkeypatch)
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_restore_vios(SYSTEM_UUID, "/backups/vios;id")
+        hmc_restore_vios(SYSTEM_UUID, "vios;id")
 
     cmd = _captured_cmd(conn)
-    assert shlex.quote("/backups/vios;id") in cmd
+    assert shlex.quote("vios;id") in cmd
 
 
 def test_resolved_system_name_is_quoted_too(monkeypatch, mock_hmc):
