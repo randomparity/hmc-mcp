@@ -81,12 +81,14 @@ part of the ordinary contract; conflict override requires an explicit later poli
 
 ## Capability and error behavior
 
-Command success with no non-empty rows means `available` with an empty collection. An HMC error
-that identifies an unsupported resource, subtype, level, or selected field means
-`capability-unavailable` and retains a public-safe reason. Authentication, authorization,
-transport, timeout, malformed successful output, and other HMC errors remain errors; they must not
-be rewritten as capability absence. A partial row missing any stable-identity component is
-malformed evidence, not an unavailable capability and not an unassigned resource.
+Command success with no non-empty rows means `available` with an empty collection. This change
+admits no HMC error signature as proof of `capability-unavailable`: every non-success remains an
+error unless later version-labelled evidence supplies the exact command, exit status, diagnostic,
+and classifier test. Authentication, authorization, transport, timeout, malformed successful
+output, and apparently unsupported-resource failures therefore must not be rewritten as
+capability absence. A required unavailable capability fails closed without mutation. A partial row
+missing any stable-identity component is malformed evidence, not an unavailable capability and
+not an unassigned resource.
 
 ## Testing and acceptance
 

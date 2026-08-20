@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed until the evidence fixtures and parser tests in this change are committed.
+Proposed until the version-backed fixtures, parser and error-classification tests, complete
+state-matrix test, and no-mutation-surface check are committed and `just verify` passes.
 
 ## Context
 
@@ -48,12 +49,15 @@ Names, location codes, MAC addresses, and partition names are attributes, not id
 SR-IOV `capacity`, `max_capacity`, and physical-port minimum granularities are percentages with
 up to two decimal places. They are never bytes, bandwidth, or whole-number weights.
 
-Read commands may report capability unavailable distinctly from an empty result. An
-evidence-admitted resource, subtype, or field rejected by the applicable HMC with an unambiguous
-documented unsupported diagnostic is capability-unavailable. Unknown or misspelled fields,
-malformed selections, and ambiguous failures are contract errors. Successful zero-row output is
-an available empty collection; malformed successful rows are contract errors. The contract
-records but does not implement mutation. Dynamic logical-port operations use
+Read commands may report capability unavailable distinctly from an empty result, but this change
+admits no HMC error signature as proof of that outcome because the reviewed IBM references do not
+document one. Successful zero-row output is an available empty collection. Every non-success —
+including unknown or misspelled fields, malformed selections, and apparently unsupported
+resources — remains an error unless a later version-labelled evidence fixture admits an exact
+command, exit status, diagnostic, and classifier test. A downstream operation that requires an
+unavailable capability must fail closed and must not mutate. Malformed successful rows are
+contract errors. The contract records but does not implement mutation. Dynamic logical-port
+operations use
 `chhwres -r sriov --rsubtype logport`; profile/create-time logical ports use the documented
 `sriov_eth_logical_ports` / `sriov_roce_logical_ports` profile attributes; dedicated slots use
 dynamic `chhwres -r io --rsubtype slot` only where the HMC permits DLPAR and otherwise change
