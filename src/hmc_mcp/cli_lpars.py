@@ -797,7 +797,9 @@ def lpars_set_description(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
     description: str = typer.Argument(
-        ..., help="New description text (printable ASCII, no ',' or '=')"
+        ...,
+        help="New description text (printable ASCII, no HMC attribute-record "
+        "structure; the error names the character)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(

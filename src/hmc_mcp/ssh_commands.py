@@ -128,9 +128,11 @@ def validate_lpar_description(description: str) -> None:
     The HMC enforces printable ASCII-only partition descriptions (HSCLC63B).
     Control characters (NUL, LF, CR, ESC, …) are also rejected because they
     can corrupt the HMC CLI's CSV-like ``-i`` parser or be silently truncated
-    at the C-string layer.  A ``,`` or ``=`` is rejected because the ``-i``
-    record's parser reads them as structure: ``description=x,foo=bar`` sets a
-    ``foo`` attribute the caller was never given an argument for.
+    at the C-string layer.  Every character in :data:`_RECORD_DELIMITERS` is
+    rejected too, because the ``-i`` record's parser reads them as structure:
+    ``description=x,foo=bar`` sets a ``foo`` attribute the caller was never
+    given an argument for.  The message names the offending character, so this
+    docstring does not restate the table — it has grown once already.
 
     Called at the MCP tool layer before UUID resolution and again inside
     :func:`set_lpar_description` as a defensive check.  Both call sites are
@@ -611,8 +613,8 @@ async def set_lpar_description(
     command output.
 
     Raises ``ValueError`` if *description* is not printable ASCII or carries a
-    ``,``, ``=``, or ``"``; see :func:`validate_lpar_description` for the
-    constraint and error code.
+    character the record treats as structure; see
+    :func:`validate_lpar_description` for the constraint and error code.
 
     Raises :class:`HMCCLIError` if *lpar_name* contains a character that would
     corrupt the ``chsyscfg -i`` attribute record; see

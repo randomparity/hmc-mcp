@@ -87,16 +87,18 @@ def hmc_set_lpar_description(
     Foreign-owned or malformed tokens are rejected. Set ownership_override=True
     only after explicit operator approval.
 
-    A description containing ',' or '=' is rejected: the HMC writes it through a
-    comma- and equals-delimited attribute record, which would read the text as
-    further attributes rather than as the description (ADR 0045).
+    A description carrying a character the HMC's attribute record treats as
+    structure is rejected, with an error naming the character. The HMC writes
+    the description through that record, so such text would be read as further
+    attributes rather than as the description (ADR 0045).
 
     WARNING: This changes LPAR configuration on the selected HMC.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        description: New printable-ASCII partition description, without ',' or '='.
+        description: New printable-ASCII partition description, carrying no
+            character the HMC attribute record treats as structure.
         ownership_override: Permit overwriting a foreign or malformed ownership token
             only after explicit operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.

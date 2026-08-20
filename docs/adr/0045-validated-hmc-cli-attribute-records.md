@@ -87,16 +87,25 @@ shell word, `build_attribute_record` the record's own delimiters — because it 
 whoever writes the seventh record site will read.
 
 **A test enforces the coupling.** `tests/unit/test_i_record_grammar.py` parses every module
-under `src/hmc_mcp/` and `scripts/`, finds each function whose own string literals name
-`chsyscfg` or `mksyscfg` *and* carry the `-i` flag, and follows the expression interpolated
-directly after that flag: it must be a `build_attribute_record` call, or a local name assigned
-from one. A function that builds one record through the builder and a second by f-string fails,
-because the check is per payload rather than per function.
+under `src/hmc_mcp/` and `scripts/` and selects each *string literal* that opens with `chsyscfg`
+or `mksyscfg` and carries the `-i` flag. For each one it follows the expression interpolated
+directly after that flag, which must be a `build_attribute_record` call or a local name assigned
+from one.
 
-Its reach is bounded and worth stating. It reads literals in the function itself, so hoisting
-the command template to a module constant, or routing the record through a shared command
-helper, would take a new site out of its view. It is a guard against the next author repeating
-the f-string that is already in the file, not a proof that no such site can exist.
+Selection and inspection share the same unit on purpose. An earlier shape selected whole
+functions and inspected f-strings, and the two could disagree: a function was selected, no
+payload was found, and it passed. So a selected literal that yields no traceable payload — a
+`.format()` template, a `%` template, a `+` concatenation that ends at the flag — is itself
+reported, and a separate test refuses a record command literal hoisted outside any function.
+Requiring the literal to *open* with the command is what keeps prose that merely mentions
+`chsyscfg -i` out of selection.
+
+Its reach is still bounded, and the bound is narrower than it looks. A function that builds one
+record through the builder and a second by f-string fails, because the check is per payload. A
+command assembled so that no single literal opens with the command name — `" ".join(["chsyscfg",
+…, "-i", payload])`, or a `cmd` built by `+=` from separate pieces — is out of its view. It is a
+guard against the next author repeating the f-string already in the file, not a proof that no
+unguarded site can exist.
 
 ## Consequences
 
@@ -112,8 +121,9 @@ HMC error, never the description it typed. What changes is that the failure is n
 immediate, and names the character.
 
 `tests/lpar/test_lpar_description.py::test_set_lpar_description_embeds_description` pinned the
-old behaviour with `owner=alice env=prod`. It now pins the refusal, and a separate test pins
-that an ordinary description still reaches the record unchanged.
+old behaviour with `owner=alice env=prod`. It now passes an ordinary description and still pins
+that it reaches the record unchanged; `test_set_lpar_description_rejects_record_delimiters_in_description`
+beside it pins the refusal of the old value.
 
 The same narrowing applies to `profile_name` in `create_lpar_via_cli` and
 `assign_profile_io_slot`, to `mode` in `set_lpar_proc_compat`, and to `drc_index` in
@@ -127,6 +137,14 @@ today, including a name with a space. Control characters are the exception, and 
 structure: a newline can terminate the record and a NUL can truncate it inside the HMC, so the
 partition acted on would differ from the one the caller named. No HMC object name has a
 documented form containing one.
+
+**`set_lpar_description` changes in three small ways beyond the narrowing.** Its `lpar_name` now
+also refuses `"` and control characters, since it goes through the same builder as every other
+record. Its `,`/`=` message for `lpar_name` reads in the builder's wording rather than its own.
+And it validates the description before the name, where it used to validate the name first — so
+a direct call carrying both a bad name and a bad description raises `ValueError` where it used
+to raise `HMCCLIError`. The tool path is unaffected, because `hmc_set_lpar_description` already
+validated the description first, and `stamp_lpar_ownership` catches both types.
 
 **Errors quote the offending value.** `build_attribute_record`'s message includes the rejected
 value, which reaches MCP callers and audit logs. Every attribute routed through it today carries
@@ -155,8 +173,9 @@ HMC's multi-device syntax for it is comma-separated — so the record grammar an
 own grammar disagree, and resolving that needs the HMC-side answer this change did not need.
 Tracked as issue #285.
 
-`--filter lpar_names=<name>` is the same name/value syntax and is untouched. It appears on eight
-`lssyscfg`/`lshwres`/`chhwres` reads and selects which partition a command acts on, so a value
+`--filter lpar_names=<name>` is the same name/value syntax and is untouched. It appears on
+`lssyscfg`, `lshwres`, and `chhwres` sites across `ssh_commands.py` and `scripts/`, several of
+them inside mutating functions, and it selects which partition a command acts on — so a value
 carrying its structure would misdirect a mutation rather than add an attribute to one. It is
 pre-existing, outside this record's `-i` subject, and folded into #285's scope.
 

@@ -273,40 +273,49 @@ def _static_text(node: ast.AST) -> str:
     return ""
 
 
-def _docstring_nodes(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
-    """Return the ``id()`` of *func*'s docstring node, if it has one."""
-    first = func.body[0] if func.body else None
-    if (
-        isinstance(first, ast.Expr)
-        and isinstance(first.value, ast.Constant)
-        and isinstance(first.value.value, str)
-    ):
-        return {id(first.value)}
-    return set()
+def _docstring_nodes(tree: ast.AST) -> set[int]:
+    """Return the ``id()`` of every docstring constant in *tree*.
+
+    A docstring quotes the command it documents, so it names ``chsyscfg`` and
+    ``-i`` without building anything.  Module, class, and function docstrings
+    are all excluded.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            ids.add(id(first.value))
+    return ids
 
 
 RECORD_COMMANDS = ("chsyscfg", "mksyscfg")
 
 
-def _builds_an_i_record(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when *func* composes a record command carrying the ``-i`` flag.
+def _is_an_i_record_literal(node: ast.AST) -> bool:
+    """True when one string literal both names a record command and flags ``-i``.
 
-    Both signals must be present in *func*'s own non-docstring string literals:
-    a command that takes an attribute record, and the ``-i`` flag that carries
-    it.  Looking at the function rather than at a single literal keeps the
-    check working when the command is assembled from several pieces.
+    Selection and payload inspection deliberately share this unit.  A rule that
+    selected on the whole function and inspected one literal could select a
+    function and then examine nothing — which passes, silently, exactly where
+    the check matters most.
+
+    The literal has to *open* with the command, which is what a command string
+    does and what prose about a command does not.  Interpolations contribute no
+    static text, so ``f"{host_prefix}chsyscfg …"`` still opens with it.
     """
-    skip = _docstring_nodes(func)
-    texts = [
-        _static_text(node) for node in ast.walk(func) if id(node) not in skip
-    ]
-    names_a_command = any(
-        command in text for text in texts for command in RECORD_COMMANDS
-    )
-    carries_the_flag = any(
-        " -i " in text or text.endswith(" -i") for text in texts
-    )
-    return names_a_command and carries_the_flag
+    if not isinstance(node, ast.Constant | ast.JoinedStr):
+        return False
+    text = _static_text(node).lstrip()
+    if not text.startswith(RECORD_COMMANDS):
+        return False
+    return " -i " in text or text.rstrip().endswith("-i")
 
 
 def _is_builder_call(node: ast.AST) -> bool:
@@ -343,47 +352,82 @@ def _builder_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[st
     return names
 
 
-def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """Return the ``-i`` payload expressions in *func* not built by the builder.
+def _unguarded_payloads(literal: ast.AST, bound: set[str]) -> list[str]:
+    """Return *literal*'s ``-i`` payloads that do not come from the builder.
 
-    Follows the value actually interpolated after the ``-i`` flag rather than
-    asking whether the builder is called anywhere in the function, so a
-    function that builds one record correctly and a second by f-string is still
-    reported.
+    *bound* holds the local names assigned from a builder call in the enclosing
+    function.  A selected literal that yields no traceable payload at all is
+    itself reported: an unexaminable record command is not a passing one.
     """
-    bound = _builder_bound_names(func)
-    skip = _docstring_nodes(func)
+    if not isinstance(literal, ast.JoinedStr):
+        return [
+            f"{ast.unparse(literal)} (a record command that is not an f-string, "
+            "so its -i payload cannot be traced to the builder)"
+        ]
     unguarded: list[str] = []
-    for node in ast.walk(func):
-        if not isinstance(node, ast.JoinedStr) or id(node) in skip:
+    examined = 0
+    parts = literal.values
+    for index, part in enumerate(parts):
+        if not _static_text(part).rstrip().endswith("-i"):
             continue
-        parts = node.values
-        for index, part in enumerate(parts[:-1]):
-            text = _static_text(part)
-            if not text.rstrip().endswith("-i"):
-                continue
-            payload = parts[index + 1]
-            if not isinstance(payload, ast.FormattedValue):
-                unguarded.append(ast.unparse(part))
-                continue
-            expression = _unwrap_shlex_quote(payload.value)
-            guarded = _is_builder_call(expression) or (
-                isinstance(expression, ast.Name) and expression.id in bound
+        payload = parts[index + 1] if index + 1 < len(parts) else None
+        if not isinstance(payload, ast.FormattedValue):
+            unguarded.append(
+                f"{ast.unparse(literal)} (the -i flag is not followed by an "
+                "interpolation in this f-string)"
             )
-            if not guarded:
-                unguarded.append(ast.unparse(payload.value))
+            continue
+        examined += 1
+        expression = _unwrap_shlex_quote(payload.value)
+        guarded = _is_builder_call(expression) or (
+            isinstance(expression, ast.Name) and expression.id in bound
+        )
+        if not guarded:
+            unguarded.append(ast.unparse(payload.value))
+    if not examined and not unguarded:
+        unguarded.append(
+            f"{ast.unparse(literal)} (selected as a record command, but no -i "
+            "payload was found to check)"
+        )
     return unguarded
+
+
+def _i_record_literals(node: ast.AST) -> list[ast.AST]:
+    """Return the ``-i`` record command literals inside *node*, docstrings aside."""
+    skip = _docstring_nodes(node)
+    return [
+        child
+        for child in ast.walk(node)
+        if id(child) not in skip and _is_an_i_record_literal(child)
+    ]
+
+
+def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Return *func*'s ``-i`` payload expressions not built by the builder."""
+    bound = _builder_bound_names(func)
+    return [
+        problem
+        for literal in _i_record_literals(func)
+        for problem in _unguarded_payloads(literal, bound)
+    ]
+
+
+def _scanned_modules() -> list[tuple[Path, ast.Module]]:
+    """Return every scanned source file parsed to an AST."""
+    return [
+        (path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+        for path in sorted(p for root in SCANNED_ROOTS for p in root.rglob("*.py"))
+    ]
 
 
 def _record_building_functions() -> list[tuple[str, ast.AST]]:
     """Return every ``(qualified name, node)`` that builds an ``-i`` record."""
     found: list[tuple[str, ast.AST]] = []
-    for path in sorted(p for root in SCANNED_ROOTS for p in root.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for path, tree in _scanned_modules():
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
-            if _builds_an_i_record(node):
+            if _i_record_literals(node):
                 found.append((f"{path.name}::{node.name}", node))
     return found
 
@@ -407,6 +451,35 @@ def test_every_i_record_site_is_built_by_the_shared_builder():
         f"these -i payloads are not built by {BUILDER_NAME}(): {skipping}. "
         f"shlex.quote protects the shell word only; the record's own ',', '=' "
         f"and '\"' structure needs the builder."
+    )
+
+
+def test_no_record_command_literal_lives_outside_a_function():
+    """A module-level record template would sit outside the payload check.
+
+    The guard follows the payload interpolated into a literal inside the
+    function that builds it.  A command template hoisted to a module constant
+    is out of that view, so this refuses the hoist rather than pretending to
+    check it.
+    """
+    hoisted: dict[str, list[str]] = {}
+    for path, tree in _scanned_modules():
+        in_functions = {
+            id(literal)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            for literal in _i_record_literals(node)
+        }
+        outside = [
+            ast.unparse(literal)
+            for literal in _i_record_literals(tree)
+            if id(literal) not in in_functions
+        ]
+        if outside:
+            hoisted[path.name] = outside
+    assert not hoisted, (
+        f"these -i record command literals live outside any function: {hoisted}. "
+        f"Build the record with {BUILDER_NAME}() in the function that runs it."
     )
 
 
