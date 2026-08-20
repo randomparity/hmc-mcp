@@ -611,16 +611,25 @@ def test_an_unusable_stderr_neither_fails_the_start_nor_reaches_stdout(
     """R10a: a diagnostic nobody asked for must not abort a start.
 
     Nor may it land on stdout, which carries JSON-RPC under stdio. Each state
-    raises differently — BrokenPipeError is an OSError, a closed file raises
-    ValueError, and ``print(file=None)`` does not raise at all but writes to
-    stdout — so asserting only "did not raise" would miss the one that leaks.
+    fails differently — BrokenPipeError is an OSError, a closed file raises
+    ValueError, and an absent stream raises nothing at all — so asserting only
+    "did not raise" would miss the one that leaks.
+
+    Since ADR 0043 the stream is resolved by ``audit``'s sink rather than by
+    ``server._warn``, on a writer thread, so this patches the process-wide
+    ``sys.stderr`` and settles the sink before reading stdout. The three states
+    are now three counted drops rather than three silent ones.
     """
+    import sys
+
     import hmc_mcp.server as server_app
+    from hmc_mcp import audit
 
     policy = _policy(ESCAPE_HATCH_ONLY, name="hatch")
-    monkeypatch.setattr(server_app.sys, "stderr", _unusable_stderr(state, tmp_path))
+    monkeypatch.setattr(sys, "stderr", _unusable_stderr(state, tmp_path))
 
     application = server_app._serve_application(False, policy)
+    assert audit._SINK.drain(audit._DRAIN_TIMEOUT), "the sink must settle, not stall"
 
     assert _names(application) == set()
     assert capsys.readouterr().out == ""
