@@ -61,7 +61,7 @@ contract errors. The contract records but does not implement mutation. Dynamic l
 operations use
 `chhwres -r sriov --rsubtype logport`; profile/create-time logical ports use the documented
 `sriov_eth_logical_ports` / `sriov_roce_logical_ports` profile attributes; dedicated slots use
-dynamic `chhwres -r io --rsubtype slot` only where the HMC permits DLPAR and otherwise change
+dynamic `chhwres -r io` with `-l <slot-DRC-index>` only where the HMC permits DLPAR and otherwise change
 `io_slots` in the profile. A profile change never claims to alter effective running state.
 
 ## Consequences
