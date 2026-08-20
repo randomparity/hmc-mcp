@@ -133,9 +133,15 @@ record exists to remove, wearing a different name.
   byte figure is now a typical case rather than a ceiling. The queue still bounds the number of
   outstanding writes, which is the property that keeps the server answering; it bounds memory
   only loosely.
-- **The bound is reached sooner.** Two producers filled 1024 slots at the audit stream's rate;
-  three fill them at that rate plus FastMCP's. A burst of handler errors now consumes slots a
-  burst of denials used to have to itself.
+- **The bound is reached sooner, and a denied caller reaches it twice as fast.** A denied call
+  now submits two items where it submitted one: ADR 0040's audit record, and ADR 0046's concise
+  line, which used to bypass the queue. Against a destination that has stopped draining, the
+  1024 slots therefore hold about half as many audit records as before, and the `records-dropped`
+  count reaches a given number in half the calls. This is a real narrowing of the
+  security-observability window and it is accepted on the same terms ADR 0043 accepted the drop
+  rule: a droppable trail that keeps serving, over a complete one that stops. It is also bounded
+  by the same precondition — a destination nobody is draining, which under stdio is the client
+  harming itself.
 - **A denial's two stderr lines are now ordered.** The audit record and ADR 0046's concise line
   go onto the same FIFO from the same call, so the record precedes the line. That was not true
   before — the record went to the sink while the line went straight through FastMCP's handler —
@@ -168,6 +174,23 @@ discards a handler, so a denial stays one line even in the process where this re
 has lapsed. Detecting the lapse and reinstalling — a watchdog, or a re-check on every dispatch —
 is not undertaken here: it adds a mechanism whose failure mode is the one being fixed, for a path
 no shipped entry point takes.
+
+### Residual: `Handler.handleError` still writes straight to fd 2
+
+`_AuditHandler.emit` wraps its body and routes a failure to `logging.Handler.handleError`, which
+is what every stdlib handler does and what makes a logging call safe to place anywhere. With
+`logging.raiseExceptions` true — the default — that method writes a multi-line traceback
+**synchronously to `sys.stderr`**, which is the behaviour ADR 0043 cited when it rejected
+`QueueHandler`. Confirmed by driving a record whose `msg % args` raises through the handler at
+this branch's HEAD: `--- Logging error ---` and a traceback reached the stream directly.
+
+This is not new — the arm predates this record and ADR 0040 accepted it for the malformed
+foreign record it was written for — but routing FastMCP's records through the same handler makes
+it reachable by more traffic. It needs a record that fails to render, which FastMCP's own tool
+error path cannot produce (it logs f-strings with no `args`), so no shipped call reaches it. Left
+as it is rather than rerouted through the sink, because replacing the stdlib error contract on
+the handler an operator may attach to `hmc_mcp.audit` is a decision about ADR 0040's surface, not
+about where FastMCP's records go.
 
 ## Considered & rejected
 
