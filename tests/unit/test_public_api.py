@@ -111,6 +111,15 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "add_vnic",
         "remove_vnic",
         "SriovMode",
+        "AssignmentResult",
+        "AssignmentStep",
+        "DedicatedPcieAssignment",
+        "LparPcieAssignments",
+        "LparPcieWorkflowResult",
+        "SriovLogicalPortAssignment",
+        "VnicAssignment",
+        "apply_lpar_pcie_assignments",
+        "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
@@ -159,6 +168,17 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_adapters",
         },
         "hmc_mcp.operations_capacity": {"capacity_report", "find_placement"},
+        "hmc_mcp.operations_assignments": {
+            "AssignmentResult",
+            "AssignmentStep",
+            "DedicatedPcieAssignment",
+            "LparPcieAssignments",
+            "LparPcieWorkflowResult",
+            "SriovLogicalPortAssignment",
+            "VnicAssignment",
+            "apply_lpar_pcie_assignments",
+            "prevalidate_lpar_pcie_assignments",
+        },
         "hmc_mcp.operations_composite": {"lpar_summary", "system_summary"},
         "hmc_mcp.operations_decommission": {
             "DecommissionResult",
@@ -293,7 +313,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0054, which added the normalized PCIe inventory models and
+    Last moved by ADR 0058, which added declarative LPAR PCIe assignments. ADR 0054
+    added the normalized PCIe inventory models and
     operations. Before that, ADR 0050 added ``HMCConfig.iso_url_allowlist`` — a
     pydantic model's ``__init__`` signature is derived from its fields, so a new
     setting moves the digest even though no operation's parameters changed.
@@ -316,7 +337,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "7ecd37c262bb0b756ffec59bca6260c891d85293b4a237d1dd7ed486b693d989"  # pragma: allowlist secret
+    expected_digest = "135947049bb30f551de143904ba26c855a64dda4beda4822b9fc446f59f26128"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

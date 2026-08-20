@@ -38,7 +38,6 @@ DEFAULT_CHUNK_SIZE = 8192
 UPLOAD_CHUNK_SIZE = 64 * 1024
 
 
-
 async def list_volume_groups(hmc: HMCClient, vios: str) -> list[dict[str, Any]]:
     return await hmc.list_volume_groups(await resolve_vios_uuid(hmc, vios))
 
@@ -82,19 +81,21 @@ async def delete_virtual_disk(
     # Check if the disk is currently mapped before deletion
     mappings = await hmc.list_storage_mappings(await resolve_vios_uuid(hmc, vios))
     disk_link = f"/rest/api/uom/VirtualIOServer/{await resolve_vios_uuid(hmc, vios)}/VolumeGroup/{vg_uuid}/VirtualDisk/{disk_name}"
-    
+
     for mapping in mappings:
         backing_storage = mapping.get("Storage", {}).get("VirtualDisk", {})
         if isinstance(backing_storage, dict):
             storage_link = backing_storage.get("@href", "")
-            if disk_link in storage_link or storage_link.endswith(f"VirtualDisk/{disk_name}"):
+            if disk_link in storage_link or storage_link.endswith(
+                f"VirtualDisk/{disk_name}"
+            ):
                 lpar = mapping.get("AssociatedLogicalPartition", {})
                 lpar_name = lpar.get("PartitionName", lpar.get("@href", "unknown"))
                 raise HMCError(
                     f"Cannot delete virtual disk '{disk_name}': it is mapped to LPAR '{lpar_name}'. "
                     f"Use detach_storage_mapping first to remove the mapping."
                 )
-    
+
     # Disk is not mapped, safe to delete
     return await hmc.delete_virtual_disk(
         await resolve_vios_uuid(hmc, vios), vg_uuid, disk_name
@@ -131,6 +132,8 @@ async def create_optical_media(
     return await hmc.create_optical_media(
         await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mib
     )
+
+
 async def list_storage_mappings(
     hmc: HMCClient, vios: str, lpar: str | None = None
 ) -> list[dict[str, Any]]:
@@ -146,9 +149,7 @@ async def list_storage_mappings(
     return await hmc.list_storage_mappings(vios_uuid, lpar_uuid)
 
 
-async def detach_storage_mapping(
-    hmc: HMCClient, vios: str, mapping_uuid: str
-) -> None:
+async def detach_storage_mapping(hmc: HMCClient, vios: str, mapping_uuid: str) -> None:
     """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage).
 
     mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
@@ -158,9 +159,7 @@ async def detach_storage_mapping(
     await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)
 
 
-async def delete_media_repository(
-    hmc: HMCClient, vios: str, vg_uuid: str
-) -> str:
+async def delete_media_repository(hmc: HMCClient, vios: str, vg_uuid: str) -> str:
     """Delete the Virtual Media Repository from a Volume Group.
 
     Refuses deletion if the repository contains any VirtualOpticalMedia
@@ -215,6 +214,7 @@ async def delete_optical_media(
 
     return await hmc.delete_optical_media(vios_uuid, vg_uuid, media_name)
 
+
 async def get_media_repository(
     hmc: HMCClient, vios: str, vg_uuid: str
 ) -> dict[str, Any] | None:
@@ -223,9 +223,7 @@ async def get_media_repository(
     Returns the repository with capacity (RepositorySize) and optionally
     embedded VirtualOpticalMedia entries if present.
     """
-    return await hmc.get_media_repository(
-        await resolve_vios_uuid(hmc, vios), vg_uuid
-    )
+    return await hmc.get_media_repository(await resolve_vios_uuid(hmc, vios), vg_uuid)
 
 
 ACCEPTED_ISO_SCHEMES = ("http", "https")
@@ -317,8 +315,7 @@ def _require_allowlisted_iso_url(
     raise ValueError(
         f"iso_source is refused: got {iso_url!r}, whose host is not on the ISO "
         f"download allowlist. Permitted: {permitted}. Publish the ISO on one of "
-        "those hosts, or have an operator add this one. "
-        + ISO_URL_ALLOWLIST_HELP
+        "those hosts, or have an operator add this one. " + ISO_URL_ALLOWLIST_HELP
     )
 
 
@@ -371,6 +368,7 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
 
             # Create temp file for download
             import tempfile
+
             fd, temp_path = tempfile.mkstemp(suffix=".iso", prefix="hmc_upload_")
             temp_file = Path(temp_path)
 
@@ -379,7 +377,9 @@ async def _download_iso_from_url(url: str) -> tuple[Path, str, int]:
 
             try:
                 with os.fdopen(fd, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=DEFAULT_CHUNK_SIZE):
+                    async for chunk in response.aiter_bytes(
+                        chunk_size=DEFAULT_CHUNK_SIZE
+                    ):
                         # Enforce size limit
                         downloaded_size += len(chunk)
                         if downloaded_size > MAX_DOWNLOAD_SIZE_BYTES:
@@ -428,10 +428,7 @@ async def list_optical_media(
     MediaName, MediaSize, and MediaType. The repository must exist
     (VMLibrary on the specified Volume Group).
     """
-    return await hmc.list_optical_media(
-        await resolve_vios_uuid(hmc, vios), vg_uuid
-    )
-
+    return await hmc.list_optical_media(await resolve_vios_uuid(hmc, vios), vg_uuid)
 
 
 async def upload_iso(
@@ -551,7 +548,6 @@ async def upload_iso(
                 pass
 
 
-
 async def create_logical_unit(
     hmc: HMCClient,
     cluster_uuid: str,
@@ -621,8 +617,11 @@ async def list_optical_mappings(
 
 
 async def mount_optical_media(
-    hmc: HMCClient, vios: str, media_name: str, lpar: str,
-    target_device: str | None = None
+    hmc: HMCClient,
+    vios: str,
+    media_name: str,
+    lpar: str,
+    target_device: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 

@@ -83,6 +83,17 @@ from hmc_mcp.operations_pcie import (
     set_sriov_adapter_mode,
     unassign_sriov_logical_port,
 )
+from hmc_mcp.operations_assignments import (
+    AssignmentResult,
+    AssignmentStep,
+    DedicatedPcieAssignment,
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+    SriovLogicalPortAssignment,
+    VnicAssignment,
+    apply_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
     ProvisionNetwork,
@@ -227,6 +238,15 @@ __all__ = [
     "add_vnic",
     "remove_vnic",
     "SriovMode",
+    "AssignmentResult",
+    "AssignmentStep",
+    "DedicatedPcieAssignment",
+    "LparPcieAssignments",
+    "LparPcieWorkflowResult",
+    "SriovLogicalPortAssignment",
+    "VnicAssignment",
+    "apply_lpar_pcie_assignments",
+    "prevalidate_lpar_pcie_assignments",
     "list_volume_groups",
     "create_volume_group",
     "create_virtual_disk",

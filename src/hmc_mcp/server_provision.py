@@ -13,6 +13,7 @@ from .operations_provision import (
     ProvisionStorage,
     provision_lpar,
 )
+from .operations_assignments import LparPcieAssignments
 
 
 tool, register_tools, tool_security = tool_module()
@@ -45,6 +46,7 @@ def hmc_provision_lpar(
     partition_type: PartitionType = "AIX/Linux",
     power_on: bool = True,
     dry_run: bool = False,
+    assignments: LparPcieAssignments = LparPcieAssignments(),
     profile: str | None = None,
 ) -> ProvisionResult:
     """Provision an LPAR with network, vSCSI storage, and optional power-on.
@@ -58,6 +60,7 @@ def hmc_provision_lpar(
         partition_type: Partition environment: AIX/Linux, OS400, or VIOS.
         power_on: Power on the partition after configuration succeeds.
         dry_run: Validate preconditions without creating or changing resources.
+        assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         profile: Optional TOML profile name; uses environment defaults when omitted.
 
     Returns:
@@ -77,6 +80,7 @@ def hmc_provision_lpar(
                 partition_type=partition_type,
                 power_on=power_on,
                 dry_run=dry_run,
+                assignments=assignments,
             )
 
     return _run(_go)

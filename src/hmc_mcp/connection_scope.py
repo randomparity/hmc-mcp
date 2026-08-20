@@ -41,8 +41,7 @@ class ConnectionScopeError(Exception):
 # claim about it. In particular the ConfigError's own message — which names the
 # config path — is chained as __cause__ and never interpolated.
 _UNREADABLE = (
-    "{tool} cannot be authorized: the configured HMC connections could not be "
-    "read."
+    "{tool} cannot be authorized: the configured HMC connections could not be read."
 )
 _DENIED = (
     "{tool} is not permitted on connection {connection} by access policy "
@@ -127,9 +126,7 @@ def _clause(argument: str, collapsed: bool) -> str:
     """
     if not collapsed:
         return ""
-    return _HMC_HOST_CLAUSE.format(
-        argument=argument, default=DEFAULT_CONNECTION_TOKEN
-    )
+    return _HMC_HOST_CLAUSE.format(argument=argument, default=DEFAULT_CONNECTION_TOKEN)
 
 
 def connection_permitted(connection: str | None, grant_connections: Container) -> bool:

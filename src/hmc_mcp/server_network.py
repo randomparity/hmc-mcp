@@ -385,11 +385,10 @@ def hmc_list_vnics(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_vnics(
-                hmc.config, system_name_or_uuid, lpar_name_or_uuid
-            )
+            return await list_vnics(hmc.config, system_name_or_uuid, lpar_name_or_uuid)
 
     return _run(_go)
 
@@ -424,6 +423,7 @@ def hmc_add_vnic(
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
@@ -469,6 +469,7 @@ def hmc_remove_vnic(
         ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
     async def _go():
         async with client_from_env(profile) as hmc:
             try:

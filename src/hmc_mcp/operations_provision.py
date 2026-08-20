@@ -23,6 +23,11 @@ from .operations_lpar import (
     power_lpar,
 )
 from .operations_storage import create_virtual_disk, map_storage
+from .operations_assignments import (
+    LparPcieAssignments,
+    apply_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
 
 
 @dataclass(frozen=True)
@@ -359,6 +364,7 @@ async def provision_lpar(
     partition_type: PartitionType = "AIX/Linux",
     power_on: bool = True,
     dry_run: bool = False,
+    assignments: LparPcieAssignments = LparPcieAssignments(),
 ) -> ProvisionResult:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -423,11 +429,17 @@ async def provision_lpar(
     await _check_vlan_exists(hmc, system_uuid, network.port_vlan_id)
     if storage.vg_uuid is not None:
         await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
+    await prevalidate_lpar_pcie_assignments(hmc, system_name_or_uuid, assignments)
 
     # ----------------------------------------------------------------
     # 3. Dry-run exit
     # ----------------------------------------------------------------
-    step_names = ["create", "network", "vscsi", "storage"]
+    assignment_names = [
+        *(f"dedicated[{index}]" for index, _ in enumerate(assignments.dedicated)),
+        *(f"sriov[{index}]" for index, _ in enumerate(assignments.sriov)),
+        *(f"vnic[{index}]" for index, _ in enumerate(assignments.vnics)),
+    ]
+    step_names = ["create", "network", "vscsi", "storage", *assignment_names]
     if power_on:
         step_names.append("power_on")
 
@@ -479,6 +491,16 @@ async def provision_lpar(
     )
     steps.extend(storage_steps)
     if not storage_completed:
+        _skip_steps(steps, [*assignment_names, *(["power_on"] if power_on else [])])
+        return _provision_result(creation, created_uuid, steps, False)
+
+    assignment_result = await apply_lpar_pcie_assignments(
+        hmc, system_name_or_uuid, name, assignments
+    )
+    steps.extend(
+        _step(item.step, item.status, item.result) for item in assignment_result.steps
+    )
+    if not assignment_result.workflow_completed:
         if power_on:
             _skip_steps(steps, ["power_on"])
         return _provision_result(creation, created_uuid, steps, False)

@@ -87,7 +87,9 @@ class StorageMixin:
 
         xml = build_volume_group_document(name, physical_volumes)
         path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VolumeGroup"
-        resp = await self._put(path, xml, resource_type="VolumeGroup", include_schema_version=False)
+        resp = await self._put(
+            path, xml, resource_type="VolumeGroup", include_schema_version=False
+        )
         entries = _parse_feed(resp, path) if resp else []
         return entries[0] if entries else None
 
@@ -181,6 +183,7 @@ class StorageMixin:
         except HMCError as exc:
             if exc.status_code == 400 and "ViosStorageDetail" in str(exc):
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "ViosStorageDetail group not supported on this HMC firmware "
                     "(HTTP 400); returning empty mapping list. "
@@ -203,8 +206,11 @@ class StorageMixin:
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
-                m for m in mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+                m
+                for m in mappings
+                if isinstance(m, dict)
+                and m.get("AssociatedLogicalPartition", {}).get("@href")
+                == expected_link
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
@@ -306,9 +312,9 @@ class StorageMixin:
 
     def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None:
         """Return the VirtualMediaRepository (VMLibrary) element, or None."""
-        return vg_elem.find(
-            f".//{{{_UOM_NS}}}VirtualMediaRepository"
-        ) or vg_elem.find(".//VirtualMediaRepository")
+        return vg_elem.find(f".//{{{_UOM_NS}}}VirtualMediaRepository") or vg_elem.find(
+            ".//VirtualMediaRepository"
+        )
 
     def _build_mr_element(self, size_mib: int) -> ET.Element:
         """Build a MediaRepositories element with a VMLibrary inside.
@@ -448,9 +454,7 @@ class StorageMixin:
                 ),
                 None,
             )
-            opt_media = ET.Element(
-                opt_media_tag, attrib={"schemaVersion": "V1_0"}
-            )
+            opt_media = ET.Element(opt_media_tag, attrib={"schemaVersion": "V1_0"})
             if repo_name_idx is not None:
                 vmlib.insert(repo_name_idx, opt_media)
             else:
@@ -591,6 +595,7 @@ class StorageMixin:
                 optical_media.append(media_list)
 
         return optical_media
+
     # ------------------------------------------------------------------ #
     # Virtual Optical Mapping (VirtualSCSIMapping for VirtualOpticalMedia)
     # ------------------------------------------------------------------ #
@@ -608,6 +613,7 @@ class StorageMixin:
         except HMCError as exc:
             if exc.status_code == 400 and "ViosStorageDetail" in str(exc):
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "ViosStorageDetail group not supported on this HMC firmware "
                     "(HTTP 400); returning empty optical-mapping list."
@@ -622,10 +628,7 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = (
-            detail.get("Resource", {})
-            .get("VirtualSCSIMappings", {})
-        )
+        mappings = detail.get("Resource", {}).get("VirtualSCSIMappings", {})
         if not isinstance(mappings, dict):
             return []
         mappings = mappings.get("VirtualSCSIMapping", [])
@@ -647,15 +650,25 @@ class StorageMixin:
         if lpar_uuid:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             optical_mappings = [
-                m for m in optical_mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+                m
+                for m in optical_mappings
+                if isinstance(m, dict)
+                and m.get("AssociatedLogicalPartition", {}).get("@href")
+                == expected_link
             ]
 
-        return optical_mappings if isinstance(optical_mappings, list) else [optical_mappings]
+        return (
+            optical_mappings
+            if isinstance(optical_mappings, list)
+            else [optical_mappings]
+        )
 
     async def create_optical_mapping(
-        self: StorageClient, vios_uuid: str, media_name: str, lpar_uuid: str,
-        target_device: str | None = None
+        self: StorageClient,
+        vios_uuid: str,
+        media_name: str,
+        lpar_uuid: str,
+        target_device: str | None = None,
     ) -> dict[str, Any] | None:
         """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
@@ -671,7 +684,9 @@ class StorageMixin:
         """
         # Step 1 — GET the full VIOS document (without schema version to avoid 406)
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        vios_xml = await self._get(get_path, "VirtualIOServer", include_schema_version=False)
+        vios_xml = await self._get(
+            get_path, "VirtualIOServer", include_schema_version=False
+        )
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
@@ -729,7 +744,9 @@ class StorageMixin:
         mappings_elem.append(new_mapping_elem)
 
         # Step 5 — POST the full modified VIOS document to the system-scoped endpoint
-        post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
+        post_path = (
+            f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
+        )
         body = ET.tostring(vios_elem, encoding="unicode")
         # Use Accept: */* as the reference implementation does; Content-Type stays VirtualIOServer
         resp = await self._request(
@@ -742,9 +759,7 @@ class StorageMixin:
             },
         )
         if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", resp.status_code, resp.text
-            )
+            raise HMCError(f"POST {post_path} failed", resp.status_code, resp.text)
         entries = _parse_feed(resp.text, post_path) if resp.text else []
         return entries[0].get("Resource", entries[0]) if entries else None
 
@@ -771,7 +786,9 @@ class StorageMixin:
         ET.register_namespace("atom", _ATOM_NS)
 
         get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
-        vios_xml = await self._get(get_path, "VirtualIOServer", include_schema_version=False)
+        vios_xml = await self._get(
+            get_path, "VirtualIOServer", include_schema_version=False
+        )
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
@@ -804,7 +821,9 @@ class StorageMixin:
 
         mappings_elem.remove(to_remove)
 
-        post_path = f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
+        post_path = (
+            f"/rest/api/uom/ManagedSystem/{sys_uuid}/VirtualIOServer/{vios_uuid}"
+        )
         body = ET.tostring(vios_elem, encoding="unicode")
         resp = await self._request(
             "POST",
@@ -816,6 +835,4 @@ class StorageMixin:
             },
         )
         if resp.status_code not in (200, 201, 202):
-            raise HMCError(
-                f"POST {post_path} failed", resp.status_code, resp.text
-            )
+            raise HMCError(f"POST {post_path} failed", resp.status_code, resp.text)

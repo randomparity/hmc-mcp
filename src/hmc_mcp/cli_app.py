@@ -439,9 +439,7 @@ def serve(
                 f"{exc} Re-run with --allow-remote if you understand the risk."
             ) from exc
     else:
-        server.main_stdio(
-            policy, enable_arbitrary_command=enable_arbitrary_command
-        )
+        server.main_stdio(policy, enable_arbitrary_command=enable_arbitrary_command)
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:
