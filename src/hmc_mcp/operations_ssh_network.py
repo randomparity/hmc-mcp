@@ -354,19 +354,23 @@ async def _preflight_add(
     backings = tuple(
         _backing(row) for row in await list_vnic_backing_rows(config, system_name)
     )
-    used: dict[tuple[str, str], tuple[str, Decimal]] = {}
+    direct_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
     for row in direct:
         key = row["adapter_id"], row["logical_port_id"]
         observation = row["phys_port_id"], _decimal(row["capacity"], "capacity")
-        if key in used and used[key] != observation:
-            raise ValueError("conflicting duplicate logical-port inventory")
-        used[key] = observation
+        if key in direct_observations:
+            raise ValueError("duplicate direct logical-port inventory")
+        direct_observations[key] = observation
+    backing_observations: dict[tuple[str, str], tuple[str, Decimal]] = {}
     for item in backings:
         key = item.adapter_id, item.logical_port_id
         observation = item.physical_port_id, item.desired_capacity_percent
-        if key in used and used[key] != observation:
+        if key in backing_observations:
+            raise ValueError("duplicate backing logical-port inventory")
+        backing_observations[key] = observation
+        if key in direct_observations and direct_observations[key] != observation:
             raise ValueError("conflicting cross-projection logical-port capacity")
-        used[key] = observation
+    used = direct_observations | backing_observations
     total = sum(
         (
             capacity
@@ -435,11 +439,7 @@ async def add_vnic(
     pairs = _pairs(before, backing_before, selector, port_vlan_id)
     candidates = _matching_vnics(before, selector, port_vlan_id)
     matching_backing_before = _matching_backings(backing_before, selector)
-    if (
-        len(pairs) == 1
-        and len(candidates) == 1
-        and len(matching_backing_before) == 1
-    ):
+    if len(pairs) == 1 and len(candidates) == 1 and len(matching_backing_before) == 1:
         return VnicChangeResult(
             "add",
             False,
@@ -501,7 +501,13 @@ async def add_vnic(
         and len(new_pairs) == 1
         and len(matching_backing_after) == 1
     )
-    changed: bool | None = True if final else None
+    unchanged = (
+        v_ok
+        and b_ok
+        and matching_after == candidates
+        and matching_backing_after == matching_backing_before
+    )
+    changed: bool | None = True if final else False if unchanged else None
     if not final:
         errors.append(
             "add reconciliation did not prove exactly one new active Operational backing"
@@ -545,6 +551,10 @@ async def remove_vnic(
     if not selected:
         return VnicChangeResult(
             "remove", False, False, None, slot_num, (), (), (), (), True, True, "", ()
+        )
+    if len(selected[0].backing_devices) != 1:
+        raise VnicCapabilityError(
+            "selected vNIC does not have exactly one embedded backing"
         )
     correlated = tuple(item for item in all_backings if _correlated(selected[0], item))
     if (
@@ -593,11 +603,7 @@ async def remove_vnic(
         tuple(item for item in after if item.slot_num == slot_num) if v_ok else ()
     )
     matching_backing_after = (
-        tuple(
-            item
-            for item in backing_after
-            if _same_backing_identity(item, captured)
-        )
+        tuple(item for item in backing_after if _same_backing_identity(item, captured))
         if b_ok
         else ()
     )
