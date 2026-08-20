@@ -7,6 +7,9 @@ from decimal import Decimal
 from typing import Generic, Literal, TypeVar, cast
 
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.client import HMCClient
+from hmc_mcp.common import resolve_lpar_uuid, resolve_system_uuid
+from hmc_mcp.operations_lpar import authorize_lpar_mutation, resolve_lpar_ownership_names
 from hmc_mcp.ssh_commands import list_dedicated_pcie_slot_rows
 from hmc_mcp.ssh_selectors import resolve_ssh_names
 
@@ -19,6 +22,10 @@ ResourceKind = Literal[
     "sriov_logical_port",
 ]
 SRIOV_UNAVAILABLE_REASON = "ADR 0053 admits selectors but no SR-IOV read projection"
+PCIE_ASSIGNMENT_UNAVAILABLE_REASON = (
+    "ADR 0053 admits no exact dedicated PCIe profile readback; "
+    "assignment cannot be safely verified"
+)
 
 _T = TypeVar("_T")
 
@@ -90,6 +97,79 @@ class SriovLogicalPort:
     capacity_percent: Decimal | None
     maximum_capacity_percent: Decimal | None
     compatibility: str | None
+
+
+class PcieAssignmentUnavailableError(RuntimeError):
+    """Raised when the evidence-backed capability matrix forbids mutation."""
+
+
+async def assign_dedicated_pcie_slot(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    *,
+    ownership_override: bool = False,
+) -> None:
+    """Authorize a dedicated-slot profile assignment and fail closed."""
+    await _authorize_pcie_profile_request(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        profile_name,
+        drc_index,
+        ownership_override=ownership_override,
+    )
+
+
+async def unassign_dedicated_pcie_slot(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    *,
+    ownership_override: bool = False,
+) -> None:
+    """Authorize a dedicated-slot profile unassignment and fail closed."""
+    await _authorize_pcie_profile_request(
+        hmc,
+        system_name_or_uuid,
+        lpar_name_or_uuid,
+        profile_name,
+        drc_index,
+        ownership_override=ownership_override,
+    )
+
+
+async def _authorize_pcie_profile_request(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    *,
+    ownership_override: bool,
+) -> None:
+    if not profile_name.strip():
+        raise ValueError("profile_name must not be blank")
+    if not drc_index.strip():
+        raise ValueError("drc_index must not be blank")
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+    raise PcieAssignmentUnavailableError(PCIE_ASSIGNMENT_UNAVAILABLE_REASON)
 
 
 async def _system_name(config: HMCConfig, system: str) -> str:

@@ -38,9 +38,9 @@ _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# An HMC attribute name, optionally carrying the `+` append operator that
-# `chsyscfg -r prof` uses to extend a list attribute (`io_slots+=…`).
-_ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*\+?$")
+# An HMC attribute name, optionally carrying the list append/remove operator
+# that `chsyscfg -r prof` uses (`io_slots+=…` / `io_slots-=…`).
+_ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*[+-]?$")
 
 # Characters `set_lpar_description` has always refused in the LPAR name it
 # writes a description for.  Neither is record structure — IBM's own escaping
@@ -146,7 +146,7 @@ def _validated_value(attribute: str, value: object) -> str:
     if not _ATTRIBUTE_NAME.match(attribute):
         raise HMCCLIError(
             f"invalid HMC CLI -i attribute name {attribute!r}; expected a "
-            "lower-case identifier, optionally with the '+' append operator"
+            "lower-case identifier, optionally with a '+' or '-' list operator"
         )
     text = str(value)
     for character, (name, reason) in _RECORD_DELIMITERS.items():
@@ -1033,12 +1033,7 @@ async def assign_profile_io_slot(
     profile_name: str,
     drc_index: str,
 ) -> str:
-    """Add a physical I/O slot DRC index to *profile_name* via SSH.
-
-    Runs ``chsyscfg -r prof -m <system_name>
-    -i "name=<profile_name>,io_slots+=<drc_index>//0,lpar_name=<lpar_name>"
-    --force`` and returns the raw command output. Appends the slot to the
-    profile's I/O slot list; ``--force`` overrides any conflicts.
+    """Add a physical I/O slot DRC index to *profile_name* without force.
 
     Raises:
         HMCCLIError: If *profile_name*, *drc_index*, or *lpar_name* contains a
@@ -1046,15 +1041,42 @@ async def assign_profile_io_slot(
             ``//0`` suffix is record-safe, so validating the whole ``io_slots``
             value covers *drc_index*.
     """
+    return await _change_profile_io_slot(
+        config, system_name, lpar_name, profile_name, drc_index, add=True
+    )
+
+
+async def unassign_profile_io_slot(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+) -> str:
+    """Remove a physical I/O slot DRC index from a profile without force."""
+    return await _change_profile_io_slot(
+        config, system_name, lpar_name, profile_name, drc_index, add=False
+    )
+
+
+async def _change_profile_io_slot(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+    *,
+    add: bool,
+) -> str:
+    operator = "io_slots+" if add else "io_slots-"
     record = build_attribute_record(
         [
             ("name", profile_name),
-            ("io_slots+", f"{drc_index}//0"),
+            (operator, f"{drc_index}//0"),
             ("lpar_name", lpar_name),
         ]
     )
-    cmd = (
-        f"chsyscfg -r prof -m {shlex.quote(system_name)} -i "
-        f"{shlex.quote(record)} --force"
+    command = (
+        f"chsyscfg -r prof -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     )
-    return await run_hmc_command(config, cmd)
+    return await run_hmc_command(config, command)

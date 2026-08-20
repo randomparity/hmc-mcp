@@ -26,10 +26,12 @@ from .operations_network import (
     list_virtual_switches,
 )
 from .operations_pcie import (
+    assign_dedicated_pcie_slot,
     list_dedicated_slots,
     list_sriov_adapters,
     list_sriov_logical_ports,
     list_sriov_physical_ports,
+    unassign_dedicated_pcie_slot,
 )
 from .operations_ssh_network import (
     SriovMode,
@@ -73,6 +75,48 @@ def network_list_dedicated_pcie_slots(
     """List normalized dedicated PCIe slots on a managed system."""
     result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
     _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("assign-dedicated-pcie-slot")
+def network_assign_dedicated_pcie_slot(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Assign a dedicated slot when safe profile readback is available."""
+    _with_client(
+        lambda hmc: assign_dedicated_pcie_slot(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
+    )
+
+
+@network_app.command("unassign-dedicated-pcie-slot")
+def network_unassign_dedicated_pcie_slot(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Unassign a dedicated slot when safe profile readback is available."""
+    _with_client(
+        lambda hmc: unassign_dedicated_pcie_slot(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
+    )
 
 
 @network_app.command("list-sriov-adapters")

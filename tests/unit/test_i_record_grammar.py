@@ -492,5 +492,5 @@ def test_the_scan_finds_every_known_record_site():
         "set_lpar_msp",
         "set_lpar_proc_compat",
         "sync_lpar_profile",
-        "assign_profile_io_slot",
+        "_change_profile_io_slot",
     } <= names
