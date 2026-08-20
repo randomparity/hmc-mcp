@@ -77,6 +77,7 @@ def _assert_pytest_invocation(
     assert kwargs["stdout"] is output
     assert kwargs["stderr"] is subprocess.STDOUT
     assert "env" not in kwargs
+    assert "cwd" not in kwargs
 
 
 def test_success_hides_noisy_pytest_output(
