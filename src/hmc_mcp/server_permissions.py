@@ -3,9 +3,11 @@
 Reports the live permissions of one composed MCP application: the tools its
 registry holds, their effect classes, and what the selected access policy
 declares. It reports a registry rather than recomputing a ceiling, and it
-distinguishes the dimensions this server enforces from the one it only
-records; see docs/adr/0037-composition-time-capability-ceiling.md and
-docs/adr/0038-dispatch-time-connection-scope.md.
+distinguishes the policy dimensions that constrain this registry from the ones
+that merely appear in its grants; see
+docs/adr/0037-composition-time-capability-ceiling.md,
+docs/adr/0038-dispatch-time-connection-scope.md, and
+docs/adr/0047-per-dimension-enforcement-labels.md.
 
 This module must not import ``server``: ``server`` imports it, and the
 authoritative tool index arrives as a parameter for that reason.
@@ -24,6 +26,7 @@ from .tool_registry import (
     ToolSecurity,
     annotations_for,
     authorized,
+    is_authorized_wrapper,
     validate_security,
 )
 
@@ -34,13 +37,12 @@ TOOL_NAME = "hmc_effective_permissions"
 # thing to break when the surface changes.
 UNKNOWN = "unknown"
 
-# The dimensions of an access policy this server evaluates. ADR 0037 enforced
-# "tools", ADR 0038 "connections", and ADR 0039 "targets" — so nothing is
-# declared-only any more. The empty tuple stays rather than being deleted: it is
-# the field a client reads to learn what a policy records but does not apply, and
-# removing it would make "no such field" and "nothing to report" indistinguishable.
-ENFORCED_DIMENSIONS: tuple[str, ...] = ("tools", "connections", "targets")
-DECLARED_ONLY_DIMENSIONS: tuple[str, ...] = ()
+# Every dimension of an access policy, in report order. ADR 0037 enforces
+# "tools" at registration; ADR 0038 "connections" and ADR 0039 "targets" at
+# dispatch. Each one is reported in exactly one of the two dimension tuples
+# whenever a policy is selected, so the report never drops a dimension it
+# is still enumerating grants for (ADR 0047).
+DIMENSIONS: tuple[str, ...] = ("tools", "connections", "targets")
 
 
 @dataclass(frozen=True)
@@ -138,30 +140,116 @@ def _declared_grant(grant: Grant) -> DeclaredGrant:
     )
 
 
+def _bounded_by_a_table(policy: AccessPolicy, name: str) -> bool:
+    """True when some grant reaching *name* constrains it with a targets table."""
+    return any(
+        not isinstance(grant.targets, AllTargets)
+        for grant in policy.grants_for(name)
+    )
+
+
+def _connections_enforced(
+    handlers: Mapping[str, object],
+    tool_security: Mapping[str, ToolSecurity],
+) -> bool:
+    """True when every reported tool that routes a connection is guarded.
+
+    A tool declaring no connection argument opens no HMC connection, so this
+    dimension has nothing to say about it — ADR 0037 records both such tools as
+    local-only by construction.
+    """
+    for name, handler in handlers.items():
+        security = tool_security.get(name)
+        if security is None:
+            # A name the index does not carry could route a connection with no
+            # guard, and nothing here can tell — the fail-closed default
+            # `_permission` already applies to `exhaustive_targets`.
+            return False
+        if security.connection_argument is None:
+            continue
+        if not is_authorized_wrapper(handler):
+            return False
+    return True
+
+
+def _targets_enforced(
+    handlers: Mapping[str, object],
+    policy: AccessPolicy,
+    tool_security: Mapping[str, ToolSecurity],
+) -> bool:
+    """True when no reported tool escapes a target constraint a grant declares.
+
+    `authorized` keys the wrapper on the connection argument alone, so a tool
+    declaring none registers unwrapped and no target check runs for it. That is
+    sound only while no grant reaching it declares a target constraint that
+    would have decided anything, and `target_scope.targets_permitted` says when
+    one would: it denies a non-exhaustive tool under a `targets` table, and it
+    denies any tool whose extracted selector value is unreadable even under
+    `all-targets`. So an unwrapped tool costs this label when it declares
+    selectors, or when a table grant reaches it.
+    """
+    for name, handler in handlers.items():
+        security = tool_security.get(name)
+        if security is None:
+            return False
+        if security.connection_argument is not None:
+            if not is_authorized_wrapper(handler):
+                return False
+            continue
+        if security.targets or _bounded_by_a_table(policy, name):
+            return False
+    return True
+
+
 def describe(
-    names: list[str],
+    handlers: Mapping[str, object],
     policy: AccessPolicy | None,
     tool_security: Mapping[str, ToolSecurity],
 ) -> EffectivePermissions:
-    """Build the report for a registry holding *names* under *policy*.
+    """Build the report for a registry of *handlers* by name, under *policy*.
+
+    The registered callables, not just their names: the connection and target
+    dimensions are enforced by a wrapper around the callable (ADR 0038,
+    ADR 0039), so the callable is the only evidence that they are enforced at
+    all.
 
     ``ceiling_enforced`` is checked, not inferred: a policy must be selected and
     every reported name must satisfy it. A registry that has drifted past its
-    ceiling therefore reports a policy name with no enforcement claim, rather
-    than a claim the registry contradicts.
+    ceiling therefore reports a policy name with no *tool*-enforcement claim,
+    rather than a claim the registry contradicts.
 
-    An empty *names* satisfies that check vacuously, and deliberately: a registry
-    holding nothing cannot exceed any ceiling, so a policy denying everything is
-    enforced maximally rather than not at all. The state is unreachable through
-    the tool — its own registration is what makes *names* non-empty — so this
-    only binds a direct caller of :func:`describe`.
+    The two dimension tuples are decided per dimension rather than from
+    ``ceiling_enforced`` alone (ADR 0047). Together they cover all three
+    dimensions whenever a policy is selected, so a drifted registry says which
+    dimensions still constrain it instead of falling silent about every one.
+    With no policy selected both are empty: nothing is declared, so nothing is
+    declared-only either.
+
+    An empty *handlers* satisfies all three checks vacuously, and deliberately:
+    a registry holding nothing cannot exceed any ceiling nor skip any wrapper,
+    so a policy denying everything is enforced maximally rather than not at all.
+    The state is unreachable through the tool — its own registration is what
+    makes *handlers* non-empty — so this only binds a direct caller of
+    :func:`describe`.
     """
+    names = sorted(handlers)
     tools = tuple(_permission(name, tool_security) for name in names)
-    enforced = policy is not None and all(policy.permits_tool(name) for name in names)
+    ceiling = policy is not None and all(policy.permits_tool(name) for name in names)
+    enforced_by_dimension = {
+        "tools": ceiling,
+        "connections": (
+            policy is not None and _connections_enforced(handlers, tool_security)
+        ),
+        "targets": (
+            policy is not None
+            and _targets_enforced(handlers, policy, tool_security)
+        ),
+    }
+    enforced = tuple(d for d in DIMENSIONS if enforced_by_dimension[d])
     return EffectivePermissions(
         policy_name=None if policy is None else policy.name,
         policy_source=None if policy is None else policy.source,
-        ceiling_enforced=enforced,
+        ceiling_enforced=ceiling,
         effects=tuple(
             sorted({tool.effect for tool in tools if tool.effect != UNKNOWN})
         ),
@@ -169,8 +257,12 @@ def describe(
         declared_grants=(
             () if policy is None else tuple(_declared_grant(g) for g in policy.grants)
         ),
-        enforced_dimensions=ENFORCED_DIMENSIONS if enforced else (),
-        declared_only_dimensions=DECLARED_ONLY_DIMENSIONS if enforced else (),
+        enforced_dimensions=enforced,
+        declared_only_dimensions=(
+            ()
+            if policy is None
+            else tuple(d for d in DIMENSIONS if d not in enforced)
+        ),
     )
 
 
@@ -208,14 +300,23 @@ def register_permissions_tool(
 
         Returns the tools this server exposes with their effect classes, the
         selected access policy's name and file, and the connection and target
-        constraints each of its grants declares. All three dimensions — tools,
-        connections, and targets — are enforced; `enforced_dimensions` and
-        `declared_only_dimensions` say which is which. A tool reporting
+        constraints each of its grants declares. Each of the three dimensions —
+        tools, connections, and targets — is reported in exactly one of
+        `enforced_dimensions` and `declared_only_dimensions`, checked against
+        this registry rather than assumed. A tool reporting
         `exhaustive_targets: false` can only be granted by a grant whose targets
         are the `all-targets` sentinel. Contains no credentials.
         """
-        names = sorted(tool.name for tool in await mcp.local_provider.list_tools())
-        return describe(names, policy, tool_security)
+        # `getattr`, because fastmcp declares `fn` on `FunctionTool` and not on
+        # the `Tool` base the provider is typed to return. A registration that
+        # carries no callable cannot witness the dispatch wrapper, and reports
+        # the connection and target dimensions as unenforced rather than
+        # assuming them.
+        handlers = {
+            tool.name: getattr(tool, "fn", None)
+            for tool in await mcp.local_provider.list_tools()
+        }
+        return describe(handlers, policy, tool_security)
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
     # Inert by construction, and deliberately still routed through the shared

@@ -491,6 +491,16 @@ gains `exhaustive_targets`, so an operator can see which of the tools their poli
 ones a `targets` table can never narrow — the fact reading (ii) makes load-bearing, and the one an
 operator would otherwise discover as an unexplained denial.
 
+> **Amended by [ADR 0047](0047-per-dimension-enforcement-labels.md)** (2026-08-19). Both constants
+> are gone: the label is computed per dimension against the registry being reported rather than
+> read from a module-level tuple, because "this build enforces targets" and "this registry has
+> targets enforced" are different claims and only the second is what the field is asked. The target
+> label is now withheld exactly when a tool escapes a target constraint a grant declares. That entry
+> also records the gap this one left: `authorized` keys its wrapper on the connection argument, so
+> the two tools declaring none are never target-checked, and a `targets` table permits them where
+> `targets_permitted` would have denied them. Tracked as #297; `exhaustive_targets` and everything
+> else in this record are unaffected.
+
 ## Consequences
 
 - **A `targets` table is now a much narrower statement than it reads.** Before this record it
