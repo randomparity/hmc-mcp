@@ -466,16 +466,16 @@ def test_a_name_outside_the_index_withholds_every_enforcement_claim():
     assert result.declared_only_dimensions == ("tools", "connections", "targets")
 
 
-def test_targets_without_a_connection_argument_cost_only_the_target_label():
-    """ADR 0047: `authorized` keys the wrapper on the connection argument alone.
+def test_an_unwrapped_tool_costs_only_the_target_label():
+    """ADR 0047 as #297 leaves it: an unwrapped tool escapes the target check.
 
-    So a tool declaring selectors but no connection argument would register
-    unwrapped and have its selectors checked by nothing — including the
-    unreadable-value denial `targets_permitted` applies even under `all-targets`.
-    The connection dimension is untouched: such a tool routes no connection, so
-    that dimension has nothing to say about it. No such tool is in the index —
-    the guard below pins that — and this branch keeps the label honest if one is
-    ever added.
+    A registered callable that is not `authorized`'s wrapper has its selectors
+    checked by nothing — including the unreadable-value denial `targets_permitted`
+    applies even under `all-targets`. The connection dimension is untouched here
+    because the fixture's tool routes no connection, so that dimension has nothing
+    to say about it, which is what isolates the target label. `create_mcp` cannot
+    produce this registry any more; a direct caller of `describe` still can, and
+    the label has to stay honest for one.
     """
     from dataclasses import replace
 
@@ -495,68 +495,140 @@ def test_targets_without_a_connection_argument_cost_only_the_target_label():
     assert result.declared_only_dimensions == ("targets",)
 
 
-def test_no_indexed_tool_declares_targets_without_a_connection_argument():
-    """ADR 0047: the assumption the branch above defends, asserted on the index.
-
-    Target scope is applied by the same wrapper as connection scope, so a tool
-    in this state is one whose declared selectors constrain nothing at dispatch.
-    """
-    unguardable = {
-        name
-        for name, security in TOOL_SECURITY.items()
-        if security.targets and security.connection_argument is None
-    }
-
-    assert unguardable == set()
-
-
 TABLE_GRANT = [
     {"effects": ["read"], "connections": ["<default>"], "targets": {"lpar": ["db-01"]}}
 ]
 
 
-def test_a_table_grant_over_a_connectionless_tool_reports_targets_declared_only():
-    """ADR 0047: the target label follows the constraint, not the tool count.
+@pytest.mark.parametrize(
+    "tool", ["hmc_effective_permissions", "hmc_list_configured_hosts"]
+)
+def test_a_table_grant_denies_a_tool_it_cannot_bound_without_a_connection(tool):
+    """#297: the two spellings of "a table cannot bound this" decide alike.
 
     `hmc_effective_permissions` and `hmc_list_configured_hosts` declare no
-    connection argument, so `authorized` registers them unwrapped and no target
-    check runs for them. A `targets` table cannot bound a non-exhaustive tool
-    (ADR 0039), so under this policy the table *should* deny both — and instead
-    permits them, as the live call below shows. That gap is ADR 0039's and is
-    tracked as #297, not closed here; what this pins is that the report stops
-    calling the target dimension enforced while it is being skipped. The
-    permitted call is asserted deliberately — when #297 closes it, this line
-    fails and points at the label that has to be revisited with it.
-    """
-    application = create_mcp(_policy(TABLE_GRANT))
-    result = _inspect(application)
+    connection argument. ADR 0039 keyed the dispatch wrapper on that argument, so
+    they registered unwrapped and no target check ran for them, and this test
+    asserted the resulting permit — a table grant bounded to one LPAR disclosed
+    the whole access policy and every configured profile's host, user, port and
+    TLS setting. `authorized` wraps every tool now, so `targets_permitted`'s
+    existing refusal of a non-exhaustive tool reaches them and the table denies,
+    naming `all-targets` as the remedy.
 
-    assert result["ceiling_enforced"] is True
-    assert result["enforced_dimensions"] == ["tools", "connections"]
-    assert result["declared_only_dimensions"] == ["targets"]
+    Note what the denial costs, and why the pair below is not optional: under a
+    table-only policy the inspection tool denies itself, so an operator who wants
+    it must write a second grant. That is ADR 0039's stated shape for every
+    selector-less tool, now including these two.
+    """
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    application = create_mcp(_policy(TABLE_GRANT))
 
     async def _connectionless_call():
-        from fastmcp import Client
-
         async with Client(application) as client:
-            return await client.call_tool("hmc_list_configured_hosts", {})
+            return await client.call_tool(tool, {})
 
-    # Permitted despite the table, which is the skipped decision the label reports.
-    assert asyncio.run(_connectionless_call()) is not None
+    with pytest.raises(ToolError) as error:
+        asyncio.run(_connectionless_call())
+    assert "no targets table can bound every resource it acts on" in str(error.value)
+    assert 'targets = "all-targets"' in str(error.value)
 
 
-def test_an_all_targets_grant_over_the_same_registry_enforces_targets():
-    """ADR 0047: the previous test's label is about the table, not the tools.
+def test_a_table_grant_registry_reports_targets_enforced():
+    """#297: nothing escapes the target check now, so the label is earned.
 
-    Same two unwrapped tools, same registry shape, an `all-targets` grant
-    instead — `targets_permitted` returns true for them under it, so nothing is
-    skipped and the label is earned. Without this pair the target label could be
-    hard-coded false and the previous test would not notice.
+    ADR 0047 withheld this label for exactly the registry below, because the two
+    connection-less tools registered unwrapped and skipped the check. `describe`
+    is called directly rather than through the tool: under a table-only policy the
+    inspection tool denies itself, which is the denial the test above pins.
     """
-    result = _inspect(create_mcp(_policy(READ_ONLY_GRANT)))
+    from hmc_mcp.server_permissions import describe
+
+    policy = _policy(TABLE_GRANT)
+    application = create_mcp(policy)
+    handlers = {
+        tool.name: getattr(tool, "fn", None)
+        for tool in asyncio.run(application.local_provider.list_tools())
+    }
+    assert "hmc_effective_permissions" in handlers
+
+    result = describe(handlers, policy, TOOL_SECURITY)
+
+    assert result.ceiling_enforced is True
+    assert result.enforced_dimensions == ("tools", "connections", "targets")
+    assert result.declared_only_dimensions == ()
+
+
+def test_an_all_targets_grant_over_the_same_registry_permits_both_tools():
+    """#297: the denial above is about the table, not about the two tools.
+
+    Same two tools, same registry shape, an `all-targets` grant instead —
+    `targets_permitted` returns true for them under it, so both are reachable and
+    the label is earned. Without this pair the fix could deny them unconditionally
+    and leave a client with no way to inspect its own permissions (#255).
+    """
+    from fastmcp import Client
+
+    application = create_mcp(_policy(READ_ONLY_GRANT))
+
+    async def _call(tool):
+        async with Client(application) as client:
+            return await client.call_tool(tool, {})
+
+    for tool in ("hmc_effective_permissions", "hmc_list_configured_hosts"):
+        assert asyncio.run(_call(tool)) is not None
+
+    result = _inspect(application)
 
     assert result["enforced_dimensions"] == ["tools", "connections", "targets"]
     assert result["declared_only_dimensions"] == []
+
+
+CONNECTIONLESS_TOOLS = ("hmc_effective_permissions", "hmc_list_configured_hosts")
+
+NAMED_ALL_TARGETS_GRANT = [
+    {
+        "tools": list(CONNECTIONLESS_TOOLS),
+        "connections": ["<default>"],
+        "targets": "all-targets",
+    }
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "build"),
+    [
+        ("effects with all-targets", lambda: _policy(READ_ONLY_GRANT)),
+        ("a ceiling naming only the two tools", lambda: _policy(NAMED_ALL_TARGETS_GRANT)),
+        ("the legacy-equivalent policy", _legacy),
+        (
+            "a table grant beside an all-targets grant naming them",
+            lambda: _policy(TABLE_GRANT + NAMED_ALL_TARGETS_GRANT),
+        ),
+    ],
+)
+@pytest.mark.parametrize("tool", CONNECTIONLESS_TOOLS)
+def test_the_connectionless_tools_stay_reachable_under_every_granting_shape(
+    label, build, tool
+):
+    """#297's risk, pinned: the fix must deny only what a table cannot bound.
+
+    Over-denying `hmc_effective_permissions` would leave a client with no way to
+    inspect its own permissions, which ADR 0047 and #255 both treat as important.
+    Each shape here reaches both tools before the fix and must still reach them
+    after it; the table-plus-all-targets pair also checks that the per-grant
+    conjunction is still a union *across* grants (ADR 0036).
+    """
+    from fastmcp import Client
+
+    application = create_mcp(build())
+
+    async def _call():
+        async with Client(application) as client:
+            return await client.call_tool(tool, {})
+
+    assert asyncio.run(_call()) is not None, label
 
 
 def test_the_authorization_witness_is_not_forged_by_functools_wraps():
@@ -589,9 +661,9 @@ def test_the_authorization_witness_is_not_forged_by_functools_wraps():
     assert getattr(unrelated, "__wrapped__", None) is not None
     assert is_authorized_wrapper(unrelated) is False
     assert is_authorized_wrapper(handler) is False
-    # A tool with no connection argument registers unwrapped by design.
-    assert local_only is handler
-    assert is_authorized_wrapper(local_only) is False
+    # A tool with no connection argument is wrapped like any other since #297.
+    assert local_only is not handler
+    assert is_authorized_wrapper(local_only) is True
     # A registration carrying no callable at all — what `describe` reads when a
     # provider hands back a `Tool` that is not a `FunctionTool`.
     assert is_authorized_wrapper(None) is False

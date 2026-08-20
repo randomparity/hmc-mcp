@@ -216,12 +216,49 @@ def test_exactly_one_record_per_call(records):
     assert len(records) == 2
 
 
-def test_a_connectionless_tool_emits_nothing(records):
-    """Spec 19. The boundary declines to scope it, so it records nothing."""
+def test_a_connectionless_tool_records_its_decision(records):
+    """Spec 19, inverted by #297: the boundary now reaches a decision for it.
+
+    ADR 0040 recorded no event for these two tools because `authorized` left them
+    unwrapped and the authorizer was not on their dispatch path. It is now, and
+    the target dimension decides — so a permit and a denial are both recorded,
+    like every other decision this boundary reaches. The connection object says
+    `absent` with a null `resolved`, which is the pair that distinguishes "this
+    tool has no connection argument" from "the caller omitted `profile`" — the
+    latter resolves to `<default>`.
+    """
     security = TOOL_SECURITY["hmc_effective_permissions"]
     assert security.connection_argument is None
     dispatch_authorizer(_policy(LAB_ALL))("hmc_effective_permissions", security, {})
-    assert records == []
+
+    assert len(records) == 1
+    assert records[0]["decision"] == "allow"
+    assert records[0]["reason"] == "permitted"
+    assert records[0]["targets"] == []
+    assert records[0]["connection"] == {
+        "state": "absent",
+        "selector": None,
+        "resolved": None,
+    }
+
+
+def test_a_connectionless_tool_records_a_target_denial(records):
+    """#297: the denial a `targets` table now produces is auditable too.
+
+    An operator filtering the stream on `target-unboundable` sees these two tools
+    like any other tool a table cannot bind; before #297 the call was permitted
+    and nothing was written at all.
+    """
+    security = TOOL_SECURITY["hmc_effective_permissions"]
+    with pytest.raises(TargetScopeError):
+        dispatch_authorizer(_policy(LAB_TARGETS))(
+            "hmc_effective_permissions", security, {}
+        )
+
+    assert len(records) == 1
+    assert records[0]["decision"] == "deny"
+    assert records[0]["reason"] == "target-unboundable"
+    assert records[0]["connection"]["resolved"] is None
 
 
 def test_a_malformed_call_emits_nothing_and_still_raises(records):
@@ -426,8 +463,14 @@ def test_gates_requires_a_policy_and_returns_both():
     assert permits is not None and authorize is not None
 
 
-def test_authorized_leaves_the_connectionless_handlers_unwrapped():
-    """Spec 33. The structural basis for the no-record cases."""
+def test_authorized_wraps_the_connectionless_handlers_too():
+    """Spec 33, inverted by #297: the basis for the no-record cases is gone.
+
+    `authorized` keyed its wrapper on the connection argument and returned these
+    two handlers untouched, which is why ADR 0040 could say the authorizer was
+    not on their dispatch path. It is now — every tool is wrapped, so every tool
+    reaches a decision and every decision is recorded.
+    """
 
     def handler(profile=None):
         return None
@@ -435,7 +478,7 @@ def test_authorized_leaves_the_connectionless_handlers_unwrapped():
     for name in ("hmc_list_configured_hosts", "hmc_effective_permissions"):
         security = TOOL_SECURITY[name]
         assert security.connection_argument is None
-        assert authorized(name, security, handler, lambda *_: None) is handler
+        assert authorized(name, security, handler, lambda *_: None) is not handler
 
     bearing = TOOL_SECURITY["hmc_power_off_lpar"]
     assert authorized("t", bearing, handler, lambda *_: None) is not handler

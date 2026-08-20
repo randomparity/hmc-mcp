@@ -140,14 +140,6 @@ def _declared_grant(grant: Grant) -> DeclaredGrant:
     )
 
 
-def _bounded_by_a_table(policy: AccessPolicy, name: str) -> bool:
-    """True when some grant reaching *name* constrains it with a targets table."""
-    return any(
-        not isinstance(grant.targets, AllTargets)
-        for grant in policy.grants_for(name)
-    )
-
-
 def _connections_enforced(
     handlers: Mapping[str, object],
     tool_security: Mapping[str, ToolSecurity],
@@ -174,29 +166,26 @@ def _connections_enforced(
 
 def _targets_enforced(
     handlers: Mapping[str, object],
-    policy: AccessPolicy,
     tool_security: Mapping[str, ToolSecurity],
 ) -> bool:
-    """True when no reported tool escapes a target constraint a grant declares.
+    """True when every reported tool carries the dispatch wrapper.
 
-    `authorized` keys the wrapper on the connection argument alone, so a tool
-    declaring none registers unwrapped and no target check runs for it. That is
-    sound only while no grant reaching it declares a target constraint that
-    would have decided anything, and `target_scope.targets_permitted` says when
-    one would: it denies a non-exhaustive tool under a `targets` table, and it
-    denies any tool whose extracted selector value is unreadable even under
-    `all-targets`. So an unwrapped tool costs this label when it declares
-    selectors, or when a table grant reaches it.
+    ADR 0047 had to ask a narrower question than the connection one: `authorized`
+    keyed its wrapper on the connection argument, so a tool declaring none
+    registered unwrapped and escaped the target check, and this label was
+    withheld only when the skipped check would have decided something. #297
+    closed that by wrapping every tool, so the question is now the same shape as
+    `_connections_enforced`'s — with no exemption, because a tool that opens no
+    connection still acts on resources a `targets` table either can or cannot
+    bound.
     """
     for name, handler in handlers.items():
-        security = tool_security.get(name)
-        if security is None:
+        if tool_security.get(name) is None:
+            # A name the index does not carry could be registered without the
+            # wrapper and nothing here can tell; the same fail-closed default
+            # `_permission` applies to `exhaustive_targets`.
             return False
-        if security.connection_argument is not None:
-            if not is_authorized_wrapper(handler):
-                return False
-            continue
-        if security.targets or _bounded_by_a_table(policy, name):
+        if not is_authorized_wrapper(handler):
             return False
     return True
 
@@ -240,10 +229,7 @@ def describe(
         "connections": (
             policy is not None and _connections_enforced(handlers, tool_security)
         ),
-        "targets": (
-            policy is not None
-            and _targets_enforced(handlers, policy, tool_security)
-        ),
+        "targets": policy is not None and _targets_enforced(handlers, tool_security),
     }
     enforced = tuple(d for d in DIMENSIONS if enforced_by_dimension[d])
     return EffectivePermissions(
@@ -319,12 +305,11 @@ def register_permissions_tool(
         return describe(handlers, policy, tool_security)
 
     validate_security(EFFECTIVE_PERMISSIONS_SECURITY, hmc_effective_permissions)
-    # Inert by construction, and deliberately still routed through the shared
-    # helper so this site cannot decide for itself: `validate_security` forbids a
-    # connection argument on `target_kind="none"`, so `authorized` always returns
-    # the handler here. It would have to, in fact — this is the package's only
-    # coroutine handler and the wrapper is synchronous, so a tool that was both
-    # async and connection-bearing would need an async branch in `authorized`.
+    # Wrapped like every other tool since #297, and it is this site that made the
+    # async branch in `authorized` necessary: this is the package's only coroutine
+    # handler, and it was previously left unwrapped only because it declares no
+    # connection argument. The target dimension reaches it now — a `targets` table
+    # denies it, since `target_kind="none"` leaves nothing for a table to bind.
     mcp.tool(
         authorized(
             TOOL_NAME,
