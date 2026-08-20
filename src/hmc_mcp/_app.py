@@ -139,9 +139,9 @@ def ceiling_aware_instructions(
     at ``initialize``, while ``server.create_mcp`` filters registration by the
     same *permits* predicate. A client under a narrow ceiling would otherwise be
     told to prefer tools absent from ``tools/list``; see
-    docs/adr/0048-ceiling-aware-server-instructions.md. When nothing the
-    prose names is withheld — every policy that grants the read effect class,
-    and the legacy-equivalent policy — the string is returned unchanged.
+    docs/adr/0048-ceiling-aware-server-instructions.md. When nothing the prose
+    names is withheld — the legacy-equivalent policy, and any policy admitting
+    all of them — the string is returned unchanged.
 
     *permits* is the ceiling, not the served registry: ``hmc_run_command`` also
     needs ``--enable-arbitrary-command``, so the ceiling can admit a name the

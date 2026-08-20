@@ -41,9 +41,12 @@ issue's account:
 - **`hmc_effective_permissions` is withheld by this policy**, confirming the issue's
   reading that a `tools`-only grant leaves a client with the instructions as its only
   self-description.
-- **No shipped policy shape triggers the defect for free.** The legacy-equivalent policy
-  and every grant of the `read` effect class reach every tool the composite section
-  recommends; under the legacy policy the withheld-and-recommended set is empty.
+- **The legacy-equivalent policy withholds none of the 18**, so it is the one shape that
+  reaches this code and changes nothing. A `read`-only grant is *not* such a shape: it
+  withholds `hmc_create_lpar` and `hmc_provision_lpar`, both recommended as bullets in the
+  composite section, plus `hmc_deploy_partition_template`, `hmc_migrate_lpar` and
+  `hmc_set_lpar_description` elsewhere. An earlier draft of this record claimed the read
+  class was unaffected; it was measured and is wrong.
 
 No security boundary is crossed. The withheld tools stay absent from `tools/list` and
 undispatchable, which is what ADR 0037 guarantees and what
@@ -103,9 +106,10 @@ it the same weight as the sections it corrects.
 
 ## Consequences
 
-- **Every deployment that grants the `read` effect class or more sees no change at all.**
-  Measured on the reproduction: legacy-equivalent policy, 5314 characters, no suffix,
-  identical to the string shipped before this record.
+- **A deployment whose ceiling admits all 18 recommended names sees no change at all.**
+  Measured: the legacy-equivalent policy yields 5314 characters, no suffix, identical to
+  the string shipped before this record. That is the shape `hmc-mcp config
+  init-access-policy` writes, so the default deployment pays nothing.
 - **A narrow ceiling pays for the correction in tokens.** The `tools`-only policy above
   goes from 5314 to 5987 characters (17 names); a `read`-only policy goes to 5824 (5
   names: `hmc_create_lpar`, `hmc_deploy_partition_template`, `hmc_migrate_lpar`,

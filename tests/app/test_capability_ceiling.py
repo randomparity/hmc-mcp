@@ -14,8 +14,8 @@ from fastmcp import FastMCP
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN, compile_access_policy
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import (
-    TOOL_SECURITY,
     PERMISSIONS_TOOL_NAME,
+    TOOL_SECURITY,
     create_mcp,
 )
 
@@ -1012,9 +1012,11 @@ def test_the_instructions_shipped_at_initialize_recommend_no_withheld_tool():
 def test_a_legacy_ceiling_ships_the_instructions_unqualified():
     """ADR 0048: the common case pays nothing — byte-identical to the prose.
 
-    Every policy that grants the read effect class reaches every composite tool
-    the prose recommends, so the suffix is absent from the deployments that
-    motivated writing the prose in the first place.
+    The legacy-equivalent policy admits all 18 names the prose recommends, so it
+    is the shape that reaches this code and changes nothing. A `read`-only grant
+    is deliberately not asserted here: it withholds `hmc_create_lpar` and
+    `hmc_provision_lpar`, which the composite section recommends as bullets, and
+    the test below pins the suffix it earns.
     """
     from hmc_mcp._app import CEILING_HEADING, INSTRUCTIONS
 
