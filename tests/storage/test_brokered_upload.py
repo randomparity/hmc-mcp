@@ -11,11 +11,13 @@ a speculative public API.
 
 import httpx
 import pytest
+from defusedxml import ElementTree as DET
 
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
+from hmc_mcp.xmlutil import localname
 
 # --------------------------------------------------------------------------- #
 # Brokered file creation fixtures
@@ -144,6 +146,17 @@ VIOS_UUID = "00000000-0000-0000-0000-000000000001"
 VG_UUID = "00000000-0000-0000-0000-000000000002"
 MEDIA_NAME = "test-image.iso"
 BROKER_URI = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-file-uuid-001"
+VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+
+# An ISO name an operator could plausibly type, carrying all five XML
+# metacharacters at once (#284).
+METACHARACTER_MEDIA_NAME = "R&D <a> \"b\" 'c'.iso"
+
+
+def _texts(body: str, element: str) -> list[str]:
+    """Parsed text of every *element* in a request body, in document order."""
+    parsed = DET.fromstring(body.encode("utf-8"))
+    return [el.text for el in parsed.iter() if localname(el.tag) == element]
 
 
 # --------------------------------------------------------------------------- #
@@ -225,6 +238,73 @@ async def test_broker_iso_import_success(mock_hmc):
     assert "LinkedFileURI" in request.content.decode()
     assert BROKER_URI in request.content.decode()
     assert result == BROKERED_ISO_IMPORT_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_broker_file_create_round_trips_metacharacters(mock_hmc):
+    """A media name carrying all five metacharacters reaches the HMC intact."""
+    create_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(
+            201,
+            text=BROKERED_FILE_CREATE_RESPONSE_201,
+            headers={"Location": BROKER_URI},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_file_create(VIOS_UUID, VG_UUID, METACHARACTER_MEDIA_NAME)
+
+    body = create_route.calls.last.request.content.decode()
+    assert _texts(body, "Filename") == [METACHARACTER_MEDIA_NAME]
+
+
+@pytest.mark.asyncio
+async def test_broker_iso_import_round_trips_metacharacters(mock_hmc):
+    """Both interpolated values parse back exactly out of the sent body."""
+    import_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE)
+    )
+    tainted_uri = f"{BROKER_URI}?a=1&b=2"
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_iso_import(
+            VIOS_UUID, VG_UUID, METACHARACTER_MEDIA_NAME, tainted_uri
+        )
+
+    body = import_route.calls.last.request.content.decode()
+    assert _texts(body, "MediaName") == [METACHARACTER_MEDIA_NAME]
+    assert _texts(body, "LinkedFileURI") == [tainted_uri]
+
+
+@pytest.mark.asyncio
+async def test_broker_iso_import_media_name_cannot_redirect_the_broker_uri(mock_hmc):
+    """Unescaped, this named a second LinkedFileURI in a well-formed document."""
+    import_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_iso_import(
+            VIOS_UUID,
+            VG_UUID,
+            "a.iso</MediaName><LinkedFileURI>https://evil.test/x<MediaName>",
+            BROKER_URI,
+        )
+
+    body = import_route.calls.last.request.content.decode()
+    assert _texts(body, "LinkedFileURI") == [BROKER_URI]
+
+
+@pytest.mark.asyncio
+async def test_broker_file_create_rejects_an_unrepresentable_filename(mock_hmc):
+    """A character XML 1.0 cannot carry is refused before the request is sent."""
+    create_route = mock_hmc.post(VG_PATH)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match=r"U\+0000"):
+            await hmc._broker_file_create(VIOS_UUID, VG_UUID, "a\x00.iso")
+
+    assert not create_route.called
 
 
 @pytest.mark.asyncio

@@ -373,3 +373,47 @@ def test_malformed_nicknames_non_string_target_raises(tmp_path):
     with _patch_config_path(tmp_path, NICKNAMES_NON_STRING_TARGET_TOML):
         with pytest.raises(ValueError, match="must map to a profile-key string"):
             hmc_list_configured_hosts()
+
+
+# ---------------------------------------------------------------------------
+# Read count (issue #295) — one parse of config.toml per invocation
+# ---------------------------------------------------------------------------
+
+READ_COUNT_TOML = """\
+default_profile = "prod"
+
+[profiles.prod]
+host = "hmc.example.com"
+user = "admin"
+password = "prodpass"  # pragma: allowlist secret
+
+[nicknames]
+big-iron = "prod"
+"""
+
+
+def test_reads_config_document_exactly_once(tmp_path):
+    """hmc_list_configured_hosts parses config.toml once, not twice (#295).
+
+    Patches the shared choke point `_read_config_document` in both the module
+    that owns it (`hmc_mcp.config`, where `list_nicknames` resolves the name as
+    a module global at call time) and `hmc_mcp.server_systems`'s own imported
+    name (its direct call site), so every read reaches the same counter
+    regardless of which call site makes it.
+    """
+    from unittest.mock import MagicMock
+
+    import hmc_mcp.config as config_mod
+    import hmc_mcp.server_systems as server_systems_mod
+
+    cfg = _write_toml(tmp_path / "config.toml", READ_COUNT_TOML)
+    counter = MagicMock(wraps=config_mod._read_config_document)
+    with (
+        patch.object(config_mod, "_read_config_document", counter),
+        patch.object(server_systems_mod, "_read_config_document", counter),
+        patch.object(server_systems_mod, "resolve_config_path", return_value=cfg),
+    ):
+        result = hmc_list_configured_hosts()
+
+    assert result["profiles"][0]["name"] == "prod"
+    assert counter.call_count == 1

@@ -417,6 +417,41 @@ def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Read count (issue #295) — one parse of config.toml per invocation
+# ---------------------------------------------------------------------------
+
+
+def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
+    """config show parses config.toml once, not three times (#295).
+
+    Patches the shared choke point `_read_config_document` in both the module
+    that owns it (`hmc_mcp.config`, where `list_nicknames`/`load_profile`
+    resolve the name as a module global at call time) and
+    `hmc_mcp.cli_config`'s own imported name (its direct call site), so every
+    read reaches the same counter regardless of which call site makes it.
+    """
+    from unittest.mock import MagicMock
+
+    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.config as config_mod
+
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+
+    counter = MagicMock(wraps=config_mod._read_config_document)
+    with (
+        patch.object(config_mod, "_read_config_document", counter),
+        patch.object(cli_config_mod, "_read_config_document", counter),
+        patch.object(sys, "platform", "linux"),
+    ):
+        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+
+    assert result.exit_code == 0, result.output
+    assert counter.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # config init-access-policy (issue #225)
 # ---------------------------------------------------------------------------
 

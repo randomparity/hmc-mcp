@@ -1,15 +1,18 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import asyncio
+import traceback
 import warnings
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from defusedxml import ElementTree as DET
 
 from hmc_mcp.client import HMCClient, HMCError
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
+from hmc_mcp.xmlutil import localname
 
 from conftest import make_config
 
@@ -170,6 +173,95 @@ async def test_logon_failure(mock_hmc):
             pass
     assert exc_info.value.status_code == 401
     assert client._http.is_closed
+
+
+@pytest.mark.asyncio
+async def test_logon_body_carries_escaped_credentials_to_the_transport(mock_hmc):
+    """The reported defect, proved at the wire rather than at the builder (#284).
+
+    The credentials come from ``HMCConfig``, so nothing on the argument
+    boundary sees them; this is the only place that proves what is sent.
+    """
+    user = "a</UserID><UserID>root"
+    metacharacters = "R&D <a> \"b\" 'c'"
+
+    async with HMCClient(make_config(user=user, password=metacharacters)):
+        pass
+
+    logon = next(
+        call
+        for call in mock_hmc.calls
+        if call.request.method == "PUT"
+        and call.request.url.path == "/rest/api/web/Logon"
+    )
+    parsed = DET.fromstring(logon.request.content)
+    assert [el.text for el in parsed.iter() if localname(el.tag) == "UserID"] == [user]
+    assert [el.text for el in parsed.iter() if localname(el.tag) == "Password"] == [
+        metacharacters
+    ]
+
+
+@pytest.mark.asyncio
+async def test_logon_refuses_a_password_xml_cannot_carry_before_sending(mock_hmc):
+    """Rejected at the encoding boundary, and the message quotes no credential."""
+    unrepresentable = "unleakable\x00"
+    client = HMCClient(make_config(password=unrepresentable))
+    try:
+        with pytest.raises(ValueError, match=r"U\+0000") as raised:
+            await client.logon()
+    finally:
+        await client._http.aclose()
+
+    assert "unleakable" not in str(raised.value)
+    assert not mock_hmc.calls
+
+
+@pytest.mark.asyncio
+async def test_logon_failure_never_quotes_the_credentials(mock_hmc):
+    """The defect lives in the credential path, so the fix must not leak it."""
+    leaky = "unleakable&<value>"
+    mock_hmc.put("/rest/api/web/Logon").mock(
+        return_value=httpx.Response(401, text="<error>bad credentials</error>")
+    )
+
+    with pytest.raises(HMCError) as raised:
+        async with HMCClient(make_config(password=leaky)):
+            pass
+
+    reported = "\n".join(
+        (str(raised.value), repr(raised.value), *getattr(raised.value, "__notes__", ()))
+    )
+    # The fragment rather than the whole value: an escaped or partially
+    # rendered leak would slip past a check for the exact string.
+    assert "unleakable" not in reported
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ConnectError("connection refused"), httpx.ConnectTimeout("")],
+    ids=["transport", "timeout"],
+)
+async def test_a_failed_logon_traceback_carries_no_credential(failure, mock_hmc):
+    """The body holds the credential, so no diagnostic about sending it may.
+
+    Formatted over the whole chain rather than the raised message alone:
+    ``_request`` re-raises ``from`` the httpx error, whose request object holds
+    the rendered body, and a rendered traceback is where that would surface.
+    """
+    leaky = "unleakable&<value>"
+    mock_hmc.put("/rest/api/web/Logon").mock(side_effect=failure)
+
+    with pytest.raises(HMCTransportError) as raised:
+        async with HMCClient(make_config(password=leaky)):
+            pass
+
+    rendered = "".join(
+        traceback.format_exception(
+            type(raised.value), raised.value, raised.value.__traceback__
+        )
+    )
+    assert "unleakable" not in rendered
 
 
 @pytest.mark.asyncio
