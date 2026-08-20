@@ -119,7 +119,7 @@ caller-supplied `vnic_id` into `vnic_id=<id>`, and `add_vnic` builds
 excluded because `backing_devices` is documented as an opaque string passed verbatim, and the
 HMC's multi-device syntax for it is comma-separated — so the record grammar and the attribute's
 own grammar disagree, and resolving that needs the HMC-side answer this change did not need.
-Tracked as a follow-up issue.
+Tracked as issue #285.
 
 Whether the HMC errors or silently accepts a duplicate attribute is still unverified. It bounds
 how bad the old behaviour was, not whether the new behaviour is correct.
