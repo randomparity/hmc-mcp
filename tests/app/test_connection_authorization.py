@@ -275,9 +275,16 @@ def test_every_connection_bearing_tool_is_wrapped_under_a_policy():
     for name in connection_bearing:
         assert _is_guarded(registered[name]), name
 
-    for name in registered:
-        if TOOL_SECURITY[name].connection_argument is None:
-            assert not _is_guarded(registered[name]), name
+    # #297: a tool declaring no connection argument is wrapped too. The wrapper
+    # carries the target dimension as well as the connection one, and whether a
+    # `targets` table can bound a tool is a fact about its selectors rather than
+    # about how it opens a connection.
+    local_only = [
+        name for name in registered if TOOL_SECURITY[name].connection_argument is None
+    ]
+    assert local_only
+    for name in local_only:
+        assert _is_guarded(registered[name]), name
 
 
 def test_every_connection_bearing_tool_is_wrapped_under_the_legacy_policy():
@@ -445,20 +452,23 @@ def _serve(policy, *, enable_arbitrary_command=True):
     return server._serve_application(enable_arbitrary_command, policy)
 
 
-def test_the_served_application_wraps_every_connection_bearing_tool():
+def test_the_served_application_wraps_every_tool():
     """The gate must be on the application `serve` builds, not one a test builds.
 
     Asserting against a self-composed application cannot observe whether
     `_serve_application` threads the authorizer at all, which leaves the
     arbitrary-command registration site — the highest-risk one — unpinned.
+
+    "every tool" since #297, connection-bearing or not: an exemption here was the
+    hole that let a `targets` table permit the two local-only tools.
     """
     application = _serve(_policy(LAB_ONLY + ESCAPE_HATCH_GRANT))
     registered = _registered(application)
 
     assert "hmc_run_command" in registered
+    assert any(TOOL_SECURITY[name].connection_argument is None for name in registered)
     for name, tool in registered.items():
-        expected = TOOL_SECURITY[name].connection_argument is not None
-        assert _is_guarded(tool) == expected, name
+        assert _is_guarded(tool), name
 
 
 def test_the_served_escape_hatch_denies_a_withheld_connection(monkeypatch):

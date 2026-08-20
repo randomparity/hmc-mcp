@@ -39,7 +39,10 @@ from .tool_registry import Authorize, ToolSecurity
 
 
 def _audit_view(
-    connection: str | None, extracted: tuple[Selected, ...]
+    connection: str | None,
+    extracted: tuple[Selected, ...],
+    *,
+    scoped: bool,
 ) -> tuple[str | None, tuple[audit.AuditTarget, ...] | None]:
     """The half of the audit record this module builds, or nulls if it cannot.
 
@@ -47,9 +50,15 @@ def _audit_view(
     covers building a record as well as writing one, and ``audit._emit``'s guard
     only reaches the half ``audit`` assembles. A failure degrades the record to
     nulls rather than dropping it, and either way cannot touch the decision.
+
+    *scoped* is false for a tool declaring no connection argument, and then
+    ``resolved`` is null rather than ``resolved_connection(None)``. That function
+    renders an omitted ``profile`` as ``<default>``, which is true of a call that
+    could have named a connection and did not; such a call never could. Null there
+    is what distinguishes the two in the stream — see ADR 0039's #297 amendment.
     """
     try:
-        return audit.resolved_connection(connection), tuple(
+        return (audit.resolved_connection(connection) if scoped else None), tuple(
             audit.AuditTarget(
                 kind=kind,
                 argument=selector,
@@ -72,21 +81,21 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
     def authorize(
         name: str, security: ToolSecurity, arguments: Mapping[str, Any]
     ) -> None:
+        # A tool declaring no connection argument opens no HMC connection, so the
+        # connection dimension has nothing to bound and every grant reaching the
+        # tool satisfies it vacuously — ADR 0038's structural fact, unchanged. The
+        # *target* dimension still decides: whether a `targets` table can bound a
+        # tool is a fact about its declared selectors, not about how it opens a
+        # connection. ADR 0039 keyed the wrapper on the connection argument and so
+        # skipped that decision entirely; #297 is that gap, and the two spellings
+        # now reach the same answer through the same loop below.
         argument = security.connection_argument
-        if argument is None:
-            # No connection is selected, so there is nothing for this boundary to
-            # scope — and the target dimension cannot reach such a tool either,
-            # since `authorized` declines to wrap it. Withholding it is the tool
-            # dimension's job (ADR 0037). An authorizer must still be safe to
-            # call on any tool. No record either: no decision was reached, and a
-            # per-call record for a per-process decision would record nothing.
-            return
         # Indexed, not `.get`: `authorized` applies the handler's defaults and
         # `validate_security` guarantees the parameter exists, so an absent key is
         # a malformed call, and treating it as an omitted argument would silently
         # make it the default connection. A KeyError here is a registration-path
-        # defect rather than an authorization outcome, so it too goes unrecorded.
-        token = arguments[argument]
+        # defect rather than an authorization outcome, so it goes unrecorded.
+        token = None if argument is None else arguments[argument]
 
         def record(
             decision: Literal["allow", "deny"],
@@ -122,22 +131,31 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         # preserved by ordering rather than by a clause. The record is emitted and
         # the original error re-raised unchanged; `targets` and `resolved` are both
         # null because nothing was extracted and nothing was resolved.
-        try:
-            connection = selected_connection(token, tool=name)
-        except ConnectionScopeError:
-            record("deny", "configuration-unreadable", None, None)
-            raise
+        connection: str | None = None
+        if argument is not None:
+            try:
+                connection = selected_connection(token, tool=name)
+            except ConnectionScopeError:
+                record("deny", "configuration-unreadable", None, None)
+                raise
         extracted = selected_targets(security, arguments)
-        resolved, audited = _audit_view(connection, extracted)
+        resolved, audited = _audit_view(
+            connection, extracted, scoped=argument is not None
+        )
 
         connection_matched = False
         # One conjunction per grant, never a union across them. Both conditions
         # are evaluated against the *same* grant before it can permit, so a policy
         # whose first grant allows the connection and whose second allows the
         # targets denies. That is ADR 0036's combination rule, and it is the
-        # fail-open this module exists to make structurally unavailable.
+        # fail-open this module exists to make structurally unavailable. A tool
+        # with no connection argument skips the first condition rather than
+        # bypassing the loop: the conjunction is over the dimensions that exist,
+        # and the target one still has to hold within one grant.
         for grant in policy.grants_for(name):
-            if not connection_permitted(connection, grant.connections):
+            if argument is not None and not connection_permitted(
+                connection, grant.connections
+            ):
                 continue
             connection_matched = True
             if targets_permitted(grant.targets, security, extracted):
@@ -149,10 +167,10 @@ def dispatch_authorizer(policy: AccessPolicy) -> Authorize:
         # Epic #218 requirement 8 asks a denial to name the constraint that
         # blocked it, and this is the only place in the design where grants are
         # considered together — for the message, never for the decision.
-        if connection_matched:
-            record("deny", denial_reason(security, extracted), resolved, audited)
-            raise target_denial(name, policy.name, security, extracted)
-        record("deny", "connection-not-granted", resolved, audited)
-        raise connection_denial(name, policy.name, argument, token, connection)
+        if argument is not None and not connection_matched:
+            record("deny", "connection-not-granted", resolved, audited)
+            raise connection_denial(name, policy.name, argument, token, connection)
+        record("deny", denial_reason(security, extracted), resolved, audited)
+        raise target_denial(name, policy.name, security, extracted)
 
     return authorize

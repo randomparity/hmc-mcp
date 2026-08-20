@@ -17,6 +17,7 @@ from hmc_mcp.connection_scope import (
     selected_connection,
 )
 from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.target_scope import TargetScopeError
 from hmc_mcp.tool_registry import ToolSecurity
 
 # `prod` is both a profile key and a nickname targeting `lab`; `load_profile`
@@ -331,16 +332,26 @@ def test_a_grant_for_another_tool_does_not_supply_the_connection(config):
         authorize("hmc_delete_lpar", SECURITY, {"profile": "prod"})
 
 
-def test_a_tool_without_a_connection_argument_is_permitted(config):
-    """No connection is selected, so there is no connection to scope."""
+def test_a_tool_without_a_connection_argument_skips_only_the_connection_check(config):
+    """#297: no connection to scope is not no decision to reach.
+
+    The connection dimension is vacuous for such a tool, so a grant naming it
+    permits whatever connections it lists — but the grant must still name it and
+    must still cover its targets. Before #297 `authorized` left these tools
+    unwrapped and the authorizer returned early, so both halves below were
+    permitted.
+    """
     security = ToolSecurity(
         effect="read",
         operation="permissions.describe",
         target_kind="none",
         connection_argument=None,
     )
-    authorize = dispatch_authorizer(_policy("lab"))
-    assert authorize("hmc_effective_permissions", security, {}) is None
+    named = _policy("lab", tools=("hmc_effective_permissions",))
+    assert dispatch_authorizer(named)("hmc_effective_permissions", security, {}) is None
+
+    with pytest.raises(TargetScopeError):
+        dispatch_authorizer(_policy("lab"))("hmc_effective_permissions", security, {})
 
 
 # ---------------------------------------------------------------------------

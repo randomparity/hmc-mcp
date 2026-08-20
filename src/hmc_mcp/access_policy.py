@@ -349,10 +349,14 @@ def _compile_grant(
         # Named tools only, unchanged: naming tool X beside a table it cannot
         # bound makes the grant dead for X, which for a named tool is the whole
         # point of the grant, so it is refused outright.
+        #
+        # #297 removed this rule's exemption for a tool declaring no connection
+        # argument. ADR 0039 exempted the pair because `authorized` left them
+        # unwrapped, so such a grant was not dead — it worked, bounded by the
+        # ceiling alone. It is dead now: every tool is wrapped and a table denies
+        # one it cannot bound whether or not it routes a connection.
         for tool in model.tools:
             security = tool_security[tool]
-            if security.connection_argument is None:
-                continue
             if not security.exhaustive_targets:
                 raise AccessPolicyError(
                     f"{where}: tool {tool!r} has no target selector that a targets "
@@ -384,13 +388,16 @@ def _compile_grant(
         # `unboundable_effect_tools` below, which a compiled grant retains enough
         # information for even though refusal here would have prevented it from
         # compiling at all.
-        connection_bound = sorted(
-            tool for tool in resolved if tool_security[tool].connection_argument
-        )
+        #
+        # The set is every tool the grant resolves to, not only the
+        # connection-bound ones: #297 made the target dimension bind a tool
+        # declaring no connection argument as well, so excluding those two would
+        # let a grant reaching nothing else compile as if it reached something.
+        reached = sorted(resolved)
         unbound = [
-            tool for tool in connection_bound if not tool_security[tool].exhaustive_targets
+            tool for tool in reached if not tool_security[tool].exhaustive_targets
         ]
-        if connection_bound and unbound == connection_bound:
+        if reached and unbound == reached:
             raise AccessPolicyError(
                 f"{where}: tool {unbound[0]!r} has no target selector that a "
                 "targets table can bound, so this grant could never authorize it; "
@@ -461,7 +468,7 @@ def unboundable_effect_tools(
     """One diagnostic line per grant whose table cannot bind part of its reach.
 
     #279: ``_compile_grant`` refuses a grant outright only when its table could
-    never authorize *anything* it reaches (every connection-bound tool
+    never authorize *anything* it reaches (every tool it resolves to
     non-exhaustive) — a *mixed* grant, reaching some tools the table binds and
     some it cannot, still loads, because refusing it would discard the working
     majority to diagnose an unreachable minority. This is that minority's
@@ -482,8 +489,7 @@ def unboundable_effect_tools(
         unbound = sorted(
             tool
             for tool in grant.tools
-            if tool_security[tool].connection_argument
-            and not tool_security[tool].exhaustive_targets
+            if not tool_security[tool].exhaustive_targets
         )
         if unbound:
             names = ", ".join(repr(tool) for tool in unbound)

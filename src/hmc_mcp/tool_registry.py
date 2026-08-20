@@ -205,35 +205,61 @@ def authorized(
     handler: Callable[..., Any],
     authorize: Authorize,
 ) -> Callable[..., Any]:
-    """Return *handler*, or a wrapper that authorizes the call before running it.
+    """Return a wrapper that authorizes the call before running *handler*.
 
-    The wrapper — not the registration site — decides: a tool declaring no
-    connection argument registers unwrapped, so no site can be handed an
-    authorizer it forgets to apply. *authorize* is required since ADR 0041;
-    the arm that returned a bare handler because no policy was selected
-    described a composition that no longer exists.
+    **Every** registered tool is wrapped, whatever it declares. Until #297 this
+    keyed on the connection argument and returned a tool declaring none
+    unwrapped, which was sound only while the wrapper carried the connection
+    dimension alone (ADR 0038). ADR 0039 put the target dimension on the same
+    wrapper without revisiting the key, so the two tools with
+    ``connection_argument = None`` were never target-checked and a ``targets``
+    table permitted them where ``target_scope.targets_permitted`` denies. The
+    wrapper — not the registration site — decides, so no site can be handed an
+    authorizer it forgets to apply. *authorize* is required since ADR 0041; the
+    arm that returned a bare handler because no policy was selected described a
+    composition that no longer exists.
 
     Arguments are bound against the handler's own signature rather than read out
     of ``kwargs``, so a selector passed positionally or left to its default is
     read correctly. ``functools.wraps`` sets ``__wrapped__``, which both
     ``inspect.signature`` and FastMCP's schema generation follow, so the
     registered tool's name, description, and parameter schema are unchanged.
+
+    A coroutine handler gets a coroutine wrapper. ``functools.wraps`` does not
+    copy ``__code__``, so ``inspect.iscoroutinefunction`` reads the wrapper's own
+    identity and a sync wrapper around ``hmc_effective_permissions`` — the
+    package's one async handler, and connection-less — would be registered as a
+    plain function returning an un-awaited coroutine. Both branches name their
+    inner function ``guarded`` because that name is a witness the suite reads.
     """
-    if security.connection_argument is None:
-        return handler
     signature = inspect.signature(handler)
 
-    @functools.wraps(handler)
-    def guarded(*args: Any, **kwargs: Any) -> Any:
+    def check(args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
         authorize(name, security, bound.arguments)
+
+    def mark(wrapper: Callable[..., Any]) -> Callable[..., Any]:
+        # After `functools.wraps`, which updates the wrapper's `__dict__` from
+        # the handler's and would otherwise overwrite this.
+        setattr(wrapper, _AUTHORIZED_MARKER, True)
+        return wrapper
+
+    if inspect.iscoroutinefunction(handler):
+
+        @functools.wraps(handler)
+        async def guarded(*args: Any, **kwargs: Any) -> Any:
+            check(args, kwargs)
+            return await handler(*args, **kwargs)
+
+        return mark(guarded)
+
+    @functools.wraps(handler)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        check(args, kwargs)
         return handler(*args, **kwargs)
 
-    # After `functools.wraps`, which updates `guarded.__dict__` from the
-    # handler's and would otherwise overwrite this.
-    setattr(guarded, _AUTHORIZED_MARKER, True)
-    return guarded
+    return mark(guarded)
 
 
 def annotations_for(effect: Effect) -> ToolAnnotations:

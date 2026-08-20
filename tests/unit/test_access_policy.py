@@ -533,6 +533,26 @@ def test_a_mixed_effect_grant_loads_and_warns_at_startup() -> None:
     assert "all-targets" in message
 
 
+def test_the_startup_warning_names_the_connectionless_tools_a_table_kills() -> None:
+    """#297: they are now part of the dead subset, so they must be named in it.
+
+    `unboundable_effect_tools` filtered on the connection argument, because a
+    tool declaring none was reachable under a table and so was not dead. It is
+    dead now, and this is the one place an operator is told before the first
+    denial — which matters most for `hmc_effective_permissions`, since a
+    table-only policy leaves them no way to ask the server itself.
+    """
+    policy = _compile(
+        _document(effects=["read"], connections=["lab"], targets={"lpar": ["db-01"]})
+    )
+
+    warnings = unboundable_effect_tools(policy, TOOL_SECURITY)
+
+    assert len(warnings) == 1
+    for offender in ("hmc_effective_permissions", "hmc_list_configured_hosts"):
+        assert repr(offender) in warnings[0]
+
+
 def test_a_wholly_dead_effect_grant_is_refused_at_load() -> None:
     """The refusal `unboundable_effect_tools` exists beside: nothing works at all.
 
@@ -575,16 +595,31 @@ def test_a_wholly_dead_effect_grant_is_refused_at_load() -> None:
     assert "all-targets" in str(raised.value)
 
 
-def test_an_unwrapped_tool_is_exempt_from_both_load_time_rules() -> None:
-    """A grant naming one beside a table is not dead, so it must not fail.
+@pytest.mark.parametrize(
+    "tool", ["hmc_effective_permissions", "hmc_list_configured_hosts"]
+)
+def test_a_connectionless_tool_named_beside_a_table_is_refused(tool: str) -> None:
+    """#297: the exemption ADR 0039 wrote for these two is gone, because it was
+    an exemption from a rule about dead grants and the grant is dead now.
 
-    `hmc_effective_permissions` and `hmc_list_configured_hosts` declare no
-    connection argument, so `tool_registry.authorized` returns their handlers
-    unwrapped and no authorizer ever runs on them. Their behaviour under a table
-    grant is exactly what it was before ADR 0039 — bounded by the ceiling alone.
-    Refusing the load would stop a server over a grant that works, and would do
-    it for the introspection tool an operator is most likely to name.
+    ADR 0039 exempted them on the grounds that `tool_registry.authorized` left
+    them unwrapped, so the grant was not dead — it worked, bounded by the ceiling
+    alone. Every tool is wrapped now and a `targets` table denies one it cannot
+    bound, so naming one here can never authorize it, and that is exactly the
+    authoring error this rule refuses the load over for every other tool.
     """
+    with pytest.raises(AccessPolicyError, match="no target selector that a targets"):
+        _compile(
+            _document(
+                tools=["hmc_delete_lpar", tool],
+                connections=["lab"],
+                targets={"lpar": ["db-01"], "managed_system": ["S1"]},
+            )
+        )
+
+
+def test_a_connectionless_tool_named_under_all_targets_still_loads() -> None:
+    """#297: the refusal above is about the table, not about the two tools."""
     policy = _compile(
         _document(
             tools=[
@@ -593,7 +628,7 @@ def test_an_unwrapped_tool_is_exempt_from_both_load_time_rules() -> None:
                 "hmc_list_configured_hosts",
             ],
             connections=["lab"],
-            targets={"lpar": ["db-01"], "managed_system": ["S1"]},
+            targets="all-targets",
         )
     )
 

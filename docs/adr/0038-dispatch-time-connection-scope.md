@@ -185,6 +185,16 @@ inventory is answered here as *the connection dimension structurally cannot boun
 Withholding that disclosure is the tool dimension's job, and ADR 0037 made it
 withholdable.
 
+> **Amended by #297** (2026-08-19). **"Are unwrapped" is no longer true; everything else in this
+> paragraph is.** ADR 0039 put the *target* dimension inside the same wrapper and inherited this
+> record's population without re-deriving it, so those two tools escaped the target check as well —
+> a `targets` table permitted them where `target_scope.targets_permitted` denies. Every tool is
+> wrapped now, and the connection dimension is skipped inside `dispatch_scope.authorize` rather
+> than by declining to wrap. The structural fact this paragraph states is what that skip
+> implements: a `connections = ["lab"]` grant still cannot bound `hmc_list_configured_hosts`, and
+> withholding it is still the tool dimension's job — but a `targets` table can now deny it, and
+> the target dimension is a third answer this paragraph never spoke for.
+
 ### A declared connection argument must actually route the connection
 
 The authorization decides on the value of `ToolSecurity.connection_argument`; the handler

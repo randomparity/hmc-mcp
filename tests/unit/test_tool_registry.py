@@ -11,6 +11,7 @@ from hmc_mcp._app import create_mcp
 from hmc_mcp.tool_registry import (
     ToolSecurity,
     annotations_for,
+    authorized,
     build_tool_security,
     tool_module,
     validate_security,
@@ -372,3 +373,49 @@ def test_exhaustive_targets_without_a_selector_is_rejected():
     )
     with pytest.raises(ValueError, match="exhaustive_targets"):
         validate_security(security, handler)
+
+
+def test_the_wrapper_of_a_coroutine_handler_is_itself_a_coroutine_function():
+    """#297: wrapping every tool put an async handler through `authorized`.
+
+    `hmc_effective_permissions` is the package's only coroutine handler and was
+    left unwrapped until #297 precisely because it declares no connection
+    argument. `functools.wraps` does not copy `__code__`, so a synchronous
+    wrapper would leave `inspect.iscoroutinefunction` false on the registered
+    callable while it returned a coroutine — the wrapper is signature-transparent
+    by design, and coroutine-ness is part of what a caller reads off it.
+    """
+    calls: list[str] = []
+
+    async def handler(profile: str | None = None) -> str:
+        return "ok"
+
+    security = ToolSecurity(
+        effect="read", operation="a.b", target_kind="console"
+    )
+    guarded = authorized("t", security, handler, lambda name, *_a: calls.append(name))
+
+    assert inspect.iscoroutinefunction(guarded)
+    assert asyncio.run(guarded("lab")) == "ok"
+    assert calls == ["t"], "the check must run before the coroutine is awaited"
+
+
+def test_the_wrapper_authorizes_before_a_coroutine_handler_runs():
+    """A denial from an async tool must not reach the handler at all."""
+    reached: list[str] = []
+
+    async def handler(profile: str | None = None) -> str:
+        reached.append("ran")
+        return "ok"
+
+    def deny(*_args) -> None:
+        raise RuntimeError("denied")
+
+    security = ToolSecurity(
+        effect="read", operation="a.b", target_kind="console"
+    )
+    guarded = authorized("t", security, handler, deny)
+
+    with pytest.raises(RuntimeError, match="denied"):
+        asyncio.run(guarded("lab"))
+    assert reached == []

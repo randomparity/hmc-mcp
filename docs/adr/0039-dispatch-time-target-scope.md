@@ -26,7 +26,8 @@ The surface this record must decide over, measured in this checkout:
 - 130 tools; 55 `read`, 46 `mutate`, 28 `destructive`, 1 `arbitrary-command`.
 - 19 tools declare **no** selector at all: 17 with `target_kind = "console"` (including
   `hmc_remove_ldap_config`, `destructive`, and `hmc_run_command`), plus the two
-  `connection_argument = None` tools the wrapper never wraps.
+  `connection_argument = None` tools the wrapper never wraps. (#297 wraps them; the count and the
+  classification are unchanged, only the clause about wrapping.)
 - 43 tools declare an `lpar` selector. 23 also declare a `managed_system` selector; **20 do not**.
 - 10 tools declare at least one `required=False` selector; two of them (`hmc_list_lpars`,
   `hmc_list_vios`) have no other.
@@ -89,6 +90,50 @@ The consequence is sharp and is stated as one: `hmc_list_lpars(system_name_or_uu
 every partition on every system" — is denied by a grant carrying `managed_system = ["S1"]`, because
 that grant did not say the caller may enumerate every system. That is the rule working, not a
 usability defect, and `targets = "all-targets"` remains available for a grant that means it.
+
+> **Amended by #297** (2026-08-19). **The population above was wrong, and the section heading with
+> it: the target dimension binds every *registered* tool, not every wrapped one.** "The same
+> population ADR 0038 chose" was taken as settled and was not. ADR 0038's three reasons — a grant
+> key is a property of the grant rather than of an effect class, a read against a withheld resource
+> is a disclosure, and an effect filter is a condition that must be written and kept in step — are
+> reasons not to narrow the dimension *by effect class*. None of them is a reason to narrow it by
+> the connection argument. `tool_registry.authorized` keyed the wrapper on that argument because
+> ADR 0038's wrapper carried the connection dimension alone, where a tool routing no connection
+> genuinely has nothing to check; this record put a second dimension inside the same wrapper and
+> inherited the key without re-deriving it. The gap was reproduced before the fix, exactly as ADR
+> 0047 predicted it: under `effects = ["read"], targets = { lpar = ["db-01"] }` both
+> `hmc_effective_permissions` and `hmc_list_configured_hosts` were permitted, returning the whole
+> compiled policy and every configured profile's host, user, port, TLS setting, default status and
+> nicknames. No credential was disclosed — verified — but the configuration, the topology, and the
+> shape of the policy itself were.
+>
+> **The correction moves the key rather than deleting it.** `authorized` wraps unconditionally;
+> `dispatch_scope.authorize` reads `connection_argument is None` and skips the *connection*
+> condition for that tool, leaving the target condition to decide inside the same per-grant loop.
+> So ADR 0038's structural fact survives intact — a `connections = ["lab"]` grant still cannot
+> bound `hmc_list_configured_hosts`, because that tool opens no connection — and it is now a
+> statement about which dimensions apply rather than about whether any authorizer runs. That is
+> what keying on the connection argument still buys, and it is all it buys.
+>
+> **What the change cost**, stated rather than discovered later:
+>
+> - A table-only policy now denies `hmc_effective_permissions`, so an operator who narrows targets
+>   and wants introspection must write the second `all-targets` grant this section already asks for
+>   — and cannot ask the server why, because the tool that would answer is the one denied.
+>   `unboundable_effect_tools` names both tools at startup for exactly that reason, and the denial
+>   text names `all-targets` as the remedy.
+> - Two load-time refusals that could not fire for these tools now can, so a policy that loaded
+>   yesterday can refuse to start today. See the amendment on the carry-forward section below.
+> - `authorized` grew a coroutine branch. `hmc_effective_permissions` is the package's only async
+>   handler and was unwrapped precisely because it declares no connection argument, so a
+>   synchronous wrapper would have registered a plain function returning an un-awaited coroutine.
+> - ADR 0040's two no-record cases become one; see its amendment.
+> - Two tools pay a per-call authorization decision they did not pay before. Both are `read` tools
+>   an operator calls, neither is on any HMC path, and the decision is a dictionary bind plus a
+>   scan of the grants that already name them.
+>
+> `exhaustive_targets`, the extraction rules, the matching rules, and reading (ii) itself are
+> unchanged — the fix is that reading (ii) now reaches the two tools it always described.
 
 ### Extraction is total, and reads only the declared selectors
 
@@ -266,6 +311,15 @@ start a server over a grant that functions, and it would do so for the introspec
 operator is most likely to name explicitly — the very tool `server._startup_warnings` already nags
 about when a policy withholds it. ADR 0038 recorded the same structural fact for the connection
 dimension; this is its target-dimension twin.
+
+> **Amended by #297** (2026-08-19). **The exemption above is removed, because its premise is
+> removed.** It was conditional on `authorized` leaving those two handlers unwrapped, and that is
+> what #297 changed — every tool is wrapped now, `targets_permitted` refuses a non-exhaustive tool
+> whatever it declares, and a grant naming either of them beside a `targets` table *is* dead. So
+> both load-time rules apply to them exactly as to `hmc_remove_ldap_config`, and
+> `unboundable_effect_tools`'s startup warning stops filtering them out of the dead subset it
+> names. The paragraph's own reasoning is what makes this the right correction rather than a
+> reversal: it refused to fail a load over a grant that functions, and this one no longer does.
 
 The cost is real and is the point: `effects = ["read"], targets = { managed_system = ["S1"] }` no
 longer reaches `hmc_list_systems`, `hmc_console_info`, or the other 12 console reads. Those are
@@ -500,6 +554,11 @@ operator would otherwise discover as an unexplained denial.
 > the two tools declaring none are never target-checked, and a `targets` table permits them where
 > `targets_permitted` would have denied them. Tracked as #297; `exhaustive_targets` and everything
 > else in this record are unaffected.
+>
+> **#297 closed that gap** (2026-08-19). Every tool is wrapped, so nothing escapes the target check
+> and this registry reports `targets` enforced under a table grant as well as under `all-targets`.
+> ADR 0047's target rule is amended accordingly; the two amendments in the Decision above say what
+> the change cost.
 
 ## Consequences
 
@@ -522,6 +581,13 @@ operator would otherwise discover as an unexplained denial.
   narrowing targets must now be written as at least two grants: one with a table for the tools it
   can bound, one with `all-targets` for the ones it cannot. #225's legacy-equivalent generator
   emits `all-targets` throughout and is unaffected.
+
+  > **Amended by #297** (2026-08-19). **25 becomes 27**: `hmc_effective_permissions` and
+  > `hmc_list_configured_hosts` join the set, which is now simply every tool whose
+  > `exhaustive_targets` is `False` — nothing is excluded for declaring no connection argument any
+  > more. Verified against the live registry rather than carried forward: 130 tools, 27
+  > non-exhaustive. The generator is still unaffected, and ADR 0041's separate count of **26** is
+  > unchanged; see its amendment for how the two now differ by `hmc_run_command` alone.
 - **A table-only policy advertises tools it will always deny.** ADR 0037's ceiling is per-tool and
   structurally cannot see targets: `permits_tool` tests membership of the union of the grants'
   tool sets, and a tool may sit in a table grant and an `all-targets` grant at once, so there is no
