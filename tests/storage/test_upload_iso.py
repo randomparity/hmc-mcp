@@ -879,3 +879,25 @@ def test_parse_iso_url_allowlist_refuses_anything_that_is_not_an_authority(rejec
 
     assert rejected in str(exc_info.value)
     assert "HMC_ISO_URL_ALLOWLIST" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "url", ["http://images.test:0/x.iso", "https://images.test:99999/x.iso"]
+)
+@pytest.mark.asyncio
+async def test_upload_iso_refuses_a_url_whose_port_is_unusable(
+    url, detonate_on_network
+):
+    """G303: an unusable port is refused, not quietly replaced by the default.
+
+    `urlparse` raises on an out-of-range port and yields a falsy 0 for `:0`, so a
+    check that fell back to the scheme default on either would compare
+    `images.test:99999` against an entry pinned to `images.test:443` and match
+    it. The host in these cases is allowlisted; the port is what refuses them.
+    """
+    with pytest.raises(ValueError, match="usable TCP port"):
+        await upload_iso(
+            _client_for(f"{ISO_HOST}:443"), VIOS_UUID, VG_UUID, MEDIA_NAME, url
+        )
+
+    assert detonate_on_network == []
