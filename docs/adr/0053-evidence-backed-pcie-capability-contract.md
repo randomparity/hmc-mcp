@@ -12,7 +12,12 @@ mutation work needs one falsifiable interpretation of HMC CLI identities, capaci
 partition state, and unsupported capability behavior. IBM's Power8 through Power11 command
 references agree on the resource families but add fields over time, so treating an unlabelled
 sample or absent field as a stable contract would make version drift indistinguishable from an
-empty resource.
+empty resource. The documentation evidence compared on 2026-08-20 is the IBM
+[Power8 `chsyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg),
+[Power9 `lshwres`](https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm),
+[Power10 `chhwres`](https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres),
+and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9080-HEU?topic=commands-chhwres)
+references. The evidence is documentation-backed; it is not a live-HMC capture.
 
 ## Decision
 
@@ -21,8 +26,8 @@ family, resource command, selected fields, and sanitized output. Parsers consume
 `-F` column order and retain empty columns. Stable identities are:
 
 - dedicated slot: managed-system identity plus `drc_index`;
-- SR-IOV adapter: managed-system identity plus integer `adapter_id`;
-- physical port: adapter identity plus integer `phys_port_id`;
+- SR-IOV adapter: managed-system identity plus the lossless CLI `adapter_id` value;
+- physical port: adapter identity plus the lossless CLI `phys_port_id` value;
 - logical port: adapter identity plus `logical_port_id`, the DRC index documented by IBM.
 
 Names, location codes, MAC addresses, and partition names are attributes, not identities.
@@ -46,11 +51,18 @@ additive fixture cases rather than changes to identity. Mutation code must selec
 profile paths from the documented state matrix and verify the same identity fields after each
 operation. This issue provides no live-mutation proof and no public mutation API.
 
+Every newly supported HMC family or newly admitted field adds a labelled evidence fixture and
+contract-test maintenance obligation. That cost is deliberate: it makes compatibility changes
+reviewable instead of allowing a downstream parser to widen the contract implicitly.
+
 ## Considered & rejected
 
-- **Normalize the current unqualified raw rows.** verified: `lshwres` reference pages for IBM
-  Power8, Power9, Power10, and Power11 document different optional SR-IOV fields while retaining
-  the resource families; absent fields therefore cannot safely mean absent resources.
+- **Normalize the current unqualified raw rows.** verified: the versioned IBM Power8 `chsyscfg`,
+  Power9 `lshwres`, Power10 `chhwres`, and Power11 `chhwres` pages linked in Context were compared
+  on 2026-08-20 using their documented `io_slots`, `adapter_id`, `phys_port_id`,
+  `logical_port_id`, `capacity`, `max_capacity`, and `migratable` fields. They retain the resource
+  families while later pages add fields; absent fields therefore cannot safely mean absent
+  resources.
 - **Use location codes or partition names as identifiers.** verified: IBM's `chhwres` and
   `chsyscfg` command references select slots by DRC index and SR-IOV resources by adapter,
   physical-port, and logical-port IDs; names and locations are descriptive fields.
@@ -63,3 +75,7 @@ operation. This issue provides no live-mutation proof and no public mutation API
 - **Implement mutation while establishing the contract.** judgment: issues #213–#216 own the
   safety policy and public behavior; performing mutation here would combine evidence collection
   with the operations it is meant to constrain.
+- **Do nothing and let each downstream issue infer its own contract.** judgment: #212–#216 would
+  independently choose identities, capacity units, state behavior, and unsupported-capability
+  semantics, making their public inventory and mutation behavior incompatible and unreviewable as
+  one HMC contract.
