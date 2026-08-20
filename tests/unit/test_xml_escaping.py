@@ -234,6 +234,11 @@ def test_builders_are_discovered():
         "build_job_request",
         "migrate_lpar_job",
         "update_hmc_job",
+        # The three client.py request bodies, moved here so the harness above
+        # covers them the same way it covers every other builder (#284).
+        "build_logon_request_document",
+        "build_brokered_file_document",
+        "build_linked_optical_media_document",
     } <= names
     assert len(STRING_CASES) >= 40
 
@@ -385,6 +390,67 @@ def test_repository_password_with_an_ampersand_stays_well_formed():
         if localname(el.tag) == "ParameterValue"
     ]
     assert "a&b<c" in values
+
+
+# --------------------------------------------------------------------- #
+# The concrete reproductions recorded on issue #284 (client.py's three
+# request bodies)
+# --------------------------------------------------------------------- #
+
+
+def test_logon_password_with_an_ampersand_stays_well_formed():
+    """The reported defect: an ordinary password made logon impossible."""
+    value = "pa&ss"
+    xml = documents.build_logon_request_document(user="hscroot", password=value)
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    found = [el.text for el in parsed.iter() if localname(el.tag) == "Password"]
+    assert found == [value]
+
+
+def test_logon_user_cannot_add_a_second_user_id():
+    """Unescaped, this produced a *well-formed* body with two identities."""
+    username = "a</UserID><UserID>root"
+    xml = documents.build_logon_request_document(user=username, password="p")
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    user_ids = [el.text for el in parsed.iter() if localname(el.tag) == "UserID"]
+    assert user_ids == [username]
+
+
+def test_brokered_filename_cannot_add_a_sibling_element():
+    filename = "a.iso</Filename><Filename>evil.iso"
+    xml = documents.build_brokered_file_document(filename=filename)
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    names = [el.text for el in parsed.iter() if localname(el.tag) == "Filename"]
+    assert names == [filename]
+
+
+def test_linked_media_name_cannot_redirect_the_broker_uri():
+    xml = documents.build_linked_optical_media_document(
+        media_name="a.iso</MediaName><LinkedFileURI>https://evil/x<MediaName>",
+        broker_uri="https://hmc.test:12443/rest/api/uom/BrokeredFile/AUTH",
+    )
+
+    parsed = DET.fromstring(xml.encode("utf-8"))
+    uris = [el.text for el in parsed.iter() if localname(el.tag) == "LinkedFileURI"]
+    assert uris == ["https://hmc.test:12443/rest/api/uom/BrokeredFile/AUTH"]
+
+
+@pytest.mark.parametrize(
+    ("value", "codepoint"),
+    [("unleakable\x00", "U+0000"), ("unleakable\ud800", "U+D800")],
+)
+def test_logon_rejects_characters_xml_cannot_carry_without_quoting_them(
+    value, codepoint
+):
+    """Reject at the boundary, and name the codepoint rather than the value."""
+    with pytest.raises(ValueError, match=re.escape(codepoint)) as raised:
+        documents.build_logon_request_document(user="hscroot", password=value)
+
+    assert value not in str(raised.value)
+    assert "unleakable" not in str(raised.value)
 
 
 @pytest.mark.parametrize(

@@ -976,6 +976,76 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 
 
 # ====================================================================== #
+# Brokered file upload / ISO import (ADR 0031)
+#
+# Create:  POST /rest/api/uom/VirtualIOServer/{uuid}/VolumeGroup/{uuid}
+#          with a BrokeredFile document; the broker URI comes back in the
+#          Location header.
+# Import:  POST to the same path with a LinkedVirtualOpticalMedia document
+#          naming that broker URI.
+#
+# Neither document carries schemaVersion, so they render their own envelope
+# rather than going through _document_envelope.
+# ====================================================================== #
+
+
+@escapes_string_arguments
+def build_brokered_file_document(filename: str) -> str:
+    """BrokeredFile document creating an upload handle (create POST).
+
+    The exact structure is version-dependent; this is the shape ADR 0031
+    recorded against a real HMC.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<BrokeredFile xmlns="{UOM_NS}">
+  <Filename>{filename}</Filename>
+</BrokeredFile>
+"""
+
+
+@escapes_string_arguments
+def build_linked_optical_media_document(media_name: str, broker_uri: str) -> str:
+    """LinkedVirtualOpticalMedia document importing an uploaded file (POST).
+
+    ``broker_uri`` is the Location header the HMC returned from the brokered
+    file create. It is escaped like any other value: escaping is the identity
+    for a URI free of the five metacharacters, and an HMC that ever returned
+    one carrying them would otherwise break the document.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LinkedVirtualOpticalMedia xmlns="{UOM_NS}">
+  <MediaName>{media_name}</MediaName>
+  <LinkedFileURI>{broker_uri}</LinkedFileURI>
+</LinkedVirtualOpticalMedia>
+"""
+
+
+# ====================================================================== #
+# Session logon (/rest/api/web/Logon)
+#
+# Authenticate: PUT /rest/api/web/Logon with a LogonRequest document; the
+# response carries the X-API-Session token.
+# ====================================================================== #
+
+
+@escapes_string_arguments
+def build_logon_request_document(user: str, password: str) -> str:
+    """LogonRequest document carrying the configured HMC credentials (PUT).
+
+    The credentials arrive from ``HMCConfig`` rather than from a tool
+    argument, which is why they reach this boundary as an explicit builder
+    call instead of through a decorator on the client method: an
+    argument-boundary decorator on ``HMCClient.logon`` would never see them.
+    """
+    body = f"""  <Metadata>
+    <Atom/>
+  </Metadata>
+  <UserID kb="CUR" kxe="false">{user}</UserID>
+  <Password kb="CUR" kxe="false">{password}</Password>"""
+    return _document_envelope("LogonRequest", body, WEB_NS)
+
+
+# ====================================================================== #
 # HMC User management (/rest/api/web/HmcUser)
 #
 # Create: POST /rest/api/web/HmcUser
