@@ -45,10 +45,11 @@ LPAR authorization.
 **Interfaces:** Define `VnicBackingSelector`, `VnicBackingSnapshot`, `VnicSnapshot`,
 `VnicChangeResult`, `VnicCapabilityError`, `VnicPartialError`, and async `add_vnic(...)` /
 `remove_vnic(...)` signatures from the spec. `VnicChangeResult.changed` is `bool | None`; it also
-defines `mutation_dispatched`, optional before/after snapshots, separate vNIC/backing after-read
-flags, output, and ordered error strings. Snapshot fields are immutable tuples so ambiguous rows
-remain observable; empty plus a successful flag means verified absence. The exact ordered field names are transcribed in the
-spec. Task 3 consumes these exact names.
+defines `mutation_dispatched`, always-present immutable `vnic_before`, `backing_before`,
+`vnic_after`, and `backing_after` tuple fields, separate vNIC/backing after-read flags, output, and
+ordered error strings. Empty tuple plus a successful flag means verified absence; ambiguous rows
+remain observable. The exact ordered field names are transcribed in the spec. Task 3 consumes these
+exact names.
 
 1. Add failing tests for blank/range/precision validation, wrong VIOS identity/type, adapter/port
    mismatch, exhausted capacity, duplicate inventory, verified ensure-one retry, degraded retry
@@ -71,7 +72,7 @@ spec. Task 3 consumes these exact names.
 **Files:** modify `src/hmc_mcp/server_network.py`, `src/hmc_mcp/cli_network.py`,
 `src/hmc_mcp/api.py`, `tests/network/test_vnics.py`, `tests/app/test_cli_commands.py`,
 `tests/app/test_capabilities.py`, `tests/unit/test_public_api.py`, and directly related security
-schema tests.
+schema tests `tests/app/test_tool_security.py` and `tests/unit/test_ssh_quoting.py`.
 
 **Interfaces:** MCP add takes target system/LPAR plus `vios_name`, `vios_lpar_id`, `adapter_id`,
 `physical_port_id`, `capacity_percent`, and `port_vlan_id`; remove takes `slot_num`. CLI mirrors
@@ -79,7 +80,7 @@ these fields. Python exports Task 2 models/errors/operations.
 
 1. Replace tests first and assert rendered schemas contain the new fields and omit
    `backing_devices`, `virtual_switch_name`, top-level `capacity`, and `vnic_id`. Run
-   `uv run pytest -q tests/network/test_vnics.py tests/app/test_capabilities.py tests/unit/test_public_api.py`;
+   `uv run pytest -q tests/network/test_vnics.py tests/app/test_cli_commands.py tests/app/test_capabilities.py tests/app/test_tool_security.py tests/unit/test_public_api.py tests/unit/test_ssh_quoting.py`;
    expect failures against old signatures.
 2. Replace adapters and exports without aliases. Run the same command plus
    `uv run python scripts/smoke_mcp.py`; expect passing tests and smoke.
