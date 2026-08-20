@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Proposed until the evidence fixtures and parser tests in this change are committed.
 
 ## Context
 
@@ -17,7 +17,7 @@ drift indistinguishable from an empty resource. The documentation evidence compa
 [Power8 `chsyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg),
 [Power9 `lshwres`](https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm),
 [Power10 `chhwres`](https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres),
-and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9080-HEU?topic=commands-chhwres)
+and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres)
 references. The evidence is documentation-backed; it is not a live-HMC capture. The admitted
 claims are deliberately narrower than the union of those pages:
 
@@ -28,9 +28,10 @@ claims are deliberately narrower than the union of those pages:
 | V10 | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
 | V11 | `chhwres` SR-IOV attributes | the V10 contract plus current documented operation and unit confirmation |
 
-The version-labelled repository fixtures retain the exact URL, command, fields, and sanitized
-excerpt that backs each admitted claim; no field is admitted merely because another family
-documents it.
+The version-labelled repository fixtures added by this change will retain the exact URL, command,
+fields, and sanitized excerpt that backs each admitted claim; no field is admitted merely because
+another family documents it. The status becomes Accepted only after those fixtures and their
+parser tests exist and pass.
 
 ## Decision
 
