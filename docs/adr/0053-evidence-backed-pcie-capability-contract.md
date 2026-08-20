@@ -15,7 +15,7 @@ references expose related resource families through different commands and versi
 fields, so treating an unlabelled sample or absent field as a stable contract would make version
 drift indistinguishable from an empty resource. The documentation evidence compared on
 2026-08-20 is the IBM
-[Power8 `chsyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg),
+[Power8 `lssyscfg`](https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-lssyscfg),
 [Power9 `lshwres`](https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm),
 [Power10 `chhwres`](https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres),
 and [Power11 `chhwres`](https://www.ibm.com/docs/en/power11/9824-42A?topic=commands-chhwres)
@@ -24,7 +24,7 @@ claims are deliberately narrower than the union of those pages:
 
 | Family | Reference section | Admitted evidence |
 |---|---|---|
-| Power8 docs | `chsyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
+| Power8 docs | `lssyscfg` partition/profile properties | `io_slots`; SR-IOV logical-port profile properties |
 | Power9 docs | `lshwres` synopsis and filters | `adapter`, `physport`, and `logport`; adapter, physical-port, and logical-port ID selectors |
 | Power10 docs | `chhwres` SR-IOV attributes | slot/adapter mode operations; logical-port IDs; `capacity`, `max_capacity`, and minimum granularity |
 | Power11 docs | `chhwres` SR-IOV attributes | the Power10 contract plus current documented operation and unit confirmation |

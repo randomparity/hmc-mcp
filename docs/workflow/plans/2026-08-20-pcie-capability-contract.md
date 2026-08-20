@@ -35,6 +35,8 @@ Use it for every red, green, and bite run below; bare `just verify` owns coverag
 - `tests/system/test_pcie_contract.py`: parser tests, evidence-schema tests, identity/unit checks,
   state-matrix assertions, and diff-scoped no-mutation assertions.
 - `tests/fixtures/pcie/*.json`: one record per admitted documentation family/resource claim.
+- `.github/workflows/ci.yml`: fetch complete Git history so the repository-only structural guard
+  can resolve `origin/main` in CI.
 - `docs/adr/0053-evidence-backed-pcie-capability-contract.md`: flip Proposed to Accepted only after
   all tests and `just verify` pass.
 - `docs/workflow/specs/2026-08-20-pcie-capability-contract-design.md`: durable contract, already
@@ -166,25 +168,30 @@ mistaken for live capture; identities and units are executable assertions.
    LPAR state selection applies only to LPAR-targeted operations, adapter mode uses system-scoped
    inventory/owner preconditions, header-only success is available-empty, and blank success is
    malformed.
-2. Add a repository-only structural no-mutation test. When Git metadata or `main` is unavailable,
-   skip with `repository-only no-mutation guard requires Git metadata and main`; make no packaging
-   claim. Otherwise reject changed or untracked production paths except
-   `src/hmc_mcp/ssh_commands.py`; parse that file and `git show main:src/hmc_mcp/ssh_commands.py`
-   with `ast`; require the only new top-level definition to be `parse_hmc_delimited_rows`, no new
-   imported names because baseline already imports `csv` and `Sequence`, and no removed
-   definition/import;
-   require the parser's call targets to be exactly the reviewed stdlib/builtin/method allowlist
+2. Add a repository-only structural no-mutation test. Without Git metadata, skip with
+   `repository-only no-mutation guard requires Git metadata`; make no packaging claim. With Git
+   metadata, resolve `main` locally or `origin/main` in CI and fail if neither exists. Reject
+   changed or untracked production paths except `src/hmc_mcp/ssh_commands.py`. Parse the current
+   file and the resolved base's `src/hmc_mcp/ssh_commands.py` with `ast`, remove only the top-level
+   `parse_hmc_delimited_rows` node from the current tree, and require `ast.dump` equality for the
+   complete remaining modules. This pins imports, constants, executable module statements, and
+   every pre-existing function body, not only their names. Separately require the parser's call
+   targets to be exactly the reviewed stdlib/builtin/method allowlist
    (`tuple`, `any`, `len`, `set`, `csv.reader`, `list`, `enumerate`, `dict`, `zip`,
    `field.strip`, `text.splitlines`, `line.strip`, and `rows.append`). This excludes a new mutation
    helper, export, project-call alias, or parser-to-SSH path structurally rather than by substring.
-3. Run the focused test; expect green against the reviewed spec. Temporarily add a call to the
-   existing SSH executor inside the parser and confirm the AST guard fails, then restore and rerun
-   green. Temporarily remove one required matrix token from the actual spec, confirm the
-   characterization test fails, restore the spec, and rerun green.
-4. Run `just verify`; expect green. Change ADR 0053 Status to `Accepted` and state that the
+3. Change `.github/workflows/ci.yml` to configure its existing `actions/checkout` step with
+   `fetch-depth: 0`. Run the guard with a temporary local branch name that cannot resolve and
+   `origin/main` available; confirm it executes against `origin/main` rather than skipping.
+4. Run the focused test; expect green against the reviewed spec. Temporarily add a call to the
+   existing SSH executor inside the parser and confirm the AST call guard fails; temporarily alter
+   an existing function body and confirm whole-module equality fails; restore both and rerun green.
+   Temporarily remove one required matrix token from the actual spec, confirm the characterization
+   test fails, restore the spec, and rerun green.
+5. Run `just verify`; expect green. Change ADR 0053 Status to `Accepted` and state that the
    evidence, parser/error tests, state-matrix test, no-mutation check, and full guardrail passed on
    2026-08-20.
-5. Re-run `just verify`; expect green. Commit:
+6. Re-run `just verify`; expect green. Commit:
    `docs: accept evidence-backed PCIe contract`.
 
 **Acceptance:** the durable matrix is mechanically pinned, no mutation surface was added, ADR 0053
