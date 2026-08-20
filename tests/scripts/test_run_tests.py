@@ -148,5 +148,28 @@ def test_failure_replays_multiple_bounded_binary_chunks_in_order(
     assert temporary_file.closed
 
 
+def test_interruption_replays_captured_output_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = b"partial pytest diagnostic before SIGINT \xff\n"
+    stderr = BinaryStderr()
+    temporary_file = TrackingTemporaryFile()
+
+    def interrupt_pytest(_command: list[str], **kwargs: object) -> None:
+        captured_output = kwargs["stdout"]
+        assert captured_output is temporary_file
+        captured_output.write(output)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_tests.sys, "stderr", stderr)
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryFile", lambda: temporary_file)
+    monkeypatch.setattr(run_tests.subprocess, "run", interrupt_pytest)
+
+    assert run_tests.main() == 130
+
+    assert stderr.buffer.getvalue() == output
+    assert temporary_file.closed
+
+
 def test_main_accepts_no_arguments() -> None:
     assert list(inspect.signature(run_tests.main).parameters) == []
