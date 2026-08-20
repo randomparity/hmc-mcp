@@ -50,16 +50,23 @@ It consumes `run_hmc_command` and `parse_hmc_delimited_rows`; Task 2 consumes it
 **Interfaces.** Create immutable `InventoryResult[T]`, `DedicatedSlot`, `SriovAdapter`,
 `SriovPhysicalPort`, and `SriovLogicalPort`. Add
 `list_dedicated_slots(config, system)`, `list_sriov_adapters(config, system)`,
-`list_sriov_physical_ports(config, system, adapter_id=None)`, and
-`list_sriov_logical_ports(config, system, adapter_id=None, physical_port_id=None)`.
+`list_sriov_physical_ports(config, system, adapter_id=None, physical_port_id=None)`, and
+`list_sriov_logical_ports(config, system, adapter_id=None, physical_port_id=None,
+logical_port_id=None)`.
 Tasks 3 and 4 consume these types and functions unchanged.
+
+The exact constructor fields, order, types, closed literals, selector semantics, capability
+invariants, and unavailable-reason text are normative in the design's `Schema` section. Task 2
+implements that table literally and tests each row; it must not add a field or literal absent
+there.
 
 1. Add model tests pinning `resource_kind`, explicit capability/reason, managed-system plus local
    selector identities, parent IDs, `Decimal | None` percentage fields, and dataclass serialization.
    Add operation tests that mock `resolve_ssh_names`, prove dedicated row normalization, reject a
    blank `drc_index`, preserve empty optional values as `None`, and prove SR-IOV operations return
-   unavailable without calling an SSH inventory command. Selector filters remain represented in
-   the result scope and are never treated as proof that a record exists.
+   unavailable without calling an SSH inventory command. Adapter, physical-port, and logical-port
+   selector filters remain represented verbatim in the result scope and are never treated as proof
+   that a record exists.
 2. Run the focused tests; expect import failures.
 3. Implement the dataclasses and operations. Use one private helper for the three repeated
    unavailable-result constructions only after all three call sites exist. Use stable reason text
@@ -72,7 +79,8 @@ Tasks 3 and 4 consume these types and functions unchanged.
 **Interfaces.** Export every model and operation from `hmc_mcp.api`. Add MCP tools
 `hmc_list_dedicated_pcie_slots`, `hmc_list_sriov_adapters`,
 `hmc_list_sriov_physical_ports`, and `hmc_list_sriov_logical_ports`; each takes a system selector
-and optional family selector arguments, returns a JSON-serializable dictionary, and has read
+and its applicable `adapter_id`, `physical_port_id`, and `logical_port_id` selectors, returns a
+JSON-serializable dictionary, and has read
 security metadata targeting `managed_system`.
 
 1. Add contract tests for exact exports, signatures, operation names, target kind, selector
@@ -90,6 +98,10 @@ security metadata targeting `managed_system`.
 commands accept parent selector options. JSON is the dataclass dictionary; text output states
 capability unavailable with its reason or renders available records.
 
+The adapter command accepts `--adapter-id`; the physical-port command accepts `--adapter-id` and
+`--physical-port-id`; the logical-port command accepts those two plus `--logical-port-id`. Tests
+require verbatim forwarding and the same values in serialized `selector` scope.
+
 1. Add CliRunner tests for command registration, selector forwarding, JSON schemas, available
    empty output, and unavailable output. Run the unit contract test; expect missing-command failures.
 2. Implement commands using the presentation-neutral operations and `asdict`, without duplicating
@@ -101,7 +113,7 @@ capability unavailable with its reason or renders available records.
 
 ## Rollback and completion
 
-Every commit is independently revertible. Reverting all four removes the new entry points without
-changing legacy inventory or mutation behavior. Before shipping, inspect `git diff main...HEAD`,
+Rollback follows reverse dependency order, or reverts the whole task range; Tasks 3 and 4 consume
+Task 2 and cannot remain after it is reverted. Reverting the range removes the new entry points
+without changing legacy inventory or mutation behavior. Before shipping, inspect `git diff main...HEAD`,
 run the adversarial review and simplification passes, then run `just verify` again.
-

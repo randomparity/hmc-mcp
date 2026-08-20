@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-20 after focused contract tests and `just verify` pass.
+Proposed on 2026-08-20. Acceptance requires focused contract tests and `just verify` to pass.
 
 ## Context
 
@@ -23,6 +23,15 @@ are explicit values or `None`. SR-IOV record schemas preserve the ADR 0053 ident
 type all currently unadmitted attributes as unknown. Until a version-labelled fixture admits an
 exact read projection, SR-IOV operations return capability unavailable without issuing a command.
 Capacity values are decimal percentages or unknown, never bytes, bandwidth, or weights.
+
+Issue #212 requires the stable schema to name mode, availability, ownership/use, location,
+capacity, compatibility, and unknown categories. Their nullable schema slots are requirement-backed
+categories, not read-field claims: every one remains unknown until same-family evidence admits its
+projection. No closed mode or compatibility classifier is defined by this decision.
+
+The normative schema table, closed literals, selectors, and invariants are in the linked design's
+`Schema` section. They are part of this decision: adapters may not invent a second shape or widen
+those vocabularies independently.
 
 The legacy raw-slot API remains separate. New MCP, CLI, and Python entry points serialize the same
 presentation-neutral records rather than redefining schemas at each adapter.
@@ -47,4 +56,3 @@ but each has one resource kind and one independently testable schema.
   authorize breaking the existing raw contract; a separate name makes the schema change explicit.
 - **Do nothing until every family is readable.** judgment: it withholds the admitted dedicated-slot
   contract and gives downstream mutation work no stable fail-closed SR-IOV selector schema.
-
