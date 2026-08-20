@@ -41,6 +41,12 @@ Spec test -> node id. This map is checked by
   269d test_shutdown_delivers_everything_queued_when_the_destination_is_read
   269e test_shutdown_returns_even_when_the_destination_never_drains
 
+#323 / ADR 0051, a second producer sharing the sink:
+
+  test_a_handler_without_a_formatter_renders_the_message_and_nothing_else
+  test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink
+  test_two_producers_share_one_bound_and_the_count_still_adds_back
+
 Not spec-numbered, each pinning something a review round found:
 
   test_resolved_connection_is_bound_to_the_sentinel_that_owns_it
@@ -574,7 +580,8 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
 
     A custom ``logging.Handler`` inherits no ``terminator``, so the newline is
     written explicitly — and in the same ``write`` call, since nothing serialises
-    this handler against FastMCP's traceback panel on the same stream.
+    this handler against the other writers still on fd 2: the interpreter's own
+    exit traceback, and any handler an operator attached outside this sink.
     """
     assert not hasattr(logging.Handler, "terminator")
     assert logging.StreamHandler.terminator == "\n"
@@ -608,6 +615,58 @@ def test_the_handler_issues_one_write_per_record(monkeypatch):
     _flush()
     assert len(writes) == 1
     assert writes[0].endswith("\n")
+
+
+# --- #323 / ADR 0051: a second producer on the same sink -----------------------
+
+
+def test_a_handler_without_a_formatter_renders_the_message_and_nothing_else(capsys):
+    """ADR 0040's grammar survives the handler growing a formatted mode.
+
+    ``logging.Handler.format`` falls back to a shared default ``Formatter`` when
+    none is installed, which would append a traceback to a record carrying
+    ``exc_info``. ``sink_handler`` must not take that fallback: the audit stream's
+    contract is that the message *is* the record, one line of ASCII JSON.
+    """
+    handler = audit.sink_handler()
+    assert handler.formatter is None
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        logger.warning('{"event":"authorization"}', exc_info=True)
+    _flush()
+
+    err = capsys.readouterr().err
+    assert err == '{"event":"authorization"}\n'
+    assert "Traceback" not in err
+
+
+def test_a_handler_with_a_formatter_carries_the_traceback_to_the_sink(capsys):
+    """The other arm, which is what ADR 0051 attaches to the ``fastmcp`` logger."""
+    handler = audit.sink_handler()
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        raise RuntimeError("a handler bug")
+    except RuntimeError:
+        logger.error("Error calling tool 'x'", exc_info=True)
+    _flush()
+
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: Error calling tool 'x'\n")
+    assert "Traceback" in err
+    assert "RuntimeError: a handler bug" in err
+
+
+# The overflow arm of this section lives below `_wedged`, which it needs:
+#   test_two_producers_share_one_bound_and_the_count_still_adds_back
 
 
 # --- #269 / ADR 0043: an undrained destination must not block the writer -------
@@ -710,6 +769,49 @@ def test_an_overflowing_queue_reports_what_it_lost(full_stderr_pipe):
     assert written[-1]["n"] == "last"
     assert records.index(markers[0]) < records.index(written[-1]), (
         "a marker reports lines missing *above* it, so it must precede them"
+    )
+
+
+def test_two_producers_share_one_bound_and_the_count_still_adds_back(full_stderr_pipe):
+    """#323 / ADR 0051: what a second producer does to ADR 0043's accounting.
+
+    Two things are asserted and both are the ADR's claims. A rendered traceback is
+    many physical lines but **one** submitted item, so it takes one queue slot,
+    costs one drop, and can never be torn across the overflow boundary. And the
+    conservation law is unchanged with both producers on the queue: every item is
+    on the stream or inside a marker's ``count``. What the field means is what
+    ADR 0043 already said — items lost, never a record count — so a reader
+    reconciling the trail is not misled by the extra source, only by more of it.
+    """
+    pipe = full_stderr_pipe
+    rendered_traceback = "ERROR: boom\nTraceback (most recent call last):\n  frame\n"
+    submitted = 264
+    with _wedged(pipe) as sink:
+        for index in range(submitted):
+            sink.submit(rendered_traceback if index % 2 else f'{{"n":{index}}}\n')
+        seen = pipe.read_available()
+        assert sink.drain(5.0), "the sink never settled after the pipe was drained"
+        sink.submit('{"n":"last"}\n')
+        assert sink.drain(5.0)
+        raw = seen + pipe.read_available()
+
+    text = raw.decode()
+    records = _records(raw)
+    markers = [record for record in records if record.get("event")]
+    written_records = [record for record in records if "n" in record]
+    written_tracebacks = text.count(rendered_traceback)
+
+    assert markers, "an overflow that reports nothing is the silent loss #269 refuses"
+    assert all(marker["event"] == "records-dropped" for marker in markers)
+    assert written_tracebacks, "no traceback survived, so nothing here was tested"
+    assert text.count("Traceback (most recent call last):") == written_tracebacks, (
+        "a traceback landed torn: it must be one write or no write"
+    )
+    assert (
+        sum(marker["count"] for marker in markers)
+        + len(written_records)
+        + written_tracebacks
+        == submitted + 1
     )
 
 

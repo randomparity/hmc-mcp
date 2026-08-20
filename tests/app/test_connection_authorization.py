@@ -7,6 +7,8 @@ decision record is docs/adr/0038-dispatch-time-connection-scope.md.
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -614,8 +616,6 @@ def denial_filter():
     It lives on a process-global logger that belongs to fastmcp, so a test that
     left it there would decide what every later test sees on stderr.
     """
-    import logging
-
     from hmc_mcp.server import install_denial_log_filter
 
     logger = logging.getLogger("fastmcp.server.server")
@@ -699,6 +699,160 @@ def test_the_client_denial_template_is_the_same_with_the_filter_off(
     template and the constant had been updated to match it.
     """
     assert _denied(create_mcp(_policy(grants)), profile) == expected
+
+
+@pytest.fixture(autouse=True)
+def fastmcp_handlers():
+    """Save and restore the process-global ``fastmcp`` logger's configuration.
+
+    ADR 0051 made ``_serve_application`` replace that logger's handlers, and this
+    module drives ``_serve_application`` in-process. Autouse for the reason
+    ``isolate_audit_logging`` is autouse for ``hmc_mcp.audit``: the tests that
+    merely *serve* leak the state as readily as the ones that read stderr, and
+    whichever ran first would otherwise decide what every later test in the
+    session sees.
+    """
+    logger = logging.getLogger("fastmcp")
+    saved = list(logger.handlers), logger.level, logger.propagate
+    try:
+        yield logger
+    finally:
+        logger.handlers[:] = saved[0]
+        logger.setLevel(saved[1])
+        logger.propagate = saved[2]
+
+
+def _targets_stderr(handler) -> bool:
+    """Whether *handler* writes to the process's stderr.
+
+    Reads both shapes FastMCP's ``configure_logging`` can install: a
+    ``logging.StreamHandler``'s ``stream``, and the ``rich`` ``Console`` a
+    ``RichHandler`` renders through, whose ``file`` resolves ``sys.stderr`` at
+    access time when it was built with ``stderr=True``.
+    """
+    stream = getattr(handler, "stream", None)
+    if stream is None:
+        stream = getattr(getattr(handler, "console", None), "file", None)
+    return stream is sys.stderr
+
+
+def test_the_served_path_takes_fastmcps_handlers_off_fd_2(fastmcp_handlers, capsys):
+    """#323 criterion 1, asserted on the handler set rather than on output.
+
+    The logger is first put back into the state importing ``fastmcp`` leaves it
+    in, so the assertion does not depend on whether an earlier test in the
+    session already served. That reconstruction is also the test's premise: it
+    fails loudly if a future ``fastmcp`` stops installing a writer on fd 2, which
+    would make the rest of this pass vacuously.
+    """
+    from fastmcp.utilities.logging import configure_logging
+
+    fastmcp_handlers.handlers[:] = []
+    configure_logging(level="INFO")
+    assert any(_targets_stderr(each) for each in fastmcp_handlers.handlers), (
+        "fastmcp must have installed a writer on fd 2 for this to be removing one"
+    )
+
+    _serve(_policy(LAB_ONLY))
+
+    assert len(fastmcp_handlers.handlers) == 1
+    assert not any(_targets_stderr(each) for each in fastmcp_handlers.handlers)
+    assert fastmcp_handlers.handlers[0].formatter is not None
+
+    # And the records still reach stderr — through the sink, which is why this
+    # has to drain before reading.
+    logging.getLogger("fastmcp.server.server").warning("a fastmcp line")
+    assert "a fastmcp line" in _stderr(capsys)
+
+
+def test_installing_the_sink_twice_leaves_one_handler(fastmcp_handlers):
+    """Idempotence, which the remove-then-add shape gives rather than a type check."""
+    from hmc_mcp.server import install_fastmcp_stderr_sink
+
+    install_fastmcp_stderr_sink()
+    install_fastmcp_stderr_sink()
+
+    assert len(fastmcp_handlers.handlers) == 1
+
+
+def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
+    fastmcp_handlers, capsys, monkeypatch
+):
+    """#323 criterion 4. ``settings.log_enabled`` false is not a reason to skip.
+
+    That setting gates ``_configure_logging`` at import of ``fastmcp``, so
+    "disabled" is exactly "the logger has no handler" — reconstructed here rather
+    than mocked, because the gate has already run by the time any test starts.
+
+    Installing anyway is the choice, and it closes a case rather than being a
+    no-op: with no handler anywhere above it a record falls through to
+    ``logging.lastResort``, which writes to fd 2 synchronously and unbounded.
+    """
+    import fastmcp
+
+    from hmc_mcp.server import install_fastmcp_stderr_sink
+
+    monkeypatch.setattr(fastmcp.settings, "log_enabled", False)
+    fastmcp_handlers.handlers[:] = []
+    fastmcp_handlers.setLevel(logging.NOTSET)
+
+    install_fastmcp_stderr_sink()
+
+    assert len(fastmcp_handlers.handlers) == 1
+    assert not any(_targets_stderr(each) for each in fastmcp_handlers.handlers)
+    assert logging.lastResort not in fastmcp_handlers.handlers
+
+    logging.getLogger("fastmcp.server.server").warning("a line with logging disabled")
+    assert "a line with logging disabled" in _stderr(capsys)
+
+
+def test_a_denial_is_one_line_through_the_sink(fastmcp_handlers, denial_filter, capsys):
+    """#323 criterion 3: ADR 0046's concise line survives ADR 0051's rerouting.
+
+    The filter and the handler are both installed here on purpose. They solve
+    different problems and #323 keeps both, so the pinned behaviour is the one an
+    operator of a served process actually gets.
+    """
+    from hmc_mcp.server import install_fastmcp_stderr_sink
+
+    install_fastmcp_stderr_sink()
+
+    assert _denied(create_mcp(_policy(LAB_ONLY)), "other") == CONNECTION_DENIAL
+
+    captured = _stderr(capsys)
+    assert "authorization denied" in captured
+    assert "Traceback" not in captured
+    assert "ConnectionScopeError" not in captured
+
+
+def test_a_handler_bug_keeps_its_traceback_through_the_sink(
+    fastmcp_handlers, denial_filter, capsys
+):
+    """#323 criterion 2, which is ADR 0046's criterion carried over the reroute.
+
+    A ``logging.Handler`` renders ``exc_info`` only when a ``Formatter`` is
+    installed on it, so this is the test that fails if the sink-backed handler
+    ships without one — the exact way this change could quietly undo #267.
+    """
+    from fastmcp import FastMCP
+
+    from hmc_mcp.server import install_fastmcp_stderr_sink
+
+    install_fastmcp_stderr_sink()
+    application = FastMCP("fastmcp-sink-probe")
+
+    @application.tool
+    def explode() -> str:
+        raise RuntimeError("a handler bug, not a denial")
+
+    with pytest.raises(ToolError):
+        _call(application, "explode", {})
+
+    captured = _stderr(capsys)
+    assert "Traceback" in captured
+    assert "RuntimeError" in captured
+    assert "a handler bug, not a denial" in captured
+    assert "authorization denied" not in captured
 
 
 def test_an_unexpected_handler_error_still_renders_its_traceback(

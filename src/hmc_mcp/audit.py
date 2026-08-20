@@ -273,9 +273,12 @@ def record_ownership_override(*, system: str, lpar: str, agent_id: str) -> None:
     _emit(_DENY_LEVEL, build)
 
 
-#: How many lines the sink will hold for a destination that is not reading. About
+#: How many items the sink will hold for a destination that is not reading. About
 #: 0.5 MiB at the measured record sizes, and roughly six times the 64 KiB pipe
-#: buffer it stands in for. Not configurable; #270 owns that gap.
+#: buffer it stands in for. Since ADR 0051 an item can also be a rendered
+#: traceback, which is larger and has no fixed size, so the bound is on items and
+#: the byte figure is a typical case rather than a ceiling. Not configurable;
+#: #270 owns that gap.
 _QUEUE_CAPACITY: Final = 1024
 
 #: The whole of what shutdown waits on a destination nobody is draining. A
@@ -286,7 +289,14 @@ _SENTINEL: Final = object()
 
 
 class _StderrSink:
-    """Every stderr write this package makes, off the thread that asked for it.
+    """Every stderr write the served process makes, off the thread that asked for it.
+
+    Three producers share it, and the third is what ADR 0051 added: this module's
+    audit records, ``server._warn``'s startup prose, and — once
+    ``server.install_fastmcp_stderr_sink`` has run — FastMCP's own records,
+    tracebacks included. One bound, one drop counter, and one writer covering all
+    three is the point rather than an accident; a second mechanism on this
+    descriptor would be a second failure mode on it.
 
     A synchronous ``write()`` to a pipe nobody is draining blocks. It raises
     nothing, so no guard fires, and under ADR 0040 that write sits inside
@@ -306,10 +316,13 @@ class _StderrSink:
     start, a broken stream raises ``OSError``, and a closed one raises
     ``ValueError``. What changes is that each of them now counts a drop.
 
-    Each line is written with its newline in **one** call. ``logging``'s lock
+    Each item is written with its newline in **one** call. ``logging``'s lock
     serialises audit records against each other but against nothing else on this
-    stream — FastMCP's traceback panel writes to it too — so a second call could let
-    another writer land between a record and its terminator.
+    stream — the interpreter's own exit traceback and any handler an operator
+    attached elsewhere still write to it directly — so a second call could let
+    another writer land between a record and its terminator. Since ADR 0051 that
+    one call is also what makes a FastMCP traceback atomic: it is one item, so it
+    cannot be interleaved and cannot be half-dropped.
     """
 
     def __init__(self, capacity: int, drain_timeout: float) -> None:
@@ -464,14 +477,32 @@ def write_diagnostic(line: str) -> None:
 class _AuditHandler(logging.Handler):
     """Hand one record per line to the sink, which writes it or counts it lost.
 
-    No ``Formatter`` is installed and the newline is explicit: a custom handler
-    inherits no ``StreamHandler.terminator``, so the message plus its terminator is
-    what reaches the stream, in one write, as ADR 0040 requires.
+    Rendering is the installed ``Formatter``'s when there is one and
+    ``record.getMessage()`` when there is not — deliberately *not*
+    ``Handler.format``'s fallback to a shared default ``Formatter``, because the
+    two callers want opposite things and the fallback would silently give both
+    the same one.
+
+    The audit logger installs none. ADR 0040's grammar is that the message *is*
+    the record — one physical line of ASCII JSON — and a formatter is the one
+    thing that could put something else on that line.
+
+    The ``fastmcp`` logger installs one (ADR 0051), because its records carry
+    ``exc_info`` and ``logging.Formatter.format`` is what appends the traceback.
+    A handler that dropped it would undo ADR 0046's guarantee that a genuine
+    handler bug keeps its traceback.
+
+    The newline is explicit either way: a custom handler inherits no
+    ``StreamHandler.terminator``, so the rendering plus its terminator is what
+    reaches the stream, in one write, as ADR 0040 requires. A multi-line
+    traceback is therefore one queue item and one write — it lands whole or is
+    dropped whole, and never half-written.
     """
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            _SINK.submit(record.getMessage() + "\n")
+            rendered = self.format(record) if self.formatter else record.getMessage()
+            _SINK.submit(rendered + "\n")
         except Exception:  # noqa: BLE001 - the stdlib handler contract
             # Every stdlib handler wraps its body this way, and that is what makes
             # a logging call safe to place anywhere in a program. This module's own
@@ -488,6 +519,17 @@ class _AuditHandler(logging.Handler):
         the bound is what keeps that from becoming the hang this sink removes.
         """
         _SINK.drain(_DRAIN_TIMEOUT)
+
+
+def sink_handler() -> logging.Handler:
+    """A handler putting one line per record onto the shared bounded sink.
+
+    Shared rather than a second sink, for the reason ADR 0043 gave ``_warn``: a
+    second mechanism on the same descriptor is a second failure mode on it. The
+    caller installs a ``Formatter`` when the records it will carry need more than
+    their own message, and leaves it unset when the message is the record.
+    """
+    return _AuditHandler()
 
 
 def install_audit_sink() -> None:
@@ -509,6 +551,6 @@ def install_audit_sink() -> None:
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     logger.propagate = False
     if not logger.handlers:
-        logger.addHandler(_AuditHandler())
+        logger.addHandler(sink_handler())
     if logger.level == logging.NOTSET:
         logger.setLevel(logging.INFO)
