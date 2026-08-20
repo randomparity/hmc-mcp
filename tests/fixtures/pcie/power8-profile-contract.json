@@ -1,0 +1,15 @@
+{
+  "record_kind": "contract-evidence",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power8",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power8/8284-22A?topic=commands-chsyscfg",
+  "source_locator": "chsyscfg > -r prof > io_slots,sriov_eth_logical_ports",
+  "claim_summary": "Profile mutation grammar covers dedicated slots and Ethernet SR-IOV logical ports; RoCE remains unknown.",
+  "support": "unknown",
+  "admitted_claims": [
+    "dedicated-slot profiles use io_slots",
+    "logical-port profiles use sriov_eth_logical_ports",
+    "sriov_roce_logical_ports remains unknown"
+  ]
+}

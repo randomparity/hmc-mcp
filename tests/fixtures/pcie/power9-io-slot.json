@@ -1,0 +1,16 @@
+{
+  "record_kind": "read-fixture",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power9",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
+  "source_locator": "lshwres > -r io > --rsubtype slot > -F > drc_index,description,lpar_name",
+  "claim_summary": "Physical-I/O slot output exposes identity, description, and owner.",
+  "support": "documented",
+  "command": "lshwres -r io --rsubtype slot -m sys1 -F drc_index,description,lpar_name --header",
+  "fields": ["drc_index", "description", "lpar_name"],
+  "parser_examples": {
+    "kind": "synthetic",
+    "stdout": "drc_index,description,lpar_name\n21010003,PCIe slot,lpar1\n21010004,PCIe slot,\n"
+  }
+}

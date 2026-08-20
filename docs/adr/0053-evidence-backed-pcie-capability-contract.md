@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed until the version-backed fixtures, parser and error-classification tests, complete
-state-matrix test, and no-mutation-surface check are committed and `just verify` passes.
+Accepted on 2026-08-20 after the documentation-backed evidence records, strict parser/error tests,
+state-matrix characterization, structural no-mutation check, and full `just verify` passed.
 
 ## Context
 

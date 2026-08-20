@@ -27,7 +27,10 @@ from .ssh import HMCCLIError, run_hmc_command
 
 _RECORD_DELIMITERS: dict[str, tuple[str, str]] = {
     ",": ("a comma", "a comma separates one attribute from the next"),
-    "=": ("an equals sign", "an equals sign separates an attribute name from its value"),
+    "=": (
+        "an equals sign",
+        "an equals sign separates an attribute name from its value",
+    ),
     '"': (
         "a double quote",
         "a double quote is the HMC's own escape for a value containing a comma, "
@@ -46,9 +49,48 @@ _ATTRIBUTE_NAME = re.compile(r"^[a-z_][a-z0-9_]*\+?$")
 # It is kept at its historical site, unchanged, because widening or dropping a
 # public tool's accepted input is not this module's call to make.  See ADR 0045.
 _DESCRIPTION_TARGET_UNSAFE: dict[str, tuple[str, str]] = {
-    " ": ("a space", "a space may make the HMC's internal -i parser tokenise incorrectly"),
+    " ": (
+        "a space",
+        "a space may make the HMC's internal -i parser tokenise incorrectly",
+    ),
     ";": ("a semicolon", "a semicolon may corrupt the HMC CLI -i parser"),
 }
+
+
+def parse_hmc_delimited_rows(
+    text: str,
+    fields: Sequence[str],
+    delimiter: str = ",",
+) -> list[dict[str, str]]:
+    """Parse strict, header-bearing HMC delimited output into named rows."""
+    expected = tuple(fields)
+    if not expected or any(not field or field.strip() != field for field in expected):
+        raise ValueError(
+            "fields must contain non-empty names without surrounding whitespace"
+        )
+    if len(set(expected)) != len(expected):
+        raise ValueError("fields must not contain duplicates")
+    if len(delimiter) != 1 or delimiter in {"\r", "\n"}:
+        raise ValueError("delimiter must be one non-newline character")
+
+    records = [line for line in text.splitlines() if line.strip()]
+    if not records:
+        raise ValueError("HMC delimited output is missing its header")
+    try:
+        parsed = list(csv.reader(records, delimiter=delimiter, strict=True))
+    except csv.Error as error:
+        raise ValueError(f"malformed HMC delimited output: {error}") from error
+    if tuple(parsed[0]) != expected:
+        raise ValueError("HMC delimited header does not match the requested fields")
+
+    rows: list[dict[str, str]] = []
+    for number, values in enumerate(parsed[1:], start=2):
+        if len(values) != len(expected):
+            raise ValueError(
+                f"HMC delimited row {number} has {len(values)} columns; expected {len(expected)}"
+            )
+        rows.append(dict(zip(expected, values, strict=True)))
+    return rows
 
 
 def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
@@ -631,9 +673,7 @@ async def set_lpar_description(
                 f"LPAR name {lpar_name!r} contains {name} ({character!r}); "
                 f"cannot safely write description via chsyscfg -i ({reason})"
             )
-    record = build_attribute_record(
-        [("name", lpar_name), ("description", description)]
-    )
+    record = build_attribute_record([("name", lpar_name), ("description", description)])
     cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 
@@ -963,9 +1003,7 @@ async def sync_lpar_profile(
         HMCCLIError: If *lpar_name* contains a character the ``-i`` record's
             parser treats as structure.
     """
-    record = build_attribute_record(
-        [("name", lpar_name), ("sync_curr_profile", 1)]
-    )
+    record = build_attribute_record([("name", lpar_name), ("sync_curr_profile", 1)])
     cmd = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
     return await run_hmc_command(config, cmd)
 

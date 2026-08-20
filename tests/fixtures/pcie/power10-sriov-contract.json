@@ -1,0 +1,17 @@
+{
+  "record_kind": "contract-evidence",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power10",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power10/7063-CR1?topic=commands-chhwres",
+  "source_locator": "chhwres > -r sriov > slot_id,adapter_id,logical_port_id,capacity,max_capacity,min_eth_capacity_granularity",
+  "claim_summary": "The mutation contract selects stable SR-IOV identities and uses percentage capacities.",
+  "support": "unknown",
+  "capacity_unit": "percent",
+  "admitted_claims": [
+    "dedicated-slot dynamic operations use -r io -o a/r -l",
+    "adapter mode uses -o a/r with slot_id",
+    "logical-port operations use adapter_id and logical_port_id",
+    "capacity, max_capacity, and minimum granularity are percent with up to two decimals"
+  ]
+}
