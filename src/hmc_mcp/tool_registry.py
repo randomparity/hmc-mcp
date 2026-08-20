@@ -82,6 +82,22 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 #   selector entirely (`client.get_job`), so the value authorized and the value
 #   fetched are different values.
 #
+# Membership is decided by whether a `targets` table can bound the identity, and
+# a name fails that by either of two routes. It cannot be written down at all
+# (`cmd` is free-form text; a `vios_partition_id` of "2" names a different VIOS on
+# every system), or it can be written and still designates something the declared
+# selectors do not contain (`file_path`, `job_href`). Which filesystem the value
+# refers to decides nothing: `file_path` is a member because an absolute console
+# path is contained by no selector — for `rstprofdata -f`, which only reads it,
+# exactly as for `bkprofdata -f` — and not because the file sits on the HMC.
+#
+# `backup_name` on `hmc_restore_vios` is the HMC-side name that made that
+# explicit and is deliberately *not* a member: `chviosbackup -id` selects the
+# catalog `-file` resolves in, so a bare name is reached through containment from
+# a declared selector. That holds only while the value cannot leave the catalog,
+# which `server_vios._validate_backup_name` is what enforces. ADR 0044 records the
+# decision and the two questions it leaves open (#282, #283).
+#
 # This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`
 # is in both, deliberately. It is a declared selector — so it is extracted and
 # compared under `all-targets`, which is what keeps three live tools working —

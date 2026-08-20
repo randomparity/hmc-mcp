@@ -361,6 +361,40 @@ def hmc_backup_vios(
     )
 
 
+def _validate_backup_name(backup_name: str) -> None:
+    """Refuse a ``backup_name`` that could denote anything but a catalog entry.
+
+    ADR 0044 keeps ``hmc_restore_vios`` bounded by the VIOS its ``-id`` selector
+    names, which holds only while the value is a name resolved inside that VIOS's
+    own backup catalog. Four shapes are refused, not because no catalog could hold
+    such a name but because the tool cannot treat any of them as one: an empty or
+    padded value, one carrying a path separator, one made only of dots, and one
+    starting with ``-``. The last is refused for what is *unknown* about it — how
+    the HMC CLI parses a bare leading dash in this position is not established
+    here, and ``shlex.quote`` offers no cover because such a value holds no shell
+    metacharacter and is emitted unquoted.
+
+    Deliberately no character-set or length rule, so a catalog entry named outside
+    whatever grammar the HMC enforces stays restorable. ADR 0039 made the same call
+    for ``job_href``, refusing dot-segments but not requiring a UUID shape:
+    refusing a legitimate identifier would trade a regression for reach the narrow
+    refusal has already removed.
+    """
+    if (
+        not backup_name
+        or backup_name != backup_name.strip()
+        or "/" in backup_name
+        or "\\" in backup_name
+        or backup_name.strip(".") == ""
+        or backup_name.startswith("-")
+    ):
+        raise ValueError(
+            f"backup_name {backup_name!r} must be a backup name as returned by "
+            "hmc_list_vios_backups — not a path, an option, or a padded value. It "
+            "is resolved inside the declared VIOS's own backup catalog."
+        )
+
+
 @tool(effect="destructive", operation="vios.restore", target_kind="vios")
 def hmc_restore_vios(
     vios_name_or_uuid: str,
@@ -384,10 +418,17 @@ def hmc_restore_vios(
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID.
-        backup_name: Backup file name returned by hmc_list_vios_backups.
+        backup_name: Backup file name returned by hmc_list_vios_backups. A name
+            within this VIOS's own catalog, not a path: a value that is empty or
+            padded, carries a path separator, is made only of dots, or starts with
+            ``-`` is refused.
         profile: Optional TOML profile name; uses environment defaults when omitted.
         system_name_or_uuid: Optional managed system used to disambiguate a VIOS name.
+
+    Raises:
+        ValueError: if ``backup_name`` could denote something outside the catalog.
     """
+    _validate_backup_name(backup_name)
     return _run(
         lambda: _run_vios_backup_command(
             vios_name_or_uuid,
