@@ -230,9 +230,8 @@ async def test_logon_failure_never_quotes_the_credentials(mock_hmc):
     reported = "\n".join(
         (str(raised.value), repr(raised.value), *getattr(raised.value, "__notes__", ()))
     )
-    assert leaky not in reported
-    # The fragment too: an escaped or partially rendered leak would otherwise
-    # slip past an equality-shaped check.
+    # The fragment rather than the whole value: an escaped or partially
+    # rendered leak would slip past a check for the exact string.
     assert "unleakable" not in reported
 
 

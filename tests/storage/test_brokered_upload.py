@@ -260,7 +260,7 @@ async def test_broker_file_create_round_trips_metacharacters(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_broker_iso_import_round_trips_metacharacters(mock_hmc):
-    """media_name and broker_uri both round-trip, and neither adds an element."""
+    """Both interpolated values parse back exactly out of the sent body."""
     import_route = mock_hmc.post(VG_PATH).mock(
         return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE)
     )
