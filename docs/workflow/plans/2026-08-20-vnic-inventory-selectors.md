@@ -23,10 +23,14 @@ state. MCP, CLI, and Python API only adapt that operation.
 `src/hmc_mcp/ssh_commands.py`, `tests/system/test_pcie_contract.py`, and
 `tests/unit/test_vnic_ssh_contract.py`.
 
-**Interfaces:** Provide `list_vnic_rows(config, system, lpar)`,
-`list_vnic_backing_rows(config, system)`, `read_vios_identity(config, system, vios)`,
-`add_vnic_backing(config, system, lpar, backing_device, vlan)`, and
-`remove_vnic_slot(config, system, lpar, slot_num)`.
+**Interfaces:** Provide
+`async def list_vnic_rows(config: HMCConfig, system_name: str, lpar_name: str) -> list[dict[str, str]]`,
+`async def list_vnic_backing_rows(config: HMCConfig, system_name: str) -> list[dict[str, str]]`,
+`async def read_vios_identity(config: HMCConfig, system_name: str, vios_name: str) -> dict[str, str]`,
+`async def add_vnic_backing(config: HMCConfig, system_name: str, lpar_name: str,
+backing_device: str, port_vlan_id: int) -> str`, and
+`async def remove_vnic_slot(config: HMCConfig, system_name: str, lpar_name: str,
+slot_num: str) -> str`.
 
 1. Add fixture and failing tests for exact fields, empty result, strict malformed rows, `-p` add,
    `-s` remove, and whole-payload quoting. Run
