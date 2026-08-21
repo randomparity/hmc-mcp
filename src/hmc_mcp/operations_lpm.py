@@ -80,7 +80,7 @@ async def migrate_lpar(
             detail = validation.error or "no validation error detail returned"
             raise HMCError(
                 "LPM validation did not succeed "
-                f"(status={validation.status or 'unknown'}, error={detail}); "
+                f"(status={validation.status or 'unknown'!r}, error={detail!r}); "
                 "migration was not submitted"
             )
     job = await hmc.lpar_migrate(
