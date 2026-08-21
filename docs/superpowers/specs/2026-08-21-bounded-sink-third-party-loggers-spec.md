@@ -33,9 +33,15 @@ to match. The access log moves into the bounded sink: accepted.
   on fd 2 after the install and nothing needs re-installing. This is cleaner than
   re-running `dictConfig` after `Config` construction (unreachable from `main_http`)
   or supplying a replacement `LOGGING_CONFIG`.
-- With `dictConfig` skipped, `uvicorn`/`uvicorn.access` keep default `propagate=True`;
-  their records go to our handler first. Leaving logger level/propagate/filters alone
-  follows ADR 0051's "only the handlers" rule uniformly across all four loggers.
+- `dictConfig` also set levels and propagation, and skipping it loses those too:
+  left alone, `uvicorn`/`uvicorn.access` sit at NOTSET (effective WARNING from root) —
+  which would silently *disable* the INFO-level access log instead of moving it — and
+  with `propagate=True` a parent+child binding pair renders every access record twice
+  (`callHandlers` walks ancestors). The install therefore sets both uvicorn loggers to
+  INFO and `propagate=False`, reproducing what uvicorn's own `LOGGING_CONFIG` would
+  have produced; this is a documented exception to ADR 0051's "only the handlers"
+  rule for the uvicorn pair specifically. `fastmcp` and `mcp` stay handlers-only:
+  neither sits inside another bound namespace, so nothing double-renders through them.
 - `temporary_log_level(log_level)` runs with `None` (neither entry point passes
   `log_level`) and reconfigures nothing — the survival argument ADR 0051 already made.
 
@@ -48,7 +54,10 @@ to match. The access log moves into the bounded sink: accepted.
    and names the producer. Renamed from `install_fastmcp_stderr_sink` — clean cutover,
    all callers/tests migrate. Called from `_serve_application` as today, so both
    transports get all four bindings unconditionally.
-2. **`main_http`** passes `uvicorn_config={"log_config": None}` through `.run()`.
+2. **`main_http`** passes `uvicorn_config={"log_config": None}` through `.run()`
+   (`log_level` deliberately not passed: uvicorn's `configure_logging` applies its
+   `log_level` block only to the `uvicorn.error`/`uvicorn.access`/`uvicorn.asgi`
+   children and never to `uvicorn` itself, so levels belong to the install).
 3. **Tests** (`tests/app/test_connection_authorization.py`, alongside the existing
    ADR 0051 sink tests):
    - after the serve-path install, each of the four loggers carries exactly one
@@ -57,6 +66,9 @@ to match. The access log moves into the bounded sink: accepted.
      `uvicorn_config`) attaches no default `StreamHandler` and leaves the sink
      binding intact — pinned through the real `main_http`/`.run()` path by stubbing
      `uvicorn.Server.serve`;
+   - an access-format record on `uvicorn.access` is rendered exactly once through the
+     sink at INFO (pins both the level fix and propagate=False against the two failure
+     modes review found: silent level drop, parent+child double render);
    - an `mcp`-namespace record reaches stderr through the sink (stdio transport);
    - idempotence of the generalized install.
 4. **ADRs** — amend `docs/adr/0043-non-blocking-stderr-diagnostics.md` (Consequences:

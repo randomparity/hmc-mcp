@@ -59,7 +59,9 @@ ADR 0043 removed for this package's own writes, left standing on the larger writ
 handlers with one handler feeding ADR 0043's sink, and `_serve_application` calls it beside
 `install_audit_sink` and `install_denial_log_filter`.** As accepted on 2026-08-20 the bound set
 was the `fastmcp` logger alone; #330's amendment adds `uvicorn`, `uvicorn.access` and `mcp`, so
-a served process carries no unbounded writer through any of them. Four choices inside that.
+a served process carries no unbounded writer through any of them. Four choices inside that, and
+the amendment adds three more of its own — levels and propagation on the uvicorn pair, the
+`log_config=None` lever, and the cross-transport install — recorded in its section below.
 
 **One shared sink, not a second one.** `audit.sink_handler()` returns an `_AuditHandler` bound to
 the same `_StderrSink` the audit records and `server._warn` already use. ADR 0043 gave the reason
@@ -237,10 +239,22 @@ The uvicorn lever is `log_config=None`, which `main_http` supplies through FastM
 `uvicorn_config`. `uvicorn.Config.__init__` still calls `configure_logging()`, but with a null
 config that function runs no `dictConfig` at all (verified against `uvicorn==0.52.1`,
 `config.py:384`), so the default `StreamHandler(stderr)` this record had probed never attaches
-and nothing has to re-install after it. The access log moves into the bounded sink with it,
-accepted: `uvicorn.access` records are rendered through the same marked formatter as the rest,
-one queue item per record. Under stdio there is no uvicorn at all; binding its loggers there
-anyway costs nothing and keeps one rule.
+and nothing has to re-install after it. Skipping `dictConfig` skips more than handlers, and the
+amendment reproduces what it would otherwise silently lose. **Levels:** uvicorn's own
+configuration holds `uvicorn` and `uvicorn.access` at INFO, and access records are emitted at
+INFO; with no `dictConfig` they would sit at NOTSET and inherit root's WARNING, and the access
+log would not move into the sink — it would disappear, the exact cost the residual text this
+amendment replaces warned the lever carried. The install therefore sets both loggers to INFO
+explicitly. **Propagation:** uvicorn's configuration sets `propagate: false` on both, and with
+it left true the parent-plus-child bindings would render every access record twice —
+`callHandlers` walks the whole ancestor chain, so the record would reach the `uvicorn.access`
+handler and then the `uvicorn` handler, two queue items per request. The install sets
+`propagate = false` on both, mirroring what `dictConfig` would have produced. `fastmcp` and
+`mcp` stay handlers-only: neither sits inside another bound namespace, so nothing double-renders
+through them and the original only-the-handlers rule stands for them unchanged. The access log
+moves into the bounded sink on those terms, accepted: `uvicorn.access` records are rendered
+through the same marked formatter as the rest, one queue item per record. Under stdio there is
+no uvicorn at all; binding its loggers there anyway costs nothing and keeps one rule.
 
 For `mcp` the reasoning is this record's own, verbatim: a logger with no handler anywhere
 above it falls through to `logging.lastResort`, and that is the same unbounded synchronous
@@ -254,6 +268,21 @@ The transport-specific reservation above is answered rather than overturned. ADR
 never reads the documentation; under `--http` that reliance is now gone, not blessed — the
 operator's journal receives sink-rendered lines exactly as it receives audit records, and no
 deployment precondition is implied by uvicorn's presence.
+
+**Considered and rejected for this amendment.** *Keep the residuals tracked* — the null option,
+and genuinely defensible under `--http`, where fd 2 belongs to an operator who chose that
+deployment; rejected because the operator's journal still receives a synchronous unbounded
+writer this package could bound for the price of one install, and a residual that names a
+writer the package can cheaply own is a decision deferred, not made. *Take the loggers over on
+`--http` only* — avoids handlers on loggers that never emit under stdio; rejected because the
+install runs in one place for both transports and a transport-conditional binding is a second
+rule to keep in agreement for zero records saved. *Supply a replacement `LOGGING_CONFIG` or
+re-run `dictConfig`* — the levers this record's residual originally weighed; rejected because a
+dict that re-creates uvicorn's handler graph is a copy of dependency internals that drifts on
+every uvicorn bump, and re-running `dictConfig` after `Config` construction is not reachable
+from `main_http` — while `log_config=None` deletes the dependency's configuration instead of
+imitating it, and the three properties it loses (handlers, levels, propagation) are each one
+line to state.
 
 ### Residual: the startup banner is not a log record and is not on the sink
 
