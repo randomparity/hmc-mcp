@@ -442,6 +442,19 @@ mkviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file>
 **Repository use:** `hmc_backup_vios` resolves its VIOS selector to a UUID and
 uses this command with the requested backup type.
 
+```python
+hmc_backup_vios(
+    "server-name",
+    "00000000-0000-0000-0000-000000000003",
+    backup_name="nightly-vios",
+    backup_type="vios",
+)
+```
+
+`backup_name` is keyword-only. A direct system name plus VIOS UUID is SSH-ready;
+a system UUID requires REST to resolve its unique MTMS identity and has no
+`lssyscfg` fallback.
+
 The required managed-system and VIOS selectors are both authorization targets.
 Narrow access-policy grants for `hmc_backup_vios` must include matching
 `managed_system` and `vios` entries; existing VIOS-only grants must add the
@@ -461,6 +474,19 @@ rstviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file> -r
 
 **Repository use:** `hmc_restore_vios` resolves its VIOS selector to a UUID and
 uses this command; `-r` is included only when `restart_if_required` is true.
+
+```python
+hmc_restore_vios(
+    "server-name",
+    "00000000-0000-0000-0000-000000000003",
+    "nightly-vios",
+    backup_type="viosioconfig",
+    restart_if_required=True,
+)
+```
+
+`backup_type` is required and keyword-only. Restore uses the same selector-routing
+rules as backup: only a direct system name plus VIOS UUID bypasses REST.
 
 ---
 

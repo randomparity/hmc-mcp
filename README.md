@@ -670,8 +670,11 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
 > lookup over SSH when the REST API is unreachable. Resolution happens before
 > the command runs, so a UUID that cannot be resolved surfaces as an error
-> rather than being passed through to the CLI. The opt-in `hmc_run_command`
-> tool is the exception — it runs whatever command you give it verbatim.
+> rather than being passed through to the CLI. VIOS backup and restore are an
+> exception: a direct system name plus VIOS UUID is SSH-ready, but a system UUID
+> requires REST to resolve its unique MTMS identity and has no `lssyscfg`
+> fallback. Separately, the opt-in `hmc_run_command` tool runs whatever command
+> you give it verbatim without selector resolution.
 > See [docs/hmc-cli-cheatsheet.md](docs/hmc-cli-cheatsheet.md) for a concise
 > reference to all HMC CLI commands used by this project.
 
