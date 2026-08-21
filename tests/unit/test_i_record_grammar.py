@@ -389,10 +389,11 @@ def test_assign_profile_io_slot_rejects_a_hostile_lpar_name():
 
 
 # ---------------------------------------------------------------------- #
-# The coupling — a new -i site cannot skip the builder
+# The coupling — a new -i, -a, or --filter site cannot skip its builder
 # ---------------------------------------------------------------------- #
 
 BUILDER_NAME = "build_attribute_record"
+FILTER_BUILDER_NAME = "build_filter"
 
 
 def _static_text(node: ast.AST) -> str:
@@ -435,10 +436,76 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
 
 
 RECORD_COMMANDS = ("chsyscfg", "mksyscfg")
+A_RECORD_COMMANDS = ("chhwres",)
+
+# The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
+# carries a bare pool name, not name=value pairs (ADR 0061).  Exempted by
+# enclosing function, so a future record-form `-a` site cannot hide behind
+# it; tests/unit/test_ssh_quoting.py::
+# test_remove_memory_pool_quotes_hostile_pool_name pins the bare emission.
+VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}
 
 
-def _is_an_i_record_literal(node: ast.AST) -> bool:
-    """True when one string literal both names a record command and flags ``-i``.
+def _static_text(node: ast.AST) -> str:
+    """Return the literal text of a string constant or f-string, or ``""``.
+
+    For an f-string only the static segments are returned; interpolations
+    contribute nothing, which is what a flag search wants.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            part.value
+            for part in node.values
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+    return ""
+
+
+def _docstring_nodes(tree: ast.AST) -> set[int]:
+    """Return the ``id()`` of every docstring constant in *tree*.
+
+    A docstring quotes the command it documents, so it names ``chsyscfg``
+    and ``--filter`` without building anything.  Module, class, and function
+    docstrings are all excluded.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            ids.add(id(first.value))
+    return ids
+
+
+def _has_flag_ending_segment(node: ast.AST, flag: str) -> bool:
+    """True when any static segment of *node* ends with *flag*.
+
+    Segments, not the concatenation: a command may carry text after the
+    flag's payload (``… --filter {…} -F … --header``), and only the segment
+    boundary says where the payload starts.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value.rstrip().endswith(flag)
+    if isinstance(node, ast.JoinedStr):
+        return any(
+            isinstance(part, ast.Constant)
+            and isinstance(part.value, str)
+            and part.value.rstrip().endswith(flag)
+            for part in node.values
+        )
+    return False
+
+
+def _is_record_literal(node: ast.AST, commands: tuple[str, ...], flag: str) -> bool:
+    """True when one string literal both names a command and carries *flag*.
 
     Selection and payload inspection deliberately share this unit.  A rule that
     selected on the whole function and inspected one literal could select a
@@ -452,19 +519,38 @@ def _is_an_i_record_literal(node: ast.AST) -> bool:
     if not isinstance(node, ast.Constant | ast.JoinedStr):
         return False
     text = _static_text(node).lstrip()
-    if not text.startswith(RECORD_COMMANDS):
+    if not text.startswith(commands):
         return False
-    return " -i " in text or text.rstrip().endswith("-i")
+    return _has_flag_ending_segment(node, flag)
 
 
-def _is_builder_call(node: ast.AST) -> bool:
-    """True when *node* is a call to :func:`build_attribute_record`."""
+def _is_an_i_record_literal(node: ast.AST) -> bool:
+    return _is_record_literal(node, RECORD_COMMANDS, "-i")
+
+
+def _is_an_a_record_literal(node: ast.AST) -> bool:
+    return _is_record_literal(node, A_RECORD_COMMANDS, "-a")
+
+
+def _is_a_filter_literal(node: ast.AST) -> bool:
+    """True when a literal carries a ``--filter`` flag awaiting its value.
+
+    Unlike the record selections this keys on the flag alone, not the opening
+    command: the migrated sites share one whole-expression shape, and the
+    ``name=`` half lives inside the nested builder argument, not the outer
+    text.
+    """
+    return _has_flag_ending_segment(node, "--filter")
+
+
+def _is_builder_call(node: ast.AST, builder_name: str = BUILDER_NAME) -> bool:
+    """True when *node* is a call to *builder_name*."""
     if not isinstance(node, ast.Call):
         return False
     callee = node.func
     if isinstance(callee, ast.Name):
-        return callee.id == BUILDER_NAME
-    return isinstance(callee, ast.Attribute) and callee.attr == BUILDER_NAME
+        return callee.id == builder_name
+    return isinstance(callee, ast.Attribute) and callee.attr == builder_name
 
 
 def _unwrap_shlex_quote(node: ast.AST) -> ast.AST:
@@ -479,11 +565,15 @@ def _unwrap_shlex_quote(node: ast.AST) -> ast.AST:
     return node
 
 
-def _builder_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """Return the local names assigned from a builder call inside *func*."""
+def _builder_bound_names(
+    func: ast.FunctionDef | ast.AsyncFunctionDef, builder_name: str
+) -> set[str]:
+    """Return the local names assigned from *builder_name* calls in *func*."""
     names: set[str] = set()
     for node in ast.walk(func):
-        if not isinstance(node, ast.Assign) or not _is_builder_call(node.value):
+        if not isinstance(node, ast.Assign) or not _is_builder_call(
+            node.value, builder_name
+        ):
             continue
         for target in node.targets:
             if isinstance(target, ast.Name):
@@ -491,64 +581,137 @@ def _builder_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[st
     return names
 
 
-def _unguarded_payloads(literal: ast.AST, bound: set[str]) -> list[str]:
-    """Return *literal*'s ``-i`` payloads that do not come from the builder.
+def _flag_payload_problems(
+    literal: ast.AST,
+    bound: set[str],
+    flag: str,
+    builder_name: str,
+) -> list[str]:
+    """Return *literal*'s *flag* payloads not produced by *builder_name*.
 
-    *bound* holds the local names assigned from a builder call in the enclosing
+    *bound* holds the local names assigned from the builder in the enclosing
     function.  A selected literal that yields no traceable payload at all is
-    itself reported: an unexaminable record command is not a passing one.
+    itself reported: an unexaminable command is not a passing one.
     """
     if not isinstance(literal, ast.JoinedStr):
         return [
-            f"{ast.unparse(literal)} (a record command that is not an f-string, "
-            "so its -i payload cannot be traced to the builder)"
+            f"{ast.unparse(literal)} (a command that is not an f-string, "
+            f"so its {flag} payload cannot be traced to {builder_name})"
         ]
     unguarded: list[str] = []
     examined = 0
     parts = literal.values
     for index, part in enumerate(parts):
-        if not _static_text(part).rstrip().endswith("-i"):
+        if not _static_text(part).rstrip().endswith(flag):
             continue
         payload = parts[index + 1] if index + 1 < len(parts) else None
         if not isinstance(payload, ast.FormattedValue):
             unguarded.append(
-                f"{ast.unparse(literal)} (the -i flag is not followed by an "
+                f"{ast.unparse(literal)} (the {flag} flag is not followed by an "
                 "interpolation in this f-string)"
             )
             continue
         examined += 1
         expression = _unwrap_shlex_quote(payload.value)
-        guarded = _is_builder_call(expression) or (
+        guarded = _is_builder_call(expression, builder_name) or (
             isinstance(expression, ast.Name) and expression.id in bound
         )
         if not guarded:
             unguarded.append(ast.unparse(payload.value))
     if not examined and not unguarded:
         unguarded.append(
-            f"{ast.unparse(literal)} (selected as a record command, but no -i "
-            "payload was found to check)"
+            f"{ast.unparse(literal)} (selected as a command carrying {flag}, "
+            f"but no {flag} payload was found to check)"
         )
     return unguarded
 
 
-def _i_record_literals(node: ast.AST) -> list[ast.AST]:
-    """Return the ``-i`` record command literals inside *node*, docstrings aside."""
-    skip = _docstring_nodes(node)
+def _joined_str_fragments(node: ast.AST) -> set[int]:
+    """Return the ``id()`` of every Constant piece inside a JoinedStr.
+
+    ``ast.walk`` descends into f-string internals, so a static segment such
+    as ``" --filter "`` would otherwise be visited as if it were a whole
+    command literal.  Only whole literals are selectable.
+    """
+    return {
+        id(part)
+        for node in ast.walk(node)
+        if isinstance(node, ast.JoinedStr)
+        for part in node.values
+        if isinstance(part, ast.Constant)
+    }
+
+
+def _keyword_value_constants(node: ast.AST) -> set[int]:
+    """Return the ``id()`` of every Constant passed as a keyword argument.
+
+    A label such as ``surface="--filter"`` is data, not a command string;
+    without this exclusion the filter selection would select its own
+    builder's diagnostic label.
+    """
+    return {
+        id(keyword.value)
+        for walked in ast.walk(node)
+        if isinstance(walked, ast.Call)
+        for keyword in walked.keywords
+        if isinstance(keyword.value, ast.Constant)
+    }
+
+
+def _selected_literals(node: ast.AST, predicate) -> list[ast.AST]:
+    """Return the selected whole literals inside *node*, docstrings aside."""
+    skip = (
+        _docstring_nodes(node)
+        | _joined_str_fragments(node)
+        | _keyword_value_constants(node)
+    )
     return [
         child
         for child in ast.walk(node)
-        if id(child) not in skip and _is_an_i_record_literal(child)
+        if id(child) not in skip and predicate(child)
+    ]
+
+
+def _unguarded_payloads_for(
+    func: ast.FunctionDef | ast.AsyncFunctionDef,
+    predicate,
+    flag: str,
+    builder_name: str,
+) -> list[str]:
+    """Return *func*'s *flag* payloads not built by *builder_name*."""
+    bound = _builder_bound_names(func, builder_name)
+    return [
+        problem
+        for literal in _selected_literals(func, predicate)
+        for problem in _flag_payload_problems(literal, bound, flag, builder_name)
     ]
 
 
 def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """Return *func*'s ``-i`` payload expressions not built by the builder."""
-    bound = _builder_bound_names(func)
-    return [
-        problem
-        for literal in _i_record_literals(func)
-        for problem in _unguarded_payloads(literal, bound)
-    ]
+    return _unguarded_payloads_for(func, _is_an_i_record_literal, "-i", BUILDER_NAME)
+
+
+def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    if func.name in VALUE_FORM_A_FUNCTIONS:
+        return []
+    return _unguarded_payloads_for(
+        func, _is_an_a_record_literal, "-a", BUILDER_NAME
+    )
+
+
+def _unguarded_filter_values(
+    func: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[str]:
+    return _unguarded_payloads_for(
+        func, _is_a_filter_literal, "--filter", FILTER_BUILDER_NAME
+    )
+
+
+SELECTIONS = (
+    ("-i", _is_an_i_record_literal, _unguarded_i_values),
+    ("-a", _is_an_a_record_literal, _unguarded_a_values),
+    ("--filter", _is_a_filter_literal, _unguarded_filter_values),
+)
 
 
 def _scanned_modules() -> list[tuple[Path, ast.Module]]:
@@ -559,42 +722,52 @@ def _scanned_modules() -> list[tuple[Path, ast.Module]]:
     ]
 
 
-def _record_building_functions() -> list[tuple[str, ast.AST]]:
-    """Return every ``(qualified name, node)`` that builds an ``-i`` record."""
+def _selected_functions(predicate) -> list[tuple[str, ast.AST]]:
+    """Return every ``(qualified name, node)`` whose literals *predicate* selects."""
     found: list[tuple[str, ast.AST]] = []
     for path, tree in _scanned_modules():
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
-            if _i_record_literals(node):
+            if _selected_literals(node, predicate):
                 found.append((f"{path.name}::{node.name}", node))
     return found
 
 
-def test_every_i_record_site_is_built_by_the_shared_builder():
-    """Every value interpolated after ``-i`` must come from the record builder.
+@pytest.mark.parametrize(
+    ("label", "predicate", "checker"),
+    SELECTIONS,
+    ids=[label for label, _, _ in SELECTIONS],
+)
+def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
+    """Every value interpolated after a grammar-carrying flag is builder-built.
 
     This is the recurrence guard.  ``shlex.quote`` around an f-string looks
-    safe and is not; the only durable defence is that the record grammar has
-    exactly one implementation and every site reaches it.
+    safe and is not; the only durable defence is that the grammar has exactly
+    one implementation and every site reaches it.
     """
-    sites = _record_building_functions()
-    assert sites, "no -i record sites found — the AST scan stopped working"
+    sites = _selected_functions(predicate)
+    assert sites, f"no {label} sites found — the AST scan stopped working"
 
     skipping = {
         name: unguarded
         for name, node in sites
-        if (unguarded := _unguarded_i_values(node))
+        if (unguarded := checker(node))
     }
     assert not skipping, (
-        f"these -i payloads are not built by {BUILDER_NAME}(): {skipping}. "
-        f"shlex.quote protects the shell word only; the record's own ',', '=' "
-        f"and '\"' structure needs the builder."
+        f"these {label} payloads are not built by their shared builder: "
+        f"{skipping}. shlex.quote protects the shell word only; the "
+        'grammar\'s own ",", "=" and "\"" structure needs the builder.'
     )
 
 
-def test_no_record_command_literal_lives_outside_a_function():
-    """A module-level record template would sit outside the payload check.
+@pytest.mark.parametrize(
+    ("label", "predicate"),
+    [(label, predicate) for label, predicate, _ in SELECTIONS],
+    ids=[label for label, _, _ in SELECTIONS],
+)
+def test_no_command_literal_lives_outside_a_function(label, predicate):
+    """A module-level command template would sit outside the payload check.
 
     The guard follows the payload interpolated into a literal inside the
     function that builds it.  A command template hoisted to a module constant
@@ -607,29 +780,137 @@ def test_no_record_command_literal_lives_outside_a_function():
             id(literal)
             for node in ast.walk(tree)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-            for literal in _i_record_literals(node)
+            for literal in _selected_literals(node, predicate)
         }
         outside = [
             ast.unparse(literal)
-            for literal in _i_record_literals(tree)
+            for literal in _selected_literals(tree, predicate)
             if id(literal) not in in_functions
         ]
         if outside:
             hoisted[path.name] = outside
     assert not hoisted, (
-        f"these -i record command literals live outside any function: {hoisted}. "
-        f"Build the record with {BUILDER_NAME}() in the function that runs it."
+        f"these {label} command literals live outside any function: {hoisted}. "
+        "Build the command with its shared builder in the function that runs it."
     )
 
 
-def test_the_scan_finds_every_known_record_site():
-    """Pin the six known sites so a silently-narrowed scan is visible."""
-    names = {name.split("::", 1)[1] for name, _ in _record_building_functions()}
-    assert {
+def test_the_scan_finds_every_known_site():
+    """Pin every known site per category so a narrowed scan is visible.
+
+    Set equality, not subset: an extra unknown site surfaces exactly like a
+    missing one.
+    """
+    by_label: dict[str, set[str]] = {}
+    for label, predicate, _ in SELECTIONS:
+        by_label[label] = {
+            name.split("::", 1)[1] for name, _ in _selected_functions(predicate)
+        }
+
+    assert by_label["-i"] == {
         "create_lpar_via_cli",
         "set_lpar_description",
         "set_lpar_msp",
         "set_lpar_proc_compat",
         "sync_lpar_profile",
         "_change_profile_io_slot",
-    } <= names
+        "unassign_sriov_logical_port_profile",
+    }
+    assert by_label["-a"] == {
+        "assign_sriov_logical_port_dynamic",
+        "add_vnic_backing",
+        "remove_memory_pool",
+    }
+    assert by_label["--filter"] == {
+        "list_sriov_physical_port_rows",
+        "list_sriov_configured_logical_port_rows",
+        "read_sriov_lpar_state",
+        "read_sriov_profile_ports",
+        "list_fc_ports",
+        "list_sea_adapters",
+        "list_vnics",
+        "list_vnic_rows",
+        "read_vios_identity",
+        "get_lpar_description",
+        "get_lpar_msp",
+        "set_lpar_msp",
+        "get_lpar_proc_compat",
+        "hmc_list_vios_backups",
+        "capture_lpar_baseline",
+        "mutate_lpar_properties",
+        "restore_lpar_baseline",
+    }
+
+
+def test_prose_docstrings_are_excluded_from_selection():
+    """The four ``--filter`` prose docstrings are never selected as sites."""
+    saw_a_docstring = False
+    for path, tree in _scanned_modules():
+        skip = _docstring_nodes(tree)
+        for label, predicate, _ in SELECTIONS:
+            selected = {id(node) for node in _selected_literals(tree, predicate)}
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and "--filter" in node.value
+                ):
+                    if id(node) in skip:
+                        saw_a_docstring = True
+                        assert id(node) not in selected
+    assert saw_a_docstring, "precondition lost: no prose docstring names --filter"
+
+
+def _function_from_source(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    """Parse *source* and return its first function definition."""
+    node = ast.parse(source)
+    return next(
+        item
+        for item in node.body
+        if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+    )
+
+
+def test_the_scan_reports_an_unguarded_whole_expression_filter():
+    """A synthetic unguarded filter literal fails; a builder-built one passes."""
+    unguarded_func = _function_from_source(
+        "\n".join(
+            [
+                "def f(x):",
+                "    cmd = f'lssyscfg -r lpar -m sys --filter {x}'",
+                "    return cmd",
+            ]
+        )
+    )
+    assert _unguarded_filter_values(unguarded_func)
+
+    guarded_func = _function_from_source(
+        "\n".join(
+            [
+                "import shlex",
+                "def f(x):",
+                "    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'",
+                "    return cmd",
+            ]
+        )
+    )
+    assert _unguarded_filter_values(guarded_func) == []
+
+
+def test_the_value_form_a_site_is_exempt_by_enclosing_function():
+    """The mempool bare-value form is skipped; a renamed copy would not be."""
+    template = [
+        "import shlex",
+        "def {name}(config, system, pool_name):",
+        "    cmd = f'chhwres -r mempool -m sys -o r -a {shlex.quote(pool_name)}'",
+        "    return cmd",
+    ]
+    exempt_func = _function_from_source(
+        "\n".join(template).replace("{name}", "remove_memory_pool")
+    )
+    assert _unguarded_a_values(exempt_func) == []
+
+    other_func = _function_from_source(
+        "\n".join(template).replace("{name}", "remove_pool_copy")
+    )
+    assert _unguarded_a_values(other_func)

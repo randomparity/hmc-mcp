@@ -894,7 +894,9 @@ async def add_vnic_backing(
     payload = build_attribute_record(
         [("port_vlan_id", port_vlan_id), ("backing_devices", backing_device)],
         quoted=("backing_devices",),
-        surface="chhwres -a record",
+        # Not spelled `chhwres -a ...`: a plain string opening with the
+        # command name would itself trip the recurrence guard's -a scan.
+        surface="`chhwres -a` record",
     )
     command = (
         "chhwres -r virtualio --rsubtype vnic -o a"
