@@ -42,7 +42,9 @@ Later implementation must satisfy exact supported command strings and preserve
 
 1. Replace list expectations with
    `lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header`. Pin empty output and valid
-   `name,type` CSV output, plus wrong/duplicate headers, empty values, and extra-column failures.
+   `name,type` CSV output, including CRLF plus a quoted comma and escaped quote in a valid name;
+   assert the exact dictionaries. Also pin wrong/duplicate headers, empty values, and extra-column
+   failures so a naive delimiter split cannot satisfy the contract.
 2. Replace backup calls with explicit system, VIOS, and backup name. Parameterize all three valid
    types and assert `mkviosbk -t TYPE -m SYSTEM --uuid UUID -f NAME`.
 3. Replace restore calls with explicit system and required `viosioconfig`/`ssp` type. Assert
