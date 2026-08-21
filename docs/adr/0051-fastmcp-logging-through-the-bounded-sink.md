@@ -245,7 +245,13 @@ configuration holds `uvicorn` and `uvicorn.access` at INFO, and access records a
 INFO; with no `dictConfig` they would sit at NOTSET and inherit root's WARNING, and the access
 log would not move into the sink — it would disappear, the exact cost the residual text this
 amendment replaces warned the lever carried. The install therefore sets both loggers to INFO
-explicitly. **Propagation:** uvicorn's configuration sets `propagate: false` on both, and with
+explicitly. One delta is accepted in doing so: the replaced path did not run at uvicorn's
+standalone defaults — FastMCP injects `log_level=settings.log_level` when neither `log_config`
+nor `log_level` is supplied (`fastmcp/server/mixins/transport.py:351-352`), so the children's
+level used to follow that setting, and now they are pinned at INFO regardless of it. With
+neither entry point passing `log_level` to `.run()`, that setting had only ever reached uvicorn
+through this injection, so nothing else changes meaning; the install's INFO is the value that
+injection produced by default. **Propagation:** uvicorn's configuration sets `propagate: false` on both, and with
 it left true the parent-plus-child bindings would render every access record twice —
 `callHandlers` walks the whole ancestor chain, so the record would reach the `uvicorn.access`
 handler and then the `uvicorn` handler, two queue items per request. The install sets
@@ -254,9 +260,10 @@ handler and then the `uvicorn` handler, two queue items per request. The install
 through them and the original only-the-handlers rule stands for them unchanged. The access log
 moves into the bounded sink on those terms, accepted: `uvicorn.access` records are rendered
 through the same marked formatter as the rest, one queue item per record. **That acceptance
-also moves the access log from stdout to stderr** — uvicorn's own configuration puts the access
-handler on `sys.stdout`, which is why the probe above recorded `<StreamHandler <stdout>>` — and
-an operator who parsed request lines from stdout must re-point that reader at stderr. Naming it
+also moves the access log from stdout to stderr** — uvicorn's own `LOGGING_CONFIG` attaches the
+access handler to `sys.stdout` (uvicorn 0.52.1, `config.py:96-111`), which is the writer the
+deleted residual's probe recorded as `<StreamHandler <stdout>>` — and an operator who parsed
+request lines from stdout must re-point that reader at stderr. Naming it
 is the point: the residual was about fd 2, `uvicorn.access` was never an fd-2 writer, and this
 amendment takes it over anyway rather than leave it as a second unbounded writer whose stream
 happens to be a different descriptor. The cost side is quantified like the record's own
@@ -298,7 +305,9 @@ narrower takeover, and it meets this record's fd-2 criterion on its own; rejecte
 the access log working under that lever means configuring `uvicorn.access` ourselves anyway,
 and keeping uvicorn's configuration means keeping the unbounded stdout writer the narrower
 option exists to preserve. The choice is therefore not sink-versus-status-quo but
-sink-versus-disabled, and the record chooses the sink.
+sink-versus-disabled, and the record chooses the sink: disabled meets the fd-2 criterion at
+zero queue cost but forfeits the only per-request visibility the HTTP transport produces, and
+the access log is worth one slot per request even under the crowding quantified above.
 
 ### Residual: the startup banner is not a log record and is not on the sink
 
