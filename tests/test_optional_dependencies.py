@@ -35,9 +35,14 @@ from pkgutil import iter_modules
 import sys
 
 
+#: Import names behind the ``app`` extra -- kept in one place so the finder and
+#: the closing ``sys.modules`` sweep cannot drift apart.
+_BLOCKED = {"fastmcp", "mcp", "rich", "typer", "uvicorn"}
+
+
 class BlockAppOnlyPackages(MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
-        if fullname.partition(".")[0] in {"fastmcp", "mcp", "rich", "typer"}:
+        if fullname.partition(".")[0] in _BLOCKED:
             raise ModuleNotFoundError(fullname)
         return None
 
@@ -60,7 +65,7 @@ operation_modules = sorted(
 assert operation_modules
 for module in operation_modules:
     import_module(f"hmc_mcp.{module}")
-assert not ({"fastmcp", "mcp", "rich", "typer"} & set(sys.modules))
+assert not (_BLOCKED & set(sys.modules))
 """
 
     subprocess.run([sys.executable, "-c", script], check=True)
