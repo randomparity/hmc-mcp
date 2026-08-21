@@ -48,7 +48,10 @@ both now parse correctly on the HMC.
 
 - validates each pair through the module-private `_validated_value(attribute, value)` the
   record builder already uses — attribute-name form, then the `_RECORD_DELIMITERS` table, then
-  control characters (`HMCCLIError`, naming field and character; no second table),
+  control characters (`HMCCLIError`, naming field and character; no second table).
+  `_validated_value` gains an optional `surface` label (default preserving today's `-i`
+  wording byte-for-byte): `build_filter` passes `--filter`, and the mempool bare-value call
+  passes the `-a` value form, so every refusal names the command surface it protects,
 - for a bare-value site that is not a filter (`remove_memory_pool`'s `-a <pool_name>`),
   callers invoke `_validated_value("pool_name", pool_name)` directly; the guard exempts that
   site by enclosing-function name (section 5), not by builder tracing,
@@ -96,8 +99,13 @@ bound from one, or either wrapped in `shlex.quote` — nothing else.
 
 - `RECORD_COMMANDS` selection widened: literals opening with `chsyscfg`/`mksyscfg` keyed on
   `-i` (unchanged), literals opening with `chhwres` keyed on `-a`.
-- New selection: any scanned literal carrying `--filter` requires its value payload to trace to
-  `build_filter` (same unwrap/trace machinery as `-i`).
+- New selection, with payload location defined per shape: a scanned literal carrying
+  `--filter` requires its payload FormattedValue to trace to `build_filter` — located after the
+  static segment ending in `--filter` (whole-expression sites) or after a static segment whose
+  text matches a trailing ``--filter <name>=`` suffix (value-only sites); same unwrap/trace
+  machinery as `-i`. The selected-but-nothing-examined tripwire applies to this selection too,
+  and the section 8 synthetic-violation test uses a value-only literal so the vacuous-pass
+  shape is covered.
 - Explicit exemption keyed on the qualified enclosing function —
   `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` — with a comment citing the mempool value
   form and ADR 0061; a pinning test asserts `remove_memory_pool` still emits the bare pool
