@@ -57,6 +57,8 @@ Later implementation must satisfy exact supported command strings and preserve
    `rstviosbk ...` both without and with `-r`, and assert `vios` is rejected before external calls.
    Add public Python binding regressions proving the old backup `(vios, type, profile)` and restore
    `(vios, backup_name, profile, system)` positional forms raise `TypeError` before external calls.
+   Add MCP dispatch regressions submitting the old named backup and restore payloads and proving
+   schema validation rejects them before REST or SSH.
 4. Apply every catalog-name rejection case to both backup and restore; retain ordinary and hostile
    separator-free name cases to prove validation and quoting independently.
 5. Update profile-routing and destructive-scope calls to the approved signatures. Assert direct
@@ -135,8 +137,8 @@ arguments are single quoted words, and exact supported command tests pass.
 
 **Files:** Modify direct callers/tests returned by
 `rg -n "hmc_(backup|restore|list)_vios|lsviosbackup|chviosbackup" src tests README.md docs`; modify
-`docs/hmc-cli-cheatsheet.md` to remove its current-production defect note after the fix. Historical
-ADR/spec passages that explicitly record the former defect remain historical evidence.
+`README.md` and `docs/hmc-cli-cheatsheet.md` for the replacement calling and routing contracts.
+Historical ADR/spec passages that explicitly record the former defect remain historical evidence.
 
 **Interfaces:** Every live caller uses Task 2 signatures. Generated MCP schemas expose system,
 VIOS, backup name, valid type, restart flag, and profile with the requiredness fixed by Task 2.
@@ -146,6 +148,10 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
 2. Update the cheatsheet repository-use notes to describe the now-supported implementation. Keep
    its command examples aligned with ADR 0060. Document that backup policies now require matching
    managed-system and VIOS target grants, so existing VIOS-only narrow grants must be updated.
+   Show named Python calls for backup `backup_name` and restore `backup_type` so the keyword-only
+   boundary is explicit. Qualify README's generic SSH fallback note: VIOS backup/restore can bypass
+   REST only with a direct system name and VIOS UUID; a system UUID requires REST MTMS resolution
+   and has no `lssyscfg` fallback.
 3. Run `rg -n "lsviosbackup|chviosbackup" src tests README.md docs/hmc-cli-cheatsheet.md`. Expect no
    match describing live code; any retained match must explicitly identify historical broken
    behavior in an immutable design record.

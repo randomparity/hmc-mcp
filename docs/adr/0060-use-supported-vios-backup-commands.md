@@ -33,7 +33,8 @@ when requested.
 Make `backup_name` keyword-only for backup and `backup_type` keyword-only for restore. The old
 maximum-arity positional calls otherwise bind successfully to different replacement parameters,
 which could reinterpret mutating targets instead of failing closed. Keyword-only boundaries make
-those legacy shapes fail Python and MCP validation without a compatibility shim.
+those legacy Python shapes fail binding without a compatibility shim. MCP callers are protected
+separately by the replacement schema's newly required system, backup-name, and restore-type fields.
 
 Preserve the managed-system selector's identity before SSH command construction. A caller-supplied
 name remains the `-m` value. Resolve a caller-supplied UUID to its machine type, model, and serial

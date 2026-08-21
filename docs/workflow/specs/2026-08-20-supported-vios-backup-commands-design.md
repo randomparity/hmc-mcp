@@ -46,9 +46,11 @@ def hmc_restore_vios(
 
 The order is the user-approved system, VIOS, backup-name shape. `backup_name` is keyword-only for
 backup, and `backup_type` is keyword-only for restore, so the old maximum-arity positional calls
-cannot bind to different replacement parameters. Restore type is required because no safe default
-is evidenced. Backup retains `vios` as its default because that is the existing public default and
-`mkviosbk` supports it. `restart_if_required` maps only to `-r`; false emits no flag.
+cannot bind to different replacement parameters in direct Python calls. MCP calls are named JSON
+objects rather than positional calls; their old payloads fail schema validation because system,
+backup-name, or restore-type fields are newly required. Restore type is required because no safe
+default is evidenced. Backup retains `vios` as its default because that is the existing public
+default and `mkviosbk` supports it. `restart_if_required` maps only to `-r`; false emits no flag.
 
 ## Resolution and command construction
 
@@ -92,10 +94,11 @@ input and its syntactic repair. REST and SSH failures retain existing exception 
 successful HMC stdout remains the return value for backup and restore; listing retains
 `list[dict[str, str]]`.
 
-This is a replacement, not a migration. Keyword-only boundaries make the old maximum-arity
-positional calls fail at Python/MCP validation rather than being reinterpreted. Generated MCP
-descriptions and schemas must show the new requiredness and must contain no old command names.
-Existing Python exports remain under the same function names.
+This is a replacement, not a migration. Keyword-only boundaries make the old maximum-arity Python
+positional calls fail binding rather than being reinterpreted. Newly required schema fields make
+old named MCP payloads fail validation. Generated MCP descriptions and schemas must show the new
+requiredness and must contain no old command names. Existing Python exports remain under the same
+function names.
 
 ## Threat model
 
@@ -136,8 +139,9 @@ safety, every missing and blank nested MTMS component plus malformed flattened M
 system-scoped VIOS-UUID resolution, backup dispatch denial without either required target grant,
 all valid backup types,
 both restore types, required restore type, optional `-r`, invalid type/name refusal before external
-calls, rejection of both legacy maximum-arity positional forms, shell quoting for every dynamic
-field, raw-output preservation, profile routing, destructive
+calls, rejection of both legacy maximum-arity Python positional forms and both legacy named MCP
+payloads before REST or SSH, shell quoting for every dynamic field, raw-output preservation,
+profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no
 old positional form or command spelling remains outside historical design records that explicitly
 describe the defect. Run `just test`, `just smoke`, and bare `just verify`.
