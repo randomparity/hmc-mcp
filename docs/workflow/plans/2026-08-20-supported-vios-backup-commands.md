@@ -50,7 +50,8 @@ Later implementation must satisfy exact supported command strings and preserve
    `lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header`. Pin empty output and valid
    `name,type` CSV output, including CRLF plus a quoted comma and escaped quote in a valid name;
    assert the exact dictionaries. Also pin wrong/duplicate headers, empty values, and extra-column
-   failures so a naive delimiter split cannot satisfy the contract.
+   failures so a naive delimiter split cannot satisfy the contract. Include a valid quoted field
+   containing an embedded newline and assert that the returned name preserves it byte-for-byte.
 2. Replace backup calls with explicit system, VIOS, and backup name. Parameterize all three valid
    types and assert `mkviosbk -t TYPE -m SYSTEM --uuid UUID -f NAME`.
 3. Replace restore calls with explicit system and required `viosioconfig`/`ssp` type. Assert
@@ -60,7 +61,9 @@ Later implementation must satisfy exact supported command strings and preserve
    Add MCP dispatch regressions submitting the old named backup and restore payloads and proving
    schema validation rejects them before REST or SSH.
 4. Apply every catalog-name rejection case to both backup and restore; retain ordinary and hostile
-   separator-free name cases to prove validation and quoting independently.
+   separator-free name cases to prove validation and quoting independently. Drive invalid type and
+   name cases with selectors that would require REST, while asserting neither `HMCClient` nor
+   `run_hmc_cli` is touched, so validation-before-I/O is directly proved.
 5. Update profile-routing and destructive-scope calls to the approved signatures. Assert direct
    system names pass through, system UUIDs become MTMS even when names collide, missing/malformed
    MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system. Cover
@@ -71,6 +74,8 @@ Later implementation must satisfy exact supported command strings and preserve
    Prove a direct system name plus VIOS UUID constructs no REST client. For a REST-assisted call,
    prove the REST client and SSH receive the exact same configuration object even if a later
    profile read would resolve differently.
+   Exercise a hostile direct managed-system name for both backup and restore, split each rendered
+   command with `shlex.split`, and prove `-m` remains one exact argument.
 6. Run `uv run --no-sync pytest -q tests/vios/test_vios_backup.py tests/unit/test_ssh_quoting.py
    tests/unit/test_ssh_profile_routing.py tests/unit/test_destructive_scope.py
    tests/app/test_tool_security.py tests/app/test_capabilities.py
@@ -101,9 +106,9 @@ without making a real HMC call.
    UUID without REST; otherwise use one REST context to resolve only selectors that need it, then
    call the builder and SSH transport. Build one `HMCConfig` snapshot per call; when REST is needed,
    construct `HMCClient` from that object and pass that identical object to `run_hmc_cli`.
-2. Replace the list parser with strict `csv.DictReader` handling for the explicit `name,type`
-   header. Empty output returns `[]`; reject a wrong or duplicate header, empty value, or extra
-   column. Change the list builder to:
+2. Replace the list parser with strict `csv.DictReader` over `io.StringIO(text, newline="")` for
+   the explicit `name,type` header. Empty output returns `[]`; reject a wrong or duplicate header,
+   empty value, or extra column. Change the list builder to:
 
    ```python
    lambda uuid: (
@@ -126,9 +131,12 @@ without making a real HMC call.
 5. Implement restore with required restore type, reject values outside `viosioconfig` and `ssp`,
    build the corresponding `rstviosbk` command, and append ` -r` exactly when
    `restart_if_required` is true. Preserve the keyword-only boundaries from Task 1.
-6. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
+6. Set backup tool metadata to `exhaustive_targets=False`; both required selector grants remain,
+   but SSP cluster scope means they do not exhaust every affected target. Pin this beside restore's
+   existing non-exhaustive classification.
+7. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
    semantics, and validation failures. Remove every current-tense old command spelling from source.
-7. Run the exact seven-file focused command from Task 1. Expect all selected tests to pass.
+8. Run the exact focused command from Task 1. Expect all selected tests to pass.
 
 **Acceptance:** Validation occurs before REST/SSH, selector resolution is correctly scoped, command
 arguments are single quoted words, and exact supported command tests pass.
@@ -152,6 +160,9 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
    boundary is explicit. Qualify README's generic SSH fallback note: VIOS backup/restore can bypass
    REST only with a direct system name and VIOS UUID; a system UUID requires REST MTMS resolution
    and has no `lssyscfg` fallback.
+   Apply the same exception to generic SSH-routing claims in the cheatsheet and server help text so
+   no current guidance promises universal name conversion or fallback for these tools. Document
+   backup and restore as non-exhaustive for SSP cluster scope.
 3. Run `rg -n "lsviosbackup|chviosbackup" src tests README.md docs/hmc-cli-cheatsheet.md`. Expect no
    match describing live code; any retained match must explicitly identify historical broken
    behavior in an immutable design record.

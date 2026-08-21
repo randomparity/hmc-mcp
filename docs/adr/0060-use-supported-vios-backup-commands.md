@@ -55,6 +55,10 @@ matching `managed_system` grant; silently omitting the selector from target acco
 caller choose an unauthorized system. Restore keeps its previously accepted non-exhaustive target
 classification.
 
+Backup is also non-exhaustive. An `ssp` backup covers the cluster and associated nodes beyond the
+managed-system and VIOS selectors used to enter the command, so those required grants cannot claim
+to enumerate every affected target.
+
 ## Consequences
 
 The three tools issue commands supported by the verified HMC versions and expose every required
@@ -72,6 +76,8 @@ REST representation lacks a complete MTMS fails closed rather than degrading to 
 Because backup now declares both selectors, policy migration is also required: a grant containing
 only the VIOS target no longer authorizes the call. This is an explicit authorization tightening,
 not an inferred side effect.
+Backup now carries the same non-exhaustive classification for `ssp` cluster scope; the two required
+selector grants remain necessary but are not represented as complete target enumeration.
 
 ## Considered & rejected
 

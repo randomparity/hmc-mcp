@@ -61,6 +61,8 @@ the comma-delimited projection. Empty stdout returns `[]`; otherwise the header 
 `name,type`, each data row must contain exactly those two nonempty fields, and malformed, duplicate,
 or extra columns raise an actionable `ValueError` rather than silently reporting false inventory.
 The return remains `list[dict[str, str]]` with keys `name` and `type` supplied by the HMC header.
+Parse the original stream without `splitlines()` so quoted fields preserve embedded CR/LF
+characters exactly.
 
 Backup and restore use one async helper that resolves only selectors which need REST. A direct
 system name remains the CLI `-m` value, and a VIOS UUID remains the CLI `--uuid` value, so a call
@@ -121,8 +123,8 @@ and its REST identity data are trusted peers; credentials are trusted configurat
 - `shlex.quote` encodes every caller-controlled or HMC-returned string as one remote-shell word.
 - Existing tool metadata and dispatch authorization govern targets. Backup requires both the
   `managed_system` and `vios` grants exposed by its new required selectors; this approved tightening
-  requires narrow policies to add the system grant. Restore remains non-exhaustive because `ssp`
-  can affect a cluster.
+  requires narrow policies to add the system grant. Backup and restore are both non-exhaustive
+  because `ssp` can affect a cluster beyond those selectors.
 - Errors may disclose public selectors and HMC diagnostics but never credentials.
 
 No authorization change beyond backup's approved two-target requirement is claimed. Races with
@@ -140,8 +142,8 @@ system-scoped VIOS-UUID resolution, backup dispatch denial without either requir
 all valid backup types,
 both restore types, required restore type, optional `-r`, invalid type/name refusal before external
 calls, rejection of both legacy maximum-arity Python positional forms and both legacy named MCP
-payloads before REST or SSH, shell quoting for every dynamic field, raw-output preservation,
-profile routing, destructive
+payloads before REST or SSH, shell quoting for every dynamic field including hostile direct system
+names on both mutation commands, raw-output preservation, profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no
 old positional form or command spelling remains outside historical design records that explicitly
 describe the defect. Run `just test`, `just smoke`, and bare `just verify`.
