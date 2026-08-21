@@ -196,7 +196,13 @@ class StorageMixin:
             return []
 
         detail = entries[0]
-        mappings = detail.get("VirtualSCSIMappings", {}).get("VirtualSCSIMapping", [])
+        mappings = (
+            detail.get("Resource", {})
+            .get("VirtualSCSIMappings", {})
+        )
+        if not isinstance(mappings, dict):
+            return []
+        mappings = mappings.get("VirtualSCSIMapping", [])
         if not isinstance(mappings, list):
             mappings = [mappings] if mappings else []
 
@@ -204,7 +210,7 @@ class StorageMixin:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             mappings = [
                 m for m in mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
             ]
 
         return mappings if isinstance(mappings, list) else [mappings]
@@ -648,7 +654,7 @@ class StorageMixin:
             expected_link = f"/rest/api/uom/LogicalPartition/{lpar_uuid}"
             optical_mappings = [
                 m for m in optical_mappings
-                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("@href") == expected_link
+                if isinstance(m, dict) and m.get("AssociatedLogicalPartition", {}).get("href") == expected_link
             ]
 
         return optical_mappings if isinstance(optical_mappings, list) else [optical_mappings]
