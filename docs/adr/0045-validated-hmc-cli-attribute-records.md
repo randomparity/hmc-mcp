@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-08-19)
+Accepted (2026-08-19). Amended in part by [0061](0061-quoted-list-values-and-guarded-filter-grammar.md) (2026-08-21): the "the grammar rejects; it does not encode" clause no longer governs attributes whose HMC-side value grammar is itself comma-separated.
 
 ## Context
 
