@@ -59,6 +59,10 @@ name remains.
 
 ## Task 2 — main_http passes log_config=None
 
+Precondition already satisfied on this branch: `uvicorn==0.52.1` is pinned in the `app`
+extra (commit e346376), because Task 2's lever rests on version-specific uvicorn source
+facts. Verify with `grep uvicorn pyproject.toml`; do not re-pin.
+
 Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`.
 
 1. Failing test: stub `uvicorn.Server.serve` with an async no-op (monkeypatch),
@@ -87,5 +91,8 @@ the ADR names `install_third_party_stderr_sinks`. Fix any stragglers.
 workflow; fix defensible findings; commit per fix. Then /simplify if warranted,
 re-verify, push, PR with body referencing `Closes #330`.
 
-Rollback: single-feature branch; `git revert` of the two code commits restores
-prior behavior.
+Rollback: single-feature branch; revert the code commits in reverse order (`git
+revert --no-edit <newest>..<oldest>` enumerates them safely). The count is whatever
+the branch actually carries — Task 4's review fixes may add code commits beyond
+Tasks 1-2, so enumerate with `git rev-list --count HEAD ^main` rather than assuming
+two.
