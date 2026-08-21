@@ -91,8 +91,9 @@ the ADR names `install_third_party_stderr_sinks`. Fix any stragglers.
 workflow; fix defensible findings; commit per fix. Then /simplify if warranted,
 re-verify, push, PR with body referencing `Closes #330`.
 
-Rollback: single-feature branch; revert the code commits in reverse order (`git
-revert --no-edit <newest>..<oldest>` enumerates them safely). The count is whatever
-the branch actually carries — Task 4's review fixes may add code commits beyond
-Tasks 1-2, so enumerate with `git rev-list --count HEAD ^main` rather than assuming
-two.
+Rollback: single-feature branch; revert the branch's commits as one contiguous
+range, newest first: `git revert --no-edit <oldest>~1..<newest>` (`A..B` selects
+commits reachable from B but not A, so the older end needs the `~1`). Reverting the
+full range — not only the code commits — keeps ADR 0043/0051's closed-residual text
+in agreement with the code; reverting code alone would strand records claiming
+residuals the reverted code no longer closes.
