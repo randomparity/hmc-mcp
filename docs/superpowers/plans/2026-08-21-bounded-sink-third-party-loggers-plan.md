@@ -32,8 +32,11 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`,
    - New: an INFO record on `uvicorn.access` renders exactly once through the sink
      (drain `audit._SINK`, assert one `uvicorn.access: ` line in `_stderr(capsys)`,
      and assert no duplicate line).
-   - New: an INFO record on `mcp` reaches stderr through the sink with the `mcp: `
-     prefix.
+   - New: a WARNING record on `mcp` reaches stderr through the sink with the `mcp: `
+     prefix. WARNING, not INFO: `mcp` stays handlers-only at NOTSET, its effective
+     level is root's WARNING, and an INFO record is dropped at the logger before any
+     handler runs — the same gate `lastResort` sat behind, so the binding changes
+     where records go, not which records exist.
    - Update `test_installing_the_sink_twice_leaves_one_handler` to loop over all four
      loggers (idempotence per logger).
 2. Implementation in `server.py`:

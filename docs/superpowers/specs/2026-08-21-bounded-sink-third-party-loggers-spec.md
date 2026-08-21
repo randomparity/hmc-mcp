@@ -70,7 +70,11 @@ to match. The access log moves into the bounded sink: accepted.
    - an access-format record on `uvicorn.access` is rendered exactly once through the
      sink at INFO (pins both the level fix and propagate=False against the two failure
      modes review found: silent level drop, parent+child double render);
-   - an `mcp`-namespace record reaches stderr through the sink (stdio transport);
+   - a WARNING record on `mcp` reaches stderr through the sink with the `mcp: `
+     prefix (stdio transport); WARNING is the floor because `mcp` stays handlers-only
+     at NOTSET and inherits root's effective WARNING — records below it stay gated by
+     the logger-level walk exactly as they were under `lastResort`, which is the
+     status quo this binding preserves, not a regression it introduces;
    - idempotence of the generalized install.
 3b. **`tests/conftest.py`** — extend the autouse `isolate_audit_logging` fixture to
    snapshot-and-reset handlers, level and propagate for `uvicorn`, `uvicorn.access`
