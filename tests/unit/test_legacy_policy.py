@@ -318,14 +318,21 @@ def test_the_recorded_unboundable_count_matches_the_registry():
     unboundable = {
         name for name, security in ordinary.items() if not security.exhaustive_targets
     }
-    reachable = {
+    connection_bearing = {
         name for name in unboundable if ordinary[name].connection_argument is not None
+    }
+    connectionless = unboundable - connection_bearing
+    all_nonexhaustive = {
+        name
+        for name, security in TOOL_SECURITY.items()
+        if not security.exhaustive_targets
     }
 
     text = record.read_text(encoding="utf-8")
     recorded = re.search(
         r"`ToolSecurity.exhaustive_targets` is `False`\. On this branch that is \*\*(\d+)\*\* "
-        r"of (\d+), of which (\d+)",
+        r"of (\d+)\. \*\*All \1 are\s+target-checked\.\*\* Of those, \*\*(\d+)\*\* "
+        r"declare a connection argument",
         text,
     )
     assert recorded is not None, (
@@ -338,33 +345,23 @@ def test_the_recorded_unboundable_count_matches_the_registry():
         f"{len(unboundable)}. Update the record."
     )
     assert int(recorded.group(2)) == len(ordinary)
-    assert int(recorded.group(3)) == len(reachable)
+    assert int(recorded.group(3)) == len(connection_bearing)
+    assert len(connectionless) == len(unboundable) - len(connection_bearing)
 
-    # The reconciliation against ADR 0039's different population, pinned the same way.
-    # ADR 0039 counts the escape hatch in and the connection-less pair out; this record
-    # does the reverse, and the arithmetic that bridges them is in the ADR as prose. It
-    # is checked here so a reader who recomputes it cannot find it stale.
-    connectionless = {
-        name for name in unboundable if TOOL_SECURITY[name].connection_argument is None
-    }
+    # #297 made ADR 0039's population every non-exhaustive tool. This record omits
+    # only the escape hatch, so the current arithmetic remains executable.
     bridge = re.search(
-        r"\*\*(\d+)\*\* \(ADR 0039\) \*\*− (\d+)\*\* `hmc_run_command`.*?"
-        r"\*\*\+ (\d+)\*\*.*?\*\*= (\d+)\*\*",
+        r"\*\*(\d+)\*\* total non-exhaustive tools.*?\*\*− (\d+)\*\* "
+        r"`hmc_run_command`.*?\*\*= (\d+)\*\*",
         text,
         flags=re.DOTALL,
     )
     assert bridge is not None, "ADR 0041 no longer states the ADR 0039 reconciliation"
-    adr39, minus, plus, total = (int(group) for group in bridge.groups())
+    adr39, minus, total = (int(group) for group in bridge.groups())
 
-    assert minus == 1, "hmc_run_command is one tool"
-    assert plus == len(connectionless), (
-        f"ADR 0041 adds {plus} connection-less tools to ADR 0039's population; the "
-        f"registry has {len(connectionless)}: {sorted(connectionless)}"
-    )
-    # ADR 0039's own figure is immutable, so it is derived rather than trusted: its
-    # population is this one, minus the pair it excludes, plus the hatch it includes.
-    assert adr39 == len(unboundable) - len(connectionless) + 1
-    assert adr39 - minus + plus == total == len(unboundable)
+    assert adr39 == len(all_nonexhaustive)
+    assert minus == len(all_nonexhaustive) - len(unboundable) == 1
+    assert adr39 - minus == total == len(unboundable)
 
 
 # ---------------------------------------------------------------------------

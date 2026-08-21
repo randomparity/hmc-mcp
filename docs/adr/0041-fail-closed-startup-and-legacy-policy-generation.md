@@ -124,45 +124,36 @@ The written document is a single grant under the policy name `legacy-equivalent`
 - **`targets = "all-targets"`.** The only value that covers an omitted optional selector, and the
   only one that grants a tool no `targets` table can bound. That set is defined by a predicate
   rather than by a remembered figure: an ordinary tool — every tool but `hmc_run_command` — whose
-  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **30** of 136, of which 28
-  are reachable by the target check at all; the other two, `hmc_effective_permissions` and
-  `hmc_list_configured_hosts`, declare no connection argument, so `authorized` never wraps them
-  and the dimension cannot reach them (ADR 0038). The count is stated because it is useful and
-  pinned by `tests/unit/test_legacy_policy.py::test_the_recorded_unboundable_count_matches_the_registry`,
+  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **30** of 136. **All 30 are
+  target-checked.** Of those, **28** declare a connection argument; the other two,
+  `hmc_effective_permissions` and `hmc_list_configured_hosts`, do not. Since #297, `authorized`
+  wraps every tool and `dispatch_authorizer` skips only the connection condition for those two,
+  not the target condition. Connection applicability therefore does not determine whether target
+  enforcement reaches a tool. The count is stated because it is useful and pinned by
+  `tests/unit/test_legacy_policy.py::test_the_recorded_unboundable_count_matches_the_registry`,
   which recomputes it from the live registry and reddens on this sentence when a tool is added.
 
-  ADR 0039 gives the classification this predicate reads, and states a **different population**:
-  "The 17 selector-less console tools, and eight more, require their own grant" — **25**, and its
-  own §Context fixes what those 17 are, "17 with `target_kind = "console"` (including
-  `hmc_remove_ldap_config`, `destructive`, and `hmc_run_command`), plus the two
-  `connection_argument = None` tools the wrapper never wraps". So 25 counts the escape hatch in
-  and the connection-less pair out, which is right for ADR 0039's question — what a table-only
-  policy still registers and then denies. This record asks a different one: what the generated
-  grant has to cover. The two differ in both directions, and reconcile exactly:
+  ADR 0039 gives the classification this predicate reads. Since #297, its current population is
+  every non-exhaustive tool, including the escape hatch; this record differs only because the
+  generated file never emits that tool. The populations reconcile exactly:
 
-  **29** (ADR 0039) **− 1** `hmc_run_command`, which the generator never emits **+ 2**
-  `hmc_effective_permissions` and `hmc_list_configured_hosts`, which the generated policy grants
-  like any other ordinary tool **= 30**.
+  **31** total non-exhaustive tools **− 1** `hmc_run_command`, which the generator never emits
+  **= 30** ordinary non-exhaustive tools the generated policy grants.
 
-  > **Amended by #297** (2026-08-19). **The two populations are now one: all 26 are reachable by
-  > the target check.** "`authorized` never wraps them and the dimension cannot reach them" was the
-  > only thing separating 24 from 26, and #297 wraps every tool. The generated policy is unchanged
-  > — it emits `all-targets` throughout and already granted both tools as ordinary ones, which is
-  > exactly why 26 was the right count for *this* record's question. What changes is that ADR
-  > 0039's question now has the same answer for them: a table-only policy registers both and denies
-  > every call to them, so its own population goes from **25** to **27** — every non-exhaustive
-  > tool in the registry, with nothing left out for either reason. The reconciliation above is
-  > unchanged as arithmetic; what it reconciles is now one exemption (`hmc_run_command`, which the
-  > generator never emits) rather than two.
+  > **Amended by #297** (2026-08-19). `authorized` now wraps every tool; for a tool without a
+  > connection argument, `dispatch_authorizer` skips the connection condition but still evaluates
+  > targets. At that point all 26 ordinary non-exhaustive tools were target-checked, making ADR
+  > 0039's population every non-exhaustive tool rather than a subset that excluded the
+  > connection-less pair. The generated policy remains unchanged: it emits `all-targets`
+  > throughout and already granted both tools as ordinary ones.
 
   > **Amended by #282** (2026-08-20). Live-HMC evidence established that an SSP restore can act
   > beyond its selected VIOS, so `hmc_restore_vios` became non-exhaustive. The ordinary population
-  > is now 29, 27 are reachable through a connection argument, and ADR 0039's reconciled population
-  > is 28.
+  > is now 29, 27 declare a connection argument, and ADR 0039's population is 30.
 
   > **Amended by #289** (2026-08-20). SSP backup likewise covers its cluster and associated nodes,
-  > so `hmc_backup_vios` became non-exhaustive. The ordinary population is now 30, 28 are reachable
-  > through a connection argument, and ADR 0039's reconciled population is 29.
+  > so `hmc_backup_vios` became non-exhaustive. The ordinary population is now 30, 28 declare a
+  > connection argument, and ADR 0039's population is 31.
 
   ADR 0039's figure is a measurement of its own set, not a stale count of this one, and its
   "all 19 selector-less tools" elsewhere is a third population (the 17 plus that pair) rather than
