@@ -78,9 +78,18 @@ Filter sites — all become `build_filter(...)`:
   both `build_filter` and `shlex.quote`
 
 Note the two filter shapes: `--filter {shlex.quote(f'lpar_names={x}')}` (whole expression
-quoted) and `--filter lpar_names={shlex.quote(x)}` (value-only). Both keep their shape; only
-the interpolated text's provenance changes to the builder.
+quoted) and `--filter lpar_names={shlex.quote(x)}` (value-only). Both keep their shape, and
+both trace to the same builder:
 
+- whole-expression sites become `--filter {shlex.quote(build_filter([...]))}`;
+- value-only sites become `--filter lpar_names={build_filter([('lpar_names', shlex.quote(x))])}`
+  — the builder call wraps the `shlex.quote` output, which is exactly the text the HMC parser
+  receives after the remote shell strips quotes. `shlex.quote` leaves every grammar-clean value
+  untouched, so clean names render byte-identically; a value carrying `,`/`=`/`"` reaches
+  `build_filter` visibly (or forces shell quoting that introduces `"`) and is refused.
+
+The guard's trace rule therefore accepts payloads that are a `build_filter` call, a local name
+bound from one, or either wrapped in `shlex.quote` — nothing else.
 ### 5. Recurrence guard
 
 `tests/unit/test_i_record_grammar.py`:
@@ -105,7 +114,11 @@ the interpolated text's provenance changes to the builder.
 
 **Boundary inventory.** One boundary, narrowed not added: MCP tool arguments / public Python
 API strings → HMC command line (existing; ADR 0036 policy model decides who may call). This
-design closes the `-a` mutation half and the `--filter` selection half of that boundary.
+design closes the `-a` mutation half and the `--filter` selection half of that boundary. The
+grammar controls govern the structured tool surface only: the opt-in, policy-gated
+`hmc_run_command` escape hatch (`server_command.py`, gated by `enable_arbitrary_command` and
+the access policy per ADR 0036/0044) bypasses them by design and remains an authorization
+concern outside this record.
 
 **Actor model.** Untrusted party: an authenticated MCP client (or direct Python API caller)
 supplying arbitrary strings as names, ids, and device lists. Trust placement: the HMC CLI
