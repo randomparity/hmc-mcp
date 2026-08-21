@@ -274,12 +274,11 @@ async def test_upload_iso_refusal_reveals_nothing_about_the_server_filesystem(
 
 @pytest.mark.asyncio
 async def test_upload_iso_name_collision(mock_hmc, stage_download):
-    """Upload ISO fails when media name already exists, and drops the download.
+    """Upload ISO refuses a taken media name before any download begins.
 
-    The refusal happens after the fetch, so without the cleanup arm covering it
-    a caller could leave an arbitrarily large staged file behind by naming media
-    that already exists — repeatedly, and without ever reaching the broker. That
-    the fetch happens at all before the refusal is #325, and is not this test.
+    The collision check needs only ``vios_uuid`` and ``vg_uuid``, both in hand
+    before the fetch, so re-running an upload against a name that already
+    exists must be refused without moving a single byte (#325).
     """
     download = stage_download()
     config = make_config(iso_url_allowlist=ISO_HOST)
@@ -293,19 +292,36 @@ async def test_upload_iso_name_collision(mock_hmc, stage_download):
 
         assert f"Media name '{MEDIA_NAME}' already exists" in str(exc_info.value)
 
-    staged, _, _ = download.return_value
-    assert not staged.exists()
+    download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_iso_refuses_an_invalid_media_name_before_the_download(
+    mock_hmc, stage_download
+):
+    """A media_name outside HMC's FileName.Pattern is refused without a fetch."""
+    download = stage_download()
+    config = make_config(iso_url_allowlist=ISO_HOST)
+    async with HMCClient(config) as hmc:
+        hmc.list_optical_media = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="media_name"):
+            await upload_iso(
+                hmc, VIOS_UUID, VG_UUID, "bad name!.iso", ISO_URL
+            )
+
+    download.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_upload_iso_drops_the_download_when_the_repository_read_fails(
     mock_hmc, stage_download
 ):
-    """A failure reading the repository does not strand the staged file either.
+    """A failure reading the repository never reaches the download.
 
-    The collision check's HMC call is the other way out of `upload_iso` between
-    the download and the broker sequence — an unreachable HMC, an expired
-    session, an unparseable feed. It leaves nothing behind.
+    The collision check's HMC call is the first repository read ``upload_iso``
+    makes — an unreachable HMC, an expired session, an unparseable feed
+    refuses the upload before any bytes move (#325).
     """
     download = stage_download()
     config = make_config(iso_url_allowlist=ISO_HOST)
@@ -317,8 +333,7 @@ async def test_upload_iso_drops_the_download_when_the_repository_read_fails(
         with pytest.raises(HMCError):
             await upload_iso(hmc, VIOS_UUID, VG_UUID, MEDIA_NAME, ISO_URL)
 
-    staged, _, _ = download.return_value
-    assert not staged.exists()
+    download.assert_not_awaited()
 
 
 @pytest.mark.asyncio
