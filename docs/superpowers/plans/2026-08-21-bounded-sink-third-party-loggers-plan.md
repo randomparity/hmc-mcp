@@ -54,8 +54,11 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`,
      `install_fastmcp_stderr_sink` across src/ and tests/).
 3. Run `just test` (red→green), then `just smoke`.
 
-Acceptance: new tests fail before the change and pass after; no reference to the old
-name remains.
+Acceptance: the binding/rendering tests (handler counts, single render, mcp record)
+fail red before the change and pass after; the untouched-levels guard for
+fastmcp/mcp is green throughout by construction — it pins what the install must NOT
+do, so it only guards the implementation, it does not redden. No reference to the
+old name remains.
 
 ## Task 2 — main_http passes log_config=None
 
@@ -85,15 +88,19 @@ The unit tests stub `uvicorn.Server.serve`, so nothing in Task 2 observes the se
 loop itself, and every justfile guardrail is stdio-only. Before the review loop,
 execute the spec's criterion 1 against a real process once:
 
-1. Launch `uv run hmc-mcp serve --http --port <free>` (check CLI flags) as a
-   subprocess with fd 2 redirected to a temp file.
-2. Issue one real HTTP request that produces both a uvicorn.error startup sequence
-   and an access record (any request reaching the app; a non-MCP path still logs an
-   access line).
-3. Stop the server; assert the captured stderr contains sink-rendered lines only:
-   `uvicorn.access: ` prefixed access line(s), no bare access-format line at column 0,
-   no `<StreamHandler` default formatting. This is a manual verification recorded in
-   the completion report, not a committed test.
+1. Prerequisites: `serve` requires `--access-policy NAME`, resolved against
+   `access-policy.toml` in the config dir. Point `HOME` at a temp directory and run
+   `uv run hmc-mcp config init-access-policy` there first — never into the real home.
+2. Launch `uv run hmc-mcp serve --http --access-policy legacy-equivalent --port <free>`
+   as a subprocess with fd 2 redirected to a temp file. The rich startup banner WILL
+   appear on that stream raw — it is ADR 0051's documented banner residual and this
+   design's non-goal; expected output, not a failure.
+3. Issue one real HTTP request (any path reaching the app produces an access record).
+4. Stop the server; assert on log-record lines apart from the banner: every
+   access-format line carries the `uvicorn.access: ` prefix, no bare access-format or
+   unprefixed uvicorn line sits at column 0, and startup lines are sink-rendered with
+   the `uvicorn: ` prefix. This is a manual verification recorded in the completion
+   report, not a committed test.
 
 ## Task 4 — Docs already amended; verify consistency
 
