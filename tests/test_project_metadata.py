@@ -21,7 +21,8 @@ VIOS_BACKUP_TOOLS = (
     "hmc_restore_vios",
 )
 FIXED_TOOL_COUNT = re.compile(
-    r"\b\d[\d,]*(?:\s+[\w-]+){0,3}\s+tools?(?:\s+names?)?\b",
+    r"(?<!\w)(?:\*{2})?\d[\d,]*(?:\*{2})?(?!\w)[^.\n]{0,80}"
+    r"\bevery ordinary tool\b",
     re.IGNORECASE,
 )
 
@@ -102,10 +103,15 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
     for guidance in (migration, current_adr_guidance):
         assert not FIXED_TOOL_COUNT.search(guidance)
 
-        stale_guidance = guidance.replace(
-            "every ordinary tool", "136 tool names, every ordinary tool", 1
-        )
-        assert FIXED_TOOL_COUNT.search(stale_guidance)
+        for fixed_count in (
+            "136 tool names, every ordinary tool",
+            "129 names, every ordinary tool",
+            "**136** tools, every ordinary tool",
+        ):
+            stale_guidance = guidance.replace("every ordinary tool", fixed_count, 1)
+            assert FIXED_TOOL_COUNT.search(stale_guidance)
+
+    assert not FIXED_TOOL_COUNT.search("31 total non-exhaustive tools")
 
 
 def test_contribution_guide_defines_the_complete_local_path() -> None:
