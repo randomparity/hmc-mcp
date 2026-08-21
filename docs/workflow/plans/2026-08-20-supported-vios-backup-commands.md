@@ -23,8 +23,10 @@ pytest/ruff/ty through `uv` and `just`.
 ## Task 1: Pin the replacement public and command contracts
 
 **Files:** Modify `tests/vios/test_vios_backup.py`, `tests/unit/test_ssh_quoting.py`,
-`tests/unit/test_ssh_profile_routing.py`, `tests/unit/test_destructive_scope.py`, and directly
-coupled lifecycle/schema tests found by searching for the three tool names.
+`tests/unit/test_ssh_profile_routing.py`, `tests/unit/test_destructive_scope.py`,
+`tests/app/test_tool_security.py`, `tests/app/test_capabilities.py`, and
+`tests/app/test_lifecycle_schema_descriptions.py`. Search the remaining name-only inventory tests,
+but do not edit them unless their expected metadata actually changes.
 
 **Interfaces:** Tests consume the approved signatures:
 
@@ -51,9 +53,11 @@ Later implementation must satisfy exact supported command strings and preserve
    system names pass through, system UUIDs become MTMS even when names collide, missing/malformed
    MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system.
 6. Run `uv run --no-sync pytest -q tests/vios/test_vios_backup.py tests/unit/test_ssh_quoting.py
-   tests/unit/test_ssh_profile_routing.py tests/unit/test_destructive_scope.py`. Expect failures
-   showing the old signatures/commands do not meet the new contract. Do not implement before this
-   red proof is retained in the forge ledger.
+   tests/unit/test_ssh_profile_routing.py tests/unit/test_destructive_scope.py
+   tests/app/test_tool_security.py tests/app/test_capabilities.py
+   tests/app/test_lifecycle_schema_descriptions.py`. Expect failures showing the old signatures,
+   commands, schemas, and descriptions do not meet the new contract. Do not implement before this
+   red proof is retained in the forge ledger. Run this identical file set after implementation.
 
 **Acceptance:** Focused tests fail for the old command/signature behavior and cover every criterion
 without making a real HMC call.
@@ -101,7 +105,7 @@ without making a real HMC call.
    `restart_if_required` is true.
 6. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
    semantics, and validation failures. Remove every current-tense old command spelling from source.
-7. Run the focused command from Task 1. Expect all selected tests to pass.
+7. Run the exact seven-file focused command from Task 1. Expect all selected tests to pass.
 
 **Acceptance:** Validation occurs before REST/SSH, selector resolution is correctly scoped, command
 arguments are single quoted words, and exact supported command tests pass.
