@@ -4,6 +4,11 @@
 
 Accepted (2026-08-20)
 
+> **Amended (2026-08-21, issue #330):** `uvicorn`, `uvicorn.access` and `mcp` joined the
+> `fastmcp` logger on the sink, on both transports, and the two residuals this record carried
+> for them are closed rather than tracked. The Decision states the widened shape and the
+> amendment section near the end records what changed; the rest is unchanged history.
+
 ## Context
 
 ADR 0043 put every stderr write *this package* makes onto one bounded queue drained by one
@@ -50,9 +55,11 @@ ADR 0043 removed for this package's own writes, left standing on the larger writ
 
 ## Decision
 
-**`hmc_mcp.server.install_fastmcp_stderr_sink` replaces the `fastmcp` logger's handlers with one
-handler feeding ADR 0043's sink, and `_serve_application` calls it beside `install_audit_sink`
-and `install_denial_log_filter`.** Four choices inside that.
+**`hmc_mcp.server.install_third_party_stderr_sinks` replaces each bound third-party logger's
+handlers with one handler feeding ADR 0043's sink, and `_serve_application` calls it beside
+`install_audit_sink` and `install_denial_log_filter`.** As accepted on 2026-08-20 the bound set
+was the `fastmcp` logger alone; #330's amendment adds `uvicorn`, `uvicorn.access` and `mcp`, so
+a served process carries no unbounded writer through any of them. Four choices inside that.
 
 **One shared sink, not a second one.** `audit.sink_handler()` returns an `_AuditHandler` bound to
 the same `_StderrSink` the audit records and `server._warn` already use. ADR 0043 gave the reason
@@ -146,13 +153,15 @@ record exists to remove, wearing a different name.
   window is narrow (nothing in the shipped serve path logs during interpreter shutdown) and it
   is not closed here, because a final marker from `close()` would be a change to ADR 0043's
   shutdown design rather than to where FastMCP's records go.
-- **This package takes ownership of another package's logger.** It removes handlers it did not
-  attach, on a logger it does not own, on the strength of source read at one version.
+- **This package takes ownership of other packages' loggers.** It removes handlers it did not
+  attach, on loggers it does not own, on the strength of source read at one version.
   `fastmcp-slim` is pinned exactly at `==3.4.7`, which bounds the drift to a deliberate bump and
   makes the bump the place to re-read `fastmcp/utilities/logging.py` — but it does not remove it.
-  The wholesale removal also displaces a handler an operator attached to `fastmcp` themselves;
-  `hmc_mcp.audit` remains the attachment point this package documents, and it still defers to
-  what the operator put there (ADR 0040).
+  The #330 amendment extends the same liberty to three namespaces from two more packages —
+  `uvicorn`, `uvicorn.access` and `mcp` — whose takeover leans equally on those pins and on
+  `log_config=None` being honoured by `uvicorn.Config`. The wholesale removal also displaces a
+  handler an operator attached to any of them themselves; `hmc_mcp.audit` remains the attachment
+  point this package documents, and it still defers to what the operator put there (ADR 0040).
 - **A drop can now lose a traceback that a synchronous write would have delivered.** ADR 0043
   traded a complete trail for a serving one, and this widens what that trade covers: under
   overflow a rendered handler traceback is droppable exactly as an audit record is. It is
@@ -216,47 +225,35 @@ has lapsed. Detecting the lapse and reinstalling — a watchdog, or a re-check o
 is not undertaken here: it adds a mechanism whose failure mode is the one being fixed, for a path
 no shipped entry point takes.
 
-### Residual: `--http` still gets an unbounded writer, from uvicorn, after this install
+### Amendment (#330): `uvicorn`, `uvicorn.access` and `mcp` join the sink
 
-**This is the largest thing this record does not close, and it is on a shipped entry point.**
-`main_http` calls `.run(transport="streamable-http")`, which constructs a `uvicorn.Config`, whose
-`__init__` calls `configure_logging()` unconditionally (`uvicorn/config.py:297`) and runs
-`dictConfig` over uvicorn's own `LOGGING_CONFIG`. Probed in this worktree, after
-`install_fastmcp_stderr_sink()` had already run:
+The two residuals this record carried — uvicorn's default handler under `--http`, and the
+`mcp` namespace reaching `logging.lastResort` — are closed by taking over all three loggers.
+That is the answer to "which third-party loggers does this package take over" that the
+residuals had been deferring one dependency at a time, and it makes the single-writer story
+hold on both transports instead of only under stdio.
 
-```
-BEFORE uvicorn        handlers=[]
-AFTER  uvicorn        handlers=[<StreamHandler <stderr>>]     stderr=True
-AFTER  uvicorn.access handlers=[<StreamHandler <stdout>>]
-fastmcp still sunk:   [<_AuditHandler>]
-```
+The uvicorn lever is `log_config=None`, which `main_http` supplies through FastMCP's
+`uvicorn_config`. `uvicorn.Config.__init__` still calls `configure_logging()`, but with a null
+config that function runs no `dictConfig` at all (verified against `uvicorn==0.52.1`,
+`config.py:384`), so the default `StreamHandler(stderr)` this record had probed never attaches
+and nothing has to re-install after it. The access log moves into the bounded sink with it,
+accepted: `uvicorn.access` records are rendered through the same marked formatter as the rest,
+one queue item per record. Under stdio there is no uvicorn at all; binding its loggers there
+anyway costs nothing and keeps one rule.
 
-So on `--http` a synchronous, unbounded `StreamHandler` lands on fd 2 **after** this install,
-and nothing re-installs. The `fastmcp` logger stays sunk; the `uvicorn` one does not.
-(Checking `uvicorn.error` answers nothing — the handler is on `uvicorn`.)
+For `mcp` the reasoning is this record's own, verbatim: a logger with no handler anywhere
+above it falls through to `logging.lastResort`, and that is the same unbounded synchronous
+writer this record exists to remove, wearing another name. All four bindings install
+unconditionally in `_serve_application`, before `.run()` reaches either transport, each
+carrying its own producer-named prefix (`fastmcp: `, `uvicorn: `, `uvicorn.access: `,
+`mcp: `) so the column-0 forgery guard survives on every rendering.
 
-Not fixed here, for a reason specific to that transport rather than a shrug. ADR 0043 rejected
-its option 1 — "keep fd 2 drained, and say so" — because *under stdio* the party the
-precondition binds is the MCP client, which spawns the server and never reads this repository's
-documentation. Under `--http` fd 2 belongs to the operator's own supervisor or journal, and
-`hmc-mcp serve --http` already requires a deliberate, operator-owned deployment behind an
-authenticated proxy. Option 1 is genuinely available there and it is not available under stdio.
-Taking it also avoids a second wholesale seizure — of a *third* package's logger — where the
-only levers are passing `log_config` through FastMCP's `uvicorn_config` (which would silently
-drop uvicorn's access log) or re-running `dictConfig` ourselves.
-
-**What this record therefore claims is scoped to the `fastmcp` logger**, and the ADR 0043
-amendment says so in those words. Tracked in #330 rather than left in a document only.
-
-### Residual: the `mcp` namespace is still on `logging.lastResort`
-
-The same shape, one level down and smaller. `mcp/server/lowlevel/server.py:713` and `:826` log
-on the `mcp` namespace, which has no handler, so a record walks to the root and reaches
-`logging.lastResort` — a `StreamHandler` on fd 2, synchronous and unbounded. The argument this
-record makes for installing on `fastmcp` even when `settings.log_enabled` is false applies to it
-verbatim. Not swept here only because it belongs with the `uvicorn` decision — both are "which
-third-party loggers does this package take over", and answering that for one dependency at a
-time is how the surface grows without anyone deciding to. Tracked with it in #330.
+The transport-specific reservation above is answered rather than overturned. ADR 0043 rejected
+"keep fd 2 drained, and say so" because *relying* on whoever reads fd 2 binds a party that
+never reads the documentation; under `--http` that reliance is now gone, not blessed — the
+operator's journal receives sink-rendered lines exactly as it receives audit records, and no
+deployment precondition is implied by uvicorn's presence.
 
 ### Residual: the startup banner is not a log record and is not on the sink
 
