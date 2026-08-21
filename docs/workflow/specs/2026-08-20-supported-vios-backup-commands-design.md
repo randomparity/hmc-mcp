@@ -8,8 +8,9 @@ Decision: [ADR 0060](../../adr/0060-use-supported-vios-backup-commands.md)
 Replace three command forms proven absent on HMC V10R3 SP1060 and V11R2 SP1120 with the supported
 VIOS backup CLI. Python 3.11 remains the floor. Host verification is arm64; declared targets are
 amd64, arm64, and ppc64le; the host is included. Add no dependency, compatibility shim, live-HMC
-mutation, authorization change beyond the approved backup two-target migration, or full-image
-restore workflow. `just verify` is the final local guardrail.
+mutation, authorization change beyond backup's approved non-exhaustive/all-targets classification
+with both selector inputs retained as metadata, or full-image restore workflow. `just verify` is
+the final local guardrail.
 
 The three VIOS backup tools require HMC V10 or newer. IBM's V9.1.940 command inventory does not
 contain the replacement commands, so no V8/V9 fallback is claimed or implemented. General V8–V11

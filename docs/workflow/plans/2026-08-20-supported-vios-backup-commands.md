@@ -14,8 +14,9 @@ pytest/ruff/ty through `uv` and `just`.
 
 - Python 3.11 remains the floor.
 - Declared targets are amd64, arm64, and ppc64le; the arm64 host is included.
-- Add no dependency, compatibility shim, live-HMC mutation, authorization change beyond the
-  approved backup two-target migration, or full-image restore workflow.
+- Add no dependency, compatibility shim, live-HMC mutation, authorization change beyond backup's
+  approved non-exhaustive/all-targets classification with both selector inputs retained as
+  metadata, or full-image restore workflow.
 - Preserve existing exports and listing/raw-output return types.
 - Quote every dynamic remote-shell word and validate type/name inputs before external calls.
 - Final guardrail: `just verify`.
