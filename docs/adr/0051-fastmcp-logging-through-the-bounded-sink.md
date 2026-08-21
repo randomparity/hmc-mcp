@@ -262,7 +262,13 @@ injection produced by default. **Propagation:** uvicorn's configuration sets `pr
 it left true the parent-plus-child bindings would render every access record twice —
 `callHandlers` walks the whole ancestor chain, so the record would reach the `uvicorn.access`
 handler and then the `uvicorn` handler, two queue items per request. The install sets
-`propagate = false` on both, mirroring what `dictConfig` would have produced. `fastmcp` and
+`propagate = false` on both, mirroring what `dictConfig` would have produced. The binding
+of `uvicorn` also carries the namespace's other records by logging's default propagation:
+uvicorn logs startup and error lines on `uvicorn.error`, which is not itself bound and
+reaches the `uvicorn` handler only because its `propagate` stays true — true *because* no
+`dictConfig` runs to rewrite it. That reliance is named here and pinned by test rather
+than left implicit; a future uvicorn that reconfigured propagation under a null config
+would fall back to `lastResort` for exactly those lines. `fastmcp` and
 `mcp` stay handlers-only: neither sits inside another bound namespace, so nothing double-renders
 through them and the original only-the-handlers rule stands for them unchanged. The access log
 moves into the bounded sink on those terms, accepted: `uvicorn.access` records are rendered

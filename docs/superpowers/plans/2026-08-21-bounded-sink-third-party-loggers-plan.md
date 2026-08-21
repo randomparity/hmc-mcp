@@ -21,8 +21,12 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`,
 
 1. Write failing tests (place beside the existing ADR 0051 sink tests, after
    `test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled`):
-   - `test_the_served_path_takes_fastmcps_handlers_off_fd_2` (existing) — update to
-     the new helper name; behavior unchanged for `fastmcp`.
+   - `test_the_served_path_takes_fastmcps_handlers_off_fd_2` (existing) — needs no
+     edit: it drives `_serve(...)` and never imports the helper. The real rename
+     sites are the five direct imports/calls of `install_fastmcp_stderr_sink` in
+     tests/app/test_connection_authorization.py (the idempotence, disabled-logging,
+     denial, traceback and forgery tests) plus the docstring reference at
+     src/hmc_mcp/audit.py:297 — update all six; behavior unchanged for `fastmcp`.
    - New: after `_serve(...)`, each of `fastmcp`, `uvicorn`, `uvicorn.access`, `mcp`
      has exactly one handler, an `_AuditHandler` whose formatter is a
      `StreamSafeFormatter` with prefix `f"{name}: "`; none targets `sys.stderr`
@@ -32,6 +36,12 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`,
    - New: an INFO record on `uvicorn.access` renders exactly once through the sink
      (drain `audit._SINK`, assert one `uvicorn.access: ` line in `_stderr(capsys)`,
      and assert no duplicate line).
+   - New: a record on `uvicorn.error` renders exactly once through the sink — this
+     pins the propagation dependency: `uvicorn.error` is not itself bound, so its
+     startup/error records reach the bound `uvicorn` handler only through logging's
+     default propagate=True, which nothing rewrites only because `dictConfig` never
+     runs. If that assumption breaks, those records fall to `lastResort` and nothing
+     committed would notice.
    - New: a WARNING record on `mcp` reaches stderr through the sink with the `mcp: `
      prefix. WARNING, not INFO: `mcp` stays handlers-only at NOTSET, its effective
      level is root's WARNING, and an INFO record is dropped at the logger before any
