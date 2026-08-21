@@ -32,10 +32,15 @@ actually changes.
 **Interfaces:** Tests consume the approved signatures:
 
 ```python
-hmc_backup_vios(system_name_or_uuid, vios_name_or_uuid, backup_name,
-                backup_type="vios", profile=None)
-hmc_restore_vios(system_name_or_uuid, vios_name_or_uuid, backup_name,
-                 backup_type, restart_if_required=False, profile=None)
+def hmc_backup_vios(
+    system_name_or_uuid, vios_name_or_uuid, *, backup_name,
+    backup_type="vios", profile=None,
+): ...
+
+def hmc_restore_vios(
+    system_name_or_uuid, vios_name_or_uuid, backup_name, *, backup_type,
+    restart_if_required=False, profile=None,
+): ...
 ```
 
 Later implementation must satisfy exact supported command strings and preserve
@@ -50,6 +55,8 @@ Later implementation must satisfy exact supported command strings and preserve
    types and assert `mkviosbk -t TYPE -m SYSTEM --uuid UUID -f NAME`.
 3. Replace restore calls with explicit system and required `viosioconfig`/`ssp` type. Assert
    `rstviosbk ...` both without and with `-r`, and assert `vios` is rejected before external calls.
+   Add public Python binding regressions proving the old backup `(vios, type, profile)` and restore
+   `(vios, backup_name, profile, system)` positional forms raise `TypeError` before external calls.
 4. Apply every catalog-name rejection case to both backup and restore; retain ordinary and hostile
    separator-free name cases to prove validation and quoting independently.
 5. Update profile-routing and destructive-scope calls to the approved signatures. Assert direct
@@ -116,7 +123,7 @@ without making a real HMC call.
 
 5. Implement restore with required restore type, reject values outside `viosioconfig` and `ssp`,
    build the corresponding `rstviosbk` command, and append ` -r` exactly when
-   `restart_if_required` is true.
+   `restart_if_required` is true. Preserve the keyword-only boundaries from Task 1.
 6. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
    semantics, and validation failures. Remove every current-tense old command spelling from source.
 7. Run the exact seven-file focused command from Task 1. Expect all selected tests to pass.

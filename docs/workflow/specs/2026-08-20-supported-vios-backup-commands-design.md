@@ -27,6 +27,7 @@ Replace the other signatures with:
 def hmc_backup_vios(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
+    *,
     backup_name: str,
     backup_type: BackupType = "vios",
     profile: str | None = None,
@@ -36,15 +37,18 @@ def hmc_restore_vios(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
     backup_name: str,
+    *,
     backup_type: Literal["viosioconfig", "ssp"],
     restart_if_required: bool = False,
     profile: str | None = None,
 ) -> str: ...
 ```
 
-The order is the user-approved system, VIOS, backup-name shape. Restore type is required because no
-safe default is evidenced. Backup retains `vios` as its default because that is the existing public
-default and `mkviosbk` supports it. `restart_if_required` maps only to `-r`; false emits no flag.
+The order is the user-approved system, VIOS, backup-name shape. `backup_name` is keyword-only for
+backup, and `backup_type` is keyword-only for restore, so the old maximum-arity positional calls
+cannot bind to different replacement parameters. Restore type is required because no safe default
+is evidenced. Backup retains `vios` as its default because that is the existing public default and
+`mkviosbk` supports it. `restart_if_required` maps only to `-r`; false emits no flag.
 
 ## Resolution and command construction
 
@@ -88,9 +92,10 @@ input and its syntactic repair. REST and SSH failures retain existing exception 
 successful HMC stdout remains the return value for backup and restore; listing retains
 `list[dict[str, str]]`.
 
-This is a replacement, not a migration. Old positional calls fail at Python/MCP validation rather
-than being reinterpreted. Generated MCP descriptions and schemas must show the new requiredness and
-must contain no old command names. Existing Python exports remain under the same function names.
+This is a replacement, not a migration. Keyword-only boundaries make the old maximum-arity
+positional calls fail at Python/MCP validation rather than being reinterpreted. Generated MCP
+descriptions and schemas must show the new requiredness and must contain no old command names.
+Existing Python exports remain under the same function names.
 
 ## Threat model
 
@@ -131,7 +136,8 @@ safety, every missing and blank nested MTMS component plus malformed flattened M
 system-scoped VIOS-UUID resolution, backup dispatch denial without either required target grant,
 all valid backup types,
 both restore types, required restore type, optional `-r`, invalid type/name refusal before external
-calls, shell quoting for every dynamic field, raw-output preservation, profile routing, destructive
+calls, rejection of both legacy maximum-arity positional forms, shell quoting for every dynamic
+field, raw-output preservation, profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no
 old positional form or command spelling remains outside historical design records that explicitly
 describe the defect. Run `just test`, `just smoke`, and bare `just verify`.

@@ -30,6 +30,11 @@ optional restart-if-required flag, then runs
 `rstviosbk -t <type> -m <system-name> --uuid <vios-uuid> -f <backup-name> [-r]`, with `-r` only
 when requested.
 
+Make `backup_name` keyword-only for backup and `backup_type` keyword-only for restore. The old
+maximum-arity positional calls otherwise bind successfully to different replacement parameters,
+which could reinterpret mutating targets instead of failing closed. Keyword-only boundaries make
+those legacy shapes fail Python and MCP validation without a compatibility shim.
+
 Preserve the managed-system selector's identity before SSH command construction. A caller-supplied
 name remains the `-m` value. Resolve a caller-supplied UUID to its machine type, model, and serial
 (MTMS), because IBM requires MTMS when user-defined system names collide; fail before SSH if that
