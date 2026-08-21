@@ -105,10 +105,17 @@ def test_list_vios_backups_returns_empty_list(monkeypatch):
     [
         "backup,type\nbase,vios\n",
         "name,name\nbase,vios\n",
+        "name,type\n,vios\n",
         "name,type\nbase,\n",
         "name,type,extra\nbase,vios,unexpected\n",
     ],
-    ids=["wrong-header", "duplicate-header", "empty-value", "extra-column"],
+    ids=[
+        "wrong-header",
+        "duplicate-header",
+        "empty-name",
+        "empty-type",
+        "extra-column",
+    ],
 )
 def test_list_vios_backups_refuses_malformed_csv(monkeypatch, output):
     """The explicit CSV projection refuses malformed rows instead of guessing."""
