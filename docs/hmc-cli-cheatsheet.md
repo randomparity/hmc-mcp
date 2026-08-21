@@ -442,6 +442,11 @@ mkviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file>
 **Repository use:** `hmc_backup_vios` resolves its VIOS selector to a UUID and
 uses this command with the requested backup type.
 
+The required managed-system and VIOS selectors are both authorization targets.
+Narrow access-policy grants for `hmc_backup_vios` must include matching
+`managed_system` and `vios` entries; existing VIOS-only grants must add the
+managed-system target before using the replacement interface.
+
 ---
 
 ### `rstviosbk` — restore a VIOS backup
