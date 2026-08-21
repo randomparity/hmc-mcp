@@ -47,7 +47,9 @@ both now parse correctly on the HMC.
 - validates each name against the same identifier form as record attribute names,
 - refuses every `_RECORD_DELIMITERS` character in each value (`HMCCLIError`, naming field and
   character — identical wording convention to the record builder),
-- returns `",".join(f"{n}={v}")`.
+- returns `",".join(f"{n}={v}")`,
+- and refuses a comma *inside* a value: IBM's multi-value list form
+  (`--filter "lpar_names=a,b"`) has no probed encoding, so it is refused fail-closed (ADR 0061).
 
 Single-pair sites call `build_filter([("lpar_names", lpar_name)])`; the one multi-pair site
 (`read_sriov_profile_ports`) calls it with both pairs.
@@ -113,7 +115,9 @@ tenancy (ADR 0036–0040 unchanged); live-HMC probes.
 - Refusals narrow accepted input fail-closed across the listed tools: a `,`/`=`/`"`/control
   character in any filtered name or id raises `HMCCLIError` before dispatch.
 - `backing_devices` comma-carrying values change behaviour from misparse/inject to quoted
-  render — the fix the issue asks for.
+  render — the fix the issue asks for. No current caller can deliver one (ADR 0057's typed
+  selector emits a single device); the quoted branch is forward-looking builder capability.
+- Multi-value filter lists (`lpar_names=a,b`) are refused until their encoding is live-probed.
 - Error type stays `HMCCLIError` at the builder layer, matching ADR 0045's split.
 
 ### 8. Test plan
