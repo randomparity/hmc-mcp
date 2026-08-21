@@ -13,8 +13,11 @@ PROJECT_URLS = {
     "Contributing": "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.md",
     "Security": "https://github.com/randomparity/hmc-mcp/security/policy",
 }
-PRIVATE_ADVISORY_URL = (
-    "https://github.com/randomparity/hmc-mcp/security/advisories/new"
+PRIVATE_ADVISORY_URL = "https://github.com/randomparity/hmc-mcp/security/advisories/new"
+VIOS_BACKUP_TOOLS = (
+    "hmc_list_vios_backups",
+    "hmc_backup_vios",
+    "hmc_restore_vios",
 )
 
 
@@ -40,6 +43,59 @@ def test_readme_links_canonical_governance_files() -> None:
     for path, link in POLICY_LINKS.items():
         assert (ROOT / path).is_file(), f"missing canonical policy file: {path}"
         assert link in readme, f"README must link {path}"
+
+
+def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
+    readme = (ROOT / "README.md").read_text()
+    cheatsheet = (ROOT / "docs" / "hmc-cli-cheatsheet.md").read_text()
+    compatibility = readme.split("## HMC version compatibility", 1)[1].split(
+        "### Firmware write-path compatibility", 1
+    )[0]
+
+    assert "HMC V8 through V11" in compatibility
+    assert "HMC V10 or newer" in compatibility
+    for tool in VIOS_BACKUP_TOOLS:
+        assert tool in compatibility
+        assert tool in cheatsheet
+    assert "require HMC V10 or newer" in cheatsheet
+
+
+def test_access_policy_guidance_matches_connectionless_dispatch_semantics() -> None:
+    readme = (ROOT / "README.md").read_text()
+    connectionless = " ".join(
+        readme.split("### What the policy does not bound", 1)[1]
+        .split("### Migrating to a required access policy", 1)[0]
+        .split()
+    )
+
+    assert "Every MCP tool is dispatch-wrapped" in connectionless
+    assert "connection dimension is vacuous" in connectionless
+    assert "by tool or effect class" in connectionless
+    assert 'targets = "all-targets"' in connectionless
+    assert "withhold" in connectionless.lower()
+
+
+def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
+    readme = (ROOT / "README.md").read_text()
+    adr = (
+        ROOT
+        / "docs"
+        / "adr"
+        / "0041-fail-closed-startup-and-legacy-policy-generation.md"
+    ).read_text()
+    migration = readme.split("### Migrating to a required access policy", 1)[1].split(
+        "### Narrowing `targets`", 1
+    )[0]
+    current_adr_guidance = adr.split(
+        "- **The generator is the onboarding path for fresh installs too", 1
+    )[1].split(
+        "- **The audit record tells the caller what the denial deliberately does not", 1
+    )[0]
+
+    assert "every ordinary tool" in migration
+    assert "129" not in migration
+    assert "every ordinary tool" in current_adr_guidance
+    assert "129" not in current_adr_guidance
 
 
 def test_contribution_guide_defines_the_complete_local_path() -> None:

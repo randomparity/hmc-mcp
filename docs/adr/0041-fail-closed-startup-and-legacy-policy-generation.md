@@ -226,11 +226,11 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   > stands, including the #270 lever and #267.
 - **The generator is the onboarding path for fresh installs too, and its output is the widest
   policy this system expresses.** A first run reaches the same refusal an upgrade does, and
-  `legacy-equivalent` names a history a new deployment does not have: 129 tools including every
-  destructive one, every connection, `all-targets`. That is why both refusal messages point at
-  the narrower documented examples as well, and why the generated file's own header says the
-  grant is a migration aid rather than a recommended posture. The paved road for a new
-  deployment is the read-only example, not this file.
+  `legacy-equivalent` names a history a new deployment does not have: every ordinary tool
+  explicitly, including every destructive one, every connection, and `all-targets`. That is why
+  both refusal messages point at the narrower documented examples as well, and why the generated
+  file's own header says the grant is a migration aid rather than a recommended posture. The paved
+  road for a new deployment is the read-only example, not this file.
 - **The audit record tells the caller what the denial deliberately does not.** ADR 0038 built the
   connection denial so an unresolvable token and a resolvable-but-withheld one deny through the
   *same* message, because two distinguishable messages would be a membership oracle over

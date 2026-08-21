@@ -16,7 +16,6 @@ from hmc_mcp.server import TOOL_SECURITY, create_mcp
 mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
 
-
 SCOPED_TOOLS = {
     "hmc_console_info",
     "hmc_list_configured_hosts",
@@ -124,9 +123,10 @@ def test_high_risk_lifecycle_guidance_is_rendered():
 
     decommission = tools["hmc_decommission_lpar"]
     assert "dry_run=True" in decommission.description
-    assert "explicit operator approval" in decommission.parameters["properties"][
-        "ownership_override"
-    ]["description"]
+    assert (
+        "explicit operator approval"
+        in decommission.parameters["properties"]["ownership_override"]["description"]
+    )
     for field in (
         "resource_deleted",
         "workflow_completed",
@@ -152,15 +152,17 @@ def test_high_risk_lifecycle_guidance_is_rendered():
 
 
 def test_vios_backup_lifecycle_guidance_names_supported_commands():
-    """Rendered guidance describes the replacement CLI contracts and restore limit."""
+    """Rendered guidance describes the replacement CLI contracts and version floor."""
     tools = _tools_by_name()
 
     listing = tools["hmc_list_vios_backups"]
     assert "lsviosbk" in listing.description
     assert "name,type" in listing.description
+    assert "HMC V10 or newer" in listing.description
 
     backup = tools["hmc_backup_vios"]
     assert "mkviosbk" in backup.description
+    assert "HMC V10 or newer" in backup.description
     assert "system_name_or_uuid" in backup.parameters["properties"]
     assert "backup_name" in backup.parameters["properties"]
     assert set(backup.parameters["required"]) == {
@@ -171,6 +173,7 @@ def test_vios_backup_lifecycle_guidance_names_supported_commands():
 
     restore = tools["hmc_restore_vios"]
     assert "rstviosbk" in restore.description
+    assert "HMC V10 or newer" in restore.description
     assert "viosioconfig" in restore.description
     assert "ssp" in restore.description
     assert "restart_if_required" in restore.parameters["properties"]

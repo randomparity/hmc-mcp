@@ -251,6 +251,11 @@ lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header
 **Repository use:** `hmc_list_vios_backups` resolves its VIOS selector to a UUID,
 runs this command, and returns the catalog's `name` and `type` fields.
 
+**Version floor:** `hmc_list_vios_backups`, `hmc_backup_vios`, and
+`hmc_restore_vios` require HMC V10 or newer. No runtime probe or unverified V8/V9
+fallback is provided; other tools retain the project's general HMC V8–V11
+support.
+
 ---
 
 ## State-changing commands

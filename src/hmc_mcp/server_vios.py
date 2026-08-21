@@ -374,6 +374,7 @@ def hmc_list_vios_backups(
 
     Resolves the required VIOS selector to a UUID, requests the explicit
     ``name,type`` CSV projection, and validates its header and every row.
+    Requires HMC V10 or newer; no older-HMC fallback is provided.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID.
@@ -417,7 +418,7 @@ def hmc_backup_vios(
     ``targets = "all-targets"``. ``backup_type`` is limited to ``vios``,
     ``viosioconfig``, or ``ssp`` and defaults to ``vios``. The backup name must
     identify one catalog entry, not a path or option. Returns the raw HMC CLI
-    output.
+    output. Requires HMC V10 or newer; no older-HMC fallback is provided.
 
     Args:
         system_name_or_uuid: Managed system name or UUID. UUIDs resolve to MTMS.
@@ -508,6 +509,7 @@ def hmc_restore_vios(
     When ``restart_if_required`` is true, ``-r`` authorizes a VIOS restart only
     after a failed restore attempt. The catalog name must not be a path, option,
     empty, or padded value. Returns the raw HMC CLI output.
+    Requires HMC V10 or newer; no older-HMC fallback is provided.
 
     Args:
         system_name_or_uuid: Managed system name or UUID. UUIDs resolve to MTMS.
