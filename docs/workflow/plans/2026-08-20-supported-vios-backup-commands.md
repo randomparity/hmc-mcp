@@ -19,6 +19,7 @@ pytest/ruff/ty through `uv` and `just`.
 - Preserve existing exports and listing/raw-output return types.
 - Quote every dynamic remote-shell word and validate type/name inputs before external calls.
 - Final guardrail: `just verify`.
+- Require HMC V10+ for the three VIOS backup tools; do not add an unverified V8/V9 command path.
 
 ## Task 1: Pin the replacement public and command contracts
 
@@ -138,7 +139,8 @@ without making a real HMC call.
    restore's existing non-exhaustive classification and preserve the current policy model rather
    than adding narrow-grant semantics.
 7. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
-   semantics, and validation failures. Remove every current-tense old command spelling from source.
+   semantics, validation failures, and the HMC V10+ floor. Remove every current-tense old command
+   spelling from source.
 8. Run the exact focused command from Task 1. Expect all selected tests to pass.
 
 **Acceptance:** Validation occurs before REST/SSH, selector resolution is correctly scoped, command
@@ -168,6 +170,9 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
    Apply the same exception to generic SSH-routing claims in the cheatsheet and server help text so
    no current guidance promises universal name conversion or fallback for these tools. Document
    backup and restore as non-exhaustive for SSP cluster scope.
+   State that these three tools require HMC V10+ in README and the cheatsheet while preserving the
+   general V8–V11 support claim for other operations. Pin the floor in rendered lifecycle/tool
+   description tests.
 3. Run `rg -n "lsviosbackup|chviosbackup" src tests README.md docs/hmc-cli-cheatsheet.md`. Expect no
    match describing live code; any retained match must explicitly identify historical broken
    behavior in an immutable design record.

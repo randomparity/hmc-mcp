@@ -17,6 +17,10 @@ The existing backup signature has no output name or managed-system selector. The
 signature has no backup type and makes its managed-system selector optional. Correct command
 construction therefore cannot preserve those contracts honestly.
 
+IBM's V9.1.940 command inventory does not include the replacement commands. These three tools
+therefore require HMC V10 or newer; the repository's general V8–V11 support remains unchanged for
+other operations. No unverified older-HMC fallback is introduced.
+
 ## Decision
 
 Replace the commands and public signatures together. Listing retains its current selector and runs
@@ -80,6 +84,8 @@ target tables cannot authorize it. Operators should use an explicitly named
 the operation under the existing policy model. Both selectors remain required call inputs and
 extracted metadata for authorization diagnostics and audit, but they are not independently
 matchable grants.
+Operators on HMC V8 or V9 receive a documented unsupported-version boundary for these tools rather
+than an implied promise that the replacement commands exist there.
 
 ## Considered & rejected
 

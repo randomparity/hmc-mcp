@@ -11,6 +11,10 @@ amd64, arm64, and ppc64le; the host is included. Add no dependency, compatibilit
 mutation, authorization change beyond the approved backup two-target migration, or full-image
 restore workflow. `just verify` is the final local guardrail.
 
+The three VIOS backup tools require HMC V10 or newer. IBM's V9.1.940 command inventory does not
+contain the replacement commands, so no V8/V9 fallback is claimed or implemented. General V8–V11
+project support continues for tools whose HMC commands exist on those releases.
+
 IBM's command references and the issue's live-HMC evidence govern the exact shapes:
 
 - `lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header`
@@ -100,7 +104,8 @@ This is a replacement, not a migration. Keyword-only boundaries make the old max
 positional calls fail binding rather than being reinterpreted. Newly required schema fields make
 old named MCP payloads fail validation. Generated MCP descriptions and schemas must show the new
 requiredness and must contain no old command names. Existing Python exports remain under the same
-function names.
+function names. Rendered descriptions state the HMC V10+ floor before a caller chooses the tool; no
+runtime version probe is added because no verified older fallback exists.
 
 ## Threat model
 
@@ -150,4 +155,5 @@ payloads before REST or SSH, shell quoting for every dynamic field including hos
 names on both mutation commands, raw-output preservation, profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no
 old positional form or command spelling remains outside historical design records that explicitly
-describe the defect. Run `just test`, `just smoke`, and bare `just verify`.
+describe the defect. Pin the HMC V10+ floor in README, cheatsheet, and all three rendered tool
+descriptions. Run `just test`, `just smoke`, and bare `just verify`.
