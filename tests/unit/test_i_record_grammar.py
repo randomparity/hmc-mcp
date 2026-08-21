@@ -192,6 +192,35 @@ def test_build_attribute_record_refuses_control_characters_in_marked_values(cont
         )
 
 
+def test_build_attribute_record_refuses_a_quoted_pair_before_another_pair():
+    """A quoted pair is only emitted as the record's final element.
+
+    The live probes verified the quoted-pair form in trailing position only;
+    any other position is an unprobed form and fails closed (ADR 0061).
+    """
+    with pytest.raises(HMCCLIError, match="final element"):
+        build_attribute_record(
+            [("backing_devices", "dev1,dev2"), ("port_vlan_id", 7)],
+            quoted=("backing_devices",),
+        )
+
+
+def test_build_attribute_record_accepts_a_trailing_quoted_pair():
+    """The probed form — quoted pair last — keeps working."""
+    record = build_attribute_record(
+        [("port_vlan_id", 7), ("backing_devices", "dev1,dev2")],
+        quoted=("backing_devices",),
+    )
+    assert record == 'port_vlan_id=7,"backing_devices=dev1,dev2"'
+    assert build_attribute_record(
+        [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
+    ) == '"backing_devices=dev1,dev2"'
+    assert build_attribute_record(
+        [("backing_devices", "dev1"), ("port_vlan_id", 7)],
+        quoted=("backing_devices",),
+    ) == "backing_devices=dev1,port_vlan_id=7"
+
+
 def test_build_attribute_record_refuses_a_duplicate_across_marked_and_unmarked():
     """Duplicate detection compares attribute names regardless of quoting."""
     with pytest.raises(HMCCLIError, match="appears twice"):

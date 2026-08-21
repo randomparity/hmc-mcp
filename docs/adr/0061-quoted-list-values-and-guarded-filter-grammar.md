@@ -87,11 +87,13 @@ an MCP tool wants a typed multi-device selector, which is ADR 0057's surface, no
 every well-formed filter render exactly as before; only delimiter-carrying values produce
 different text, and those commands never worked.
 
-**Unverified, carried deliberately**: a quoted pair in any non-trailing record position; a
-quoted single-device value; `=` or `"` inside a caller's value portion of a quoted region. A
-future record that places a quotable attribute before another attribute emits a form no probe
-has accepted; if a live HMC ever shows one of these forms failing, the fix is a builder rule,
-not a grammar change.
+**Unverified, carried deliberately**: a quoted single-device value; `=` or `"` inside a
+caller's value portion of a quoted region. The non-trailing quoted position is not merely
+carried — the builder refuses it, applying the same fail-closed rule as the multi-value
+filter refusal: the probes verified the quoted pair only as the record's final element, so a
+quotable comma-carrying attribute followed by another pair is refused before dispatch. If a
+live HMC ever shows one of the remaining forms failing, the fix is a builder rule, not a
+grammar change.
 
 **ADR 0045 otherwise stands**: one builder owns the grammar; duplicates are refused; space and
 semicolon remain non-structure; the backslash residual remains open.

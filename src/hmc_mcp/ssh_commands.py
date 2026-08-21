@@ -149,11 +149,23 @@ def build_attribute_record(
         seen.add(attribute)
     quotable = frozenset(quoted)
     parts = []
-    for attribute, value in pairs:
+    for index, (attribute, value) in enumerate(pairs):
         text = _validated_value(
             attribute, value, allow_comma=attribute in quotable, surface=surface
         )
         if attribute in quotable and "," in text:
+            if index != len(pairs) - 1:
+                # The live probes verified the quoted pair only as the final
+                # element of the record (ADR 0061); a non-trailing quoted
+                # pair is an unprobed form, so it fails closed like every
+                # other unprobed grammar variant.
+                raise HMCCLIError(
+                    f"HMC CLI {surface} attribute {attribute!r} renders as a "
+                    'quoted pair ("name=v1,v2"), which the HMC has only been '
+                    "shown to accept as the record's final element; it cannot "
+                    f"be followed by {pairs[index + 1][0]!r}. Place "
+                    f"{attribute!r} last or split the record."
+                )
             parts.append(f'"{attribute}={text}"')
         else:
             parts.append(f"{attribute}={text}")
