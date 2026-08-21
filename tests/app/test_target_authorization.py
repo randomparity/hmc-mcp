@@ -145,6 +145,55 @@ def test_any_selector_outside_the_table_denies(system, lpar):
         _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system=system, lpar=lpar))
 
 
+VIOS_BACKUP_ARGUMENTS = {
+    "system_name_or_uuid": "sys-1",
+    "vios_name_or_uuid": "vios-1",
+    "backup_name": "backup",
+    "backup_type": "vios",
+    "profile": "lab",
+}
+
+
+def test_backup_vios_requires_one_grant_covering_system_and_vios():
+    """A single two-target grant authorizes the replacement backup contract."""
+    grants = [
+        {
+            "tools": ["hmc_backup_vios"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "vios": ["vios-1"]},
+        }
+    ]
+
+    assert _authorize(grants, "hmc_backup_vios", VIOS_BACKUP_ARGUMENTS) is None
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        {"managed_system": ["sys-1"], "vios": ["other-vios"]},
+        {"managed_system": ["other-system"], "vios": ["vios-1"]},
+    ],
+    ids=["missing-vios-grant", "missing-managed-system-grant"],
+)
+def test_backup_vios_one_sided_target_grant_denies_before_io(monkeypatch, targets):
+    """Neither half of the required target pair can reach the handler."""
+    opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
+    grants = [
+        {
+            "tools": ["hmc_backup_vios"],
+            "connections": ["lab"],
+            "targets": targets,
+        }
+    ]
+
+    application = create_mcp(_policy(grants))
+    with pytest.raises(ToolError):
+        _call(application, "hmc_backup_vios", VIOS_BACKUP_ARGUMENTS)
+
+    assert opened == []
+
+
 def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
     """`hmc_power_off_lpar` is the carry-forward's live instance.
 
