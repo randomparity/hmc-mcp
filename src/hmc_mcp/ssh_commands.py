@@ -10,7 +10,7 @@ import csv
 import io
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
@@ -96,8 +96,20 @@ def parse_hmc_delimited_rows(
     return rows
 
 
-def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
+def build_attribute_record(
+    pairs: Sequence[tuple[str, object]],
+    *,
+    quoted: Collection[str] = (),
+    surface: str = "-i",
+) -> str:
     """Return the ``-i`` attribute record for *pairs*, or raise.
+
+    *quoted* names list-valued attributes whose HMC-side grammar is a
+    comma-separated list (ADR 0061).  A marked value containing a comma is
+    rendered as the IBM quoted pair ``"name=v1,v2"``; without a comma it
+    renders bare, byte-identical to the unmarked form.  Every other record
+    delimiter is refused inside a marked value: only the comma's behaviour
+    inside a quoted region is live-verified.
 
     *pairs* is an ordered sequence of ``(attribute, value)``.  Each value is
     rendered with :func:`str` and checked against the record grammar before the
@@ -123,42 +135,94 @@ def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
     """
     if not pairs:
         raise HMCCLIError(
-            "cannot build an HMC CLI -i attribute record with no attributes; "
+            f"cannot build an HMC CLI {surface} record with no attributes; "
             "at least one attribute is required"
         )
     seen: set[str] = set()
     for attribute, _value in pairs:
         if attribute in seen:
             raise HMCCLIError(
-                f"HMC CLI -i attribute {attribute!r} appears twice in one "
-                "record; the HMC's handling of a repeated attribute is "
+                f"HMC CLI {surface} attribute {attribute!r} appears twice in "
+                "one record; the HMC's handling of a repeated attribute is "
                 "undefined, so the record is refused rather than sent"
             )
         seen.add(attribute)
+    quotable = frozenset(quoted)
+    parts = []
+    for attribute, value in pairs:
+        text = _validated_value(
+            attribute, value, allow_comma=attribute in quotable, surface=surface
+        )
+        if attribute in quotable and "," in text:
+            parts.append(f'"{attribute}={text}"')
+        else:
+            parts.append(f"{attribute}={text}")
+    return ",".join(parts)
+
+
+def build_filter(pairs: Sequence[tuple[str, object]]) -> str:
+    """Return the ``--filter`` expression for *pairs*, or raise.
+
+    The ``--filter`` grammar is the same ``name=value`` comma-joined record
+    grammar (ADR 0061): a delimiter inside a value adds or rewrites a filter
+    pair, so a mutation would select a partition the caller did not name.
+    Values are validated by the same ``_validated_value`` primitive the
+    record builder uses; there is no second delimiter table.
+
+    A comma *inside* one value — IBM's multi-value list form — is refused
+    until its encoding is probed; every site here selects a single resolved
+    object by name.
+    """
+    if not pairs:
+        raise HMCCLIError(
+            "cannot build an HMC CLI --filter expression with no pairs; "
+            "at least one name=value pair is required"
+        )
+    seen: set[str] = set()
+    for attribute, _value in pairs:
+        if attribute in seen:
+            raise HMCCLIError(
+                f"HMC CLI --filter attribute {attribute!r} appears twice in "
+                "one expression; the HMC's handling of a repeated filter "
+                "attribute is undefined, so the expression is refused"
+            )
+        seen.add(attribute)
     return ",".join(
-        f"{attribute}={_validated_value(attribute, value)}"
+        f"{attribute}={_validated_value(attribute, value, surface='--filter')}"
         for attribute, value in pairs
     )
 
 
-def _validated_value(attribute: str, value: object) -> str:
-    """Return *value* as record text, or raise :class:`HMCCLIError`."""
+def _validated_value(
+    attribute: str,
+    value: object,
+    *,
+    allow_comma: bool = False,
+    surface: str = "-i",
+) -> str:
+    """Return *value* as record text, or raise :class:`HMCCLIError`.
+
+    *allow_comma* marks a quotable list attribute (ADR 0061): the comma is
+    permitted because the caller renders the pair quoted.  *surface* names
+    the command surface in refusal messages so a ``--filter`` or ``-a``
+    refusal never blames an ``-i`` record.
+    """
     if not _ATTRIBUTE_NAME.match(attribute):
         raise HMCCLIError(
-            f"invalid HMC CLI -i attribute name {attribute!r}; expected a "
+            f"invalid HMC CLI {surface} attribute name {attribute!r}; expected a "
             "lower-case identifier, optionally with a '+' or '-' list operator"
         )
     text = str(value)
     for character, (name, reason) in _RECORD_DELIMITERS.items():
-        if character in text:
+        if character in text and not (allow_comma and character == ","):
             raise HMCCLIError(
-                f"HMC CLI -i attribute {attribute!r} value {text!r} contains "
+                f"HMC CLI {surface} attribute {attribute!r} value {text!r} contains "
                 f"{name} ({character!r}); {reason}, so the value would alter "
                 f"the record's structure. Remove {name} from the value."
             )
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
         raise HMCCLIError(
-            f"HMC CLI -i attribute {attribute!r} value {text!r} contains a "
+            f"HMC CLI {surface} attribute {attribute!r} value {text!r} contains a "
             "control character; the record is one line and the same data "
             "format is read one record per line by the -f file form, so a "
             "newline may terminate the record and a NUL may truncate it. "

@@ -26,6 +26,7 @@ from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import (
     assign_profile_io_slot,
     build_attribute_record,
+    build_filter,
     create_lpar_via_cli,
     set_lpar_description,
     set_lpar_msp,
@@ -147,6 +148,88 @@ def test_build_attribute_record_rejects_an_empty_record():
     """A record with no attributes is a caller bug, not an empty command."""
     with pytest.raises(HMCCLIError, match="at least one attribute"):
         build_attribute_record([])
+
+
+# ---------------------------------------------------------------------- #
+# Quoted-pair support (ADR 0061)
+# ---------------------------------------------------------------------- #
+
+
+def test_build_attribute_record_quotes_a_marked_list_value():
+    """A marked value carrying a comma renders as the IBM quoted pair."""
+    record = build_attribute_record(
+        [("port_vlan_id", 0), ("backing_devices", "dev1,dev2")],
+        quoted=("backing_devices",),
+        surface="chhwres -a record",
+    )
+    assert record == 'port_vlan_id=0,"backing_devices=dev1,dev2"'
+
+
+def test_build_attribute_record_leaves_a_marked_value_without_commas_bare():
+    """A marked value without a comma is byte-identical to the unmarked form."""
+    record = build_attribute_record(
+        [("backing_devices", "sriov/vios1/100/1/1/2")], quoted=("backing_devices",)
+    )
+    assert record == "backing_devices=sriov/vios1/100/1/1/2"
+
+
+@pytest.mark.parametrize("bad", ['"', "="])
+def test_build_attribute_record_refuses_structure_inside_marked_values(bad):
+    """Only the comma is permitted inside a quoted region; the rest is refused."""
+    with pytest.raises(HMCCLIError, match="backing_devices"):
+        build_attribute_record(
+            [("backing_devices", f"dev{bad}1")], quoted=("backing_devices",)
+        )
+
+
+@pytest.mark.parametrize("control", ["\n", "\r", "\x00"])
+def test_build_attribute_record_refuses_control_characters_in_marked_values(control):
+    """Control characters stay refused even in a quotable attribute."""
+    with pytest.raises(HMCCLIError, match="control character"):
+        build_attribute_record(
+            [("backing_devices", f"dev{control}1")], quoted=("backing_devices",)
+        )
+
+
+def test_build_attribute_record_refuses_a_duplicate_across_marked_and_unmarked():
+    """Duplicate detection compares attribute names regardless of quoting."""
+    with pytest.raises(HMCCLIError, match="appears twice"):
+        build_attribute_record(
+            [("backing_devices", "a"), ("backing_devices", "b")],
+            quoted=("backing_devices",),
+        )
+
+
+def test_duplicate_refusal_precedes_value_validation():
+    """The duplicate pre-pass fires before any per-value check, as today."""
+    with pytest.raises(HMCCLIError, match="appears twice"):
+        build_attribute_record([("name", "a"), ("name", "b,x")])
+
+
+def test_build_filter_joins_pairs_in_order():
+    """build_filter renders name=value pairs comma-joined, in order."""
+    record = build_filter([("lpar_names", "lpar1"), ("profile_names", "default")])
+    assert record == "lpar_names=lpar1,profile_names=default"
+
+
+def test_build_filter_refuses_a_delimiter_in_a_value():
+    """A delimiter in a filter value would add or rewrite a pair; refused."""
+    with pytest.raises(HMCCLIError, match="comma"):
+        build_filter([("lpar_names", "lpar1,lpar2")])
+
+
+def test_build_filter_names_the_filter_surface_in_refusals():
+    """A --filter refusal names --filter, not -i."""
+    with pytest.raises(HMCCLIError, match="--filter attribute"):
+        build_filter([("lpar_names", "lpar1,lpar2")])
+
+
+def test_build_filter_refuses_duplicates_and_empty_input():
+    """Repeated filter attributes and empty expressions are refused."""
+    with pytest.raises(HMCCLIError, match="twice"):
+        build_filter([("lpar_names", "a"), ("lpar_names", "b")])
+    with pytest.raises(HMCCLIError, match="at least one"):
+        build_filter([])
 
 
 @pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])
