@@ -232,16 +232,18 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
 
    The exists/lpar-assignment pre-checks run after validation; a bad name fails without an HMC
    round trip.
-4. Migrate the sites. Whole-expression shapes — replace the inner f-string with a
-   `build_filter` call, e.g. `read_sriov_lpar_state`:
+4. Migrate the sites. Every site normalizes to one whole-expression shape — validate the raw
+   value inside `build_filter`, then let `shlex.quote` wrap the result, e.g.
+   `read_sriov_lpar_state`:
 
 ```python
     command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(fields)} --header"
 ```
 
    Same treatment at `list_sriov_roce_port_rows` :548 and
-   `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `list_vnic_rows` :768 and
-   `read_vios_identity` :800 (`lpar_names`). `read_sriov_profile_ports` :604–605 becomes:
+   `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `list_vnic_rows` :768,
+   `read_vios_identity` :800, and `list_vnics` :717 (`lpar_names`).
+   `read_sriov_profile_ports` :604–605 becomes:
 
 ```python
     filters = build_filter(
@@ -249,20 +251,18 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
     )
 ```
 
-   Value-interpolation shapes (`list_fc_ports` :665, `list_sea_adapters` :691, `list_vnics`
-   :717, the description :931, msp :984, `lpar_env` :1025, and proc-compat :1083 probes) keep
-   their literal prefix and quote the value inside the builder call, so a clean name renders
-   byte-identically:
+   The value-only fragments (`list_fc_ports` :665, `list_sea_adapters` :691, the description
+   :931, msp :984, `lpar_env` :1025, and proc-compat :1083 probes) normalize to the same shape:
 
 ```python
-        cmd += f" --filter lpar_names={build_filter([('lpar_names', shlex.quote(lpar_name))])}"
+        cmd += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
 ```
 
-   (Validation runs on the `shlex.quote` output as a conservative stand-in for the raw value:
-   the remote shell strips quotes before the HMC parses the argument, and `shlex.quote`
-   preserves every original character while adding only quoting metacharacters, so a delimiter
-   check on the quoted text accepts nothing the raw-value check would reject. Single-quote /
-   backslash interaction stays under ADR 0045's open backslash residual.)
+   Never interpolate the pair into a literal that already carries `<name>=` — `build_filter`
+   returns the full `name=value` text, so a kept prefix would double the attribute name. For a
+   clean single-pair value `shlex.quote` returns the text bare, rendering byte-identically to
+   today; a space-carrying name quotes the whole expression instead of the bare value, with
+   identical post-shell argv.
 
 5. Run `uv run --no-sync pytest tests/unit -q` and `uv run --no-sync pytest tests/system -q`;
    fix any exact-string command pins the migrations touch (expected: tests asserting
@@ -348,14 +348,14 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
 
 ```python
         cmd=f"lssyscfg -r lpar -m {context.system_name}"
-        f" --filter lpar_names={build_filter([('lpar_names', shlex.quote(context.lp3_name))])}",
+        f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))}",
 ```
 
    :1159:
 
 ```python
         cmd=f"lssyscfg -r lpar -m {context.system_name}"
-        f" --filter lpar_names={build_filter([('lpar_names', shlex.quote(context.lp3_name))])} -F lpar_env",
+        f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))} -F lpar_env",
 ```
 
    Add `import shlex` if absent; extend the existing `hmc_mcp.ssh_commands` import with
@@ -379,13 +379,12 @@ returns nothing.
      `A_RECORD_COMMANDS = ("chhwres",)` keying on `-a`.
    - Add `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` with a comment citing the mempool
      bare-value form and ADR 0061; the `-a` per-function check skips that function.
-   - New `--filter` selection, stated as a predicate: any Constant/JoinedStr literal selected
-     when a static segment ends with `--filter` (whole-expression sites — the `<name>=` lives
-     in the nested build_filter argument, not the outer text) **or** carries a trailing
-     ``--filter <name>=`` suffix (value-only fragments). Payload location per shape: after that
-     segment, the next FormattedValue must trace to `build_filter` or a local bound name,
-     unwrapping `shlex.quote`. The selected-but-nothing-examined tripwire applies, and the
-     synthetic-violation test uses a value-only literal.
+   - New `--filter` selection, stated as a predicate: any Constant/JoinedStr literal whose
+     static text has a segment ending with `--filter`; the next FormattedValue must trace to
+     `build_filter` or a local bound name, unwrapping `shlex.quote`. All migrated sites share
+     the whole-expression shape, so this one rule covers them. The
+     selected-but-nothing-examined tripwire applies, and the synthetic-violation test uses a
+     whole-expression literal.
    - Known-site enumeration for the filter selection — 17 enclosing functions:
      `list_sriov_roce_port_rows`, `list_sriov_configured_logical_port_rows`,
      `read_sriov_lpar_state`, `read_sriov_profile_ports`, `list_fc_ports`, `list_sea_adapters`,
@@ -397,9 +396,10 @@ returns nothing.
      outside-function-literal refusal (extend
      `test_no_record_command_literal_lives_outside_a_function` to `chhwres -a` and
      `--filter` literals).
-   - Extend `test_the_scan_finds_every_known_record_site` to pin: the `-a` functions
-     (`assign_sriov_logical_port_dynamic`, `add_vnic_backing`, `remove_memory_pool`) and the
-     filter set above — asserting **set equality**, so an extra unknown site also surfaces.
+   - The `-i` known set gains its seventh member the scan already finds:
+     `unassign_sriov_logical_port_profile` (:646). Restate every category pin — `-i`, `-a`,
+     and `--filter` — as per-category set equality, so an extra unknown site in any category
+     surfaces; extend `test_the_scan_finds_every_known_record_site` accordingly.
    - Add a guard test asserting the four prose docstrings (`:711`, `:924`, `:979`, `:1074`
      content) are not selected.
 2. Run `uv run --no-sync pytest tests/unit/test_i_record_grammar.py -q` — green against the

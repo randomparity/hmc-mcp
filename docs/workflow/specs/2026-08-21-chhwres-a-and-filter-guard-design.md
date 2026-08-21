@@ -78,21 +78,17 @@ Filter sites — all become `build_filter(...)`:
 - ssh_commands.py: `list_sriov_roce_port_rows` :548 (`adapter_ids`), `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `read_sriov_lpar_state` :591 (`lpar_names`), `read_sriov_profile_ports` :604–605 (`lpar_names`+`profile_names`), `list_fc_ports` :665, `list_sea_adapters` :691, `list_vnics` :717, `list_vnic_rows` :768, `read_vios_identity` :800, the description probe :931, the msp probe :984, the `lpar_env` probe :1025, the proc-compat probe :1083 (all `lpar_names`)
 - server_vios.py:390 (`vios_uuids`)
 - scripts/live_test_runner.py :407, :1159, :1892 (`lpar_names`; raw f-string interpolation
-  today, no `shlex.quote`; script already imports from `hmc_mcp.ssh_commands`) — these gain
-  both `build_filter` and `shlex.quote`
+  today, no `shlex.quote`; script already imports from `hmc_mcp.ssh_commands`) — these
+  normalize to the same whole-expression shape (:407/:1892 drop their hard double-quote
+  wrapper)
 
-Note the two filter shapes: `--filter {shlex.quote(f'lpar_names={x}')}` (whole expression
-quoted) and `--filter lpar_names={shlex.quote(x)}` (value-only). Both keep their shape, and
-both trace to the same builder:
-
-- whole-expression sites become `--filter {shlex.quote(build_filter([...]))}`;
-- value-only sites become `--filter lpar_names={build_filter([('lpar_names', shlex.quote(x))])}`
-  — the builder call wraps the `shlex.quote` output, which is exactly the text the HMC parser
-  receives after the remote shell strips quotes. Validating the quoted text is equivalent to
-  validating the raw value for this refusal set because `shlex.quote` preserves every original
-  character (it only adds single quotes, plus its `'"'"'` idiom — which itself introduces `"`
-  when the value contains a single quote, and is rightly refused too). Clean names pass through
-  `shlex.quote` untouched and render byte-identically.
+All sites normalize to one whole-expression shape — validate the raw value inside
+`build_filter`, then wrap the result: `--filter {shlex.quote(build_filter([...]))}`. The
+value-only fragments drop their `<name>=` literal prefix (`build_filter` returns the full
+`name=value` text, so a kept prefix would double the attribute name). For a clean single-pair
+value `shlex.quote` returns the text bare, rendering byte-identically to today; a
+space-carrying name quotes the whole expression instead of the bare value, with identical
+post-shell argv. Validation runs on the raw value, before quoting.
 
 The guard's trace rule therefore accepts payloads that are a `build_filter` call, a local name
 bound from one, or either wrapped in `shlex.quote` — nothing else.
@@ -102,18 +98,15 @@ bound from one, or either wrapped in `shlex.quote` — nothing else.
 
 - `RECORD_COMMANDS` selection widened: literals opening with `chsyscfg`/`mksyscfg` keyed on
   `-i` (unchanged), literals opening with `chhwres` keyed on `-a`.
-- New selection, stated as a predicate: any Constant/JoinedStr literal selected when a static
-  segment ends with `--filter` (whole-expression sites, where `<name>=` lives inside the nested
-  builder argument) **or** carries a ``--filter <name>=`` suffix (the value-only fragments) — the
-  value-only sites are `cmd += f" --filter ..."` fragments that open with no command name, so
-  an opening-with rule would silently miss them. The tradeoff is deliberate: a prose string
-  spelling `--filter name=value` will be selected and must either drop that flag spelling or
-  gain a traced payload. Payload location per shape: after the
-  static segment ending in `--filter` (whole-expression sites) or after a static segment whose
-  text matches a trailing ``--filter <name>=`` suffix (value-only sites); same unwrap/trace
-  machinery as `-i`. The selected-but-nothing-examined tripwire applies to this selection too,
-  and the section 8 synthetic-violation test uses a value-only literal so the vacuous-pass
-  shape is covered.
+- New selection, stated as a predicate: any Constant/JoinedStr literal whose static text has a
+  segment ending with `--filter` — all migrated sites share the whole-expression shape, so one
+  rule covers them. The payload is the next FormattedValue after that segment, which must trace
+  to `build_filter` or a local bound name, unwrapping `shlex.quote`; same unwrap/trace
+  machinery as `-i`. The tradeoff of matching on containment rather than on the opening command
+  is deliberate: a prose string spelling `--filter name=value` will be selected and must either
+  drop that flag spelling or gain a traced payload. The selected-but-nothing-examined tripwire
+  applies to this selection too, and the section 8 synthetic-violation test uses a migrated
+  whole-expression literal so the vacuous-pass shape is covered.
 - Explicit exemption keyed on the qualified enclosing function —
   `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` — with a comment citing the mempool value
   form and ADR 0061; a pinning test asserts `remove_memory_pool` still emits the bare pool
@@ -172,9 +165,10 @@ tenancy (ADR 0036–0040 unchanged); live-HMC probes.
   site gets a hostile-value refusal test (parametrized, mirroring the existing `HOSTILE` tests).
 - Guard: widened selection passes on the migrated tree; known-site pins updated; exemption
   pinned; a deliberately unguarded synthetic literal fails (keeps the scan honest).
-- Shape pin: one value-only site (`list_fc_ports`) asserts a space-carrying name renders
-  `--filter lpar_names='my name'` — byte-for-byte the pre-migration form — distinguishing the
-  specified quote-inside composition from a whole-expression rewrite.
+- Shape pin: `list_fc_ports` asserts a space-carrying name renders
+  `--filter 'lpar_names=my name'` (whole expression quoted; post-shell argv identical to the
+  pre-migration `--filter lpar_names='my name'`), pinning the normalized composition against a
+  silent revert to a kept literal prefix.
 - Command-shape fixtures: unchanged. Conditional quoting keeps every well-formed `src/`
   command byte-identical. Exception, deliberate: the three `scripts/live_test_runner.py`
   sites normalize their quoting shape (:407/:1892 drop their hard double-quote wrapper,
