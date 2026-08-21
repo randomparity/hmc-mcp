@@ -342,18 +342,18 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
 
 
 @pytest.mark.parametrize(
-    ("mtms", "expected_mtms"),
+    ("mtms", "expected_shell_mtms"),
     [
-        ("9009-42A*1234567", "9009-42A*1234567"),
+        ("9009-42A*1234567", "'9009-42A*1234567'"),
         (
             {"MachineType": "9009", "Model": "42A", "SerialNumber": "1234567"},
-            "9009-42A*1234567",
+            "'9009-42A*1234567'",
         ),
     ],
     ids=["flattened", "nested"],
 )
 def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
-    monkeypatch, mtms, expected_mtms
+    monkeypatch, mtms, expected_shell_mtms
 ):
     """A UUID resolves to its unique MTMS, never an ambiguous user-defined name."""
     _hmc_env(monkeypatch)
@@ -372,7 +372,10 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
         hmc_backup_vios(SYSTEM_UUID, "vios-prod", BACKUP_NAME)
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod", system_uuid=SYSTEM_UUID)
-    assert f"-m {expected_mtms} --uuid {VIOS_UUID}" in conn_mock.run.call_args.args[0]
+    assert (
+        f"-m {expected_shell_mtms} --uuid {VIOS_UUID}"
+        in conn_mock.run.call_args.args[0]
+    )
     assert SYSTEM_NAME not in conn_mock.run.call_args.args[0]
 
 
