@@ -53,8 +53,9 @@ both now parse correctly on the HMC.
   wording byte-for-byte): `build_filter` passes `--filter`, and the mempool bare-value call
   passes the `-a` value form, so every refusal names the command surface it protects,
 - for a bare-value site that is not a filter (`remove_memory_pool`'s `-a <pool_name>`),
-  callers invoke `_validated_value("pool_name", pool_name)` directly; the guard exempts that
-  site by enclosing-function name (section 5), not by builder tracing,
+  callers invoke `_validated_value("pool_name", pool_name, surface="chhwres -a value")`
+  directly, before the pool-list lookup so a bad name fails without an HMC round trip; the
+  guard exempts that site by enclosing-function name (section 5), not by builder tracing,
 - returns `",".join(f"{n}={v}")`,
 - and refuses a comma *inside* a value: IBM's multi-value list form
   (`--filter "lpar_names=a,b"`) has no probed encoding, so it is refused fail-closed (ADR 0061).
@@ -87,9 +88,11 @@ both trace to the same builder:
 - whole-expression sites become `--filter {shlex.quote(build_filter([...]))}`;
 - value-only sites become `--filter lpar_names={build_filter([('lpar_names', shlex.quote(x))])}`
   — the builder call wraps the `shlex.quote` output, which is exactly the text the HMC parser
-  receives after the remote shell strips quotes. `shlex.quote` leaves every grammar-clean value
-  untouched, so clean names render byte-identically; a value carrying `,`/`=`/`"` reaches
-  `build_filter` visibly (or forces shell quoting that introduces `"`) and is refused.
+  receives after the remote shell strips quotes. Validating the quoted text is equivalent to
+  validating the raw value for this refusal set because `shlex.quote` preserves every original
+  character (it only adds single quotes, plus its `'"'"'` idiom — which itself introduces `"`
+  when the value contains a single quote, and is rightly refused too). Clean names pass through
+  `shlex.quote` untouched and render byte-identically.
 
 The guard's trace rule therefore accepts payloads that are a `build_filter` call, a local name
 bound from one, or either wrapped in `shlex.quote` — nothing else.
@@ -99,8 +102,12 @@ bound from one, or either wrapped in `shlex.quote` — nothing else.
 
 - `RECORD_COMMANDS` selection widened: literals opening with `chsyscfg`/`mksyscfg` keyed on
   `-i` (unchanged), literals opening with `chhwres` keyed on `-a`.
-- New selection, with payload location defined per shape: a scanned literal carrying
-  `--filter` requires its payload FormattedValue to trace to `build_filter` — located after the
+- New selection, stated as a predicate: any Constant/JoinedStr literal whose static text
+  contains a ``--filter <name>=`` segment is selected, regardless of what opens it — the
+  value-only sites are `cmd += f" --filter ..."` fragments that open with no command name, so
+  an opening-with rule would silently miss them. The tradeoff is deliberate: a prose string
+  spelling `--filter name=value` will be selected and must either drop that flag spelling or
+  gain a traced payload. Payload location per shape: after the
   static segment ending in `--filter` (whole-expression sites) or after a static segment whose
   text matches a trailing ``--filter <name>=`` suffix (value-only sites); same unwrap/trace
   machinery as `-i`. The selected-but-nothing-examined tripwire applies to this selection too,
@@ -164,6 +171,9 @@ tenancy (ADR 0036–0040 unchanged); live-HMC probes.
   site gets a hostile-value refusal test (parametrized, mirroring the existing `HOSTILE` tests).
 - Guard: widened selection passes on the migrated tree; known-site pins updated; exemption
   pinned; a deliberately unguarded synthetic literal fails (keeps the scan honest).
+- Shape pin: one value-only site (`list_fc_ports`) asserts a space-carrying name renders
+  `--filter lpar_names='my name'` — byte-for-byte the pre-migration form — distinguishing the
+  specified quote-inside composition from a whole-expression rewrite.
 - Command-shape fixtures: unchanged. Conditional quoting keeps every well-formed `src/`
   command byte-identical. Exception, deliberate: the three `scripts/live_test_runner.py`
   sites normalize their quoting shape (:407/:1892 drop their hard double-quote wrapper,
