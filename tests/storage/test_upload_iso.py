@@ -306,9 +306,9 @@ async def test_upload_iso_refuses_an_invalid_media_name_before_the_download(
         hmc.list_optical_media = AsyncMock(return_value=[])
 
         with pytest.raises(ValueError, match="media_name"):
-            await upload_iso(
-                hmc, VIOS_UUID, VG_UUID, "bad name!.iso", ISO_URL
-            )
+            await upload_iso(hmc, VIOS_UUID, VG_UUID, "bad name!.iso", ISO_URL)
+
+        hmc.list_optical_media.assert_not_awaited()
 
     download.assert_not_awaited()
 
