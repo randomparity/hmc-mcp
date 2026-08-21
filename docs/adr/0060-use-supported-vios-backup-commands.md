@@ -20,9 +20,12 @@ construction therefore cannot preserve those contracts honestly.
 
 Replace the commands and public signatures together. Listing retains its current selector and runs
 `lsviosbk --filter "vios_uuids=<uuid>"`. Backup takes managed-system selector, VIOS selector,
-backup name, and an optional `vios`/`viosioconfig`/`ssp` type, then runs `mkviosbk`. Restore takes
+backup name, and an optional `vios`/`viosioconfig`/`ssp` type, then runs
+`mkviosbk -t <type> -m <system-name> --uuid <vios-uuid> -f <backup-name>`. Restore takes
 managed-system selector, VIOS selector, backup name, a required `viosioconfig`/`ssp` type, and an
-optional restart-if-required flag, then runs `rstviosbk` with `-r` only when requested.
+optional restart-if-required flag, then runs
+`rstviosbk -t <type> -m <system-name> --uuid <vios-uuid> -f <backup-name> [-r]`, with `-r` only
+when requested.
 
 Resolve a managed-system UUID to its HMC system name and resolve a VIOS name within that system to
 its UUID before SSH command construction. Shell-quote every dynamic CLI value. Apply the existing
