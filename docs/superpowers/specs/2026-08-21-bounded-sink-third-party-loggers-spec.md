@@ -49,8 +49,9 @@ to match. The access log moves into the bounded sink: accepted.
 
 1. **`src/hmc_mcp/server.py`** — generalize the install: one function binds each of
    `fastmcp`, `uvicorn`, `uvicorn.access`, `mcp` (remove-all-handlers, then add one
-   `_AuditHandler` on the shared sink with `StreamSafeFormatter("%(levelname)s:
-   %(message)s)", f"{name}: ")`). Per-producer prefix keeps the column-0 forgery guard
+   `_AuditHandler` on the shared sink with `StreamSafeFormatter(_FASTMCP_LINE_FORMAT,
+   f"{name}: ")`, where `_FASTMCP_LINE_FORMAT` stays `"%(levelname)s: %(message)s"`).
+   Per-producer prefix keeps the column-0 forgery guard
    and names the producer. Renamed from `install_fastmcp_stderr_sink` — clean cutover,
    all callers/tests migrate. Called from `_serve_application` as today, so both
    transports get all four bindings unconditionally.
