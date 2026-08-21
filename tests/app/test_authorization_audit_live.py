@@ -153,7 +153,12 @@ class _Server:
         self.log = log
         self._next_id = 0
         self._frames: queue.Queue = queue.Queue()
-        threading.Thread(target=self._pump, daemon=True).start()
+        self._pump_thread = threading.Thread(target=self._pump, daemon=True)
+        self._pump_thread.start()
+
+    def reap(self) -> None:
+        """End the child, then release its streams after the stdout pump exits."""
+        _reap(self.process, self._pump_thread)
 
     def _diagnosis(self) -> str:
         """The child's own stderr, so a failure here names its cause."""
@@ -248,11 +253,11 @@ def run_a(child_env, server_binary, tmp_path):
             server.initialize()
             yield server, log
         finally:
-            _reap(process)
+            server.reap()
 
 
-def _reap(process: subprocess.Popen) -> None:
-    """Terminate, then kill, then assert it is gone. Never leaves a child."""
+def _reap(process: subprocess.Popen, pump_thread: threading.Thread | None = None) -> None:
+    """Terminate a child and deterministically close its parent-owned pipe wrappers."""
     try:
         if process.stdin and not process.stdin.closed:
             process.stdin.close()
@@ -264,6 +269,15 @@ def _reap(process: subprocess.Popen) -> None:
             process.wait(timeout=10)
     finally:
         assert process.poll() is not None, "the server subprocess outlived the test"
+        if pump_thread is not None:
+            pump_thread.join(timeout=DEADLINE)
+            assert not pump_thread.is_alive(), "stdout pump outlived the server"
+        if process.stdout and not process.stdout.closed:
+            process.stdout.close()
+        # Popen exposes ``stderr`` only when it owns a PIPE. External log sinks
+        # and ``DEVNULL`` remain the caller's responsibility.
+        if process.stderr and not process.stderr.closed:
+            process.stderr.close()
 
 
 def _audit_lines(log: Path) -> list[dict]:
@@ -371,7 +385,7 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
                 "hmc_power_off_lpar", {**PERMITTED, "profile": "prod"}
             )
         finally:
-            _reap(reference.process)
+            reference.reap()
 
     # shlex.quote, not " ".join: this repository's own path contains spaces, and
     # an unquoted one makes `sh -c` split it into words and fail to exec at all —
@@ -388,7 +402,7 @@ def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp
         listed = blinded.send("tools/list", {})
         assert "result" in listed
     finally:
-        _reap(blinded.process)
+        blinded.reap()
 
 
 def _error_text(frame: dict) -> str:
