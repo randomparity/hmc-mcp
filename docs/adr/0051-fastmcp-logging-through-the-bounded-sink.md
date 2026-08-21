@@ -232,8 +232,15 @@ no shipped entry point takes.
 The two residuals this record carried — uvicorn's default handler under `--http`, and the
 `mcp` namespace reaching `logging.lastResort` — are closed by taking over all three loggers.
 That is the answer to "which third-party loggers does this package take over" that the
-residuals had been deferring one dependency at a time, and it makes the single-writer story
-hold on both transports instead of only under stdio.
+residuals had been deferring one dependency at a time, and it puts the loggers the served
+process's dependencies actually write through on the sink on both transports. It does **not**
+make fd 2 single-writer in the general case, and the record says so rather than overclaim: any
+namespace outside the four that has no handler of its own still walks to
+`logging.lastResort` — an unbounded synchronous fd-2 writer — exactly as `mcp` did. An
+`asyncio` task whose exception is never retrieved logs ERROR on `asyncio`, which has no
+handler, and reaches it from the middle of the serving path. Sweeping every namespace a
+dependency might touch is not undertaken here; what this amendment closes is the set a reader
+of the two residuals was actually owed.
 
 The uvicorn lever is `log_config=None`, which `main_http` supplies through FastMCP's
 `uvicorn_config`. `uvicorn.Config.__init__` still calls `configure_logging()`, but with a null
@@ -263,7 +270,10 @@ through the same marked formatter as the rest, one queue item per record. **That
 also moves the access log from stdout to stderr** — uvicorn's own `LOGGING_CONFIG` attaches the
 access handler to `sys.stdout` (uvicorn 0.52.1, `config.py:96-111`), which is the writer the
 deleted residual's probe recorded as `<StreamHandler <stdout>>` — and an operator who parsed
-request lines from stdout must re-point that reader at stderr. Naming it
+request lines from stdout must re-point that reader at stderr **and** re-write it for the new
+line grammar: the replaced writer rendered through uvicorn's `AccessFormatter`, while the sink
+renders through `StreamSafeFormatter` with the fixed `uvicorn.access: ` column-0 prefix on
+every physical line. Naming it
 is the point: the residual was about fd 2, `uvicorn.access` was never an fd-2 writer, and this
 amendment takes it over anyway rather than leave it as a second unbounded writer whose stream
 happens to be a different descriptor. The cost side is quantified like the record's own
