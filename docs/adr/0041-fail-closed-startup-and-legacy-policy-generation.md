@@ -124,7 +124,7 @@ The written document is a single grant under the policy name `legacy-equivalent`
 - **`targets = "all-targets"`.** The only value that covers an omitted optional selector, and the
   only one that grants a tool no `targets` table can bound. That set is defined by a predicate
   rather than by a remembered figure: an ordinary tool — every tool but `hmc_run_command` — whose
-  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **29** of 136, of which 27
+  `ToolSecurity.exhaustive_targets` is `False`. On this branch that is **30** of 136, of which 28
   are reachable by the target check at all; the other two, `hmc_effective_permissions` and
   `hmc_list_configured_hosts`, declare no connection argument, so `authorized` never wraps them
   and the dimension cannot reach them (ADR 0038). The count is stated because it is useful and
@@ -140,9 +140,9 @@ The written document is a single grant under the policy name `legacy-equivalent`
   policy still registers and then denies. This record asks a different one: what the generated
   grant has to cover. The two differ in both directions, and reconcile exactly:
 
-  **28** (ADR 0039) **− 1** `hmc_run_command`, which the generator never emits **+ 2**
+  **29** (ADR 0039) **− 1** `hmc_run_command`, which the generator never emits **+ 2**
   `hmc_effective_permissions` and `hmc_list_configured_hosts`, which the generated policy grants
-  like any other ordinary tool **= 29**.
+  like any other ordinary tool **= 30**.
 
   > **Amended by #297** (2026-08-19). **The two populations are now one: all 26 are reachable by
   > the target check.** "`authorized` never wraps them and the dimension cannot reach them" was the
@@ -159,6 +159,10 @@ The written document is a single grant under the policy name `legacy-equivalent`
   > beyond its selected VIOS, so `hmc_restore_vios` became non-exhaustive. The ordinary population
   > is now 29, 27 are reachable through a connection argument, and ADR 0039's reconciled population
   > is 28.
+
+  > **Amended by #289** (2026-08-20). SSP backup likewise covers its cluster and associated nodes,
+  > so `hmc_backup_vios` became non-exhaustive. The ordinary population is now 30, 28 are reachable
+  > through a connection argument, and ADR 0039's reconciled population is 29.
 
   ADR 0039's figure is a measurement of its own set, not a stale count of this one, and its
   "all 19 selector-less tools" elsewhere is a third population (the 17 plus that pair) rather than
