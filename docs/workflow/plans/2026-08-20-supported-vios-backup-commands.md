@@ -68,9 +68,10 @@ Later implementation must satisfy exact supported command strings and preserve
    system names pass through, system UUIDs become MTMS even when names collide, missing/malformed
    MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system. Cover
    every missing and blank nested `MachineType`, `Model`, and `SerialNumber` case. Pin dispatch
-   authorization so backup requires matching managed-system and VIOS grants and denies a policy
-   missing either target before its handler opens REST or SSH. `build_targets` already derives both
-   required selectors from `REQUIRED_TARGET_ARGUMENTS`; do not add redundant `extra_targets`.
+   authorization so backup exposes both required selectors from `REQUIRED_TARGET_ARGUMENTS`; do
+   not add redundant `extra_targets`. Prove a named grant with `targets = "all-targets"` permits,
+   while a target table (including one containing both selector kinds) is rejected with all-targets
+   guidance and an effect/table grant denies before its handler opens REST or SSH.
    Prove a direct system name plus VIOS UUID constructs no REST client. For a REST-assisted call,
    prove the REST client and SSH receive the exact same configuration object even if a later
    profile read would resolve differently.
@@ -131,9 +132,10 @@ without making a real HMC call.
 5. Implement restore with required restore type, reject values outside `viosioconfig` and `ssp`,
    build the corresponding `rstviosbk` command, and append ` -r` exactly when
    `restart_if_required` is true. Preserve the keyword-only boundaries from Task 1.
-6. Set backup tool metadata to `exhaustive_targets=False`; both required selector grants remain,
-   but SSP cluster scope means they do not exhaust every affected target. Pin this beside restore's
-   existing non-exhaustive classification.
+6. Set backup tool metadata to `exhaustive_targets=False`; both required selectors remain extracted
+   metadata, but SSP cluster scope means they do not exhaust every affected target. Pin this beside
+   restore's existing non-exhaustive classification and preserve the current policy model rather
+   than adding narrow-grant semantics.
 7. Rewrite docstrings to state supported command forms, required selectors, type limits, restart
    semantics, and validation failures. Remove every current-tense old command spelling from source.
 8. Run the exact focused command from Task 1. Expect all selected tests to pass.
@@ -154,8 +156,9 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
 1. Update remaining direct test callers and exact schema/description expectations. Do not add an
    adapter for the old positional form.
 2. Update the cheatsheet repository-use notes to describe the now-supported implementation. Keep
-   its command examples aligned with ADR 0060. Document that backup policies now require matching
-   managed-system and VIOS target grants, so existing VIOS-only narrow grants must be updated.
+   its command examples aligned with ADR 0060. Document that backup is non-exhaustive and therefore
+   requires a named `targets = "all-targets"` grant; VIOS-only and combined narrow tables cannot
+   authorize it.
    Show named Python calls for backup `backup_name` and restore `backup_type` so the keyword-only
    boundary is explicit. Qualify README's generic SSH fallback note: VIOS backup/restore can bypass
    REST only with a direct system name and VIOS UUID; a system UUID requires REST MTMS resolution

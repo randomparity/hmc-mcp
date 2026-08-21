@@ -49,15 +49,15 @@ opening a REST client. When either selector needs REST resolution, build one con
 for the call and use that same object for both REST and SSH so mutable profile state cannot route
 the two legs to different HMCs.
 
-Treat the new managed-system selector on `hmc_backup_vios` as a required authorization target in
-addition to its required VIOS target. Existing narrow policy grants for this operation must add a
-matching `managed_system` grant; silently omitting the selector from target accounting would let a
-caller choose an unauthorized system. Restore keeps its previously accepted non-exhaustive target
-classification.
+Keep the new managed-system selector and VIOS selector as required authorization metadata on
+`hmc_backup_vios`. Because backup is non-exhaustive, the existing policy model authorizes it only
+through a named `targets = "all-targets"` grant; a targets table cannot authorize the tool even if
+it contains both selector kinds. Restore keeps its previously accepted non-exhaustive target
+classification and the same all-targets rule.
 
 Backup is also non-exhaustive. An `ssp` backup covers the cluster and associated nodes beyond the
-managed-system and VIOS selectors used to enter the command, so those required grants cannot claim
-to enumerate every affected target.
+managed-system and VIOS selectors used to enter the command, so those selectors cannot claim to
+enumerate every affected target.
 
 ## Consequences
 
@@ -73,11 +73,10 @@ explicit `ssp` restore can affect the cluster beyond the selected VIOS. The rest
 the HMC to restart the VIOS only after a failed restore attempt, matching `rstviosbk -r`.
 Using MTMS for a UUID selector preserves uniqueness when user-defined names collide; a UUID whose
 REST representation lacks a complete MTMS fails closed rather than degrading to a name.
-Because backup now declares both selectors, policy migration is also required: a grant containing
-only the VIOS target no longer authorizes the call. This is an explicit authorization tightening,
-not an inferred side effect.
-Backup now carries the same non-exhaustive classification for `ssp` cluster scope; the two required
-selector grants remain necessary but are not represented as complete target enumeration.
+Because backup is non-exhaustive, policy migration is required: VIOS-only and combined narrow
+target tables cannot authorize it. Operators must use a named `targets = "all-targets"` grant.
+Both selectors remain required call inputs and extracted metadata for authorization diagnostics and
+audit, but they are not independently matchable grants.
 
 ## Considered & rejected
 

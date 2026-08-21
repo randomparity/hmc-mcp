@@ -121,13 +121,15 @@ and its REST identity data are trusted peers; credentials are trusted configurat
 - UUID-to-MTMS conversion preserves a unique managed-system selector when user-defined names
   collide and fails closed if the unique CLI identity cannot be obtained.
 - `shlex.quote` encodes every caller-controlled or HMC-returned string as one remote-shell word.
-- Existing tool metadata and dispatch authorization govern targets. Backup requires both the
-  `managed_system` and `vios` grants exposed by its new required selectors; this approved tightening
-  requires narrow policies to add the system grant. Backup and restore are both non-exhaustive
-  because `ssp` can affect a cluster beyond those selectors.
+- Existing tool metadata and dispatch authorization govern targets. Backup exposes required
+  `managed_system` and `vios` selectors for extraction, diagnostics, and audit. Backup and restore
+  are both non-exhaustive because `ssp` can affect a cluster beyond those selectors, so the current
+  policy model authorizes either tool only through a named `targets = "all-targets"` grant; target
+  tables cannot authorize them.
 - Errors may disclose public selectors and HMC diagnostics but never credentials.
 
-No authorization change beyond backup's approved two-target requirement is claimed. Races with
+No authorization-model change beyond backup's approved non-exhaustive classification is claimed.
+Races with
 another HMC operator, rollback of backup or
 restore, availability of catalog entries, HMC-side retention, and full-image restoration are out of
 scope. Live mutation is excluded; mocked exact-command tests plus the recorded HMC help are the
@@ -138,7 +140,8 @@ available proof.
 Focused tests must first fail against the old commands and signatures, then pass after the change.
 They cover exact list filtering, direct system-name and UUID-to-MTMS resolution, duplicate-name
 safety, every missing and blank nested MTMS component plus malformed flattened MTMS failure,
-system-scoped VIOS-UUID resolution, backup dispatch denial without either required target grant,
+system-scoped VIOS-UUID resolution, required selector metadata plus non-exhaustive all-targets
+authorization and narrow-table rejection,
 all valid backup types,
 both restore types, required restore type, optional `-r`, invalid type/name refusal before external
 calls, rejection of both legacy maximum-arity Python positional forms and both legacy named MCP
