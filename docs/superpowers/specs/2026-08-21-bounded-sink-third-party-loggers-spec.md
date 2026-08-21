@@ -72,6 +72,12 @@ to match. The access log moves into the bounded sink: accepted.
      modes review found: silent level drop, parent+child double render);
    - an `mcp`-namespace record reaches stderr through the sink (stdio transport);
    - idempotence of the generalized install.
+3b. **`tests/conftest.py`** — extend the autouse `isolate_audit_logging` fixture to
+   snapshot-and-reset handlers, level and propagate for `uvicorn`, `uvicorn.access`
+   and `mcp`, exactly as `_PRISTINE_FASTMCP` does for `fastmcp`: the generalized
+   install mutates process-global state on all four loggers, and without this the
+   first serving test leaks a sink handler plus INFO/propagate=False onto every later
+   module in the session.
 4. **ADRs** — amend `docs/adr/0043-non-blocking-stderr-diagnostics.md` (Consequences:
    the "does not widen" clause becomes closed) and
    `docs/adr/0051-fastmcp-logging-through-the-bounded-sink.md` (the two residual
