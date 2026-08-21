@@ -20,9 +20,15 @@ VIOS_BACKUP_TOOLS = (
     "hmc_backup_vios",
     "hmc_restore_vios",
 )
+COUNT_NUMBER = r"(?:\*{2})?\d[\d,]*(?:\*{2})?"
+TOOL_COUNT_NOUN = r"(?:tools?(?:\s+names?)?|names?)"
+NUMBERED_TOOL_COUNT = (
+    rf"{COUNT_NUMBER}(?:\s+[\w-]+){{0,3}}\s+{TOOL_COUNT_NOUN}"
+)
 FIXED_TOOL_COUNT = re.compile(
-    r"(?<!\w)(?:\*{2})?\d[\d,]*(?:\*{2})?(?!\w)[^.\n]{0,80}"
-    r"\bevery ordinary tool\b",
+    rf"(?:{NUMBERED_TOOL_COUNT}[^.\n]{{0,80}}\bevery ordinary tool\b"
+    rf"|\bevery ordinary tool\b[^.\n]{{0,80}}(?:{COUNT_NUMBER}\s+total\b"
+    rf"|{NUMBERED_TOOL_COUNT}))",
     re.IGNORECASE,
 )
 
@@ -107,10 +113,14 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
             "136 tool names, every ordinary tool",
             "129 names, every ordinary tool",
             "**136** tools, every ordinary tool",
+            "every ordinary tool is named explicitly (136 total)",
         ):
             stale_guidance = guidance.replace("every ordinary tool", fixed_count, 1)
             assert FIXED_TOOL_COUNT.search(stale_guidance)
 
+    assert not FIXED_TOOL_COUNT.search(
+        "Issue #289 requires every ordinary tool to be named explicitly"
+    )
     assert not FIXED_TOOL_COUNT.search("31 total non-exhaustive tools")
 
 
