@@ -161,8 +161,12 @@ tenancy (ADR 0036–0040 unchanged); live-HMC probes.
 - Builder: marked value without comma → bare; with comma → quoted pair; `"`, `=`, control in
   marked value → refused; duplicate across marked/unmarked → refused; unmarked behaviour
   byte-identical (existing tests already pin).
-- Filters: single- and multi-pair joins; hostile value refused naming field; every inventoried
-  site gets a hostile-value refusal test (parametrized, mirroring the existing `HOSTILE` tests).
+- Filters: single- and multi-pair joins; hostile value refused naming field; every
+  `ssh_commands.py` filter function gets a hostile-value refusal test (parametrized, mirroring
+  the existing `HOSTILE` tests). The `server_vios.py` site is exempt from a runtime hostile
+  test because its filter value is a resolved or ``is_uuid``-gated UUID — hostile text cannot
+  reach it — and the three `scripts/live_test_runner.py` sites are harness-internal; both are
+  covered by the builder's unit tests and the Task 5 structural scan.
 - Guard: widened selection passes on the migrated tree; known-site pins updated; exemption
   pinned; a deliberately unguarded synthetic literal fails (keeps the scan honest).
 - Shape pin: `list_fc_ports` asserts a space-carrying name renders

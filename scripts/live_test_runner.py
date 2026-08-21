@@ -34,11 +34,13 @@ from typing import Any
 
 from fastmcp import Client
 
+import shlex
+
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.server import TOOL_SECURITY, _gates, create_mcp
 from hmc_mcp.server_command import configure_arbitrary_command_tool
-from hmc_mcp.ssh_commands import validate_lpar_description
+from hmc_mcp.ssh_commands import build_filter, validate_lpar_description
 
 # ---------------------------------------------------------------------------
 # Pre-run guard: HMC_SCHEMA_VERSION=V1_0 is required for REST write path
@@ -404,7 +406,7 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
         client,
         "hmc_run_command",
         cmd=f"lssyscfg -r lpar -m {context.system_name}"
-        f' --filter "lpar_names={context.lp3_name}"',
+        f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))}",
     )
     record(state, 0, "hmc_run_command lssyscfg (baseline)", st, data)
     if st == "PASS":
@@ -1156,7 +1158,7 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
         client,
         "hmc_run_command",
         cmd=f"lssyscfg -r lpar -m {context.system_name}"
-        f" --filter lpar_names={context.lp3_name} -F lpar_env",
+        f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))} -F lpar_env",
     )
     record(state, 10, "lssyscfg lpar_env check", st_env, data_env)
     lp3_env = (data_env or "").strip() if st_env == "PASS" else ""
@@ -1889,7 +1891,7 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
         client,
         "hmc_run_command",
         cmd=f"lssyscfg -r lpar -m {context.system_name}"
-        f' --filter "lpar_names={context.lp3_name}"',
+        f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))}",
     )
     record(state, 15, "hmc_run_command lssyscfg (final)", st, data)
 
