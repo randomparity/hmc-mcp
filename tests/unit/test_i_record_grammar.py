@@ -425,8 +425,6 @@ BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
 
 
-RECORD_COMMANDS = ("chsyscfg", "mksyscfg")
-A_RECORD_COMMANDS = ("chhwres",)
 
 # The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
 # carries a bare pool name, not name=value pairs (ADR 0061).  Exempted by
@@ -509,8 +507,8 @@ def _has_flag_ending_segment(node: ast.AST, flag: str) -> bool:
     return False
 
 
-def _is_record_literal(node: ast.AST, commands: tuple[str, ...], flag: str) -> bool:
-    """True when one string literal both names a command and carries *flag*.
+def _is_record_literal(node: ast.AST, flag: str) -> bool:
+    """True when a literal carries *flag* as a standalone token.
 
     Selection and payload inspection deliberately share this unit.  A rule that
     selected on the whole function and inspected one literal could select a
@@ -520,11 +518,9 @@ def _is_record_literal(node: ast.AST, commands: tuple[str, ...], flag: str) -> b
     ADR 0045 originally also required the literal to *open* with the command
     name.  That let the appended-fragment idiom — ``cmd += f" -a {…}"``, the
     shape this very branch uses for its ``--filter`` sites — evade the scan,
-    so the opening rule is gone: any literal whose static segment ends with
-    the flag is selected, and prose that trips it fails closed exactly like
-    an unguarded site (the docstring exclusion absorbs documented commands).
-    *commands* is retained for the known-site pins, which still verify the
-    found functions are the record builders.
+    so the opening rule is gone: selection carries no command constraint and
+    over-selects deliberately.  Prose that trips it fails closed exactly like
+    an unguarded site; the docstring exclusion absorbs documented commands.
     """
     if not isinstance(node, ast.Constant | ast.JoinedStr):
         return False
@@ -532,11 +528,11 @@ def _is_record_literal(node: ast.AST, commands: tuple[str, ...], flag: str) -> b
 
 
 def _is_an_i_record_literal(node: ast.AST) -> bool:
-    return _is_record_literal(node, RECORD_COMMANDS, "-i")
+    return _is_record_literal(node, "-i")
 
 
 def _is_an_a_record_literal(node: ast.AST) -> bool:
-    return _is_record_literal(node, A_RECORD_COMMANDS, "-a")
+    return _is_record_literal(node, "-a")
 
 
 def _is_a_filter_literal(node: ast.AST) -> bool:
@@ -707,8 +703,35 @@ def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
 
 
 def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Return *func*'s ``-a`` payloads not built by the record builder.
+
+    A function in :data:`VALUE_FORM_A_FUNCTIONS` may carry the bare-value
+    ``-a`` form only: its payload must be a plain name.  A builder call (or
+    any other expression) inside an exempted function means someone added a
+    record-form site where the exemption lives, and it is reported.
+    """
     if func.name in VALUE_FORM_A_FUNCTIONS:
-        return []
+        problems: list[str] = []
+        for literal in _selected_literals(func, _is_an_a_record_literal):
+            for index, part in enumerate(literal.values):
+                segment = part.value if isinstance(part, ast.Constant) else ""
+                if not _ends_with_flag_token(segment, "-a"):
+                    continue
+                payload = (
+                    literal.values[index + 1]
+                    if index + 1 < len(literal.values)
+                    else None
+                )
+                expression = (
+                    _unwrap_shlex_quote(payload.value)
+                    if isinstance(payload, ast.FormattedValue)
+                    else None
+                )
+                if _is_builder_call(expression, BUILDER_NAME) or not isinstance(
+                    expression, ast.Name
+                ):
+                    problems.append(ast.unparse(literal))
+        return problems
     return _unguarded_payloads_for(
         func, _is_an_a_record_literal, "-a", BUILDER_NAME
     )
