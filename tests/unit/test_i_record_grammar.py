@@ -671,12 +671,19 @@ def _joined_str_fragments(node: ast.AST) -> set[int]:
     }
 
 
+# Keyword-value constants exactly matching a grammar surface label are
+# diagnostic data, not command strings; anything else passed as a keyword
+# stays selectable like any other literal.
+_SURFACE_LABELS = frozenset({"--filter", "-i", "-a"})
+
+
 def _keyword_value_constants(node: ast.AST) -> set[int]:
-    """Return the ``id()`` of every Constant passed as a keyword argument.
+    """Return the ``id()`` of Constants passed as keywords naming a surface.
 
     A label such as ``surface="--filter"`` is data, not a command string;
-    without this exclusion the filter selection would select its own
-    builder's diagnostic label.
+    without this narrow exclusion the filter selection would select its own
+    builder's diagnostic label.  The match is exact, so a command string
+    passed as a keyword argument keeps its protection.
     """
     return {
         id(keyword.value)
@@ -684,6 +691,7 @@ def _keyword_value_constants(node: ast.AST) -> set[int]:
         if isinstance(walked, ast.Call)
         for keyword in walked.keywords
         if isinstance(keyword.value, ast.Constant)
+        and keyword.value.value in _SURFACE_LABELS
     }
 
 

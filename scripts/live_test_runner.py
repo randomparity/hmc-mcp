@@ -405,7 +405,7 @@ async def capture_lpar_baseline(client: Client, state: RunState) -> None:
     st, data = await call(
         client,
         "hmc_run_command",
-        cmd=f"lssyscfg -r lpar -m {context.system_name}"
+        cmd=f"lssyscfg -r lpar -m {shlex.quote(context.system_name)}"
         f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))}",
     )
     record(state, 0, "hmc_run_command lssyscfg (baseline)", st, data)
@@ -1157,7 +1157,7 @@ async def mutate_lpar_properties(client: Client, state: RunState) -> None:
     st_env, data_env = await call(
         client,
         "hmc_run_command",
-        cmd=f"lssyscfg -r lpar -m {context.system_name}"
+        cmd=f"lssyscfg -r lpar -m {shlex.quote(context.system_name)}"
         f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))} -F lpar_env",
     )
     record(state, 10, "lssyscfg lpar_env check", st_env, data_env)
@@ -1890,7 +1890,7 @@ async def restore_lpar_baseline(client: Client, state: RunState) -> None:
     st, data = await call(
         client,
         "hmc_run_command",
-        cmd=f"lssyscfg -r lpar -m {context.system_name}"
+        cmd=f"lssyscfg -r lpar -m {shlex.quote(context.system_name)}"
         f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))}",
     )
     record(state, 15, "hmc_run_command lssyscfg (final)", st, data)
