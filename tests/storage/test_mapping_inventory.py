@@ -14,7 +14,6 @@ from conftest import make_config
 from hmc_mcp.client import HMCClient
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
-LPAR_UUID = "00000000-0000-0000-0000-000000000001"
 
 MAPPINGS_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:uom="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
