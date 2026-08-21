@@ -447,10 +447,12 @@ async def upload_iso(
     has put on ``iso_url_allowlist`` (``HMC_ISO_URL_ALLOWLIST``), and both
     conditions are checked before any other work happens. **With no allowlist
     configured every URL is refused** — see ``_require_allowlisted_iso_url`` and
-    ADR 0050. The ISO is then downloaded with explicit timeout and size bounds
-    and without following redirects; SHA-256 and size are computed from the
-    download; name collisions are refused; and both the local temp file and the
-    HMC broker resources are cleaned up on every outcome.
+    ADR 0050. The media name is then validated against HMC's FileName.Pattern
+    and refused on collision with existing media before any transfer begins;
+    the ISO is downloaded with explicit timeout and size bounds and without
+    following redirects, with SHA-256 and size computed from the download; and
+    both the local temp file and the HMC broker resources are cleaned up on
+    every outcome.
 
     Args:
         hmc: HMC client instance.
@@ -480,28 +482,31 @@ async def upload_iso(
         _require_http_url(iso_source), hmc.config.iso_url_allowlist_entries
     )
     vios_uuid = await resolve_vios_uuid(hmc, vios)
+
+    # Validate media_name against HMC FileName.Pattern
+    _HMC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.]{1,79}$")
+    if not _HMC_FILENAME_RE.match(media_name):
+        raise ValueError(
+            f"media_name {media_name!r} is invalid. "
+            "HMC only accepts filenames matching [A-Za-z0-9_.]{1,79} "
+            "(no hyphens, spaces, or other special characters)."
+        )
+
+    # Check for name collision before downloading anything — the check needs
+    # only vios_uuid and vg_uuid, so a taken name is refused without the
+    # transfer (#325).
+    existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
+    for media in existing_media:
+        if media.get("MediaName") == media_name:
+            raise FileExistsError(
+                f"Media name '{media_name}' already exists in repository. "
+                "Use a different name or delete the existing media first."
+            )
+
     iso_path, iso_sha256, file_size = await _download_iso_from_url(iso_url)
 
     broker_uri: str | None = None
     try:
-        # Validate media_name against HMC FileName.Pattern
-        _HMC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.]{1,79}$")
-        if not _HMC_FILENAME_RE.match(media_name):
-            raise ValueError(
-                f"media_name {media_name!r} is invalid. "
-                "HMC only accepts filenames matching [A-Za-z0-9_.]{1,79} "
-                "(no hyphens, spaces, or other special characters)."
-            )
-
-        # Check for name collision
-        existing_media = await hmc.list_optical_media(vios_uuid, vg_uuid)
-        for media in existing_media:
-            if media.get("MediaName") == media_name:
-                raise FileExistsError(
-                    f"Media name '{media_name}' already exists in repository. "
-                    "Use a different name or delete the existing media first."
-                )
-
         # Check for duplicate content (same SHA-256 under different name)
         # Note: HMC does not expose trustworthy SHA-256 checksums in the API,
         # so we cannot perform duplicate detection via server-side checksums.
