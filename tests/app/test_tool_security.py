@@ -201,7 +201,7 @@ def test_selectors_and_connection_arguments_are_public_parameters():
         ("hmc_power_off_lpar", "system_name_or_uuid", False),
         ("hmc_power_off_vios", "system_name_or_uuid", False),
         ("hmc_delete_vios", "system_name_or_uuid", False),
-        ("hmc_restore_vios", "system_name_or_uuid", False),
+        ("hmc_restore_vios", "system_name_or_uuid", True),
         ("hmc_list_lpars", "system_name_or_uuid", False),
         ("hmc_delete_lpar", "lpar_name_or_uuid", True),
         ("hmc_migrate_lpar", "target_system_name_or_uuid", True),
@@ -1564,4 +1564,10 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     ):
         for escape in escapes:
             with pytest.raises(ValueError, match="backup_name"):
-                server_vios.hmc_restore_vios(vios_uuid, escape)
+                server_vios.hmc_restore_vios(
+                    "system-name",
+                    vios_uuid,
+                    escape,
+                    "ssp",
+                    restart_if_required=False,
+                )

@@ -278,6 +278,44 @@ def test_closed_vocab_enum_matches_runtime_constant():
         assert set(parameter["enum"]) == set(values)
 
 
+def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
+    """The public schemas expose every HMC input required by the replacement CLIs."""
+    by_name = _tools_by_name()
+
+    backup = by_name["hmc_backup_vios"].parameters
+    assert set(backup["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "profile",
+    }
+    assert set(backup["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+    }
+    assert backup["properties"]["backup_type"]["default"] == "vios"
+
+    restore = by_name["hmc_restore_vios"].parameters
+    assert set(restore["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "restart_if_required",
+        "profile",
+    }
+    assert set(restore["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+    }
+    assert restore["properties"]["backup_type"]["enum"] == ["viosioconfig", "ssp"]
+    assert restore["properties"]["restart_if_required"]["default"] is False
+
+
 def test_parameter_normalization_contract_is_schema_pinned():
     from hmc_mcp.operations_pcm import PCM_CATEGORIES
     from hmc_mcp.server_lpar_config import PROCESSOR_COMPATIBILITY_MODES

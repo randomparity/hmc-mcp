@@ -13,6 +13,7 @@ command escape hatch.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import shlex
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,6 +21,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import (
+    hmc_backup_vios,
     hmc_backup_lpar_profiles,
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
@@ -69,6 +71,18 @@ def _captured_cmd(conn_mock) -> str:
 def _arg_after(args: list[str], option: str) -> str:
     """Return the argument following *option* in a shlex-split argv list."""
     return args[args.index(option) + 1]
+
+
+def _vios_client_factory():
+    hmc = AsyncMock()
+    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
+
+    @asynccontextmanager
+    async def factory(_profile):
+        yield hmc
+
+    return factory
 
 
 # ---------------------------------------------------------------------- #
@@ -151,8 +165,22 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
     assert shlex.quote("/tmp/bak;id") in cmd
 
 
-def test_restore_vios_quotes_hostile_backup_name(monkeypatch):
-    """hmc_restore_vios shell-quotes a hostile backup_name (no REST resolution).
+@pytest.mark.parametrize(
+    ("tool", "arguments", "keywords"),
+    [
+        (hmc_backup_vios, (SYSTEM_NAME, SYSTEM_UUID, "vios;id"), {}),
+        (
+            hmc_restore_vios,
+            (SYSTEM_NAME, SYSTEM_UUID, "vios;id", "ssp"),
+            {"restart_if_required": False},
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_vios_backup_tools_quote_hostile_backup_name(
+    monkeypatch, tool, arguments, keywords
+):
+    """VIOS backup and restore shell-quote a hostile catalog name.
 
     The hostile value carries a shell metacharacter but no path separator: ADR
     0044's containment guard refuses a separator-bearing name before the command
@@ -160,10 +188,11 @@ def test_restore_vios_quotes_hostile_backup_name(monkeypatch):
     Quoting and containment are separate controls and this proves the first.
     """
     _hmc_env(monkeypatch)
+    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_restore_vios(SYSTEM_UUID, "vios;id")
+        tool(*arguments, **keywords)
 
     cmd = _captured_cmd(conn)
     assert shlex.quote("vios;id") in cmd
