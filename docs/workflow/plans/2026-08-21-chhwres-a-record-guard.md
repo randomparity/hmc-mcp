@@ -137,10 +137,12 @@ def _validated_value(
 ```
 
    and guard the table loop with `if character in text and not (allow_comma and character == ","):`.
-   The refusal messages interpolate *surface*: `"HMC CLI {surface} attribute {attribute!r} ..."`
-   — the default reproduces today's wording byte-for-byte; Task 2 passes `surface="--filter"`,
-   Task 4's mempool validation passes the `-a` form. Add `Collection` to the
-   `collections.abc` import.
+   Every refusal message interpolates *surface* — the delimiter-table message, the control-
+   character message, **and** the attribute-name-form message (`"invalid HMC CLI {surface}
+   attribute name ..."`) — so no refusal blames the wrong surface. The default reproduces
+   today's wording byte-for-byte; Task 2 passes `surface="--filter"`,
+   and Task 2's mempool bare-value validation passes the `-a` value form. Add `Collection` to
+   the `collections.abc` import.
 
 4. Run `uv run --no-sync pytest tests/unit/test_i_record_grammar.py -q` — all pass, including
    every pre-existing builder test (byte-identical unmarked behaviour).
@@ -181,7 +183,7 @@ def test_build_filter_refuses_duplicates_and_empty_input():
 
    Per-site hostile-value refusal tests, mirroring the existing ``HOSTILE`` block — one
    parametrized test per migrated ssh_commands filter function (17 minus server_vios and
-   scripts; see step 6 for those):
+   scripts sites are Task 4):
 
 ```python
 HOSTILE_FILTER = "x,injected=1"
@@ -212,8 +214,9 @@ def test_filter_site_refuses_a_hostile_name(fn):
         asyncio.run(f(_config(), "sys", HOSTILE_FILTER))
 ```
 
-   (Adjust per-signature extras: `read_sriov_profile_ports` and `read_sriov_lpar_state` take
-   extra positional args; pass clean values for them.) Plus the spec's shape pin:
+   (Adjust per-signature extras: `read_sriov_profile_ports` takes a fourth positional arg;
+   `set_lpar_msp` requires `enabled` — pass `True`. The other listed functions take exactly
+   `(config, system_name, name)`.) Plus the spec's shape pin:
 
 ```python
 def test_list_fc_ports_renders_the_whole_expression_quoted():
@@ -439,7 +442,10 @@ deliberate narrowing of the spec's per-site-test promise to the ssh_commands sur
    - `RECORD_COMMANDS = ("chsyscfg", "mksyscfg")` keeps keying on `-i`; add
      `A_RECORD_COMMANDS = ("chhwres",)` keying on `-a`.
    - Add `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` with a comment citing the mempool
-     bare-value form and ADR 0061; the `-a` per-function check skips that function.
+     bare-value form and ADR 0061; the `-a` per-function check skips that function. The spec's
+     bare-emission pin is already discharged by
+     `tests/unit/test_ssh_quoting.py::test_remove_memory_pool_quotes_hostile_pool_name` — cite
+     it in the exemption comment rather than writing a duplicate test.
    - New `--filter` selection, stated as a predicate: any Constant/JoinedStr literal whose
      static text has a segment ending with `--filter`; the next FormattedValue must trace to
      `build_filter` or a local bound name, unwrapping `shlex.quote`. All migrated sites share
