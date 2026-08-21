@@ -21,8 +21,9 @@ Live verification now exists (recorded on #285, 2026-08-21, HMC V10R3M1060 and V
   format error. Multi-device input is therefore *currently broken*, not merely injectable.
 - The IBM quoted-pair form — `-a "port_vlan_id=0,\"backing_devices=dev1,dev2\""` — is accepted;
   the error in that probe was a capacity constraint, not a format error. The quoting rule IBM
-  documents for `chsyscfg` lists applies to `chhwres -a`.
-- Whether a *single-device* value wrapped in quotes is accepted was not probed.
+  documents for `chsyscfg` lists applies to `chhwres -a`. The probe verified the pair
+  separator `=` inside the quoted region; it did not probe an additional `=` inside a value,
+  a quoted *single*-device value, or a quoted pair in any position other than last.
 
 Separately, the `--filter name=value` selections on `lssyscfg`/`lshwres`/`chhwres` commands are
 built by f-string from caller-supplied names. A value carrying `,` or `=` adds or rewrites a
@@ -36,23 +37,32 @@ the same boundary ADR 0045 closed for the mutation half.
 marked attribute whose rendered value contains a comma is emitted as `"name=v1,v2"` — literal
 double quotes around the pair, per IBM's convention. A marked attribute without a comma is
 emitted bare, byte-identical to today. Inside a quoted value the comma is permitted because the
-live probes verified exactly that; `"`, `=`, and control characters are still refused, because
-nothing has verified their behaviour inside the quoted region. Quoting is conditional, not
-unconditional, precisely because the quoted single-device form was never probed: no
-currently-working command changes a single byte.
+live probes verified exactly that; the pair's own `=` separator inside the quoted region is
+likewise probe-verified, but an `=` supplied inside a caller's *value* is not, so caller values
+are still refused — as are `"` and control characters, whose behaviour inside a quoted region
+nothing has probed. Quoting is conditional, not unconditional, precisely because the quoted
+single-device form was never probed: no currently-working command changes a single byte.
 
 **Every `chhwres -a` record routes through the builder.** `add_vnic_backing` builds
-`port_vlan_id`/`backing_devices` through it, marking `backing_devices` quotable. The value-form
-site `chhwres -r mempool -o r -a <pool_name>` is not an attribute record — `-a` there carries a
-bare pool name, not `name=value` pairs — so it keeps its plain value, validated against the
-same delimiter table, and the recurrence guard exempts it explicitly rather than pretending it
-is a record.
+`port_vlan_id`/`backing_devices` through it, marking `backing_devices` quotable. No caller on
+this branch can currently deliver a multi-device value — ADR 0057 deliberately replaced the
+opaque `backing_devices` string with a typed single-device selector — so the quoted branch is
+forward-looking infrastructure, adopted here because the issue asked for an explicit decision
+on `backing_devices` and the operator chose the encode path once the quoting mechanism was
+live-verified. The value-form site `chhwres -r mempool -o r -a <pool_name>` is not an attribute
+record — `-a` there carries a bare pool name, not `name=value` pairs — so it keeps its plain
+value, validated against the same delimiter table, and the recurrence guard exempts it
+explicitly rather than pretending it is a record.
 
 **The filter half gets its own builder from the same table.** `build_filter(pairs)` takes
 `(name, value)` pairs, refuses record delimiters and control characters in each value, and
 joins them comma-separated — the shape `--filter lpar_names=x,profile_names=y` already uses.
-Every `--filter` site in `src/hmc_mcp/` and `scripts/` routes through it. The delimiter table
-stays defined once; the record builder, the fast validators, and the filter builder all read it.
+Every `--filter` site in `src/hmc_mcp/` and `scripts/` routes through it. This deliberately
+does not reproduce the filter grammar's other half: IBM documents comma-separated *lists*
+inside one filter value (`--filter "lpar_names=lpar1,lpar2"`), and until a probed encoding
+exists for that form the builder refuses it, exactly as it refuses a comma in a record value.
+Every site this change migrates selects a single resolved object by name, so nothing reachable
+narrows; the refusal keeps a future multi-value site from reaching an unguarded escape hatch.
 
 **The recurrence guard widens with the grammar.** `tests/unit/test_i_record_grammar.py`
 selects `chsyscfg`/`mksyscfg` `-i`, `chhwres` `-a`, and any literal carrying `--filter`, and
@@ -63,22 +73,41 @@ exemption named, not silently allowed.
 
 **Public input contracts narrow, fail-closed.** A name or id containing `,`, `=`, or `"` that
 today reaches an `--filter` or `-a` payload and corrupts it is refused before the command is
-built, with `HMCCLIError` naming the field and character. Names arriving from HMC resolution
-are unaffected unless an HMC object name genuinely contains a delimiter — the same bet ADR
-0045 made, now applied to the selection half.
+built, with `HMCCLIError` naming the field and character. Multi-value filter lists
+(`lpar_names=a,b`) join that refusal until their encoding is probed. Names arriving from HMC
+resolution are unaffected unless an HMC object name genuinely contains a delimiter — the same
+bet ADR 0045 made, now applied to the selection half.
 
-**Multi-device vNIC input becomes expressible and correct.** A `backing_devices` value with a
-comma renders quoted instead of misparsing; the injection demonstrated on #285 closes with the
-fix rather than by refusal.
+**Multi-device vNIC input becomes expressible at the builder, not yet reachable from a tool.**
+A `backing_devices` value with a comma renders quoted instead of misparsing; the injection
+demonstrated on #285 closes with the fix rather than by refusal. Reaching that capability from
+an MCP tool wants a typed multi-device selector, which is ADR 0057's surface, not this record's.
 
 **Emitted commands are byte-stable except where they were broken.** Single-device payloads and
 every well-formed filter render exactly as before; only delimiter-carrying values produce
 different text, and those commands never worked.
 
+**Unverified, carried deliberately**: a quoted pair in any non-trailing record position; a
+quoted single-device value; `=` or `"` inside a caller's value portion of a quoted region. A
+future record that places a quotable attribute before another attribute emits a form no probe
+has accepted; if a live HMC ever shows one of these forms failing, the fix is a builder rule,
+not a grammar change.
+
 **ADR 0045 otherwise stands**: one builder owns the grammar; duplicates are refused; space and
 semicolon remain non-structure; the backslash residual remains open.
 
 ## Considered & rejected
+
+**Do nothing** — leave `add_vnic_backing` on its f-string and keep `--filter` unguarded. It is
+the cheapest option and closes nothing: the injection reproduced on #285 stays reachable
+through every listed tool, which is the condition the issue reports.
+
+**Route through the builder with plain ADR 0045 rejection; defer quoting** — the smaller wire
+change, and sufficient today because the only producer emits a comma-free single device. Passed
+over because the issue required an explicit decision on `backing_devices`, the operator chose
+the encode path (decision recorded on the charter, 2026-08-21), and the quoting mechanism is
+now probe-verified rather than guessed; deferring would re-open this exact question when the
+first multi-device caller lands, with the evidence already on the shelf.
 
 **Unconditional quoting of marked attributes.** Simpler to state, but it changes every
 single-device command to a form no live probe exercised, and churns recorded-command fixtures
