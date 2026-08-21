@@ -25,8 +25,9 @@ pytest/ruff/ty through `uv` and `just`.
 **Files:** Modify `tests/vios/test_vios_backup.py`, `tests/unit/test_ssh_quoting.py`,
 `tests/unit/test_ssh_profile_routing.py`, `tests/unit/test_destructive_scope.py`,
 `tests/app/test_tool_security.py`, `tests/app/test_capabilities.py`, and
-`tests/app/test_lifecycle_schema_descriptions.py`. Search the remaining name-only inventory tests,
-but do not edit them unless their expected metadata actually changes.
+`tests/app/test_lifecycle_schema_descriptions.py`, and `tests/app/test_target_authorization.py`.
+Search the remaining name-only inventory tests, but do not edit them unless their expected metadata
+actually changes.
 
 **Interfaces:** Tests consume the approved signatures:
 
@@ -56,13 +57,18 @@ Later implementation must satisfy exact supported command strings and preserve
    MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system. Cover
    every missing and blank nested `MachineType`, `Model`, and `SerialNumber` case. Pin dispatch
    authorization so backup requires matching managed-system and VIOS grants and denies a policy
-   missing either target.
+   missing either target before its handler opens REST or SSH. `build_targets` already derives both
+   required selectors from `REQUIRED_TARGET_ARGUMENTS`; do not add redundant `extra_targets`.
+   Prove a direct system name plus VIOS UUID constructs no REST client. For a REST-assisted call,
+   prove the REST client and SSH receive the exact same configuration object even if a later
+   profile read would resolve differently.
 6. Run `uv run --no-sync pytest -q tests/vios/test_vios_backup.py tests/unit/test_ssh_quoting.py
    tests/unit/test_ssh_profile_routing.py tests/unit/test_destructive_scope.py
    tests/app/test_tool_security.py tests/app/test_capabilities.py
-   tests/app/test_lifecycle_schema_descriptions.py`. Expect failures showing the old signatures,
-   commands, schemas, and descriptions do not meet the new contract. Do not implement before this
-   red proof is retained in the forge ledger. Run this identical file set after implementation.
+   tests/app/test_lifecycle_schema_descriptions.py tests/app/test_target_authorization.py`. Expect
+   failures showing the old signatures, commands, schemas, descriptions, and authorization do not
+   meet the new contract. Do not implement before this red proof is retained in the forge ledger.
+   Run this identical file set after implementation.
 
 **Acceptance:** Focused tests fail for the old command/signature behavior and cover every criterion
 without making a real HMC call.
@@ -71,7 +77,7 @@ without making a real HMC call.
 
 **Files:** Modify `src/hmc_mcp/server_vios.py`.
 
-**Interfaces:** Consume `is_uuid`, `resolve_vios_uuid`, `client_from_env`, `run_hmc_cli`, and
+**Interfaces:** Consume `HMCClient`, `is_uuid`, `resolve_vios_uuid`, `run_hmc_cli`, and
 `build_config`. Provide the exact public functions from Task 1. Keep
 `BackupType = Literal["vios", "viosioconfig", "ssp"]` and add a restore-only literal/set.
 
@@ -84,7 +90,8 @@ without making a real HMC call.
    value, and each missing or blank nested component. Replace `_run_vios_backup_command` with a
    helper accepting explicit system and VIOS selectors. Fast-path a direct system name plus VIOS
    UUID without REST; otherwise use one REST context to resolve only selectors that need it, then
-   call the builder and SSH transport.
+   call the builder and SSH transport. Build one `HMCConfig` snapshot per call; when REST is needed,
+   construct `HMCClient` from that object and pass that identical object to `run_hmc_cli`.
 2. Replace the list parser with strict `csv.DictReader` handling for the explicit `name,type`
    header. Empty output returns `[]`; reject a wrong or duplicate header, empty value, or extra
    column. Change the list builder to:

@@ -58,7 +58,9 @@ The return remains `list[dict[str, str]]` with keys `name` and `type` supplied b
 
 Backup and restore use one async helper that resolves only selectors which need REST. A direct
 system name remains the CLI `-m` value, and a VIOS UUID remains the CLI `--uuid` value, so a call
-whose selectors are already CLI-ready does not require a REST login before SSH. A system UUID is fetched
+whose selectors are already CLI-ready does not require a REST login before SSH. When REST is
+needed, build the selected profile's configuration once, construct the REST client from that exact
+object, and pass the same object to SSH after resolution. A system UUID is fetched
 once and converted to its `MachineTypeModelSerialNumber`; nested machine-type/model/serial fields
 serialize as `tttt-mmm*sssssss`. An already rendered value must parse into exactly three nonblank,
 unpadded machine-type, model, and serial components separated by the first `-` and `*`, then
@@ -80,9 +82,11 @@ decision. Backup type retains `vios`, `viosioconfig`, and `ssp`; restore type ac
 
 ## Error behavior and compatibility
 
-All validation errors name the operation, rejected input, and permitted values or repair. REST and
-SSH failures retain existing exception behavior. Raw successful HMC stdout remains the return value
-for backup and restore; listing retains `list[dict[str, str]]`.
+Type and selector validation errors name the relevant operation, rejected input, and permitted
+values or repair. The shared catalog-name error remains operation-neutral while naming the rejected
+input and its syntactic repair. REST and SSH failures retain existing exception behavior. Raw
+successful HMC stdout remains the return value for backup and restore; listing retains
+`list[dict[str, str]]`.
 
 This is a replacement, not a migration. Old positional calls fail at Python/MCP validation rather
 than being reinterpreted. Generated MCP descriptions and schemas must show the new requiredness and

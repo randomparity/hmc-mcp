@@ -38,6 +38,11 @@ Shell-quote every dynamic CLI value. Apply the existing catalog-name refusal to 
 restore names. Replace the old interfaces outright: no alias, compatibility overload, or inferred
 default restore type.
 
+A direct managed-system name plus VIOS UUID is already CLI-ready and must reach SSH without
+opening a REST client. When either selector needs REST resolution, build one configuration snapshot
+for the call and use that same object for both REST and SSH so mutable profile state cannot route
+the two legs to different HMCs.
+
 Treat the new managed-system selector on `hmc_backup_vios` as a required authorization target in
 addition to its required VIOS target. Existing narrow policy grants for this operation must add a
 matching `managed_system` grant; silently omitting the selector from target accounting would let a
