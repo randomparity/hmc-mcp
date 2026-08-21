@@ -753,6 +753,11 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(capsys):
     assert "a fastmcp line" in _stderr(capsys)
 
 
+#: Every logger the served path binds to ADR 0043's sink (#330): the original
+#: ``fastmcp`` takeover plus the three namespaces the amendment added.
+SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+
+
 def test_installing_the_sink_twice_leaves_one_handler_per_logger():
     """Idempotence, which the remove-then-add shape gives rather than a type check."""
     from hmc_mcp.server import install_third_party_stderr_sinks
@@ -793,11 +798,6 @@ def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
 
     logging.getLogger("fastmcp.server.server").warning("a line with logging disabled")
     assert "a line with logging disabled" in _stderr(capsys)
-
-
-#: Every logger the served path binds to ADR 0043's sink (#330): the original
-#: ``fastmcp`` takeover plus the three namespaces the amendment added.
-SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
 
 
 def _formatter_prefix(handler):
