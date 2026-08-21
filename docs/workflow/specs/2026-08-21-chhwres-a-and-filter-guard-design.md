@@ -7,7 +7,7 @@ Issue: randomparity/hmc-mcp#285 · ADR: [0061](../../adr/0061-quoted-list-values
 Frozen in the `WORK:SCOPE` charter (token `q285-scope-7c41`, issue comment 5369324909):
 
 1. `add_vnic_backing` builds its `-a` record via `build_attribute_record`.
-2. Comma-carrying `backing_devices` values render in the IBM quoted-pair form whose bytes match what the 2026-08-21 live probes accepted (ADR 0061 Context); no new live-HMC probing is in scope.
+2. Comma-carrying `backing_devices` values render in the IBM quoted-pair form whose post-shell HMC-argument bytes match what the 2026-08-21 live probes accepted (ADR 0061 Context); the pinning test asserts the builder output before `shlex.quote`, e.g. `port_vlan_id=0,"backing_devices=dev1,dev2"`. No new live-HMC probing is in scope.
 3. The recurrence guard in `tests/unit/test_i_record_grammar.py` selects `chhwres -a` literals.
 4. Every `--filter name=value` selection value is validated against the shared delimiter table before interpolation, in `src/` and `scripts/`.
 5. `just verify` green.
@@ -93,6 +93,12 @@ the interpolated text's provenance changes to the builder.
   `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` — with a comment citing the mempool value
   form and ADR 0061; a pinning test asserts `remove_memory_pool` still emits the bare pool
   name.
+- The new selections inherit the existing docstring exclusion (`_docstring_nodes`): the four
+  prose docstrings carrying `--filter lpar_names=...` (:711, :924, :979, :1074) must not be
+  selected — a guard test pins that.
+- The outside-function literal refusal (`test_no_record_command_literal_lives_outside_a_function`)
+  extends to the `chhwres -a` and `--filter` selections alongside the payload trace, closing the
+  hoist-the-template escape hatch for both.
 - Known-site pin test extended to the new selections so silent narrowing is visible.
 
 ### 6. Threat model
@@ -137,8 +143,10 @@ tenancy (ADR 0036–0040 unchanged); live-HMC probes.
   site gets a hostile-value refusal test (parametrized, mirroring the existing `HOSTILE` tests).
 - Guard: widened selection passes on the migrated tree; known-site pins updated; exemption
   pinned; a deliberately unguarded synthetic literal fails (keeps the scan honest).
-- Command-shape fixtures: unchanged — conditional quoting keeps every well-formed command
-  byte-identical.
+- Command-shape fixtures: unchanged. Conditional quoting keeps every well-formed `src/`
+  command byte-identical. Exception, deliberate: the three `scripts/live_test_runner.py`
+  sites normalize their quoting shape (:407/:1892 drop their hard double-quote wrapper,
+  :1159 gains `shlex.quote`); no fixture pins those commands.
 
 ## Non-goals
 
