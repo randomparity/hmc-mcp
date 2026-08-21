@@ -27,6 +27,7 @@ from hmc_mcp.ssh_commands import (
     assign_profile_io_slot,
     build_attribute_record,
     build_filter,
+    list_fc_ports,
     create_lpar_via_cli,
     set_lpar_description,
     set_lpar_msp,
@@ -230,6 +231,61 @@ def test_build_filter_refuses_duplicates_and_empty_input():
         build_filter([("lpar_names", "a"), ("lpar_names", "b")])
     with pytest.raises(HMCCLIError, match="at least one"):
         build_filter([])
+
+
+# ---------------------------------------------------------------------- #
+# Per-site refusal — one hostile value for every function building a filter
+# ---------------------------------------------------------------------- #
+
+HOSTILE_FILTER = "x,injected=1"
+
+
+@pytest.mark.parametrize(
+    ("fn_name", "extra_args"),
+    [
+        ("list_sriov_physical_port_rows", ()),
+        ("list_sriov_configured_logical_port_rows", ()),
+        ("read_sriov_lpar_state", ()),
+        ("read_sriov_profile_ports", ("default_profile",)),
+        ("list_fc_ports", ()),
+        ("list_sea_adapters", ()),
+        ("list_vnics", ()),
+        ("list_vnic_rows", ()),
+        ("read_vios_identity", ()),
+        ("get_lpar_description", ()),
+        ("get_lpar_msp", ()),
+        ("set_lpar_msp", (True,)),
+        ("get_lpar_proc_compat", ()),
+    ],
+)
+def test_filter_site_refuses_a_hostile_name(fn_name, extra_args):
+    """A delimiter-carrying name is refused before any command is built."""
+    import hmc_mcp.ssh_commands as mod
+
+    fn = getattr(mod, fn_name)
+    with pytest.raises(HMCCLIError, match="comma"):
+        asyncio.run(fn(_config(), "sys-a", HOSTILE_FILTER, *extra_args))
+
+
+def test_list_fc_ports_renders_the_whole_expression_quoted():
+    """A space-carrying name quotes the whole expression (normalized shape)."""
+    sent = []
+
+    async def fake_run(config, command):
+        sent.append(command)
+        return ""
+
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", side_effect=fake_run):
+        asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
+    assert "--filter 'lpar_names=my name'" in sent[0]
+
+
+def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
+    """The mempool bare-value form validates against the same table."""
+    from hmc_mcp.ssh_commands import remove_memory_pool
+
+    with pytest.raises(HMCCLIError, match="comma"):
+        asyncio.run(remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
 
 
 @pytest.mark.parametrize(("bad", "wording"), [(" ", "space"), (";", "semicolon")])

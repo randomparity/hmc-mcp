@@ -609,7 +609,7 @@ async def list_sriov_physical_port_rows(
         "phys_port_max_logical_ports",
         "curr_eth_logical_ports",
     )
-    command = f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level roce --filter {shlex.quote(f'adapter_ids={adapter_id}')} -F {','.join(fields)} --header"
+    command = f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level roce --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header"
     return _parse_admitted_rows(await run_hmc_command(config, command), fields)
 
 
@@ -631,7 +631,7 @@ _SRIOV_LOGICAL_FIELDS = (
 async def list_sriov_configured_logical_port_rows(
     config: HMCConfig, system_name: str, adapter_id: str
 ) -> list[dict[str, str]]:
-    command = f"lshwres -r sriov --rsubtype logport -m {shlex.quote(system_name)} --level eth --filter {shlex.quote(f'adapter_ids={adapter_id}')} -F {','.join(_SRIOV_LOGICAL_FIELDS)} --header"
+    command = f"lshwres -r sriov --rsubtype logport -m {shlex.quote(system_name)} --level eth --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(_SRIOV_LOGICAL_FIELDS)} --header"
     return _parse_admitted_rows(
         await run_hmc_command(config, command), _SRIOV_LOGICAL_FIELDS
     )
@@ -652,7 +652,7 @@ async def read_sriov_lpar_state(
     config: HMCConfig, system_name: str, lpar_name: str
 ) -> dict[str, str]:
     fields = ("name", "lpar_id", "state", "rmc_state")
-    command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(f'lpar_names={lpar_name}')} -F {','.join(fields)} --header"
+    command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
         raise HMCCLIError(
@@ -665,7 +665,9 @@ async def read_sriov_profile_ports(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> dict[str, str]:
     fields = ("name", "sriov_eth_logical_ports")
-    filters = f"lpar_names={lpar_name},profile_names={profile_name}"
+    filters = build_filter(
+        [("lpar_names", lpar_name), ("profile_names", profile_name)]
+    )
     command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
@@ -726,7 +728,7 @@ async def list_fc_ports(
         f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system_name)}"
     )
     if lpar_name:
-        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+        cmd += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
         return []
@@ -752,7 +754,7 @@ async def list_sea_adapters(
         f" -F {fields}"
     )
     if lpar_name:
-        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+        cmd += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
         return []
@@ -778,7 +780,7 @@ async def list_vnics(
     """
     cmd = (
         f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"
-        f" --filter lpar_names={shlex.quote(lpar_name)}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     )
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
@@ -829,7 +831,7 @@ async def list_vnic_rows(
     command = (
         "lshwres -r virtualio --rsubtype vnic --level lpar"
         f" -m {shlex.quote(system_name)}"
-        f" --filter {shlex.quote(f'lpar_names={lpar_name}')}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
         f" -F {fields} --header"
     )
     output = await run_hmc_command(config, command)
@@ -861,7 +863,7 @@ async def read_vios_identity(
     fields = ",".join(_VIOS_IDENTITY_FIELDS)
     command = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)}"
-        f" --filter {shlex.quote(f'lpar_names={vios_name}')}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', vios_name)]))}"
         f" -F {fields} --header"
     )
     rows = parse_hmc_delimited_rows(
@@ -944,6 +946,11 @@ async def remove_memory_pool(
         HMCCLIError: If *pool_name* has LPARs still assigned to it, or if
             no pool with that name exists on *system_name*.
     """
+    # The `-a` value here is a bare pool name, not an attribute record
+    # (ADR 0061); validate it against the same delimiter table before the
+    # round trip so a bad name fails locally.
+    _validated_value("pool_name", pool_name, surface="chhwres -a value")
+
     # Safety check: list pools and look for LPAR assignments.
     pools = await list_memory_pools(config, system_name)
 
@@ -992,7 +999,7 @@ async def get_lpar_description(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F description"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F description"
     )
     return await run_hmc_command(config, cmd)
 
@@ -1045,7 +1052,7 @@ async def get_lpar_msp(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F msp"
     )
     raw = await run_hmc_command(config, cmd)
     value = raw.strip()
@@ -1086,7 +1093,7 @@ async def set_lpar_msp(
     """
     env_cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F lpar_env"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F lpar_env"
     )
     lpar_env = (await run_hmc_command(config, env_cmd)).strip()
     if not lpar_env:
@@ -1144,7 +1151,7 @@ async def get_lpar_proc_compat(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} "
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
         "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
     )
     raw = await run_hmc_command(config, cmd)
