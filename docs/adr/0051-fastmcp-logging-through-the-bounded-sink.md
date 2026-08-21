@@ -253,7 +253,17 @@ handler and then the `uvicorn` handler, two queue items per request. The install
 `mcp` stay handlers-only: neither sits inside another bound namespace, so nothing double-renders
 through them and the original only-the-handlers rule stands for them unchanged. The access log
 moves into the bounded sink on those terms, accepted: `uvicorn.access` records are rendered
-through the same marked formatter as the rest, one queue item per record. Under stdio there is
+through the same marked formatter as the rest, one queue item per record. **That acceptance
+also moves the access log from stdout to stderr** — uvicorn's own configuration puts the access
+handler on `sys.stdout`, which is why the probe above recorded `<StreamHandler <stdout>>` — and
+an operator who parsed request lines from stdout must re-point that reader at stderr. Naming it
+is the point: the residual was about fd 2, `uvicorn.access` was never an fd-2 writer, and this
+amendment takes it over anyway rather than leave it as a second unbounded writer whose stream
+happens to be a different descriptor. The cost side is quantified like the record's own
+twice-as-fast analysis: at INFO every HTTP request submits one item, so under a destination
+that has stopped draining, request traffic alone can fill the 1024 slots and crowd audit and
+denial records out of the security-observability window — bounded by the same precondition and
+accepted on ADR 0043's terms, but now stated. Under stdio there is
 no uvicorn at all; binding its loggers there anyway costs nothing and keeps one rule.
 
 For `mcp` the reasoning is this record's own, verbatim: a logger with no handler anywhere
@@ -282,7 +292,13 @@ dict that re-creates uvicorn's handler graph is a copy of dependency internals t
 every uvicorn bump, and re-running `dictConfig` after `Config` construction is not reachable
 from `main_http` — while `log_config=None` deletes the dependency's configuration instead of
 imitating it, and the three properties it loses (handlers, levels, propagation) are each one
-line to state.
+line to state. *Bind `uvicorn` only and leave `uvicorn.access` where uvicorn put it* — the
+narrower takeover, and it meets this record's fd-2 criterion on its own; rejected because
+"where uvicorn put it" no longer exists once `log_config=None` skips the `dictConfig`: keeping
+the access log working under that lever means configuring `uvicorn.access` ourselves anyway,
+and keeping uvicorn's configuration means keeping the unbounded stdout writer the narrower
+option exists to preserve. The choice is therefore not sink-versus-status-quo but
+sink-versus-disabled, and the record chooses the sink.
 
 ### Residual: the startup banner is not a log record and is not on the sink
 
