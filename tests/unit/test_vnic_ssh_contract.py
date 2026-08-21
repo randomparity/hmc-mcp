@@ -171,6 +171,39 @@ async def test_add_vnic_uses_p_and_quotes_whole_payload(monkeypatch, config) -> 
 
 
 @pytest.mark.asyncio
+async def test_add_vnic_backing_quotes_a_multi_device_list(monkeypatch, config) -> None:
+    """A comma-carrying device list renders as the IBM quoted pair (ADR 0061)."""
+    calls: list[str] = []
+
+    async def fake_run(_config, command: str) -> str:
+        calls.append(command)
+        return "added"
+
+    monkeypatch.setattr("hmc_mcp.ssh_commands.run_hmc_command", fake_run)
+    result = await add_vnic_backing(
+        config, "system-a", "client-a", "sriov/vios1/1/0/2,sriov/vios2/2/0/2", 7
+    )
+    assert result == "added"
+    # Every assertion here must be capable of failing.
+    assert len(calls) == 1
+    assert shlex.split(calls[0])[-2:] == [
+        "-a",
+        'port_vlan_id=7,"backing_devices=sriov/vios1/1/0/2,sriov/vios2/2/0/2"',
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_vnic_backing_refuses_record_structure_in_a_device(
+    monkeypatch, config
+) -> None:
+    """`=` inside a device value is refused; only the comma is quotable."""
+    from hmc_mcp.ssh import HMCCLIError
+
+    with pytest.raises(HMCCLIError, match="equals sign"):
+        await add_vnic_backing(config, "system-a", "client-a", "sriov/dev=1", 7)
+
+
+@pytest.mark.asyncio
 async def test_remove_vnic_uses_p_and_s(monkeypatch, config) -> None:
     calls: list[str] = []
 

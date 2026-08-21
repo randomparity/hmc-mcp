@@ -883,8 +883,19 @@ async def add_vnic_backing(
     backing_device: str,
     port_vlan_id: int,
 ) -> str:
-    """Add one vNIC with a prevalidated backing-device payload."""
-    payload = f"port_vlan_id={port_vlan_id},backing_devices={backing_device}"
+    """Add one vNIC via ``chhwres -r virtualio --rsubtype vnic -o a``.
+
+    *backing_device* is a ``/``-delimited SR-IOV device spec, or a
+    comma-separated list of them; a value carrying a comma renders as the
+    IBM quoted pair ``"backing_devices=dev1,dev2"`` so the list survives the
+    record grammar (ADR 0061).  Any other record delimiter in the value is
+    refused before the command is built.
+    """
+    payload = build_attribute_record(
+        [("port_vlan_id", port_vlan_id), ("backing_devices", backing_device)],
+        quoted=("backing_devices",),
+        surface="chhwres -a record",
+    )
     command = (
         "chhwres -r virtualio --rsubtype vnic -o a"
         f" -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
