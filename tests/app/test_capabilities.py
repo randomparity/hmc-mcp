@@ -55,6 +55,7 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
 
 
 # ------------------------------------------------------------------ #
