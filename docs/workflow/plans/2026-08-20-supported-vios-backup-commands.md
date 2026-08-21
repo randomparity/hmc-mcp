@@ -173,6 +173,10 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
    State that these three tools require HMC V10+ in README and the cheatsheet while preserving the
    general V8–V11 support claim for other operations. Pin the floor in rendered lifecycle/tool
    description tests.
+   Correct README's connectionless-tool policy paragraph: every tool is dispatch-wrapped;
+   connectionless tools satisfy only the connection dimension vacuously, while tool/effect reach
+   and target authorization still apply. Replace stale fixed generated-policy counts in README and
+   ADR 0041 with “every ordinary tool” so registry growth cannot stale normative migration guidance.
 3. Run `rg -n "lsviosbackup|chviosbackup" src tests README.md docs/hmc-cli-cheatsheet.md`. Expect no
    match describing live code; any retained match must explicitly identify historical broken
    behavior in an immutable design record.
