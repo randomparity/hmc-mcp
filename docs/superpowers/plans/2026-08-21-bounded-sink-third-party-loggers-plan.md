@@ -23,10 +23,11 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`,
    `test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled`):
    - `test_the_served_path_takes_fastmcps_handlers_off_fd_2` (existing) — needs no
      edit: it drives `_serve(...)` and never imports the helper. The real rename
-     sites are the five direct imports/calls of `install_fastmcp_stderr_sink` in
-     tests/app/test_connection_authorization.py (the idempotence, disabled-logging,
-     denial, traceback and forgery tests) plus the docstring reference at
-     src/hmc_mcp/audit.py:297 — update all six; behavior unchanged for `fastmcp`.
+     site list at HEAD: the five direct imports/calls of `install_fastmcp_stderr_sink`
+     in tests/app/test_connection_authorization.py (the idempotence, disabled-logging,
+     denial, traceback and forgery tests) — update all five; behavior unchanged for
+     `fastmcp`. (The src/hmc_mcp/audit.py docstring reference is already renamed on
+     this branch.)
    - New: after `_serve(...)`, each of `fastmcp`, `uvicorn`, `uvicorn.access`, `mcp`
      has exactly one handler, an `_AuditHandler` whose formatter is a
      `StreamSafeFormatter` with prefix `f"{name}: "`; none targets `sys.stderr`
@@ -99,8 +100,10 @@ loop itself, and every justfile guardrail is stdio-only. Before the review loop,
 execute the spec's criterion 1 against a real process once:
 
 1. Prerequisites: `serve` requires `--access-policy NAME`, resolved against
-   `access-policy.toml` in the config dir. Point `HOME` at a temp directory and run
-   `uv run hmc-mcp config init-access-policy` there first — never into the real home.
+   `access-policy.toml` in the config dir. Sandbox hermetically: point `HOME` at a
+   temp directory AND unset `XDG_CONFIG_HOME` (config_dir() prefers it over HOME),
+   then run `uv run hmc-mcp config init-access-policy` there first — never into the
+   real home.
 2. Launch `uv run hmc-mcp serve --http --access-policy legacy-equivalent --port <free>`
    as a subprocess with fd 2 redirected to a temp file. The rich startup banner WILL
    appear on that stream raw — it is ADR 0051's documented banner residual and this
