@@ -13,6 +13,7 @@ from ._app import (
     _run,
 )
 
+from .client import HMCClient
 from .errors import HMCError
 from .common import (
     build_config,
@@ -332,15 +333,23 @@ async def _run_vios_backup_mutation_command(
     build_command: Callable[[str, str], str],
     profile: str | None,
 ) -> str:
-    async with client_from_env(profile) as hmc:
-        system_name = await _resolve_vios_backup_system_name(hmc, system_name_or_uuid)
-        vios_uuid = await resolve_vios_uuid(
-            hmc,
-            vios_name_or_uuid,
-            system_name_or_uuid=system_name_or_uuid,
-        )
+    config = build_config(profile=profile)
+    system_name = system_name_or_uuid
+    vios_uuid = vios_name_or_uuid
+    if is_uuid(system_name_or_uuid) or not is_uuid(vios_name_or_uuid):
+        async with HMCClient(config) as hmc:
+            if is_uuid(system_name_or_uuid):
+                system_name = await _resolve_vios_backup_system_name(
+                    hmc, system_name_or_uuid
+                )
+            if not is_uuid(vios_name_or_uuid):
+                vios_uuid = await resolve_vios_uuid(
+                    hmc,
+                    vios_name_or_uuid,
+                    system_name_or_uuid=system_name_or_uuid,
+                )
     command = build_command(system_name, vios_uuid)
-    return await run_hmc_cli(command, build_config(profile=profile))
+    return await run_hmc_cli(command, config)
 
 
 async def _run_vios_backup_list_command(
@@ -348,9 +357,12 @@ async def _run_vios_backup_list_command(
     build_command: Callable[[str], str],
     profile: str | None,
 ) -> str:
-    async with client_from_env(profile) as hmc:
-        vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-    return await run_hmc_cli(build_command(vios_uuid), build_config(profile=profile))
+    config = build_config(profile=profile)
+    vios_uuid = vios_name_or_uuid
+    if not is_uuid(vios_name_or_uuid):
+        async with HMCClient(config) as hmc:
+            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+    return await run_hmc_cli(build_command(vios_uuid), config)
 
 
 @tool(effect="read", operation="vios.list_backups", target_kind="vios")
@@ -456,9 +468,10 @@ def _validate_backup_name(backup_name: str) -> None:
         or backup_name.startswith("-")
     ):
         raise ValueError(
-            f"backup_name {backup_name!r} must be a backup name as returned by "
-            "hmc_list_vios_backups — not a path, an option, or a padded value. It "
-            "is resolved inside the declared VIOS's own backup catalog."
+            f"backup_name {backup_name!r} must be a nonempty, unpadded catalog "
+            "name without path separators; it must not consist only of dots or "
+            "start with '-'. It is resolved inside the declared VIOS's own backup "
+            "catalog."
         )
 
 
