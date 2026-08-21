@@ -19,8 +19,10 @@ construction therefore cannot preserve those contracts honestly.
 ## Decision
 
 Replace the commands and public signatures together. Listing retains its current selector and runs
-`lsviosbk --filter "vios_uuids=<uuid>"`. Backup takes managed-system selector, VIOS selector,
-backup name, and an optional `vios`/`viosioconfig`/`ssp` type, then runs
+`lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header`, then parses the explicit
+comma-delimited projection rather than the old command's presumed fixed-width display. Backup
+takes managed-system selector, VIOS selector, backup name, and an optional
+`vios`/`viosioconfig`/`ssp` type, then runs
 `mkviosbk -t <type> -m <system-name> --uuid <vios-uuid> -f <backup-name>`. Restore takes
 managed-system selector, VIOS selector, backup name, a required `viosioconfig`/`ssp` type, and an
 optional restart-if-required flag, then runs
@@ -41,7 +43,8 @@ The three tools issue commands supported by the verified HMC versions and expose
 HMC input. Existing backup and restore callers must update their argument lists. Restore cannot
 accidentally select SSP or VIOS I/O configuration semantics through an unstated default. Full-VIOS
 backup remains available, while full-VIOS restore remains unavailable because it requires a
-different operational workflow. Listing retains its existing result parser and return type.
+different operational workflow. Listing retains `list[dict[str, str]]` but now returns the actual
+`name` and `type` projection documented by its header instead of invented fixed-width headings.
 
 The already-accepted `exhaustive_targets=False` classification on restore remains unchanged: an
 explicit `ssp` restore can affect the cluster beyond the selected VIOS. The restart flag authorizes
@@ -65,5 +68,8 @@ REST representation lacks a complete MTMS fails closed rather than degrading to 
   only `viosioconfig` and `ssp`; full-image restore is a distinct workflow outside issue #289.
 - **Retain an overload or compatibility shim.** judgment: two public contracts for one operation
   would preserve a path that cannot construct a valid HMC command.
+- **Retain the fixed-width list parser.** verified: IBM's `lsviosbk` reference supports an explicit
+  delimiter-separated `-F` projection and `--header`; no evidence establishes that the replacement
+  command emits the old parser's two-or-more-space layout.
 - **Add overwrite and full-backup attribute controls.** judgment: `--force` and `-a` are optional
   `mkviosbk` features not required to repair the broken tools.

@@ -13,7 +13,7 @@ guardrail.
 
 IBM's command references and the issue's live-HMC evidence govern the exact shapes:
 
-- `lsviosbk --filter "vios_uuids=<uuid>"`
+- `lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header`
 - `mkviosbk -t <vios|viosioconfig|ssp> -m <system-name> --uuid <vios-uuid> -f <backup-name>`
 - `rstviosbk -t <viosioconfig|ssp> -m <system-name> --uuid <vios-uuid> -f <backup-name> [-r]`
 
@@ -48,8 +48,13 @@ default and `mkviosbk` supports it. `restart_if_required` maps only to `-r`; fal
 
 ## Resolution and command construction
 
-Listing retains the existing VIOS-name-to-UUID resolution and result parser. Its builder changes to
-the supported command and quotes the complete `vios_uuids=<uuid>` filter value.
+Listing retains the existing VIOS-name-to-UUID resolution. Its builder changes to the supported
+command, quotes the complete `vios_uuids=<uuid>` filter value, and requests the explicit `name,type`
+projection with `--header`. Replace the speculative fixed-width parser with `csv.DictReader` over
+the comma-delimited projection. Empty stdout returns `[]`; otherwise the header must be exactly
+`name,type`, each data row must contain exactly those two nonempty fields, and malformed, duplicate,
+or extra columns raise an actionable `ValueError` rather than silently reporting false inventory.
+The return remains `list[dict[str, str]]` with keys `name` and `type` supplied by the HMC header.
 
 Backup and restore use one async helper that opens the selected profile's REST client and resolves
 the selectors before SSH. A direct system name remains the CLI `-m` value. A system UUID is fetched
