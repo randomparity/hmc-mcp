@@ -208,7 +208,22 @@ def build_filter(pairs: Sequence[tuple[str, object]]) -> str:
     )
 ```
 
-3. Migrate the sites. Whole-expression shapes — replace the inner f-string with a
+3. Validate the mempool bare value (`remove_memory_pool`, :908): before building `cmd`,
+
+```python
+    _validated_value("pool_name", pool_name, surface="-a")
+```
+
+   plus a failing-first unit test:
+
+```python
+def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
+    with pytest.raises(HMCCLIError, match="comma"):
+        asyncio.run(remove_memory_pool(_config(), "sys", "pool,extra=1"))
+```
+
+   (the existing exists/lpar-assignment pre-checks run first and are unaffected).
+4. Migrate the sites. Whole-expression shapes — replace the inner f-string with a
    `build_filter` call, e.g. `read_sriov_lpar_state`:
 
 ```python
@@ -237,11 +252,11 @@ def build_filter(pairs: Sequence[tuple[str, object]]) -> str:
    (The `shlex.quote` output is what the HMC parser actually receives, so it is the text the
    grammar must validate; `shlex.quote` leaves every grammar-clean value untouched.)
 
-4. Run `uv run --no-sync pytest tests/unit -q` and `uv run --no-sync pytest tests/system -q`;
+5. Run `uv run --no-sync pytest tests/unit -q` and `uv run --no-sync pytest tests/system -q`;
    fix any exact-string command pins the migrations touch (expected: tests asserting
    `--filter lpar_names=...` command strings keep passing because clean values render
    identically; any that fail are updated to the builder-produced string in this commit).
-5. Commit: `feat: route ssh_commands filter selections through build_filter`.
+6. Commit: `feat: route ssh_commands filter selections through build_filter`.
 
 **Acceptance**: new filter tests green; `grep -n "filter.*f'" src/hmc_mcp/ssh_commands.py`
 returns no un-migrated interpolation (the guard in Task 5 enforces this structurally);
@@ -344,9 +359,12 @@ returns nothing.
      `A_RECORD_COMMANDS = ("chhwres",)` keying on `-a`.
    - Add `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` with a comment citing the mempool
      bare-value form and ADR 0061; the `-a` per-function check skips that function.
-   - New `--filter` selection: a scanned literal whose static text contains `--filter` must
-     carry a `build_filter` call (or a local name bound from one) in one of its interpolations;
-     reuse the unwrap/trace machinery, including `shlex.quote` unwrapping.
+   - New `--filter` selection with payload location per shape: after the static segment ending
+     in `--filter` (whole-expression sites), or after the static segment matching a trailing
+     ``--filter <name>=`` suffix (value-only sites), the next FormattedValue must trace to
+     `build_filter` or a local bound name, unwrapping `shlex.quote`. The
+     selected-but-nothing-examined tripwire applies, and the synthetic-violation test uses a
+     value-only literal.
    - Both new selections inherit `_docstring_nodes` exclusion and the
      outside-function-literal refusal (extend
      `test_no_record_command_literal_lives_outside_a_function` to `chhwres -a` and
