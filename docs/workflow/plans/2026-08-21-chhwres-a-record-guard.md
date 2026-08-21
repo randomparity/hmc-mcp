@@ -120,8 +120,9 @@ def build_attribute_record(
    Give `build_attribute_record` a `surface: str = "-i record"` parameter and thread it into
    every `HMCCLIError` message it raises itself (empty record, duplicate attribute) and into
    each `_validated_value` call. Task 3 passes `surface="chhwres -a record"` from
-   `add_vnic_backing` so `-a` refusals name their true command surface; every other caller
-   keeps today's wording byte-for-byte via the default.
+   `add_vnic_backing` and Task 2's mempool bare-value validation passes the `-a` value form,
+   so those refusals name their true command surface; every other caller keeps today's wording
+   byte-for-byte via the default.
 
    Change `_validated_value` to:
 
@@ -314,7 +315,8 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
    today; a space-carrying name quotes the whole expression instead of the bare value, with
    identical post-shell argv.
 
-5. Run `uv run --no-sync pytest tests/unit -q` and `uv run --no-sync pytest tests/system -q`;
+5. Run `uv run --no-sync pytest tests/unit tests/network tests/system -q` (tests/network
+   directly covers `list_fc_ports` and `list_sea_adapters`);
    fix any exact-string command pins the migrations touch (expected: tests asserting
    `--filter lpar_names=...` command strings keep passing because clean values render
    identically; any that fail are updated to the builder-produced string in this commit).
@@ -409,8 +411,10 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
         f" --filter {shlex.quote(build_filter([('lpar_names', context.lp3_name)]))} -F lpar_env",
 ```
 
-   Add `import shlex` if absent; extend the existing `hmc_mcp.ssh_commands` import with
-   `build_filter`.
+   Imports, per file: `scripts/live_test_runner.py` — add `import shlex` if absent and extend
+   its existing `hmc_mcp.ssh_commands` import with `build_filter`; `src/hmc_mcp/server_vios.py`
+   — `shlex` is already imported (:9), add a new `from .ssh_commands import build_filter`
+   (no cycle: ssh_commands imports neither server_vios nor anything that reaches it).
 
 3. `uv run --no-sync python -c "import hmc_mcp.server_vios"` and
    `uv run --no-sync python -m py_compile scripts/live_test_runner.py` both succeed.
