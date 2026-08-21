@@ -182,6 +182,13 @@ regardless of firmware age.
 | HMC V10     | POWER8, POWER9, POWER10  | V1_0             |
 | HMC V11     | POWER9, POWER10, POWER11 | V1_0             |
 
+Three VIOS backup catalog tools have a narrower floor:
+`hmc_list_vios_backups`, `hmc_backup_vios`, and `hmc_restore_vios` require
+**HMC V10 or newer**. Their supported HMC commands do not exist in the V9.1.940
+command inventory, so these tools have no runtime version probe or V8/V9
+fallback. Other tools retain the general HMC V8 through V11 support stated
+above.
+
 **`HMC_SCHEMA_VERSION` — leave this unset for normal operation.**
 `hmc-mcp` omits the `X-HMC-Schema-Version` request header from all write
 paths (`PUT`/`POST`) regardless of this setting — some HMC firmware versions
@@ -319,15 +326,17 @@ tools, CLI commands, and the server composition modules outside that API's
 contract for the same reason. If you need a constraint that binds a human at a
 shell, use HMC-side user roles.
 
-It also does not bound a tool that opens no HMC connection at all.
-`hmc_list_configured_hosts` returns every configured profile's name, host, user,
-and default flag, and `hmc_effective_permissions` returns the policy's own
-grants; neither takes a `profile` argument, so neither `connections` nor
-`targets` can narrow either — the dispatch-time check runs only on tools that
-select a connection, and these two select none. A `connections = ["lab"]` read
-grant still discloses the `prod` inventory. Withhold them by name — a grant
-listing `tools` and no `read` effect class — when the configuration or the
-policy is itself sensitive.
+Every MCP tool is dispatch-wrapped.
+For a connectionless tool, the connection dimension is vacuous because the call
+selects no profile to authorize. A grant must still reach the tool by tool or
+effect class, and target authorization still applies. `hmc_list_configured_hosts`
+returns every configured profile's name, host, user, and default flag, while
+`hmc_effective_permissions` returns the policy's own grants. Both are
+non-exhaustive connectionless tools, so a targets table cannot authorize either
+one; they require `targets = "all-targets"`. A `connections = ["lab"]` read grant
+with `all-targets` can therefore still disclose the `prod` inventory. When the
+configuration or policy is sensitive, withhold these tools by name: enumerate
+the permitted `tools` without granting the `read` effect class.
 
 ### Migrating to a required access policy
 
@@ -428,7 +437,7 @@ And the legacy-equivalent policy, which `hmc-mcp config init-access-policy` writ
 tools = [
     "hmc_add_network_adapter",
     "hmc_add_vfc_adapter",
-    # ... 129 names, every ordinary tool. hmc_run_command is not among them.
+    # ... every ordinary tool is named. hmc_run_command is not among them.
 ]
 connections = ["<default>", "lab", "prod"]   # every profile key in config.toml
 targets = "all-targets"
@@ -670,8 +679,11 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
 > lookup over SSH when the REST API is unreachable. Resolution happens before
 > the command runs, so a UUID that cannot be resolved surfaces as an error
-> rather than being passed through to the CLI. The opt-in `hmc_run_command`
-> tool is the exception — it runs whatever command you give it verbatim.
+> rather than being passed through to the CLI. VIOS backup and restore are an
+> exception: a direct system name plus VIOS UUID is SSH-ready, but a system UUID
+> requires REST to resolve its unique MTMS identity and has no `lssyscfg`
+> fallback. Separately, the opt-in `hmc_run_command` tool runs whatever command
+> you give it verbatim without selector resolution.
 > See [docs/hmc-cli-cheatsheet.md](docs/hmc-cli-cheatsheet.md) for a concise
 > reference to all HMC CLI commands used by this project.
 
@@ -685,6 +697,13 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_list_vios_backups` | List existing VIOS backups (SSH/CLI) |
 | `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
 | `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
+
+`hmc_backup_vios` and `hmc_restore_vios` retain required managed-system and VIOS
+selector metadata for authorization diagnostics and audit. Because their `ssp`
+mode can affect the wider cluster, both tools are non-exhaustive and require
+`targets = "all-targets"`. Prefer a grant that explicitly names only the needed
+tool. An effect-class grant with `all-targets` can reach either tool; a targets
+table cannot authorize either one even when it contains both selector kinds.
 
 **SR-IOV / vNIC & physical I/O (SSH/CLI)**
 

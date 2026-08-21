@@ -55,6 +55,7 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
 
 
 # ------------------------------------------------------------------ #
@@ -276,6 +277,44 @@ def test_closed_vocab_enum_matches_runtime_constant():
     for (tool_name, parameter_name), values in expected_enums.items():
         parameter = by_name[tool_name].parameters["properties"][parameter_name]
         assert set(parameter["enum"]) == set(values)
+
+
+def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
+    """The public schemas expose every HMC input required by the replacement CLIs."""
+    by_name = _tools_by_name()
+
+    backup = by_name["hmc_backup_vios"].parameters
+    assert set(backup["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "profile",
+    }
+    assert set(backup["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+    }
+    assert backup["properties"]["backup_type"]["default"] == "vios"
+
+    restore = by_name["hmc_restore_vios"].parameters
+    assert set(restore["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "restart_if_required",
+        "profile",
+    }
+    assert set(restore["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+    }
+    assert restore["properties"]["backup_type"]["enum"] == ["viosioconfig", "ssp"]
+    assert restore["properties"]["restart_if_required"]["default"] is False
 
 
 def test_parameter_normalization_contract_is_schema_pinned():

@@ -34,6 +34,12 @@ _PRISTINE_FASTMCP = (
 )
 
 
+@pytest.fixture(autouse=True)
+def enable_tls_verification_for_tests(monkeypatch):
+    """Keep mocked HMC connections secure unless a test opts out explicitly."""
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+
+
 def _restore_fastmcp_logger() -> None:
     handlers, level, propagate = _PRISTINE_FASTMCP
     _FASTMCP_LOGGER.handlers[:] = handlers
@@ -250,7 +256,7 @@ def make_config(**kw) -> HMCConfig:
         "host": "hmc.test",
         "user": "hscroot",
         "password": "abc123",
-        "verify_ssl": False,
+        "verify_ssl": True,
         "_env_file": None,  # suppress .env loading so live creds/schema don't bleed in
     }
     defaults.update(kw)

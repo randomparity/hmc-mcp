@@ -561,8 +561,16 @@ def test_the_documented_migration_works_end_to_end(tmp_path):
         server.stdin.flush()
         line = server.stdout.readline()
     finally:
-        server.kill()
-        server.wait(timeout=30)
+        try:
+            if server.stdin is not None and not server.stdin.closed:
+                server.stdin.close()
+            if server.poll() is None:
+                server.kill()
+            server.wait(timeout=30)
+        finally:
+            for stream in (server.stdout, server.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
 
     assert line, "the server produced no initialize reply"
     reply = json.loads(line)

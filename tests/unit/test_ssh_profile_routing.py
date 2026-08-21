@@ -12,6 +12,7 @@ These tests verify that:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -58,6 +59,18 @@ def _set_env(monkeypatch, host: str, user: str, password: str) -> None:
     monkeypatch.setenv("HMC_HOST", host)
     monkeypatch.setenv("HMC_USER", user)
     monkeypatch.setenv("HMC_PASSWORD", password)
+
+
+def _vios_client_factory():
+    hmc = AsyncMock()
+    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
+
+    @asynccontextmanager
+    async def factory(_profile):
+        yield hmc
+
+    return factory
 
 
 # ---------------------------------------------------------------------------
@@ -261,12 +274,19 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
     """hmc_restore_vios with profile routes SSH to the profile's HMC host."""
     from hmc_mcp.server import hmc_restore_vios
 
+    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
     with patch(
         "hmc_mcp.server_vios.build_config", return_value=DEV_CONFIG
     ) as mock_config:
         conn = _make_ssh_mock("")
         with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn) as mock_connect:
-            hmc_restore_vios(SYSTEM_UUID, "backup.tar.gz", profile="dev")
+            hmc_restore_vios(
+                SYSTEM_NAME,
+                SYSTEM_UUID,
+                "backup.tar.gz",
+                backup_type="ssp",
+                profile="dev",
+            )
 
     mock_config.assert_called_once_with(profile="dev")
     assert mock_connect.call_args.kwargs["host"] == DEV_HOST

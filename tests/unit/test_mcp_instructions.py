@@ -31,8 +31,12 @@ _WORKFLOWS_HEADING = "## Recommended workflows"
 _EXPECTED_CONVENTIONS = """## Resource addressing and asynchronous jobs
 
 Parameters ending in `*_name_or_uuid` accept either a resource name or UUID. Parameters
-ending in `*_uuid` require a UUID. SSH-passthrough tools resolve UUIDs to HMC CLI names
-before running the command.
+ending in `*_uuid` require a UUID. SSH-passthrough tools usually resolve UUIDs to HMC CLI
+names before running the command. VIOS backup catalog tools are exceptions:
+`hmc_list_vios_backups` passes a VIOS UUID directly. `hmc_backup_vios` and
+`hmc_restore_vios` are SSH-ready with a direct system name plus VIOS UUID; a VIOS name or
+system UUID requires REST. A system UUID resolves to its unique MTMS identity, never an HMC
+CLI name, with no `lssyscfg` fallback.
 
 For tools that expose asynchronous wait controls, `wait=False` is the default and returns
 the submitted job for later polling; `wait=True` polls until the job reaches a terminal

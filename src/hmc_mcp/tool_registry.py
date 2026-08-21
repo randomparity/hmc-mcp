@@ -92,10 +92,10 @@ REQUIRED_TARGET_ARGUMENTS: Mapping[str, TargetKind] = MappingProxyType({
 # exactly as for `bkprofdata -f` — and not because the file sits on the HMC.
 #
 # `backup_name` on `hmc_restore_vios` is the HMC-side name that made that
-# explicit and is deliberately *not* a member: `chviosbackup -id` selects the
-# catalog `-file` resolves in, so a bare name is reached through containment from
-# a declared selector. That holds only while the value cannot leave the catalog,
-# which `server_vios._validate_backup_name` is what enforces. ADR 0044 records the
+# explicit and is deliberately *not* a member: the selected VIOS backup catalog
+# contains the name, so it is reached through containment from a declared
+# selector. That holds only while the value cannot leave the catalog, which
+# `server_vios._validate_backup_name` is what enforces. ADR 0044 records the
 # decision and the two questions it leaves open (#282, #283).
 #
 # This is not the complement of REQUIRED_TARGET_ARGUMENTS: `vios_partition_id`

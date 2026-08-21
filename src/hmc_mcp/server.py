@@ -27,8 +27,12 @@ Authentication:
 Addressing:
     Public tools generally accept a resource name or UUID where their parameter
     is named ``*_name_or_uuid``. Parameters explicitly named ``*_uuid`` require
-    a UUID. SSH-passthrough tools resolve UUIDs to CLI names before running the
-    HMC command.
+    a UUID. Most SSH-passthrough tools resolve UUIDs to CLI names before running
+    the HMC command. VIOS backup catalog tools are different: listing uses a VIOS
+    UUID directly, while backup and restore pass a direct system name and VIOS
+    UUID through without REST. A VIOS name or backup/restore system UUID requires
+    REST resolution and has no ``lssyscfg`` fallback; a system UUID resolves to
+    its unique MTMS identity rather than its CLI name.
 
 This module is a thin aggregator: the tool handlers live in domain
 submodules (``server_lpars``, ``server_storage``, ...). ``create_mcp``

@@ -198,7 +198,7 @@ def _self_signed_cert(tmp_path: Path) -> tuple[str, str]:
 
 @pytest.fixture
 def mock_hmc(tmp_path):
-    """A threaded HTTPS mock HMC on an ephemeral port; yields the server."""
+    """A threaded HTTPS mock HMC and its trusted certificate path."""
     certfile, keyfile = _self_signed_cert(tmp_path)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
@@ -208,25 +208,27 @@ def mock_hmc(tmp_path):
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        yield httpd
+        yield httpd, certfile
     finally:
         httpd.shutdown()
         httpd.server_close()
 
 
-def _env(port: int) -> dict[str, str]:
+def _env(port: int, certificate_path: str) -> dict[str, str]:
     return {
         "HMC_HOST": "127.0.0.1",
         "HMC_PORT": str(port),
         "HMC_USER": "hscroot",
         "HMC_PASSWORD": "abc123",  # fake credential for the mock HMC
-        "HMC_VERIFY_SSL": "false",
+        "HMC_VERIFY_SSL": "true",
+        "SSL_CERT_FILE": certificate_path,
     }
 
 
 def test_systems_list_e2e(mock_hmc):
+    server, certificate_path = mock_hmc
     result = RUNNER.invoke(
-        cli.app, ["systems", "list"], env=_env(mock_hmc.server_address[1])
+        cli.app, ["systems", "list"], env=_env(server.server_address[1], certificate_path)
     )
 
     assert result.exit_code == 0
@@ -237,8 +239,9 @@ def test_systems_list_e2e(mock_hmc):
 
 
 def test_lpars_list_e2e(mock_hmc):
+    server, certificate_path = mock_hmc
     result = RUNNER.invoke(
-        cli.app, ["lpars", "list"], env=_env(mock_hmc.server_address[1])
+        cli.app, ["lpars", "list"], env=_env(server.server_address[1], certificate_path)
     )
 
     assert result.exit_code == 0
@@ -248,10 +251,11 @@ def test_lpars_list_e2e(mock_hmc):
 
 
 def test_lpars_list_json_e2e(mock_hmc):
+    server, certificate_path = mock_hmc
     result = RUNNER.invoke(
         cli.app,
         ["lpars", "list", "--json"],
-        env=_env(mock_hmc.server_address[1]),
+        env=_env(server.server_address[1], certificate_path),
     )
 
     assert result.exit_code == 0
@@ -260,18 +264,19 @@ def test_lpars_list_json_e2e(mock_hmc):
 
 
 def test_lpar_power_on_e2e(mock_hmc):
+    server, certificate_path = mock_hmc
     lpar_uuid = "11111111-1111-1111-1111-111111111111"
     result = RUNNER.invoke(
         cli.app,
         ["lpars", "power-on", lpar_uuid, "--force", "--yes"],
-        env=_env(mock_hmc.server_address[1]),
+        env=_env(server.server_address[1], certificate_path),
     )
 
     assert result.exit_code == 0
     assert lpar_uuid in result.stdout
     power_on_request = next(
         request
-        for request in mock_hmc.request_log
+        for request in server.request_log
         if request["path"].endswith("/do/PowerOn")
     )
     assert power_on_request["path"] == (

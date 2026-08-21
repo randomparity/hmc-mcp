@@ -170,7 +170,11 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
         ),
         pytest.param(
             "hmc_backup_vios",
-            {"vios_name_or_uuid": "vios-1"},
+            {
+                "system_name_or_uuid": "sys-1",
+                "vios_name_or_uuid": "vios-1",
+                "backup_name": "backup",
+            },
             id="ssh-passthrough",
         ),
     ],

@@ -11,11 +11,14 @@ or run `<command> --help` on the HMC itself.
 > asyncssh; there is no persistent shell session.  `hmc_run_command` exposes
 > this transport directly to callers.
 
-> **CLI-name vs UUID resolution** — the HMC CLI accepts *CLI names*
-> (`-m <system>`, `-p <partition>`), not REST UUIDs.  hmc-mcp resolves REST
-> UUIDs to CLI names before issuing any SSH command: it tries the REST API
-> first and falls back to `lssyscfg -r sys/lpar -F uuid,name` over SSH when
-> the REST API is unreachable.
+> **CLI-name vs UUID resolution** — most HMC CLI options such as `-m <system>`
+> and `-p <partition>` require CLI names rather than REST UUIDs. For those
+> options, hmc-mcp tries REST resolution first and can fall back to
+> `lssyscfg -r sys/lpar -F uuid,name` over SSH. VIOS backup catalog commands are
+> exceptions: listing passes a VIOS UUID directly, while backup and restore pass
+> a direct system name plus VIOS UUID directly. A VIOS name or a backup/restore
+> system UUID requires REST and has no `lssyscfg` fallback; the system UUID
+> resolves to its unique MTMS identity rather than a CLI name.
 
 > **UUID field name** — the correct lower-case field name is `uuid` on both
 > HMC V10 and V11.  `UUID` (upper-case) is rejected with *invalid attribute*.
@@ -241,22 +244,17 @@ lslparmigr -r sriov -m <source>
 ### `lsviosbk` — list VIOS backups on the HMC
 
 ```
-# list all VIOS backups on the HMC
-lsviosbk
-
-# filter to one VIOS by UUID
-lsviosbk --filter "vios_uuids=<uuid>"
-
-# filter to one managed system
-lsviosbk --filter "sys_names=<system>"
+# list one VIOS's backup catalog as explicit CSV
+lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header
 ```
 
-**Note:** the correct command name is `lsviosbk` (not `lsviosbackup`).
-`lsviosbackup` does not exist on HMC V10 or V11.  The current production code
-in `server_vios.py` incorrectly calls `lsviosbackup -id <uuid>` and
-`chviosbackup`; those commands will fail at runtime.
+**Repository use:** `hmc_list_vios_backups` resolves its VIOS selector to a UUID,
+runs this command, and returns the catalog's `name` and `type` fields.
 
-**Repository use:** `hmc_list_vios_backups` (`server_vios.py`).
+**Version floor:** `hmc_list_vios_backups`, `hmc_backup_vios`, and
+`hmc_restore_vios` require HMC V10 or newer. No runtime probe or unverified V8/V9
+fallback is provided; other tools retain the project's general HMC V8–V11
+support.
 
 ---
 
@@ -441,31 +439,66 @@ merge-current-wins, `4` initialize (no `-f` needed).
 ### `mkviosbk` — create a VIOS backup
 
 ```
-mkviosbk -t viosioconfig -m <system> -p <vios-name> -f <backup-file>
-mkviosbk -t vios         -m <system> -p <vios-name> -f <backup-file>
-mkviosbk -t ssp          -m <system> -p <vios-name> -f <backup-file>
-# or by UUID:
 mkviosbk -t viosioconfig -m <system> --uuid <vios-uuid> -f <backup-file>
+mkviosbk -t vios         -m <system> --uuid <vios-uuid> -f <backup-file>
+mkviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file>
 ```
 
 **`-t`** backup type: `viosioconfig` (I/O config), `vios` (full VIOS),
 `ssp` (Shared Storage Pool).  The backup file is stored on the HMC.
 
-**Note:** `server_vios.py` currently calls the non-existent `chviosbackup`
-instead of this command.  Until that is corrected, `hmc_backup_vios` will
-fail at runtime.
+**Repository use:** `hmc_backup_vios` resolves its VIOS selector to a UUID and
+uses this command with the requested backup type.
+
+```python
+hmc_backup_vios(
+    "server-name",
+    "00000000-0000-0000-0000-000000000003",
+    backup_name="nightly-vios",
+    backup_type="vios",
+)
+```
+
+`backup_name` is keyword-only. A direct system name plus VIOS UUID is SSH-ready;
+a system UUID requires REST to resolve its unique MTMS identity and has no
+`lssyscfg` fallback.
+
+The required managed-system and VIOS selectors remain authorization and audit
+metadata, but an `ssp` backup can cover the cluster and associated nodes beyond
+them. The tool is therefore non-exhaustive: only `targets = "all-targets"` can
+authorize it. Prefer an explicit `tools = ["hmc_backup_vios"]` grant for least
+privilege. An effect-wide mutate grant with `all-targets` also reaches it, while
+a targets table cannot authorize it even when both selector kinds are present.
 
 ---
 
 ### `rstviosbk` — restore a VIOS backup
 
 ```
-rstviosbk -t viosioconfig -m <system> -p <vios-name> -f <backup-file>
+rstviosbk -t viosioconfig -m <system> --uuid <vios-uuid> -f <backup-file>
 rstviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file> -r
 ```
 
 **`-r`** restarts the VIOS if required after restore.  Only `viosioconfig` and
 `ssp` types are restorable; a full `vios` restore requires NIM/reinstall.
+
+**Repository use:** `hmc_restore_vios` resolves its VIOS selector to a UUID and
+uses this command; `-r` is included only when `restart_if_required` is true.
+
+```python
+hmc_restore_vios(
+    "server-name",
+    "00000000-0000-0000-0000-000000000003",
+    "nightly-vios",
+    backup_type="viosioconfig",
+    restart_if_required=True,
+)
+```
+
+`backup_type` is required and keyword-only. Restore uses the same selector-routing
+rules as backup: only a direct system name plus VIOS UUID bypasses REST. Restore
+is likewise non-exhaustive because `ssp` can affect the wider cluster, so it also
+requires an `all-targets` grant; prefer naming `hmc_restore_vios` explicitly.
 
 ---
 
