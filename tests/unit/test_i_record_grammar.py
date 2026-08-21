@@ -425,45 +425,6 @@ BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
 
 
-def _static_text(node: ast.AST) -> str:
-    """Return the literal text of a string constant or f-string, or ``""``.
-
-    For an f-string only the static segments are returned; interpolations
-    contribute nothing, which is what a flag search wants.
-    """
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.JoinedStr):
-        return "".join(
-            part.value
-            for part in node.values
-            if isinstance(part, ast.Constant) and isinstance(part.value, str)
-        )
-    return ""
-
-
-def _docstring_nodes(tree: ast.AST) -> set[int]:
-    """Return the ``id()`` of every docstring constant in *tree*.
-
-    A docstring quotes the command it documents, so it names ``chsyscfg`` and
-    ``-i`` without building anything.  Module, class, and function docstrings
-    are all excluded.
-    """
-    ids: set[int] = set()
-    for node in ast.walk(tree):
-        body = getattr(node, "body", None)
-        if not isinstance(body, list) or not body:
-            continue
-        first = body[0]
-        if (
-            isinstance(first, ast.Expr)
-            and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)
-        ):
-            ids.add(id(first.value))
-    return ids
-
-
 RECORD_COMMANDS = ("chsyscfg", "mksyscfg")
 A_RECORD_COMMANDS = ("chhwres",)
 
@@ -514,20 +475,35 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _ends_with_flag_token(segment: str, flag: str) -> bool:
+    """True when *segment* ends with *flag* as a standalone token.
+
+    The flag must be preceded by whitespace inside the segment: a bare
+    ``"-i"`` diagnostic label is data, not a command fragment, while every
+    real site renders the flag mid-command with a space before it.
+    """
+    stripped = segment.rstrip()
+    return (
+        stripped.endswith(flag)
+        and len(stripped) > len(flag)
+        and stripped[-len(flag) - 1].isspace()
+    )
+
+
 def _has_flag_ending_segment(node: ast.AST, flag: str) -> bool:
-    """True when any static segment of *node* ends with *flag*.
+    """True when any static segment of *node* ends with a *flag* token.
 
     Segments, not the concatenation: a command may carry text after the
     flag's payload (``… --filter {…} -F … --header``), and only the segment
     boundary says where the payload starts.
     """
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value.rstrip().endswith(flag)
+        return _ends_with_flag_token(node.value, flag)
     if isinstance(node, ast.JoinedStr):
         return any(
             isinstance(part, ast.Constant)
             and isinstance(part.value, str)
-            and part.value.rstrip().endswith(flag)
+            and _ends_with_flag_token(part.value, flag)
             for part in node.values
         )
     return False
@@ -541,14 +517,16 @@ def _is_record_literal(node: ast.AST, commands: tuple[str, ...], flag: str) -> b
     function and then examine nothing — which passes, silently, exactly where
     the check matters most.
 
-    The literal has to *open* with the command, which is what a command string
-    does and what prose about a command does not.  Interpolations contribute no
-    static text, so ``f"{host_prefix}chsyscfg …"`` still opens with it.
+    ADR 0045 originally also required the literal to *open* with the command
+    name.  That let the appended-fragment idiom — ``cmd += f" -a {…}"``, the
+    shape this very branch uses for its ``--filter`` sites — evade the scan,
+    so the opening rule is gone: any literal whose static segment ends with
+    the flag is selected, and prose that trips it fails closed exactly like
+    an unguarded site (the docstring exclusion absorbs documented commands).
+    *commands* is retained for the known-site pins, which still verify the
+    found functions are the record builders.
     """
     if not isinstance(node, ast.Constant | ast.JoinedStr):
-        return False
-    text = _static_text(node).lstrip()
-    if not text.startswith(commands):
         return False
     return _has_flag_ending_segment(node, flag)
 
