@@ -51,8 +51,9 @@ the two legs to different HMCs.
 
 Keep the new managed-system selector and VIOS selector as required authorization metadata on
 `hmc_backup_vios`. Because backup is non-exhaustive, the existing policy model authorizes it only
-through a named `targets = "all-targets"` grant; a targets table cannot authorize the tool even if
-it contains both selector kinds. Restore keeps its previously accepted non-exhaustive target
+through `targets = "all-targets"`; the grant may reach it by explicit tool name or effect class. A
+targets table cannot authorize the tool even if it contains both selector kinds. Restore keeps its
+previously accepted non-exhaustive target
 classification and the same all-targets rule.
 
 Backup is also non-exhaustive. An `ssp` backup covers the cluster and associated nodes beyond the
@@ -74,9 +75,11 @@ the HMC to restart the VIOS only after a failed restore attempt, matching `rstvi
 Using MTMS for a UUID selector preserves uniqueness when user-defined names collide; a UUID whose
 REST representation lacks a complete MTMS fails closed rather than degrading to a name.
 Because backup is non-exhaustive, policy migration is required: VIOS-only and combined narrow
-target tables cannot authorize it. Operators must use a named `targets = "all-targets"` grant.
-Both selectors remain required call inputs and extracted metadata for authorization diagnostics and
-audit, but they are not independently matchable grants.
+target tables cannot authorize it. Operators should use an explicitly named
+`targets = "all-targets"` grant for least privilege; a broader effect/all-targets grant also reaches
+the operation under the existing policy model. Both selectors remain required call inputs and
+extracted metadata for authorization diagnostics and audit, but they are not independently
+matchable grants.
 
 ## Considered & rejected
 

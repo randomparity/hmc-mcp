@@ -69,7 +69,8 @@ Later implementation must satisfy exact supported command strings and preserve
    MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system. Cover
    every missing and blank nested `MachineType`, `Model`, and `SerialNumber` case. Pin dispatch
    authorization so backup exposes both required selectors from `REQUIRED_TARGET_ARGUMENTS`; do
-   not add redundant `extra_targets`. Prove a named grant with `targets = "all-targets"` permits,
+   not add redundant `extra_targets`. Prove explicit-tool and effect-class grants with
+   `targets = "all-targets"` permit,
    while a target table (including one containing both selector kinds) is rejected with all-targets
    guidance and an effect/table grant denies before its handler opens REST or SSH.
    Prove a direct system name plus VIOS UUID constructs no REST client. For a REST-assisted call,
@@ -157,8 +158,9 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
    adapter for the old positional form.
 2. Update the cheatsheet repository-use notes to describe the now-supported implementation. Keep
    its command examples aligned with ADR 0060. Document that backup is non-exhaustive and therefore
-   requires a named `targets = "all-targets"` grant; VIOS-only and combined narrow tables cannot
-   authorize it.
+   requires `targets = "all-targets"`; recommend an explicitly named grant for least privilege,
+   note that an effect/all-targets grant also reaches it, and explain that VIOS-only and combined
+   narrow tables cannot authorize it.
    Show named Python calls for backup `backup_name` and restore `backup_type` so the keyword-only
    boundary is explicit. Qualify README's generic SSH fallback note: VIOS backup/restore can bypass
    REST only with a direct system name and VIOS UUID; a system UUID requires REST MTMS resolution

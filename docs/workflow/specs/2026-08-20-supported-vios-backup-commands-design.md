@@ -124,8 +124,9 @@ and its REST identity data are trusted peers; credentials are trusted configurat
 - Existing tool metadata and dispatch authorization govern targets. Backup exposes required
   `managed_system` and `vios` selectors for extraction, diagnostics, and audit. Backup and restore
   are both non-exhaustive because `ssp` can affect a cluster beyond those selectors, so the current
-  policy model authorizes either tool only through a named `targets = "all-targets"` grant; target
-  tables cannot authorize them.
+  policy model authorizes either tool only through `targets = "all-targets"`; the grant may reach
+  an operation by explicit tool name or effect class. Target tables cannot authorize them. Current
+  operator guidance recommends explicit tool names for least privilege.
 - Errors may disclose public selectors and HMC diagnostics but never credentials.
 
 No authorization-model change beyond backup's approved non-exhaustive classification is claimed.
