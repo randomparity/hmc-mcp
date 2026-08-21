@@ -255,6 +255,8 @@ async def test_delete_media_repository_refusal_is_repr_quoted(mock_hmc):
             await delete_media_repository(hmc, VIOS_UUID, VG_UUID)
 
     message = str(exc_info.value)
+    hostile_names = "evil\nimage\t.iso"
+    assert repr(hostile_names) in message
     assert not any(
         ord(ch) < 0x20 or ord(ch) == 0x7F or ch in "\u2028\u2029" for ch in message
     )

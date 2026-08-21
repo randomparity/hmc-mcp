@@ -204,7 +204,7 @@ async def delete_optical_media(
             name = storage.get("MediaName", "")
             if name == media_name:
                 lpar = mapping.get("AssociatedLogicalPartition", {})
-                lpar_id = lpar.get("@href", lpar.get("PartitionName", "unknown"))
+                lpar_id = lpar.get("href", lpar.get("PartitionName", "unknown"))
                 blockers.append(str(lpar_id))
 
     if blockers:
