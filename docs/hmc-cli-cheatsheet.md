@@ -241,22 +241,12 @@ lslparmigr -r sriov -m <source>
 ### `lsviosbk` — list VIOS backups on the HMC
 
 ```
-# list all VIOS backups on the HMC
-lsviosbk
-
-# filter to one VIOS by UUID
-lsviosbk --filter "vios_uuids=<uuid>"
-
-# filter to one managed system
-lsviosbk --filter "sys_names=<system>"
+# list one VIOS's backup catalog as explicit CSV
+lsviosbk --filter "vios_uuids=<uuid>" -F name,type --header
 ```
 
-**Note:** the correct command name is `lsviosbk` (not `lsviosbackup`).
-`lsviosbackup` does not exist on HMC V10 or V11.  The current production code
-in `server_vios.py` incorrectly calls `lsviosbackup -id <uuid>` and
-`chviosbackup`; those commands will fail at runtime.
-
-**Repository use:** `hmc_list_vios_backups` (`server_vios.py`).
+**Repository use:** `hmc_list_vios_backups` resolves its VIOS selector to a UUID,
+runs this command, and returns the catalog's `name` and `type` fields.
 
 ---
 
@@ -441,31 +431,31 @@ merge-current-wins, `4` initialize (no `-f` needed).
 ### `mkviosbk` — create a VIOS backup
 
 ```
-mkviosbk -t viosioconfig -m <system> -p <vios-name> -f <backup-file>
-mkviosbk -t vios         -m <system> -p <vios-name> -f <backup-file>
-mkviosbk -t ssp          -m <system> -p <vios-name> -f <backup-file>
-# or by UUID:
 mkviosbk -t viosioconfig -m <system> --uuid <vios-uuid> -f <backup-file>
+mkviosbk -t vios         -m <system> --uuid <vios-uuid> -f <backup-file>
+mkviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file>
 ```
 
 **`-t`** backup type: `viosioconfig` (I/O config), `vios` (full VIOS),
 `ssp` (Shared Storage Pool).  The backup file is stored on the HMC.
 
-**Note:** `server_vios.py` currently calls the non-existent `chviosbackup`
-instead of this command.  Until that is corrected, `hmc_backup_vios` will
-fail at runtime.
+**Repository use:** `hmc_backup_vios` resolves its VIOS selector to a UUID and
+uses this command with the requested backup type.
 
 ---
 
 ### `rstviosbk` — restore a VIOS backup
 
 ```
-rstviosbk -t viosioconfig -m <system> -p <vios-name> -f <backup-file>
+rstviosbk -t viosioconfig -m <system> --uuid <vios-uuid> -f <backup-file>
 rstviosbk -t ssp          -m <system> --uuid <vios-uuid> -f <backup-file> -r
 ```
 
 **`-r`** restarts the VIOS if required after restore.  Only `viosioconfig` and
 `ssp` types are restorable; a full `vios` restore requires NIM/reinstall.
+
+**Repository use:** `hmc_restore_vios` resolves its VIOS selector to a UUID and
+uses this command; `-r` is included only when `restart_if_required` is true.
 
 ---
 
