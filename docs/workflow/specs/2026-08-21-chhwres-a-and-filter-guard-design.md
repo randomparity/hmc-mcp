@@ -102,8 +102,9 @@ bound from one, or either wrapped in `shlex.quote` — nothing else.
 
 - `RECORD_COMMANDS` selection widened: literals opening with `chsyscfg`/`mksyscfg` keyed on
   `-i` (unchanged), literals opening with `chhwres` keyed on `-a`.
-- New selection, stated as a predicate: any Constant/JoinedStr literal whose static text
-  contains a ``--filter <name>=`` segment is selected, regardless of what opens it — the
+- New selection, stated as a predicate: any Constant/JoinedStr literal selected when a static
+  segment ends with `--filter` (whole-expression sites, where `<name>=` lives inside the nested
+  builder argument) **or** carries a ``--filter <name>=`` suffix (the value-only fragments) — the
   value-only sites are `cmd += f" --filter ..."` fragments that open with no command name, so
   an opening-with rule would silently miss them. The tradeoff is deliberate: a prose string
   spelling `--filter name=value` will be selected and must either drop that flag spelling or

@@ -117,6 +117,12 @@ def build_attribute_record(
     return ",".join(parts)
 ```
 
+   Give `build_attribute_record` a `surface: str = "-i record"` parameter and thread it into
+   every `HMCCLIError` message it raises itself (empty record, duplicate attribute) and into
+   each `_validated_value` call. Task 3 passes `surface="chhwres -a record"` from
+   `add_vnic_backing` so `-a` refusals name their true command surface; every other caller
+   keeps today's wording byte-for-byte via the default.
+
    Change `_validated_value` to:
 
 ```python
@@ -208,10 +214,12 @@ def build_filter(pairs: Sequence[tuple[str, object]]) -> str:
     )
 ```
 
-3. Validate the mempool bare value (`remove_memory_pool`, :908): before building `cmd`,
+3. Validate the mempool bare value at the **top** of `remove_memory_pool`, before the
+   `list_memory_pools` call (:884) — otherwise a delimiter-carrying pool name matches no real
+   pool and dies in the not-found branch before validation runs:
 
 ```python
-    _validated_value("pool_name", pool_name, surface="-a")
+    _validated_value("pool_name", pool_name, surface="chhwres -a value")
 ```
 
    plus a failing-first unit test:
@@ -222,7 +230,8 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
         asyncio.run(remove_memory_pool(_config(), "sys", "pool,extra=1"))
 ```
 
-   (the existing exists/lpar-assignment pre-checks run first and are unaffected).
+   The exists/lpar-assignment pre-checks run after validation; a bad name fails without an HMC
+   round trip.
 4. Migrate the sites. Whole-expression shapes — replace the inner f-string with a
    `build_filter` call, e.g. `read_sriov_lpar_state`:
 
@@ -249,8 +258,11 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
         cmd += f" --filter lpar_names={build_filter([('lpar_names', shlex.quote(lpar_name))])}"
 ```
 
-   (The `shlex.quote` output is what the HMC parser actually receives, so it is the text the
-   grammar must validate; `shlex.quote` leaves every grammar-clean value untouched.)
+   (Validation runs on the `shlex.quote` output as a conservative stand-in for the raw value:
+   the remote shell strips quotes before the HMC parses the argument, and `shlex.quote`
+   preserves every original character while adding only quoting metacharacters, so a delimiter
+   check on the quoted text accepts nothing the raw-value check would reject. Single-quote /
+   backslash interaction stays under ADR 0045's open backslash residual.)
 
 5. Run `uv run --no-sync pytest tests/unit -q` and `uv run --no-sync pytest tests/system -q`;
    fix any exact-string command pins the migrations touch (expected: tests asserting
@@ -272,12 +284,19 @@ existing command-shape tests green.
 @pytest.mark.asyncio
 async def test_add_vnic_backing_quotes_a_multi_device_list():
     """A comma-carrying device list renders as the IBM quoted pair."""
-    ...
-    result = await add_vnic_backing(
+    sent = []
+
+    async def fake_run(config, command):
+        sent.append(command)
+        return ""
+
+    ...monkeypatch hmc_mcp.ssh_commands.run_hmc_command to fake_run...
+    await add_vnic_backing(
         config, "system-a", "client-a", "sriov/vios1/1/0/2,sriov/vios2/2/0/2", 7
     )
-    ...
-    assert "-a", 'port_vlan_id=7,"backing_devices=sriov/vios1/1/0/2,sriov/vios2/2/0/2"' in sent
+    # Every assertion here must be capable of failing.
+    assert len(sent) == 1
+    assert "-a 'port_vlan_id=7,\"backing_devices=sriov/vios1/1/0/2,sriov/vios2/2/0/2\"'" in sent[0]
 
 
 @pytest.mark.asyncio
@@ -296,6 +315,7 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
     payload = build_attribute_record(
         [("port_vlan_id", port_vlan_id), ("backing_devices", backing_device)],
         quoted=("backing_devices",),
+        surface="chhwres -a record",
     )
 ```
 
@@ -359,19 +379,27 @@ returns nothing.
      `A_RECORD_COMMANDS = ("chhwres",)` keying on `-a`.
    - Add `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` with a comment citing the mempool
      bare-value form and ADR 0061; the `-a` per-function check skips that function.
-   - New `--filter` selection with payload location per shape: after the static segment ending
-     in `--filter` (whole-expression sites), or after the static segment matching a trailing
-     ``--filter <name>=`` suffix (value-only sites), the next FormattedValue must trace to
-     `build_filter` or a local bound name, unwrapping `shlex.quote`. The
-     selected-but-nothing-examined tripwire applies, and the synthetic-violation test uses a
-     value-only literal.
+   - New `--filter` selection, stated as a predicate: any Constant/JoinedStr literal selected
+     when a static segment ends with `--filter` (whole-expression sites — the `<name>=` lives
+     in the nested build_filter argument, not the outer text) **or** carries a trailing
+     ``--filter <name>=`` suffix (value-only fragments). Payload location per shape: after that
+     segment, the next FormattedValue must trace to `build_filter` or a local bound name,
+     unwrapping `shlex.quote`. The selected-but-nothing-examined tripwire applies, and the
+     synthetic-violation test uses a value-only literal.
+   - Known-site enumeration for the filter selection — 17 enclosing functions:
+     `list_sriov_roce_port_rows`, `list_sriov_configured_logical_port_rows`,
+     `read_sriov_lpar_state`, `read_sriov_profile_ports`, `list_fc_ports`, `list_sea_adapters`,
+     `list_vnics`, `list_vnic_rows`, `read_vios_identity`, and the description, msp,
+     `lpar_env`, and proc-compat probe functions (13 in ssh_commands.py);
+     `hmc_list_vios_backings_command` in server_vios.py :390; and the three live_test_runner
+     functions at :407/:1159/:1892.
    - Both new selections inherit `_docstring_nodes` exclusion and the
      outside-function-literal refusal (extend
      `test_no_record_command_literal_lives_outside_a_function` to `chhwres -a` and
      `--filter` literals).
    - Extend `test_the_scan_finds_every_known_record_site` to pin: the `-a` functions
      (`assign_sriov_logical_port_dynamic`, `add_vnic_backing`, `remove_memory_pool`) and the
-     full filter-site function set from Tasks 2 and 4 (16 functions).
+     filter set above — asserting **set equality**, so an extra unknown site also surfaces.
    - Add a guard test asserting the four prose docstrings (`:711`, `:924`, `:979`, `:1074`
      content) are not selected.
 2. Run `uv run --no-sync pytest tests/unit/test_i_record_grammar.py -q` — green against the
