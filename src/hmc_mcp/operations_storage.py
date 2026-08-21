@@ -86,13 +86,14 @@ async def delete_virtual_disk(
     for mapping in mappings:
         backing_storage = mapping.get("Storage", {}).get("VirtualDisk", {})
         if isinstance(backing_storage, dict):
-            storage_link = backing_storage.get("@href", "")
+            storage_link = backing_storage.get("href", "")
             if disk_link in storage_link or storage_link.endswith(f"VirtualDisk/{disk_name}"):
                 lpar = mapping.get("AssociatedLogicalPartition", {})
-                lpar_name = lpar.get("PartitionName", lpar.get("@href", "unknown"))
+                lpar_name = lpar.get("PartitionName", lpar.get("href", "unknown"))
                 raise HMCError(
-                    f"Cannot delete virtual disk '{disk_name}': it is mapped to LPAR '{lpar_name}'. "
-                    f"Use detach_storage_mapping first to remove the mapping."
+                    f"Cannot delete virtual disk {disk_name!r}: it is mapped to "
+                    f"LPAR {lpar_name!r}. Use detach_storage_mapping first to "
+                    "remove the mapping."
                 )
     
     # Disk is not mapped, safe to delete
@@ -175,7 +176,7 @@ async def delete_media_repository(
         names = ", ".join(m.get("MediaName", "unknown") for m in media)
         raise HMCError(
             f"Cannot delete media repository: it contains {len(media)} "
-            f"image(s): {names}. Delete all images first."
+            f"image(s): {names!r}. Delete all images first."
         )
     await hmc.delete_media_repository(vios_uuid, vg_uuid)
     return vios_uuid
