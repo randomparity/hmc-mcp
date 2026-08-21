@@ -59,8 +59,10 @@ The return remains `list[dict[str, str]]` with keys `name` and `type` supplied b
 Backup and restore use one async helper that opens the selected profile's REST client and resolves
 the selectors before SSH. A direct system name remains the CLI `-m` value. A system UUID is fetched
 once and converted to its `MachineTypeModelSerialNumber`; nested machine-type/model/serial fields
-serialize as `tttt-mmm*sssssss`, while an already rendered nonblank MTMS passes through. Missing or
-malformed MTMS fails before SSH rather than degrading a unique UUID to a possibly duplicated name.
+serialize as `tttt-mmm*sssssss`. An already rendered value must parse into exactly three nonblank,
+unpadded machine-type, model, and serial components separated by the first `-` and `*`, then
+re-serialize byte-identically; an arbitrary nonblank string is not an MTMS. Missing or malformed
+MTMS fails before SSH rather than degrading a unique UUID to a possibly duplicated name.
 The helper resolves `vios_name_or_uuid` through
 `resolve_vios_uuid(..., system_name_or_uuid=system_name_or_uuid)`. The system CLI identity, VIOS
 UUID, type, and backup name are each shell-quoted where they enter the SSH string. REST resolution

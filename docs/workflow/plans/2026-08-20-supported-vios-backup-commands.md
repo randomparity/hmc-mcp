@@ -67,11 +67,14 @@ without making a real HMC call.
 `BackupType = Literal["vios", "viosioconfig", "ssp"]` and add a restore-only literal/set.
 
 1. Add a local system CLI identity resolver. Pass a direct name through. For a UUID, fetch the
-   managed system and accept either a nonblank rendered `MachineTypeModelSerialNumber` or compose
-   nested `MachineType`, `Model`, and `SerialNumber` as `tttt-mmm*sssssss`; otherwise raise an
-   actionable `ValueError` before SSH. Replace `_run_vios_backup_command` with a helper accepting
-   explicit system and VIOS selectors; in one REST context resolve that CLI identity and the
-   system-scoped VIOS UUID, then call the builder and SSH transport.
+   managed system. A flattened `MachineTypeModelSerialNumber` must parse into exactly three
+   nonblank, unpadded components separated by the first `-` and `*`, then re-serialize
+   byte-identically. A nested representation must contain nonblank `MachineType`, `Model`, and
+   `SerialNumber`, composed as `tttt-mmm*sssssss`; otherwise raise an actionable `ValueError`
+   before SSH. Tests cover a valid flattened value, valid nested mapping, malformed flattened
+   value, and each missing or blank nested component. Replace `_run_vios_backup_command` with a
+   helper accepting explicit system and VIOS selectors; in one REST context resolve that CLI
+   identity and the system-scoped VIOS UUID, then call the builder and SSH transport.
 2. Replace the list parser with strict `csv.DictReader` handling for the explicit `name,type`
    header. Empty output returns `[]`; reject a wrong or duplicate header, empty value, or extra
    column. Change the list builder to:
