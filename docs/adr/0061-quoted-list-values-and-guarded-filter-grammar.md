@@ -71,7 +71,7 @@ exemption named, not silently allowed. All three selections key on flag-carrying
 rather than on a literal opening with the command name: ADR 0045's opening rule let the
 appended-fragment idiom (`cmd += f" -a {…}"`) evade the scan, and this branch's own filter
 sites use that shape. The flag must be a whitespace-preceded token, so bare diagnostic labels
-are not selected; prose that trips the scan fails closed like any unguarded site.
+are not selected; prose that trips the scan fails closed like any unguarded site. Element-wise assembly (`" ".join(["chhwres", "-a", payload])`) remains outside any literal selection — the same bound ADR 0045 records for its opening rule, inherited unchanged here.
 
 ## Consequences
 

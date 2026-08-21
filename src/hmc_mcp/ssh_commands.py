@@ -135,8 +135,8 @@ def build_attribute_record(
     """
     if not pairs:
         raise HMCCLIError(
-            f"cannot build an HMC CLI {surface} record with no attributes; "
-            "at least one attribute is required"
+            f"cannot build an HMC CLI {surface} attribute record with no "
+            "attributes; at least one attribute is required"
         )
     seen: set[str] = set()
     for attribute, _value in pairs:
@@ -908,7 +908,7 @@ async def add_vnic_backing(
         quoted=("backing_devices",),
         # Not spelled `chhwres -a ...`: a plain string opening with the
         # command name would itself trip the recurrence guard's -a scan.
-        surface="`chhwres -a` record",
+        surface="`chhwres -a`",
     )
     command = (
         "chhwres -r virtualio --rsubtype vnic -o a"

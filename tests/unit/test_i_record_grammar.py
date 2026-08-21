@@ -713,6 +713,9 @@ def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
     if func.name in VALUE_FORM_A_FUNCTIONS:
         problems: list[str] = []
         for literal in _selected_literals(func, _is_an_a_record_literal):
+            if not isinstance(literal, ast.JoinedStr):
+                problems.append(ast.unparse(literal))
+                continue
             for index, part in enumerate(literal.values):
                 segment = part.value if isinstance(part, ast.Constant) else ""
                 if not _ends_with_flag_token(segment, "-a"):
