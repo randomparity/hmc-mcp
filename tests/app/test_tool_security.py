@@ -152,7 +152,10 @@ LEGACY_DESTRUCTIVE = frozenset(
 def _tools_by_name(enable_arbitrary_command: bool = False):
     asyncio.run(
         server_command.configure_arbitrary_command_tool(
-            enable_arbitrary_command, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
+            enable_arbitrary_command,
+            mcp,
+            permits=_HATCH.permits_tool,
+            authorize=dispatch_authorizer(_HATCH),
         )
     )
     try:
@@ -161,7 +164,10 @@ def _tools_by_name(enable_arbitrary_command: bool = False):
         if enable_arbitrary_command:
             asyncio.run(
                 server_command.configure_arbitrary_command_tool(
-                    False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
+                    False,
+                    mcp,
+                    permits=_HATCH.permits_tool,
+                    authorize=dispatch_authorizer(_HATCH),
                 )
             )
 
@@ -228,6 +234,20 @@ def test_multi_kind_tools_declare_every_target():
     }
     assert ("lpar", "lpar_name_or_uuid") in attach
     assert ("vios", "vios_uuid") in attach
+
+
+def test_backup_vios_non_exhaustive_scope_keeps_required_selector_metadata():
+    """SSP scope changes grant semantics, not selector extraction or audit."""
+    security = TOOL_SECURITY["hmc_backup_vios"]
+
+    assert security.exhaustive_targets is False
+    assert {
+        (selector.kind, selector.argument, selector.required)
+        for selector in security.targets
+    } == {
+        ("managed_system", "system_name_or_uuid", True),
+        ("vios", "vios_name_or_uuid", True),
+    }
 
 
 def test_target_declarations_are_internally_consistent():
@@ -514,7 +534,9 @@ def _nested_selector(function: _Scope, argument: str) -> str | None:
     for parameter, default in pairs:
         if isinstance(default, ast.Name) and default.id == argument:
             return parameter.arg
-    return None if any(parameter.arg == argument for parameter, _ in pairs) else argument
+    return (
+        None if any(parameter.arg == argument for parameter, _ in pairs) else argument
+    )
 
 
 def _bound_names(function: _Scope) -> set[str]:
@@ -551,8 +573,7 @@ def _bound_parameter(helper: _Def, call: ast.Call, argument: str) -> str | None:
         if isinstance(keyword.value, ast.Name) and keyword.value.id == argument:
             return keyword.arg
     positional = [
-        parameter.arg
-        for parameter in [*helper.args.posonlyargs, *helper.args.args]
+        parameter.arg for parameter in [*helper.args.posonlyargs, *helper.args.args]
     ]
     for index, node in enumerate(call.args):
         if (
@@ -657,9 +678,7 @@ def _assert_no_config_construction(function: _Def, tool: str) -> None:
     what keeps the builder set closed.
     """
     assert "HMCConfig" not in {
-        _call_name(node)
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
+        _call_name(node) for node in ast.walk(function) if isinstance(node, ast.Call)
     }, f"{tool}: constructs its own HMCConfig, bypassing profile resolution"
 
 
@@ -1067,43 +1086,46 @@ def hmc_probe(system_name_or_uuid: str):
 # expectation is: a set computed from `security.targets` would agree with any
 # registry, including one in which a composite silently became narrowable.
 # ADR 0039 grants every name below only under `targets = "all-targets"`.
-_NOT_EXHAUSTIVE = frozenset({
-    # No selector at all, so a `targets` table has nothing to bind on.
-    "hmc_capacity_report",
-    "hmc_configure_ldap",
-    "hmc_console_info",
-    "hmc_effective_permissions",
-    "hmc_find_placement",
-    "hmc_fleet_health",
-    "hmc_get_ldap_config",
-    "hmc_list_clusters",
-    "hmc_list_configured_hosts",
-    "hmc_list_partition_templates",
-    "hmc_list_password_policies",
-    "hmc_list_password_policy_status",
-    "hmc_list_recent_jobs",
-    "hmc_list_resources",
-    "hmc_list_shared_storage_pools",
-    "hmc_list_systems",
-    "hmc_list_users",
-    "hmc_remove_ldap_config",
-    "hmc_run_command",
-    # Selectors, but they do not name every resource the call acts on.
-    "hmc_backup_lpar_profiles",
-    "hmc_create_lpar",
-    "hmc_modify_lpar",
-    "hmc_restore_lpar_profiles",
-    "hmc_restore_vios",
-    "hmc_provision_lpar",
-    # Selectors, but one of them is a per-system slot number the fleet-wide
-    # `vios` allowlist cannot pin down.
-    "hmc_add_vfc_adapter",
-    "hmc_add_vscsi_adapter",
-    "hmc_attach_disk_to_lpar",
-    # A declared selector that a second argument overrides outright.
-    "hmc_get_job",
-    "hmc_wait_for_job",
-})
+_NOT_EXHAUSTIVE = frozenset(
+    {
+        # No selector at all, so a `targets` table has nothing to bind on.
+        "hmc_capacity_report",
+        "hmc_configure_ldap",
+        "hmc_console_info",
+        "hmc_effective_permissions",
+        "hmc_find_placement",
+        "hmc_fleet_health",
+        "hmc_get_ldap_config",
+        "hmc_list_clusters",
+        "hmc_list_configured_hosts",
+        "hmc_list_partition_templates",
+        "hmc_list_password_policies",
+        "hmc_list_password_policy_status",
+        "hmc_list_recent_jobs",
+        "hmc_list_resources",
+        "hmc_list_shared_storage_pools",
+        "hmc_list_systems",
+        "hmc_list_users",
+        "hmc_remove_ldap_config",
+        "hmc_run_command",
+        # Selectors, but they do not name every resource the call acts on.
+        "hmc_backup_lpar_profiles",
+        "hmc_backup_vios",
+        "hmc_create_lpar",
+        "hmc_modify_lpar",
+        "hmc_restore_lpar_profiles",
+        "hmc_restore_vios",
+        "hmc_provision_lpar",
+        # Selectors, but one of them is a per-system slot number the fleet-wide
+        # `vios` allowlist cannot pin down.
+        "hmc_add_vfc_adapter",
+        "hmc_add_vscsi_adapter",
+        "hmc_attach_disk_to_lpar",
+        # A declared selector that a second argument overrides outright.
+        "hmc_get_job",
+        "hmc_wait_for_job",
+    }
+)
 
 
 def test_the_tools_a_targets_table_cannot_bound_are_exactly_these():
@@ -1135,6 +1157,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
         "hmc_add_vscsi_adapter",
         "hmc_attach_disk_to_lpar",
         "hmc_backup_lpar_profiles",
+        "hmc_backup_vios",
         "hmc_create_lpar",
         "hmc_get_job",
         "hmc_modify_lpar",
@@ -1420,15 +1443,17 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 # What ADR 0049 did *not* close is the tool fetching a caller-supplied URL from
 # the MCP server's network position — that is #303, and it is still a source
 # outside the HMC that no `targets` table could reach.
-_PAYLOAD_SOURCE_ARGUMENTS = frozenset({
-    "repository",
-    "nim_ip",
-    "nim_gateway",
-    "nim_subnetmask",
-    "lpar_ip",
-    "vios_ip",
-    "iso_source",
-})
+_PAYLOAD_SOURCE_ARGUMENTS = frozenset(
+    {
+        "repository",
+        "nim_ip",
+        "nim_gateway",
+        "nim_subnetmask",
+        "lpar_ip",
+        "vios_ip",
+        "iso_source",
+    }
+)
 
 
 def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
@@ -1497,12 +1522,18 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
     """
     source = Path(tool_registry.__file__).read_text(encoding="utf-8")
     head, anchor, _ = source.partition("UNBOUNDED_ARGUMENTS: frozenset")
-    assert anchor, "UNBOUNDED_ARGUMENTS was renamed or reformatted; re-anchor this check"
+    assert anchor, (
+        "UNBOUNDED_ARGUMENTS was renamed or reformatted; re-anchor this check"
+    )
     opening = "# Public argument names that carry the identity"
-    assert opening in head, f"the comment opening {opening!r} moved; re-anchor this check"
+    assert opening in head, (
+        f"the comment opening {opening!r} moved; re-anchor this check"
+    )
     comment = head[head.rindex(opening) :]
 
-    undocumented = sorted(name for name in UNBOUNDED_ARGUMENTS if f"`{name}`" not in comment)
+    undocumented = sorted(
+        name for name in UNBOUNDED_ARGUMENTS if f"`{name}`" not in comment
+    )
     assert not undocumented, (
         f"these names are in UNBOUNDED_ARGUMENTS with no reason recorded beside "
         f"the set: {undocumented}. Add the bullet saying what identity the name "
@@ -1520,7 +1551,9 @@ def test_every_unbounded_name_carries_its_reason_beside_the_set():
     # the replacement in, so this file's rule text cannot drift back or fall
     # silent about the case that exposed it.
     own_source = Path(__file__).read_text(encoding="utf-8")
-    _, opened, guardrail = own_source.partition("# The line against UNBOUNDED_ARGUMENTS")
+    _, opened, guardrail = own_source.partition(
+        "# The line against UNBOUNDED_ARGUMENTS"
+    )
     assert opened, "the UNBOUNDED_ARGUMENTS guardrail comment has gone missing"
     guardrail, closed, _ = guardrail.partition("_PAYLOAD_SOURCE_ARGUMENTS = frozenset")
     assert closed, "_PAYLOAD_SOURCE_ARGUMENTS was renamed; re-anchor this check"
@@ -1560,7 +1593,8 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
     escapes = ["../other/x.tar", "..", "-operation"]
 
     with patch(
-        "hmc_mcp.ssh.asyncssh.connect", side_effect=AssertionError("reached the SSH layer")
+        "hmc_mcp.ssh.asyncssh.connect",
+        side_effect=AssertionError("reached the SSH layer"),
     ):
         for escape in escapes:
             with pytest.raises(ValueError, match="backup_name"):

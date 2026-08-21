@@ -203,6 +203,35 @@ def test_vios_backup_tools_quote_hostile_backup_name(
     assert shlex.quote("vios;id") in cmd
 
 
+@pytest.mark.parametrize(
+    ("tool", "arguments", "keywords"),
+    [
+        (
+            hmc_backup_vios,
+            (HOSTILE, SYSTEM_UUID),
+            {"backup_name": "safe-backup"},
+        ),
+        (
+            hmc_restore_vios,
+            (HOSTILE, SYSTEM_UUID, "safe-backup"),
+            {"backup_type": "ssp", "restart_if_required": False},
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
+    monkeypatch, tool, arguments, keywords
+):
+    """A caller-controlled direct system name remains one exact ``-m`` word."""
+    _hmc_env(monkeypatch)
+    conn = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+        tool(*arguments, **keywords)
+
+    assert _arg_after(shlex.split(_captured_cmd(conn)), "-m") == HOSTILE
+
+
 def test_resolved_system_name_is_quoted_too(monkeypatch, mock_hmc):
     """REST-resolved names are quoted too — the HMC could return metacharacters.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 import csv
+import io
 import shlex
 from collections.abc import Callable, Mapping
 from typing import Any, Literal
@@ -265,7 +266,7 @@ def _parse_lsviosbk_output(text: str) -> list[dict[str, str]]:
     if not text.strip():
         return []
     try:
-        reader = csv.DictReader(text.splitlines(), strict=True)
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
         if reader.fieldnames != ["name", "type"]:
             raise ValueError(
                 "Malformed lsviosbk CSV: expected the exact header 'name,type'."
@@ -394,7 +395,13 @@ def hmc_list_vios_backups(
     return _parse_lsviosbk_output(output)
 
 
-@tool(effect="mutate", operation="vios.backup", target_kind="vios")
+@tool(
+    effect="mutate",
+    operation="vios.backup",
+    target_kind="vios",
+    # An SSP backup can cover the cluster and associated nodes beyond this VIOS.
+    exhaustive_targets=False,
+)
 def hmc_backup_vios(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
@@ -405,10 +412,12 @@ def hmc_backup_vios(
 ) -> str:
     """Create a named VIOS backup with the supported ``mkviosbk`` command.
 
-    Both managed-system and VIOS selectors are required. ``backup_type`` is
-    limited to ``vios``, ``viosioconfig``, or ``ssp`` and defaults to ``vios``.
-    The backup name must identify one catalog entry, not a path or option.
-    Returns the raw HMC CLI output.
+    Both managed-system and VIOS selectors are required metadata, but an SSP
+    backup can affect its wider cluster, so access policy requires
+    ``targets = "all-targets"``. ``backup_type`` is limited to ``vios``,
+    ``viosioconfig``, or ``ssp`` and defaults to ``vios``. The backup name must
+    identify one catalog entry, not a path or option. Returns the raw HMC CLI
+    output.
 
     Args:
         system_name_or_uuid: Managed system name or UUID. UUIDs resolve to MTMS.
