@@ -1,3 +1,4 @@
+import re
 import tomllib
 from pathlib import Path
 
@@ -18,6 +19,10 @@ VIOS_BACKUP_TOOLS = (
     "hmc_list_vios_backups",
     "hmc_backup_vios",
     "hmc_restore_vios",
+)
+FIXED_TOOL_COUNT = re.compile(
+    r"\b\d[\d,]*(?:\s+[\w-]+){0,3}\s+tools?(?:\s+names?)?\b",
+    re.IGNORECASE,
 )
 
 
@@ -93,9 +98,14 @@ def test_generated_policy_guidance_does_not_pin_a_stale_tool_count() -> None:
     )[0]
 
     assert "every ordinary tool" in migration
-    assert "129" not in migration
     assert "every ordinary tool" in current_adr_guidance
-    assert "129" not in current_adr_guidance
+    for guidance in (migration, current_adr_guidance):
+        assert not FIXED_TOOL_COUNT.search(guidance)
+
+        stale_guidance = guidance.replace(
+            "every ordinary tool", "136 tool names, every ordinary tool", 1
+        )
+        assert FIXED_TOOL_COUNT.search(stale_guidance)
 
 
 def test_contribution_guide_defines_the_complete_local_path() -> None:
