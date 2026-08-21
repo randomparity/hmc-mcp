@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted on 2026-08-20.
+Accepted on 2026-08-20. Authorization consequence approved on 2026-08-20 after whole-branch
+review.
 
 ## Context
 
@@ -37,6 +38,12 @@ Shell-quote every dynamic CLI value. Apply the existing catalog-name refusal to 
 restore names. Replace the old interfaces outright: no alias, compatibility overload, or inferred
 default restore type.
 
+Treat the new managed-system selector on `hmc_backup_vios` as a required authorization target in
+addition to its required VIOS target. Existing narrow policy grants for this operation must add a
+matching `managed_system` grant; silently omitting the selector from target accounting would let a
+caller choose an unauthorized system. Restore keeps its previously accepted non-exhaustive target
+classification.
+
 ## Consequences
 
 The three tools issue commands supported by the verified HMC versions and expose every required
@@ -51,6 +58,9 @@ explicit `ssp` restore can affect the cluster beyond the selected VIOS. The rest
 the HMC to restart the VIOS only after a failed restore attempt, matching `rstviosbk -r`.
 Using MTMS for a UUID selector preserves uniqueness when user-defined names collide; a UUID whose
 REST representation lacks a complete MTMS fails closed rather than degrading to a name.
+Because backup now declares both selectors, policy migration is also required: a grant containing
+only the VIOS target no longer authorizes the call. This is an explicit authorization tightening,
+not an inferred side effect.
 
 ## Considered & rejected
 

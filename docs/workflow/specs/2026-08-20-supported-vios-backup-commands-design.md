@@ -8,8 +8,8 @@ Decision: [ADR 0060](../../adr/0060-use-supported-vios-backup-commands.md)
 Replace three command forms proven absent on HMC V10R3 SP1060 and V11R2 SP1120 with the supported
 VIOS backup CLI. Python 3.11 remains the floor. Host verification is arm64; declared targets are
 amd64, arm64, and ppc64le; the host is included. Add no dependency, compatibility shim, live-HMC
-mutation, authorization change, or full-image restore workflow. `just verify` is the final local
-guardrail.
+mutation, authorization change beyond the approved backup two-target migration, or full-image
+restore workflow. `just verify` is the final local guardrail.
 
 IBM's command references and the issue's live-HMC evidence govern the exact shapes:
 
@@ -56,8 +56,9 @@ the comma-delimited projection. Empty stdout returns `[]`; otherwise the header 
 or extra columns raise an actionable `ValueError` rather than silently reporting false inventory.
 The return remains `list[dict[str, str]]` with keys `name` and `type` supplied by the HMC header.
 
-Backup and restore use one async helper that opens the selected profile's REST client and resolves
-the selectors before SSH. A direct system name remains the CLI `-m` value. A system UUID is fetched
+Backup and restore use one async helper that resolves only selectors which need REST. A direct
+system name remains the CLI `-m` value, and a VIOS UUID remains the CLI `--uuid` value, so a call
+whose selectors are already CLI-ready does not require a REST login before SSH. A system UUID is fetched
 once and converted to its `MachineTypeModelSerialNumber`; nested machine-type/model/serial fields
 serialize as `tttt-mmm*sssssss`. An already rendered value must parse into exactly three nonblank,
 unpadded machine-type, model, and serial components separated by the first `-` and `*`, then
@@ -69,7 +70,9 @@ UUID, type, and backup name are each shell-quoted where they enter the SSH strin
 completes before SSH runs. An unknown system UUID or a VIOS name absent from that system fails with
 an actionable selector error.
 
-The existing backup-name validator becomes command-neutral and runs for backup and restore. It
+The existing backup-name validator becomes command-neutral and runs for backup and restore. Its
+error describes the syntactic catalog-name contract without telling backup creation callers to
+select an already existing entry. It
 rejects empty or padded names, `/`, `\\`, dots-only values, and a leading dash. It deliberately
 does not add IBM's documented length or character grammar, preserving ADR 0044's narrow-refusal
 decision. Backup type retains `vios`, `viosioconfig`, and `ssp`; restore type accepts only
@@ -104,11 +107,14 @@ and its REST identity data are trusted peers; credentials are trusted configurat
 - UUID-to-MTMS conversion preserves a unique managed-system selector when user-defined names
   collide and fails closed if the unique CLI identity cannot be obtained.
 - `shlex.quote` encodes every caller-controlled or HMC-returned string as one remote-shell word.
-- Existing tool metadata and dispatch authorization continue to govern targets; restore remains
-  non-exhaustive because `ssp` can affect a cluster.
+- Existing tool metadata and dispatch authorization govern targets. Backup requires both the
+  `managed_system` and `vios` grants exposed by its new required selectors; this approved tightening
+  requires narrow policies to add the system grant. Restore remains non-exhaustive because `ssp`
+  can affect a cluster.
 - Errors may disclose public selectors and HMC diagnostics but never credentials.
 
-No new authorization guarantee is claimed. Races with another HMC operator, rollback of backup or
+No authorization change beyond backup's approved two-target requirement is claimed. Races with
+another HMC operator, rollback of backup or
 restore, availability of catalog entries, HMC-side retention, and full-image restoration are out of
 scope. Live mutation is excluded; mocked exact-command tests plus the recorded HMC help are the
 available proof.
@@ -117,7 +123,9 @@ available proof.
 
 Focused tests must first fail against the old commands and signatures, then pass after the change.
 They cover exact list filtering, direct system-name and UUID-to-MTMS resolution, duplicate-name
-safety, missing/malformed MTMS failure, system-scoped VIOS-UUID resolution, all valid backup types,
+safety, every missing and blank nested MTMS component plus malformed flattened MTMS failure,
+system-scoped VIOS-UUID resolution, backup dispatch denial without either required target grant,
+all valid backup types,
 both restore types, required restore type, optional `-r`, invalid type/name refusal before external
 calls, shell quoting for every dynamic field, raw-output preservation, profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no

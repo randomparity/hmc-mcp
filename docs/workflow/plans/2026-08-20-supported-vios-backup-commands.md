@@ -14,8 +14,8 @@ pytest/ruff/ty through `uv` and `just`.
 
 - Python 3.11 remains the floor.
 - Declared targets are amd64, arm64, and ppc64le; the arm64 host is included.
-- Add no dependency, compatibility shim, live-HMC mutation, authorization change, or full-image
-  restore workflow.
+- Add no dependency, compatibility shim, live-HMC mutation, authorization change beyond the
+  approved backup two-target migration, or full-image restore workflow.
 - Preserve existing exports and listing/raw-output return types.
 - Quote every dynamic remote-shell word and validate type/name inputs before external calls.
 - Final guardrail: `just verify`.
@@ -53,7 +53,10 @@ Later implementation must satisfy exact supported command strings and preserve
    separator-free name cases to prove validation and quoting independently.
 5. Update profile-routing and destructive-scope calls to the approved signatures. Assert direct
    system names pass through, system UUIDs become MTMS even when names collide, missing/malformed
-   MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system.
+   MTMS fails before SSH, and VIOS-name resolution remains scoped to the explicit system. Cover
+   every missing and blank nested `MachineType`, `Model`, and `SerialNumber` case. Pin dispatch
+   authorization so backup requires matching managed-system and VIOS grants and denies a policy
+   missing either target.
 6. Run `uv run --no-sync pytest -q tests/vios/test_vios_backup.py tests/unit/test_ssh_quoting.py
    tests/unit/test_ssh_profile_routing.py tests/unit/test_destructive_scope.py
    tests/app/test_tool_security.py tests/app/test_capabilities.py
@@ -79,8 +82,9 @@ without making a real HMC call.
    `SerialNumber`, composed as `tttt-mmm*sssssss`; otherwise raise an actionable `ValueError`
    before SSH. Tests cover a valid flattened value, valid nested mapping, malformed flattened
    value, and each missing or blank nested component. Replace `_run_vios_backup_command` with a
-   helper accepting explicit system and VIOS selectors; in one REST context resolve that CLI
-   identity and the system-scoped VIOS UUID, then call the builder and SSH transport.
+   helper accepting explicit system and VIOS selectors. Fast-path a direct system name plus VIOS
+   UUID without REST; otherwise use one REST context to resolve only selectors that need it, then
+   call the builder and SSH transport.
 2. Replace the list parser with strict `csv.DictReader` handling for the explicit `name,type`
    header. Empty output returns `[]`; reject a wrong or duplicate header, empty value, or extra
    column. Change the list builder to:
@@ -93,7 +97,8 @@ without making a real HMC call.
    ```
 
 3. Rename `_validate_backup_name` only if a command-neutral name improves clarity; call it before
-   both backup and restore. Preserve its exact narrow rejection set and actionable message.
+   both backup and restore. Preserve its exact narrow rejection set and use operation-neutral
+   repair guidance that does not tell creation callers to select an existing catalog entry.
 4. Implement backup with the approved signature and:
 
    ```python
@@ -125,7 +130,8 @@ VIOS, backup name, valid type, restart flag, and profile with the requiredness f
 1. Update remaining direct test callers and exact schema/description expectations. Do not add an
    adapter for the old positional form.
 2. Update the cheatsheet repository-use notes to describe the now-supported implementation. Keep
-   its command examples aligned with ADR 0060.
+   its command examples aligned with ADR 0060. Document that backup policies now require matching
+   managed-system and VIOS target grants, so existing VIOS-only narrow grants must be updated.
 3. Run `rg -n "lsviosbackup|chviosbackup" src tests README.md docs/hmc-cli-cheatsheet.md`. Expect no
    match describing live code; any retained match must explicitly identify historical broken
    behavior in an immutable design record.
