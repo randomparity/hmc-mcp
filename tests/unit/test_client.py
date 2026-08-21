@@ -274,6 +274,17 @@ async def test_context_exit_preserves_primary_error_and_always_closes(
 
 
 @pytest.mark.asyncio
+async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
+    """The shared mock-client factory enables TLS verification by default."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        async with HMCClient(make_config()):
+            pass
+
+    assert not [warning for warning in caught if "verification" in str(warning.message)]
+
+
+@pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
     with pytest.warns(UserWarning, match="certificate verification is disabled"):
