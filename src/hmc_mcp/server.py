@@ -509,9 +509,31 @@ _FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 #: of them share the stream.
 _FASTMCP_LINE_PREFIX: Final = "fastmcp: "
 
+#: The third-party loggers the served path binds to ADR 0043's sink (ADR 0051,
+#: widened by #330). Each gets its own handler and its own producer-named prefix;
+#: ``uvicorn`` and ``uvicorn.access`` additionally get the level and propagation
+#: their own ``LOGGING_CONFIG`` would have given them, because the lever this
+#: takes -- ``log_config=None`` -- runs no ``dictConfig`` at all. ``fastmcp`` and
+#: ``mcp`` stay handlers-only: neither sits inside another bound namespace.
+_THIRD_PARTY_LOGGERS: Final = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
 
-def install_fastmcp_stderr_sink() -> None:
-    """Put FastMCP's own stderr output on ADR 0043's bounded queue. ADR 0051.
+#: The uvicorn namespaces whose level the install pins to INFO. Access records are
+#: emitted at INFO, and with no ``dictConfig`` they would inherit root's WARNING --
+#: the access log would not move into the sink, it would disappear.
+_UVICORN_LEVEL_LOGGERS: Final = ("uvicorn", "uvicorn.access")
+
+#: What ``main_http`` passes FastMCP so the ``uvicorn.Config`` it constructs never
+#: runs uvicorn's own ``configure_logging`` ``dictConfig`` (uvicorn 0.52.1 skips it
+#: entirely on a null config, ``config.py:384``): the default ``StreamHandler``
+#: that would otherwise land on fd 2 *after* the sink install never attaches, and
+#: nothing has to re-install after it. Deliberately without ``log_level``: that
+#: lever reaches only uvicorn's ``.error``/``.access``/``.asgi`` children and never
+#: ``uvicorn`` itself, so levels belong to the install above.
+_UVICORN_CONFIG: Final = {"log_config": None}
+
+
+def install_third_party_stderr_sinks() -> None:
+    """Put the bound third-party loggers' stderr output on ADR 0043's queue. ADR 0051.
 
     ADR 0043 bounded every write *this package* makes to fd 2, on the reasoning
     that a blocked ``write()`` there wedges the server. FastMCP's two
@@ -530,7 +552,7 @@ def install_fastmcp_stderr_sink() -> None:
     handler's destination means reading ``rich``'s ``Console.file``, and when
     ``settings.log_enabled`` is false there is no handler to recognize at all.
     Taking the list wholesale is ADR 0051's accepted cost — it also displaces a
-    handler an operator attached to ``fastmcp`` themselves — and it is what makes
+    handler an operator attached to any bound logger themselves — and it is what makes
     "no handler on this logger writes to fd 2" something a test asserts rather
     than infers. Removing and re-adding is what makes this idempotent: a second
     call takes out the handler the first one left. A removed handler is not
@@ -538,13 +560,20 @@ def install_fastmcp_stderr_sink() -> None:
     flushes and closes it at exit anyway, and closing a handler this package did not
     open would be a second liberty on top of removing it.
 
-    **Only the handlers.** The logger's level, its ``propagate`` flag, and its
-    filters are untouched — including ``_DenialFilter``, which sits on the child
-    logger and solves a different problem: this handler decides *where* a record
-    goes, that filter decides *what* a denial record says. One thing the wholesale
-    removal takes with it in a test process is ``pytest``'s own
-    ``LogCaptureHandler``, so a test that serves and then asserts on a FastMCP
-    record through ``caplog`` would pass vacuously; nothing does today.
+    **Only the handlers — with one documented exception.** For ``fastmcp`` and
+    ``mcp`` the level, ``propagate`` flag, and filters are untouched — including
+    ``_DenialFilter``, which sits on the child logger and solves a different
+    problem: this handler decides *where* a record goes, that filter decides *what*
+    a denial record says. The ``uvicorn`` pair is the exception ADR 0051's
+    amendment records: skipping uvicorn's ``dictConfig`` skips its level and
+    propagation configuration too, so the install reproduces it — both loggers at
+    INFO (access records are INFO; left alone they would inherit root's WARNING and
+    the access log would silently vanish) and ``propagate = False`` (with the
+    parent-plus-child bindings left propagating, ``callHandlers`` would render
+    every access record twice). One thing the wholesale removal takes with it in a
+    test process is ``pytest``'s own ``LogCaptureHandler``, so a test that serves
+    and then asserts on a bound record through ``caplog`` would pass vacuously;
+    nothing does today.
 
     **The rendering is marked, not just formatted.** ``StreamSafeFormatter`` puts a
     fixed non-JSON prefix on every physical line and escapes the control
@@ -558,14 +587,21 @@ def install_fastmcp_stderr_sink() -> None:
     synchronously and unbounded, which is precisely the writer this exists to
     remove.
     """
-    logger = logging.getLogger(_FASTMCP_LOGGER_NAME)
-    for existing in logger.handlers[:]:
-        logger.removeHandler(existing)
-    handler = sink_handler()
-    handler.setFormatter(
-        StreamSafeFormatter(_FASTMCP_LINE_FORMAT, _FASTMCP_LINE_PREFIX)
-    )
-    logger.addHandler(handler)
+    for name in _THIRD_PARTY_LOGGERS:
+        logger = logging.getLogger(name)
+        for existing in logger.handlers[:]:
+            logger.removeHandler(existing)
+        handler = sink_handler()
+        handler.setFormatter(
+            StreamSafeFormatter(
+                _FASTMCP_LINE_FORMAT,
+                _FASTMCP_LINE_PREFIX if name == _FASTMCP_LOGGER_NAME else f"{name}: ",
+            )
+        )
+        logger.addHandler(handler)
+        if name in _UVICORN_LEVEL_LOGGERS:
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
 
 
 def _serve_application(
@@ -590,7 +626,7 @@ def _serve_application(
     # to stderr for the same reason. Composing an application must not mutate
     # global logging state (ADR 0040).
     install_audit_sink()
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
     install_denial_log_filter()
     _warn(_startup_warnings(tool_count, access_policy, enable_arbitrary_command))
     return application
@@ -620,7 +656,10 @@ def main_http(
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
     _serve_application(enable_arbitrary_command, access_policy).run(
-        transport="streamable-http", host=host, port=port
+        transport="streamable-http",
+        host=host,
+        port=port,
+        uvicorn_config=_UVICORN_CONFIG,
     )
 
 

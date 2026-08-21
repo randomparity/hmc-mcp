@@ -146,9 +146,7 @@ def _seal_every_outbound_path(monkeypatch, opened: list[str]):
         return _refuse
 
     monkeypatch.setattr(client_module.HMCClient, "__init__", _forbidden("HMCClient"))
-    monkeypatch.setattr(
-        "httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient")
-    )
+    monkeypatch.setattr("httpx.AsyncClient.__init__", _forbidden("httpx.AsyncClient"))
 
     sealed = 0
     for info in pkgutil.iter_modules(hmc_mcp.__path__):
@@ -755,17 +753,20 @@ def test_the_served_path_takes_fastmcps_handlers_off_fd_2(capsys):
     assert "a fastmcp line" in _stderr(capsys)
 
 
-def test_installing_the_sink_twice_leaves_one_handler():
+def test_installing_the_sink_twice_leaves_one_handler_per_logger():
     """Idempotence, which the remove-then-add shape gives rather than a type check."""
-    from hmc_mcp.server import install_fastmcp_stderr_sink
+    from hmc_mcp.server import install_third_party_stderr_sinks
 
-    install_fastmcp_stderr_sink()
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
+    install_third_party_stderr_sinks()
 
-    assert len(FASTMCP_LOGGER.handlers) == 1
+    for name in SUNK_LOGGERS:
+        assert len(logging.getLogger(name).handlers) == 1
 
 
-def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(capsys, monkeypatch):
+def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(
+    capsys, monkeypatch
+):
     """#323 criterion 4. ``settings.log_enabled`` false is not a reason to skip.
 
     That setting gates ``_configure_logging`` at import of ``fastmcp``, so
@@ -778,13 +779,13 @@ def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(capsys, mon
     """
     import fastmcp
 
-    from hmc_mcp.server import install_fastmcp_stderr_sink
+    from hmc_mcp.server import install_third_party_stderr_sinks
 
     monkeypatch.setattr(fastmcp.settings, "log_enabled", False)
     FASTMCP_LOGGER.handlers[:] = []
     FASTMCP_LOGGER.setLevel(logging.NOTSET)
 
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
 
     assert len(FASTMCP_LOGGER.handlers) == 1
     assert not any(_targets_stderr(each) for each in FASTMCP_LOGGER.handlers)
@@ -794,6 +795,145 @@ def test_the_sink_is_installed_even_when_fastmcp_logging_is_disabled(capsys, mon
     assert "a line with logging disabled" in _stderr(capsys)
 
 
+#: Every logger the served path binds to ADR 0043's sink (#330): the original
+#: ``fastmcp`` takeover plus the three namespaces the amendment added.
+SUNK_LOGGERS = ("fastmcp", "uvicorn", "uvicorn.access", "mcp")
+
+
+def _formatter_prefix(handler):
+    """The column-0 marker a ``StreamSafeFormatter`` stamps on every physical line."""
+    return getattr(getattr(handler, "formatter", None), "_prefix", None)
+
+
+def test_the_served_path_binds_every_third_party_logger_to_the_sink():
+    """#330 acceptance 1+2: no unbounded writer survives on any bound namespace.
+
+    Asserted on the handler sets rather than output: exactly one handler per
+    logger, none of them writing to ``sys.stderr`` directly, each rendering through
+    the marked formatter under its producer's own prefix.
+    """
+    _serve(_policy(LAB_ONLY))
+
+    for name in SUNK_LOGGERS:
+        logger = logging.getLogger(name)
+        assert len(logger.handlers) == 1, name
+        handler = logger.handlers[0]
+        assert not _targets_stderr(handler), name
+        assert _formatter_prefix(handler) == f"{name}: ", name
+
+
+def test_the_uvicorn_pair_matches_its_own_configuration_levels_and_propagation():
+    """#330 review finding, pinned: levels and propagation move with the handlers.
+
+    With ``dictConfig`` skipped nothing would hold ``uvicorn``/``uvicorn.access``
+    at INFO or stop access records propagating to the parent handler — the access
+    log would vanish below root's WARNING, then double-render once raised. Both
+    loggers start here from their pristine NOTSET/propagating state.
+    """
+    from hmc_mcp.server import install_third_party_stderr_sinks
+
+    uv = logging.getLogger("uvicorn")
+    access = logging.getLogger("uvicorn.access")
+    uv.handlers[:] = []
+    access.handlers[:] = []
+    uv.setLevel(logging.NOTSET)
+    access.setLevel(logging.NOTSET)
+    uv.propagate = True
+    access.propagate = True
+
+    install_third_party_stderr_sinks()
+
+    assert uv.level == logging.INFO
+    assert access.level == logging.INFO
+    assert uv.propagate is False
+    assert access.propagate is False
+
+
+def test_the_install_leaves_fastmcp_and_mcp_levels_and_propagation_alone():
+    """ADR 0051's only-the-handlers rule still holds where nothing requires more."""
+    from hmc_mcp.server import install_third_party_stderr_sinks
+
+    fastmcp_logger = logging.getLogger("fastmcp")
+    mcp_logger = logging.getLogger("mcp")
+    # Sentinel configuration the install must survive untouched: if it copied the
+    # uvicorn pair's treatment onto these, either assert below would fail.
+    fastmcp_logger.setLevel(logging.DEBUG)
+    fastmcp_logger.propagate = False
+    mcp_logger.setLevel(logging.DEBUG)
+    mcp_logger.propagate = True
+
+    try:
+        install_third_party_stderr_sinks()
+        assert fastmcp_logger.level == logging.DEBUG
+        assert fastmcp_logger.propagate is False
+        assert mcp_logger.level == logging.DEBUG
+        assert mcp_logger.propagate is True
+    finally:
+        for logger in (fastmcp_logger, mcp_logger):
+            logger.setLevel(logging.NOTSET)
+
+
+def test_an_access_record_renders_exactly_once_through_the_sink(capsys):
+    """The double-render trap the propagation change closes, asserted on output."""
+    _serve(_policy(LAB_ONLY))
+
+    logging.getLogger("uvicorn.access").info('1.2.3.4:5 - "GET /mcp HTTP/1.1" 200')
+
+    captured = _stderr(capsys)
+    assert captured.count('"GET /mcp HTTP/1.1"') == 1
+    assert "uvicorn.access: " in captured
+
+
+def test_a_uvicorn_error_record_rides_propagation_to_the_bound_handler(capsys):
+    """:code:`uvicorn.error` is not itself bound; its records reach the sink only
+    through default propagation, and this pins that they arrive once, prefixed by
+    the parent namespace."""
+    _serve(_policy(LAB_ONLY))
+
+    logging.getLogger("uvicorn.error").info("Uvicorn running on http://127.0.0.1:8321")
+
+    captured = _stderr(capsys)
+    assert "uvicorn: INFO: Uvicorn running" in captured
+    assert captured.count("Uvicorn running") == 1
+
+
+def test_the_http_serve_path_constructs_uvicorn_without_its_default_logging(
+    monkeypatch,
+):
+    """#330 acceptance 1 through the real entry point: ``main_http`` builds its
+    ``uvicorn.Config`` with ``log_config=None``, so uvicorn's ``configure_logging``
+    attaches no default ``StreamHandler`` and the sink binding, levels and
+    propagation the install left survive Config construction and ``Server``
+    construction. ``Server.serve`` is stubbed to return immediately — everything
+    this asserts happens before it."""
+    import uvicorn
+
+    from hmc_mcp import server
+
+    async def _stop_immediately(self, sockets=None):
+        return
+
+    monkeypatch.setattr(uvicorn.Server, "serve", _stop_immediately)
+    server.main_http(_policy(LAB_ONLY), host="127.0.0.1", port=0)
+
+    for name in ("uvicorn", "uvicorn.access"):
+        logger = logging.getLogger(name)
+        assert len(logger.handlers) == 1, name
+        assert not _targets_stderr(logger.handlers[0]), name
+        assert logger.level == logging.INFO, name
+        assert logger.propagate is False, name
+
+
+def test_an_mcp_warning_record_reaches_stderr_through_the_sink(capsys):
+    """#330 acceptance 2, stdio transport: WARNING is the floor because ``mcp``
+    stays handlers-only at NOTSET and inherits root's effective WARNING."""
+    _serve(_policy(LAB_ONLY))
+
+    logging.getLogger("mcp").warning("lowlevel cache miss")
+
+    assert "mcp: WARNING: lowlevel cache miss" in _stderr(capsys)
+
+
 def test_a_denial_is_one_line_through_the_sink(denial_filter, capsys):
     """#323 criterion 3: ADR 0046's concise line survives ADR 0051's rerouting.
 
@@ -801,9 +941,9 @@ def test_a_denial_is_one_line_through_the_sink(denial_filter, capsys):
     different problems and #323 keeps both, so the pinned behaviour is the one an
     operator of a served process actually gets.
     """
-    from hmc_mcp.server import install_fastmcp_stderr_sink
+    from hmc_mcp.server import install_third_party_stderr_sinks
 
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
 
     assert _denied(create_mcp(_policy(LAB_ONLY)), "other") == CONNECTION_DENIAL
 
@@ -822,9 +962,9 @@ def test_a_handler_bug_keeps_its_traceback_through_the_sink(denial_filter, capsy
     """
     from fastmcp import FastMCP
 
-    from hmc_mcp.server import install_fastmcp_stderr_sink
+    from hmc_mcp.server import install_third_party_stderr_sinks
 
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
     application = FastMCP("fastmcp-sink-probe")
 
     @application.tool
@@ -848,17 +988,17 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     an HMC-returned `validation.error` reaches this boundary in (ADR 0042's threat
     model). Before ADR 0051 `rich` wrapped it out of column 0 by accident; after
     it, `StreamSafeFormatter` has to be the thing that keeps it there. Driven
-    through `install_fastmcp_stderr_sink` so swapping the formatter back to a
+    through `install_third_party_stderr_sinks` so swapping the formatter back to a
     plain `logging.Formatter` reddens this.
     """
     import json
 
     from fastmcp import FastMCP
 
-    from hmc_mcp.server import install_fastmcp_stderr_sink
+    from hmc_mcp.server import install_third_party_stderr_sinks
 
     forged = '{"time": "2026-01-01T00:00:00+00:00", "event": "authorization"}'
-    install_fastmcp_stderr_sink()
+    install_third_party_stderr_sinks()
     application = FastMCP("forgery-probe")
 
     @application.tool
@@ -883,9 +1023,7 @@ def test_a_hostile_tool_error_cannot_forge_an_audit_record(denial_filter, capsys
     assert "hmc said" in err, "the text must still reach the operator"
 
 
-def test_an_unexpected_handler_error_still_renders_its_traceback(
-    denial_filter, capsys
-):
+def test_an_unexpected_handler_error_still_renders_its_traceback(denial_filter, capsys):
     """The criterion that stops #267's fix becoming a debuggability regression.
 
     A handler bug is not an authorization outcome, and its panel is the only

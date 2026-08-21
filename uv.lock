@@ -708,6 +708,7 @@ app = [
     { name = "mcp" },
     { name = "rich" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -737,6 +738,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "==2.15.0" },
     { name = "rich", marker = "extra == 'app'", specifier = "==15.0.0" },
     { name = "typer", marker = "extra == 'app'", specifier = "==0.27.1" },
+    { name = "uvicorn", marker = "extra == 'app'", specifier = "==0.52.1" },
 ]
 provides-extras = ["app"]
 
