@@ -10,7 +10,7 @@ import csv
 import io
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
@@ -96,8 +96,20 @@ def parse_hmc_delimited_rows(
     return rows
 
 
-def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
+def build_attribute_record(
+    pairs: Sequence[tuple[str, object]],
+    *,
+    quoted: Collection[str] = (),
+    surface: str = "-i",
+) -> str:
     """Return the ``-i`` attribute record for *pairs*, or raise.
+
+    *quoted* names list-valued attributes whose HMC-side grammar is a
+    comma-separated list (ADR 0061).  A marked value containing a comma is
+    rendered as the IBM quoted pair ``"name=v1,v2"``; without a comma it
+    renders bare, byte-identical to the unmarked form.  Every other record
+    delimiter is refused inside a marked value: only the comma's behaviour
+    inside a quoted region is live-verified.
 
     *pairs* is an ordered sequence of ``(attribute, value)``.  Each value is
     rendered with :func:`str` and checked against the record grammar before the
@@ -123,42 +135,106 @@ def build_attribute_record(pairs: Sequence[tuple[str, object]]) -> str:
     """
     if not pairs:
         raise HMCCLIError(
-            "cannot build an HMC CLI -i attribute record with no attributes; "
-            "at least one attribute is required"
+            f"cannot build an HMC CLI {surface} attribute record with no "
+            "attributes; at least one attribute is required"
         )
     seen: set[str] = set()
     for attribute, _value in pairs:
         if attribute in seen:
             raise HMCCLIError(
-                f"HMC CLI -i attribute {attribute!r} appears twice in one "
-                "record; the HMC's handling of a repeated attribute is "
+                f"HMC CLI {surface} attribute {attribute!r} appears twice in "
+                "one record; the HMC's handling of a repeated attribute is "
                 "undefined, so the record is refused rather than sent"
             )
         seen.add(attribute)
+    quotable = frozenset(quoted)
+    parts = []
+    for index, (attribute, value) in enumerate(pairs):
+        text = _validated_value(
+            attribute, value, allow_comma=attribute in quotable, surface=surface
+        )
+        if attribute in quotable and "," in text:
+            if index != len(pairs) - 1:
+                # The live probes verified the quoted pair only as the final
+                # element of the record (ADR 0061); a non-trailing quoted
+                # pair is an unprobed form, so it fails closed like every
+                # other unprobed grammar variant.
+                raise HMCCLIError(
+                    f"HMC CLI {surface} attribute {attribute!r} renders as a "
+                    'quoted pair ("name=v1,v2"), which the HMC has only been '
+                    "shown to accept as the record's final element; it cannot "
+                    f"be followed by {pairs[index + 1][0]!r}. Place "
+                    f"{attribute!r} last or split the record."
+                )
+            parts.append(f'"{attribute}={text}"')
+        else:
+            parts.append(f"{attribute}={text}")
+    return ",".join(parts)
+
+
+def build_filter(pairs: Sequence[tuple[str, object]]) -> str:
+    """Return the ``--filter`` expression for *pairs*, or raise.
+
+    The ``--filter`` grammar is the same ``name=value`` comma-joined record
+    grammar (ADR 0061): a delimiter inside a value adds or rewrites a filter
+    pair, so a mutation would select a partition the caller did not name.
+    Values are validated by the same ``_validated_value`` primitive the
+    record builder uses; there is no second delimiter table.
+
+    A comma *inside* one value — IBM's multi-value list form — is refused
+    until its encoding is probed; every site here selects a single resolved
+    object by name.
+    """
+    if not pairs:
+        raise HMCCLIError(
+            "cannot build an HMC CLI --filter expression with no pairs; "
+            "at least one name=value pair is required"
+        )
+    seen: set[str] = set()
+    for attribute, _value in pairs:
+        if attribute in seen:
+            raise HMCCLIError(
+                f"HMC CLI --filter attribute {attribute!r} appears twice in "
+                "one expression; the HMC's handling of a repeated filter "
+                "attribute is undefined, so the expression is refused"
+            )
+        seen.add(attribute)
     return ",".join(
-        f"{attribute}={_validated_value(attribute, value)}"
+        f"{attribute}={_validated_value(attribute, value, surface='--filter')}"
         for attribute, value in pairs
     )
 
 
-def _validated_value(attribute: str, value: object) -> str:
-    """Return *value* as record text, or raise :class:`HMCCLIError`."""
+def _validated_value(
+    attribute: str,
+    value: object,
+    *,
+    allow_comma: bool = False,
+    surface: str = "-i",
+) -> str:
+    """Return *value* as record text, or raise :class:`HMCCLIError`.
+
+    *allow_comma* marks a quotable list attribute (ADR 0061): the comma is
+    permitted because the caller renders the pair quoted.  *surface* names
+    the command surface in refusal messages so a ``--filter`` or ``-a``
+    refusal never blames an ``-i`` record.
+    """
     if not _ATTRIBUTE_NAME.match(attribute):
         raise HMCCLIError(
-            f"invalid HMC CLI -i attribute name {attribute!r}; expected a "
+            f"invalid HMC CLI {surface} attribute name {attribute!r}; expected a "
             "lower-case identifier, optionally with a '+' or '-' list operator"
         )
     text = str(value)
     for character, (name, reason) in _RECORD_DELIMITERS.items():
-        if character in text:
+        if character in text and not (allow_comma and character == ","):
             raise HMCCLIError(
-                f"HMC CLI -i attribute {attribute!r} value {text!r} contains "
+                f"HMC CLI {surface} attribute {attribute!r} value {text!r} contains "
                 f"{name} ({character!r}); {reason}, so the value would alter "
                 f"the record's structure. Remove {name} from the value."
             )
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
         raise HMCCLIError(
-            f"HMC CLI -i attribute {attribute!r} value {text!r} contains a "
+            f"HMC CLI {surface} attribute {attribute!r} value {text!r} contains a "
             "control character; the record is one line and the same data "
             "format is read one record per line by the -f file form, so a "
             "newline may terminate the record and a NUL may truncate it. "
@@ -545,7 +621,7 @@ async def list_sriov_physical_port_rows(
         "phys_port_max_logical_ports",
         "curr_eth_logical_ports",
     )
-    command = f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level roce --filter {shlex.quote(f'adapter_ids={adapter_id}')} -F {','.join(fields)} --header"
+    command = f"lshwres -r sriov --rsubtype physport -m {shlex.quote(system_name)} --level roce --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(fields)} --header"
     return _parse_admitted_rows(await run_hmc_command(config, command), fields)
 
 
@@ -567,7 +643,7 @@ _SRIOV_LOGICAL_FIELDS = (
 async def list_sriov_configured_logical_port_rows(
     config: HMCConfig, system_name: str, adapter_id: str
 ) -> list[dict[str, str]]:
-    command = f"lshwres -r sriov --rsubtype logport -m {shlex.quote(system_name)} --level eth --filter {shlex.quote(f'adapter_ids={adapter_id}')} -F {','.join(_SRIOV_LOGICAL_FIELDS)} --header"
+    command = f"lshwres -r sriov --rsubtype logport -m {shlex.quote(system_name)} --level eth --filter {shlex.quote(build_filter([('adapter_ids', adapter_id)]))} -F {','.join(_SRIOV_LOGICAL_FIELDS)} --header"
     return _parse_admitted_rows(
         await run_hmc_command(config, command), _SRIOV_LOGICAL_FIELDS
     )
@@ -588,7 +664,7 @@ async def read_sriov_lpar_state(
     config: HMCConfig, system_name: str, lpar_name: str
 ) -> dict[str, str]:
     fields = ("name", "lpar_id", "state", "rmc_state")
-    command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(f'lpar_names={lpar_name}')} -F {','.join(fields)} --header"
+    command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
         raise HMCCLIError(
@@ -601,7 +677,9 @@ async def read_sriov_profile_ports(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> dict[str, str]:
     fields = ("name", "sriov_eth_logical_ports")
-    filters = f"lpar_names={lpar_name},profile_names={profile_name}"
+    filters = build_filter(
+        [("lpar_names", lpar_name), ("profile_names", profile_name)]
+    )
     command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
@@ -662,7 +740,7 @@ async def list_fc_ports(
         f"lshwres -r virtualio --rsubtype fc --level lpar -m {shlex.quote(system_name)}"
     )
     if lpar_name:
-        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+        cmd += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
         return []
@@ -688,7 +766,7 @@ async def list_sea_adapters(
         f" -F {fields}"
     )
     if lpar_name:
-        cmd += f" --filter lpar_names={shlex.quote(lpar_name)}"
+        cmd += f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
         return []
@@ -714,7 +792,7 @@ async def list_vnics(
     """
     cmd = (
         f"lshwres -r virtualio --rsubtype vnic --level lpar -m {shlex.quote(system_name)}"
-        f" --filter lpar_names={shlex.quote(lpar_name)}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
     )
     raw = await run_hmc_command(config, cmd)
     if not raw.strip():
@@ -765,7 +843,7 @@ async def list_vnic_rows(
     command = (
         "lshwres -r virtualio --rsubtype vnic --level lpar"
         f" -m {shlex.quote(system_name)}"
-        f" --filter {shlex.quote(f'lpar_names={lpar_name}')}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))}"
         f" -F {fields} --header"
     )
     output = await run_hmc_command(config, command)
@@ -797,7 +875,7 @@ async def read_vios_identity(
     fields = ",".join(_VIOS_IDENTITY_FIELDS)
     command = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)}"
-        f" --filter {shlex.quote(f'lpar_names={vios_name}')}"
+        f" --filter {shlex.quote(build_filter([('lpar_names', vios_name)]))}"
         f" -F {fields} --header"
     )
     rows = parse_hmc_delimited_rows(
@@ -817,8 +895,21 @@ async def add_vnic_backing(
     backing_device: str,
     port_vlan_id: int,
 ) -> str:
-    """Add one vNIC with a prevalidated backing-device payload."""
-    payload = f"port_vlan_id={port_vlan_id},backing_devices={backing_device}"
+    """Add one vNIC via ``chhwres -r virtualio --rsubtype vnic -o a``.
+
+    *backing_device* is a ``/``-delimited SR-IOV device spec, or a
+    comma-separated list of them; a value carrying a comma renders as the
+    IBM quoted pair ``"backing_devices=dev1,dev2"`` so the list survives the
+    record grammar (ADR 0061).  Any other record delimiter in the value is
+    refused before the command is built.
+    """
+    payload = build_attribute_record(
+        [("port_vlan_id", port_vlan_id), ("backing_devices", backing_device)],
+        quoted=("backing_devices",),
+        # Not spelled `chhwres -a ...`: a plain string opening with the
+        # command name would itself trip the recurrence guard's -a scan.
+        surface="`chhwres -a`",
+    )
     command = (
         "chhwres -r virtualio --rsubtype vnic -o a"
         f" -m {shlex.quote(system_name)} -p {shlex.quote(lpar_name)}"
@@ -880,6 +971,11 @@ async def remove_memory_pool(
         HMCCLIError: If *pool_name* has LPARs still assigned to it, or if
             no pool with that name exists on *system_name*.
     """
+    # The `-a` value here is a bare pool name, not an attribute record
+    # (ADR 0061); validate it against the same delimiter table before the
+    # round trip so a bad name fails locally.
+    _validated_value("pool_name", pool_name, surface="chhwres -a value")
+
     # Safety check: list pools and look for LPAR assignments.
     pools = await list_memory_pools(config, system_name)
 
@@ -928,7 +1024,7 @@ async def get_lpar_description(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F description"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F description"
     )
     return await run_hmc_command(config, cmd)
 
@@ -981,7 +1077,7 @@ async def get_lpar_msp(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F msp"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F msp"
     )
     raw = await run_hmc_command(config, cmd)
     value = raw.strip()
@@ -1022,7 +1118,7 @@ async def set_lpar_msp(
     """
     env_cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} -F lpar_env"
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F lpar_env"
     )
     lpar_env = (await run_hmc_command(config, env_cmd)).strip()
     if not lpar_env:
@@ -1080,7 +1176,7 @@ async def get_lpar_proc_compat(
     """
     cmd = (
         f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
-        f"--filter lpar_names={shlex.quote(lpar_name)} "
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
         "-F desired_lpar_proc_compat_mode,curr_lpar_proc_compat_mode"
     )
     raw = await run_hmc_command(config, cmd)

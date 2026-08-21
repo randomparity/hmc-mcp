@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
+from .ssh_commands import build_filter
+
 import csv
 import io
 import shlex
@@ -387,7 +389,7 @@ def hmc_list_vios_backups(
         lambda: _run_vios_backup_list_command(
             vios_name_or_uuid,
             lambda uuid: (
-                f"lsviosbk --filter {shlex.quote(f'vios_uuids={uuid}')} "
+                f"lsviosbk --filter {shlex.quote(build_filter([('vios_uuids', uuid)]))} "
                 "-F name,type --header"
             ),
             profile,
