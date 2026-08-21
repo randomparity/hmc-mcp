@@ -75,7 +75,7 @@ Record (`-a`) sites — ssh_commands.py:
 
 Filter sites — all become `build_filter(...)`:
 
-- ssh_commands.py: `list_sriov_roce_port_rows` :548 (`adapter_ids`), `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `read_sriov_lpar_state` :591 (`lpar_names`), `read_sriov_profile_ports` :604–605 (`lpar_names`+`profile_names`), `list_fc_ports` :665, `list_sea_adapters` :691, `list_vnics` :717, `list_vnic_rows` :768, `read_vios_identity` :800, the description probe :931, the msp probe :984, the `lpar_env` probe :1025, the proc-compat probe :1083 (all `lpar_names`)
+- ssh_commands.py: `list_sriov_physical_port_rows` :548 (`adapter_ids`), `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `read_sriov_lpar_state` :591 (`lpar_names`), `read_sriov_profile_ports` :604–605 (`lpar_names`+`profile_names`), `list_fc_ports` :665, `list_sea_adapters` :691, `list_vnics` :717, `list_vnic_rows` :768, `read_vios_identity` :800, the description probe :931, the msp probe :984, the `lpar_env` probe :1025, the proc-compat probe :1083 (all `lpar_names`)
 - server_vios.py:390 (`vios_uuids`)
 - scripts/live_test_runner.py :407, :1159, :1892 (`lpar_names`; raw f-string interpolation
   today, no `shlex.quote`; script already imports from `hmc_mcp.ssh_commands`) — these

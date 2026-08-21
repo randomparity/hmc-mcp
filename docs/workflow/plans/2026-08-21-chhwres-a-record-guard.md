@@ -178,6 +178,56 @@ def test_build_filter_refuses_duplicates_and_empty_input():
         build_filter([])
 ```
 
+   Per-site hostile-value refusal tests, mirroring the existing ``HOSTILE`` block — one
+   parametrized test per migrated ssh_commands filter function (17 minus server_vios and
+   scripts; see step 6 for those):
+
+```python
+HOSTILE_FILTER = "x,injected=1"
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        "list_sriov_physical_port_rows",
+        "list_sriov_configured_logical_port_rows",
+        "read_sriov_lpar_state",
+        "read_sriov_profile_ports",
+        "list_fc_ports",
+        "list_sea_adapters",
+        "list_vnics",
+        "list_vnic_rows",
+        "read_vios_identity",
+        "get_lpar_description",
+        "get_lpar_msp",
+        "set_lpar_msp",
+        "get_lpar_proc_compat",
+    ],
+)
+def test_filter_site_refuses_a_hostile_name(fn):
+    import hmc_mcp.ssh_commands as mod
+    f = getattr(mod, fn)
+    with pytest.raises(HMCCLIError, match="comma"):
+        asyncio.run(f(_config(), "sys", HOSTILE_FILTER))
+```
+
+   (Adjust per-signature extras: `read_sriov_profile_ports` and `read_sriov_lpar_state` take
+   extra positional args; pass clean values for them.) Plus the spec's shape pin:
+
+```python
+def test_list_fc_ports_renders_the_whole_expression_quoted():
+    """A space-carrying name quotes the whole expression (normalized shape)."""
+    sent = []
+
+    async def fake_run(config, command):
+        sent.append(command)
+        return ""
+
+    ...monkeypatch run_hmc_command...
+    asyncio.run(list_fc_ports(_config(), "system-a", "my name"))
+    assert "--filter 'lpar_names=my name'" in sent[0]
+```
+
 2. Implement beside the record builder:
 
 ```python
@@ -240,7 +290,7 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
     command = f"lssyscfg -r lpar -m {shlex.quote(system_name)} --filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} -F {','.join(fields)} --header"
 ```
 
-   Same treatment at `list_sriov_roce_port_rows` :548 and
+   Same treatment at `list_sriov_physical_port_rows` :548 and
    `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `list_vnic_rows` :768,
    `read_vios_identity` :800, and `list_vnics` :717 (`lpar_names`).
    `read_sriov_profile_ports` :604–605 becomes:
@@ -270,9 +320,10 @@ def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
    identically; any that fail are updated to the builder-produced string in this commit).
 6. Commit: `feat: route ssh_commands filter selections through build_filter`.
 
-**Acceptance**: new filter tests green; `grep -n "filter.*f'" src/hmc_mcp/ssh_commands.py`
-returns no un-migrated interpolation (the guard in Task 5 enforces this structurally);
-existing command-shape tests green.
+**Acceptance**: new filter tests green; every per-site hostile refusal green; shape pin green;
+existing command-shape tests green. Structural enforcement of "no un-migrated site" is
+deliberately deferred to Task 5's widened scan — this task's acceptance is behavioural only,
+and the mid-sequence tree may still contain a missed site until then.
 
 ## Task 3 — `add_vnic_backing` through the record builder
 
@@ -365,8 +416,14 @@ async def test_add_vnic_backing_refuses_record_structure_in_a_device():
    `uv run --no-sync python -m py_compile scripts/live_test_runner.py` both succeed.
 4. Commit: `feat: route remaining filter sites through build_filter`.
 
-**Acceptance**: both modules import clean; `grep -rn "filter.*{f'" src/hmc_mcp scripts`
-returns nothing.
+Per-site hostile-value runtime tests are not written for the server_vios or live_test_runner
+sites: the script functions drive live MCP clients and cannot be exercised unit-side, and
+server_vios's site sits inside a lambda handed to `_run_vios_backup_list_command` — these
+sites are covered by the builder's unit tests and by the Task 5 structural scan. Recorded as a
+deliberate narrowing of the spec's per-site-test promise to the ssh_commands surface.
+
+**Acceptance**: both modules import clean; no raw `--filter {f'` interpolation remains under
+`src/hmc_mcp/` or `scripts/`.
 
 ## Task 5 — Widen the recurrence guard
 
@@ -386,11 +443,11 @@ returns nothing.
      selected-but-nothing-examined tripwire applies, and the synthetic-violation test uses a
      whole-expression literal.
    - Known-site enumeration for the filter selection — 17 enclosing functions:
-     `list_sriov_roce_port_rows`, `list_sriov_configured_logical_port_rows`,
+     `list_sriov_physical_port_rows`, `list_sriov_configured_logical_port_rows`,
      `read_sriov_lpar_state`, `read_sriov_profile_ports`, `list_fc_ports`, `list_sea_adapters`,
      `list_vnics`, `list_vnic_rows`, `read_vios_identity`, and the description, msp,
      `lpar_env`, and proc-compat probe functions (13 in ssh_commands.py);
-     `hmc_list_vios_backings_command` in server_vios.py :390; and the three live_test_runner
+     `hmc_list_vios_backups` in server_vios.py :390; and the three live_test_runner
      functions at :407/:1159/:1892.
    - Both new selections inherit `_docstring_nodes` exclusion and the
      outside-function-literal refusal (extend
