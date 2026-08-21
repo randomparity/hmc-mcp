@@ -11,11 +11,14 @@ or run `<command> --help` on the HMC itself.
 > asyncssh; there is no persistent shell session.  `hmc_run_command` exposes
 > this transport directly to callers.
 
-> **CLI-name vs UUID resolution** — the HMC CLI accepts *CLI names*
-> (`-m <system>`, `-p <partition>`), not REST UUIDs.  hmc-mcp resolves REST
-> UUIDs to CLI names before issuing any SSH command: it tries the REST API
-> first and falls back to `lssyscfg -r sys/lpar -F uuid,name` over SSH when
-> the REST API is unreachable.
+> **CLI-name vs UUID resolution** — most HMC CLI options such as `-m <system>`
+> and `-p <partition>` require CLI names rather than REST UUIDs. For those
+> options, hmc-mcp tries REST resolution first and can fall back to
+> `lssyscfg -r sys/lpar -F uuid,name` over SSH. VIOS backup catalog commands are
+> exceptions: listing passes a VIOS UUID directly, while backup and restore pass
+> a direct system name plus VIOS UUID directly. A VIOS name or a backup/restore
+> system UUID requires REST and has no `lssyscfg` fallback; the system UUID
+> resolves to its unique MTMS identity rather than a CLI name.
 
 > **UUID field name** — the correct lower-case field name is `uuid` on both
 > HMC V10 and V11.  `UUID` (upper-case) is rejected with *invalid attribute*.
@@ -455,10 +458,12 @@ hmc_backup_vios(
 a system UUID requires REST to resolve its unique MTMS identity and has no
 `lssyscfg` fallback.
 
-The required managed-system and VIOS selectors are both authorization targets.
-Narrow access-policy grants for `hmc_backup_vios` must include matching
-`managed_system` and `vios` entries; existing VIOS-only grants must add the
-managed-system target before using the replacement interface.
+The required managed-system and VIOS selectors remain authorization and audit
+metadata, but an `ssp` backup can cover the cluster and associated nodes beyond
+them. The tool is therefore non-exhaustive: only `targets = "all-targets"` can
+authorize it. Prefer an explicit `tools = ["hmc_backup_vios"]` grant for least
+privilege. An effect-wide mutate grant with `all-targets` also reaches it, while
+a targets table cannot authorize it even when both selector kinds are present.
 
 ---
 
@@ -486,7 +491,9 @@ hmc_restore_vios(
 ```
 
 `backup_type` is required and keyword-only. Restore uses the same selector-routing
-rules as backup: only a direct system name plus VIOS UUID bypasses REST.
+rules as backup: only a direct system name plus VIOS UUID bypasses REST. Restore
+is likewise non-exhaustive because `ssp` can affect the wider cluster, so it also
+requires an `all-targets` grant; prefer naming `hmc_restore_vios` explicitly.
 
 ---
 

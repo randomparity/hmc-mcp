@@ -689,6 +689,13 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
 | `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
 
+`hmc_backup_vios` and `hmc_restore_vios` retain required managed-system and VIOS
+selector metadata for authorization diagnostics and audit. Because their `ssp`
+mode can affect the wider cluster, both tools are non-exhaustive and require
+`targets = "all-targets"`. Prefer a grant that explicitly names only the needed
+tool. An effect-class grant with `all-targets` can reach either tool; a targets
+table cannot authorize either one even when it contains both selector kinds.
+
 **SR-IOV / vNIC & physical I/O (SSH/CLI)**
 
 | Tool                       | Description |
