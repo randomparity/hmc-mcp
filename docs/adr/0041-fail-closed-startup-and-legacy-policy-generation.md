@@ -180,10 +180,10 @@ registers a module's entire tool set unbounded and without error.
 This record first rejected the narrowing, on the ground that `None` still described the
 mechanism accurately and that ADR 0038 had priced it at a dozen call sites. Both halves stopped
 holding: `None` describes a composition that no longer exists, and every non-test caller now
-passes both gates, so the price is paid already. `authorized`'s early return survives through
-its other disjunct alone — a tool declaring no connection argument. What the earlier reasoning
-got right is narrower than it claimed: the *policy object* still travels as callables, so
-`access_policy` never imports `tool_registry` back.
+passes both gates, so the price is paid already. Since #297, `authorized` wraps every tool;
+connection-less tools skip only the connection condition and still pass through target
+authorization. What the earlier reasoning got right is narrower than it claimed: the *policy
+object* still travels as callables, so `access_policy` never imports `tool_registry` back.
 
 **Short-lived scoped grants remain a future extension point and nothing more.** The seam is
 `server._gates`: a future grant issuer would compose a second `Authorize` alongside

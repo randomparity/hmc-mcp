@@ -295,10 +295,13 @@ def test_the_recorded_unboundable_count_matches_the_registry():
     """ADR 0041's count of tools no `targets` table can bound is recomputed here.
 
     Not a spec requirement — this exists because the figure it replaced was wrong and
-    nothing reddened. ADR 0039 states the same set as 25 in two places while its own
-    earlier line says 19 selector-less tools; the live registry says 26. A bare integer
-    in an immutable record rots the first time a tool is added, and no test in the repo
-    could see it.
+    nothing reddened. Historically, ADR 0039 stated the same set as 25 in two places
+    while its own earlier line said 19 selector-less tools; the then-live registry had
+    26. Since #297, every tool passes through target authorization: a connection-less
+    tool skips only the connection condition. The current registry has 30 ordinary
+    non-exhaustive tools and 31 total including `hmc_run_command`. A bare integer in an
+    immutable record rots the first time a tool is added, and no test in the repo could
+    see it.
 
     So the assertion runs the other way round: the predicate is evaluated against the
     live registry, and the ADR's sentence has to agree with it. Adding a tool with
