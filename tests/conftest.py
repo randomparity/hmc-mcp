@@ -104,6 +104,7 @@ def isolate_audit_logging():
     setup as well as teardown, for the reason above.
     """
     _restore_fastmcp_logger()
+    _restore_third_party_loggers()
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     saved_handlers = list(logger.handlers)
     saved_level = logger.level
