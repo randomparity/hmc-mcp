@@ -24,6 +24,11 @@ to match. The access log moves into the bounded sink: accepted.
 
 ## Levers, verified against installed `fastmcp-slim==3.4.7` + `uvicorn==0.52.1`
 
+The design's uvicorn claims are version-specific source facts, so this change also pins
+`uvicorn==0.52.1` in the `app` extra beside the existing exact pins — before it, uvicorn
+floated transitively at `>=0.35` bounded only by `uv.lock`, and a bump could reintroduce
+an unbounded fd-2 handler without any pyproject change inviting review.
+
 - `FastMCP.run(**transport_kwargs)` forwards unknown kwargs to `run_http_async`, which
   accepts `uvicorn_config: dict` merged into the `uvicorn.Config(app, host, port,
   **config_kwargs)` call (`fastmcp/server/mixins/transport.py:266,342-357`).
