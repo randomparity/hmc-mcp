@@ -499,16 +499,6 @@ _FASTMCP_LOGGER_NAME: Final = "fastmcp"
 #: bug keeps its traceback.
 _FASTMCP_LINE_FORMAT: Final = "%(levelname)s: %(message)s"
 
-#: What every physical line of a FastMCP rendering starts with. Its job is to be
-#: something a JSON object cannot start with: a rendered exception carries whatever
-#: the exception's ``str()`` carries, which under ADR 0042's threat model is
-#: HMC-returned text, and without this a newline followed by ``{"event": …}`` would
-#: land at column 0 of the audit stream and parse as a record. ``rich``'s wrapping
-#: made column 0 unreachable before ADR 0051; this is what replaces that accident
-#: with a rule. It also names the producer, which is worth something now that three
-#: of them share the stream.
-_FASTMCP_LINE_PREFIX: Final = "fastmcp: "
-
 #: The third-party loggers the served path binds to ADR 0043's sink (ADR 0051,
 #: widened by #330). Each gets its own handler and its own producer-named prefix;
 #: ``uvicorn`` and ``uvicorn.access`` additionally get the level and propagation
@@ -592,12 +582,7 @@ def install_third_party_stderr_sinks() -> None:
         for existing in logger.handlers[:]:
             logger.removeHandler(existing)
         handler = sink_handler()
-        handler.setFormatter(
-            StreamSafeFormatter(
-                _FASTMCP_LINE_FORMAT,
-                _FASTMCP_LINE_PREFIX if name == _FASTMCP_LOGGER_NAME else f"{name}: ",
-            )
-        )
+        handler.setFormatter(StreamSafeFormatter(_FASTMCP_LINE_FORMAT, f"{name}: "))
         logger.addHandler(handler)
         if name in _UVICORN_LEVEL_LOGGERS:
             logger.setLevel(logging.INFO)
