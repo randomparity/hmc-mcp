@@ -124,6 +124,27 @@ HOSTILE_MEDIA_FEED = """<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>"""
 
+HOSTILE_MOUNTED_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <content>
+      <VirtualIOServer>
+        <VirtualSCSIMappings>
+          <VirtualSCSIMapping>
+            <UUID>mapping-001</UUID>
+            <Storage>
+              <VirtualOpticalMedia>
+                <MediaName>evil'name.iso</MediaName>
+              </VirtualOpticalMedia>
+            </Storage>
+            <AssociatedLogicalPartition rel="related" href="/rest/api/uom/LogicalPartition/lpar-001"/>
+          </VirtualSCSIMapping>
+        </VirtualSCSIMappings>
+      </VirtualIOServer>
+    </content>
+  </entry>
+</feed>"""
+
 
 @pytest.mark.asyncio
 async def test_delete_media_repository_refuses_nonempty(mock_hmc):
@@ -237,3 +258,20 @@ async def test_delete_media_repository_refusal_is_repr_quoted(mock_hmc):
     assert not any(
         ord(ch) < 0x20 or ord(ch) == 0x7F or ch in "\u2028\u2029" for ch in message
     )
+
+
+@pytest.mark.asyncio
+async def test_delete_optical_media_refusal_is_repr_quoted(mock_hmc):
+    """The mounted-media refusal repr-quotes the names it echoes."""
+    media_name = "evil'name.iso"
+    mock_hmc.get(VIOS_PATH).mock(
+        return_value=httpx.Response(200, text=HOSTILE_MOUNTED_FEED)
+    )
+
+    config = make_config()
+    async with HMCClient(config) as hmc:
+        with pytest.raises(HMCError) as exc_info:
+            await delete_optical_media(hmc, VIOS_UUID, VG_UUID, media_name)
+
+    message = str(exc_info.value)
+    assert repr(media_name) in message

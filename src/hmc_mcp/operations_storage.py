@@ -209,9 +209,9 @@ async def delete_optical_media(
 
     if blockers:
         raise HMCError(
-            f"Cannot delete optical media '{media_name}': it is mounted on "
-            f"{len(blockers)} LPAR(s): {', '.join(blockers)}. "
-            f"Unmount the media first."
+            f"Cannot delete optical media {media_name!r}: it is mounted on "
+            f"{len(blockers)} LPAR(s): {', '.join(blockers)!r}. "
+            "Unmount the media first."
         )
 
     return await hmc.delete_optical_media(vios_uuid, vg_uuid, media_name)
