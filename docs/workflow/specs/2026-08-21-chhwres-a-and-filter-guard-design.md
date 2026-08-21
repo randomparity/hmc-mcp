@@ -7,7 +7,7 @@ Issue: randomparity/hmc-mcp#285 · ADR: [0061](../../adr/0061-quoted-list-values
 Frozen in the `WORK:SCOPE` charter (token `q285-scope-7c41`, issue comment 5369324909):
 
 1. `add_vnic_backing` builds its `-a` record via `build_attribute_record`.
-2. Comma-carrying `backing_devices` values render in the IBM quoted-pair form.
+2. Comma-carrying `backing_devices` values render in the IBM quoted-pair form whose bytes match what the 2026-08-21 live probes accepted (ADR 0061 Context); no new live-HMC probing is in scope.
 3. The recurrence guard in `tests/unit/test_i_record_grammar.py` selects `chhwres -a` literals.
 4. Every `--filter name=value` selection value is validated against the shared delimiter table before interpolation, in `src/` and `scripts/`.
 5. `just verify` green.
@@ -19,8 +19,10 @@ Frozen in the `WORK:SCOPE` charter (token `q285-scope-7c41`, issue comment 53693
 `build_attribute_record(pairs, *, quoted: Collection[str] = ()) -> str` (ssh_commands.py).
 
 - `quoted` names attributes whose value may be a comma-separated HMC list.
-- Validation order per value, unchanged for unmarked values: attribute-name form, then the
-  `_RECORD_DELIMITERS` table (`,` `=` `"` plus control characters), then duplicate refusal.
+- Refusal precedence unchanged for unmarked values: the duplicate pre-pass runs first over all
+  pairs, then each value passes name-form → delimiter-table → control-character checks inside
+  `_validated_value`. A record with both a duplicate name and a bad value keeps raising the
+  duplicate error; a test pins this precedence.
 - A marked value containing `,` renders as `"name=v1,v2"` — literal double quotes around the
   whole pair. A marked value without `,` renders bare. `=`, `"`, control characters are
   refused even in marked values (nothing has verified their behaviour inside a quoted region).
@@ -44,9 +46,12 @@ both now parse correctly on the HMC.
 
 `build_filter(pairs: Sequence[tuple[str, object]]) -> str` beside the record builder:
 
-- validates each name against the same identifier form as record attribute names,
-- refuses every `_RECORD_DELIMITERS` character in each value (`HMCCLIError`, naming field and
-  character — identical wording convention to the record builder),
+- validates each pair through the module-private `_validated_value(attribute, value)` the
+  record builder already uses — attribute-name form, then the `_RECORD_DELIMITERS` table, then
+  control characters (`HMCCLIError`, naming field and character; no second table),
+- for a bare-value site that is not a filter (`remove_memory_pool`'s `-a <pool_name>`),
+  callers invoke `_validated_value("pool_name", pool_name)` directly; the guard exempts that
+  site by enclosing-function name (section 5), not by builder tracing,
 - returns `",".join(f"{n}={v}")`,
 - and refuses a comma *inside* a value: IBM's multi-value list form
   (`--filter "lpar_names=a,b"`) has no probed encoding, so it is refused fail-closed (ADR 0061).
@@ -66,9 +71,11 @@ Record (`-a`) sites — ssh_commands.py:
 
 Filter sites — all become `build_filter(...)`:
 
-- ssh_commands.py: `list_sriov_roce_port_rows` :548 (`adapter_ids`), `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `read_sriov_lpar_state` :591 (`lpar_names`), `read_sriov_profile_ports` :604–605 (`lpar_names`+`profile_names`), `list_fc_ports` :665, `list_sea_adapters` :691, `list_vnic_rows` :768, `read_vios_identity` :800, the description probe :931, the msp probe :984, the `lpar_env` probe :1025, the proc-compat probe :1083 (all `lpar_names`)
+- ssh_commands.py: `list_sriov_roce_port_rows` :548 (`adapter_ids`), `list_sriov_configured_logical_port_rows` :570 (`adapter_ids`), `read_sriov_lpar_state` :591 (`lpar_names`), `read_sriov_profile_ports` :604–605 (`lpar_names`+`profile_names`), `list_fc_ports` :665, `list_sea_adapters` :691, `list_vnics` :717, `list_vnic_rows` :768, `read_vios_identity` :800, the description probe :931, the msp probe :984, the `lpar_env` probe :1025, the proc-compat probe :1083 (all `lpar_names`)
 - server_vios.py:390 (`vios_uuids`)
-- scripts/live_test_runner.py :407, :1159, :1892 (`lpar_names`; script already imports from `hmc_mcp.ssh_commands`)
+- scripts/live_test_runner.py :407, :1159, :1892 (`lpar_names`; raw f-string interpolation
+  today, no `shlex.quote`; script already imports from `hmc_mcp.ssh_commands`) — these gain
+  both `build_filter` and `shlex.quote`
 
 Note the two filter shapes: `--filter {shlex.quote(f'lpar_names={x}')}` (whole expression
 quoted) and `--filter lpar_names={shlex.quote(x)}` (value-only). Both keep their shape; only
@@ -82,9 +89,10 @@ the interpolated text's provenance changes to the builder.
   `-i` (unchanged), literals opening with `chhwres` keyed on `-a`.
 - New selection: any scanned literal carrying `--filter` requires its value payload to trace to
   `build_filter` (same unwrap/trace machinery as `-i`).
-- Explicit exemption set `_VALUE_FORM_A_PAYLOADS = {"pool_name"}` with a comment citing the
-  mempool value form and ADR 0061; a pinning test asserts `remove_memory_pool` still emits the
-  bare pool name.
+- Explicit exemption keyed on the qualified enclosing function —
+  `_VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}` — with a comment citing the mempool value
+  form and ADR 0061; a pinning test asserts `remove_memory_pool` still emits the bare pool
+  name.
 - Known-site pin test extended to the new selections so silent narrowing is visible.
 
 ### 6. Threat model
