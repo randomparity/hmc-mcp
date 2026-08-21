@@ -1568,6 +1568,6 @@ def test_restore_vios_scope_and_backup_name_containment_are_independent(monkeypa
                     "system-name",
                     vios_uuid,
                     escape,
-                    "ssp",
+                    backup_type="ssp",
                     restart_if_required=False,
                 )

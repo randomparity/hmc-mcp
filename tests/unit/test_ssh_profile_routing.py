@@ -284,7 +284,7 @@ def test_hmc_restore_vios_profile_reaches_ssh(monkeypatch):
                 SYSTEM_NAME,
                 SYSTEM_UUID,
                 "backup.tar.gz",
-                "ssp",
+                backup_type="ssp",
                 profile="dev",
             )
 

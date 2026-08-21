@@ -169,11 +169,15 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
 @pytest.mark.parametrize(
     ("tool", "arguments", "keywords"),
     [
-        (hmc_backup_vios, (SYSTEM_NAME, SYSTEM_UUID, "vios;id"), {}),
+        (
+            hmc_backup_vios,
+            (SYSTEM_NAME, SYSTEM_UUID),
+            {"backup_name": "vios;id"},
+        ),
         (
             hmc_restore_vios,
-            (SYSTEM_NAME, SYSTEM_UUID, "vios;id", "ssp"),
-            {"restart_if_required": False},
+            (SYSTEM_NAME, SYSTEM_UUID, "vios;id"),
+            {"backup_type": "ssp", "restart_if_required": False},
         ),
     ],
     ids=["backup", "restore"],

@@ -163,9 +163,20 @@ def test_vios_backup_lifecycle_guidance_names_supported_commands():
     assert "mkviosbk" in backup.description
     assert "system_name_or_uuid" in backup.parameters["properties"]
     assert "backup_name" in backup.parameters["properties"]
+    assert set(backup.parameters["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+    }
 
     restore = tools["hmc_restore_vios"]
     assert "rstviosbk" in restore.description
     assert "viosioconfig" in restore.description
     assert "ssp" in restore.description
     assert "restart_if_required" in restore.parameters["properties"]
+    assert set(restore.parameters["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+    }

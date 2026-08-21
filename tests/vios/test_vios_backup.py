@@ -195,7 +195,12 @@ def test_backup_vios_runs_supported_command(monkeypatch, backup_type):
     conn_mock = _make_ssh_mock("Backup completed successfully.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, BACKUP_NAME, backup_type)
+        result = hmc_backup_vios(
+            SYSTEM_NAME,
+            VIOS_UUID,
+            backup_name=BACKUP_NAME,
+            backup_type=backup_type,
+        )
 
     conn_mock.run.assert_called_once_with(
         f"mkviosbk -t {backup_type} -m {SYSTEM_NAME} --uuid {VIOS_UUID} -f {BACKUP_NAME}",
@@ -211,7 +216,7 @@ def test_backup_vios_defaults_to_full_vios_type(monkeypatch):
     conn_mock = _make_ssh_mock("Done.\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, BACKUP_NAME)
+        hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name=BACKUP_NAME)
 
     assert "mkviosbk -t vios" in conn_mock.run.call_args.args[0]
 
@@ -231,7 +236,9 @@ def test_backup_vios_with_cli_ready_selectors_uses_one_config_without_rest(
     monkeypatch.setattr("hmc_mcp.server_vios.run_hmc_cli", run_hmc_cli)
 
     assert (
-        hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, BACKUP_NAME, profile="dev")
+        hmc_backup_vios(
+            SYSTEM_NAME, VIOS_UUID, backup_name=BACKUP_NAME, profile="dev"
+        )
         == "completed\n"
     )
 
@@ -248,7 +255,39 @@ def test_backup_vios_invalid_type_raises_before_external_calls(monkeypatch):
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="Invalid backup_type"):
-            hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, BACKUP_NAME, "bogus")
+            hmc_backup_vios(
+                SYSTEM_NAME,
+                VIOS_UUID,
+                backup_name=BACKUP_NAME,
+                backup_type="bogus",
+            )
+
+
+@pytest.mark.parametrize(
+    ("tool", "legacy_arguments"),
+    [
+        (hmc_backup_vios, ("old-vios", "ssp", "old-profile")),
+        (
+            hmc_restore_vios,
+            ("old-vios", "old-backup", "old-profile", "old-system"),
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_vios_backup_tools_reject_legacy_positional_calls_before_io(
+    monkeypatch, tool, legacy_arguments
+):
+    """Legacy maximum-arity calls cannot bind as replacement arguments."""
+    rest_client = MagicMock(side_effect=AssertionError("opened a REST client"))
+    run_hmc_cli = AsyncMock(side_effect=AssertionError("reached the SSH layer"))
+    monkeypatch.setattr("hmc_mcp.server_vios.HMCClient", rest_client)
+    monkeypatch.setattr("hmc_mcp.server_vios.run_hmc_cli", run_hmc_cli)
+
+    with pytest.raises(TypeError):
+        tool(*legacy_arguments)
+
+    rest_client.assert_not_called()
+    run_hmc_cli.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------- #
@@ -270,7 +309,7 @@ def test_restore_vios_runs_supported_command(
             SYSTEM_NAME,
             VIOS_UUID,
             BACKUP_NAME,
-            backup_type,
+            backup_type=backup_type,
             restart_if_required=restart_if_required,
         )
 
@@ -293,7 +332,9 @@ def test_restore_vios_rejects_full_vios_type_before_external_calls(monkeypatch):
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="backup_type"):
-            hmc_restore_vios(SYSTEM_NAME, VIOS_UUID, BACKUP_NAME, "vios")
+            hmc_restore_vios(
+                SYSTEM_NAME, VIOS_UUID, BACKUP_NAME, backup_type="vios"
+            )
 
 
 @pytest.mark.parametrize("backup_name", INVALID_BACKUP_NAMES)
@@ -308,7 +349,7 @@ def test_backup_vios_refuses_a_name_that_could_leave_the_catalog(
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="backup_name"):
-            hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name)
+            hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name=backup_name)
 
 
 def test_backup_vios_catalog_name_error_describes_creation_safe_syntax(monkeypatch):
@@ -316,7 +357,7 @@ def test_backup_vios_catalog_name_error_describes_creation_safe_syntax(monkeypat
     _hmc_env(monkeypatch)
 
     with pytest.raises(ValueError) as error:
-        hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, "../existing")
+        hmc_backup_vios(SYSTEM_NAME, VIOS_UUID, backup_name="../existing")
 
     message = str(error.value)
     assert "nonempty, unpadded catalog name" in message
@@ -339,7 +380,7 @@ def test_restore_vios_refuses_a_name_that_could_leave_the_catalog(
                 SYSTEM_NAME,
                 VIOS_UUID,
                 backup_name,
-                "ssp",
+                backup_type="ssp",
                 restart_if_required=False,
             )
 
@@ -354,8 +395,8 @@ def test_restore_vios_refuses_a_name_that_could_leave_the_catalog(
         (hmc_backup_vios, (SYSTEM_NAME, VIOS_UUID), {}),
         (
             hmc_restore_vios,
-            (SYSTEM_NAME, VIOS_UUID, "ssp"),
-            {"restart_if_required": False},
+            (SYSTEM_NAME, VIOS_UUID),
+            {"backup_type": "ssp", "restart_if_required": False},
         ),
     ],
     ids=["backup", "restore"],
@@ -366,10 +407,8 @@ def test_vios_backup_tools_admit_ordinary_catalog_names(
     """Validation is narrow enough to retain ordinary catalog names for both tools."""
     _hmc_env(monkeypatch)
     conn_mock = _make_ssh_mock("completed\n")
-    call_arguments = (*arguments[:2], backup_name, *arguments[2:])
-
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        tool(*call_arguments, **keywords)
+        tool(*arguments, backup_name=backup_name, **keywords)
 
     assert f"-f {backup_name}" in conn_mock.run.call_args.args[0]
 
@@ -385,7 +424,7 @@ def test_restore_vios_returns_cli_output(monkeypatch):
             SYSTEM_NAME,
             VIOS_UUID,
             "mybackup",
-            "ssp",
+            backup_type="ssp",
             restart_if_required=False,
         )
 
@@ -407,7 +446,7 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_backup_vios(SYSTEM_NAME, "vios-prod", BACKUP_NAME)
+        hmc_backup_vios(SYSTEM_NAME, "vios-prod", backup_name=BACKUP_NAME)
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod", system_uuid=SYSTEM_UUID)
     assert f"-m {SYSTEM_NAME} --uuid {VIOS_UUID}" in conn_mock.run.call_args.args[0]
@@ -441,7 +480,7 @@ def test_backup_vios_uses_mtms_for_a_system_uuid_even_when_names_collide(
     conn_mock = _make_ssh_mock("completed\n")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        hmc_backup_vios(SYSTEM_UUID, "vios-prod", BACKUP_NAME)
+        hmc_backup_vios(SYSTEM_UUID, "vios-prod", backup_name=BACKUP_NAME)
 
     hmc.find_vios_by_name.assert_awaited_once_with("vios-prod", system_uuid=SYSTEM_UUID)
     assert (
@@ -473,7 +512,7 @@ def test_backup_vios_refuses_uuid_without_complete_mtms_before_ssh(
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, BACKUP_NAME)
+            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 @pytest.mark.parametrize(
@@ -520,7 +559,7 @@ def test_backup_vios_refuses_missing_or_blank_nested_mtms_component_before_ssh(
         side_effect=AssertionError("reached the SSH layer"),
     ):
         with pytest.raises(ValueError, match="MachineTypeModelSerialNumber|MTMS"):
-            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, BACKUP_NAME)
+            hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME)
 
 
 def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):
@@ -538,7 +577,9 @@ def test_backup_vios_reuses_config_for_rest_and_ssh(monkeypatch):
     monkeypatch.setattr("hmc_mcp.server_vios.run_hmc_cli", run_hmc_cli)
 
     assert (
-        hmc_backup_vios(SYSTEM_UUID, VIOS_UUID, BACKUP_NAME, profile="dev")
+        hmc_backup_vios(
+            SYSTEM_UUID, VIOS_UUID, backup_name=BACKUP_NAME, profile="dev"
+        )
         == "completed\n"
     )
 

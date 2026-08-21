@@ -398,6 +398,7 @@ def hmc_list_vios_backups(
 def hmc_backup_vios(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
+    *,
     backup_name: str,
     backup_type: BackupType = "vios",
     profile: str | None = None,
@@ -486,6 +487,7 @@ def hmc_restore_vios(
     system_name_or_uuid: str,
     vios_name_or_uuid: str,
     backup_name: str,
+    *,
     backup_type: RestoreBackupType,
     restart_if_required: bool = False,
     profile: str | None = None,

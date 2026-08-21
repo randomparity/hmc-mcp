@@ -138,7 +138,11 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     monkeypatch.setattr(server_vios, "run_hmc_cli", command)
 
     assert server_vios.hmc_restore_vios(
-        "system-name", "vios1", "backup", "ssp", restart_if_required=False
+        "system-name",
+        "vios1",
+        "backup",
+        backup_type="ssp",
+        restart_if_required=False,
     ) == "restored"
 
     hmc.find_vios_by_name.assert_awaited_once_with(

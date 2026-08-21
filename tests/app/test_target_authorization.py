@@ -194,6 +194,54 @@ def test_backup_vios_one_sided_target_grant_denies_before_io(monkeypatch, target
     assert opened == []
 
 
+@pytest.mark.parametrize(
+    ("tool", "legacy_arguments", "missing_fields"),
+    [
+        (
+            "hmc_backup_vios",
+            {
+                "vios_name_or_uuid": "vios-1",
+                "backup_type": "ssp",
+                "profile": "lab",
+            },
+            ("system_name_or_uuid", "backup_name"),
+        ),
+        (
+            "hmc_restore_vios",
+            {
+                "vios_name_or_uuid": "vios-1",
+                "backup_name": "backup",
+                "profile": "lab",
+                "system_name_or_uuid": "sys-1",
+            },
+            ("backup_type",),
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_legacy_vios_backup_payloads_fail_validation_before_io(
+    monkeypatch, tool, legacy_arguments, missing_fields
+):
+    """Old named payloads omit replacement fields and never reach a handler."""
+    opened: list[str] = []
+    _seal_every_outbound_path(monkeypatch, opened)
+    grants = [
+        {
+            "tools": [tool],
+            "connections": ["lab"],
+            "targets": "all-targets",
+        }
+    ]
+
+    application = create_mcp(_policy(grants))
+    with pytest.raises(ToolError) as error:
+        _call(application, tool, legacy_arguments)
+
+    message = str(error.value)
+    assert all(field in message for field in missing_fields)
+    assert opened == []
+
+
 def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
     """`hmc_power_off_lpar` is the carry-forward's live instance.
 
