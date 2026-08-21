@@ -79,13 +79,29 @@ Files: `src/hmc_mcp/server.py`, `tests/app/test_connection_authorization.py`.
 Acceptance: the serve path constructs `uvicorn.Config` with `log_config=None`; no
 default handler lands after the install.
 
-## Task 3 — Docs already amended; verify consistency
+## Task 3 — Real serve --http behavioral check
+
+The unit tests stub `uvicorn.Server.serve`, so nothing in Task 2 observes the serving
+loop itself, and every justfile guardrail is stdio-only. Before the review loop,
+execute the spec's criterion 1 against a real process once:
+
+1. Launch `uv run hmc-mcp serve --http --port <free>` (check CLI flags) as a
+   subprocess with fd 2 redirected to a temp file.
+2. Issue one real HTTP request that produces both a uvicorn.error startup sequence
+   and an access record (any request reaching the app; a non-MCP path still logs an
+   access line).
+3. Stop the server; assert the captured stderr contains sink-rendered lines only:
+   `uvicorn.access: ` prefixed access line(s), no bare access-format line at column 0,
+   no `<StreamHandler` default formatting. This is a manual verification recorded in
+   the completion report, not a committed test.
+
+## Task 4 — Docs already amended; verify consistency
 
 ADRs 0043/0051 are already amended on this branch (commits 0c589ba..HEAD). Verify no
 stale references remain: grep for `install_fastmcp_stderr_sink` in docs/ and src/;
 the ADR names `install_third_party_stderr_sinks`. Fix any stragglers.
 
-## Task 4 — Guardrails + review loop
+## Task 5 — Guardrails + review loop
 
 `just verify`. Then the branch review loop (/review-loop --base main) per the
 workflow; fix defensible findings; commit per fix. Then /simplify if warranted,
