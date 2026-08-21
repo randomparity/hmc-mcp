@@ -27,10 +27,13 @@ optional restart-if-required flag, then runs
 `rstviosbk -t <type> -m <system-name> --uuid <vios-uuid> -f <backup-name> [-r]`, with `-r` only
 when requested.
 
-Resolve a managed-system UUID to its HMC system name and resolve a VIOS name within that system to
-its UUID before SSH command construction. Shell-quote every dynamic CLI value. Apply the existing
-catalog-name refusal to both creation and restore names. Replace the old interfaces outright: no
-alias, compatibility overload, or inferred default restore type.
+Preserve the managed-system selector's identity before SSH command construction. A caller-supplied
+name remains the `-m` value. Resolve a caller-supplied UUID to its machine type, model, and serial
+(MTMS), because IBM requires MTMS when user-defined system names collide; fail before SSH if that
+unique CLI identity is unavailable. Resolve a VIOS name within the selected system to its UUID.
+Shell-quote every dynamic CLI value. Apply the existing catalog-name refusal to both creation and
+restore names. Replace the old interfaces outright: no alias, compatibility overload, or inferred
+default restore type.
 
 ## Consequences
 
@@ -43,6 +46,8 @@ different operational workflow. Listing retains its existing result parser and r
 The already-accepted `exhaustive_targets=False` classification on restore remains unchanged: an
 explicit `ssp` restore can affect the cluster beyond the selected VIOS. The restart flag authorizes
 the HMC to restart the VIOS only after a failed restore attempt, matching `rstviosbk -r`.
+Using MTMS for a UUID selector preserves uniqueness when user-defined names collide; a UUID whose
+REST representation lacks a complete MTMS fails closed rather than degrading to a name.
 
 ## Considered & rejected
 
@@ -51,6 +56,9 @@ the HMC to restart the VIOS only after a failed restore attempt, matching `rstvi
   V10R3 SP1060 and V11R2 SP1120 reject the current commands.
 - **Infer the managed system from a VIOS UUID.** judgment: this adds fleet-wide discovery and an
   ambiguity/failure path to avoid one explicit selector that the HMC command already requires.
+- **Resolve a system UUID to its user-defined name.** verified: IBM's `mkviosbk` and `rstviosbk`
+  references require MTMS when user-defined names collide, so name conversion can discard the
+  unique identity the caller supplied.
 - **Default restore to `viosioconfig`.** judgment: a default would silently choose destructive
   semantics that the old interface never represented.
 - **Accept `vios` restore and route it elsewhere.** verified: IBM's `rstviosbk` reference accepts

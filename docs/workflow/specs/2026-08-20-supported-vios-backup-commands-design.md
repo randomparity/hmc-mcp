@@ -51,12 +51,16 @@ default and `mkviosbk` supports it. `restart_if_required` maps only to `-r`; fal
 Listing retains the existing VIOS-name-to-UUID resolution and result parser. Its builder changes to
 the supported command and quotes the complete `vios_uuids=<uuid>` filter value.
 
-Backup and restore use one async helper that opens the selected profile's REST client, resolves
-`system_name_or_uuid` through `resolve_system_name`, and resolves `vios_name_or_uuid` through
-`resolve_vios_uuid(..., system_name_or_uuid=...)`. The system name, VIOS UUID, type, and backup name
-are each shell-quoted where they enter the SSH string. REST resolution completes before SSH runs.
-An unknown system UUID or a VIOS name absent from that system fails before SSH with the existing
-actionable selector errors.
+Backup and restore use one async helper that opens the selected profile's REST client and resolves
+the selectors before SSH. A direct system name remains the CLI `-m` value. A system UUID is fetched
+once and converted to its `MachineTypeModelSerialNumber`; nested machine-type/model/serial fields
+serialize as `tttt-mmm*sssssss`, while an already rendered nonblank MTMS passes through. Missing or
+malformed MTMS fails before SSH rather than degrading a unique UUID to a possibly duplicated name.
+The helper resolves `vios_name_or_uuid` through
+`resolve_vios_uuid(..., system_name_or_uuid=system_name_or_uuid)`. The system CLI identity, VIOS
+UUID, type, and backup name are each shell-quoted where they enter the SSH string. REST resolution
+completes before SSH runs. An unknown system UUID or a VIOS name absent from that system fails with
+an actionable selector error.
 
 The existing backup-name validator becomes command-neutral and runs for backup and restore. It
 rejects empty or padded names, `/`, `\\`, dots-only values, and a leading dash. It deliberately
@@ -90,6 +94,8 @@ and its REST identity data are trusted peers; credentials are trusted configurat
 - Exact `Literal`/set validation bounds both type arguments before external calls.
 - The existing narrow catalog-name validator prevents option and path-shaped file values.
 - Existing system/VIOS resolvers bind a VIOS name to the explicit managed-system scope.
+- UUID-to-MTMS conversion preserves a unique managed-system selector when user-defined names
+  collide and fails closed if the unique CLI identity cannot be obtained.
 - `shlex.quote` encodes every caller-controlled or HMC-returned string as one remote-shell word.
 - Existing tool metadata and dispatch authorization continue to govern targets; restore remains
   non-exhaustive because `ssp` can affect a cluster.
@@ -103,8 +109,9 @@ available proof.
 ## Verification
 
 Focused tests must first fail against the old commands and signatures, then pass after the change.
-They cover exact list filtering, system-name and VIOS-UUID resolution, all valid backup types, both
-restore types, required restore type, optional `-r`, invalid type/name refusal before external
+They cover exact list filtering, direct system-name and UUID-to-MTMS resolution, duplicate-name
+safety, missing/malformed MTMS failure, system-scoped VIOS-UUID resolution, all valid backup types,
+both restore types, required restore type, optional `-r`, invalid type/name refusal before external
 calls, shell quoting for every dynamic field, raw-output preservation, profile routing, destructive
 scope forwarding, and rendered lifecycle/schema descriptions. Sweep all repository callers so no
 old positional form or command spelling remains outside historical design records that explicitly
