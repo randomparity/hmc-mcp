@@ -294,7 +294,8 @@ class _StderrSink:
 
     Three producers share it, and the third is what ADR 0051 added: this module's
     audit records, ``server._warn``'s startup prose, and — once
-    ``server.install_fastmcp_stderr_sink`` has run — FastMCP's own records,
+    ``server.install_third_party_stderr_sinks`` has run — the records of the bound
+    third-party loggers (``fastmcp``, ``uvicorn``, ``uvicorn.access``, ``mcp``),
     tracebacks included. One bound, one drop counter, and one writer covering all
     three is the point rather than an accident; a second mechanism on this
     descriptor would be a second failure mode on it.

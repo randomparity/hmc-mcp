@@ -5,7 +5,9 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PRESENTATION_PACKAGES = {"fastmcp-slim", "mcp", "rich", "typer"}
+#: Packages only the ``app`` extra may pull in: the presentation stack plus
+#: the HTTP server stack. Nothing here belongs to the dependency-free core.
+APP_ONLY_PACKAGES = {"fastmcp-slim", "mcp", "rich", "typer", "uvicorn"}
 
 
 def _dependency_names(requirements: list[str]) -> set[str]:
@@ -14,14 +16,14 @@ def _dependency_names(requirements: list[str]) -> set[str]:
     }
 
 
-def test_presentation_dependencies_are_confined_to_app_extra() -> None:
+def test_app_only_dependencies_are_confined_to_the_app_extra() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
 
-    assert _dependency_names(project["dependencies"]).isdisjoint(PRESENTATION_PACKAGES)
+    assert _dependency_names(project["dependencies"]).isdisjoint(APP_ONLY_PACKAGES)
     assert set(project["optional-dependencies"]) == {"app"}
     assert (
         _dependency_names(project["optional-dependencies"]["app"])
-        == PRESENTATION_PACKAGES
+        == APP_ONLY_PACKAGES
     )
 
 
@@ -33,14 +35,19 @@ from pkgutil import iter_modules
 import sys
 
 
-class BlockPresentationPackages(MetaPathFinder):
+#: Import names behind the ``app`` extra -- kept in one place so the finder and
+#: the closing ``sys.modules`` sweep cannot drift apart.
+_BLOCKED = {"fastmcp", "mcp", "rich", "typer", "uvicorn"}
+
+
+class BlockAppOnlyPackages(MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
-        if fullname.partition(".")[0] in {"fastmcp", "mcp", "rich", "typer"}:
+        if fullname.partition(".")[0] in _BLOCKED:
             raise ModuleNotFoundError(fullname)
         return None
 
 
-sys.meta_path.insert(0, BlockPresentationPackages())
+sys.meta_path.insert(0, BlockAppOnlyPackages())
 
 import hmc_mcp
 from hmc_mcp.client import HMCClient
@@ -58,7 +65,7 @@ operation_modules = sorted(
 assert operation_modules
 for module in operation_modules:
     import_module(f"hmc_mcp.{module}")
-assert not ({"fastmcp", "mcp", "rich", "typer"} & set(sys.modules))
+assert not (_BLOCKED & set(sys.modules))
 """
 
     subprocess.run([sys.executable, "-c", script], check=True)

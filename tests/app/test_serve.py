@@ -240,7 +240,10 @@ def test_http_entry_point_gates_the_escape_hatch(enabled, monkeypatch):
     assert flag is enabled
     assert permits is not None and authorize is not None
     run.assert_called_once_with(
-        transport="streamable-http", host="127.0.0.1", port=9000
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=9000,
+        uvicorn_config={"log_config": None},
     )
 
 
@@ -256,7 +259,12 @@ def test_http_entrypoint_accepts_remote_bind_with_authorization():
     with patch.object(FastMCP, "run") as run:
         server_app.main_http(_legacy(), host="0.0.0.0", allow_remote=True)
 
-    run.assert_called_once_with(transport="streamable-http", host="0.0.0.0", port=8000)
+    run.assert_called_once_with(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port=8000,
+        uvicorn_config={"log_config": None},
+    )
 
 
 def test_serve_http_without_a_policy_refuses_before_binding():

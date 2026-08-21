@@ -33,6 +33,18 @@ _PRISTINE_FASTMCP = (
     _FASTMCP_LOGGER.propagate,
 )
 
+_THIRD_PARTY_LOGGERS = tuple(
+    logging.getLogger(name) for name in ("uvicorn", "uvicorn.access", "mcp")
+)
+#: Pristine state of the loggers #330's install binds beyond ``fastmcp``: captured
+#: at collection like ``_PRISTINE_FASTMCP``, though for these it is simply "empty,
+#: NOTSET, propagating" — nothing configures them at import while ``dictConfig``
+#: never runs. Snapshotted rather than assumed so a future import-time configurator
+#: changes the fixture's behaviour instead of being silently overwritten by it.
+_PRISTINE_THIRD_PARTY = tuple(
+    (list(each.handlers), each.level, each.propagate) for each in _THIRD_PARTY_LOGGERS
+)
+
 
 @pytest.fixture(autouse=True)
 def enable_tls_verification_for_tests(monkeypatch):
@@ -45,6 +57,15 @@ def _restore_fastmcp_logger() -> None:
     _FASTMCP_LOGGER.handlers[:] = handlers
     _FASTMCP_LOGGER.setLevel(level)
     _FASTMCP_LOGGER.propagate = propagate
+
+
+def _restore_third_party_loggers() -> None:
+    for logger, (handlers, level, propagate) in zip(
+        _THIRD_PARTY_LOGGERS, _PRISTINE_THIRD_PARTY
+    ):
+        logger.handlers[:] = handlers
+        logger.setLevel(level)
+        logger.propagate = propagate
 
 
 @pytest.fixture(autouse=True)
@@ -75,12 +96,15 @@ def isolate_audit_logging():
     test captures.
 
     Since ADR 0051 it does the same for the ``fastmcp`` logger, whose handlers
-    ``_serve_application`` also replaces. That logger needs its pristine state
-    captured at import rather than reset to empty, so the snapshot lives at module
-    level and this fixture only applies it — at setup as well as teardown, for the
-    reason above.
+    ``_serve_application`` also replaces; since #330's amendment it does it for the
+    three further loggers that install binds — ``uvicorn``, ``uvicorn.access`` and
+    ``mcp`` — which add level and propagation to what must be restored. Those
+    loggers need their pristine state captured at import rather than reset to empty,
+    so the snapshots live at module level and this fixture only applies them — at
+    setup as well as teardown, for the reason above.
     """
     _restore_fastmcp_logger()
+    _restore_third_party_loggers()
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     saved_handlers = list(logger.handlers)
     saved_level = logger.level
@@ -97,6 +121,7 @@ def isolate_audit_logging():
         logger.propagate = saved_propagate
         logging.root.handlers[:] = saved_root
         _restore_fastmcp_logger()
+        _restore_third_party_loggers()
         # ADR 0043 made delivery asynchronous, so a record emitted here can still
         # be in flight after the test returns. Settle the sink and clear anything
         # it is owed, or one test's records land in another test's captured output
@@ -295,8 +320,7 @@ def assert_no_mutating_requests(router) -> int:
     offending = [
         f"{call.request.method} {call.request.url.path}"
         for call in router.calls
-        if call.request.method != "GET"
-        and call.request.url.path not in _SESSION_PATHS
+        if call.request.method != "GET" and call.request.url.path not in _SESSION_PATHS
     ]
     assert not offending, f"a dry-run path mutated the HMC: {offending}"
     return len(router.calls)
