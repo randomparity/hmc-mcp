@@ -249,11 +249,21 @@ class Grant:
 
     ``connections`` holds ``None`` for the environment/default connection, which
     is what ``common.build_config(profile=None)`` means.
+
+    ``effects`` is what the grant *authored* — the effect-class names written in
+    the document, in document order — while ``tools`` is what it *resolves to*.
+    #221 rendered grants only in expanded form; #251 retains the authored tuple
+    so inspection can distinguish an effect-class grant from a named-tool
+    enumeration that happens to reach the same tools. The values are the
+    operator-authored identifiers `_GrantModel._validate_effects` already
+    admits, so retaining them widens no disclosure surface. Defaulted ``()``
+    because a tools-only grant authors no effect class.
     """
 
     tools: frozenset[str]
     connections: frozenset[str | None]
     targets: AllTargets | Mapping[TargetKind, frozenset[str]]
+    effects: tuple[str, ...] = ()
 
     # Uniformly unhashable. Without this a frozen dataclass hashes its field
     # tuple, so a grant carrying ALL_TARGETS would hash while one carrying a
@@ -415,7 +425,9 @@ def _compile_grant(
             {kind: frozenset(values) for kind, values in model.targets.items()}
         )
     )
-    return Grant(tools=resolved, connections=connections, targets=targets)
+    return Grant(
+        tools=resolved, connections=connections, targets=targets, effects=model.effects
+    )
 
 
 def compile_access_policy(

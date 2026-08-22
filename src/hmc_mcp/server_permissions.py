@@ -71,12 +71,21 @@ class DeclaredGrant:
     Grants are conjunctive alternatives (ADR 0036), so connections and targets
     are never merged across entries: a union would describe reach no single
     grant confers.
+
+    ``effects`` is what the grant authored — the effect-class names in the
+    document — alongside ``tools``, what it resolves to (its effect-class
+    expansion unioned with its named tools). #251: without authorship, a grant
+    written as `effects = ["read"]` and one written as an equivalent named-tool
+    list are indistinguishable, hiding both how the file was written and the
+    ADR 0036/0037 upgrade hazard that an effect-class grant silently gains any
+    tool a later release adds to the class.
     """
 
     tools: tuple[str, ...]
     connections: tuple[str, ...]
     all_targets: bool
     targets: dict[str, tuple[str, ...]]
+    effects: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +146,7 @@ def _declared_grant(grant: Grant) -> DeclaredGrant:
                 for kind, values in sorted(grant.targets.items())
             }
         ),
+        effects=grant.effects,
     )
 
 
@@ -285,8 +295,9 @@ def register_permissions_tool(
         """Report what this MCP server may currently do.
 
         Returns the tools this server exposes with their effect classes, the
-        selected access policy's name and file, and the connection and target
-        constraints each of its grants declares. Each of the three dimensions —
+        selected access policy's name and file, and, per grant, the effect
+        classes the grant authored beside its resolved tools and its declared
+        connection and target constraints. Each of the three dimensions —
         tools, connections, and targets — is reported in exactly one of
         `enforced_dimensions` and `declared_only_dimensions`, checked against
         this registry rather than assumed. A tool reporting

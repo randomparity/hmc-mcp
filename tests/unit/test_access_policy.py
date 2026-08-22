@@ -741,6 +741,38 @@ def test_grants_for_returns_whole_grants_not_merged_dimensions() -> None:
     assert all("prod" not in grant.connections for grant in found)
 
 
+def test_compiled_grant_retains_authored_effects() -> None:
+    """The authored `effects` tuple survives compilation alongside the resolution.
+
+    #251: inspection renders each grant's resolved `tools`, which unions the
+    effect-class expansion with named tools. Without retaining what was authored,
+    a grant written as `effects = ["read"]` is indistinguishable from one written
+    as a ninety-name list.
+    """
+    document = {
+        "policies": {
+            "lab": {
+                "grants": [
+                    dict(VALID_GRANT, effects=["mutate", "read"]),
+                    {
+                        "tools": ["hmc_delete_lpar"],
+                        "connections": ["lab"],
+                        "targets": {
+                            "managed_system": ["S1"],
+                            "lpar": ["scratch-01"],
+                        },
+                    },
+                ]
+            }
+        }
+    }
+
+    policy = _compile(document)
+
+    assert policy.grants[0].effects == ("mutate", "read")
+    assert policy.grants[1].effects == ()
+
+
 def test_compiled_policy_is_immutable() -> None:
     policy = _compile(
         _document(
