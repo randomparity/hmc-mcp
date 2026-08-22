@@ -263,6 +263,15 @@ supplies a grant now, and `AccessPolicy` stays frozen for the process lifetime (
   path is `--output`: regenerate to a scratch path and diff the `tools` array against the deployed
   policy. Absent that, release notes are the only signal. The pin itself is fail-closed and
   deliberate; presenting the inspection tool as the way to see it would not have been true.
+
+  > **Amended by #276** (2026-08-21). The manual detection path above — regenerate to a
+  > scratch path with `--output` and diff by hand — is superseded for operators by
+  > `hmc-mcp config diff-access-policy`, which renders what the current build and the
+  > current `config.toml` would generate through the same renderer this record describes,
+  > prints the unified diff against the deployed document, and exits non-zero on any
+  > difference, so CI or a health check can run it unprompted. The scratch-and-diff
+  > procedure remains correct; it just no longer has to be remembered. The pin itself is
+  > unchanged: fail-closed, deliberate, and still invisible inside a running server.
 - **Regenerating discards hand edits, and the deployed file must not be moved aside to do it.**
   Regeneration is: generate to a scratch path with `--output`, diff, and merge by hand whatever
   was edited into the deployed file — an added `hmc_run_command` grant, a narrowed connection

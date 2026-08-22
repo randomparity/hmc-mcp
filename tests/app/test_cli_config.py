@@ -722,3 +722,121 @@ def test_every_spec_numbered_test_named_in_the_header_still_exists():
 
     assert named, "the header maps no test; the guard would pass vacuously"
     assert named <= defined, f"named but not defined: {sorted(named - defined)}"
+# ---------------------------------------------------------------------------
+# config diff-access-policy (issue #276)
+# ---------------------------------------------------------------------------
+
+DIFF_ARGV = ["config", "diff-access-policy"]
+
+
+def _generate_and_deploy(tmp_path, monkeypatch, config_toml=None):
+    """Generate the platform-native policy with init-access-policy; return its path."""
+    if config_toml is not None:
+        config_dir = tmp_path / "hmc-mcp"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "config.toml").write_text(config_toml, encoding="utf-8")
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    result = _generate(tmp_path, monkeypatch)
+    assert result.exit_code == 0, result.output
+    return target
+
+
+def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
+    tmp_path, monkeypatch
+):
+    """#276: exit 0, and no diff hunks, when the deployed document matches this build."""
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 0, result.output
+    assert not [
+        line
+        for line in result.output.splitlines()
+        if line.startswith(("+", "-"))
+    ], result.output
+
+
+def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeypatch):
+    """#276 drift arm 1: TOOL_SECURITY grew after generation; the diff names the tool.
+
+    Patching `server.TOOL_SECURITY` works because the command imports it inside the
+    handler, at call time — the same attribute `init-access-policy` renders from.
+    """
+    from dataclasses import replace
+
+    import hmc_mcp.server as server_mod
+
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+    drifted = dict(server_mod.TOOL_SECURITY)
+    drifted["hmc_hypothetical_tool"] = replace(next(iter(drifted.values())))
+
+    with patch.object(server_mod, "TOOL_SECURITY", drifted):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 1, result.output
+    added = [line for line in result.output.splitlines() if line.startswith("+")]
+    assert any('"hmc_hypothetical_tool"' in line for line in added)
+
+
+def test_diff_access_policy_shows_a_profile_added_after_generation(
+    tmp_path, monkeypatch
+):
+    """#276 drift arm 2: a profile key config.toml gains after the policy was written."""
+    deployed = _generate_and_deploy(tmp_path, monkeypatch, TWO_PROFILE_TOML)
+    config_dir = tmp_path / "hmc-mcp"
+    (config_dir / "config.toml").write_text(
+        TWO_PROFILE_TOML
+        + '\n[profiles.staging]\n'
+        + 'host = "staging.example.com"\n'
+        + 'user = "admin"\n'
+        + 'password_env = "HMC_STAGING_PW"  # pragma: allowlist secret\n',
+        encoding="utf-8",
+    )
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 1, result.output
+    assert '"staging"' in result.output
+
+
+def test_diff_access_policy_reports_an_unreadable_deployed_file(tmp_path, monkeypatch):
+    """#276 error arm: a path with no policy behind it exits distinctly, naming the path."""
+    missing = tmp_path / "nowhere" / "access-policy.toml"
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(missing)])
+
+    assert result.exit_code == 3
+    flattened = result.output.replace("\n", "")
+    assert str(missing) in flattened
+    assert "init-access-policy" in flattened
+
+
+def test_diff_access_policy_reports_a_non_text_deployed_file(tmp_path, monkeypatch):
+    """#276 error arm: bytes that are not a TOML document are refused, not diffed."""
+    deployed = tmp_path / "access-policy.bin"
+    deployed.write_bytes(b"\x00\xff\xfe")
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 3
+
+
+def test_diff_access_policy_generation_failure_beats_the_deployed_file_check(
+    tmp_path, monkeypatch
+):
+    """#276 error arm: generation failure exits 4 even with a readable deployed file.
+
+    A padded profile key fails rendering (R9b); the deployed document beside it is
+    fine and never gets read. Distinct from the exit-3 unreadable-deployed arm above.
+    """
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+    config_dir = tmp_path / "hmc-mcp"
+    (config_dir / "config.toml").write_text(
+        '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
+    )
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 4
+    assert "padded" in result.output

@@ -377,18 +377,21 @@ Six things are worth knowing before you run it.
 - **A container or unit needs a resolvable `HOME` or `XDG_CONFIG_HOME`.** Under a uid with
   no passwd entry and neither variable set, the path cannot be resolved and the server
   cannot start at any setting.
-- **It never overwrites.** To regenerate after an upgrade, write elsewhere and merge:
+- **It never overwrites.** To check a deployed policy after an upgrade, run:
 
   ```bash
-  hmc-mcp config init-access-policy --output /tmp/access-policy.new
-  diff /tmp/access-policy.new ~/.config/hmc-mcp/access-policy.toml
+  hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
   ```
 
-  Compare **both** the `tools` and the `connections` arrays. The policy is a snapshot of
-  each: a tool a later release adds, and a profile you add to `config.toml`, are both
-  ungranted until you add them here. Nothing in a running server surfaces either gap —
-  `hmc_effective_permissions` reports what was registered, which is exactly what the policy
-  produced — so this diff is the detection path.
+  This renders what the current build plus your current `config.toml` would generate
+  and prints a unified diff against the deployed policy, exiting non-zero on any
+  difference — see [Detecting access-policy drift](#detecting-access-policy-drift)
+  below. Compare **both** the `tools` and the `connections` arrays in that diff. The
+  policy is a snapshot of each: a tool a later release adds, and a profile you add to
+  `config.toml`, are both ungranted until you add them to the deployed file by hand.
+  Nothing in a running server surfaces either gap — `hmc_effective_permissions`
+  reports what was registered, which is exactly what the policy produced — so this
+  diff is the detection path.
 - **If `serve` reports a policy that will not compile and the generator reports the file
   already exists**, the file is truncated or corrupt. Delete it and re-run the generator.
 - **`config.toml` and `access-policy.toml` are different files with different jobs.**
@@ -396,6 +399,32 @@ Six things are worth knowing before you run it.
   `access-policy.toml` holds **server access policies** — what an MCP server may do with
   them. They have separate lifecycles, and a grant's `connections` entries are profile
   *keys* from `config.toml`, never profile contents.
+
+### Detecting access-policy drift
+
+A generated policy is a snapshot of two things that both move on: the tool surface of
+the build that ran the generator, and the profile keys in `config.toml`. After an
+upgrade adds a tool, or you add `[profiles.newsite]` and restart, the deployed policy
+grants neither — silently, because `hmc_effective_permissions` reports only the
+registered set, which is exactly what the policy produced.
+
+`config diff-access-policy` makes the comparison routine instead of something an
+operator has to remember to do:
+
+```bash
+hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
+```
+
+It renders the legacy-equivalent policy exactly as `config init-access-policy` would —
+same generator, same config-directory resolution, so run it as the identity and with
+the environment `serve` runs under — and prints a unified diff against the deployed
+document. Exit codes: `0` identical, `1` different (the diff goes to stdout, so a CI
+log captures it directly), `2` usage error, `3` the deployed file could not be read,
+`4` generation failed. A CI gate or health check asserts on exit status `1`.
+
+The command compares full documents, so a deliberately narrow authored policy always
+differs from the generated one — point it at deployments running the generated
+`legacy-equivalent` policy, or at a copy of it.
 
 Policies live in `access-policy.toml`, beside `config.toml` in the same
 platform-native directory. A minimal read-only policy:
