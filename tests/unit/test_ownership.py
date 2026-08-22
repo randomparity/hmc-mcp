@@ -76,6 +76,16 @@ def test_validate_agent_id_space():
         validate_agent_id("alice smith")
 
 
+def test_validate_agent_id_double_quote():
+    with pytest.raises(ValueError, match="double quote"):
+        validate_agent_id('agent"x')
+
+
+def test_validate_agent_id_backslash():
+    with pytest.raises(ValueError, match="backslash"):
+        validate_agent_id("agent\\x")
+
+
 def test_validate_agent_id_non_ascii():
     with pytest.raises(ValueError, match="printable ASCII"):
         validate_agent_id("alicé")
@@ -403,28 +413,23 @@ def test_stamp_without_caller_token_unchanged():
     assert token == f"[hmc-mcp owner:hmc-mcp created:{today}]"
 
 
-def test_stamp_degrades_to_none_when_agent_id_breaks_description_grammar():
-    """A config-legal agent_id carrying '"' fails the HMC description grammar.
+@pytest.mark.parametrize("character", ['"', "\\"])
+def test_agent_id_breaking_stamp_grammar_rejected_at_construction(character):
+    """An agent_id that would break the stamp's grammar never configures.
 
-    validate_agent_id permits '"' and '\\', so the composed ownership stamp can
-    be rejected by validate_lpar_description (which set_lpar_description also
-    runs defensively).  The stamp is best-effort: it must degrade to None
-    rather than raise out of the owning create after the LPAR exists.
+    validate_agent_id forbids '"' and '\\' (ADR 0065), mirroring
+    validate_caller_token: HMCConfig construction raises ValueError instead
+    of letting every ADR 0011 ownership stamp silently degrade to None in
+    stamp_lpar_ownership's best-effort catch.
     """
-    from hmc_mcp.config import validate_agent_id
-
-    agent_id = 'agent"x'
-    validate_agent_id(agent_id)  # config-level validation accepts it...
-    config = _config()
-    with patch(
-        "hmc_mcp.ssh_commands.set_lpar_description",
-        new=AsyncMock(return_value=""),
-    ) as mock_set:
-        token = asyncio.run(
-            stamp_lpar_ownership(config, "sys1", "lpar1", agent_id=agent_id)
+    agent_id = f"agent{character}x"
+    with pytest.raises(ValueError):
+        validate_agent_id(agent_id)
+    with pytest.raises(ValueError):
+        HMCConfig(
+            host="hmc.test", user="u", password="p", agent_id=agent_id,
+            _env_file=None,
         )
-    assert token is None  # ...but the stamp degrades instead of raising
-    mock_set.assert_not_awaited()  # refused by the pre-flight grammar check
 
 
 def test_stamp_bad_caller_token_raises_unswallowed():

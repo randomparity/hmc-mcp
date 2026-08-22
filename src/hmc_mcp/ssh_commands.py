@@ -363,15 +363,14 @@ async def stamp_lpar_ownership(
         description = f"{description} [caller {caller_token}]"
     try:
         # The composed description still gets the HMC's own grammar check
-        # here, inside the best-effort boundary: a config-supplied agent_id
-        # can carry a character validate_agent_id permits but the description
-        # field refuses ('"' is the known case), and set_lpar_description
-        # re-runs this validator defensively.  A ValueError raised below the
-        # pre-flight check is therefore an agent-driven grammar failure and
-        # degrades to a skipped stamp — it must not fail the owning create
-        # after the LPAR already exists.  A malformed caller_token cannot
-        # reach this catch: validate_caller_token above the try raises before
-        # any SSH traffic (ADR 0064).
+        # here, inside the best-effort boundary, as a defensive last resort:
+        # validate_agent_id now refuses every character the description field
+        # would reject ('"' and '\\' included; ADR 0065), so a ValueError
+        # raised below the pre-flight check has no expected config-driven case
+        # left — it still degrades to a skipped stamp rather than failing
+        # the owning create after the LPAR already exists.  A malformed
+        # caller_token cannot reach this catch: validate_caller_token above
+        # the try raises before any SSH traffic (ADR 0064).
         validate_lpar_description(description)
         await set_lpar_description(config, system_name, lpar_name, description)
         return description
