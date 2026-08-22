@@ -29,15 +29,24 @@ segment:
 
 The token grammar is server-defined and enforced before any HMC round trip:
 1–64 printable ASCII characters, forbidding whitespace, control characters,
-non-ASCII, and the record delimiters and format characters `,`, `=`, `"`,
-`[`, `]`. This keeps the token a single machine-parseable word, keeps it
+non-ASCII, and the characters `,`, `=`, `"`, `[`, `]`, `\`. The backslash is
+refused because ADR 0045 records its behaviour inside an `-i` record as
+unverified. This keeps the token a single machine-parseable word, keeps it
 writable through the HMC CLI `-i` attribute record (ADR 0045), and keeps the
-bracketed token framing unambiguous. A new `parse_lpar_ownership_caller_token()`
-extracts the token from a description, mirroring `parse_lpar_ownership_owner()`.
+bracketed token framing unambiguous.
 
-The combined description is written in the same single best-effort SSH stamp
-call ADR 0011 already makes: a stamp failure warns in the tool result and never
-fails the create. Omitting `caller_token` produces exactly today's description.
+A dedicated extractor, `parse_lpar_ownership_caller_token()`, reads the
+segment with its own character class — everything except whitespace and
+brackets — so grammar-legal tokens containing `:` are written and parsed
+round-trip. It does not reuse the owner regex's narrower class.
+
+Validation lives at two named sites, both before any HMC traffic: the MCP tool
+entry points validate first (fast local `ValueError`), and the shared creation
+path validates again *outside* the best-effort catch — a malformed token raises
+`ValueError` from `create_and_stamp_lpar` instead of being swallowed into a
+failed stamp that would discard the ADR 0011 ownership stamp along with the
+caller segment. The swallow inside `stamp_lpar_ownership` remains only as the
+existing defensive last resort for transport errors.
 
 ## Consequences
 
@@ -50,10 +59,15 @@ fails the create. Omitting `caller_token` produces exactly today's description.
 - One SSH round trip total, unchanged from ADR 0011; the caller segment adds no
   extra HMC traffic.
 - A malformed token is rejected locally with a `ValueError` naming the offending
-  character, before name-uniqueness checks or any HMC call — the same fail-fast
-  layering `set_lpar_description` uses.
+  character, before name-uniqueness checks or any HMC call.
 - The caller token is advisory metadata, like the ownership stamp: nothing
   enforces its uniqueness or truthfulness, and it grants no authority.
+- Whether the HMC caps or silently truncates long descriptions is unverified;
+  `validate_lpar_description` bounds charset but not length. A truncating HMC
+  would silently drop tracking data while the stamp still reports success. The
+  64-character token cap bounds the added length; no length guard is added.
+- Adding a parameter to two public lifecycle tools triggers ADR 0016's rule
+  that schema contract tests must be updated in the same change.
 - `hmc_deploy_partition_template` stamping (ADR 0014) does not carry a caller
   token; template deployments have no caller token parameter to pass.
 
@@ -62,18 +76,29 @@ fails the create. Omitting `caller_token` produces exactly today's description.
 - **Fold the caller token into the ownership stamp's brackets.**
   verified: the ADR 0011 parse regex
   (`hmc_mcp/operations_lpar.py:_OWNERSHIP_TOKEN`) anchors `]` immediately after
-  `created:<date>`; text inside the brackets would make every stamped
-  description fail the ownership parse and degrade foreign-owner authorization
-  to "no claim".
+  `created:<date>`; text inside the brackets makes every stamped description
+  fail the ownership parse, and `_authorize_lpar_ownership_description`
+  (operations_lpar.py:141-156) then fails closed — raising `PermissionError`
+  for *any* mutation, including by the legitimate owner — rather than
+  downgrading to "no claim".
+- **Compose the caller token into the initial create payload** (REST
+  `Description` element / `mksyscfg description=`).
+  judgment: it would remove the post-create window for the caller segment, but
+  it must be threaded through two divergent create paths (REST document and the
+  406 CLI fallback), duplicating description plumbing that the shared stamp
+  already owns; and the adopted design retains the same narrow race window the
+  do-nothing option has — the stamp is a post-create write either way, a
+  residual ADR 0011 accepted for the ownership token.
 - **Free-form caller text appended to the description.**
   judgment: unparseable prose defeats the tracking purpose — the issue asks for
   machine-trackable provenance — and free text reaching the `-i` record is the
   injection class ADR 0045 closed.
 - **A separate HMC user-defined attribute field.**
-  verified: `mksyscfg`/`chsyscfg` expose no second writable free-text attribute
-  for partitions in the commands this server uses (`lssyscfg` reads
-  `description` only); the description field is the only per-LPAR metadata
-  writable over SSH with no external dependency (ADR 0011).
+  judgment: no second writable free-text attribute for partitions is known in
+  the `mksyscfg`/`chsyscfg` surface this server uses, and the claim traces only
+  to ADR 0011's own record — it cannot be verified without a live HMC. ADR 0011
+  already established the description field as the only per-LPAR metadata
+  writable over SSH with no external dependency.
 - **Write the caller token via a second SSH call after the ownership stamp.**
   judgment: doubles the best-effort round trips and introduces a half-stamped
   state (ownership written, caller segment lost) that the single composed write
@@ -81,5 +106,6 @@ fails the create. Omitting `caller_token` produces exactly today's description.
 - **Do nothing; callers can set the description after create with
   `hmc_set_lpar_description`.**
   rejected per issue #358: the token must be included *upon reservation*, and a
-  post-create write is a second tool call plus a race window in which another
-  actor may act on the unstamped partition.
+  post-create write by the caller is an extra tool call with a wider race
+  window than the stamp this design already performs.
+
