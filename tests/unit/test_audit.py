@@ -59,6 +59,9 @@ Not spec-numbered, each pinning something a review round found:
   test_the_override_record_carries_the_hmc_host       (#271)
   test_an_empty_override_host_renders_empty_and_is_bounded (#271)
   test_a_foreign_writers_bad_record_does_not_raise_into_them
+  test_the_tls_record_carries_host_and_source          (#379)
+  test_an_empty_tls_host_renders_empty_and_is_bounded  (#379)
+  test_a_long_tls_source_stays_bounded                 (#379)
 """
 
 from __future__ import annotations
@@ -337,19 +340,27 @@ def test_reasons_matches_the_literal():
 
 
 def test_events_matches_the_literal_and_every_emitter_uses_it():
-    """The `event` vocabulary is three values, and a checker can see that.
+    """The `event` vocabulary is four values, and a checker can see that.
 
     ADR 0043 added `records-dropped`, which is the sink's own event rather than a
     decision, so it is emitted by the sink and not through the logger — which is
-    why it is reached here through `_drop_marker` and the other two are not.
+    why it is reached here through `_drop_marker` and the other three are not.
     """
     assert audit.EVENTS == frozenset(get_args(audit.Event))
-    assert audit.EVENTS == {"authorization", "ownership-override", "records-dropped"}
+    assert audit.EVENTS == {
+        "authorization",
+        "ownership-override",
+        "records-dropped",
+        "tls-verification-disabled",
+    }
 
     lines = _capture()
     audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     emitted = {json.loads(lines[0])["event"]}
     emitted.add(_authorization()["event"])
+    lines = _capture()
+    audit.record_tls_verification_disabled(host="hmc.test", source="field-default")
+    emitted.add(_one(lines)["event"])
     emitted.add(json.loads(audit._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
 
@@ -385,6 +396,44 @@ def test_an_empty_override_host_renders_empty_and_is_bounded():
         system="s", lpar="l", host="H" * 500, agent_id="a"
     )
     assert len(_one(lines)["host"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_the_tls_record_carries_host_and_source():
+    """#379. The durable counterpart of the logon warning names the HMC and the knob.
+
+    `source` is the operator-facing half of the record: it says which of
+    `explicit-argument`, `environment:HMC_VERIFY_SSL` or `field-default` to turn
+    to stop the exposure. No credential, session token or request body travels —
+    a construction-time event has none to carry.
+    """
+    lines = _capture()
+    audit.record_tls_verification_disabled(host="hmc.test", source="field-default")
+    record = _one(lines)
+    assert list(record) == ["time", "event", "host", "source"]
+    assert record["event"] == "tls-verification-disabled"
+    assert record["host"] == "hmc.test"
+    assert record["source"] == "field-default"
+
+
+def test_an_empty_tls_host_renders_empty_and_is_bounded():
+    """`HMCConfig.host` defaults to "", which is what renders, and the
+    caller-supplied bound applies to it like to every other field."""
+    lines = _capture()
+    audit.record_tls_verification_disabled(host="", source="explicit-argument")
+    assert _one(lines)["host"] == ""
+
+    lines = _capture()
+    audit.record_tls_verification_disabled(
+        host="H" * 500, source="environment:HMC_VERIFY_SSL"
+    )
+    assert len(_one(lines)["host"]) == audit.MAX_VALUE_LENGTH
+
+
+def test_a_long_tls_source_stays_bounded():
+    """*source* is caller-supplied prose too, so it takes the same bound."""
+    lines = _capture()
+    audit.record_tls_verification_disabled(host="hmc.test", source="s" * 500)
+    assert len(_one(lines)["source"]) == audit.MAX_VALUE_LENGTH
 
 
 def test_only_audit_resolves_the_audit_logger():

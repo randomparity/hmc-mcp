@@ -90,7 +90,12 @@ Reason = Literal[
 #: ``EFFECTS`` from ``Effect``.
 REASONS: frozenset[str] = frozenset(get_args(Reason))
 
-Event = Literal["authorization", "ownership-override", "records-dropped"]
+Event = Literal[
+    "authorization",
+    "ownership-override",
+    "records-dropped",
+    "tls-verification-disabled",
+]
 
 #: Derived, as REASONS is, so the vocabulary is something a checker and a test can
 #: consult rather than a claim in a docstring. Every builder binds its literal
@@ -276,6 +281,42 @@ def record_ownership_override(
             "lpar": _value(lpar),
             "host": _value(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
+        }
+
+    _emit(_DENY_LEVEL, build)
+
+
+def record_tls_verification_disabled(*, host: str, source: str) -> None:
+    """Emit one record for a client constructed with TLS verification off.
+
+    #379. The ``warnings.warn`` in ``HMCClient.logon`` stays: it is the right
+    channel for a CLI user, but under the default warning filter it renders once
+    per process per location and never reaches the structured stream an operator
+    monitors. This is the durable counterpart — one record per client
+    construction (not per request, which would flood the sink; not per process,
+    which would miss a later client built with different settings), so the audit
+    stream can answer "were credentials ever sent over an unverified channel,
+    and to which HMC".
+
+    *source* names where the effective setting came from — ``explicit-argument``,
+    ``environment:HMC_VERIFY_SSL`` or ``field-default`` — because an operator
+    needs to know which knob to turn to fix it. It carries no credential, no
+    session token and no request body; like every caller-supplied field, *host*
+    and *source* pass through ``_value``, so they are bounded and an unset
+    ``HMCConfig.host`` renders as an empty string.
+
+    Always ``WARNING``, matching :func:`record_ownership_override`, so a CLI user
+    whose process never installed the sink still sees it through
+    ``logging.lastResort``.
+    """
+
+    def build() -> dict[str, Any]:
+        event: Event = "tls-verification-disabled"
+        return {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "host": _value(host),
+            "source": _value(source),
         }
 
     _emit(_DENY_LEVEL, build)

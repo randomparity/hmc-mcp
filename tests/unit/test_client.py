@@ -1,6 +1,8 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import asyncio
+import json
+import logging
 import traceback
 import warnings
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +12,9 @@ import pytest
 import respx
 from defusedxml import ElementTree as DET
 
+from hmc_mcp import audit
 from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
 from hmc_mcp.xmlutil import localname
@@ -362,6 +366,99 @@ async def test_logon_failure(mock_hmc):
             pass
     assert exc_info.value.status_code == 401
     assert client._http.is_closed
+
+
+def _capture_audit() -> list[dict]:
+    """Collect parsed audit records. Logger isolation is conftest's autouse fixture."""
+    events: list[dict] = []
+
+    class _Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            events.append(json.loads(record.getMessage()))
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(_Collect())
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    return events
+
+
+@pytest.mark.asyncio
+async def test_tls_disabled_audit_event_is_once_per_construction_not_per_request(
+    mock_hmc,
+):
+    """#379. N constructions emit N records; M requests on one client add none.
+
+    Per-request would flood the sink; per-process would miss a later client built
+    with different settings. The record is the audit stream's answer to "were our
+    HMC credentials ever sent over an unverified channel", so it must exist once
+    per client and never scale with traffic.
+    """
+    mock_hmc.get("/rest/api/hmc").mock(
+        return_value=httpx.Response(200, text="<feed/>")
+    )
+    caught = _capture_audit()
+
+    for _ in range(3):
+        async with HMCClient(make_config(verify_ssl=False)) as client:
+            for _ in range(5):
+                await client._get("/rest/api/hmc")
+
+    assert len(caught) == 3
+    assert {record["event"] for record in caught} == {"tls-verification-disabled"}
+
+
+@pytest.mark.asyncio
+async def test_no_tls_audit_event_when_verification_enabled(mock_hmc):
+    """#379. A verified connection produces no record — the event marks a gap."""
+    caught = _capture_audit()
+    async with HMCClient(make_config(verify_ssl=True)):
+        pass
+    assert caught == []
+
+
+@pytest.mark.parametrize(
+    ("environ_value", "kwargs", "expected_source"),
+    [
+        # The conftest autouse fixture sets HMC_VERIFY_SSL=true; an explicit
+        # False argument overrides it, and pydantic-settings' source priority
+        # makes that the record's answer even when the two agree.
+        (None, {"verify_ssl": False}, "explicit-argument"),
+        ("true", {"verify_ssl": False}, "explicit-argument"),
+        # No explicit argument: the environment supplied the value pydantic
+        # folded into the constructor kwargs.
+        ("false", {}, "environment:HMC_VERIFY_SSL"),
+        # Neither: the field default, which is the case an operator upgrading
+        # with no configuration at all is in.
+        (None, {}, "field-default"),
+    ],
+)
+def test_tls_audit_record_names_where_the_setting_came_from(
+    monkeypatch, environ_value, kwargs, expected_source
+):
+    """#379. `source` says which knob to turn, per the acceptance criteria."""
+    if environ_value is None:
+        monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    else:
+        monkeypatch.setenv("HMC_VERIFY_SSL", environ_value)
+
+    config_kwargs = {
+        # make_config() forces verify_ssl=True; these cases need the real
+        # default to flow through unset.
+        "host": "hmc.test",
+        "user": "hscroot",
+        "password": "abc123",
+        "_env_file": None,
+    }
+    config_kwargs.update(kwargs)
+    caught = _capture_audit()
+    HMCClient(HMCConfig(**config_kwargs))
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == expected_source
+    assert caught[0]["host"] == "hmc.test"
+    # No credential material in the record — construction-time state only.
+    assert "abc123" not in json.dumps(caught[0])
 
 
 @pytest.mark.asyncio

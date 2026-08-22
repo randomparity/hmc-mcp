@@ -24,6 +24,7 @@ BASELINED_FINDINGS = {
     "tests/conftest.py": 1,
     "tests/security/test_users.py": 2,
     "tests/unit/test_ssh.py": 1,
+    "tests/unit/test_client.py": 1,
 }
 ACTION_PINS = {
     "actions/checkout": (
