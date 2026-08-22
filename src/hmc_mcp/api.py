@@ -36,6 +36,7 @@ from hmc_mcp.operations_lpar import (
     power_lpar,
     rename_lpar,
     resolve_lpar_ownership_names,
+    set_lpar_ownership_description,
     stamp_created_lpar_ownership,
 )
 from hmc_mcp.operations_lpm import (
@@ -170,6 +171,7 @@ __all__ = [
     "resolve_lpar_ownership_names",
     "stamp_created_lpar_ownership",
     "create_and_stamp_lpar",
+    "set_lpar_ownership_description",
     "delete_lpar",
     "power_lpar",
     "rename_lpar",

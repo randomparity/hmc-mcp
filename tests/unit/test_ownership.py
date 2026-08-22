@@ -478,3 +478,185 @@ def test_owner_parse_unaffected_by_caller_segment():
 
     description = "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1]"
     assert parse_lpar_ownership_owner(description) == "alice"
+
+
+# ---------------------------------------------------------------------------
+# set_lpar_ownership_description (issue #376, ADR 0066)
+# ---------------------------------------------------------------------------
+
+
+def _patch_restamp_resolution():
+    """Patch the operation's name resolution to fixed stubs."""
+    return (
+        patch(
+            "hmc_mcp.operations_lpar.resolve_system_uuid",
+            new=AsyncMock(return_value="sys-uuid"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_uuid",
+            new=AsyncMock(return_value="lpar-uuid"),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=("sys1", "lpar1")),
+        ),
+    )
+
+
+def _run_set_ownership_description(description, *, ownership_override=False):
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    write = AsyncMock(return_value="chsyscfg ok")
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch(
+            "hmc_mcp.operations_lpar.set_lpar_description",
+            new=write,
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.get_lpar_description",
+            new=AsyncMock(return_value=description),
+        ),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        result = asyncio.run(
+            operations_lpar.set_lpar_ownership_description(
+                hmc,
+                "sys1",
+                "lpar1",
+                description,
+                ownership_override=ownership_override,
+            )
+        )
+    return result, write
+
+
+def test_set_lpar_ownership_description_writes_owned_lpar():
+    """An LPAR owned by the calling agent accepts a guarded rewrite."""
+    result, write = _run_set_ownership_description(
+        "[hmc-mcp owner:alice created:2026-08-14]"
+    )
+    assert result == "chsyscfg ok"
+    write.assert_awaited_once()
+    assert write.call_args.args == (
+        _config().model_copy(update={"agent_id": "alice"}),
+        "sys1",
+        "lpar1",
+        "[hmc-mcp owner:alice created:2026-08-14]",
+    )
+
+
+def test_set_lpar_ownership_description_rejects_foreign_owned():
+    """A foreign-owned token blocks the write and issues no SSH traffic."""
+    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    write = AsyncMock()
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with pytest.raises(PermissionError, match="owned by 'bob'"):
+            asyncio.run(
+                operations_lpar.set_lpar_ownership_description(
+                    hmc, "sys1", "lpar1", "replacement"
+                )
+            )
+    write.assert_not_awaited()
+
+
+def test_set_lpar_ownership_description_writes_unowned_lpar():
+    """An LPAR with no ownership token can receive its first stamp."""
+    read = AsyncMock(return_value="")
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    write = AsyncMock(return_value="ok")
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        result = asyncio.run(
+            operations_lpar.set_lpar_ownership_description(
+                hmc, "sys1", "lpar1", "first stamp"
+            )
+        )
+    assert result == "ok"
+    write.assert_awaited_once()
+
+
+def test_set_lpar_ownership_description_override_bypasses_guard(caplog):
+    """ownership_override=True skips the ownership read and writes anyway."""
+    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    write = AsyncMock(return_value="ok")
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with caplog.at_level(logging.WARNING):
+            result = asyncio.run(
+                operations_lpar.set_lpar_ownership_description(
+                    hmc,
+                    "sys1",
+                    "lpar1",
+                    "replacement",
+                    ownership_override=True,
+                )
+            )
+    assert result == "ok"
+    read.assert_not_awaited()
+    write.assert_awaited_once()
+    records = _override_records(caplog)
+    assert len(records) == 1
+    assert records[0]["event"] == "ownership-override"
+
+
+@pytest.mark.parametrize("bad", ["em\u2014dash", "a,b", "a=b", "line\nbreak"])
+def test_set_lpar_ownership_description_rejects_invalid_text(bad):
+    """Validation fires before any name resolution or network activity."""
+    resolve_system = AsyncMock()
+    hmc = type("StubHMC", (), {"config": _config()})()
+    write = AsyncMock()
+    with (
+        patch("hmc_mcp.operations_lpar.resolve_system_uuid", new=resolve_system),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+        pytest.raises(ValueError),
+    ):
+        asyncio.run(
+            operations_lpar.set_lpar_ownership_description(hmc, "sys1", "lpar1", bad)
+        )
+    resolve_system.assert_not_awaited()
+    write.assert_not_awaited()
+
+
+def test_set_lpar_ownership_description_restamps_failed_create_stamp():
+    """Re-stamp path: an unowned LPAR receives an ADR 0011 + ADR 0064 token."""
+    read = AsyncMock(return_value="")
+    today = datetime.date.today().isoformat()
+    token = f"[hmc-mcp owner:alice created:{today}] [caller JIRA-42]"
+    hmc = type(
+        "StubHMC", (), {"config": _config().model_copy(update={"agent_id": "alice"})}
+    )()
+    write = AsyncMock(return_value="ok")
+    patches = (
+        *(_p for _p in _patch_restamp_resolution()),
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=read),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        result = asyncio.run(
+            operations_lpar.set_lpar_ownership_description(hmc, "sys1", "lpar1", token)
+        )
+    assert result == "ok"
+    assert write.call_args.args[3] == token

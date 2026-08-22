@@ -5,20 +5,20 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
+    _run,
     _ssh_with_client,
 )
 
 from .ssh_commands import (
-    validate_lpar_description,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
-    set_lpar_description,
+    validate_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from .operations_lpar import authorize_lpar_mutation
-from .client import HMCClient
+from .common import client_from_env
+from .operations_lpar import set_lpar_ownership_description
 from typing import Literal
 
 
@@ -105,22 +105,17 @@ def hmc_set_lpar_description(
     """
     validate_lpar_description(description)
 
-    async def _set(config, system_name, lpar_name):
-        hmc = HMCClient(config)
-        await authorize_lpar_mutation(
-            hmc,
-            system_name,
-            lpar_name,
-            ownership_override=ownership_override,
-        )
-        return await set_lpar_description(config, system_name, lpar_name, description)
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await set_lpar_ownership_description(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                description,
+                ownership_override=ownership_override,
+            )
 
-    return _ssh_with_client(
-        _set,
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+    return _run(_go)
 
 
 @tool(effect="read", operation="lpar.get_msp", target_kind="lpar")
