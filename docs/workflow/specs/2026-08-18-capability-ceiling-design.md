@@ -213,9 +213,10 @@ domain module, and applies no ceiling check of its own.
 four stderr warnings (R10a, R18, R19, R19a), and `hmc_effective_permissions` in its
 read-only tool table. Where it documents that tool it states the disclosure: the tool
 returns the policy name, its absolute path, every connection token, and every target
-selector to any MCP client that can call it, and only a `tools`-only policy omitting it can
-withhold it. `just verify` does not check this, so it is a requirement rather than
-a gate.
+selector to any MCP client that can call it. Any policy that neither grants the `read`
+effect class nor names the tool in a grant's `tools` withholds it; a policy granting
+`read` reaches it and cannot exclude it. `just verify` does not check this, so it is
+a requirement rather than a gate.
 
 **R21 — Guardrails.** `just verify` passes bare, including the 90.00% coverage floor and
 the no-`# pragma: no cover` rule in `tests/test_ci_pipeline.py`.
@@ -419,8 +420,9 @@ theirs.
   to the same client, but this change is what makes that tool withholdable: under a
   `tools`-only policy that withholds it, inspection becomes the *widest* configuration
   disclosure on the surface, and under an `effects = ["read"]` policy the inspection tool
-  cannot be withheld at all. An operator who considers the policy's contents sensitive must
-  write a `tools`-only policy that omits `hmc_effective_permissions`.
+  cannot be withheld at all. An operator who considers the policy's contents sensitive
+  writes a policy that neither grants the `read` effect class nor names
+  `hmc_effective_permissions` in a grant's `tools`.
 - *`--access-policy NAME`.* The value is operator-supplied and used only as a dictionary
   key inside the parsed document. It is never a path, never interpolated into a command,
   and `compile_access_policy` already `repr()`s it in the not-found message so a name
