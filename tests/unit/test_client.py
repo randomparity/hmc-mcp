@@ -229,6 +229,55 @@ async def test_logon_logoff(mock_hmc):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 202, 204])
+async def test_logoff_accepts_success_statuses(mock_hmc, status):
+    mock_hmc.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(status))
+    client = HMCClient(make_config())
+    await client.logon()
+    assert client.is_logged_on
+
+    await client.logoff()
+
+    assert not client.is_logged_on
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 404, 500])
+async def test_logoff_rejects_unexpected_status_and_clears_state(mock_hmc, status):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        return_value=httpx.Response(status, text="<Message>nope</Message>")
+    )
+    client = HMCClient(make_config())
+    await client.logon()
+
+    with pytest.raises(HMCError) as raised:
+        await client.logoff()
+
+    assert raised.value.status_code == status
+    assert not client.is_logged_on
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
+async def test_logoff_transport_failure_is_distinct_and_clears_state(mock_hmc):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    client = HMCClient(make_config())
+    await client.logon()
+
+    with pytest.raises(HMCTransportError):
+        await client.logoff()
+
+    assert not client.is_logged_on
+    assert client._session_token is None
+    # The dead token is gone from the shared header store, so no subsequent
+    # request can carry it.
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body_error", "logoff_error", "close_error", "expected_error"),
     [

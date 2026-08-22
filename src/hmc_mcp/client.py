@@ -171,6 +171,18 @@ class HMCClient(
         return self
 
     async def __aexit__(self, _exc_type, exc, _traceback) -> None:
+        """Log off and close the transport without masking the body's error.
+
+        Cleanup runs even when the ``async with`` body raised. When it did,
+        the body's exception is primary and wins: cleanup failures are
+        attached to it via ``exc.add_note`` and never replace it — replacing
+        the in-flight error would hide the failure that actually matters
+        behind an incidental one. A failing logoff (an HMC rejection as
+        :class:`HMCError`, or a transport failure as
+        :class:`HMCTransportError`) is therefore recorded as a note on the
+        body's exception rather than raised. Only when the body exited
+        cleanly does a cleanup error propagate.
+        """
         cleanup_error: BaseException | None = None
         try:
             await self.logoff()
@@ -252,15 +264,28 @@ class HMCClient(
         return token
 
     async def logoff(self) -> None:
-        """Invalidate the session token (DELETE the Logon resource)."""
+        """Invalidate the session token (DELETE the Logon resource).
+
+        The DELETE is expected to answer 200, 202, or 204; any other status
+        raises :class:`HMCError`, so a rejected logoff is never mistaken for
+        a closed session (ADR 0028). A transport-level failure surfaces as
+        :class:`HMCTransportError` from ``_request`` — distinct from an HMC
+        rejection, because they mean different things to a caller.
+
+        Local state clears either way: the token and the ``X-API-Session``
+        header are dropped even when the request fails, so a client that
+        believes it is logged off never re-sends the dead token.
+        """
         if not self._session_token:
             return
         try:
-            await self._request(
+            resp = await self._request(
                 "DELETE",
                 "/rest/api/web/Logon",
                 headers=self._web_headers({"Accept": MEDIA_WEB}),
             )
+            if resp.status_code not in (200, 202, 204):
+                raise HMCError("HMC logoff failed", resp.status_code, resp.text)
         finally:
             self._session_token = None
             self._http.headers.pop("X-API-Session", None)
