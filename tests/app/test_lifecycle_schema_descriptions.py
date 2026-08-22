@@ -183,3 +183,13 @@ def test_vios_backup_lifecycle_guidance_names_supported_commands():
         "backup_name",
         "backup_type",
     }
+
+
+def test_caller_token_parameter_documents_grammar():
+    tools = _tools_by_name()
+    for name in ("hmc_create_lpar", "hmc_provision_lpar"):
+        description = tools[name].parameters["properties"]["caller_token"][
+            "description"
+        ]
+        assert "[caller " in description
+        assert "64" in description

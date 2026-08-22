@@ -14,7 +14,7 @@ from .operations_provision import (
     provision_lpar,
 )
 from .operations_assignments import LparPcieAssignments
-
+from .ssh_commands import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 
@@ -54,6 +54,7 @@ def hmc_provision_lpar(
     power_on: bool = True,
     dry_run: bool = False,
     assignments: LparPcieAssignments = LparPcieAssignments(),
+    caller_token: str | None = None,
     profile: str | None = None,
 ) -> ProvisionResult:
     """Provision an LPAR with network, vSCSI storage, and optional power-on.
@@ -68,12 +69,21 @@ def hmc_provision_lpar(
         power_on: Power on the partition after configuration succeeds.
         dry_run: Validate preconditions without creating or changing resources.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
+        caller_token: Optional caller tracking reference embedded in the partition
+            description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
+            1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         profile: Optional TOML profile name; uses environment defaults when omitted.
 
     Returns:
         A structured result with resource_created, workflow_completed, lpar_uuid,
         dry_run, ownership_stamped, steps, and warnings fields.
+        With ``caller_token``, ``ownership_stamped=True`` confirms both the ownership
+        stamp and the caller segment landed (one combined write); ``False`` means both
+        were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
     """
+
+    if caller_token is not None:
+        validate_caller_token(caller_token)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -88,6 +98,7 @@ def hmc_provision_lpar(
                 power_on=power_on,
                 dry_run=dry_run,
                 assignments=assignments,
+                caller_token=caller_token,
             )
 
     return _run(_go)

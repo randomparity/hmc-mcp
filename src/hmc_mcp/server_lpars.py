@@ -39,7 +39,7 @@ from .operations_assignments import (
     _apply_validated_lpar_pcie_assignments,
     prevalidate_lpar_pcie_assignments,
 )
-
+from .ssh_commands import validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 
@@ -68,6 +68,7 @@ def hmc_create_lpar(
     os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
+    caller_token: str | None = None,
     assignments: LparPcieAssignments = LparPcieAssignments(),
     profile: str | None = None,
 ) -> LparPcieWorkflowResult:
@@ -101,6 +102,9 @@ def hmc_create_lpar(
     - ``ownership_stamped`` — ``True`` when the description-field ownership token
       was written; ``False`` when the SSH stamp attempt failed; ``None`` when the
       stamp was not attempted (no LPAR body available to confirm the partition name).
+      With ``caller_token``, ``ownership_stamped=True`` confirms both the ownership
+      stamp and the caller segment landed (one combined write); ``False`` means both
+      were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
 
     Args:
@@ -112,9 +116,15 @@ def hmc_create_lpar(
         os_type: Optional target operating-system family: aix, linux, or ibmi.
         keylock: Optional initial keylock position: normal, manual, or auto.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
+        caller_token: Optional caller tracking reference embedded in the partition
+            description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
+            1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
         assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
+    if caller_token is not None:
+        validate_caller_token(caller_token)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -133,6 +143,7 @@ def hmc_create_lpar(
                         os_type,
                         keylock,
                         max_virtual_slots,
+                        caller_token,
                     ),
                 )
                 steps = [AssignmentStep("create", "ok", creation.lpar)]
