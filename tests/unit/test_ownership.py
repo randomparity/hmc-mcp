@@ -665,3 +665,168 @@ def test_set_lpar_ownership_description_restamps_failed_create_stamp():
         )
     assert result == "ok"
     assert write.call_args.args[3] == token
+    assert result == "ok"
+    assert write.call_args.args[3] == token
+
+
+# ---------------------------------------------------------------------------
+# create_and_stamp_lpar stamp_policy (issue #377, ADR 0067)
+# ---------------------------------------------------------------------------
+
+
+from hmc_mcp.errors import HMCError  # noqa: E402
+from hmc_mcp.operations_lpar import LparCreation, create_and_stamp_lpar  # noqa: E402
+from hmc_mcp.documents import LparResources  # noqa: E402
+from hmc_mcp.ssh import HMCCLIError  # noqa: E402
+
+_STAMP_FAILURES = [
+    HMCCLIError("SSH command failed"),
+    OSError("connection dropped"),
+    ValueError("composed description broke the -i grammar"),
+]
+_STAMP_FAILURE_IDS = ["HMCCLIError", "OSError", "ValueError"]
+
+
+def _creation(**overrides):
+    kwargs = {
+        "name": "newlpar",
+        "partition_type": "AIX/Linux",
+        "resources": LparResources(),
+    }
+    kwargs.update(overrides)
+    return LparCreation(**kwargs)
+
+
+def _create_hmc():
+    """Stub client whose create path succeeds and returns a partition entry."""
+    hmc = type(
+        "StubCreateHMC",
+        (),
+        {"config": _config().model_copy(update={"agent_id": "alice"})},
+    )()
+    hmc.find_partition_by_name = AsyncMock(return_value=None)
+    hmc.create_logical_partition = AsyncMock(
+        return_value={"UUID": "lpar-uuid-377", "Resource": {"PartitionName": "newlpar"}}
+    )
+    return hmc
+
+
+def _run_create(hmc, creation, *, set_description=None):
+    """Run create_and_stamp_lpar against stubbed name resolution and SSH write."""
+    if set_description is None:
+        today = datetime.date.today().isoformat()
+        set_description = AsyncMock(
+            return_value=f"[hmc-mcp owner:alice created:{today}]"
+        )
+    with (
+        patch("hmc_mcp.ssh_commands.set_lpar_description", new=set_description),
+        patch.object(
+            operations_lpar,
+            "resolve_system_uuid",
+            new=AsyncMock(return_value="sys-uuid"),
+        ),
+        patch.object(
+            operations_lpar, "_system_name", new=AsyncMock(return_value="sys1")
+        ),
+    ):
+        result = asyncio.run(create_and_stamp_lpar(hmc, "sys1", creation))
+    return result
+
+
+@pytest.mark.parametrize("failure", _STAMP_FAILURES, ids=_STAMP_FAILURE_IDS)
+def test_best_effort_stamp_failure_unchanged(failure):
+    """ADR 0011 default is byte-for-byte unchanged for every failure class."""
+    result = _run_create(
+        _create_hmc(), _creation(), set_description=AsyncMock(side_effect=failure)
+    )
+    assert result.resource_created is True
+    assert result.ownership_stamped is False
+    assert result.warnings == ("ownership stamp failed for LPAR 'newlpar'",)
+
+
+def test_default_stamp_policy_is_best_effort():
+    creation = LparCreation("n", "AIX/Linux", LparResources())
+    assert creation.stamp_policy == "best-effort"
+
+
+@pytest.mark.parametrize("failure", _STAMP_FAILURES, ids=_STAMP_FAILURE_IDS)
+def test_required_stamp_failure_raises_with_name_and_uuid(failure):
+    """Under 'required' every swallowed failure class raises after the create."""
+    hmc = _create_hmc()
+    with pytest.raises(HMCError) as excinfo:
+        _run_create(
+            hmc,
+            _creation(stamp_policy="required"),
+            set_description=AsyncMock(side_effect=failure),
+        )
+    message = str(excinfo.value)
+    assert "'newlpar'" in message
+    assert "lpar-uuid-377" in message
+    hmc.create_logical_partition.assert_awaited_once()  # raised after the create
+
+
+def test_required_stamped_success_returns_result():
+    """A confirmed stamp under 'required' returns normally."""
+    result = _run_create(_create_hmc(), _creation(stamp_policy="required"))
+    assert result.resource_created is True
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
+
+
+def test_best_effort_stamped_success_returns_result():
+    result = _run_create(_create_hmc(), _creation())
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
+
+
+def test_required_skips_raise_when_system_name_unresolved():
+    """An unresolved system name leaves an untagged LPAR — required rejects it."""
+    hmc = _create_hmc()
+    with (
+        patch.object(
+            operations_lpar,
+            "resolve_system_uuid",
+            new=AsyncMock(return_value="sys-uuid"),
+        ),
+        patch.object(
+            operations_lpar,
+            "_system_name",
+            new=AsyncMock(return_value="sys-uuid"),  # fallback equals the uuid
+        ),
+    ):
+        with pytest.raises(HMCError) as excinfo:
+            asyncio.run(
+                create_and_stamp_lpar(hmc, "sys1", _creation(stamp_policy="required"))
+            )
+    message = str(excinfo.value)
+    assert "'newlpar'" in message
+    assert "lpar-uuid-377" in message
+
+
+def test_best_effort_skip_warning_unchanged_when_system_name_unresolved():
+    hmc = _create_hmc()
+    with (
+        patch.object(
+            operations_lpar,
+            "resolve_system_uuid",
+            new=AsyncMock(return_value="sys-uuid"),
+        ),
+        patch.object(
+            operations_lpar,
+            "_system_name",
+            new=AsyncMock(return_value="sys-uuid"),  # fallback equals the uuid
+        ),
+    ):
+        result = asyncio.run(create_and_stamp_lpar(hmc, "sys1", _creation()))
+    assert result.ownership_stamped is None
+    assert result.warnings == (
+        "ownership stamp skipped for LPAR 'newlpar': "
+        "could not resolve the managed-system name",
+    )
+
+
+def test_required_rejects_unknown_policy_before_traffic():
+    hmc = _create_hmc()
+    with pytest.raises(ValueError, match="stamp_policy"):
+        _run_create(hmc, _creation(stamp_policy="mandatory"))  # type: ignore[arg-type]
+    hmc.find_partition_by_name.assert_not_awaited()
