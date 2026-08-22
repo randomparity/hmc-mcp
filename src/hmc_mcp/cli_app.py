@@ -275,9 +275,14 @@ def _output(
         _print_json(entries)
 
 
-def _fail(exc: Exception) -> NoReturn:
+def _fail(exc: Exception, *, code: int = 1) -> NoReturn:
+    """Report *exc* through the error console and exit with *code*.
+
+    ``code`` lets a command distinguish failure classes to a script — the default
+    1 stays every caller's runtime-error exit.
+    """
     err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
-    raise typer.Exit(code=1)
+    raise typer.Exit(code=code)
 
 
 def _usage_error(message: str) -> NoReturn:

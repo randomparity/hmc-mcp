@@ -4,6 +4,7 @@ hmc-mcp config init                — create the platform-native config file
 hmc-mcp config list                — list configured profile names
 hmc-mcp config show                — show non-secret connection metadata for a profile
 hmc-mcp config init-access-policy  — generate a legacy-equivalent server access policy
+hmc-mcp config diff-access-policy  — diff a deployed policy against what would generate now
 
 Two different files live under this group, and they are not two spellings of one
 thing. ``config.toml`` holds **HMC connection profiles**: which consoles this
@@ -19,7 +20,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import typer
 from rich.markup import escape
@@ -402,3 +403,124 @@ def config_init_access_policy(
             "file is not the one it will load. Diff it against the deployed policy and "
             "merge by hand."
         )
+DIFF_IDENTICAL: Final = 0
+DIFF_DIFFERS: Final = 1
+DEPLOYED_UNREADABLE: Final = 3
+GENERATION_FAILED: Final = 4
+
+
+@config_app.command("diff-access-policy")
+def config_diff_access_policy(
+    deployed: str = typer.Argument(
+        metavar="PATH",
+        help="Path to the deployed access-policy.toml document to compare against.",
+    ),
+) -> None:
+    """Diff a deployed access policy against what this build would generate now.
+
+    Renders the legacy-equivalent policy exactly as ``config init-access-policy``
+    would — every ordinary tool in this build's registry, every profile key in
+    the current ``config.toml`` — and prints a unified diff against the deployed
+    document. That surfaces both drift arms ADR 0041 records: a tool a later
+    release added, and a profile added to ``config.toml`` after generation. The
+    non-zero difference exit makes it usable as a CI gate or health check.
+
+    Exit codes:
+
+    \b
+      0  identical — nothing to do
+      1  different — the unified diff went to stdout
+      2  usage error
+      3  the deployed policy could not be read
+      4  generation failed
+
+    Run it as the identity, and with the environment, that ``serve`` runs under,
+    for the reason ``config init-access-policy`` gives: the connection list is
+    read from that identity's ``config.toml``, through the same config-directory
+    resolution.
+    """
+    import difflib
+
+    from .legacy_policy import (
+        GENERATED_SOURCE,
+        compile_rendered_policy,
+        legacy_connections,
+        render_legacy_policy,
+    )
+    from .server import TOOL_SECURITY
+
+    path = Path(deployed)
+
+    try:
+        connections = legacy_connections()
+    except ConfigError as exc:
+        _fail(exc, code=GENERATION_FAILED)
+
+    text = render_legacy_policy(TOOL_SECURITY, connections)
+
+    # Load what was rendered, exactly as `init-access-policy` does before it writes:
+    # escaping makes the document parse while ADR 0036 enforces rules on entry
+    # *content* that escaping cannot satisfy. Compiling through the real loader keeps
+    # those rules in one place instead of copying them here, where they would drift.
+    try:
+        compile_rendered_policy(text, TOOL_SECURITY)
+    except AccessPolicyError as exc:
+        # As in init-access-policy: every noun in the loader's message belongs to a
+        # document that does not exist here either — the origin is the operator's
+        # config.toml, and the remedy is an edit there.
+        _fail(
+            AccessPolicyError(
+                f"{exc}\n\nThat entry came from a profile key in config.toml. "
+                "Remove the padding from the profile key."
+            ),
+            code=GENERATION_FAILED,
+        )
+
+    try:
+        deployed_text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        _fail(
+            RuntimeError(
+                f"No deployed access policy at {path}. Pass the path of the "
+                "access-policy.toml the server loads; if none exists yet, create "
+                "one with `hmc-mcp config init-access-policy` first."
+            ),
+            code=DEPLOYED_UNREADABLE,
+        )
+    except UnicodeDecodeError:
+        _fail(
+            RuntimeError(
+                f"{path} is not UTF-8 text, so it is not a TOML policy document. "
+                "Pass the path of the access-policy.toml the server loads."
+            ),
+            code=DEPLOYED_UNREADABLE,
+        )
+    except OSError as exc:
+        _fail(exc, code=DEPLOYED_UNREADABLE)
+
+    diff = list(
+        difflib.unified_diff(
+            deployed_text.splitlines(keepends=True),
+            text.splitlines(keepends=True),
+            fromfile=f"{path} (deployed)",
+            tofile=GENERATED_SOURCE,
+        )
+    )
+    if not diff:
+        # The all-clear goes to stderr so stdout stays machine-readable on the green
+        # path: whatever captures the diff captures nothing at all when current.
+        # `soft_wrap=True`: like init-access-policy's success line, this carries the
+        # operator's own path, and an 80-column fold on a non-tty would break it.
+        err_console.print(
+            f"No differences: {escape(str(path))} matches what this build and the "
+            "current config.toml generate.",
+            soft_wrap=True,
+        )
+        return
+
+    # Escaped like every other operator-controlled path through a markup-enabled
+    # Console; soft-wrapped because the diff IS the command's machine-readable
+    # output and a hard fold at 80 columns would corrupt its lines.
+    for line in diff:
+        console.print(escape(line.rstrip("\n")), soft_wrap=True, highlight=False)
+    raise typer.Exit(code=DIFF_DIFFERS)
