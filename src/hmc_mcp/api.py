@@ -36,6 +36,7 @@ from hmc_mcp.operations_lpar import (
     power_lpar,
     rename_lpar,
     resolve_lpar_ownership_names,
+    list_lpar_ownership,
     set_lpar_ownership_description,
     stamp_created_lpar_ownership,
 )
@@ -169,6 +170,7 @@ __all__ = [
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",
     "resolve_lpar_ownership_names",
+    "list_lpar_ownership",
     "stamp_created_lpar_ownership",
     "create_and_stamp_lpar",
     "set_lpar_ownership_description",

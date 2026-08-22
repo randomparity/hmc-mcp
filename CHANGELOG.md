@@ -30,6 +30,11 @@ carry a `### Facade manifest` section.
   `"required"`.
 - Audit sink emits a `tls-verification-disabled` event when TLS verification is turned off via
   `HMC_INSECURE_TLS` (#379).
+- `list_lpar_ownership` operation, facade export, and `hmc_list_lpar_ownership` MCP tool
+  (#375, ADR 0071): parsed ADR 0011 ownership per LPAR from the REST bulk list feed — one
+  call covers every partition on a managed system. Partitions with no description
+  (REST `<Description>` element absent), a non-token description (`unparsed`), and a valid
+  ownership stamp (`owned`/`owner`) are reported as distinct facts; none are dropped.
 
 ### Changed
 
@@ -55,10 +60,16 @@ carry a `### Facade manifest` section.
 - ADR 0070 records the operator decision to bridge the install tools to the
   HMC CLI `installios` command, the grammar mapping with sources, the
   submit-and-detach semantics, and the injection-validation approach (#410).
+- ADR 0071 records the decision to feed the bulk LPAR ownership read from the REST list
+  endpoint per the #374 live-REST survey (descriptions inlined since schema V1_2_0,
+  absent-element empty semantics), superseding the issue's N×SSH sketch, and the
+  parse-failure honesty policy (#375). Also corrects the disproven "not exposed via REST"
+  claim in `get_lpar_description`'s docstring.
 
 ### Facade manifest
 
 - Added: `set_lpar_ownership_description`.
+- Added: `list_lpar_ownership`.
 - Removed: none.
 - Renamed: none.
 - Exported model/literal changes: `LparCreation` gained the

@@ -41,6 +41,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
         "resolve_lpar_ownership_names",
+        "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
         "set_lpar_ownership_description",
@@ -199,6 +200,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "read_lpar_boot_order",
             "rename_lpar",
             "resolve_lpar_ownership_names",
+            "list_lpar_ownership",
             "set_lpar_boot_order",
             "stamp_created_lpar_ownership",
             "set_lpar_ownership_description",
@@ -315,8 +317,10 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0067, which added the ``stamp_policy`` field to
-    ``LparCreation`` (issue #377). Before that, ADR 0066 added
+    Last moved by issue #375, which added the ``list_lpar_ownership``
+    operation (bulk per-system LPAR ownership read; ADR 0071). Before that,
+    ADR 0067 added the ``stamp_policy`` field to ``LparCreation`` (issue
+    #377), and before that ADR 0066 added
     ``set_lpar_ownership_description`` (issue #376), and before it ADR 0064
     added the optional ``caller_token`` parameter to ``provision_lpar``.
     Before that, ADR 0059 changed ``HMCConfig.port``'s default from 12443
@@ -344,9 +348,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by ADR 0067: stamp_policy field added to LparCreation (issue
-    # #377; ADR 0066 before it).
-    expected_digest = "2df6615ba7ac932348c1bbd8ac15f5283b0f72504a5cdd5351e8e0533ac25d90"  # pragma: allowlist secret
+    # Moved by #375: the list_lpar_ownership operation joined the manifest
+    # (ADR 0071; ADR 0067's stamp_policy moved it before that).
+    expected_digest = "9de7e06421f7b28ce8bbda4b5dd4524e09b9fb84ee4a86c7987e537f022c5233"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

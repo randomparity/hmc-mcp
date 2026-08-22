@@ -135,6 +135,7 @@ from .server_lpars import (
     hmc_delete_lpar as hmc_delete_lpar,
     hmc_dlpar_mem as hmc_dlpar_mem,
     hmc_dlpar_proc as hmc_dlpar_proc,
+    hmc_list_lpar_ownership as hmc_list_lpar_ownership,
     hmc_modify_lpar as hmc_modify_lpar,
     hmc_rename_lpar as hmc_rename_lpar,
     hmc_power_off_lpar as hmc_power_off_lpar,

@@ -59,15 +59,16 @@ def test_create_mcp_returns_independent_complete_applications():
     # ADR 0041 made the policy mandatory. The legacy-equivalent one registers exactly
     # the surface the no-argument call used to. ADR 0054 adds four read-only normalized
     # PCIe inventory tools. ADR 0055 replaces one unsafe assignment tool with
-    # symmetric dedicated and SR-IOV assign/unassign tools, so the live total is 136.
+    # symmetric dedicated and SR-IOV assign/unassign tools. #375 adds the read-only
+    # hmc_list_lpar_ownership tool, so the live total is 137.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 136
-    assert len(asyncio.run(second.list_tools())) == 136
+    assert len(asyncio.run(first.list_tools())) == 137
+    assert len(asyncio.run(second.list_tools())) == 137
 
 
 def test_operations_do_not_import_application_modules():
