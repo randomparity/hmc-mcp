@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from . import audit
 from .client import HMCClient
@@ -75,6 +75,7 @@ class LparCreation:
     keylock: Keylock | None = None
     max_virtual_slots: int | None = None
     caller_token: str | None = None
+    stamp_policy: Literal["best-effort", "required"] = "best-effort"
 
 
 @dataclass(frozen=True)
@@ -304,7 +305,27 @@ async def create_and_stamp_lpar(
     system_name_or_uuid: str,
     creation: LparCreation,
 ) -> LparCreationResult:
-    """Validate and create an LPAR with fallback and ownership stamping."""
+    """Validate and create an LPAR with fallback and ownership stamping.
+
+    ``creation.stamp_policy`` selects how an ownership-stamp failure or skip
+    is surfaced (issue #377):
+
+    - ``"best-effort"`` (default, ADR 0011): a failed or skipped stamp never
+      fails the call. The result reports it through ``ownership_stamped``
+      and ``warnings``.
+    - ``"required"``: any outcome other than a confirmed stamp raises
+      :class:`HMCError` *after* the create completes. The exception carries
+      the new LPAR's name and UUID so the caller can find the partition.
+      The LPAR **still exists** when the error is raised — the create is not
+      rolled back — so re-stamp it with
+      :func:`set_lpar_ownership_description` (issue #376, ADR 0066) or
+      delete it to release its resources.
+    """
+    if creation.stamp_policy not in ("best-effort", "required"):
+        raise ValueError(
+            f"stamp_policy must be 'best-effort' or 'required', "
+            f"got {creation.stamp_policy!r}"
+        )
     if creation.caller_token is not None:
         # First statement, before find_partition_by_name and outside the
         # stamp's best-effort catch: no create can precede rejection, and a
@@ -349,6 +370,14 @@ async def create_and_stamp_lpar(
         created_lpar = await hmc.find_partition_by_name(creation.name)
 
     if created_lpar is None:
+        if creation.stamp_policy == "required":
+            raise HMCError(
+                "stamp_policy='required': cannot confirm the created LPAR "
+                f"exists — the create returned no body for {creation.name!r}. "
+                "Verify whether the partition was created before retrying; a "
+                "created partition can be re-stamped with "
+                "set_lpar_ownership_description."
+            )
         return LparCreationResult(
             resource_created=True,
             lpar=None,
@@ -365,6 +394,18 @@ async def create_and_stamp_lpar(
         created_lpar,
         caller_token=creation.caller_token,
     )
+    if creation.stamp_policy == "required" and ownership_stamped is not True:
+        resource = created_lpar.get("Resource") or {}
+        name = resource.get("PartitionName") or creation.name
+        uuid = created_lpar.get("UUID")
+        identity = f"{name!r} (UUID {uuid!r})" if uuid else f"{name!r} (UUID unknown)"
+        raise HMCError(
+            "stamp_policy='required': ownership stamping did not succeed for "
+            f"LPAR {identity}. {'; '.join(warnings)} The LPAR still exists — "
+            "the create is not rolled back. Re-stamp it with "
+            "set_lpar_ownership_description (issue #376) or delete it to "
+            "release its resources."
+        )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
 
 
