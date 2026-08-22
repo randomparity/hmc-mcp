@@ -9,12 +9,14 @@ into :class:`HMCClient` by inheritance.
 
 from __future__ import annotations
 
+import os
 import warnings
 from collections.abc import AsyncIterator
 from typing import Any
 import re
 from urllib.parse import unquote, urlparse
 
+from . import audit
 from .client_contracts import httpx
 from .client_parse import _find_text, _parse_feed
 from .config import HMCConfig
@@ -111,6 +113,49 @@ def _reject_non_job_path(path: str) -> None:
         )
 
 
+def _env_flag(value: str) -> bool | None:
+    """Parse a boolean environment value the way pydantic-settings would.
+
+    Returns ``None`` for anything unparseable. Unreachable in practice — a
+    value pydantic cannot parse fails ``HMCConfig`` construction long before
+    this runs — but kept total so the caller can never raise out of an
+    otherwise-successful client construction (#379).
+    """
+    lowered = value.strip().lower()
+    if lowered in {"1", "t", "true", "y", "yes", "on"}:
+        return True
+    if lowered in {"0", "f", "false", "n", "no", "off"}:
+        return False
+    return None
+
+
+def _verify_ssl_source(config: HMCConfig) -> str:
+    """Name where the effective ``verify_ssl`` value came from, for #379's audit record.
+
+    One of ``explicit-argument``, ``environment:HMC_VERIFY_SSL`` or
+    ``field-default``. ``pydantic-settings`` folds environment values into the
+    constructor kwargs, so ``model_fields_set`` alone cannot separate an explicit
+    argument from an environment-sourced one once ``HMC_VERIFY_SSL`` is set; when
+    both are present and disagree, the explicit argument won pydantic-settings'
+    source priority, and when they agree they are indistinguishable and the
+    environment is named — telling the operator which knob matches the effective
+    value is what lets them change it.
+    """
+    raw = os.environ.get("HMC_VERIFY_SSL")
+    if raw is None:
+        if "verify_ssl" in config.model_fields_set:
+            return "explicit-argument"
+        return "field-default"
+    if (
+        "verify_ssl" in config.model_fields_set
+        and _env_flag(raw) != config.verify_ssl
+    ):
+        return "explicit-argument"
+    return "environment:HMC_VERIFY_SSL"
+
+
+
+
 class HMCClient(
     UsersMixin,
     SystemsMixin,
@@ -137,6 +182,15 @@ class HMCClient(
         self._legacy_port_fallback = (
             config.port == 443 and "port" not in config.model_fields_set
         )
+        if not self.config.verify_ssl:
+            # #379. Once per construction — not per request, which would flood
+            # the sink, and not per process, which would miss a later client
+            # built with different settings. The logon-time warnings.warn stays:
+            # it is the CLI user's channel; this is the durable record's.
+            audit.record_tls_verification_disabled(
+                host=self.config.host,
+                source=_verify_ssl_source(self.config),
+            )
         # X-Audit-Memento is evaluated once at construction time — this is safe
         # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
         # If the transport ever moves to a persistent shared client, this header would

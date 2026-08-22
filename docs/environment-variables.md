@@ -37,6 +37,16 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   so TLS verification is off by default. To verify the HMC certificate, install
   its CA locally and set `HMC_VERIFY_SSL=true` — otherwise credentials are at
   risk of man-in-the-middle interception.
+  The `false` default is deliberate and stays until 1.0: self-signed
+  certificates are the norm on HMCs, and this package has no certificate-trust
+  story yet (no trust-store configuration, no per-host pinning, no fingerprint
+  option), so flipping the default would break every existing operator's working
+  configuration on upgrade with no migration path. Because the insecure-by-default
+  state must still be observable, every client constructed with verification off
+  emits a `tls-verification-disabled` record to the audit stream, naming the HMC
+  host and where the setting came from (`explicit-argument`,
+  `environment:HMC_VERIFY_SSL`, or `field-default`), in addition to the
+  logon-time warning.
 
 - **SSH key file** (`HMC_SSH_KEY_FILE`): only used by SSH-passthrough commands
   (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
