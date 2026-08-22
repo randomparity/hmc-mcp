@@ -596,6 +596,20 @@ def sink_handler() -> logging.Handler:
     return _AuditHandler()
 
 
+def set_audit_level(level: int) -> None:
+    """Put the operator's chosen level on the reserved audit logger.
+
+    Called from ``server._serve_application`` ahead of ``install_audit_sink``
+    (#270), so the NOTSET-default rule there sees an explicit choice and keeps
+    it. Permits are recorded at ``INFO`` and denials at ``WARNING``, so
+    ``WARNING`` keeps denials only and ``ERROR`` silences the stream; an
+    explicit ``INFO`` is indistinguishable from the default. The level must be
+    resolved to its integer before it reaches here -- the CLI validates the
+    name, and a Python-API caller has ``logging`` already.
+    """
+    logging.getLogger(AUDIT_LOGGER_NAME).setLevel(level)
+
+
 def install_audit_sink() -> None:
     """Attach the stderr sink the serve paths use. Idempotent.
 

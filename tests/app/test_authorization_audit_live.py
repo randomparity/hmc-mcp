@@ -399,6 +399,45 @@ def test_a_long_caller_value_arrives_truncated(run_a):
     assert len(entry["value"]) == 128
 
 
+def test_an_audit_level_of_warning_suppresses_permits_but_keeps_denials(
+    child_env, server_binary, tmp_path
+):
+    """#270 — the issue's core scenario, against the real console script.
+
+    One child launched with ``--audit-level WARNING`` answers both a permitted
+    and a denied call; only the denial's record may reach stderr. The permit is
+    proven processed by its reply frame, so its missing record is suppression
+    rather than silence.
+    """
+    log = tmp_path / "stderr.log"
+    with log.open("w") as sink:
+        process = _spawn(
+            [
+                server_binary,
+                "serve",
+                "--access-policy",
+                "lab-scoped",
+                "--audit-level",
+                "WARNING",
+            ],
+            child_env,
+            sink,
+        )
+        server = _Server(process, log)
+        try:
+            server.initialize()
+            permitted = server.call("hmc_power_off_lpar", PERMITTED)
+            denied = server.call("hmc_power_off_lpar", {**PERMITTED, "profile": "prod"})
+            _await_last_record(log, "connection-not-granted")
+        finally:
+            server.reap()
+
+    assert "error" not in permitted or permitted["id"] is not None
+    assert denied["id"] is not None
+    reasons = [record["reason"] for record in _audit_lines(log)]
+    assert reasons == ["connection-not-granted"]
+
+
 def test_a_failed_sink_leaves_the_denial_unchanged(child_env, server_binary, tmp_path):
     """L5 — Run B, a separate subprocess with fd 2 closed at interpreter start.
 
