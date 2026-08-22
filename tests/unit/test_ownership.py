@@ -403,6 +403,30 @@ def test_stamp_without_caller_token_unchanged():
     assert token == f"[hmc-mcp owner:hmc-mcp created:{today}]"
 
 
+def test_stamp_degrades_to_none_when_agent_id_breaks_description_grammar():
+    """A config-legal agent_id carrying '"' fails the HMC description grammar.
+
+    validate_agent_id permits '"' and '\\', so the composed ownership stamp can
+    be rejected by validate_lpar_description (which set_lpar_description also
+    runs defensively).  The stamp is best-effort: it must degrade to None
+    rather than raise out of the owning create after the LPAR exists.
+    """
+    from hmc_mcp.config import validate_agent_id
+
+    agent_id = 'agent"x'
+    validate_agent_id(agent_id)  # config-level validation accepts it...
+    config = _config()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description",
+        new=AsyncMock(return_value=""),
+    ) as mock_set:
+        token = asyncio.run(
+            stamp_lpar_ownership(config, "sys1", "lpar1", agent_id=agent_id)
+        )
+    assert token is None  # ...but the stamp degrades instead of raising
+    mock_set.assert_not_awaited()  # refused by the pre-flight grammar check
+
+
 def test_stamp_bad_caller_token_raises_unswallowed():
     config = _config()
     with patch(

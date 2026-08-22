@@ -345,10 +345,10 @@ async def stamp_lpar_ownership(
     in one call.
 
     Returns the description on success; returns ``None`` (without raising) on
-    SSH/network failure — a best-effort post-create call that must not fail
-    the LPAR creation itself.  A malformed *caller_token* raises ``ValueError``
-    before any SSH traffic instead of being swallowed, so it can never discard
-    the ownership stamp.
+    SSH/network failure or a composed-description grammar failure — a
+    best-effort post-create call that must not fail the LPAR creation itself.
+    A malformed *caller_token* raises ``ValueError`` before any SSH traffic
+    instead of being swallowed, so it can never discard the ownership stamp.
 
     *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
     """
@@ -362,12 +362,22 @@ async def stamp_lpar_ownership(
     if caller_token is not None:
         description = f"{description} [caller {caller_token}]"
     try:
+        # The composed description still gets the HMC's own grammar check
+        # here, inside the best-effort boundary: a config-supplied agent_id
+        # can carry a character validate_agent_id permits but the description
+        # field refuses ('"' is the known case), and set_lpar_description
+        # re-runs this validator defensively.  A ValueError raised below the
+        # pre-flight check is therefore an agent-driven grammar failure and
+        # degrades to a skipped stamp — it must not fail the owning create
+        # after the LPAR already exists.  A malformed caller_token cannot
+        # reach this catch: validate_caller_token above the try raises before
+        # any SSH traffic (ADR 0064).
+        validate_lpar_description(description)
         await set_lpar_description(config, system_name, lpar_name, description)
         return description
-    except (HMCCLIError, OSError):
-        # Transport, network failures are best-effort here: none of these
-        # should fail the owning create call.  Grammar errors cannot reach
-        # this point — both tokens are validated before the try.
+    except (HMCCLIError, OSError, ValueError):
+        # Transport, network, and composed-description grammar failures are
+        # best-effort here: none of these should fail the owning create call.
         return None
 
 
