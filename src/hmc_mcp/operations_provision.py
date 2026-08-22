@@ -23,6 +23,7 @@ from .operations_lpar import (
     power_lpar,
 )
 from .operations_storage import create_virtual_disk, map_storage
+from .ssh_commands import validate_caller_token
 from .operations_assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,
@@ -426,6 +427,12 @@ async def provision_lpar(
       ``True`` confirms both the ownership stamp and the caller segment
       landed (one combined write); ``False`` means both were lost.
     """
+
+    if caller_token is not None:
+        # First statement, before any HMC round trip: the public operation is
+        # reachable directly (api.__all__) without the MCP tool's entry check,
+        # and a malformed token must fail identically there (ADR 0064).
+        validate_caller_token(caller_token)
 
     # ----------------------------------------------------------------
     # 1. Resolve system UUID

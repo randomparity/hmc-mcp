@@ -8,6 +8,7 @@ interactions are mocked with the respx ``mock_hmc`` fixture from conftest.py.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -581,6 +582,18 @@ def test_provision_invalid_caller_token_fails_before_preconditions(monkeypatch, 
     with pytest.raises(ValueError, match="caller_token"):
         hmc_provision_lpar(
             **_provision_args(name="p-lpar", dry_run=True, caller_token="a=b")
+        )
+
+
+def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch):
+    """Direct provision_lpar callers bypass hmc_provision_lpar's entry check,
+    so the operation validates first, before any HMC round trip."""
+    _hmc_env(monkeypatch)
+    from hmc_mcp.operations_provision import provision_lpar
+
+    with pytest.raises(ValueError, match="caller_token"):
+        asyncio.run(
+            provision_lpar(None, **_provision_args(caller_token="a=b"))  # type: ignore[arg-type]
         )
 
 
