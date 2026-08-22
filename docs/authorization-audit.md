@@ -190,9 +190,11 @@ defers to a handler that is already there and will not add a second.
 > `logging.lastResort` — what a CLI process with no sink installed uses — is synchronous
 > for the same reason.
 
-> Setting the level from the `hmc-mcp serve` command line is **not** possible today;
-> that path exposes no logging option. The lever works for an in-process caller that
-> configures the logger first. Issue #270 covers the gap.
+> To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
+> `DEBUG` and `INFO` keep both records, `WARNING` keeps denials only, and `ERROR` or
+> `CRITICAL` silences the stream. The name is validated — a misspelling is a usage error
+> that starts nothing. Omitted, the shipped sink's own `INFO` default stands. An in-process
+> caller keeps configuring the logger directly, before calling `main_stdio` / `main_http`.
 
 Three things to know if you consume this stream:
 
@@ -256,5 +258,6 @@ made a policy mandatory this applies to every deployment, and an ungranted calle
 the writes at call rate, because the record precedes the denial. Since ADR 0051 a denied call
 puts *two* items on the queue — this record, then FastMCP's one-line denial — so the queue
 fills in about half the calls it used to. That caller can therefore make records drop —
-bounded to the queue, visible as a `records-dropped` count, and never able to stall a call. There is no in-process lever to reduce the volume from
-`hmc-mcp serve` either — see issue #270.
+bounded to the queue, visible as a `records-dropped` count, and never able to stall a call.
+`hmc-mcp serve --audit-level WARNING` halves what that caller can produce — permits are gone —
+but the denials themselves stay, because an unrecorded probe is worse than a recorded one.

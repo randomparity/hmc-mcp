@@ -275,6 +275,7 @@ hmc-mcp serve --access-policy lab --http --listen-host 127.0.0.1 --port 8000
 # Explicitly enable the arbitrary-command MCP escape hatch when required. The policy
 # must also grant hmc_run_command by name; the flag alone is not enough:
 hmc-mcp serve --access-policy lab --enable-arbitrary-command
+hmc-mcp serve --access-policy lab --audit-level WARNING   # authorization denials only on stderr
 ```
 
 `--access-policy NAME` enforces the named policy from the platform-native
@@ -594,6 +595,10 @@ on the `hmc_mcp.audit` logger — policy, tool, effect class, decision, a stable
 code, the connection selector, and the declared target selectors. Denials are `WARNING`
 and permits are `INFO`. Credentials, whole argument sets, command text, and response
 bodies are absent by construction.
+
+`--audit-level LEVEL` on `hmc-mcp serve` tunes that stream: `DEBUG` and `INFO` keep both
+records (the default), `WARNING` keeps denials only, and `ERROR` or `CRITICAL` silences it.
+An unknown level name is a usage error that starts nothing.
 
 Every deployment writes these, because every deployment now selects a policy. Delivery is
 **asynchronous and droppable**: records go onto a bounded in-memory queue drained by one

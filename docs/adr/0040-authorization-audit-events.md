@@ -352,6 +352,11 @@ configures the logger before calling `main_stdio` or `main_http`, and **not** to
 `hmc-mcp serve`, which exposes no logging option and hands control straight to `.run()`. That gap
 is #270.
 
+> **Amended by #270** (2026-08-21). The gap is closed from the command line: `hmc-mcp serve`
+> takes `--audit-level LEVEL`, applied through `audit.set_audit_level` immediately before
+> `install_audit_sink`, so the NOTSET-default rule above sees an explicit choice and keeps it.
+> Omitting the flag leaves the default exactly as stated.
+
 ## Consequences
 
 - The operator gets a per-call authorization trail with a stable grammar, and the calling agent
@@ -379,6 +384,10 @@ is #270.
   An unrecorded probe is worse than a recorded one, which is why the trade is taken this way. Note
   that the lever and the consequence do not reach the same operator: a CLI-launched server has the
   volume and not the lever (#270).
+  > **Amended by #270** (2026-08-21). The lever reaches the CLI-launched server now:
+  > `--audit-level WARNING` keeps denials only and `ERROR` silences the stream. Nothing here
+  > bounds the denial half: the record still precedes the denial, so the ungranted caller's
+  > `WARNING` volume remains the deployment's to bound.
 - An `HMC_HOST` collapse of a call that *named* a connection is visible in the record without
   being a field: `state: "present"` with `resolved: "<default>"` arises no other way, since a
   non-empty string token reaches rule 3 unless rule 1 fired first — *unless* a profile is
@@ -494,6 +503,12 @@ defend; `logging` provides all three controls through the `hmc_mcp.audit` logger
 mechanism would have to be kept in agreement with it. That second half holds for a Python-API
 caller and not yet for one running `hmc-mcp serve`, so this is a rejection as redundant *with
 #270*, not as redundant today.
+
+  > **Amended by #270** (2026-08-21). The level half is no longer merely redundant-in-waiting on
+  > the serve path: `--audit-level LEVEL` resolves the operator's name through
+  > `logging.getLevelName` onto `hmc_mcp.audit.setLevel` ahead of the sink install — the same
+  > standard-library control, given a documented route. Destination and on/off remain
+  > standard-library-only; the flag adds no second mechanism to keep in agreement.
 
 **Install the sink in `create_mcp`, or at import.** Rejected because both mutate global logging
 state for a caller that only composed an application — the in-process path every test and the
