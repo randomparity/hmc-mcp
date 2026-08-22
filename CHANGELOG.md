@@ -35,12 +35,26 @@ carry a `### Facade manifest` section.
 
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
+- `hmc_install_lpar_os` and `hmc_install_vios` now drive the HMC CLI
+  `installios` command over SSH (submit-and-detach: they return the remote PID
+  and log path instead of a job, and `hmc_get_job`/`hmc_wait_for_job` do not
+  apply). The targeted `InstallLPAR`/`InstallVIOS` REST jobs do not exist on
+  any surveyed HMC (ADR 0069). Parameter changes: `nim_ip` is removed (under
+  CLI semantics the HMC itself serves the install image); a required
+  `install_source` (`-d`) and `system_name_or_uuid` (`-s`) replace it, and a
+  required `profile_name` (`-r`, default `"default"`) plus optional
+  `mac_address` (`-m`) join; `wait`/`wait_timeout_seconds`/`poll_interval`/
+  `hmc_timeout_minutes` are removed because there is no job to poll (#410,
+  ADR 0070).
 
 ### Documentation
 
 - ADR 0069 records the live-HMC survey finding that the HMC REST API does not advertise the
   `InstallLPAR`/`InstallVIOS` jobs at any surveyed firmware level (#381); the disposition of the
   affected tools is tracked in #410. No code change.
+- ADR 0070 records the operator decision to bridge the install tools to the
+  HMC CLI `installios` command, the grammar mapping with sources, the
+  submit-and-detach semantics, and the injection-validation approach (#410).
 
 ### Facade manifest
 
@@ -53,6 +67,10 @@ carry a `### Facade manifest` section.
   `"tls-verification-disabled"` literal on `hmc_mcp.audit.Event`; that module is not part of the
   `hmc_mcp.api` facade, so it does not expand the manifest itself but is recorded here because it
   widens a public literal vocabulary.
+- Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
+  on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
+  `hmc_mcp.api` exports; their parameter changes do not move the frozen
+  manifest or its signature digest.
 
 ## [0.1.0] - 2026-08-22
 

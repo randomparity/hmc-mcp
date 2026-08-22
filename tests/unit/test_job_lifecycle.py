@@ -13,35 +13,8 @@ from hmc_mcp.jobs import (
     job_identifier,
     job_outcome,
     validate_wait_timing,
-    install_wait_timeout_seconds,
     wait_for_submitted_job,
 )
-
-
-def test_install_wait_timeout_derives_hmc_budget_with_observation_margin():
-    assert install_wait_timeout_seconds(60, None, 5) == 3605
-
-
-def test_install_wait_timeout_preserves_explicit_client_budget():
-    assert install_wait_timeout_seconds(60, 30, 5) == 30
-
-
-@pytest.mark.parametrize(
-    ("hmc_timeout_minutes", "wait_timeout_seconds", "poll_interval", "message"),
-    [
-        (0, None, 5, "hmc_timeout_minutes"),
-        (-1, None, 5, "hmc_timeout_minutes"),
-        (60, -1, 5, "wait_timeout_seconds"),
-        (60, None, 0, "poll_interval"),
-    ],
-)
-def test_install_wait_timeout_rejects_invalid_timing(
-    hmc_timeout_minutes, wait_timeout_seconds, poll_interval, message
-):
-    with pytest.raises(ValueError, match=message):
-        install_wait_timeout_seconds(
-            hmc_timeout_minutes, wait_timeout_seconds, poll_interval
-        )
 
 
 def test_repository_source_builds_a_pydantic_type_adapter() -> None:
