@@ -240,6 +240,42 @@ def test_inspection_reports_grants_separately_without_merging():
     assert grants[1]["targets"] == {"lpar": ["db-01"], "managed_system": ["sys-a"]}
 
 
+def test_inspection_reports_each_grant_authored_effects():
+    """#251: each grant discloses the effect classes it authored, not only the
+    resolved tool union. An `effects = ["read"]` grant and a named-tool list
+    render identically in `tools`, so authorship must be its own field."""
+    policy = _policy([
+        {"effects": ["read"], "connections": ["lab"], "targets": "all-targets"},
+        {
+            "tools": ["hmc_delete_lpar"],
+            "connections": ["scratch"],
+            "targets": {"lpar": ["db-01"], "managed_system": ["sys-a"]},
+        },
+    ])
+    grants = _inspect(create_mcp(policy))["declared_grants"]
+
+    assert [grant["effects"] for grant in grants] == [["read"], []]
+
+
+def test_inspection_reports_a_mixed_grant_effects_besides_named_tools():
+    """#251: a grant authored with both an effect class and named tools reports
+    both — the authored classes in `effects`, everything it resolves to in
+    `tools`."""
+    policy = _policy([
+        {
+            "effects": ["read"],
+            "tools": ["hmc_power_off_lpar"],
+            "connections": ["lab"],
+            "targets": "all-targets",
+        },
+    ])
+    grants = _inspect(create_mcp(policy))["declared_grants"]
+
+    assert grants[0]["effects"] == ["read"]
+    assert "hmc_power_off_lpar" in grants[0]["tools"]
+    assert "hmc_list_systems" in grants[0]["tools"]
+
+
 def test_inspection_does_not_raise_on_a_tool_outside_the_index():
     """R13: an unindexed registered name is reported, not fatal."""
     application = create_mcp(_legacy())
