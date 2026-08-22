@@ -28,8 +28,10 @@ from .ssh import HMCCLIError
 from .ssh_commands import (
     _ssh_system_name,
     create_lpar_via_cli,
+    set_lpar_description,
     stamp_lpar_ownership,
     validate_caller_token,
+    validate_lpar_description,
 )
 from .ssh_commands import get_lpar_description
 
@@ -364,6 +366,41 @@ async def create_and_stamp_lpar(
         caller_token=creation.caller_token,
     )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
+
+
+async def set_lpar_ownership_description(
+    hmc: HMCClient,
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    description: str,
+    *,
+    ownership_override: bool = False,
+) -> str:
+    """Validate, authorize, and write one LPAR description (ADR 0066).
+
+    The presentation-neutral guarded description write: validates the text
+    before any HMC traffic, enforces the description-field ownership token
+    (ADR 0011) via :func:`authorize_lpar_mutation`, then writes the new
+    description over SSH. Supports re-stamping an LPAR whose create-time
+    stamp failed and rewriting the token at pool return or handover; callers
+    compose the description themselves in the ADR 0011 / ADR 0064 token
+    format.
+    """
+    validate_lpar_description(description)
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+    )
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+    return await set_lpar_description(hmc.config, system_name, lpar_name, description)
 
 
 async def delete_lpar(

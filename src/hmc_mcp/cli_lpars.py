@@ -33,11 +33,11 @@ from .server_lpar_config import ProcessorCompatibilityMode
 from .server_systems import PartitionState
 from .operations_lpar import (
     LparCreation,
-    authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     rename_lpar,
+    set_lpar_ownership_description,
 )
 from .operations_assignments import (
     LparPcieAssignments,
@@ -63,7 +63,6 @@ from .ssh_commands import (
     get_lpar_msp,
     get_lpar_proc_compat,
     get_proc_compat_modes,
-    set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
     validate_caller_token,
@@ -892,14 +891,12 @@ def lpars_set_description(
 
     async def _go():
         async with _client() as hmc:
-            await authorize_lpar_mutation(
+            return await set_lpar_ownership_description(
                 hmc,
                 system_name,
                 lpar_name,
+                description,
                 ownership_override=ownership_override,
-            )
-            return await set_lpar_description(
-                hmc.config, system_name, lpar_name, description
             )
 
     result = _run(_go)

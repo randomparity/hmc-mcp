@@ -43,6 +43,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "resolve_lpar_ownership_names",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
+        "set_lpar_ownership_description",
         "delete_lpar",
         "power_lpar",
         "rename_lpar",
@@ -200,6 +201,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "resolve_lpar_ownership_names",
             "set_lpar_boot_order",
             "stamp_created_lpar_ownership",
+            "set_lpar_ownership_description",
         },
         "hmc_mcp.operations_lpm": {
             "LpmResult",
@@ -313,8 +315,9 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0064, which added the optional ``caller_token``
-    parameter to ``provision_lpar``. Before that, ADR 0059 changed
+    Last moved by ADR 0066, which added ``set_lpar_ownership_description``
+    (issue #376). Before that, ADR 0064 added the optional ``caller_token``
+    parameter to ``provision_lpar``, and before it ADR 0059 changed
     ``HMCConfig.port``'s default from 12443 to 443. ADR 0058 added
     declarative LPAR PCIe assignments, and ADR 0054 added the normalized PCIe
     inventory models and operations. Before that, ADR 0050 added
@@ -339,9 +342,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by ADR 0064: provision_lpar gained an optional `caller_token`
-    # parameter (issue #358).
-    expected_digest = "b0adf88318336ca4c39e02d5e49ead17b078b3f321ddf7852aca9857cd581b91"  # pragma: allowlist secret
+    # Moved by ADR 0066: set_lpar_ownership_description added (issue #376,
+    # ADR 0064 before it).
+    expected_digest = "2bfb518cc1da878ca030260e0fec55c69bc9faf2d685a0fe8fe361c828f6f42d"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

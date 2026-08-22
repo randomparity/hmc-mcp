@@ -64,7 +64,8 @@ built-in containers are not facade exports. The initial inventory is:
   internal.
 - `operations_lpar`: operations `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
-  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, and `rename_lpar`; types `LparCreation`,
+  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`, and
+  `set_lpar_ownership_description`; types `LparCreation`,
   `LparCreationResult`, and `LparPowerResult`; synchronous result helper `power_on_outcome` and
   ownership parser `parse_lpar_ownership_owner` are excluded; underscore helpers are internal.
 - `operations_lpm`: operations `migrate_lpar`, `abort_lpar_migration`,
