@@ -313,14 +313,15 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by ADR 0059, which changed ``HMCConfig.port``'s default from
-    12443 to 443. ADR 0058 added declarative LPAR PCIe assignments, and ADR 0054
-    added the normalized PCIe inventory models and
-    operations. Before that, ADR 0050 added ``HMCConfig.iso_url_allowlist`` — a
-    pydantic model's ``__init__`` signature is derived from its fields, so a new
-    setting moves the digest even though no operation's parameters changed.
-    Before that, ADR 0049 narrowed ``upload_iso``'s ``iso_source`` from
-    ``str | Path`` to ``str``.
+    Last moved by ADR 0064, which added the optional ``caller_token``
+    parameter to ``provision_lpar``. Before that, ADR 0059 changed
+    ``HMCConfig.port``'s default from 12443 to 443. ADR 0058 added
+    declarative LPAR PCIe assignments, and ADR 0054 added the normalized PCIe
+    inventory models and operations. Before that, ADR 0050 added
+    ``HMCConfig.iso_url_allowlist`` — a pydantic model's ``__init__``
+    signature is derived from its fields, so a new setting moves the digest
+    even though no operation's parameters changed. Before that, ADR 0049
+    narrowed ``upload_iso``'s ``iso_source`` from ``str | Path`` to ``str``.
     """
     operations = {
         name: getattr(api, name)
@@ -338,9 +339,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #259: every lpar-selector operation and the three LPM operations
-    # gained an optional `system_name_or_uuid` disambiguator (ADR 0063).
-    expected_digest = "0fee53f10f5e69fdc07af0a2744d775409f2f263921580b502e9595807baf52b"  # pragma: allowlist secret
+    # Moved by ADR 0064: provision_lpar gained an optional `caller_token`
+    # parameter (issue #358).
+    expected_digest = "b0adf88318336ca4c39e02d5e49ead17b078b3f321ddf7852aca9857cd581b91"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

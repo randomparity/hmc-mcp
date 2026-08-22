@@ -407,7 +407,7 @@ async def provision_lpar(
         Optional caller tracking reference embedded in the partition
         description as ``[caller <token>]`` after the ownership stamp
         (ADR 0064); 1–64 printable ASCII characters, no whitespace or
-        , = " [ ] \.
+        comma, equals, double quote, square brackets, or backslash.
 
     Returns
     -------
