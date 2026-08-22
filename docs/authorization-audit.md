@@ -94,13 +94,18 @@ Emitted when an operator approves an [ADR 0011](adr/0011-multi-agent-lpar-owners
 LPAR ownership override. Always `WARNING`.
 
 ```json
-{"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
+{"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```
 
-It carries no `policy`, `decision`, `reason`, `connection`, or `targets`, and not as
-nulls — an ownership check on a token parsed from an LPAR description is not an
-access-policy decision, and empty fields would read as one. It does not say **which
-HMC** the override applied to; that is issue #271.
+`host` is the hostname or address of the HMC the override was approved on — the
+same `HMCConfig.host` whose `agent_id` the attribution records. It names a
+machine, not a grant, so it is its own field rather than an arm of the
+authorization record's `connection` object. An unset `HMC_HOST` renders as an
+empty string.
+
+It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
+an ownership check on a token parsed from an LPAR description is not an
+access-policy decision, and empty fields would read as one.
 
 ### `event: "records-dropped"`
 

@@ -125,6 +125,7 @@ def _audit_lpar_ownership_override(
     audit.record_ownership_override(
         system=system_name,
         lpar=lpar_name,
+        host=hmc.config.host,
         agent_id=hmc.config.agent_id or "hmc-mcp",
     )
 

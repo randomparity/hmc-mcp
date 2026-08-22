@@ -56,6 +56,8 @@ Not spec-numbered, each pinning something a review round found:
   test_events_matches_the_literal_and_every_emitter_uses_it
   test_the_module_closes_propagation_at_import          (#272, fresh interpreter)
   test_an_unconfigured_logger_still_reaches_last_resort (#272's other half)
+  test_the_override_record_carries_the_hmc_host       (#271)
+  test_an_empty_override_host_renders_empty_and_is_bounded (#271)
   test_a_foreign_writers_bad_record_does_not_raise_into_them
 """
 
@@ -345,11 +347,44 @@ def test_events_matches_the_literal_and_every_emitter_uses_it():
     assert audit.EVENTS == {"authorization", "ownership-override", "records-dropped"}
 
     lines = _capture()
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     emitted = {json.loads(lines[0])["event"]}
     emitted.add(_authorization()["event"])
     emitted.add(json.loads(audit._drop_marker(1))["event"])
     assert emitted == audit.EVENTS, "every declared event must be reachable"
+
+
+def test_the_override_record_carries_the_hmc_host():
+    """#271. The highest-consequence event names which HMC it applied to.
+
+    `system` and `lpar` are names that repeat across a fleet; `host` is the
+    ``HMCConfig.host`` of the client whose config supplied the recorded
+    ``agent_id``, and it is its own field rather than a ``connection`` arm —
+    a hostname is not an access-policy connection selector.
+    """
+    lines = _capture()
+    audit.record_ownership_override(
+        system="sys-a", lpar="db-01", host="hmc.test", agent_id="agent-7"
+    )
+    record = _one(lines)
+    assert list(record) == [
+        "time", "event", "system", "lpar", "host", "attribution",
+    ]
+    assert record["host"] == "hmc.test"
+
+
+def test_an_empty_override_host_renders_empty_and_is_bounded():
+    """`HMCConfig.host` defaults to "", which is what renders, and the
+    caller-supplied bound applies to it like to every other field."""
+    lines = _capture()
+    audit.record_ownership_override(system="s", lpar="l", host="", agent_id="a")
+    assert _one(lines)["host"] == ""
+
+    lines = _capture()
+    audit.record_ownership_override(
+        system="s", lpar="l", host="H" * 500, agent_id="a"
+    )
+    assert len(_one(lines)["host"]) == audit.MAX_VALUE_LENGTH
 
 
 def test_only_audit_resolves_the_audit_logger():
@@ -372,7 +407,7 @@ def test_only_audit_resolves_the_audit_logger():
 def test_a_record_reaches_stderr_and_not_stdout(capsys):
     """Spec 9."""
     audit.install_audit_sink()
-    audit.record_ownership_override(system="sys-a", lpar="db-01", agent_id="agent-7")
+    audit.record_ownership_override(system="sys-a", lpar="db-01", host="hmc.test", agent_id="agent-7")
     # Through the handler's own `flush`, which is what `logging.shutdown` calls at
     # interpreter exit — and the reason that call cannot become the hang #269 is
     # about, since it is the sink's bounded drain rather than an unbounded join.
@@ -395,7 +430,7 @@ def test_the_sink_does_not_propagate_to_an_ancestor_handler(capsys):
     try:
         audit.install_audit_sink()
         assert logging.getLogger(audit.AUDIT_LOGGER_NAME).propagate is False
-        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
         _flush()
         capsys.readouterr()
         assert root_lines == [], "a root handler must not receive audit records"
@@ -499,7 +534,7 @@ def test_an_unconfigured_logger_still_reaches_last_resort(capsys):
     saved = list(logging.root.handlers)
     logging.root.handlers.clear()
     try:
-        audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+        audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
         captured = capsys.readouterr()
     finally:
         logging.root.handlers[:] = saved
@@ -543,7 +578,7 @@ def test_a_preattached_stdout_handler_is_deferred_to(capsys):
     audit.install_audit_sink()
     assert len(logger.handlers) == 1, "install must not add a second handler"
     logger.setLevel(logging.INFO)
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     assert json.loads(capsys.readouterr().out.strip())["event"] == "ownership-override"
 
 
@@ -590,8 +625,8 @@ def test_the_line_equals_the_message_and_records_do_not_share_a_line(capsys):
     assert logging.StreamHandler.terminator == "\n"
 
     audit.install_audit_sink()
-    audit.record_ownership_override(system="one", lpar="l", agent_id="a")
-    audit.record_ownership_override(system="two", lpar="l", agent_id="a")
+    audit.record_ownership_override(system="one", lpar="l", host="hmc.test", agent_id="a")
+    audit.record_ownership_override(system="two", lpar="l", host="hmc.test", agent_id="a")
     _flush()
     err = capsys.readouterr().err
     lines = err.splitlines()
@@ -614,7 +649,7 @@ def test_the_handler_issues_one_write_per_record(monkeypatch):
 
     audit.install_audit_sink()
     monkeypatch.setattr(sys, "stderr", _Counting())
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     _flush()
     assert len(writes) == 1
     assert writes[0].endswith("\n")
@@ -723,7 +758,7 @@ def test_the_audit_records_own_grammar_is_untouched_by_that_formatter(capsys):
     — this fails if a later change gives the audit logger the marked one.
     """
     audit.install_audit_sink()
-    audit.record_ownership_override(system="s", lpar="l", agent_id="a")
+    audit.record_ownership_override(system="s", lpar="l", host="hmc.test", agent_id="a")
     _flush()
 
     err = capsys.readouterr().err

@@ -248,14 +248,20 @@ def record_authorization(
     _emit(_ALLOW_LEVEL if decision == "allow" else _DENY_LEVEL, build)
 
 
-def record_ownership_override(*, system: str, lpar: str, agent_id: str) -> None:
+def record_ownership_override(
+    *, system: str, lpar: str, host: str, agent_id: str
+) -> None:
     """Emit one record for an approved ADR 0011 LPAR ownership override.
 
     Carries no ``policy``, ``decision``, ``reason`` or ``targets``, and not as nulls:
     none of them exists for this event, and rendering them empty would suggest an
     access-policy decision was taken when this is an ownership check on a token
-    parsed from an LPAR description. It carries no ``connection`` either, though the
-    HMC identity does exist at the emission point — see ADR 0040 and #271.
+    parsed from an LPAR description (#268). It carries no ``connection`` either: a
+    hostname is not an access-policy connection selector, and this path also runs
+    from the CLI and the Python API where no policy connection exists (ADR 0040).
+    The HMC identity travels as its own ``host`` field instead (#271). Like every
+    caller-supplied field it passes through ``_value``, so an unset
+    ``HMCConfig.host`` — whose default is ``""`` — renders as an empty string.
 
     Always ``WARNING``, which is what it was before convergence, so a CLI user whose
     process never installed the sink still sees it through ``logging.lastResort``.
@@ -268,6 +274,7 @@ def record_ownership_override(*, system: str, lpar: str, agent_id: str) -> None:
             "event": event,
             "system": _value(system),
             "lpar": _value(lpar),
+            "host": _value(host),
             "attribution": _attribution(agent_id, "config:agent_id"),
         }
 
