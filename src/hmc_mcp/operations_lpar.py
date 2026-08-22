@@ -143,6 +143,68 @@ def parse_lpar_ownership_caller_token(description: str) -> str | None:
     return matches[0]
 
 
+def lpar_ownership_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Distill one parsed LogicalPartition feed entry into ownership facts.
+
+    The ``description`` field is the raw Description text: ``None`` when the
+    ``<Description>`` element is absent (how the HMC signals an empty
+    description, per the #374 live-REST survey), the element text otherwise.
+    A description that carries no well-formed ADR 0011 ownership stamp sets
+    ``unparsed`` — "owned by something that is not an hmc-mcp token" is a
+    different fact from "no description", and neither partition may be
+    silently dropped by a reconciliation sweep.
+    """
+    resource = entry.get("Resource") or {}
+    name = resource.get("PartitionName")
+    description = resource.get("Description")
+    owner = (
+        parse_lpar_ownership_owner(description)
+        if isinstance(description, str)
+        else None
+    )
+    return {
+        "lpar_name": name,
+        "lpar_uuid": entry.get("UUID"),
+        "description": description,
+        "owned": owner is not None,
+        "owner": owner,
+        "unparsed": description is not None and owner is None,
+    }
+
+
+async def list_lpar_ownership(
+    hmc: HMCClient,
+    system_name_or_uuid: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read parsed ownership for every LPAR on a managed system in one call.
+
+    Uses the REST bulk list feed ``GET
+    /rest/api/uom/ManagedSystem/<uuid>/LogicalPartition``, which inlines the
+    complete LogicalPartition object — including ``Description`` — per entry
+    (#374 live-REST survey; attribute present since schema version V1_2_0),
+    so one request covers every partition with no per-partition detail calls.
+    With ``system_name_or_uuid`` omitted, falls back to a single fleet-wide
+    ``GET /rest/api/uom/LogicalPartition``, mirroring the ``hmc_list_lpars``
+    selector convention (ADR 0063).
+
+    Returns one dict per partition as built by :func:`lpar_ownership_entry`:
+    ``lpar_name``, ``lpar_uuid``, raw ``description`` (``None`` = element
+    absent), ``owned``/``owner`` for well-formed ADR 0011 stamps, and
+    ``unparsed`` for descriptions that carry no such stamp. Ownership parsing
+    reuses :func:`parse_lpar_ownership_owner`; no second token grammar exists.
+
+    Note: feed entries do not name their parent managed system, so fleet-wide
+    results identify partitions only by name/UUID; pass a selector for
+    per-system attribution.
+    """
+    if system_name_or_uuid is not None:
+        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+        entries = await hmc.list_logical_partitions(system_uuid)
+    else:
+        entries = await hmc.list_uom("LogicalPartition")
+    return [lpar_ownership_entry(entry) for entry in entries]
+
+
 def _audit_lpar_ownership_override(
     hmc: HMCClient, system_name: str, lpar_name: str
 ) -> None:
