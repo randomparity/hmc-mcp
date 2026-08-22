@@ -19,16 +19,23 @@ from .operations_assignments import LparPcieAssignments
 tool, register_tools, tool_security = tool_module()
 
 
-# Not exhaustive: the VIOS this call mutates is named by `storage.vios_uuid` and
-# `network.vios_partition_id`, one level below the signature, so `build_targets`
-# cannot see them and no policy `targets` table can bound them. The mapping is
-# POSTed to the global /VirtualIOServer/{uuid} URI, so nothing constrains that
-# VIOS to `system_name_or_uuid` either. ADR 0039 grants this tool only under
-# `targets = "all-targets"`.
+# The VIOS identities this call mutates arrive one level below the signature —
+# `storage.vios_uuid` and `network.vios_partition_id` — and are declared here as
+# nested selectors (#260), so extraction, the audit record, and denial messages
+# see them instead of only the managed system. The tool remains
+# `exhaustive_targets=False`: `storage.vios_uuid` is a fleet-unique UUID a policy
+# `targets` table could bound, but `network.vios_partition_id` is a per-system
+# slot number no allowlist can write precisely (ADR 0039, #259), so only
+# `targets = "all-targets"` grants it today. The declaration is what makes the
+# boundable half fixable the moment #259 gives the slot number a fleet-unique form.
 @tool(
     effect="mutate",
     operation="provision.lpar",
     target_kind="managed_system",
+    extra_targets=(
+        ("vios", "network.vios_partition_id"),
+        ("vios", "storage.vios_uuid"),
+    ),
     exhaustive_targets=False,
 )
 def hmc_provision_lpar(

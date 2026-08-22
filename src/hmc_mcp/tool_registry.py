@@ -14,9 +14,11 @@ import functools
 import inspect
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass, replace
 from types import MappingProxyType
-from typing import Any, Literal, get_args
+from typing import Any, Literal, get_args, get_origin, get_type_hints
+
+from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -131,11 +133,27 @@ _ANNOTATIONS: Mapping[str, tuple[bool, bool | None]] = MappingProxyType({
 
 @dataclass(frozen=True)
 class TargetSelector:
-    """A public handler argument carrying the identity of one target resource."""
+    """A public handler argument carrying the identity of one target resource.
+
+    *argument* is the handler parameter the identity arrives through, except
+    when *container* names a structured (dataclass / pydantic-model) parameter:
+    then it is a field of that object and the identity arrives one level below
+    the signature (#260). ``path`` is the location as denial messages and audit
+    records render it — unambiguous for the nested case, where a bare field
+    name would not say which argument carries it.
+    """
 
     kind: TargetKind
     argument: str
     required: bool
+    container: str | None = None
+
+    @property
+    def path(self) -> str:
+        """The selector's location, dotted when nested."""
+        if self.container is None:
+            return self.argument
+        return f"{self.container}.{self.argument}"
 
 
 @dataclass(frozen=True)
@@ -272,18 +290,98 @@ def build_targets(
     handler: Callable[..., Any],
     extra_targets: Iterable[tuple[TargetKind, str]],
 ) -> tuple[TargetSelector, ...]:
-    """Build target selectors from the argument table plus explicit extras."""
+    """Build target selectors from the argument table plus explicit extras.
+
+    An extra written ``"argument"`` names a parameter, as before. An extra
+    written ``"container.field"`` declares a nested selector (#260): the
+    identity arrives as *field* of the structured (dataclass / pydantic-model)
+    parameter *container*, one level below the signature. The descent is a
+    declaration rather than a derivation — ADR 0039 rejected inspecting
+    signatures into authority at registration — so nothing a tool does not
+    declare is extracted, and a dotted path is validated against the real
+    fields at declaration time.
+    """
     parameters = inspect.signature(handler).parameters
     selectors = [
         TargetSelector(kind, name, parameter.default is inspect.Parameter.empty)
         for name, parameter in parameters.items()
         if (kind := REQUIRED_TARGET_ARGUMENTS.get(name)) is not None
     ]
+    hints = None
     for kind, argument in extra_targets:
-        parameter = parameters.get(argument)
-        required = parameter is not None and parameter.default is inspect.Parameter.empty
-        selectors.append(TargetSelector(kind, argument, required))
+        container, _, field = argument.rpartition(".")
+        if not container:
+            parameter = parameters.get(argument)
+            required = (
+                parameter is not None and parameter.default is inspect.Parameter.empty
+            )
+            selectors.append(TargetSelector(kind, argument, required))
+            continue
+        if hints is None:
+            hints = get_type_hints(handler)
+        selectors.append(
+            _nested_selector(kind, container, field, parameters, hints)
+        )
     return tuple(selectors)
+
+
+def _structured_fields(annotation: object) -> Mapping[str, bool] | None:
+    """The fields of a dataclass or pydantic model, each to its requiredness.
+
+    ``None`` for anything else — the signal that a container parameter cannot
+    carry a nested selector.
+    """
+    if is_dataclass(annotation) and isinstance(annotation, type):
+        return {
+            field.name: (
+                field.default is MISSING and field.default_factory is MISSING
+            )
+            for field in dataclass_fields(annotation)
+        }
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return {
+            name: info.is_required() for name, info in annotation.model_fields.items()
+        }
+    return None
+
+
+def _nested_selector(
+    kind: TargetKind,
+    container: str,
+    field: str,
+    parameters: Mapping[str, inspect.Parameter],
+    hints: Mapping[str, object],
+) -> TargetSelector:
+    """One validated nested selector, or the ValueError that refuses it."""
+    where = f"{container}.{field}"
+    parameter = parameters.get(container)
+    if parameter is None:
+        raise ValueError(
+            f"{where}: container {container!r} is not a parameter; "
+            f"handler takes {sorted(parameters)}"
+        )
+    annotation = hints.get(container)
+    if parameter.default is None or _is_optional(annotation):
+        raise ValueError(
+            f"{where}: cannot declare a nested selector on an optional "
+            f"container; a call that passes None would be unreadable at "
+            "dispatch and deny even under all-targets"
+        )
+    fields = _structured_fields(annotation)
+    if fields is None:
+        raise ValueError(
+            f"{where}: container {container!r} is not a dataclass or pydantic "
+            f"model; only a structured argument can carry a nested selector"
+        )
+    if field not in fields:
+        raise ValueError(f"{where}: no such field; {container} has {sorted(fields)}")
+    required = parameter.default is inspect.Parameter.empty and fields[field]
+    return TargetSelector(kind, field, required, container=container)
+
+
+def _is_optional(annotation: object) -> bool:
+    """True when the annotation admits None."""
+    return get_origin(annotation) is not None and type(None) in get_args(annotation)
 
 
 def _validate_arguments(
@@ -293,6 +391,13 @@ def _validate_arguments(
 ) -> None:
     """Reject a selector or connection argument the handler does not accept."""
     for target in security.targets:
+        if target.container is not None:
+            if target.container not in parameters:
+                raise ValueError(
+                    f"{name}: nested selector container {target.container!r} is "
+                    f"not a parameter; handler takes {sorted(parameters)}"
+                )
+            continue
         if target.argument not in parameters:
             raise ValueError(
                 f"{name}: target argument {target.argument!r} is not a parameter; "
@@ -306,9 +411,9 @@ def _validate_arguments(
             f"{name}: connection argument {security.connection_argument!r} is not a "
             f"parameter; handler takes {sorted(parameters)}"
         )
-    arguments = [target.argument for target in security.targets]
-    if len(arguments) != len(set(arguments)):
-        raise ValueError(f"{name}: duplicate target argument in {sorted(arguments)}")
+    paths = [target.path for target in security.targets]
+    if len(paths) != len(set(paths)):
+        raise ValueError(f"{name}: duplicate target argument in {sorted(paths)}")
 
 
 def validate_security(security: ToolSecurity, handler: Callable[..., Any]) -> None:

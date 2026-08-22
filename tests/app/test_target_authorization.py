@@ -21,6 +21,7 @@ from hmc_mcp.access_policy import AccessPolicyError
 from hmc_mcp.config import config_dir
 from hmc_mcp.connection_scope import ConnectionScopeError
 from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.target_scope import TargetScopeError
 
@@ -309,7 +310,7 @@ def test_a_table_grant_never_reaches_a_selector_less_destructive_tool():
 
 @pytest.mark.parametrize(
     "tool",
-    ["hmc_create_lpar", "hmc_modify_lpar", "hmc_provision_lpar"],
+    ["hmc_create_lpar", "hmc_modify_lpar"],
 )
 def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound(tool):
     grants = [
@@ -327,11 +328,39 @@ def test_a_table_grant_never_reaches_a_composite_its_selectors_cannot_bound(tool
                 "system_name_or_uuid": "sys-1",
                 "lpar_name_or_uuid": "victim",
                 "name": "new-lpar",
-                "network": None,
-                "storage": None,
                 "profile": "lab",
             },
         )
+
+
+def test_a_table_grant_still_never_reaches_provision_lpar():
+    """#260 declared the nested selectors; the slot number still cannot bound.
+
+    A well-formed call now extracts all three identities and denies under
+    target-unboundable anyway, because `network.vios_partition_id` is an
+    identity no table can write precisely. A call whose structured arguments
+    are None is malformed rather than narrow: the second extraction rule reads
+    it UNREADABLE, which denies under `all-targets` too.
+    """
+    grants = [
+        {
+            "effects": ["mutate"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "vios": ["vios-uuid-1"]},
+        }
+    ]
+    well_formed = {
+        "system_name_or_uuid": "sys-1",
+        "name": "new-lpar",
+        "network": ProvisionNetwork(port_vlan_id=1, vios_partition_id=3, vios_slot=2),
+        "storage": ProvisionStorage(vios_uuid="vios-uuid-1", storage_name="rootvg"),
+        "profile": "lab",
+    }
+    with pytest.raises(TargetScopeError, match="all-targets"):
+        _authorize(grants, "hmc_provision_lpar", well_formed)
+
+    with pytest.raises(TargetScopeError, match="readable"):
+        _authorize(grants, "hmc_provision_lpar", {**well_formed, "storage": None})
 
 
 def test_all_targets_reaches_everything_the_table_could_not():
