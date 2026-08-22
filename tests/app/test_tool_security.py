@@ -244,6 +244,45 @@ def test_multi_kind_tools_declare_every_target():
     assert ("vios", "vios_uuid") in attach
 
 
+def test_every_lpar_selector_tool_declares_a_managed_system_selector():
+    """#259 case 1: an `lpar` name is unique within a system, not the fleet.
+
+    ADR 0039 carried this as a residual over the lpar tools that took no
+    managed-system argument, so `lpar = ["db-01"]` authorized that name on
+    every system the granted connection reached. Every tool that declares an
+    `lpar` selector now also declares a `managed_system` selector, which makes
+    ADR 0039's "every declared selector must be supplied and matched" rule
+    total over the kind instead of partial.
+    """
+    offenders = sorted(
+        name
+        for name, security in TOOL_SECURITY.items()
+        if any(t.kind == "lpar" for t in security.targets)
+        and not any(t.kind == "managed_system" for t in security.targets)
+    )
+    assert not offenders, (
+        "these tools authorize an lpar identity no system selector pins: "
+        f"{offenders}. Add a system_name_or_uuid parameter and pass it to "
+        "resolution."
+    )
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    ["hmc_migrate_lpar", "hmc_migrate_validate_lpar", "hmc_remote_restart_lpar"],
+)
+def test_lpm_tools_declare_their_source_system(tool_name):
+    """#259 case 2: LPM tools bound the source, not only the destination.
+
+    `(lpar, target_system_name_or_uuid)` alone authorized evacuating a
+    partition of that name off any source system into the named destination.
+    The source arrives as its own `managed_system` selector, so one allowlist
+    entry must match both endpoints.
+    """
+    pairs = {(t.kind, t.argument) for t in TOOL_SECURITY[tool_name].targets}
+    assert ("managed_system", "system_name_or_uuid") in pairs
+
+
 
 def test_provision_lpar_declares_its_nested_selectors():
     """#260: the VIOS identities one level below the signature are declared.

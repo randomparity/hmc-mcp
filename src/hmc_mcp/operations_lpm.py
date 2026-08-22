@@ -55,11 +55,14 @@ async def migrate_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve selectors and submit standalone validation or validation-first migration."""
     effective_wait = wait or (validate_first and not validate)
     validate_wait_timing(effective_wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
     if validate:
         job = await hmc.lpar_migrate_validate(
@@ -99,10 +102,13 @@ async def abort_lpar_migration(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve and abort an in-progress migration."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     job = await hmc.lpar_migrate_abort(lpar_uuid)
     return LpmResult(
         lpar_uuid,
@@ -117,10 +123,13 @@ async def recover_lpar_migration(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve and recover a failed migration."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     job = await hmc.lpar_migrate_recover(lpar_uuid)
     return LpmResult(
         lpar_uuid,
@@ -136,10 +145,13 @@ async def remote_restart_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
     """Resolve both selectors and remotely restart a failed partition."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
     job = await hmc.lpar_remote_restart(lpar_uuid, target_system)
     return LpmResult(

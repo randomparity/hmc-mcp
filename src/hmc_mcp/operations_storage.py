@@ -109,9 +109,12 @@ async def map_storage(
     storage_name: str,
     lpar: str,
     target: str | None,
+    system_name_or_uuid: str | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar, system_name_or_uuid=system_name_or_uuid
+    )
     resource = await hmc.map_storage_to_lpar(
         vios_uuid, kind, storage_name, lpar_uuid, target
     )
@@ -133,7 +136,10 @@ async def create_optical_media(
         await resolve_vios_uuid(hmc, vios), vg_uuid, name, size_mib
     )
 async def list_storage_mappings(
-    hmc: HMCClient, vios: str, lpar: str | None = None
+    hmc: HMCClient,
+    vios: str,
+    lpar: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings on a VIOS, optionally scoped to an LPAR.
 
@@ -143,7 +149,9 @@ async def list_storage_mappings(
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = None
     if lpar:
-        lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+        lpar_uuid = await resolve_lpar_uuid(
+            hmc, lpar, system_name_or_uuid=system_name_or_uuid
+        )
     return await hmc.list_storage_mappings(vios_uuid, lpar_uuid)
 
 
@@ -611,7 +619,10 @@ def validate_logical_unit_wait(
 
 
 async def list_optical_mappings(
-    hmc: HMCClient, vios: str, lpar: str | None = None
+    hmc: HMCClient,
+    vios: str,
+    lpar: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings for optical media on a VIOS, optionally scoped to an LPAR.
 
@@ -622,13 +633,16 @@ async def list_optical_mappings(
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = None
     if lpar:
-        lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+        lpar_uuid = await resolve_lpar_uuid(
+            hmc, lpar, system_name_or_uuid=system_name_or_uuid
+        )
     return await hmc.list_optical_mappings(vios_uuid, lpar_uuid)
 
 
 async def mount_optical_media(
     hmc: HMCClient, vios: str, media_name: str, lpar: str,
-    target_device: str | None = None
+    target_device: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
@@ -637,14 +651,17 @@ async def mount_optical_media(
     target_device optionally pins the vtscsi name. Returns the created mapping resource.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar, system_name_or_uuid=system_name_or_uuid
+    )
     return await hmc.create_optical_mapping(
         vios_uuid, media_name, lpar_uuid, target_device
     )
 
 
 async def unmount_optical_media(
-    hmc: HMCClient, vios: str, lpar: str, media_name: str
+    hmc: HMCClient, vios: str, lpar: str, media_name: str,
+    system_name_or_uuid: str | None = None,
 ) -> None:
     """Remove the VirtualSCSIMapping for an optical device (unmount and detach).
 
@@ -653,12 +670,15 @@ async def unmount_optical_media(
     (ISO container) is preserved and can be remounted later.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar, system_name_or_uuid=system_name_or_uuid
+    )
     await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
 
 
 async def detach_optical_mapping(
-    hmc: HMCClient, vios: str, lpar: str, media_name: str
+    hmc: HMCClient, vios: str, lpar: str, media_name: str,
+    system_name_or_uuid: str | None = None,
 ) -> None:
     """Remove a VirtualSCSIMapping for an optical device (detach mapping).
 
@@ -667,5 +687,7 @@ async def detach_optical_mapping(
     (ISO container) is preserved and can be remounted later.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar, system_name_or_uuid=system_name_or_uuid
+    )
     await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)

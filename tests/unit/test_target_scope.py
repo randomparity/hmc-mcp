@@ -424,11 +424,9 @@ def test_the_sentinels_name_themselves():
 # ---------------------------------------------------------------------------
 
 
-# A *read* tool with two selectors. Deliberately not modelled on `hmc_get_lpar`,
-# which declares only `lpar_name_or_uuid` — an earlier draft named it that and
-# invented a `system_name_or_uuid` it does not have, which quietly asserted the
-# fleet-uniqueness residual (#259) was closed. `hmc_list_lpars` is the real
-# shape: one optional system selector on a read.
+# A *read* tool with two selectors. Kept as its own fixture even though
+# `hmc_get_lpar` now declares this exact shape (#259): the fixture pins the
+# extraction rule, not any one tool's declaration.
 GET_LPAR = ToolSecurity(
     effect="read",
     operation="lpar.list",

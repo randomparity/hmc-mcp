@@ -289,6 +289,7 @@ def hmc_dlpar_proc(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
@@ -306,12 +307,16 @@ def hmc_dlpar_proc(
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
         resources: Processor fields to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     xml = build_dlpar_proc_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -326,6 +331,7 @@ def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
@@ -340,12 +346,16 @@ def hmc_dlpar_mem(
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
         resources: Memory fields in MiB to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     xml = build_dlpar_mem_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -475,6 +485,7 @@ def hmc_power_on_lpar(
     poll_interval: int = 5,
     force: bool = False,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition.
 
@@ -498,6 +509,8 @@ def hmc_power_on_lpar(
         poll_interval: Seconds between job polls when waiting; must be positive.
         force: Submit PowerOn even when the partition already reports running.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -508,6 +521,7 @@ def hmc_power_on_lpar(
                 hmc,
                 lpar_name_or_uuid,
                 power_on=True,
+                system_name_or_uuid=system_name_or_uuid,
                 force=force,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
