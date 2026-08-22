@@ -283,6 +283,52 @@ def validate_lpar_description(description: str) -> None:
             )
 
 
+def validate_caller_token(token: str) -> None:
+    """Raise ``ValueError`` if *token* cannot be embedded as ``[caller <token>]``.
+
+    The grammar is server-defined (ADR 0064): 1–64 printable ASCII characters,
+    forbidding whitespace, control characters, non-ASCII, and the characters
+    ``,` ``=```"``[``]`` and ``\\``.  Commas, equals signs, and quotes are the
+    HMC CLI ``-i`` record structure (ADR 0045); brackets break the caller
+    segment's own framing; the backslash is refused because ADR 0045 records
+    its ``-i`` behaviour as unverified.  The empty string is a violation, not
+    an omission, and a non-``str`` value is rejected before any character
+    check because the second validation site serves callers that bypass MCP
+    tool typing.
+    """
+    if not isinstance(token, str):
+        raise ValueError(
+            f"caller_token must be a string, got {type(token).__name__}"
+        )
+    if not token:
+        raise ValueError("caller_token must not be empty")
+    if len(token) > 64:
+        raise ValueError(f"caller_token is {len(token)} characters; maximum is 64")
+    if not token.isascii() or any(
+        ord(character) < 0x20 or ord(character) == 0x7F for character in token
+    ):
+        raise ValueError(
+            "caller_token contains non-ASCII or non-printable characters; "
+            "only printable ASCII is accepted"
+        )
+    if any(character.isspace() for character in token):
+        raise ValueError(
+            "caller_token contains whitespace; it must be a single word"
+        )
+    forbidden = {
+        ",": "commas corrupt the HMC CLI -i parser",
+        "=": "equals signs corrupt the HMC CLI -i parser",
+        '"': "double quotes are the HMC CLI -i record escape",
+        "[": "brackets break the [caller <token>] segment format",
+        "]": "brackets break the [caller <token>] segment format",
+        "\\": "backslash behaviour inside an HMC CLI -i record is unverified "
+        "(ADR 0045)",
+    }
+    for character, reason in forbidden.items():
+        if character in token:
+            raise ValueError(f"caller_token contains {character!r}; {reason}")
+
+
 async def stamp_lpar_ownership(
     config: HMCConfig,
     system_name: str,

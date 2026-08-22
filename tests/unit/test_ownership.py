@@ -336,3 +336,39 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
         asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
     assert _override_records(caplog) == []
+
+
+from hmc_mcp.ssh_commands import validate_caller_token  # noqa: E402
+
+
+def test_validate_caller_token_accepts_tracker_ids():
+    validate_caller_token("CHG12345")          # ticket key
+    validate_caller_token("2026/08/batch-7")   # slashes, digits
+    validate_caller_token("owner@team:42")     # colon round-trips (spec guarantee 6)
+    validate_caller_token("a" * 64)            # length boundary
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",               # empty string is a violation, not an omission
+        "a" * 65,         # too long
+        "a,b",            # comma: -i record delimiter
+        "a=b",            # equals: -i record delimiter
+        'a"b',            # double quote: -i record escape
+        "a[b",            # bracket: breaks the [caller ...] framing
+        "a]b",
+        "a\\b",           # backslash: unverified -i behaviour (ADR 0045)
+        "a b",            # whitespace
+        "alicé",          # non-ASCII
+        "a\nb",           # control character
+    ],
+)
+def test_validate_caller_token_rejects(bad):
+    with pytest.raises(ValueError, match="caller_token"):
+        validate_caller_token(bad)
+
+
+def test_validate_caller_token_rejects_non_string():
+    with pytest.raises(ValueError, match="string"):
+        validate_caller_token(42)  # type: ignore[arg-type]
