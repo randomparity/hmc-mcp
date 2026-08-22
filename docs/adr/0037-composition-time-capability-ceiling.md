@@ -64,6 +64,16 @@ than in `create_mcp`: composition is a library function called at import and onc
 while the entry points run only when a server actually starts and are the single point
 where the served registry, the policy, and the arbitrary-command flag all exist at once.
 
+> **Amended by #253** (2026-08-21). **"Only a `tools`-only grant that omits it withholds
+> it" states a false necessary condition; the implementation was never wrong.** A grant
+> reaches the union of its effect classes and its named tools (`_resolve_tools` in
+> `access_policy.py`), so an effects-only policy granting `mutate` and `destructive` but
+> neither `read` nor the tool name compiles cleanly and withholds
+> `hmc_effective_permissions` — reproduced against `feat/capability-ceiling-221`,
+> withheld-inspection warning and all. The corrected rule: any policy that neither grants
+> the `read` effect class nor names the tool in a grant's `tools` withholds it; a policy
+> granting `read` reaches it and cannot exclude it.
+
 **Both registration sites take the same `permits` gate.** The inspection tool needs the
 application object, which does not exist at import, so it cannot be one of the collector's
 decorator-captured definitions and is registered by a factory outside the `TOOL_MODULES`
@@ -169,6 +179,11 @@ and this intersection reads only the compiled result.
   it, inspection becomes the widest configuration disclosure on the surface; under an
   `effects = ["read"]` policy it cannot be withheld at all. Only a `tools`-only policy can
   withhold it.
+
+  > **Amended by #253** (2026-08-21). **"Only a `tools`-only policy can withhold it" is
+  > false for the same reason; see the amendment on the Decision above.** Any policy that
+  > neither grants the `read` effect class nor names the tool in a grant's `tools`
+  > withholds it.
 - **The registered tool count is 129, not 128**, in the unfiltered default composition, and
   `hmc_effective_permissions` joins the `read` effect class — the first instance of the
   index drift ADR 0036 recorded, so an existing `effects = ["read"]` grant gains it on
