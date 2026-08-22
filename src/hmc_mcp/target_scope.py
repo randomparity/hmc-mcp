@@ -22,7 +22,7 @@ from typing import Any, Final
 
 from .access_policy import ALL_TARGETS_TOKEN, AllTargets
 from .audit import MAX_VALUE_LENGTH, Reason, State
-from .tool_registry import TargetKind, ToolSecurity
+from .tool_registry import TargetKind, TargetSelector, ToolSecurity
 
 
 class TargetScopeError(Exception):
@@ -59,8 +59,9 @@ ABSENT: Final = _Unresolved("ABSENT")
 #: ``string`` or ``integer``; the G14 guardrail is what keeps that true.
 UNREADABLE: Final = _Unresolved("UNREADABLE")
 
-#: One extracted selector: its kind, the argument it came from, and either the
-#: string to compare or one of the two sentinels above.
+#: One extracted selector: its kind, the location it came from (dotted for a
+#: selector read from inside a structured argument), and either the string to
+#: compare or one of the two sentinels above.
 Selected = tuple[TargetKind, str, str | _Unresolved]
 
 # Phrased over the *table* rather than over the tool's selectors, because it has
@@ -137,16 +138,40 @@ def selected_targets(
     """Every target *security* declares, read from the call's bound *arguments*.
 
     Indexed rather than ``.get``: ``tool_registry.authorized`` has already applied
-    the handler's defaults and ``validate_security`` guarantees each selector is a
-    parameter, so an absent key is a malformed call. Letting it read as an omitted
-    argument would turn a broken call into a merely narrow one.
+    the handler's defaults and ``validate_security`` guarantees each selector is
+    a parameter — or, for a nested selector (#260), that its container is — so an
+    absent key is a malformed call. Letting it read as an omitted argument would
+    turn a broken call into a merely narrow one.
+
+    Two extraction rules, one per selector shape. A top-level selector reads the
+    bound argument. A nested selector reads an attribute of a caller-supplied
+    object (ADR 0062), and every way that read can fail is fail-closed: a None
+    sub-object and an object without the declared attribute are malformed calls
+    rendered UNREADABLE, denying under ``all-targets`` too, because no policy
+    edit can repair what the call itself broke. Only a well-formed object whose
+    declared field is None reads as ABSENT — the object was supplied; the
+    optional selector on it was left unset.
 
     Declaration order is preserved, which is the order the denial message reports.
     """
     return tuple(
-        (target.kind, target.argument, _value(arguments[target.argument]))
+        (target.kind, target.path, _read(target, arguments))
         for target in security.targets
     )
+
+
+def _read(target: TargetSelector, arguments: Mapping[str, Any]) -> str | _Unresolved:
+    """One declared selector, by the rule its shape demands."""
+    if target.container is None:
+        return _value(arguments[target.argument])
+    container = arguments[target.container]
+    if container is None:
+        return UNREADABLE
+    try:
+        raw = getattr(container, target.argument)
+    except AttributeError:
+        return UNREADABLE
+    return _value(raw)
 
 
 def targets_permitted(

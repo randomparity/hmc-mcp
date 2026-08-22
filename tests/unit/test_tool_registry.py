@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from dataclasses import dataclass
 
 import pytest
+from pydantic import BaseModel
 
 from hmc_mcp._app import create_mcp
 from hmc_mcp.tool_registry import (
+    TargetSelector,
     ToolSecurity,
     annotations_for,
     authorized,
@@ -135,9 +138,179 @@ def test_extra_targets_supply_a_kind_the_table_cannot_name():
     )
     def remove_user(name: str, profile: str | None = None) -> str:
         return "ok"
-
     targets = security()["remove_user"].targets
     assert [(t.kind, t.argument, t.required) for t in targets] == [("user", "name", True)]
+
+
+
+# ---------------------------------------------------------------------------
+# #260 — declared nested target selectors, one level below the signature
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Storage:
+    """One fleet-unique VIOS identity field, as ProvisionStorage carries."""
+
+    vios_uuid: str
+    storage_name: str = "disk1"
+
+
+@dataclass(frozen=True)
+class _Network:
+    """Every identity-bearing field defaulted, as a slot number can be."""
+
+    port_vlan_id: int = 1
+    vios_partition_id: int = 3
+
+
+@dataclass(frozen=True)
+class _Model:
+    """Module-level so `get_type_hints` can resolve the annotation."""
+
+    vios_uuid: str
+
+
+class _PydanticModel(BaseModel):
+    """The pydantic half of the structured-container contract."""
+
+    vios_uuid: str
+
+
+def test_a_dotted_extra_declares_a_nested_selector():
+    tool, _register, security = tool_module()
+
+    @tool(
+        effect="mutate",
+        operation="provision.lpar",
+        target_kind="managed_system",
+        extra_targets=(("vios", "storage.vios_uuid"),),
+    )
+    def provision(
+        system_name_or_uuid: str, storage: _Storage, profile: str | None = None
+    ) -> str:
+        return "ok"
+
+    assert [(t.kind, t.argument, t.required) for t in security()["provision"].targets] == [
+        ("managed_system", "system_name_or_uuid", True),
+        ("vios", "vios_uuid", True),
+    ]
+    selector = security()["provision"].targets[1]
+    assert selector.container == "storage"
+    assert selector.path == "storage.vios_uuid"
+
+
+def test_a_nested_field_with_a_default_is_optional():
+    tool, _register, security = tool_module()
+
+    @tool(
+        effect="mutate",
+        operation="provision.lpar",
+        target_kind="managed_system",
+        extra_targets=(
+            ("vios", "network.vios_partition_id"),
+            ("vios", "storage.vios_uuid"),
+        ),
+    )
+    def provision(
+        system_name_or_uuid: str,
+        network: _Network,
+        storage: _Storage,
+        profile: str | None = None,
+    ) -> str:
+        return "ok"
+
+    assert [(t.argument, t.required) for t in security()["provision"].targets] == [
+        ("system_name_or_uuid", True),
+        ("vios_partition_id", False),
+        ("vios_uuid", True),
+    ]
+
+
+def test_a_nested_selector_on_a_pydantic_model_is_declared():
+    tool, _register, security = tool_module()
+
+    @tool(
+        effect="mutate",
+        operation="provision.lpar",
+        target_kind="managed_system",
+        extra_targets=(("vios", "model.vios_uuid"),),
+    )
+    def provision(
+        system_name_or_uuid: str, model: _PydanticModel, profile: str | None = None
+    ) -> str:
+        return "ok"
+
+    selector = security()["provision"].targets[1]
+    assert (selector.container, selector.argument) == ("model", "vios_uuid")
+
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ((("vios", "absent.vios_uuid"),), "absent"),
+        ((("vios", "storage.nothing"),), "nothing"),
+        ((("vios", "name.vios_uuid"),), "structured"),
+        ((("vios", "spare.vios_uuid"),), "optional"),
+    ],
+    ids=[
+        "absent-container",
+        "absent-field",
+        "unstructured-container",
+        "optional-container",
+    ],
+)
+def test_tool_rejects_impossible_nested_declarations(extra, message):
+    tool, _register, _security = tool_module()
+
+    with pytest.raises(ValueError, match=message):
+
+        @tool(
+            effect="read",
+            operation="a.b",
+            target_kind="console",
+            extra_targets=extra,
+        )
+        def sample(
+            name: str,
+            storage: _Storage,
+            spare: _Storage | None = None,
+            profile: str | None = None,
+        ) -> str:
+            return "ok"
+
+
+def test_two_identical_dotted_extras_are_rejected():
+    tool, _register, _security = tool_module()
+
+    with pytest.raises(ValueError, match="duplicate"):
+
+        @tool(
+            effect="read",
+            operation="a.b",
+            target_kind="lpar",
+            extra_targets=(
+                ("vios", "storage.vios_uuid"),
+                ("vios", "storage.vios_uuid"),
+            ),
+        )
+        def sample(vios_uuid: str, storage: _Storage, profile: str | None = None) -> str:
+            return "ok"
+
+
+def test_validate_security_rejects_a_nested_container_that_is_not_a_parameter():
+    def handler(storage: _Storage, profile: str | None = None) -> str:
+        return "ok"
+
+    security = ToolSecurity(
+        effect="mutate",
+        operation="a.b",
+        target_kind="lpar",
+        targets=(TargetSelector("vios", "vios_uuid", True, container="elsewhere"),),
+    )
+    with pytest.raises(ValueError, match="elsewhere"):
+        validate_security(security, handler)
 
 
 @pytest.mark.parametrize(

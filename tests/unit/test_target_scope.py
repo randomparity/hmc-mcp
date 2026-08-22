@@ -9,6 +9,7 @@ docs/adr/0039-dispatch-time-target-scope.md.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import MappingProxyType
 
 import pytest
@@ -587,3 +588,126 @@ def test_denial_reason_names_the_condition_that_actually_held():
     ):
         assert targets_permitted(table, security, extracted) is False
         assert denial_reason(security, extracted) == expected
+
+
+# ---------------------------------------------------------------------------
+# #260 — the second extraction rule: a selector read from a caller-supplied
+# structured argument, one level below the bound arguments
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _ProvisionStorage:
+    """As `operations_provision.ProvisionStorage`, trimmed to the identity."""
+
+    vios_uuid: str | None = None
+
+
+@dataclass(frozen=True)
+class _ProvisionNetwork:
+    """As `operations_provision.ProvisionNetwork`: an int slot number."""
+
+    vios_partition_id: int = 3
+
+
+def _nested(*selectors, exhaustive=False):
+    """A record whose selectors arrive through a structured argument."""
+    targets = tuple(
+        TargetSelector(kind, argument, required, container=container)
+        for kind, argument, required, container in selectors
+    )
+    return ToolSecurity(
+        effect="mutate",
+        operation="provision.lpar",
+        target_kind="managed_system",
+        targets=targets,
+        exhaustive_targets=exhaustive and bool(targets),
+    )
+
+
+PROVISION_NESTED = _nested(
+    ("managed_system", "system_name_or_uuid", True, None),
+    ("vios", "vios_uuid", True, "storage"),
+    ("vios", "vios_partition_id", False, "network"),
+)
+_SYS = ("managed_system", "system_name_or_uuid", "sys-a")
+
+
+def test_a_nested_selector_reads_the_caller_supplied_object():
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {
+            "system_name_or_uuid": "sys-a",
+            "storage": _ProvisionStorage(vios_uuid="vios-uuid-1"),
+            "network": _ProvisionNetwork(vios_partition_id=5),
+        },
+    )
+    assert extracted == (
+        _SYS,
+        ("vios", "storage.vios_uuid", "vios-uuid-1"),
+        ("vios", "network.vios_partition_id", "5"),
+    )
+
+
+def test_a_none_sub_object_is_unreadable_not_absent():
+    """Fail closed: a None where the schema requires an object is malformed."""
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+    )
+    assert extracted[1] == ("vios", "storage.vios_uuid", UNREADABLE)
+    assert extracted[2] == ("vios", "network.vios_partition_id", UNREADABLE)
+
+
+def test_a_missing_attribute_is_unreadable():
+    """An object without the declared field is malformed, not narrow."""
+    class Impostor:
+        pass
+
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {
+            "system_name_or_uuid": "sys-a",
+            "storage": Impostor(),
+            "network": Impostor(),
+        },
+    )
+    assert extracted[1][2] is UNREADABLE
+    assert extracted[2][2] is UNREADABLE
+
+
+def test_a_none_field_value_is_absent():
+    """The object is real; the field is an optional selector left unset."""
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {
+            "system_name_or_uuid": "sys-a",
+            "storage": _ProvisionStorage(vios_uuid=None),
+            "network": _ProvisionNetwork(),
+        },
+    )
+    assert extracted[1] == ("vios", "storage.vios_uuid", ABSENT)
+
+
+def test_a_missing_container_argument_is_still_malformed():
+    """No default was applied, so the call never went through the boundary."""
+    with pytest.raises(KeyError):
+        selected_targets(PROVISION_NESTED, {"system_name_or_uuid": "sys-a"})
+
+
+def test_an_unreadable_sub_object_denies_even_under_all_targets():
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+    )
+    assert targets_permitted(ALL_TARGETS, PROVISION_NESTED, extracted) is False
+
+
+def test_an_unreadable_nested_selector_is_reported_by_its_path():
+    """The operator must be able to act: 'vios_uuid' alone names four fields."""
+    extracted = selected_targets(
+        PROVISION_NESTED,
+        {"system_name_or_uuid": "sys-a", "storage": None, "network": None},
+    )
+    message = str(target_denial("t", "p", PROVISION_NESTED, extracted))
+    assert "'storage.vios_uuid'" in message

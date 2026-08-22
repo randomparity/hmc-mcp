@@ -193,9 +193,17 @@ def test_declared_effects_use_the_closed_vocabulary():
 def test_selectors_and_connection_arguments_are_public_parameters():
     """G3: every declared selector is really an argument a caller supplies."""
     for name, tool in _tools_by_name(True).items():
-        security = TOOL_SECURITY[name]
         properties = set(tool.parameters.get("properties", {}))
+        security = TOOL_SECURITY[name]
         for target in security.targets:
+            if target.container is not None:
+                # A nested selector (#260) is a field of a structured parameter,
+                # so it must be public one level down in that object's schema.
+                nested = tool.parameters["properties"][target.container].get(
+                    "properties", {}
+                )
+                assert target.argument in nested, (name, target.path)
+                continue
             assert target.argument in properties, (name, target.argument)
         if security.connection_argument is not None:
             assert security.connection_argument in properties, name
@@ -234,6 +242,27 @@ def test_multi_kind_tools_declare_every_target():
     }
     assert ("lpar", "lpar_name_or_uuid") in attach
     assert ("vios", "vios_uuid") in attach
+
+
+
+def test_provision_lpar_declares_its_nested_selectors():
+    """#260: the VIOS identities one level below the signature are declared.
+
+    Extraction, the audit record, and denial messages see them; the tool stays
+    non-exhaustive because the slot number is still an identity no table can
+    bound. Pinning the containers too, since a dotted extra that lost its
+    container would silently stop extracting anything.
+    """
+    security = TOOL_SECURITY["hmc_provision_lpar"]
+    assert security.exhaustive_targets is False
+    assert [
+        (t.kind, t.path, t.required) for t in security.targets
+    ] == [
+        ("managed_system", "system_name_or_uuid", True),
+        ("vios", "network.vios_partition_id", True),
+        ("vios", "storage.vios_uuid", True),
+    ]
+
 
 
 def test_backup_vios_non_exhaustive_scope_keeps_required_selector_metadata():
@@ -1180,7 +1209,7 @@ def test_every_selector_less_tool_is_unbounded_and_no_other_is_by_accident():
 
 
 def _selector_annotations() -> dict[str, object]:
-    """Every declared selector argument's resolved annotation, keyed `tool.arg`."""
+    """Every declared selector's resolved annotation, keyed `tool.path`."""
     resolved: dict[str, object] = {}
     for module in _TOOL_MODULES:
         for name, security in TOOL_SECURITY.items():
@@ -1189,7 +1218,15 @@ def _selector_annotations() -> dict[str, object]:
                 continue
             hints = get_type_hints(handler)
             for target in security.targets:
-                resolved[f"{name}.{target.argument}"] = hints.get(target.argument)
+                if target.container is not None:
+                    # A nested selector (#260) types its field through the
+                    # container's own annotation, one level down.
+                    container = get_type_hints(hints[target.container])[
+                        target.argument
+                    ]
+                else:
+                    container = hints.get(target.argument)
+                resolved[f"{name}.{target.path}"] = container
     return resolved
 
 
@@ -1293,7 +1330,9 @@ def test_the_declared_set_is_exactly_what_the_check_finds():
         "hmc_attach_disk_to_lpar": ["vios_partition_id"],
         "hmc_backup_lpar_profiles": ["file_path"],
         "hmc_get_job": ["job_href"],
-        "hmc_provision_lpar": ["network.vios_partition_id", "storage.vios_uuid"],
+        # storage.vios_uuid is declared now (#260); the slot number remains an
+        # identity no table can bound, so it stays in this set.
+        "hmc_provision_lpar": ["network.vios_partition_id"],
         "hmc_restore_lpar_profiles": ["file_path"],
         "hmc_run_command": ["cmd"],
         "hmc_wait_for_job": ["job_href"],
@@ -1326,9 +1365,12 @@ def test_every_handler_reads_the_target_selectors_it_declares():
                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
             }
             missing = [
-                target.argument
+                target.path
                 for target in TOOL_SECURITY[name].targets
-                if target.argument not in loaded
+                # A nested selector (#260) is read by passing its container
+                # onward, so the handler must load the container; the field is
+                # read by the operation it is handed to, one module out.
+                if (target.container or target.argument) not in loaded
             ]
             if missing:
                 unread[name] = missing
