@@ -268,7 +268,7 @@ jobs:
               "assigned_memory_mb": 8192,
               "free_memory_mb": 24576,
               "total_proc_units": 8.0,
-              "assigned_proc_units": 8.0,
+              "assigned_proc_units": 2.0,
               "free_proc_units": 6.0,
               "total_lpars": 1,
               "running_lpars": 1,
