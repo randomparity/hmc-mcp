@@ -1550,7 +1550,7 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 _PAYLOAD_SOURCE_ARGUMENTS = frozenset(
     {
         "repository",
-        "nim_ip",
+        "install_source",
         "nim_gateway",
         "nim_subnetmask",
         "lpar_ip",
@@ -1558,6 +1558,11 @@ _PAYLOAD_SOURCE_ARGUMENTS = frozenset(
         "iso_source",
     }
 )
+#
+# `nim_ip` left the set with #410: the InstallLPAR/InstallVIOS REST jobs it fed
+# do not exist (ADR 0069), and the installios CLI bridge (ADR 0070) has no
+# external NIM-server address — the HMC itself serves the image named by
+# `install_source`, which joined the set in its place.
 
 
 def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
@@ -1593,11 +1598,11 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
     assert found == {
         "hmc_install_lpar_os": (
             True,
-            ["lpar_ip", "nim_gateway", "nim_ip", "nim_subnetmask"],
+            ["install_source", "lpar_ip", "nim_gateway", "nim_subnetmask"],
         ),
         "hmc_install_vios": (
             True,
-            ["nim_gateway", "nim_ip", "nim_subnetmask", "vios_ip"],
+            ["install_source", "nim_gateway", "nim_subnetmask", "vios_ip"],
         ),
         "hmc_update_console_software": (True, ["repository"]),
         "hmc_update_firmware": (True, ["repository"]),

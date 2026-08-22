@@ -23,18 +23,23 @@ from .common import (
     client_from_env,
     is_uuid,
     resolve_lpar_uuid,
+    resolve_system_name,
     resolve_system_uuid,
     resolve_vios_uuid,
 )
-from .jobs import (
-    install_lpar_job,
-    install_vios_job,
-    validate_wait_timing,
-    install_wait_timeout_seconds,
-    wait_for_submitted_job,
-)
+from .jobs import validate_wait_timing
 from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
+from .ssh_commands import (
+    _ssh_lpar_name,
+    build_installios_command,
+    run_installios,
+    validate_install_source,
+    validate_ipv4_address,
+    validate_ipv4_subnet_mask,
+    validate_mac_address,
+    validate_vlan_id,
+)
 
 
 tool, register_tools, tool_security = tool_module()
@@ -126,65 +131,114 @@ def hmc_delete_vios(
 @tool(effect="destructive", operation="vios.install", target_kind="vios")
 def hmc_install_vios(
     vios_name_or_uuid: str,
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
+    system_name_or_uuid: str,
+    install_source: str,
     vios_ip: str,
+    nim_subnetmask: str,
+    nim_gateway: str,
+    profile_name: str = "default",
     vlan_id: str = "0",
-    hmc_timeout_minutes: int = 60,
-    wait: bool = False,
-    wait_timeout_seconds: int | None = None,
-    poll_interval: int = 5,
+    mac_address: str | None = None,
     profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Submit a NIM-based VIOS installation job.
+) -> dict[str, Any]:
+    """Install a VIOS onto an existing partition via the HMC ``installios`` CLI.
 
-    vios_name_or_uuid identifies an existing powered-off VIOS partition. The
-    VIOS will PXE-boot from the NIM server at nim_ip to install its OS.
-    nim_gateway and nim_subnetmask define the network for the NIM install
-    boot; vios_ip is the IP address the VIOS uses during the NIM install;
-    vlan_id is the VLAN tag for the install network (use "0" for untagged).
-    hmc_timeout_minutes is the job timeout in minutes (default 60). Returns the submitted
-    job — poll hmc_get_job for status.
+    This tool drives the HMC command line over SSH, not the REST API: the
+    ``InstallVIOS`` REST job this operation once targeted does not exist on any
+    surveyed HMC (ADR 0069), and ``installios`` has no REST equivalent (the
+    grammar is recorded in ADR 0070).
 
-    Set wait=True to block until the job reaches a terminal state.
+    Semantics are submit-and-detach. The install is a full NIM network
+    installation that typically runs far longer than one SSH session; the tool
+    launches ``installios`` in the background on the HMC (``nohup``, stdin
+    closed) and returns as soon as the process is submitted, reporting the
+    remote PID and the log path (``/tmp/hmc-mcp-installios-<partition>.log``).
+    It cannot report the install's progress or outcome. There is no HMC job on
+    this path — hmc_get_job / hmc_wait_for_job do not apply. Monitor the
+    install through the partition's console (mkvterm) or the log file, then
+    confirm with the partition state tools. If an install fails mid-flight,
+    clean up the NIM resources with ``installios -u`` in an SSH session before
+    retrying.
+
+    Requires hmcsuperadmin-level HMC authority (e.g. hscroot). The target must
+    be a powered-off VIOS partition that already exists with a profile.
 
     Args:
         vios_name_or_uuid: Powered-off VIOS partition name or UUID.
-        nim_ip: IPv4 address of the NIM server.
-        nim_gateway: IPv4 gateway for the installation network.
-        nim_subnetmask: IPv4 subnet mask for the installation network.
-        vios_ip: IPv4 address assigned to the VIOS during installation.
-        vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
-        hmc_timeout_minutes: HMC installation-job timeout in minutes.
-        wait: Wait for the normalized job outcome when true.
-        wait_timeout_seconds: Maximum client-side wait in seconds. When omitted,
-            derives the HMC timeout in seconds plus one polling interval.
-        poll_interval: Seconds between job-status requests while waiting.
-        profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Managed-system name or UUID hosting the VIOS;
+            ``installios -s`` needs it explicitly.
+        install_source: Where the install image comes from (``installios
+            -d``): a device path such as ``/dev/cdrom`` or an ``lsmediadev``
+            USB device, an absolute path on the HMC to a ``backupios``
+            nim_resources tarball or VIOS ISO, or ``server:/path`` for an
+            NFS-served backup. Replaces the retired ``nim_ip`` parameter:
+            under CLI semantics the HMC itself serves the image, so there is
+            no external NIM-server address.
+        vios_ip: IPv4 address assigned to the VIOS during installation
+            (``-i``); unchanged from the REST-era parameter.
+        nim_subnetmask: IPv4 subnet mask for the VIOS's install-time network
+            interface (``-S``); now configures the client side, not a remote
+            NIM server.
+        nim_gateway: IPv4 gateway used during installation (``-g``); same
+            client-side semantics as ``nim_subnetmask``.
+        profile_name: Partition profile holding the install resources
+            (``-r``); defaults to ``default``.
+        vlan_id: Install-network VLAN tag identifier (``-V``); ``"0"`` for
+            untagged traffic.
+        mac_address: Optional client MAC address (``-m``). When omitted,
+            ``installios`` discovers it, which can time out on some networks.
+        profile: Optional TOML profile name; uses environment defaults when
+            omitted.
     """
-    job_xml = install_vios_job(
-        nim_ip,
-        nim_gateway,
-        nim_subnetmask,
-        vios_ip,
-        vlan_id,
-        hmc_timeout_minutes=hmc_timeout_minutes,
-    )
-    effective_wait_timeout = install_wait_timeout_seconds(
-        hmc_timeout_minutes, wait_timeout_seconds, poll_interval
-    )
+    validate_install_source(install_source)
+    validate_ipv4_address(vios_ip)
+    validate_ipv4_subnet_mask(nim_subnetmask)
+    validate_ipv4_address(nim_gateway)
+    validate_vlan_id(vlan_id)
+    if mac_address is not None:
+        validate_mac_address(mac_address)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
-            job = await hmc.submit_job(
-                f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/InstallVIOS",
-                job_xml,
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+            vios_uuid = await resolve_vios_uuid(
+                hmc, vios_name_or_uuid, system_name_or_uuid=system_uuid
             )
-            return await wait_for_submitted_job(
-                hmc, job, wait, effective_wait_timeout, poll_interval
+            system_name = (
+                system_name_or_uuid
+                if not is_uuid(system_name_or_uuid)
+                else await resolve_system_name(hmc, system_uuid)
             )
+        config = build_config(profile=profile)
+        vios_name = (
+            vios_name_or_uuid
+            if not is_uuid(vios_name_or_uuid)
+            else await _ssh_lpar_name(config, vios_uuid, system_name)
+        )
+        command, log_path = build_installios_command(
+            install_source=install_source,
+            client_ip=vios_ip,
+            subnet_mask=nim_subnetmask,
+            gateway=nim_gateway,
+            system_name=system_name,
+            partition_name=vios_name,
+            profile_name=profile_name,
+            vlan_id=vlan_id,
+            mac_address=mac_address,
+        )
+        pid = await run_installios(config, command)
+        return {
+            "system": system_name,
+            "partition": vios_name,
+            "pid": pid,
+            "log_path": log_path,
+            "message": (
+                "installios submitted and detached; no HMC job exists on this "
+                f"path. Monitor PID {pid} via {log_path} or the partition "
+                "console; run 'installios -u' on the HMC to clean up a failed "
+                "install."
+            ),
+        }
 
     return _run(_go)
 
@@ -192,70 +246,120 @@ def hmc_install_vios(
 @tool(effect="destructive", operation="lpar.install_os", target_kind="lpar")
 def hmc_install_lpar_os(
     lpar_name_or_uuid: str,
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
+    system_name_or_uuid: str,
+    install_source: str,
     lpar_ip: str,
+    nim_subnetmask: str,
+    nim_gateway: str,
+    profile_name: str = "default",
     vlan_id: str = "0",
-    hmc_timeout_minutes: int = 60,
-    wait: bool = False,
-    wait_timeout_seconds: int | None = None,
-    poll_interval: int = 5,
+    mac_address: str | None = None,
     profile: str | None = None,
-    system_name_or_uuid: str | None = None,
-) -> dict[str, Any] | None:
-    """Submit a NIM-based LPAR OS installation job.
+) -> dict[str, Any]:
+    """Install an OS image onto a partition via the HMC ``installios`` CLI.
 
-    lpar_name_or_uuid identifies an existing powered-off LPAR by name or UUID. The LPAR will
-    PXE-boot from the NIM server at nim_ip to install its OS.
-    nim_gateway and nim_subnetmask define the network for the NIM install
-    boot; lpar_ip is the IP address the LPAR uses during the NIM install;
-    vlan_id is the VLAN tag for the install network (use "0" for untagged).
-    hmc_timeout_minutes is the job timeout in minutes (default 60). Returns the submitted
-    job — poll hmc_get_job for status.
+    This tool drives the HMC command line over SSH, not the REST API: the
+    ``InstallLPAR`` REST job this operation once targeted does not exist on any
+    surveyed HMC (ADR 0069), and ``installios`` has no REST equivalent (the
+    grammar is recorded in ADR 0070).
 
-    Set wait=True to block until the job reaches a terminal state.
+    Note the engine's scope: the IBM man page defines ``installios`` as the
+    Virtual I/O Server installer and requires the ``-p`` partition to be of
+    type Virtual I/O Server. This bridge therefore installs VIOS images; a
+    general AIX/Linux NIM install stays on the NIM master and is out of scope
+    here (ADR 0069 records why the HMC alone cannot drive it).
+
+    Semantics are submit-and-detach. The install is a full NIM network
+    installation that typically runs far longer than one SSH session; the tool
+    launches ``installios`` in the background on the HMC (``nohup``, stdin
+    closed) and returns as soon as the process is submitted, reporting the
+    remote PID and the log path (``/tmp/hmc-mcp-installios-<partition>.log``).
+    It cannot report the install's progress or outcome. There is no HMC job on
+    this path — hmc_get_job / hmc_wait_for_job do not apply. Monitor the
+    install through the partition's console (mkvterm) or the log file, then
+    confirm with the partition state tools. If an install fails mid-flight,
+    clean up the NIM resources with ``installios -u`` in an SSH session before
+    retrying.
+
+    Requires hmcsuperadmin-level HMC authority (e.g. hscroot). The target must
+    be a powered-off partition that already exists with a profile.
 
     Args:
         lpar_name_or_uuid: Powered-off partition name or UUID.
-        nim_ip: IPv4 address of the NIM server.
-        nim_gateway: IPv4 gateway for the installation network.
-        nim_subnetmask: IPv4 subnet mask for the installation network.
-        lpar_ip: IPv4 address assigned to the partition during installation.
-        vlan_id: Install-network VLAN identifier, or ``0`` for untagged traffic.
-        hmc_timeout_minutes: HMC installation-job timeout in minutes.
-        wait: Wait for the normalized job outcome when true.
-        wait_timeout_seconds: Maximum client-side wait in seconds. When omitted,
-            derives the HMC timeout in seconds plus one polling interval.
-        poll_interval: Seconds between job-status requests while waiting.
-        profile: Optional TOML profile name; uses environment defaults when omitted.
-        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
-            partition name; when omitted the name is searched fleet-wide.
+        system_name_or_uuid: Managed-system name or UUID hosting the
+            partition; ``installios -s`` needs it explicitly.
+        install_source: Where the install image comes from (``installios
+            -d``): a device path such as ``/dev/cdrom`` or an ``lsmediadev``
+            USB device, an absolute path on the HMC to a ``backupios``
+            nim_resources tarball or VIOS ISO, or ``server:/path`` for an
+            NFS-served backup. Replaces the retired ``nim_ip`` parameter:
+            under CLI semantics the HMC itself serves the image, so there is
+            no external NIM-server address.
+        lpar_ip: IPv4 address assigned to the partition during installation
+            (``-i``); unchanged from the REST-era parameter.
+        nim_subnetmask: IPv4 subnet mask for the partition's install-time
+            network interface (``-S``); now configures the client side, not a
+            remote NIM server.
+        nim_gateway: IPv4 gateway used during installation (``-g``); same
+            client-side semantics as ``nim_subnetmask``.
+        profile_name: Partition profile holding the install resources
+            (``-r``); defaults to ``default``.
+        vlan_id: Install-network VLAN tag identifier (``-V``); ``"0"`` for
+            untagged traffic.
+        mac_address: Optional client MAC address (``-m``). When omitted,
+            ``installios`` discovers it, which can time out on some networks.
+        profile: Optional TOML profile name; uses environment defaults when
+            omitted.
     """
-    job_xml = install_lpar_job(
-        nim_ip,
-        nim_gateway,
-        nim_subnetmask,
-        lpar_ip,
-        vlan_id,
-        hmc_timeout_minutes=hmc_timeout_minutes,
-    )
-    effective_wait_timeout = install_wait_timeout_seconds(
-        hmc_timeout_minutes, wait_timeout_seconds, poll_interval
-    )
+    validate_install_source(install_source)
+    validate_ipv4_address(lpar_ip)
+    validate_ipv4_subnet_mask(nim_subnetmask)
+    validate_ipv4_address(nim_gateway)
+    validate_vlan_id(vlan_id)
+    if mac_address is not None:
+        validate_mac_address(mac_address)
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
             lpar_uuid = await resolve_lpar_uuid(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
             )
-            job = await hmc.submit_job(
-                f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
-                job_xml,
+            system_name = (
+                system_name_or_uuid
+                if not is_uuid(system_name_or_uuid)
+                else await resolve_system_name(hmc, system_uuid)
             )
-            return await wait_for_submitted_job(
-                hmc, job, wait, effective_wait_timeout, poll_interval
-            )
+        config = build_config(profile=profile)
+        lpar_name = (
+            lpar_name_or_uuid
+            if not is_uuid(lpar_name_or_uuid)
+            else await _ssh_lpar_name(config, lpar_uuid, system_name)
+        )
+        command, log_path = build_installios_command(
+            install_source=install_source,
+            client_ip=lpar_ip,
+            subnet_mask=nim_subnetmask,
+            gateway=nim_gateway,
+            system_name=system_name,
+            partition_name=lpar_name,
+            profile_name=profile_name,
+            vlan_id=vlan_id,
+            mac_address=mac_address,
+        )
+        pid = await run_installios(config, command)
+        return {
+            "system": system_name,
+            "partition": lpar_name,
+            "pid": pid,
+            "log_path": log_path,
+            "message": (
+                "installios submitted and detached; no HMC job exists on this "
+                f"path. Monitor PID {pid} via {log_path} or the partition "
+                "console; run 'installios -u' on the HMC to clean up a failed "
+                "install."
+            ),
+        }
 
     return _run(_go)
 
