@@ -662,12 +662,17 @@ def test_a_read_tool_is_denied_on_a_target_outside_the_table():
             "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
         }
     ]
-    # `hmc_get_lpar` declares only `lpar_name_or_uuid` — it takes no system
-    # argument, which is exactly the fleet-uniqueness residual #259 records.
+    # #259 case 1 closed: `hmc_get_lpar` now declares a `managed_system`
+    # selector beside `lpar_name_or_uuid`, so the system is pinned too.
     assert [t.argument for t in TOOL_SECURITY["hmc_get_lpar"].targets] == [
-        "lpar_name_or_uuid"
+        "lpar_name_or_uuid",
+        "system_name_or_uuid",
     ]
-    args = {"lpar_name_or_uuid": "secret-db", "profile": "lab"}
+    args = {
+        "lpar_name_or_uuid": "secret-db",
+        "system_name_or_uuid": "sys-1",
+        "profile": "lab",
+    }
     with pytest.raises(TargetScopeError):
         _authorize(grants, "hmc_get_lpar", args)
 
@@ -693,6 +698,75 @@ def test_an_unpinned_list_call_is_denied():
     assert (
         _authorize(
             grants, "hmc_list_lpars", {"system_name_or_uuid": "sys-1", "profile": "lab"}
+        )
+        is None
+    )
+
+
+def test_a_fleet_ambiguous_read_is_denied_without_its_system():
+    """#259 case 1 at the boundary on a tool that previously took no system.
+
+    Before the change `hmc_get_lpar` declared only `lpar_name_or_uuid`, so
+    `lpar = ["victim"]` matched that name on every system the connection
+    reached. Now the omitted selector is ABSENT and denies, exactly as it
+    always did on `hmc_power_off_lpar`.
+    """
+    grants = [
+        {
+            "tools": ["hmc_get_lpar"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+        }
+    ]
+    arguments = {
+        "lpar_name_or_uuid": "victim",
+        "system_name_or_uuid": None,
+        "profile": "lab",
+    }
+    with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
+        _authorize(grants, "hmc_get_lpar", arguments)
+    with pytest.raises(TargetScopeError):
+        _authorize(
+            grants, "hmc_get_lpar", {**arguments, "system_name_or_uuid": "sys-2"}
+        )
+    assert (
+        _authorize(
+            grants, "hmc_get_lpar", {**arguments, "system_name_or_uuid": "sys-1"}
+        )
+        is None
+    )
+
+
+def test_migrate_denies_when_the_source_system_is_outside_the_table():
+    """#259 case 2 at the boundary: one allowlist entry covers both endpoints.
+
+    A grant naming `{ lpar = ["db-01"], managed_system = ["S2"] }` used to
+    authorize evacuating db-01 off any source system into S2, because the
+    source was not a declared selector at all. The source now arrives as its
+    own `managed_system` selector and must match the same allowlist.
+    """
+    grants = [
+        {
+            "tools": ["hmc_migrate_lpar"],
+            "connections": ["lab"],
+            "targets": {"lpar": ["db-01"], "managed_system": ["S2"]},
+        }
+    ]
+    arguments = {
+        "lpar_name_or_uuid": "db-01",
+        "target_system_name_or_uuid": "S2",
+        "system_name_or_uuid": "S1",
+        "profile": "lab",
+    }
+    with pytest.raises(TargetScopeError):
+        _authorize(grants, "hmc_migrate_lpar", arguments)
+    with pytest.raises(TargetScopeError, match="system_name_or_uuid"):
+        _authorize(
+            grants, "hmc_migrate_lpar", {**arguments, "system_name_or_uuid": None}
+        )
+    assert (
+        _authorize(
+            grants, "hmc_migrate_lpar", {**arguments, "system_name_or_uuid": "S2"}
         )
         is None
     )

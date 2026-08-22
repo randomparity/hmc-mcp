@@ -202,6 +202,7 @@ def hmc_install_lpar_os(
     wait_timeout_seconds: int | None = None,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit a NIM-based LPAR OS installation job.
 
@@ -228,6 +229,8 @@ def hmc_install_lpar_os(
             derives the HMC timeout in seconds plus one polling interval.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     job_xml = install_lpar_job(
         nim_ip,
@@ -243,7 +246,9 @@ def hmc_install_lpar_os(
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             job = await hmc.submit_job(
                 f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/InstallLPAR",
                 job_xml,

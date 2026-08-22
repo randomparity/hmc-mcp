@@ -260,20 +260,31 @@ def hmc_list_lpars(
 
 @tool(effect="read", operation="lpar.get", target_kind="lpar")
 def hmc_get_lpar(
-    lpar_name_or_uuid: str, profile: str | None = None
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get one logical partition by partition name or UUID.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             if is_uuid(lpar_name_or_uuid):
                 return await hmc.get_logical_partition(lpar_name_or_uuid)
-            return await hmc.find_partition_by_name(lpar_name_or_uuid)
+            system_uuid = (
+                await resolve_system_uuid(hmc, system_name_or_uuid)
+                if system_name_or_uuid is not None
+                else None
+            )
+            return await hmc.find_partition_by_name(
+                lpar_name_or_uuid, system_uuid=system_uuid
+            )
 
     return _run(_go)
 
@@ -282,17 +293,22 @@ def hmc_get_lpar(
 def hmc_get_lpar_state(
     lpar_name_or_uuid: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str | None:
     """Return the current state of one LPAR by partition name or UUID.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             return await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )

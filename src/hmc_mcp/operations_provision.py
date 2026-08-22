@@ -302,6 +302,7 @@ async def attach_disk_to_lpar(
     vios_partition_id: int,
     vios_slot: int,
     dry_run: bool = False,
+    system_name_or_uuid: str | None = None,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR."""
     if capacity_mib <= 0:
@@ -309,7 +310,9 @@ async def attach_disk_to_lpar(
     if storage.kind != "VirtualDisk" or storage.vg_uuid is None:
         raise ValueError("disk attachment requires a VirtualDisk with vg_uuid")
 
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     await _check_vg_exists(hmc, storage.vios_uuid, storage.vg_uuid)
     step_names = ["create_disk", "vscsi", "storage"]
     if dry_run:

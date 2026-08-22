@@ -18,17 +18,22 @@ tool, register_tools, tool_security = tool_module()
 def hmc_lpar_summary(
     lpar_name_or_uuid: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Return state, resources, OS details, adapters, and description for one LPAR.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await lpar_summary(hmc, lpar_name_or_uuid)
+            return await lpar_summary(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
 
     return _run(_go)
 

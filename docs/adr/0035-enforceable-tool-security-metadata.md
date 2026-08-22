@@ -87,6 +87,17 @@ argument that narrows or disambiguates without being what is acted on, such as
 `hmc_power_off_lpar`'s optional `system_name_or_uuid`, which exists only to disambiguate
 duplicate partition names.
 
+> **Amended by #259** (2026-08-21) via [ADR 0063](0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md).
+> The scope/subject split above shipped the twenty-odd lpar tools whose only identity was
+> `lpar_name_or_uuid` without a system selector: a partition name is unique within a system,
+> not the fleet, so a policy naming `lpar = ["db-01"]` reached that name on every system the
+> granted connection reaches. ADR 0039 recorded that as a residual rather than widen the
+> public contract. That boundary is now superseded by operator decision — every tool that
+> declares an `lpar` selector also accepts an optional `system_name_or_uuid`, and the three
+> LPM tools take it as their source-system selector beside the destination. This record's
+> derivation machinery is unchanged; the argument table simply grew no new entries, because
+> `system_name_or_uuid` was already mapped to `managed_system`.
+
 `targets` and `required` are **built, not declared**. `REQUIRED_TARGET_ARGUMENTS` is a fixed
 argument-name-to-kind table; `tool()` intersects it with the handler's signature and emits one
 `TargetSelector` per match, with `required` set from `param.default is inspect.Parameter.empty`. An

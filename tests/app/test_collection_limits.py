@@ -54,7 +54,7 @@ COLLECTION_TOOLS = {
     "hmc_list_adapters": (
         server_adapters,
         ("lpar-1",),
-        ["lpar_name_or_uuid", "adapter_type", "profile", "limit"],
+        ["lpar_name_or_uuid", "adapter_type", "profile", "limit", "system_name_or_uuid"],
     ),
     "hmc_list_virtual_switches": (
         server_network,
@@ -246,7 +246,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
 
     assert result == entries[:2]
     list_selected.assert_awaited_once_with(
-        client, "lpar-name", "VirtualSCSIClientAdapter"
+        client, "lpar-name", "VirtualSCSIClientAdapter", None
     )
 
 

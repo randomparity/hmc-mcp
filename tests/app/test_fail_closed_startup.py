@@ -254,7 +254,13 @@ def test_the_generated_policy_authorizes_a_vios_partition_id_call():
     authorize(
         "hmc_add_vscsi_adapter",
         TOOL_SECURITY["hmc_add_vscsi_adapter"],
-        {"profile": None, "lpar_name_or_uuid": "db-01", "vios_partition_id": 2},
+        {
+            "profile": None,
+            "lpar_name_or_uuid": "db-01",
+            "vios_partition_id": 2,
+            # #259: the tool now declares this optional selector too.
+            "system_name_or_uuid": None,
+        },
     )
 
 

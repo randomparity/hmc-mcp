@@ -338,7 +338,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = "81acaf5031216727f762c7e8c3471d96c1442e5d9215da212917a25f3ed94ccd"  # pragma: allowlist secret
+    # Moved by #259: every lpar-selector operation and the three LPM operations
+    # gained an optional `system_name_or_uuid` disambiguator (ADR 0063).
+    expected_digest = "0fee53f10f5e69fdc07af0a2744d775409f2f263921580b502e9595807baf52b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

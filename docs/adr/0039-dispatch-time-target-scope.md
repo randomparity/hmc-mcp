@@ -251,6 +251,14 @@ unique across the fleet, so a policy that must disambiguate on those tools lists
 names — at the cost of a policy file that has to be rewritten when a partition is recreated. This is
 filed as a follow-up issue rather than absorbed.
 
+> **Closed by #259** (2026-08-21) via [ADR 0063](0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md).
+> The rejection two paragraphs above was superseded by operator decision: every lpar tool now
+> declares an optional `system_name_or_uuid`, so "every declared selector must be supplied and
+> matched" is total over the kind — Reading B's effect no longer depends on which twenty tools a
+> signature happens to cover. The UUID remedy above remains the operator-side answer under
+> `all-targets` grants and outside table-constrained policies, where the omitted selector is
+> simply not extracted into any constraint.
+
 `metric_resource` has the same shape for a different reason: `resource_name_or_uuid` is
 disambiguated by a `category` argument that is not a selector and is not in
 `REQUIRED_TARGET_ARGUMENTS`. Recorded here, closed by the same follow-up, not silently inherited.
@@ -269,6 +277,13 @@ the 20-tool residual above. The remedy is the same UUID one, and this joins the 
 issue. Recorded as a residual rather than closed here, because closing it means adding a source
 `system_name_or_uuid` to three LPM signatures — the public-contract change rejected two paragraphs
 above.
+
+> **Closed by #259** (2026-08-21) via [ADR 0063](0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md).
+> The three LPM tools now declare a source `system_name_or_uuid` beside
+> `target_system_name_or_uuid`. Both are `managed_system` selectors, so one allowlist entry must
+> match both endpoints — the role collision ADR 0036 flagged resolves safely under kind-local
+> matching now that the source is declared. `hmc_migrate_abort_lpar` and
+> `hmc_migrate_recover_lpar` are covered by the case-1 closure above.
 
 ### Carry-forward: what a target-constrained grant means for a selector-less tool
 

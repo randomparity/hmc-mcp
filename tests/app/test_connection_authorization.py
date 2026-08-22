@@ -589,7 +589,9 @@ LAB_ONE_LPAR = [
     {
         "tools": ["hmc_power_on_lpar"],
         "connections": ["lab"],
-        "targets": {"lpar": ["scratch-01"]},
+        # #259: hmc_power_on_lpar now declares a managed_system selector, so
+        # the table must cover it for the grant to load at all.
+        "targets": {"lpar": ["scratch-01"], "managed_system": ["sys-1"]},
     }
 ]
 
@@ -604,10 +606,10 @@ CONNECTION_DENIAL = (
 )
 TARGET_DENIAL = (
     "Error calling tool 'hmc_power_on_lpar': hmc_power_on_lpar is not permitted "
-    "on lpar='lp-1' by access policy 'lab-only'. No grant naming hmc_power_on_lpar "
-    "allows that combination of targets. Grant them in a policy grant that already "
-    "names hmc_power_on_lpar, or call hmc_power_on_lpar with targets the policy "
-    "grants."
+    "on lpar='lp-1', managed_system='sys-1' by access policy 'lab-only'. No grant "
+    "naming hmc_power_on_lpar allows that combination of targets. Grant them in a "
+    "policy grant that already names hmc_power_on_lpar, or call hmc_power_on_lpar "
+    "with targets the policy grants."
 )
 
 
@@ -650,7 +652,11 @@ def _denied(application, profile: str) -> str:
         _call(
             application,
             "hmc_power_on_lpar",
-            {"lpar_name_or_uuid": "lp-1", "profile": profile},
+            {
+                "lpar_name_or_uuid": "lp-1",
+                "system_name_or_uuid": "sys-1",
+                "profile": profile,
+            },
         )
     return str(error.value)
 

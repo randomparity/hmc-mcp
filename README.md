@@ -496,12 +496,16 @@ Four rules explain why:
   a client has no way to ask the server what it may do. Give it the second grant
   above — that is what the `effects = ["read"]` / `"all-targets"` grant in the
   example is for — or expect the startup warning naming it.
-- **An LPAR name is unique within a system, not across the fleet.** For the
-  tools that also take a `system_name_or_uuid` the rule above pins it. For those
-  that do not — and for the migration tools, which name only the *destination*
-  system — a `lpar = ["db-01"]` entry matches that name on every system the
-  granted connection reaches. Where that matters, list partition **UUIDs**,
-  which are unique.
+- **An LPAR name is unique within a system, not across the fleet.** Every tool
+  that takes an `lpar_name_or_uuid` also takes an optional
+  `system_name_or_uuid`, and every LPM tool names its source system the same
+  way ([ADR 0063](docs/adr/0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md)),
+  so the rule above pins the system on all of them: under a table, a call that
+  omits the selector is refused, and one allowlist entry must match both
+  migration endpoints. Where you grant a tool under `"all-targets"`, or call it
+  outside a table-constrained policy and omit the selector, a partition name is
+  still matched on whichever system has one — list partition **UUIDs** there,
+  which are unique across the fleet.
 
 ### Startup warnings
 
@@ -618,6 +622,12 @@ The NIM install tools distinguish `hmc_timeout_minutes` from the client-side
 client waits for the HMC timeout converted to seconds plus one polling interval,
 so it can observe the terminal state at the HMC deadline. LPM's separate
 `wait_time` value is an HMC migration/validation field measured in seconds.
+
+Every partition tool accepts an optional `system_name_or_uuid`
+(SystemName or UUID) that disambiguates its `lpar_name_or_uuid`; omitted, the
+name is searched fleet-wide. The LPM tools take it as the *source*-system
+selector beside their required `target_system_name_or_uuid`, so a policy table
+must match both endpoints against its `managed_system` allowlist.
 
 **Mutating / lifecycle**
 
