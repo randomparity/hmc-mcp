@@ -36,6 +36,12 @@ carry a `### Facade manifest` section.
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
 
+### Documentation
+
+- ADR 0069 records the live-HMC survey finding that the HMC REST API does not advertise the
+  `InstallLPAR`/`InstallVIOS` jobs at any surveyed firmware level (#381); the disposition of the
+  affected tools is tracked in #410. No code change.
+
 ### Facade manifest
 
 - Added: `set_lpar_ownership_description`.
