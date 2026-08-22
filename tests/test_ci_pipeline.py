@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import sys
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -260,7 +261,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("runs-on: ubuntu-24.04") == 3
+    assert workflow.count("runs-on: ubuntu-24.04") == 4
     assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
@@ -299,7 +300,7 @@ def test_active_ci_checkouts_with_project_uv_do_not_fetch_full_history() -> None
         active_workflow,
     )
 
-    assert len(checkout_settings) == 4
+    assert len(checkout_settings) == 5
     assert active_workflow.count("uv run") >= 2
     # Full history is no longer fetched: the version is declared statically and no
     # workflow step reads Git history (ADR 0033).
@@ -490,6 +491,69 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "--no-deps" not in body
     assert "scripts/smoke_mcp.py" not in body
     assert "pip install -e" not in body
+
+
+def test_github_ci_exercises_each_declared_range_floor() -> None:
+    """ADR 0068: a declared range is a claim only if its low end is exercised."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    active_workflow, _ = _inactive_ppc64le_job(workflow)
+    floors_job = re.search(
+        r"^  library-range-floors:\n(?P<body>.*?)(?=^  wheel-smoke:)",
+        active_workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+
+    assert floors_job
+    body = floors_job["body"]
+    assert "    needs: ci\n" in body
+    assert "    name: amd64 / Python 3.13 / library range floors\n" in body
+    # The floors are derived from the declaration, never transcribed: a new or
+    # widened runtime range is floor-tested without touching this job.
+    assert 'with open("pyproject.toml", "rb") as file:' in body
+    assert "--requirements .range-floors.txt" in body
+    assert '            "${wheels[0]}"' in body
+    assert "uv venv" in body
+    # The exercised surface is the bare installed API, not the app extra.
+    assert "from hmc_mcp.api import capacity_report" in body
+    assert "[app]" not in body
+    assert "scripts/smoke_mcp.py" not in body
+
+
+def test_the_floor_derivation_covers_every_declared_range(tmp_path: Path) -> None:
+    """Run the workflow's derivation snippet against pyproject.toml itself."""
+    from test_supply_chain import LIBRARY_DEPENDENCIES, RANGED_REQUIREMENT
+
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        dependencies = tomllib.load(file)["project"]["dependencies"]
+
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    step = re.search(
+        r"Derive every declared range's floor.*?<<'PY'\n(?P<script>.*?)\n {10}PY",
+        workflow,
+        re.DOTALL,
+    )
+    assert step, "floor-derivation heredoc not found in ci.yml"
+    script = textwrap.dedent(step["script"])
+
+    shutil.copy2(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    (tmp_path / "_derive_floors.py").write_text(script)
+    result = subprocess.run(
+        [sys.executable, "_derive_floors.py"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    expected = {
+        f"{match['name']}=={match['floor']}"
+        for spec in dependencies
+        if (match := RANGED_REQUIREMENT.fullmatch(spec))
+    }
+    derived = set((tmp_path / ".range-floors.txt").read_text().splitlines())
+    assert derived == expected
+    assert {line.split("==")[0] for line in derived} == set(LIBRARY_DEPENDENCIES)
 
 
 def test_github_ci_retains_an_inactive_bounded_ppc64le_job() -> None:
