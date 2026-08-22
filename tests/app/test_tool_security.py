@@ -385,6 +385,13 @@ DESTRUCTIVE_WITHOUT_PREFIX = frozenset(
         "hmc_backup_lpar_profiles",
         "hmc_migrate_abort_lpar",
         "hmc_remote_restart_lpar",
+        # #247: the firmware/software update tools overwrite existing software
+        # they did not create (ADR 0035 amendment). No prefix is newly reliable:
+        # "update" sits mid-name on hmc_vios_update and would over-match future
+        # non-destructive update helpers, so the names are pinned here instead.
+        "hmc_update_console_software",
+        "hmc_update_firmware",
+        "hmc_vios_update",
     }
 )
 
@@ -396,6 +403,7 @@ def test_destructively_named_tools_are_destructive():
     convention is a discussion, not a gate failure. It cannot catch a new tool
     named outside these prefixes, which is why the declared effect stays a
     reviewed human judgement.
+
     """
     matched = {n for n in TOOL_SECURITY if n.startswith(DESTRUCTIVE_NAME_PREFIXES)}
     misclassified = {n for n in matched if TOOL_SECURITY[n].effect != "destructive"}
@@ -403,6 +411,21 @@ def test_destructively_named_tools_are_destructive():
 
     declared = {n for n, s in TOOL_SECURITY.items() if s.effect == "destructive"}
     assert declared == matched | DESTRUCTIVE_WITHOUT_PREFIX
+
+
+def test_software_and_firmware_update_tools_are_destructive():
+    """#247: the human decision ADR 0035 deferred is recorded as destructive.
+
+    Each tool overwrites firmware or system software it did not create — the
+    ADR 0035 boundary criterion verbatim — so a policy granting only `mutate`
+    must not reach a firmware flash.
+    """
+    for name in (
+        "hmc_update_console_software",
+        "hmc_vios_update",
+        "hmc_update_firmware",
+    ):
+        assert TOOL_SECURITY[name].effect == "destructive", name
 
 
 def test_arbitrary_command_is_absent_by_default_and_maximally_classified():

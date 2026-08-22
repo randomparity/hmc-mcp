@@ -35,7 +35,7 @@ async def _update_op(
 tool, register_tools, tool_security = tool_module()
 
 
-@tool(effect="mutate", operation="update.console", target_kind="console")
+@tool(effect="destructive", operation="update.console", target_kind="console")
 def hmc_update_console_software(
     console_uuid: str,
     repository: RepositorySource,
@@ -143,7 +143,7 @@ def hmc_get_available_hmc_ptfs(
         raise
 
 
-@tool(effect="mutate", operation="update.vios", target_kind="vios")
+@tool(effect="destructive", operation="update.vios", target_kind="vios")
 def hmc_vios_update(
     vios_name_or_uuid: str,
     repository: RepositorySource,
@@ -198,7 +198,7 @@ def hmc_vios_update(
     return _run(_go)
 
 
-@tool(effect="mutate", operation="update.firmware", target_kind="managed_system")
+@tool(effect="destructive", operation="update.firmware", target_kind="managed_system")
 def hmc_update_firmware(
     system_name_or_uuid: str,
     repository: RepositorySource,

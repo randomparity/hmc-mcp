@@ -207,6 +207,16 @@ asserting coverage.
   the wire annotation only becomes explicit. The three firmware and software update tools sit
   on the same line and are deliberately left `mutate` pending a human decision, tracked
   separately.
+
+  > **Amended by #247** (2026-08-21). **The deferred decision is made: all three
+  > firmware and software update tools are classified `destructive`.** Each overwrites
+  > existing firmware or system software it did not create — the boundary criterion of
+  > this record verbatim — which places them beside `hmc_install_vios` and
+  > `hmc_install_lpar_os`, not beside routine configuration changes. The declarations in
+  > `src/hmc_mcp/server_updates.py` carry `effect="destructive"` now; on the wire this
+  > only makes `destructiveHint=True` explicit, which cautious MCP clients already
+  > defaulted to for `mutate` tools, so the operative change is server-side: a policy
+  > granting only the `mutate` effect class no longer reaches a firmware flash.
 - `hmc_read_lpar_boot_order` is reclassified from untagged/state-changing to `read`. It
   issues one GET and returns boot-order state; leaving it `mutate` would be exactly the
   contradiction this record exists to make impossible. Its annotation changes from none to
