@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, NoReturn, TypeVar
+from typing import Any, Final, NoReturn, TypeVar
 
 import typer
 from typer._click.globals import get_current_context
@@ -34,6 +35,10 @@ from .client import HMCClient
 from .config import HMCConfig
 
 _T = TypeVar("_T")
+
+#: The level names ``--audit-level`` accepts. The audit record's own split —
+#: permits at INFO, denials at WARNING (#224) — is what these select from.
+_AUDIT_LEVELS: Final = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 app = typer.Typer(
     name="hmc-mcp",
@@ -357,6 +362,14 @@ def serve(
         "--enable-arbitrary-command",
         help="Expose hmc_run_command, which can execute any HMC CLI command.",
     ),
+    audit_level: str | None = typer.Option(
+        None,
+        "--audit-level",
+        metavar="LEVEL",
+        help="Minimum level for authorization audit records on stderr: permits "
+        "are INFO, denials WARNING. DEBUG and INFO keep both; WARNING keeps "
+        "denials only; ERROR or CRITICAL silences the stream.",
+    ),
     access_policy: str | None = typer.Option(
         None,
         "--access-policy",
@@ -399,6 +412,22 @@ def serve(
             "configure the server with HMC_* environment variables or a configured HMC_PROFILE"
         )
 
+    # Validated here rather than left to logging: a typo would otherwise surface
+    # as a bare ValueError from Logger.setLevel partway through composition, after
+    # the sink has begun installing, instead of a usage error — like every other
+    # refusal above — that starts nothing.
+    level: int | None = None
+    if audit_level is not None:
+        name = audit_level.upper()
+        if name not in _AUDIT_LEVELS:
+            raise typer.BadParameter(
+                f"unknown --audit-level {audit_level!r}; use one of "
+                + ", ".join(_AUDIT_LEVELS)
+            )
+        resolved = logging.getLevelName(name)
+        assert isinstance(resolved, int), name  # guaranteed by _AUDIT_LEVELS
+        level = resolved
+
     from .access_policy import AccessPolicyError, load_access_policy
 
     # A usage error: the invocation is incomplete. Checked after the HMC-option
@@ -433,6 +462,7 @@ def serve(
                 port=port,
                 enable_arbitrary_command=enable_arbitrary_command,
                 allow_remote=allow_remote,
+                audit_level=level,
             )
         except ValueError as exc:
             raise typer.BadParameter(
@@ -440,7 +470,9 @@ def serve(
             ) from exc
     else:
         server.main_stdio(
-            policy, enable_arbitrary_command=enable_arbitrary_command
+            policy,
+            enable_arbitrary_command=enable_arbitrary_command,
+            audit_level=level,
         )
 
 

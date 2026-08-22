@@ -63,6 +63,7 @@ from .access_policy import AccessPolicy, unboundable_effect_tools
 from .audit import (
     StreamSafeFormatter,
     install_audit_sink,
+    set_audit_level,
     sink_handler,
     write_diagnostic,
 )
@@ -590,7 +591,9 @@ def install_third_party_stderr_sinks() -> None:
 
 
 def _serve_application(
-    enable_arbitrary_command: bool, access_policy: AccessPolicy
+    enable_arbitrary_command: bool,
+    access_policy: AccessPolicy,
+    audit_level: int | None = None,
 ) -> FastMCP:
     """Compose, gate, and diagnose the application about to be served."""
     application = create_mcp(access_policy)
@@ -610,6 +613,12 @@ def _serve_application(
     # process has been established as a server, and where `_warn` already writes
     # to stderr for the same reason. Composing an application must not mutate
     # global logging state (ADR 0040).
+    # Before the install, so the operator's choice survives its NOTSET-default
+    # rule (#270): the level split ADR 0040 offers against record volume is
+    # reachable from the documented stdio deployment now too, and ADR 0040's
+    # rejected-alternatives note is amended accordingly.
+    if audit_level is not None:
+        set_audit_level(audit_level)
     install_audit_sink()
     install_third_party_stderr_sinks()
     install_denial_log_filter()
@@ -620,9 +629,17 @@ def _serve_application(
 def main_stdio(
     access_policy: AccessPolicy,
     enable_arbitrary_command: bool = False,
+    audit_level: int | None = None,
 ) -> None:
-    """Start an MCP server over stdio, bounded by *access_policy*."""
-    _serve_application(enable_arbitrary_command, access_policy).run()
+    """Start an MCP server over stdio, bounded by *access_policy*.
+
+    *audit_level*, when given, is applied to the authorization audit logger
+    before its stderr sink installs (#270); ``None`` leaves the sink's own
+    default in force.
+    """
+    _serve_application(
+        enable_arbitrary_command, access_policy, audit_level=audit_level
+    ).run()
 
 
 def main_http(
@@ -631,8 +648,12 @@ def main_http(
     port: int = 8000,
     enable_arbitrary_command: bool = False,
     allow_remote: bool = False,
+    audit_level: int | None = None,
 ) -> None:
-    """Start an MCP server over streamable HTTP, bounded by *access_policy*."""
+    """Start an MCP server over streamable HTTP, bounded by *access_policy*.
+
+    *audit_level* means what it does in :func:`main_stdio`.
+    """
     if not allow_remote and not _is_loopback(host):
         raise ValueError(
             f"listen host {host!r} binds beyond loopback, but the streamable HTTP "
@@ -640,7 +661,9 @@ def main_http(
             "(including user administration). Refusing to start. Explicitly "
             "authorize remote binding and put an authenticated reverse proxy in front."
         )
-    _serve_application(enable_arbitrary_command, access_policy).run(
+    _serve_application(
+        enable_arbitrary_command, access_policy, audit_level=audit_level
+    ).run(
         transport="streamable-http",
         host=host,
         port=port,

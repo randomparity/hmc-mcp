@@ -5,8 +5,11 @@ surface, so `hmc-mcp serve --http` must refuse non-loopback binds unless the
 operator explicitly opts in with --allow-remote.
 """
 
+import logging
 import socket
 from unittest.mock import patch
+
+from hmc_mcp import audit
 
 import pytest
 from click import unstyle
@@ -111,6 +114,7 @@ def test_serve_http_loopback_bind_is_allowed():
         "port": 8000,
         "enable_arbitrary_command": False,
         "allow_remote": False,
+        "audit_level": None,
     }
 
 
@@ -148,6 +152,7 @@ def test_serve_http_non_loopback_allowed_with_explicit_opt_in():
         "port": 8000,
         "enable_arbitrary_command": False,
         "allow_remote": True,
+        "audit_level": None,
     }
 
 
@@ -177,7 +182,10 @@ def test_serve_allows_environment_hmc_options(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert isinstance(main_stdio.call_args.args[0], AccessPolicy)
-    assert main_stdio.call_args.kwargs == {"enable_arbitrary_command": False}
+    assert main_stdio.call_args.kwargs == {
+        "enable_arbitrary_command": False,
+        "audit_level": None,
+    }
 
 
 @pytest.mark.parametrize("http", [False, True])
@@ -198,9 +206,68 @@ def test_serve_passes_arbitrary_command_opt_in(http):
             "port": 8000,
             "enable_arbitrary_command": True,
             "allow_remote": False,
+            "audit_level": None,
         }
     else:
-        assert entrypoint.call_args.kwargs == {"enable_arbitrary_command": True}
+        assert entrypoint.call_args.kwargs == {
+            "enable_arbitrary_command": True,
+            "audit_level": None,
+        }
+
+
+def test_serve_rejects_an_unknown_audit_level():
+    """A misspelled --audit-level is a usage error naming the valid levels."""
+    with patch("hmc_mcp.server.main_stdio") as main_stdio:
+        result = CliRunner().invoke(
+            app, ["serve", "--audit-level", "LOUD", *POLICY_ARGS]
+        )
+
+    assert result.exit_code == 2
+    output = unstyle(result.output)
+    assert "LOUD" in output
+    for name in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        assert name in output
+    main_stdio.assert_not_called()
+
+
+@pytest.mark.parametrize("level_name", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+@pytest.mark.parametrize("http", [False, True])
+def test_serve_forwards_the_audit_level(http, level_name):
+    args = ["serve", "--audit-level", level_name, *POLICY_ARGS]
+    target = "hmc_mcp.server.main_http" if http else "hmc_mcp.server.main_stdio"
+    if http:
+        args.append("--http")
+
+    with patch(target) as entrypoint:
+        result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    expected = getattr(logging, level_name)
+    assert entrypoint.call_args.kwargs["audit_level"] == expected
+
+
+def test_an_explicit_audit_level_is_set_before_the_sink_installs():
+    """#270: the operator's level survives install_audit_sink's NOTSET default.
+
+    Order is the whole feature: a level set after the install would be
+    indistinguishable from the sink's own default.
+    """
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.setLevel(logging.NOTSET)
+    server_app._serve_application(False, _legacy(), audit_level=logging.WARNING)
+
+    assert logger.level == logging.WARNING
+    assert len(logger.handlers) == 1, "the sink still installed exactly once"
+
+
+def test_omitting_the_audit_level_leaves_the_documented_default():
+    """No flag, no setLevel: the sink's own NOTSET rule picks INFO."""
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.setLevel(logging.NOTSET)
+    with patch.object(FastMCP, "run"):
+        server_app.main_stdio(_legacy())
+
+    assert logger.level == logging.INFO
 
 
 @pytest.mark.parametrize("enabled", [False, True])
