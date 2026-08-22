@@ -440,7 +440,17 @@ def test_parse_caller_token_absent():
         "[hmc-mcp owner:a created:2026-08-21][caller X]",         # missing space
         "[hmc-mcp owner:a created:2026-08-21] [caller ]",         # empty segment
         "[hmc-mcp owner:bogus created:x] [caller X]",             # malformed anchor
+        "[hmc-mcp owner:a created:2026-08-21] [caller]",          # bare bracket, no space
+        "[hmc-mcp owner:a created:2026-08-21] [Caller X]",        # lowercased prefix mismatch
     ],
 )
 def test_parse_caller_token_spoofed_yields_none(description):
     assert parse_lpar_ownership_caller_token(description) is None
+
+
+def test_owner_parse_unaffected_by_caller_segment():
+    """ADR 0011 ownership parse keeps working on combined descriptions (spec g5)."""
+    from hmc_mcp.operations_lpar import parse_lpar_ownership_owner
+
+    description = "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1]"
+    assert parse_lpar_ownership_owner(description) == "alice"
