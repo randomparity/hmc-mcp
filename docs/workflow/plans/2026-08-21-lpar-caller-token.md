@@ -5,9 +5,11 @@
 `[hmc-mcp owner:<agent> created:<date>] [caller <token>]`.
 
 **Architecture:** the token composes into ADR 0011's single best-effort SSH stamp
-write (`set_lpar_description` over `chsyscfg -i`). Validation runs at two named
-sites (tool entry; first statement of `create_and_stamp_lpar`) outside the stamp's
-transport-failure swallow. A dedicated anchored parser extracts the segment.
+write (`set_lpar_description` over `chsyscfg -i`). Validation runs at tool entry,
+at the CLI entry, and as the first statement of `create_and_stamp_lpar` — always
+outside the stamp's transport-failure swallow and before any HMC traffic on that
+surface. A dedicated anchored extractor yields the segment only when exactly one
+well-formed caller segment follows a well-formed ownership stamp.
 
 **Stack:** Python ≥3.11 (`uv`), pytest, respx for HTTP mocks, ruff + ty gates.
 
@@ -20,7 +22,8 @@ transport-failure swallow. A dedicated anchored parser extracts the segment.
 - Description format: exactly `[hmc-mcp owner:<agent> created:<date>] [caller <token>]`.
 - Omission preserves byte-for-byte current behavior (existing pinned tests stay green).
 - Stamp stays best-effort: transport failure warns, never fails the create; a malformed
-  token raises before any HMC traffic and outside the swallow.
+  token raises before any HMC traffic on every surface (MCP tools, CLI) and outside the
+  swallow.
 - Extractor: literal case-sensitive `[caller ` prefix, anchored to a well-formed
   ownership stamp followed by one space; `None` on absent/spoofed/duplicated/misordered.
 - Repo conventions: relative intra-package imports, Google-style docstrings with an
@@ -38,9 +41,14 @@ transport-failure swallow. A dedicated anchored parser extracts the segment.
 | `src/hmc_mcp/operations_lpar.py` | `LparCreation.caller_token`; anchored extractor; creation-path validation; threading. |
 | `src/hmc_mcp/server_lpars.py` | `hmc_create_lpar` parameter, docstring, entry validation. |
 | `src/hmc_mcp/server_provision.py`, `src/hmc_mcp/operations_provision.py` | `hmc_provision_lpar` parameter plumbing. |
-| `src/hmc_mcp/cli_lpars.py` | `lpars create --caller-token`. |
+| `src/hmc_mcp/cli_lpars.py` | `lpars create --caller-token` with entry validation. |
 | `README.md` | Two tool-table rows. |
-| `tests/unit/test_ownership.py`, `tests/lpar/test_ownership_tools.py`, `tests/lpar/test_provision_tool.py`, `tests/app/test_lifecycle_schema_descriptions.py` | Contracts above. |
+| `tests/unit/test_ownership.py`, `tests/app/test_ownership_tools.py`, `tests/lpar/test_provision_tool.py`, `tests/app/test_lifecycle_schema_descriptions.py` | Contracts above. |
+
+Note: the MCP-tool-level create tests (`_env`, `_setup_mock`, respx `BASE`,
+`SYSTEM_UUID`, the `hmc_create_lpar` import) live in **`tests/app/test_ownership_tools.py`**;
+there is no `tests/lpar/test_ownership_tools.py`. All Task 3–4 additions to that file
+target the `tests/app/` path.
 
 ---
 
@@ -49,7 +57,7 @@ transport-failure swallow. A dedicated anchored parser extracts the segment.
 **File:** `src/hmc_mcp/ssh_commands.py`; **Tests:** `tests/unit/test_ownership.py`.
 
 **Interfaces produced:** `validate_caller_token(token: str) -> None` — raises
-`ValueError` naming the violation; imported later by Tasks 2–4.
+`ValueError` naming the violation; imported later by Tasks 2–5.
 
 **Step 1 — failing tests.** Append to `tests/unit/test_ownership.py` (module already
 imports `pytest`, `HMCConfig`, `patch`, `AsyncMock`):
@@ -144,7 +152,7 @@ def validate_caller_token(token: str) -> None:
             raise ValueError(f"caller_token contains {character!r}; {reason}")
 ```
 
-**Step 3 — verify:** same pytest command passes (14 items). Run
+**Step 3 — verify:** same pytest command passes (13 items). Run
 `uv run --no-sync ruff check src/hmc_mcp/ssh_commands.py tests/unit/test_ownership.py`.
 Commit `feat: validate_caller_token grammar (issue #358)`.
 
@@ -203,7 +211,7 @@ def test_stamp_bad_caller_token_raises_unswallowed():
     mock_set.assert_not_awaited()  # rejected before any SSH traffic
 ```
 
-Run `-k "stamp and caller"` — new tests fail (unexpected keyword / no raise).
+Run `-k "stamp"` — new tests fail (unexpected keyword / no raise).
 
 **Step 2 — implement.** Replace the body of `stamp_lpar_ownership`
 (`PUT` lines 286–321 of `src/hmc_mcp/ssh_commands.py`):
@@ -264,7 +272,7 @@ passes including pre-existing pins (`test_stamp_returns_token_on_success`,
 ## Task 3 — Creation-path plumbing and anchored extractor
 
 **Files:** `src/hmc_mcp/operations_lpar.py`; **Tests:** `tests/unit/test_ownership.py`,
-`tests/lpar/test_ownership_tools.py`.
+`tests/app/test_ownership_tools.py`.
 
 **Interfaces consumed:** `validate_caller_token` (Task 1).
 **Interfaces produced:** `LparCreation.caller_token: str | None = None`;
@@ -306,8 +314,8 @@ def test_parse_caller_token_spoofed_yields_none(description):
     assert parse_lpar_ownership_caller_token(description) is None
 ```
 
-In `tests/lpar/test_ownership_tools.py` append (file already has `_env`, `_setup_mock`,
-respx fixtures, `hmc_create_lpar` imports):
+In `tests/app/test_ownership_tools.py` append (file already has `_env`, `_setup_mock`,
+respx `BASE`, `SYSTEM_UUID`, and the `hmc_create_lpar` import):
 
 ```python
 def test_create_lpar_invalid_caller_token_zero_routes(monkeypatch):
@@ -318,17 +326,44 @@ def test_create_lpar_invalid_caller_token_zero_routes(monkeypatch):
         with pytest.raises(ValueError, match="caller_token"):
             hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
                             caller_token="a=b")
-        assert not router.routes or all(
-            not route.called for route in router.routes
+        assert all(not route.called for route in router.routes)
+
+
+def test_create_lpar_valid_caller_token_stamped(monkeypatch):
+    """A valid token threads through to the composed ownership stamp."""
+    captured: dict[str, str] = {}
+
+    async def capture_stamp(config, system_name, lpar_name, *, agent_id=None,
+                            caller_token=None):
+        captured["description"] = (
+            f"[hmc-mcp owner:hmc-mcp created:2026-08-21] [caller {caller_token}]"
         )
+        return captured["description"]
+
+    _env(monkeypatch)
+    with respx.mock(base_url=BASE, assert_all_called=False) as router:
+        _setup_mock(router)
+        with patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership", new=capture_stamp
+        ):
+            result = hmc_create_lpar(
+                system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
+                caller_token="CHG-9",
+            )
+    assert result.resource_created is True
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
+    assert captured["description"].endswith("[caller CHG-9]")
 ```
+
+Match the file's existing import block for `patch`, `pytest`, and `respx` — mirror
+whatever the neighboring tests import rather than inventing new imports.
 
 Run both files — ImportError/failure expected.
 
 **Step 2 — implement.** In `src/hmc_mcp/operations_lpar.py`:
 
-(a) Extend the import from `.ssh_commands` (line 28 area) to include
-`validate_caller_token`:
+(a) Extend the `.ssh_commands` import (line 28 area):
 
 ```python
 from .ssh_commands import (
@@ -339,7 +374,7 @@ from .ssh_commands import (
 )
 ```
 
-(b) Below `_OWNERSHIP_TOKEN` (line 48–50) add:
+(b) Below `_OWNERSHIP_TOKEN` (lines 48–50) add:
 
 ```python
 _CALLER_TOKEN = re.compile(
@@ -348,18 +383,19 @@ _CALLER_TOKEN = re.compile(
 )
 ```
 
-(c) After `parse_lpar_ownership_owner` (line 106–109) add:
+(c) After `parse_lpar_ownership_owner` (lines 106–109) add:
 
 ```python
 def parse_lpar_ownership_caller_token(description: str) -> str | None:
     """Return the caller tracking token following a well-formed ownership stamp.
 
     Matches the literal ``[caller <token>]`` segment only when it directly
-    follows a well-formed ADR 0011 ownership stamp and one space, so spoofed,
-    duplicated, or misordered segments yield ``None`` (ADR 0064).
+    follows a well-formed ADR 0011 ownership stamp and one space, and only
+    when exactly one such segment exists, so spoofed, duplicated, or
+    misordered segments yield ``None`` (ADR 0064).
     """
-    match = _CALLER_TOKEN.search(description)
-    return match.group("token") if match is not None else None
+    matches = _CALLER_TOKEN.findall(description)
+    return matches[0] if len(matches) == 1 else None
 ```
 
 (d) Add the dataclass field after `max_virtual_slots` (line 63):
@@ -423,7 +459,7 @@ and thread the token into the final stamp call (line 318):
 ```
 
 **Step 3 — verify:** `uv run --no-sync pytest tests/unit/test_ownership.py
-tests/lpar/test_ownership_tools.py tests/lpar/test_lpar_http406.py -q` all pass;
+tests/app/test_ownership_tools.py tests/lpar/test_lpar_http406.py -q` all pass;
 existing pins untouched. Commit `feat: thread caller token through LPAR creation (issue #358)`.
 
 ## Task 4 — MCP tool surfaces
@@ -440,11 +476,12 @@ descriptions name the grammar.
 
 **Step 1 — failing tests.**
 
-In `tests/lpar/test_provision_tool.py` (uses the module-level autouse-style fixture
-that patches `stamp_lpar_ownership`; see its `_stamp_patch` fixture) append:
+In `tests/lpar/test_provision_tool.py` append (mirror that file's existing fixtures
+and helpers for `_network` / `_storage` / `SYSTEM_UUID` — use whatever names the
+neighboring provision tests use, matching them exactly rather than inventing):
 
 ```python
-def test_provision_invalid_caller_token_fails_before_preconditions(respx_mock_none):
+def test_provision_invalid_caller_token_fails_before_preconditions():
     """dry_run=True still fails fast on a bad token (spec guarantee 3)."""
     with pytest.raises(ValueError, match="caller_token"):
         hmc_provision_lpar(
@@ -470,10 +507,6 @@ def test_provision_passes_caller_token_to_creation():
     assert result.ownership_stamped is True
 ```
 
-Use the file's existing fixtures/helpers for names `_network`, `_storage`,
-`SYSTEM_UUID` — mirror whatever the neighboring tests use; if those helpers differ,
-match them exactly rather than inventing names.
-
 In `tests/app/test_lifecycle_schema_descriptions.py` append:
 
 ```python
@@ -491,8 +524,7 @@ Run — failures expected (parameter absent).
 
 **Step 2 — implement.**
 
-`src/hmc_mcp/server_lpars.py`: add import `validate_caller_token` to the
-`.operations_lpar` import block is wrong — it lives in `.ssh_commands`; add:
+`src/hmc_mcp/server_lpars.py`: add below the existing `.operations_lpar` import block:
 
 ```python
 from .ssh_commands import validate_caller_token
@@ -529,17 +561,17 @@ and pass it into the `LparCreation(...)` construction (after `max_virtual_slots,
 `assignments: LparPcieAssignments = LparPcieAssignments(),` (line 56), same docstring
 wording in its `Args:` section, same first-statement validation (import
 `validate_caller_token` from `.ssh_commands`), and pass
-`caller_token=caller_token` into the `provision_lpar(...)` call (line 80–91).
+`caller_token=caller_token` into the `provision_lpar(...)` call (lines 80–91).
 
 `src/hmc_mcp/operations_provision.py`: add `caller_token: str | None = None` keyword
 to `provision_lpar`'s signature (documented in its Returns-docstring list like the
-other parameters) and pass it into `LparCreation(name, partition_type, resources)`
-(line 465) as `LparCreation(name, partition_type, resources,
-caller_token=caller_token)`. Dry-run exits happen after tool-entry validation by
-construction, satisfying the dry-run contract test.
+other parameters) and change the construction at line 465 to
+`LparCreation(name, partition_type, resources, caller_token=caller_token)`.
+Dry-run exits happen after tool-entry validation by construction, satisfying the
+dry-run contract test.
 
 **Step 3 — verify:** `uv run --no-sync pytest tests/lpar/test_provision_tool.py
-tests/lpar/test_ownership_tools.py tests/app/test_lifecycle_schema_descriptions.py -q`
+tests/app/test_ownership_tools.py tests/app/test_lifecycle_schema_descriptions.py -q`
 passes. Commit `feat: expose caller_token on hmc_create_lpar and hmc_provision_lpar (issue #358)`.
 
 ## Task 5 — CLI option, README, full guardrails
@@ -548,7 +580,7 @@ passes. Commit `feat: expose caller_token on hmc_create_lpar and hmc_provision_l
 
 **Step 1 — implement.**
 
-CLI: add option after the `pcie_assignments` option (line 504–508):
+CLI: add option after the `pcie_assignments` option (lines 504–508):
 
 ```python
     caller_token: str | None = typer.Option(
@@ -560,7 +592,21 @@ CLI: add option after the `pcie_assignments` option (line 504–508):
     ),
 ```
 
-and pass it into `LparCreation(...)` at line 546–551:
+Validate at CLI entry — first statement of `lpars_create`, before the
+partition-type check, the confirmation prompt, and the PCIe prevalidation (which
+performs HMC REST round trips whenever SR-IOV/vNIC assignments are present):
+
+```python
+    if caller_token is not None:
+        from .ssh_commands import validate_caller_token
+
+        validate_caller_token(caller_token)
+```
+
+(Hoist the import to the module's existing `.ssh_commands` import block at lines
+61–69 instead of importing inline, if ruff prefers.)
+
+Pass it into `LparCreation(...)` at lines 546–551:
 
 ```python
                 LparCreation(
@@ -572,11 +618,8 @@ and pass it into `LparCreation(...)` at line 546–551:
                 ),
 ```
 
-Validation happens in `create_and_stamp_lpar`'s first statement — before any HMC
-round trip — which is the documented site for the CLI path.
-
-README: in the lifecycle tool table, extend the `hmc_create_lpar` row (line ~672) and
-the `hmc_provision_lpar` row (line ~670) with: "; optional `caller_token` embeds
+README: in the lifecycle tool table, extend the `hmc_create_lpar` row (~line 672) and
+the `hmc_provision_lpar` row (~line 670) with: "; optional `caller_token` embeds
 `[caller <token>]` in the partition description (ADR 0064)".
 
 **Step 2 — verify (full suite):**
@@ -592,5 +635,18 @@ Commit `feat: caller token CLI option and docs (issue #358)`.
 
 ## Rollback
 
-Each task is an independent commit; `git revert <sha>` per task restores prior behavior.
-No migrations, no persisted state, no external contracts beyond tool signatures.
+Tasks are ordered by dependency (each consumes the previous task's interface), so a
+partial rollback reverts in strict reverse commit order; reverting any single commit
+except the newest leaves later tasks' imports dangling. No migrations, no persisted
+state, no external contracts beyond tool signatures.
+
+## Plan-review record
+
+The `$trial-loop` run on this plan (2026-08-21, 1 iteration) returned six findings, all
+dispositioned `accepted-fixed` in this revision: extractor uniqueness guard
+(`findall` + single-match rule) added so the pinned duplicated-segment test passes;
+all five `tests/lpar/test_ownership_tools.py` citations corrected to
+`tests/app/test_ownership_tools.py`; CLI entry validation moved before the PCIe
+prevalidation round trips; a valid-token `hmc_create_lpar` pass-through test added;
+Task 1 count corrected to 13; rollback section rewritten for reverse-order dependence.
+Nothing outstanding.
