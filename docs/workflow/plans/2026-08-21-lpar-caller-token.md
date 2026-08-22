@@ -669,3 +669,18 @@ with two low findings, both dispositioned: (1) CLI `--caller-token` exceeds the
 charter's surface hedge — accepted via a `WORK:SCOPE` amendment on issue #358
 ratifying CLI/MCP parity per repo convention; (2) guarantee-7 landing-outcome
 documentation absent from tasks — accepted-fixed as the Task 4 step above.
+
+## Branch-review record
+
+The branch `$trial-loop` (2026-08-21, 3 iterations) returned **approve** with two fix
+commits: 1285f88 restores the composed-description grammar check inside
+`stamp_lpar_ownership`'s best-effort `try` with catch `(HMCCLIError, OSError,
+ValueError)` — a config-legal `agent_id` containing `"` otherwise failed the create
+tools after LPAR creation — and 2f1d7a2 hoists caller-token validation to the first
+statement of `provision_lpar` so direct API callers keep before-any-HMC-traffic
+semantics. The candidate approved surface's `stamp_lpar_ownership` clause is amended
+accordingly in the oathbind report; no deferrals; ADR 0011 residuals disclosed as
+suppressions (post-create stamping window; non-atomic caller-segment write; advisory,
+spoofable token). Pre-existing adjacent gap noted for a tracker issue:
+`validate_agent_id` permits `"` and `\`, so such an `agent_id` silently skips
+stamping (degrades to a warning by design).
