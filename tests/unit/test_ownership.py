@@ -372,3 +372,46 @@ def test_validate_caller_token_rejects(bad):
 def test_validate_caller_token_rejects_non_string():
     with pytest.raises(ValueError, match="string"):
         validate_caller_token(42)  # type: ignore[arg-type]
+
+
+def test_stamp_composes_caller_segment():
+    config = _config()
+    today = datetime.date.today().isoformat()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ) as mock_set:
+        token = asyncio.run(
+            stamp_lpar_ownership(
+                config, "sys1", "lpar1", agent_id="alice", caller_token="CHG-1"
+            )
+        )
+    assert token == f"[hmc-mcp owner:alice created:{today}] [caller CHG-1]"
+    assert mock_set.call_args.args[3] == token
+    # still a valid HMC description
+    from hmc_mcp.ssh_commands import validate_lpar_description
+
+    validate_lpar_description(token)
+
+
+def test_stamp_without_caller_token_unchanged():
+    config = _config()
+    today = datetime.date.today().isoformat()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ):
+        token = asyncio.run(stamp_lpar_ownership(config, "sys1", "lpar1"))
+    assert token == f"[hmc-mcp owner:hmc-mcp created:{today}]"
+
+
+def test_stamp_bad_caller_token_raises_unswallowed():
+    config = _config()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ) as mock_set:
+        with pytest.raises(ValueError, match="caller_token"):
+            asyncio.run(
+                stamp_lpar_ownership(
+                    config, "sys1", "lpar1", caller_token=""
+                )
+            )
+    mock_set.assert_not_awaited()  # rejected before any SSH traffic

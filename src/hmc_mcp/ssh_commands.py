@@ -335,34 +335,39 @@ async def stamp_lpar_ownership(
     lpar_name: str,
     *,
     agent_id: str | None = None,
+    caller_token: str | None = None,
 ) -> str | None:
-    """Write an ownership token to *lpar_name*'s description field.
+    """Write an ownership token, plus an optional caller token, to *lpar_name*.
 
-    Builds the token ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and
-    calls :func:`set_lpar_description` to write it over SSH.
+    Builds ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and, when
+    *caller_token* is given, appends `` [caller <token>]`` (ADR 0064), then
+    writes the combined description with :func:`set_lpar_description` over SSH
+    in one call.
 
-    Returns the token string on success; returns ``None`` (without raising) on
-    any SSH or network failure — this is a best-effort post-create call that
-    must not fail the LPAR creation itself.
+    Returns the description on success; returns ``None`` (without raising) on
+    SSH/network failure — a best-effort post-create call that must not fail
+    the LPAR creation itself.  A malformed *caller_token* raises ``ValueError``
+    before any SSH traffic instead of being swallowed, so it can never discard
+    the ownership stamp.
 
     *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
     """
     import datetime
 
+    if caller_token is not None:
+        validate_caller_token(caller_token)
     effective_id = agent_id if agent_id else "hmc-mcp"
     today = datetime.date.today().isoformat()
-    token = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    description = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    if caller_token is not None:
+        description = f"{description} [caller {caller_token}]"
     try:
-        # Pre-validate the token before the SSH round-trip.  Kept inside the
-        # try block so that a ValueError (should not fire when agent_id was
-        # validated by HMCConfig, but may if called directly) is caught and
-        # treated as a best-effort failure rather than propagating to the caller.
-        validate_lpar_description(token)
-        await set_lpar_description(config, system_name, lpar_name, token)
-        return token
-    except (HMCCLIError, OSError, ValueError):
-        # Transport, network, and validation failures are best-effort here.
-        # Stamping is best-effort: none of these should fail the owning create call.
+        await set_lpar_description(config, system_name, lpar_name, description)
+        return description
+    except (HMCCLIError, OSError):
+        # Transport, network failures are best-effort here: none of these
+        # should fail the owning create call.  Grammar errors cannot reach
+        # this point — both tokens are validated before the try.
         return None
 
 
