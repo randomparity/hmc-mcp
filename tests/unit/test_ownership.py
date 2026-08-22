@@ -336,3 +336,145 @@ def test_authorize_lpar_mutation_normal_access_has_no_override_audit(caplog):
         asyncio.run(authorize_lpar_mutation(hmc, "sys1", "lpar1"))
 
     assert _override_records(caplog) == []
+
+
+from hmc_mcp.ssh_commands import validate_caller_token  # noqa: E402
+
+
+def test_validate_caller_token_accepts_tracker_ids():
+    validate_caller_token("CHG12345")          # ticket key
+    validate_caller_token("2026/08/batch-7")   # slashes, digits
+    validate_caller_token("owner@team:42")     # colon round-trips (spec guarantee 6)
+    validate_caller_token("a" * 64)            # length boundary
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",               # empty string is a violation, not an omission
+        "a" * 65,         # too long
+        "a,b",            # comma: -i record delimiter
+        "a=b",            # equals: -i record delimiter
+        'a"b',            # double quote: -i record escape
+        "a[b",            # bracket: breaks the [caller ...] framing
+        "a]b",
+        "a\\b",           # backslash: unverified -i behaviour (ADR 0045)
+        "a b",            # whitespace
+        "alicé",          # non-ASCII
+        "a\nb",           # control character
+    ],
+)
+def test_validate_caller_token_rejects(bad):
+    with pytest.raises(ValueError, match="caller_token"):
+        validate_caller_token(bad)
+
+
+def test_validate_caller_token_rejects_non_string():
+    with pytest.raises(ValueError, match="string"):
+        validate_caller_token(42)  # type: ignore[arg-type]
+
+
+def test_stamp_composes_caller_segment():
+    config = _config()
+    today = datetime.date.today().isoformat()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ) as mock_set:
+        token = asyncio.run(
+            stamp_lpar_ownership(
+                config, "sys1", "lpar1", agent_id="alice", caller_token="CHG-1"
+            )
+        )
+    assert token == f"[hmc-mcp owner:alice created:{today}] [caller CHG-1]"
+    assert mock_set.call_args.args[3] == token
+    # still a valid HMC description
+    from hmc_mcp.ssh_commands import validate_lpar_description
+
+    validate_lpar_description(token)
+
+
+def test_stamp_without_caller_token_unchanged():
+    config = _config()
+    today = datetime.date.today().isoformat()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ):
+        token = asyncio.run(stamp_lpar_ownership(config, "sys1", "lpar1"))
+    assert token == f"[hmc-mcp owner:hmc-mcp created:{today}]"
+
+
+def test_stamp_degrades_to_none_when_agent_id_breaks_description_grammar():
+    """A config-legal agent_id carrying '"' fails the HMC description grammar.
+
+    validate_agent_id permits '"' and '\\', so the composed ownership stamp can
+    be rejected by validate_lpar_description (which set_lpar_description also
+    runs defensively).  The stamp is best-effort: it must degrade to None
+    rather than raise out of the owning create after the LPAR exists.
+    """
+    from hmc_mcp.config import validate_agent_id
+
+    agent_id = 'agent"x'
+    validate_agent_id(agent_id)  # config-level validation accepts it...
+    config = _config()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description",
+        new=AsyncMock(return_value=""),
+    ) as mock_set:
+        token = asyncio.run(
+            stamp_lpar_ownership(config, "sys1", "lpar1", agent_id=agent_id)
+        )
+    assert token is None  # ...but the stamp degrades instead of raising
+    mock_set.assert_not_awaited()  # refused by the pre-flight grammar check
+
+
+def test_stamp_bad_caller_token_raises_unswallowed():
+    config = _config()
+    with patch(
+        "hmc_mcp.ssh_commands.set_lpar_description", new=AsyncMock(return_value="")
+    ) as mock_set:
+        with pytest.raises(ValueError, match="caller_token"):
+            asyncio.run(
+                stamp_lpar_ownership(
+                    config, "sys1", "lpar1", caller_token=""
+                )
+            )
+    mock_set.assert_not_awaited()  # rejected before any SSH traffic
+
+
+from hmc_mcp.operations_lpar import parse_lpar_ownership_caller_token  # noqa: E402
+
+
+def test_parse_caller_token_round_trip():
+    description = (
+        "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1:x/y]"
+    )
+    assert parse_lpar_ownership_caller_token(description) == "JIRA-1:x/y"
+
+
+def test_parse_caller_token_absent():
+    assert parse_lpar_ownership_caller_token("[hmc-mcp owner:a created:2026-08-21]") is None
+    assert parse_lpar_ownership_caller_token("plain legacy description") is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "[caller JIRA-1] [hmc-mcp owner:a created:2026-08-21]",   # misordered
+        "[hmc-mcp owner:a created:2026-08-21] [caller X] [caller Y]",  # duplicated
+        "[hmc-mcp owner:a created:2026-08-21][caller X]",         # missing space
+        "[hmc-mcp owner:a created:2026-08-21] [caller ]",         # empty segment
+        "[hmc-mcp owner:bogus created:x] [caller X]",             # malformed anchor
+        "[hmc-mcp owner:a created:2026-08-21] [caller]",          # bare bracket, no space
+        "[hmc-mcp owner:a created:2026-08-21] [Caller X]",        # lowercased prefix mismatch
+    ],
+)
+def test_parse_caller_token_spoofed_yields_none(description):
+    assert parse_lpar_ownership_caller_token(description) is None
+
+
+def test_owner_parse_unaffected_by_caller_segment():
+    """ADR 0011 ownership parse keeps working on combined descriptions (spec g5)."""
+    from hmc_mcp.operations_lpar import parse_lpar_ownership_owner
+
+    description = "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1]"
+    assert parse_lpar_ownership_owner(description) == "alice"

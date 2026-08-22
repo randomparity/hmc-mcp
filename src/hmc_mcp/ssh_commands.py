@@ -283,40 +283,101 @@ def validate_lpar_description(description: str) -> None:
             )
 
 
+def validate_caller_token(token: str) -> None:
+    """Raise ``ValueError`` if *token* cannot be embedded as ``[caller <token>]``.
+
+    The grammar is server-defined (ADR 0064): 1–64 printable ASCII characters,
+    forbidding whitespace, control characters, non-ASCII, and the characters
+    ``,` ``=```"``[``]`` and ``\\``.  Commas, equals signs, and quotes are the
+    HMC CLI ``-i`` record structure (ADR 0045); brackets break the caller
+    segment's own framing; the backslash is refused because ADR 0045 records
+    its ``-i`` behaviour as unverified.  The empty string is a violation, not
+    an omission, and a non-``str`` value is rejected before any character
+    check because the second validation site serves callers that bypass MCP
+    tool typing.
+    """
+    if not isinstance(token, str):
+        raise ValueError(
+            f"caller_token must be a string, got {type(token).__name__}"
+        )
+    if not token:
+        raise ValueError("caller_token must not be empty")
+    if len(token) > 64:
+        raise ValueError(f"caller_token is {len(token)} characters; maximum is 64")
+    if not token.isascii() or any(
+        ord(character) < 0x20 or ord(character) == 0x7F for character in token
+    ):
+        raise ValueError(
+            "caller_token contains non-ASCII or non-printable characters; "
+            "only printable ASCII is accepted"
+        )
+    if any(character.isspace() for character in token):
+        raise ValueError(
+            "caller_token contains whitespace; it must be a single word"
+        )
+    forbidden = {
+        ",": "commas corrupt the HMC CLI -i parser",
+        "=": "equals signs corrupt the HMC CLI -i parser",
+        '"': "double quotes are the HMC CLI -i record escape",
+        "[": "brackets break the [caller <token>] segment format",
+        "]": "brackets break the [caller <token>] segment format",
+        "\\": "backslash behaviour inside an HMC CLI -i record is unverified "
+        "(ADR 0045)",
+    }
+    for character, reason in forbidden.items():
+        if character in token:
+            raise ValueError(f"caller_token contains {character!r}; {reason}")
+
+
 async def stamp_lpar_ownership(
     config: HMCConfig,
     system_name: str,
     lpar_name: str,
     *,
     agent_id: str | None = None,
+    caller_token: str | None = None,
 ) -> str | None:
-    """Write an ownership token to *lpar_name*'s description field.
+    """Write an ownership token, plus an optional caller token, to *lpar_name*.
 
-    Builds the token ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and
-    calls :func:`set_lpar_description` to write it over SSH.
+    Builds ``[hmc-mcp owner:<agent_id> created:<YYYY-MM-DD>]`` and, when
+    *caller_token* is given, appends `` [caller <token>]`` (ADR 0064), then
+    writes the combined description with :func:`set_lpar_description` over SSH
+    in one call.
 
-    Returns the token string on success; returns ``None`` (without raising) on
-    any SSH or network failure — this is a best-effort post-create call that
-    must not fail the LPAR creation itself.
+    Returns the description on success; returns ``None`` (without raising) on
+    SSH/network failure or a composed-description grammar failure — a
+    best-effort post-create call that must not fail the LPAR creation itself.
+    A malformed *caller_token* raises ``ValueError`` before any SSH traffic
+    instead of being swallowed, so it can never discard the ownership stamp.
 
     *agent_id* defaults to ``"hmc-mcp"`` when ``None`` or empty.
     """
     import datetime
 
+    if caller_token is not None:
+        validate_caller_token(caller_token)
     effective_id = agent_id if agent_id else "hmc-mcp"
     today = datetime.date.today().isoformat()
-    token = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    description = f"[hmc-mcp owner:{effective_id} created:{today}]"
+    if caller_token is not None:
+        description = f"{description} [caller {caller_token}]"
     try:
-        # Pre-validate the token before the SSH round-trip.  Kept inside the
-        # try block so that a ValueError (should not fire when agent_id was
-        # validated by HMCConfig, but may if called directly) is caught and
-        # treated as a best-effort failure rather than propagating to the caller.
-        validate_lpar_description(token)
-        await set_lpar_description(config, system_name, lpar_name, token)
-        return token
+        # The composed description still gets the HMC's own grammar check
+        # here, inside the best-effort boundary: a config-supplied agent_id
+        # can carry a character validate_agent_id permits but the description
+        # field refuses ('"' is the known case), and set_lpar_description
+        # re-runs this validator defensively.  A ValueError raised below the
+        # pre-flight check is therefore an agent-driven grammar failure and
+        # degrades to a skipped stamp — it must not fail the owning create
+        # after the LPAR already exists.  A malformed caller_token cannot
+        # reach this catch: validate_caller_token above the try raises before
+        # any SSH traffic (ADR 0064).
+        validate_lpar_description(description)
+        await set_lpar_description(config, system_name, lpar_name, description)
+        return description
     except (HMCCLIError, OSError, ValueError):
-        # Transport, network, and validation failures are best-effort here.
-        # Stamping is best-effort: none of these should fail the owning create call.
+        # Transport, network, and composed-description grammar failures are
+        # best-effort here: none of these should fail the owning create call.
         return None
 
 

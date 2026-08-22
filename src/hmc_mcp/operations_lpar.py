@@ -25,7 +25,12 @@ from .jobs import (
     wait_for_submitted_job,
 )
 from .ssh import HMCCLIError
-from .ssh_commands import _ssh_system_name, create_lpar_via_cli, stamp_lpar_ownership
+from .ssh_commands import (
+    _ssh_system_name,
+    create_lpar_via_cli,
+    stamp_lpar_ownership,
+    validate_caller_token,
+)
 from .ssh_commands import get_lpar_description
 
 _logger = logging.getLogger(__name__)
@@ -50,6 +55,12 @@ _OWNERSHIP_TOKEN = re.compile(
 )
 
 
+_CALLER_TOKEN = re.compile(
+    r"\[hmc-mcp owner:[^\s\[\]:]+ created:\d{4}-\d{2}-\d{2}\] "
+    r"\[caller (?P<token>[^\s\[\]]+)\]"
+)
+
+
 @dataclass(frozen=True)
 class LparCreation:
     """Inputs needed by both REST and CLI LPAR creation paths."""
@@ -61,6 +72,7 @@ class LparCreation:
     os_type: OsType | None = None
     keylock: Keylock | None = None
     max_virtual_slots: int | None = None
+    caller_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +119,25 @@ def parse_lpar_ownership_owner(description: str) -> str | None:
     """Return the advisory hmc-mcp owner token embedded in *description*."""
     match = _OWNERSHIP_TOKEN.search(description)
     return match.group("owner") if match is not None else None
+
+
+def parse_lpar_ownership_caller_token(description: str) -> str | None:
+    """Return the caller tracking token following a well-formed ownership stamp.
+
+    Matches the literal ``[caller <token>]`` segment only when it directly
+    follows a well-formed ADR 0011 ownership stamp and one space, and only
+    when exactly one such segment exists, so spoofed, duplicated, or
+    misordered segments yield ``None`` (ADR 0064).
+    """
+    matches = _CALLER_TOKEN.findall(description)
+    if len(matches) != 1:
+        return None
+    # A second bracketed caller segment makes provenance ambiguous even
+    # though only one of them can sit in the anchored slot after the stamp;
+    # refuse rather than guess which one is authoritative (ADR 0064).
+    if description.count("[caller ") != 1:
+        return None
+    return matches[0]
 
 
 def _audit_lpar_ownership_override(
@@ -238,6 +269,7 @@ async def stamp_created_lpar_ownership(
     system_uuid: str,
     system_fallback: str,
     created_lpar: dict[str, Any],
+    caller_token: str | None = None,
 ) -> tuple[bool | None, list[str]]:
     confirmed_name = (created_lpar.get("Resource") or {}).get("PartitionName")
     if not confirmed_name:
@@ -251,7 +283,11 @@ async def stamp_created_lpar_ownership(
         ]
 
     token = await stamp_lpar_ownership(
-        hmc.config, system_name, confirmed_name, agent_id=hmc.config.agent_id
+        hmc.config,
+        system_name,
+        confirmed_name,
+        agent_id=hmc.config.agent_id,
+        caller_token=caller_token,
     )
     if token is not None:
         return True, []
@@ -267,6 +303,11 @@ async def create_and_stamp_lpar(
     creation: LparCreation,
 ) -> LparCreationResult:
     """Validate and create an LPAR with fallback and ownership stamping."""
+    if creation.caller_token is not None:
+        # First statement, before find_partition_by_name and outside the
+        # stamp's best-effort catch: no create can precede rejection, and a
+        # malformed token can never discard the ownership stamp (ADR 0064).
+        validate_caller_token(creation.caller_token)
     existing = await hmc.find_partition_by_name(creation.name)
     if existing:
         raise ValueError(
@@ -316,7 +357,11 @@ async def create_and_stamp_lpar(
             ),
         )
     ownership_stamped, warnings = await stamp_created_lpar_ownership(
-        hmc, system_uuid, system_name or system_name_or_uuid, created_lpar
+        hmc,
+        system_uuid,
+        system_name or system_name_or_uuid,
+        created_lpar,
+        caller_token=creation.caller_token,
     )
     return LparCreationResult(True, created_lpar, ownership_stamped, tuple(warnings))
 

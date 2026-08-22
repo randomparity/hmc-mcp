@@ -8,6 +8,7 @@ interactions are mocked with the respx ``mock_hmc`` fixture from conftest.py.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -573,3 +574,35 @@ def test_provision_lpar_dry_run_issues_no_mutating_request(monkeypatch, mock_hmc
     # non-zero so a future change that skips the handler entirely — and therefore
     # trivially "mutates nothing" — cannot pass this test.
     assert requests > 0
+
+
+def test_provision_invalid_caller_token_fails_before_preconditions(monkeypatch, mock_hmc):
+    """dry_run=True still fails fast on a bad token (spec guarantee 3)."""
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="caller_token"):
+        hmc_provision_lpar(
+            **_provision_args(name="p-lpar", dry_run=True, caller_token="a=b")
+        )
+
+
+def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch):
+    """Direct provision_lpar callers bypass hmc_provision_lpar's entry check,
+    so the operation validates first, before any HMC round trip."""
+    _hmc_env(monkeypatch)
+    from hmc_mcp.operations_provision import provision_lpar
+
+    with pytest.raises(ValueError, match="caller_token"):
+        asyncio.run(
+            provision_lpar(None, **_provision_args(caller_token="a=b"))  # type: ignore[arg-type]
+        )
+
+
+def test_provision_passes_caller_token_to_creation(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc, name="p-lpar")
+    _mock_execution_steps(mock_hmc)
+    result = hmc_provision_lpar(
+        **_provision_args(name="p-lpar", power_on=False, caller_token="CHG-9")
+    )
+    assert result.resource_created is True
+    assert result.ownership_stamped is True

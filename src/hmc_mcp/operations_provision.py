@@ -23,6 +23,7 @@ from .operations_lpar import (
     power_lpar,
 )
 from .operations_storage import create_virtual_disk, map_storage
+from .ssh_commands import validate_caller_token
 from .operations_assignments import (
     LparPcieAssignments,
     _apply_validated_lpar_pcie_assignments,
@@ -368,6 +369,7 @@ async def provision_lpar(
     power_on: bool = True,
     dry_run: bool = False,
     assignments: LparPcieAssignments = LparPcieAssignments(),
+    caller_token: str | None = None,
 ) -> ProvisionResult:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -402,6 +404,11 @@ async def provision_lpar(
         Submit a PowerOn job after provisioning (default ``True``).
     dry_run:
         When ``True``, run precondition checks only — no LPAR is created.
+    caller_token:
+        Optional caller tracking reference embedded in the partition
+        description as ``[caller <token>]`` after the ownership stamp
+        (ADR 0064); 1–64 printable ASCII characters, no whitespace or
+        comma, equals, double quote, square brackets, or backslash.
 
     Returns
     -------
@@ -416,8 +423,16 @@ async def provision_lpar(
       or skips when the stamp could not be applied after creation.
     - ``ownership_stamped`` (bool | None): ``True`` when the description-field
       ownership token was written; ``False`` when the SSH stamp attempt failed;
-      ``None`` when the stamp was not attempted.
+      ``None`` when the stamp was not attempted. With ``caller_token``,
+      ``True`` confirms both the ownership stamp and the caller segment
+      landed (one combined write); ``False`` means both were lost.
     """
+
+    if caller_token is not None:
+        # First statement, before any HMC round trip: the public operation is
+        # reachable directly (api.__all__) without the MCP tool's entry check,
+        # and a malformed token must fail identically there (ADR 0064).
+        validate_caller_token(caller_token)
 
     # ----------------------------------------------------------------
     # 1. Resolve system UUID
@@ -462,7 +477,7 @@ async def provision_lpar(
         creation = await create_and_stamp_lpar(
             hmc,
             system_name_or_uuid,
-            LparCreation(name, partition_type, resources),
+            LparCreation(name, partition_type, resources, caller_token=caller_token),
         )
     except HMCError as exc:
         steps.append(_step("create", "error", str(exc)))
