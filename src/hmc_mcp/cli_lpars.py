@@ -66,6 +66,7 @@ from .ssh_commands import (
     set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
+    validate_caller_token,
 )
 
 
@@ -506,6 +507,13 @@ def lpars_create(
         "--pcie-assignments",
         help="JSON file using the declarative LparPcieAssignments schema",
     ),
+    caller_token: str | None = typer.Option(
+        None,
+        "--caller-token",
+        help="Optional tracking reference embedded in the partition description "
+        "as '[caller <token>]' (ADR 0064); 1–64 printable ASCII characters, "
+        "no whitespace or , = \" [ ] \\",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Create a new LPAR on a managed system.
@@ -513,6 +521,8 @@ def lpars_create(
     Creates the partition powered off with a default profile; storage/network
     and boot settings are configured afterwards via the HMC.
     """
+    if caller_token is not None:
+        validate_caller_token(caller_token)
     if partition_type not in PARTITION_TYPES:
         _usage_error(
             f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
@@ -548,6 +558,7 @@ def lpars_create(
                     partition_type,
                     resources,
                     partition_id=partition_id,
+                    caller_token=caller_token,
                 ),
             )
             if creation.lpar is None:
