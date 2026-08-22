@@ -155,8 +155,8 @@ reaching the console's LDAP configuration unbounded. P8 does not catch it, becau
 is declared by other destructive tools in the same grant. #221's permission inspection is
 where both gaps become visible. And it means the only *complete* form for an effect
 class is `targets = "all-targets"`, because `hmc_get_job` and `hmc_wait_for_job` (`read`)
-and `hmc_update_console_software` (`mutate`) carry required selectors whose values the HMC
-mints at runtime and no static file can enumerate.
+and `hmc_update_console_software` (`destructive` since #247) carry required selectors
+whose values the HMC mints at runtime and no static file can enumerate.
 
 Naming those tools explicitly is what P9 catches: `tools = ["hmc_delete_lpar"]` with
 `targets = { managed_system = ["S1"] }` is rejected, because the operator wrote a

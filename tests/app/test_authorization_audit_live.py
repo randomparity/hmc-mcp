@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -301,6 +302,35 @@ def _audit_lines(log: Path) -> list[dict]:
     return records
 
 
+def _await_records(log: Path, ready) -> list[dict]:
+    """Poll the sink until *ready* holds over the parsed audit records.
+
+    The reply frame and the audit record are independent writes from the
+    child: the JSON-RPC answer can be read off stdout before the record's
+    flush reaches the stderr file, so a single read after a call races the
+    record's arrival. CI hit exactly that once — L3 read only the earlier
+    ``permitted`` record, so ``[-1]`` was not the denial. Waiting removes
+    the race without changing what any test asserts.
+    """
+    deadline = time.monotonic() + DEADLINE
+    while True:
+        records = _audit_lines(log)
+        if ready(records):
+            return records
+        assert time.monotonic() < deadline, (
+            f"audit record did not land within {DEADLINE}s; log tail:\n"
+            f"{log.read_text(errors='replace')[-2000:]}"
+        )
+        time.sleep(0.02)
+
+
+def _await_last_record(log: Path, reason: str) -> dict:
+    """The newest record once one carrying *reason* is the last to land."""
+    return _await_records(
+        log, lambda records: bool(records) and records[-1]["reason"] == reason
+    )[-1]
+
+
 PERMITTED = {
     "lpar_name_or_uuid": "db-01",
     "system_name_or_uuid": "sys-a",
@@ -312,7 +342,7 @@ def test_a_permitted_call_emits_one_parseable_record_on_stderr(run_a):
     """L1."""
     server, log = run_a
     server.call("hmc_power_off_lpar", PERMITTED)
-    records = _audit_lines(log)
+    records = _await_records(log, lambda items: len(items) >= 1)
     assert len(records) == 1
     record = records[0]
     assert record["decision"] == "allow"
@@ -334,7 +364,7 @@ def test_records_do_not_share_a_physical_line(run_a):
     server, log = run_a
     for _ in range(3):
         server.call("hmc_power_off_lpar", PERMITTED)
-    assert len(_audit_lines(log)) == 3
+    assert len(_await_records(log, lambda items: len(items) >= 3)) == 3
 
 
 def test_stdout_carries_no_non_json_line(run_a):
@@ -345,7 +375,15 @@ def test_stdout_carries_no_non_json_line(run_a):
     server.call("hmc_power_off_lpar", PERMITTED)
     denied = server.call("hmc_power_off_lpar", {**PERMITTED, "profile": "prod"})
     assert denied["id"] is not None
-    assert _audit_lines(log)[-1]["reason"] == "connection-not-granted"
+    # Wait for the denial's record instead of trusting [-1]: the reply frame
+    # and the record are independent writes, so an immediate read once saw
+    # only the permitted record on CI. Awaiting the reason makes the ordering
+    # claim (permit first, denial last) deterministic rather than lucky.
+    _await_last_record(log, "connection-not-granted")
+    assert [r["reason"] for r in _audit_lines(log)] == [
+        "permitted",
+        "connection-not-granted",
+    ]
 
 
 def test_a_long_caller_value_arrives_truncated(run_a):
@@ -354,8 +392,7 @@ def test_a_long_caller_value_arrives_truncated(run_a):
     server.call(
         "hmc_power_off_lpar", {**PERMITTED, "lpar_name_or_uuid": "A" * 500}
     )
-    record = _audit_lines(log)[-1]
-    assert record["reason"] == "target-not-granted"
+    record = _await_last_record(log, "target-not-granted")
     entry = next(
         item for item in record["targets"] if item["argument"] == "lpar_name_or_uuid"
     )

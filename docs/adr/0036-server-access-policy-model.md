@@ -122,11 +122,16 @@ that adds a tool to a granted effect class would otherwise make an unedited, pre
 valid file fail to load, and under #225's fail-closed startup that is a server that does
 not start after an upgrade. And the exempt case is one the rule could not usefully catch
 anyway — `hmc_get_job` and `hmc_wait_for_job` (`read`) and `hmc_update_console_software`
-(`mutate`) carry required selectors whose values the HMC mints at runtime, so the only
+(`destructive`) carry required selectors whose values the HMC mints at runtime, so the only
 form that satisfies coverage for an effect-class grant is `"all-targets"`. A rule
 justified as fail-closed whose sole satisfiable remedy is the *widest* form in the format
 is working against itself. Under the exemption, an effect-class grant may carry a partial
 `targets` table and the tools it does not cover are denied at call time by #223.
+
+  > **Amended by #247** (2026-08-21). `hmc_update_console_software` is `destructive`
+  > now (ADR 0035 amendment); nothing here turns on the effect class — the exemption
+  > rests on its runtime-minted required selector, which the reclassification leaves
+  > untouched.
 
 Optional selectors are never required to be covered — how an absent optional selector is
 treated is #223's decision, per ADR 0035.
