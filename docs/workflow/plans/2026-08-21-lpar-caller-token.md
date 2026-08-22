@@ -523,6 +523,16 @@ def test_caller_token_parameter_documents_grammar():
 Run — failures expected (parameter absent).
 
 **Step 2 — implement.**
+Landing-outcome docs (spec guarantee 7 / audit finding 2): extend both tools'
+result documentation — the `Returns:` prose of `hmc_create_lpar`'s docstring
+(after the ``ownership_stamped`` bullet) and `hmc_provision_lpar`'s
+`Returns:` paragraph — with one sentence:
+
+```python
+    With ``caller_token``, ``ownership_stamped=True`` confirms both the ownership
+    stamp and the caller segment landed (one combined write); ``False`` means both
+    were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
+```
 
 `src/hmc_mcp/server_lpars.py`: add below the existing `.operations_lpar` import block:
 
@@ -650,3 +660,12 @@ all five `tests/lpar/test_ownership_tools.py` citations corrected to
 prevalidation round trips; a valid-token `hmc_create_lpar` pass-through test added;
 Task 1 count corrected to 13; rollback section rewritten for reverse-order dependence.
 Nothing outstanding.
+
+## Scope-audit record
+
+The `$oathbind` audit (2026-08-21, report at
+`.agent/oathbind/2026-08-21-issue-358-oathbind.md`) returned **needs-attention**
+with two low findings, both dispositioned: (1) CLI `--caller-token` exceeds the
+charter's surface hedge — accepted via a `WORK:SCOPE` amendment on issue #358
+ratifying CLI/MCP parity per repo convention; (2) guarantee-7 landing-outcome
+documentation absent from tasks — accepted-fixed as the Task 4 step above.
