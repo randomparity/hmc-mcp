@@ -415,3 +415,32 @@ def test_stamp_bad_caller_token_raises_unswallowed():
                 )
             )
     mock_set.assert_not_awaited()  # rejected before any SSH traffic
+
+
+from hmc_mcp.operations_lpar import parse_lpar_ownership_caller_token  # noqa: E402
+
+
+def test_parse_caller_token_round_trip():
+    description = (
+        "[hmc-mcp owner:alice created:2026-08-21] [caller JIRA-1:x/y]"
+    )
+    assert parse_lpar_ownership_caller_token(description) == "JIRA-1:x/y"
+
+
+def test_parse_caller_token_absent():
+    assert parse_lpar_ownership_caller_token("[hmc-mcp owner:a created:2026-08-21]") is None
+    assert parse_lpar_ownership_caller_token("plain legacy description") is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "[caller JIRA-1] [hmc-mcp owner:a created:2026-08-21]",   # misordered
+        "[hmc-mcp owner:a created:2026-08-21] [caller X] [caller Y]",  # duplicated
+        "[hmc-mcp owner:a created:2026-08-21][caller X]",         # missing space
+        "[hmc-mcp owner:a created:2026-08-21] [caller ]",         # empty segment
+        "[hmc-mcp owner:bogus created:x] [caller X]",             # malformed anchor
+    ],
+)
+def test_parse_caller_token_spoofed_yields_none(description):
+    assert parse_lpar_ownership_caller_token(description) is None
