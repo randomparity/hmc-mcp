@@ -46,10 +46,13 @@ def validate_agent_id(agent_id: str) -> None:
     forbidden = {
         ",": "commas corrupt the HMC CLI -i parser",
         "=": "equals signs corrupt the HMC CLI -i parser",
+        '"': "double quotes are the HMC CLI -i record escape",
         "[": "brackets break the ownership token format",
         "]": "brackets break the ownership token format",
         "/": "the HMC REST API rejects '/' in X-Audit-Memento",
         ":": "colons make audit and ownership token formats ambiguous",
+        "\\": "backslash behaviour inside an HMC CLI -i record is unverified "
+        "(ADR 0045)",
         " ": "spaces corrupt the ownership token in the CLI -i parser",
     }
     for character, reason in forbidden.items():
@@ -153,8 +156,10 @@ class HMCConfig(BaseSettings):
         description=(
             "Per-agent identifier folded into the X-Audit-Memento header as "
             "hmc-mcp:<agent_id>. Used for multi-agent LPAR ownership attribution. "
-            "Must be 1–64 printable ASCII characters with no commas, = signs, or "
-            "square brackets. (HMC_AGENT_ID)"
+            "Must be 1–64 printable ASCII characters with no commas, = signs, "
+            "square brackets, double quotes, or backslashes — any of those would "
+            "corrupt the ownership stamp in the HMC CLI -i parser or the "
+            "description grammar. (HMC_AGENT_ID)"
         ),
     )
 
