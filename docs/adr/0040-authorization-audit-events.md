@@ -110,7 +110,7 @@ already permits:
 | `event` | fields after `time` and `event` |
 |---|---|
 | `authorization` | `policy`, `tool`, `effect`, `decision`, `reason`, `connection`, `targets`, `attribution` |
-| `ownership-override` | `system`, `lpar`, `attribution` |
+| `ownership-override` | `system`, `lpar`, `host`, `attribution` |
 
 What the two share is the *grammar*, not the field set: one physical line, ASCII JSON, every
 caller-supplied value truncated to 128 characters, `time` and `event` first. A consumer selecting
@@ -121,15 +121,18 @@ as nulls: none of them exists for this event, and rendering them empty would sug
 access-policy decision was taken when the override is an ADR 0011 ownership check on a token
 parsed from an LPAR description. `system` and `lpar` are the caller's own names.
 
-It carries no `connection` either, but for a different reason, stated separately because the
-first one would be false: the HMC identity *does* exist at the emission point — the emitter holds
-an `HMCClient` whose `config.host` sits beside the `agent_id` this event records — and is
-dropped. It is omitted because a hostname is not an access-policy connection selector and putting
-it under the same key would conflate them, because this path also runs from the CLI and the
-Python API where no policy connection exists at all, and because what the audit sink discloses is
-a decision this convergence should not make on its own. The consequence is real and is a
-residual, not a non-issue: in a multi-HMC deployment the highest-consequence event this package
-emits does not say which HMC it happened on. Filed as #271.
+It carries no `connection`: a hostname is not an access-policy connection selector and
+putting one under the same key would conflate them, and this path also runs from the CLI
+and the Python API where no policy connection exists at all.
+
+> **Amended by #271** (2026-08-21). **The HMC identity is recorded now.** The convergence
+above dropped `hmc.config.host` — available at the emission point, beside the `agent_id`
+this event records — which left the highest-consequence event unable to say which HMC it
+happened on in a multi-HMC deployment. The record carries that identity as its own `host`
+field, between `lpar` and `attribution`: a machine name, not a grant, so it does not join
+the `connection` object. It passes through the same `_value` bound as every caller-supplied
+field; an unset `HMCConfig.host` renders as an empty string. The residual this amendment
+closes is gone.
 
 `attribution.source` therefore becomes a two-value vocabulary too, and the honesty is the point:
 the authorization record reads `os.environ`, while this one reads `hmc.config.agent_id` — the

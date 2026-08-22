@@ -219,6 +219,7 @@ def test_authorize_lpar_mutation_override_is_audited(caplog):
         "event": "ownership-override",
         "system": "sys1",
         "lpar": "lpar1",
+        "host": "hmc.test",
         "attribution": {
             "claim": "hmc-mcp",
             "source": "config:agent_id",
@@ -226,6 +227,26 @@ def test_authorize_lpar_mutation_override_is_audited(caplog):
         },
     }
     assert [r for r in caplog.records if r.name == "hmc_mcp.operations_lpar"] == []
+
+
+def test_the_override_record_host_comes_from_the_client_config(caplog):
+    """#271. `host` is the emitter's own ``HMCConfig.host``, and an unset one —
+    the config default — renders as the empty string that it is."""
+    hmc = type(
+        "StubHMC",
+        (),
+        {"config": _config().model_copy(update={"host": "", "agent_id": None})},
+    )()
+    with (
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        caplog.at_level(logging.WARNING),
+    ):
+        asyncio.run(
+            authorize_lpar_mutation(hmc, "sys1", "lpar1", ownership_override=True)
+        )
+    records = _override_records(caplog)
+    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert records[0]["host"] == ""
 
 
 def test_the_override_record_is_bounded_and_escaped(caplog):
