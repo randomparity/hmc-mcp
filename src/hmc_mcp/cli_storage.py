@@ -375,7 +375,7 @@ def storage_list_mappings(
         table.add_column("Backing Storage", style="yellow")
         table.add_column("Type", style="magenta")
         for m in mappings:
-            mapping_uuid = m.get("ElementID", "")
+            mapping_uuid = m.get("UUID", "")
             storage = m.get("Storage", {})
             client = m.get("AssociatedLogicalPartition", {})
             client_name = client.get("PartitionName", "")
@@ -397,10 +397,10 @@ def storage_list_mappings(
 @storage_app.command("detach-mapping")
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    mapping_uuid: str = typer.Argument(..., help="UUID of the VirtualSCSIMapping to delete"),
+    mapping_uuid: str = typer.Argument(..., help="Exact UUID shown by storage list-mappings"),
     confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
 ) -> None:
-    """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage)."""
+    """Detach a VirtualSCSIMapping while preserving its backing storage."""
     if not confirm:
         typer.confirm(
             f"Delete storage mapping {mapping_uuid} on VIOS {vios}? "

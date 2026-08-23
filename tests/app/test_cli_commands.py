@@ -195,8 +195,8 @@ class FakeHMC:
         self._record("lpar_migrate_recover", lpar_uuid)
         return self.job
 
-    async def lpar_remote_restart(self, lpar_uuid, target):
-        self._record("lpar_remote_restart", lpar_uuid, target)
+    async def lpar_remote_restart(self, lpar_uuid, operation, source, **kwargs):
+        self._record("lpar_remote_restart", lpar_uuid, operation, source, **kwargs)
         return self.job
 
     async def create_volume_group(self, vios_uuid, name, physical_volumes):
@@ -1866,7 +1866,7 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
         assert (vios, lpar) == (VIOS_UUID, None)
         return [
             {
-                "ElementID": "map-1",
+                "UUID": "map-1",
                 "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
                 "Storage": {"VirtualDisk": {"DiskName": "bootvol"}},
             }
@@ -1879,6 +1879,7 @@ def test_storage_list_mappings_renders_virtual_disk(direct_client, monkeypatch):
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID])
 
     assert result.exit_code == 0
+    assert "map-1" in result.stdout
     assert "bootvol" in result.stdout
     assert "VirtualDisk" in result.stdout
     assert direct_client.entered
@@ -1889,7 +1890,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
         assert lpar == LPAR_UUID
         return [
             {
-                "ElementID": "map-2",
+                "UUID": "map-2",
                 "AssociatedLogicalPartition": {"PartitionName": "lpar1"},
                 "Storage": {"PhysicalVolume": {"VolumeName": "hdisk9"}},
             }
@@ -1910,7 +1911,7 @@ def test_storage_list_mappings_renders_physical_volume(direct_client, monkeypatc
 
 def test_storage_list_mappings_json(direct_client, monkeypatch):
     async def fake_mappings(_hmc, _vios, _lpar):
-        return [{"ElementID": "map-1"}]
+        return [{"UUID": "map-1"}]
 
     monkeypatch.setattr(
         "hmc_mcp.operations_storage.list_storage_mappings", fake_mappings
@@ -1919,7 +1920,7 @@ def test_storage_list_mappings_json(direct_client, monkeypatch):
     result = RUNNER.invoke(cli.app, ["storage", "list-mappings", VIOS_UUID, "--json"])
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == [{"ElementID": "map-1"}]
+    assert json.loads(result.stdout) == [{"UUID": "map-1"}]
 
 
 def test_storage_detach_mapping_deletes_when_confirmed(direct_client, monkeypatch):
@@ -2132,8 +2133,28 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
             ("lpar_migrate_recover", (LPAR_UUID,), {}),
         ),
         (
-            ["lpars", "remote-restart", LPAR_NAME, "--target", "sys1", "--yes"],
-            ("lpar_remote_restart", (LPAR_UUID, "sys1"), {}),
+            [
+                "lpars",
+                "remote-restart",
+                LPAR_NAME,
+                "--operation",
+                "restart",
+                "--system",
+                "sys1",
+                "--target",
+                "target",
+                "--yes",
+            ],
+            (
+                "lpar_remote_restart",
+                (LPAR_UUID, "restart", "sys1"),
+                {
+                    "target_managed_system": "target",
+                    "target_managed_system_uuid": None,
+                    "use_current_data": False,
+                    "retain_devices": False,
+                },
+            ),
         ),
     ],
 )
@@ -2196,8 +2217,12 @@ def test_migrate_cli_rejects_effective_wait_timing_before_confirmation(fake_hmc)
             "lpars",
             "remote-restart",
             LPAR_NAME,
-            "--target",
+            "--operation",
+            "restart",
+            "--system",
             "sys1",
+            "--target",
+            "target",
             "--yes",
         ],
     ],

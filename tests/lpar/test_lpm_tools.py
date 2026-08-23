@@ -34,7 +34,11 @@ JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
-    (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+    (
+        hmc_remote_restart_lpar,
+        "RemoteRestart",
+        (LPAR_UUID, "restart", "source-system", "vrml12-fsp"),
+    ),
 ]
 LPM_RECOVERY_OPERATION_CASES = [
     (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
@@ -42,7 +46,7 @@ LPM_RECOVERY_OPERATION_CASES = [
     (
         remote_restart_lpar,
         "lpar_remote_restart",
-        (LPAR_UUID, "target-system"),
+        (LPAR_UUID, "restart", "source-system"),
     ),
 ]
 
@@ -121,9 +125,11 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_remote_restart_lpar PUTs a RemoteRestart job with the target."""
     _hmc_env(monkeypatch)
     route = _job_route(mock_hmc, "RemoteRestart")
-    hmc_remote_restart_lpar(LPAR_UUID, "vrml12-fsp")
+    hmc_remote_restart_lpar(LPAR_UUID, "restart", "source-system", "vrml12-fsp")
     body = route.calls.last.request.content.decode()
     assert "RemoteRestart</OperationName>" in body
+    assert "restart" in body
+    assert "source-system" in body
     assert "vrml12-fsp" in body
 
 
@@ -137,7 +143,7 @@ def test_lpm_recovery_tools_wait_for_terminal_outcome(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
 
@@ -161,7 +167,7 @@ def test_lpm_recovery_tools_return_explicit_timeout(
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     _job_route(mock_hmc, operation)
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
 
@@ -302,7 +308,7 @@ def test_migrate_lpar_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     """hmc_migrate_lpar(wait=True) submits the job then polls until COMPLETED."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(
@@ -322,7 +328,7 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
     """hmc_migrate_lpar(wait=False) returns the submitted job entry without polling."""
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "Migrate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_migrate_lpar(LPAR_UUID, "vrml12-fsp", wait=False, validate_first=False)
@@ -334,7 +340,7 @@ def test_migrate_lpar_wait_false_returns_submitted_job(monkeypatch, mock_hmc):
 def test_migrate_validate_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     submit_route = _job_route(mock_hmc, "MigrateValidate")
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
 

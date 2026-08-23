@@ -19,6 +19,8 @@ from .operations_lpm import (
 
 from typing import cast
 
+from .jobs import RemoteRestartOperation
+
 
 tool, register_tools, tool_security = tool_module()
 
@@ -219,12 +221,15 @@ def hmc_migrate_recover_lpar(
 @tool(effect="destructive", operation="lpar.remote_restart", target_kind="lpar")
 def hmc_remote_restart_lpar(
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
+    operation: RemoteRestartOperation,
+    system_name_or_uuid: str,
+    target_system_name_or_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
-    system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Remote-restart a failed LPAR on another managed system.
 
@@ -235,14 +240,15 @@ def hmc_remote_restart_lpar(
 
     Args:
         lpar_name_or_uuid: Failed partition name or UUID.
-        target_system_name_or_uuid: Managed-system name or UUID on which to restart.
+        operation: Explicit validate, recover, restart, cleanup, or cancel action.
+        system_name_or_uuid: Source managed-system name or UUID.
+        target_system_name_or_uuid: Target name or UUID; optional only for cleanup.
+        use_current_data: Use current configuration data; restart only.
+        retain_devices: Retain devices; cleanup only.
         wait: Wait for the remote-restart job's terminal outcome when true.
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
-        system_name_or_uuid: Optional SystemName or UUID of the source system,
-            disambiguating the partition name; when omitted the name is
-            searched fleet-wide.
     """
 
     async def _go():
@@ -250,11 +256,14 @@ def hmc_remote_restart_lpar(
             result = await remote_restart_lpar(
                 hmc,
                 lpar_name_or_uuid,
-                target_system_name_or_uuid,
+                operation,
+                system_name_or_uuid,
+                target_system_name_or_uuid=target_system_name_or_uuid,
+                use_current_data=use_current_data,
+                retain_devices=retain_devices,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
-                system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
 

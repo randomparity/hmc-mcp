@@ -9,6 +9,9 @@ from pydantic import TypeAdapter
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
+    FAILED_JOB_STATUSES,
+    SUCCESSFUL_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
     PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,
@@ -18,6 +21,19 @@ from hmc_mcp.jobs import (
     vios_stdout,
     wait_for_submitted_job,
 )
+
+_SUCCESSFUL_TERMINAL_STATUSES = {"COMPLETED", "COMPLETED_OK"}
+_ACTIONABLE_TERMINAL_STATUSES = {
+    "CANCELED_BEFORE_START",
+    "CANCELED_WHILE_RUNNING",
+    "COMPLETED_WITH_ERROR",
+    "COMPLETED_WITH_WARNINGS",
+    "EXCEPTION",
+    "FAILED",
+    "FAILED_BEFORE_COMPLETION",
+    "FAILED_BEFORE_COMPLETION_RETRY",
+    "FAILED_TO_START",
+}
 
 
 def test_platform_update_builds_a_pydantic_schema() -> None:
@@ -190,6 +206,22 @@ def test_job_outcome_prefers_error_data_regardless_of_parameter_order(names) -> 
     assert job_outcome("job-id", job).error == "failure text"
 
 
+def test_job_outcome_surfaces_detailed_status_when_error_data_is_absent() -> None:
+    job = {
+        "Resource": {
+            "Status": "FAILED",
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "detailedStatus",
+                    "ParameterValue": "target system unavailable",
+                }
+            },
+        }
+    }
+
+    assert job_outcome("job-id", job).error == "target system unavailable"
+
+
 def test_job_outcome_tolerates_truthy_non_mapping_resource() -> None:
     outcome = job_outcome(" requested-id ", {"Resource": "unexpected"})
 
@@ -283,3 +315,18 @@ async def test_wait_for_submitted_job_propagates_poll_error() -> None:
 
     with pytest.raises(TimeoutError, match="timed out"):
         await wait_for_submitted_job(client, {"UUID": "job-3"}, True, 30, 2)
+
+
+def test_terminal_job_statuses_are_exhaustively_partitioned() -> None:
+    assert SUCCESSFUL_JOB_STATUSES == _SUCCESSFUL_TERMINAL_STATUSES
+    assert FAILED_JOB_STATUSES == _ACTIONABLE_TERMINAL_STATUSES
+    assert SUCCESSFUL_JOB_STATUSES.isdisjoint(FAILED_JOB_STATUSES)
+    assert SUCCESSFUL_JOB_STATUSES | FAILED_JOB_STATUSES == TERMINAL_JOB_STATUSES
+
+
+@pytest.mark.parametrize("status", sorted(_ACTIONABLE_TERMINAL_STATUSES))
+def test_job_outcome_marks_every_actionable_terminal_status_as_error(status) -> None:
+    outcome = job_outcome("job-id", {"Resource": {"Status": status}})
+
+    assert outcome.timed_out is False
+    assert outcome.error == f"Job ended with status {status}"

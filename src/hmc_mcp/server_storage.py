@@ -456,14 +456,14 @@ def hmc_detach_storage_mapping(
     mapping_uuid: str,
     profile: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+    """Detach a VirtualSCSIMapping by its inventory UUID.
 
     Removes the mapping only; the backing storage (PhysicalVolume or
     VirtualDisk) is preserved.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        mapping_uuid: Exact UUID returned by ``hmc_list_storage_mappings``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 

@@ -23,7 +23,6 @@ BASELINED_FINDINGS = {
     "tests/app/test_cli.py": 2,
     "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
-    "tests/security/test_users.py": 2,
     "tests/unit/test_ssh.py": 1,
     "tests/unit/test_client.py": 1,
 }

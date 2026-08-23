@@ -22,6 +22,7 @@ from .jobs import (
     VIOSUpdateSource,
     VIOSUpgradeSource,
     update_hmc_job,
+    list_management_console_updates_job,
     platform_update_job,
     update_vios_job,
     upgrade_vios_job,
@@ -167,53 +168,48 @@ def hmc_update_console_software(
     return _run(_go)
 
 
-def _check_ptf_error(exc: HMCError) -> None:
-    """Re-raise *exc* with an actionable message if SoftwareUpdate group is unsupported.
-
-    HTTP 400 with REST0026 indicates the SoftwareUpdate attribute group is not
-    supported on this HMC version or firmware level. All other errors are left unchanged.
-    """
-    if exc.status_code == 400:
-        msg_str = str(exc)
-        body_str = exc.body or ""
-        if (
-            "REST0026" in msg_str
-            or "REST0026" in body_str
-            or "SoftwareUpdate" in msg_str
-            or "SoftwareUpdate" in body_str
-        ):
-            raise HMCError(
-                "SoftwareUpdate attribute group not supported on this HMC version.",
-                exc.status_code,
-            ) from exc
-
-
-@tool(effect="read", operation="update.list_ptfs", target_kind="console")
+@tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
 def hmc_get_available_hmc_ptfs(
-    console_uuid: str, profile: str | None = None
+    console_uuid: str,
+    profile: str | None = None,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
 ) -> dict[str, Any] | None:
-    """Get available PTFs (fixes) for the HMC software.
+    """Submit the documented job that lists available HMC PTFs.
 
-    Issues a GET to the ManagementConsole resource with the SoftwareUpdate
-    group, which returns available PTF information. console_uuid is the
-    ManagementConsole UUID (from hmc_console_info). Does not submit a job.
+    The HMC obtains the list from the IBM website. With ``wait=False``, returns
+    the submitted job so callers can poll it with ``hmc_get_job``. With
+    ``wait=True``, polls until the job reaches a terminal state or the timeout
+    expires; a completed job's response contains the available PTF objects.
 
     Args:
         console_uuid: Management-console UUID returned by ``hmc_console_info``.
+        wait: Wait for the submitted job to reach a terminal state.
+        timeout_seconds: Maximum wait duration in seconds.
+        poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+    validate_wait_timing(wait, timeout_seconds, poll_interval)
+    job_xml = list_management_console_updates_job()
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.get_uom(
-                "ManagementConsole", console_uuid, group="SoftwareUpdate"
+            console_path_id = quote(console_uuid, safe="")
+            return await _update_op(
+                hmc,
+                lambda hmc2: hmc2.submit_job(
+                    f"/rest/api/uom/ManagementConsole/{console_path_id}"
+                    "/do/ListManagementConsoleUpdates",
+                    job_xml,
+                ),
+                wait,
+                timeout_seconds,
+                poll_interval,
             )
 
-    try:
-        return _run(_go)
-    except HMCError as exc:
-        _check_ptf_error(exc)
-        raise
+    return _run(_go)
 
 
 @tool(effect="destructive", operation="update.vios", target_kind="vios")

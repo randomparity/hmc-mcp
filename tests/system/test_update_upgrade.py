@@ -16,6 +16,7 @@ from hmc_mcp.jobs import (
     VIOSPlatformUpdate,
     VIOSUpdateSource,
     VIOSUpgradeSource,
+    build_job_request,
     job_outcome,
     platform_update_job,
     update_hmc_job,
@@ -409,16 +410,15 @@ async def test_hmc_update_console_software_update(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_hmc_get_available_hmc_ptfs(mock_hmc):
-    mock_hmc.get(
-        f"/rest/api/uom/ManagementConsole/{HMC_UUID}",
-        params={"group": "SoftwareUpdate"},
-    ).mock(return_value=httpx.Response(200, text=CONSOLE_ENTRY))
+    path = f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/ListManagementConsoleUpdates"
+    route = mock_hmc.put(path).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc.get_uom(
-            "ManagementConsole", HMC_UUID, group="SoftwareUpdate"
+        result = await hmc.submit_job(
+            path, build_job_request("ListManagementConsoleUpdates", "ManagementConsole")
         )
 
+    assert route.called
     assert result is not None
 
 

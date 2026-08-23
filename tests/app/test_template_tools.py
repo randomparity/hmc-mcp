@@ -126,7 +126,16 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     result = hmc_deploy_partition_template("draft-uuid", TARGET_SYSTEM_UUID)
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
-    assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
+    assert (
+        f"<ParameterName kb=\"ROR\" kxe=\"false\">TargetUuid</ParameterName>\n"
+        f"      <ParameterValue kb=\"CUR\" kxe=\"false\">{TARGET_SYSTEM_UUID}"
+        "</ParameterValue>" in body
+    )
+    assert (
+        '<ParameterName kb="ROR" kxe="false">TemplateUuid</ParameterName>\n'
+        '      <ParameterValue kb="CUR" kxe="false">draft-uuid</ParameterValue>'
+        in body
+    )
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"
@@ -177,7 +186,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
@@ -226,7 +235,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))

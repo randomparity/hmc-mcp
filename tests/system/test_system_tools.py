@@ -302,10 +302,11 @@ def test_vios_no_arg_lists_all(monkeypatch, mock_hmc):
 
 
 def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
-    """hmc_list_vios(vios_uuid=...) GETs the ViosStorageDetail group."""
+    """hmc_list_vios(vios_uuid=...) GETs both documented mapping groups."""
     _hmc_env(monkeypatch)
     route = mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
+        "?group=ViosSCSIMapping&group=ViosFCMapping"
     ).mock(
         return_value=httpx.Response(
             200, text=_feed(VIOS_UUID, "VirtualIOServer", PartitionName="vios1")

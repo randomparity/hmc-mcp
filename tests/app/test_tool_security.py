@@ -96,12 +96,10 @@ LEGACY_READ_ONLY = frozenset(
         "hmc_processed_metric_links",
         "hmc_aggregated_metrics",
         "hmc_aggregated_metric_links",
-        "hmc_list_users",
         "hmc_get_user",
-        "hmc_list_password_policies",
-        "hmc_list_password_policy_status",
-        "hmc_get_ldap_config",
-        "hmc_get_available_hmc_ptfs",
+        "hmc_list_task_roles",
+        "hmc_list_resource_roles",
+        "hmc_get_remote_access",
         "hmc_list_vios_backups",
         "hmc_get_lpar_description",
         "hmc_get_lpar_msp",
@@ -130,8 +128,6 @@ LEGACY_DESTRUCTIVE = frozenset(
         "hmc_delete_virtual_disk",
         "hmc_delete_logical_unit",
         "hmc_delete_user",
-        "hmc_delete_password_policy",
-        "hmc_remove_ldap_config",
         "hmc_remove_memory_pool",
         "hmc_remove_vnic",
         "hmc_power_off_system",
@@ -188,6 +184,14 @@ def test_annotations_are_derived_from_the_effect_class():
 def test_declared_effects_use_the_closed_vocabulary():
     for name, security in TOOL_SECURITY.items():
         assert security.effect in EFFECTS, name
+
+
+def test_available_hmc_ptfs_is_mutating_job_submission():
+    security = TOOL_SECURITY["hmc_get_available_hmc_ptfs"]
+    tool = _tools_by_name()["hmc_get_available_hmc_ptfs"]
+
+    assert security.effect == "mutate"
+    assert tool.annotations.readOnlyHint is False
 
 
 def test_selectors_and_connection_arguments_are_public_parameters():
@@ -293,9 +297,7 @@ def test_provision_lpar_declares_its_nested_selectors():
     """
     security = TOOL_SECURITY["hmc_provision_lpar"]
     assert security.exhaustive_targets is False
-    assert [
-        (t.kind, t.path, t.required) for t in security.targets
-    ] == [
+    assert [(t.kind, t.path, t.required) for t in security.targets] == [
         ("managed_system", "system_name_or_uuid", True),
         ("vios", "network.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
@@ -370,14 +372,13 @@ def test_the_argument_table_matches_its_independent_expectation():
         ("hmc_get_job", {("job", "job_uuid")}),
         ("hmc_get_partition_template", {("template", "template_uuid")}),
         ("hmc_get_shared_storage_pool", {("shared_storage_pool", "ssp_uuid")}),
-        ("hmc_delete_password_policy", {("password_policy", "policy_name")}),
         ("hmc_processed_metrics", {("metric_resource", "resource_name_or_uuid")}),
         ("hmc_create_logical_unit", {("cluster", "cluster_uuid")}),
         (
             "hmc_add_vscsi_adapter",
             {("lpar", "lpar_name_or_uuid"), ("vios", "vios_partition_id")},
         ),
-        ("hmc_delete_user", {("user", "name")}),
+        ("hmc_delete_user", {("user", "user_profile_uuid")}),
     ],
 )
 def test_selectors_are_built_for_every_table_kind(tool_name, expected):
@@ -1179,23 +1180,17 @@ _NOT_EXHAUSTIVE = frozenset(
     {
         # No selector at all, so a `targets` table has nothing to bind on.
         "hmc_capacity_report",
-        "hmc_configure_ldap",
         "hmc_console_info",
         "hmc_effective_permissions",
         "hmc_find_placement",
         "hmc_fleet_health",
-        "hmc_get_ldap_config",
         "hmc_list_clusters",
         "hmc_list_configured_hosts",
         "hmc_list_partition_templates",
-        "hmc_list_password_policies",
-        "hmc_list_password_policy_status",
         "hmc_list_recent_jobs",
         "hmc_list_resources",
         "hmc_list_shared_storage_pools",
         "hmc_list_systems",
-        "hmc_list_users",
-        "hmc_remove_ldap_config",
         "hmc_run_command",
         # Selectors, but they do not name every resource the call acts on.
         "hmc_backup_lpar_profiles",
@@ -1281,9 +1276,7 @@ def _selector_annotations() -> dict[str, object]:
                 if target.container is not None:
                     # A nested selector (#260) types its field through the
                     # container's own annotation, one level down.
-                    container = get_type_hints(hints[target.container])[
-                        target.argument
-                    ]
+                    container = get_type_hints(hints[target.container])[target.argument]
                 else:
                     container = hints.get(target.argument)
                 resolved[f"{name}.{target.path}"] = container

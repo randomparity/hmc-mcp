@@ -5,7 +5,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client import HMCClient, HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"
@@ -106,7 +106,7 @@ CREATE_MAPPING_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="ye
 </feed>
 """
 
-VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
+VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 
 
 @pytest.mark.asyncio
@@ -143,6 +143,18 @@ async def test_list_optical_mappings_empty(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_list_optical_mappings_propagates_bad_request(mock_hmc):
+    """A rejected documented group is an API error, not an empty inventory."""
+    mock_hmc.get(VIOS_PATH).mock(return_value=httpx.Response(400, text="bad request"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.list_optical_mappings(VIOS_UUID)
+
+    assert raised.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_create_optical_mapping_submits_document(mock_hmc):
     """create_optical_mapping GETs the VIOS, appends mapping, POSTs to system-scoped endpoint."""
     # Step 1: GET the full VIOS document
@@ -166,6 +178,25 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
     assert result is not None
     assert result["UUID"] == "mapping-uuid-new-001"
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
+
+
+@pytest.mark.asyncio
+async def test_create_optical_mapping_preserves_permissive_system_link(mock_hmc):
+    """Issue #403 strict detach parsing does not narrow existing optical responses."""
+    response = VIOS_GET_FEED.replace(
+        f"/ManagedSystem/{SYS_UUID}\"", f"/ManagedSystem/{SYS_UUID}/details\""
+    )
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=response)
+    )
+    posted = mock_hmc.post(
+        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+
+    assert posted.called
 
 
 # VIOS document containing one optical mapping for LPAR_UUID / test.iso

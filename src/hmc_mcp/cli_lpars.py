@@ -12,6 +12,7 @@ from rich.table import Table
 from typing import cast
 
 from .common import is_uuid
+from .jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
 from .cli_app import (
     _client,
     _first_field,
@@ -396,7 +397,15 @@ def lpars_migrate_recover(
 @lpars_app.command("remote-restart")
 def lpars_remote_restart(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    operation: str = typer.Option(..., "--operation", help="RemoteRestart operation"),
+    system: str = typer.Option(
+        ..., "--system", help="Source managed system name or UUID"
+    ),
+    target: str | None = typer.Option(
+        None, "--target", help="Target managed system name or UUID"
+    ),
+    use_current_data: bool = typer.Option(False, "--use-current-data"),
+    retain_devices: bool = typer.Option(False, "--retain-devices"),
     wait: bool = typer.Option(
         False, "--wait/--no-wait", help="Wait for job completion"
     ),
@@ -408,18 +417,26 @@ def lpars_remote_restart(
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
     validate_wait_timing(wait, timeout, interval)
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        raise typer.BadParameter(
+            f"operation must be one of: {', '.join(sorted(REMOTE_RESTART_OPERATIONS))}"
+        )
 
     async def _fn(hmc):
         return await remote_restart_lpar(
             hmc,
             name_or_uuid,
-            target,
+            cast(RemoteRestartOperation, operation),
+            system,
+            target_system_name_or_uuid=target,
+            use_current_data=use_current_data,
+            retain_devices=retain_devices,
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
         )
 
-    _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
+    _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)
 
 
 def _power_lpar(
