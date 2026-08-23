@@ -214,19 +214,15 @@ from .server_metrics import (
     hmc_set_pcm_preferences as hmc_set_pcm_preferences,
 )
 from .server_users import (
-    hmc_configure_ldap as hmc_configure_ldap,
-    hmc_create_password_policy as hmc_create_password_policy,
+    hmc_configure_remote_access as hmc_configure_remote_access,
     hmc_create_user as hmc_create_user,
-    hmc_delete_password_policy as hmc_delete_password_policy,
     hmc_delete_user as hmc_delete_user,
-    hmc_get_ldap_config as hmc_get_ldap_config,
-    hmc_list_password_policy_status as hmc_list_password_policy_status,
+    hmc_get_remote_access as hmc_get_remote_access,
     hmc_get_user as hmc_get_user,
-    hmc_list_password_policies as hmc_list_password_policies,
-    hmc_modify_password_policy as hmc_modify_password_policy,
-    hmc_modify_user as hmc_modify_user,
-    hmc_remove_ldap_config as hmc_remove_ldap_config,
+    hmc_list_resource_roles as hmc_list_resource_roles,
+    hmc_list_task_roles as hmc_list_task_roles,
     hmc_list_users as hmc_list_users,
+    hmc_modify_user as hmc_modify_user,
 )
 from .server_updates import (
     hmc_get_available_hmc_ptfs as hmc_get_available_hmc_ptfs,

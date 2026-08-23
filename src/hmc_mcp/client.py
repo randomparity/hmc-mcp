@@ -80,7 +80,7 @@ def _reject_dot_segments(method: str, path: str) -> None:
 # (`/rest/api/uom/Job/{uuid}`) and the per-operation collection the submission
 # response points at (`/rest/api/uom/jobs/{id}`, issue #95). Anchored on the
 # *last two* segments rather than tested for membership: membership let
-# `/rest/api/web/HmcUser/jobs` through, because it contains the word.
+# an unrelated `/rest/api/web/Logon/jobs` path through, because it contains the word.
 _JOB_PATH = re.compile(r"^(?:/[^/]+)*/(?:Job|jobs)/[^/]+$")
 
 
@@ -88,10 +88,9 @@ def _reject_non_job_path(path: str) -> None:
     """Refuse a ``job_href`` that does not address a job.
 
     ``get_job`` fetches the caller's ``job_href`` directly, so the path — not the
-    ``job_uuid`` argument — decides which resource is read. ``_web_get`` sends
-    the same ``web+xml`` Accept header ``client_users.get_hmc_user`` uses, so
-    without this an ``href`` of ``/rest/api/web/HmcUser/root`` returns the root
-    account record through a tool classified ``read``/``job``.
+    ``job_uuid`` argument — decides which resource is read. Without this, an
+    unrelated web-resource href could be fetched through a tool classified
+    ``read``/``job``.
 
     The check binds the *resource class*, not the identifier. Binding the last
     segment to ``job_uuid`` would be tighter, and was rejected: ``jobs.job_identifier``
@@ -667,17 +666,12 @@ class HMCClient(
     # ------------------------------------------------------------------ #
     # Web endpoint helpers (/rest/api/web/)
     #
-    # The HMC exposes user management and other non-UOM resources under
-    # /rest/api/web/ with the MEDIA_WEB content type.  These helpers mirror
+    # The HMC exposes non-UOM resources under /rest/api/web/ with the MEDIA_WEB
+    # content type. These helpers mirror
     # _get/_post/_delete but use MEDIA_WEB for Content-Type and Accept.
     #
-    # Auth assumption: /rest/api/web/HmcUser (and sibling web endpoints)
-    # accept the same X-API-Session token that _get/_post/_delete use.
-    # This is consistent with the HMC REST API design — the token is set
-    # on the shared httpx client during logon and applies to every request,
-    # including the /rest/api/web/Logon and /rest/api/web/Logoff calls that
-    # already use MEDIA_WEB in this file.  The ansible-power-hmc reference
-    # implementation uses the same session token for HmcUser operations.
+    # The session token is set on the shared httpx client during logon and
+    # therefore applies to documented web resources that use these helpers.
     # ------------------------------------------------------------------ #
 
     def _web_headers(self, extra: dict[str, str]) -> dict[str, str]:

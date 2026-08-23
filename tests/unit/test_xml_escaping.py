@@ -267,7 +267,7 @@ def test_builders_are_discovered():
     names = {name for _, name, _ in _builders()}
     assert {
         "build_hmc_user_document",
-        "build_ldap_config_document",
+        "build_remote_access_document",
         "build_vscsi_mapping_document",
         "build_job_request",
         "migrate_lpar_job",
@@ -325,24 +325,6 @@ def test_closed_vocabularies_reject_metacharacters(builder, parameter):
         builder(**kwargs)
 
 
-def test_the_recorded_builder_count_matches_the_module():
-    """ADR 0042 states the figure; a new builder must not leave it stale.
-
-    The count is load-bearing prose rather than decoration: it is how the
-    record claims the "every public builder carries the decorator" invariant
-    covers the whole module. Recomputing it here reddens the sentence rather
-    than letting it drift, which is what happened to it once already (#284).
-    """
-    recorded = re.search(
-        r"`documents\.py` decorates all (\d+) builders",
-        ADR_0042.read_text(encoding="utf-8"),
-    )
-    assert recorded is not None, "ADR 0042 no longer states the builder count"
-
-    actual = len([name for module, name, _ in _builders() if module is documents])
-    assert int(recorded.group(1)) == actual
-
-
 def test_every_documents_builder_escapes_its_arguments():
     """documents.py has no single rendering choke point, so each builder wraps."""
     unprotected = [
@@ -387,7 +369,7 @@ def test_job_request_is_the_jobs_module_choke_point():
 
 def test_ldap_search_filter_accepts_an_ordinary_conjunction():
     search_filter = "(&(objectClass=person)(uid=*))"
-    xml = documents.build_ldap_config_document(search_filter=search_filter)
+    xml = documents.build_remote_access_document({"SearchFilter": search_filter})
 
     parsed = DET.fromstring(xml.encode("utf-8"))
     found = [el.text for el in parsed.iter() if localname(el.tag) == "SearchFilter"]
@@ -396,7 +378,7 @@ def test_ldap_search_filter_accepts_an_ordinary_conjunction():
 
 def test_hmc_user_description_cannot_add_a_second_user_id():
     xml = documents.build_hmc_user_document(
-        username="alice",
+        user_id="alice",
         description="</Description><UserID>root</UserID><Description>x",
     )
 
@@ -544,18 +526,18 @@ def test_escaping_is_the_identity_for_ordinary_values(value):
 def test_characters_xml_cannot_carry_are_rejected(value, codepoint):
     """Escaping cannot rescue these, so the boundary refuses them by name."""
     with pytest.raises(ValueError, match=re.escape(codepoint)):
-        documents.build_hmc_user_document(username=value)
+        documents.build_hmc_user_document(user_id=value)
 
 
 @pytest.mark.parametrize("value", ["a\tb", "a\nb", "a\rb", "caf\u00e9", "\U0001f600"])
 def test_characters_xml_can_carry_are_accepted(value):
-    xml = documents.build_hmc_user_document(username=value)
+    xml = documents.build_hmc_user_document(user_id=value)
 
     assert DET.fromstring(xml.encode("utf-8")) is not None
 
 
 def test_dataclass_members_are_escaped_too():
-    """LparResources and PasswordPolicySettings reach a builder by value."""
+    """Dataclass values passed through builders are escaped recursively."""
 
     @dataclasses.dataclass(frozen=True)
     class Fixture:

@@ -286,26 +286,32 @@ def test_an_omitted_optional_selector_denies_on_a_destructive_tool():
     )
 
 
-def test_a_table_grant_never_reaches_a_selector_less_destructive_tool():
-    """Reading (i) — the silent fail-open — refused on the real index.
-
-    The grant reads as "may destroy victim on sys-1 in the lab". Without this
-    rule it would also delete the lab console's entire LDAP configuration.
-    """
+def test_remote_access_update_is_bound_to_its_console_selector():
     grants = [
         {
-            "effects": ["destructive"],
+            "effects": ["mutate"],
             "connections": ["lab"],
-            "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
+            "targets": {"console": ["console-1"]},
         }
     ]
-    assert TOOL_SECURITY["hmc_remove_ldap_config"].targets == ()
-    with pytest.raises(TargetScopeError, match="all-targets"):
+    targets = TOOL_SECURITY["hmc_configure_remote_access"].targets
+    assert {(target.kind, target.argument) for target in targets} == {
+        ("console", "console_uuid")
+    }
+    with pytest.raises(TargetScopeError, match="target"):
         _authorize(
-            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "console-2", "values": {}, "profile": "lab"},
         )
-    # The same grant still authorizes the tool it does describe.
-    assert _authorize(grants, "hmc_delete_lpar", _delete()) is None
+    assert (
+        _authorize(
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "console-1", "values": {}, "profile": "lab"},
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -374,7 +380,9 @@ def test_all_targets_reaches_everything_the_table_could_not():
     ]
     assert (
         _authorize(
-            grants, "hmc_remove_ldap_config", {"resource": "ldap", "profile": "lab"}
+            grants,
+            "hmc_configure_remote_access",
+            {"console_uuid": "anything", "values": {}, "profile": "lab"},
         )
         is None
     )
@@ -418,18 +426,6 @@ def test_all_targets_reaches_everything_the_table_could_not():
                 }
             ],
             id="omitted-optional-selector",
-        ),
-        pytest.param(
-            "hmc_remove_ldap_config",
-            {"resource": "ldap"},
-            [
-                {
-                    "effects": ["destructive"],
-                    "connections": ["lab"],
-                    "targets": {"managed_system": ["sys-1"], "lpar": ["victim"]},
-                }
-            ],
-            id="tool-a-table-cannot-bound",
         ),
     ],
 )
