@@ -192,7 +192,6 @@ def test_a_non_job_link_is_refused(path):
 # which is the argument for guarding the waist rather than the call sites.
 _SUB_RESOURCE_CALLS = (
     ("delete_child", ("LogicalPartition", "AUTH", "ClientNetworkAdapter", "{X}")),
-    ("delete_storage_mapping", ("AUTH", "{X}")),
     ("delete_optical_mapping", ("{X}", "lpar", "media")),
     ("create_virtual_disk", ("AUTH", "{X}", "disk", 1)),
     ("delete_virtual_disk", ("AUTH", "{X}", "disk")),

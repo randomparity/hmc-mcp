@@ -158,10 +158,9 @@ async def list_storage_mappings(
 async def detach_storage_mapping(
     hmc: HMCClient, vios: str, mapping_uuid: str
 ) -> None:
-    """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage).
+    """Detach a VirtualSCSIMapping while preserving its backing storage.
 
-    mapping_uuid is the UUID of the VirtualSCSIMapping to delete. This removes
-    the mapping only; the backing PhysicalVolume or VirtualDisk is not affected.
+    ``mapping_uuid`` is the exact UUID returned by ``list_storage_mappings``.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     await hmc.delete_storage_mapping(vios_uuid, mapping_uuid)

@@ -205,13 +205,71 @@ class StorageMixin:
     async def delete_storage_mapping(
         self: StorageClient, vios_uuid: str, mapping_uuid: str
     ) -> None:
-        """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+        """Detach one mapping through its parent VirtualIOServer document."""
+        if not mapping_uuid:
+            raise HMCError("Storage mapping UUID must not be empty")
 
-        This removes the mapping only; the backing storage (PhysicalVolume or
-        VirtualDisk) is preserved.
-        """
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VirtualSCSIMapping/{mapping_uuid}"
-        await self._delete(path)
+        get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+        vios_xml = await self._get(
+            get_path, "VirtualIOServer", include_schema_version=False
+        )
+        if not vios_xml:
+            raise HMCError(f"GET {get_path} returned empty response", 200, "")
+        try:
+            root = ET.fromstring(vios_xml)
+        except ET.ParseError as exc:
+            raise HMCError(
+                "VirtualIOServer GET response is not valid XML", 200, vios_xml
+            ) from exc
+
+        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
+        if vios_elem is None and root.tag == f"{{{_UOM_NS}}}VirtualIOServer":
+            vios_elem = root
+        if vios_elem is None:
+            raise HMCError(
+                "VirtualIOServer GET response has no VirtualIOServer resource",
+                200,
+                vios_xml,
+            )
+        mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
+        if mappings is None:
+            raise HMCError(
+                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+            )
+        matches = [
+            mapping
+            for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
+            if (mapping.findtext(f"{{{_UOM_NS}}}UUID") or "").strip()
+            == mapping_uuid
+        ]
+        if not matches:
+            raise HMCError(
+                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+            )
+        if len(matches) != 1:
+            raise HMCError(
+                f"Storage mapping UUID {mapping_uuid!r} matched {len(matches)} mappings; "
+                "refusing an ambiguous detach"
+            )
+
+        mappings.remove(matches[0])
+        system_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
+        post_path = (
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
+        )
+        response = await self._request(
+            "POST",
+            post_path,
+            content=ET.tostring(vios_elem, encoding="unicode"),
+            headers={
+                "Accept": "*/*",
+                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+            },
+        )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(
+                f"POST {post_path} failed", response.status_code, response.text
+            )
 
     # ------------------------------------------------------------------ #
     # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
