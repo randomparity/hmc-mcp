@@ -89,36 +89,12 @@ pytest/respx, ruff, ty, and uv.
      tests/app/test_capabilities.py
    ```
 
-5. In `src/hmc_mcp/jobs.py`, define the exact interfaces:
-
-   ```python
-   VIOSUpdateResourceType = Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"]
-   VIOSUpgradeResourceType = Literal["HMC", "NFS", "SFTP", "USB"]
-
-   class _VIOSSourceBase(TypedDict, total=False):
-       Name: Annotated[str, Field(description="Name of the VIOS image.")]
-       ServerHostOrIP: Annotated[str, Field(description="Remote server host or IP.")]
-       UserName: Annotated[str, Field(description="Remote SFTP user name.")]
-       Password: Annotated[str, Field(description="Remote SFTP password.")]
-       SSHKey: Annotated[str, Field(description="SSH private key for SFTP.")]
-       PassPhrase: Annotated[str, Field(description="SSH-key passphrase.")]
-       RemoteDirectory: Annotated[str, Field(description="Remote image directory.")]
-       FileNames: Annotated[str, Field(description="Comma-separated image files.")]
-       MountLocation: Annotated[str, Field(description="NFS mount location.")]
-       MountOptions: Annotated[str, Field(description="Additional NFS mount options.")]
-       USBDevice: Annotated[str, Field(description="USB device name.")]
-       SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
-
-   class VIOSUpdateSource(_VIOSSourceBase, total=False):
-       ResourceType: Required[VIOSUpdateResourceType]
-       RestartVIOS: Annotated[str, Field(description="Restart VIOS after update.")]
-
-   class VIOSUpgradeSource(_VIOSSourceBase, total=False):
-       ResourceType: Required[VIOSUpgradeResourceType]
-       Disks: Annotated[str, Field(description="Comma-separated free physical volumes.")]
-
-   VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
-   ```
+5. In `src/hmc_mcp/jobs.py`, define one described TypedDict variant per
+   operation and `ResourceType`, then expose their union as `VIOSSource`.
+   Each variant's schema requires its discriminator and source-specific fields:
+   HMC requires `Name`, NFS/SFTP require `ServerHostOrIP` and
+   `RemoteDirectory`, USB requires `USBDevice`, and every upgrade requires
+   `Disks`. Keep `RestartVIOS` update-only and `Disks` upgrade-only.
 
    Add operation-specific key/type constants and a validator that rejects
    unknown or missing parameters with operation-named actionable messages,

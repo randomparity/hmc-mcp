@@ -514,9 +514,24 @@ class ConsoleUpdateSource(TypedDict, total=False):
 
 _CONSOLE_UPDATE_KEYS = frozenset(ConsoleUpdateSource.__annotations__)
 
+_VIOS_NAME = Annotated[str, Field(description="Name of the VIOS image.")]
+_VIOS_SERVER = Annotated[str, Field(description="Remote server host or IP.")]
+_VIOS_REMOTE_DIRECTORY = Annotated[str, Field(description="Remote image directory.")]
+_VIOS_FILE_NAMES = Annotated[str, Field(description="Comma-separated image files.")]
+_VIOS_MOUNT_LOCATION = Annotated[str, Field(description="NFS mount location.")]
+_VIOS_MOUNT_OPTIONS = Annotated[str, Field(description="Additional NFS mount options.")]
+_VIOS_USER = Annotated[str, Field(description="Remote SFTP user name.")]
+_VIOS_PASSWORD = Annotated[str, Field(description="Remote SFTP password.")]
+_VIOS_SSH_KEY = Annotated[str, Field(description="SSH private key for SFTP.")]
+_VIOS_PASSPHRASE = Annotated[str, Field(description="SSH-key passphrase.")]
+_VIOS_USB_DEVICE = Annotated[str, Field(description="USB device name.")]
+_VIOS_DISKS = Annotated[
+    str, Field(description="Comma-separated free physical volumes.")
+]
+
 
 class _VIOSOptionalSource(TypedDict, total=False):
-    Name: Annotated[str, Field(description="Name of the VIOS image.")]
+    Name: _VIOS_NAME
     SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
 
 
@@ -525,38 +540,42 @@ class _VIOSUpdateOptional(_VIOSOptionalSource, total=False):
 
 
 class VIOSUpdateHMCSource(TypedDict):
-    ResourceType: Literal["HMC"]
-    Name: str
-    RestartVIOS: NotRequired[str]
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    RestartVIOS: NotRequired[
+        Annotated[str, Field(description="Restart the VIOS after the update.")]
+    ]
 
 
 class VIOSUpdateNFSSource(_VIOSUpdateOptional):
-    ResourceType: Literal["NFS"]
-    ServerHostOrIP: str
-    RemoteDirectory: str
-    FileNames: NotRequired[str]
-    MountLocation: NotRequired[str]
-    MountOptions: NotRequired[str]
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
 
 
 class VIOSUpdateSFTPSource(_VIOSUpdateOptional):
-    ResourceType: Literal["SFTP"]
-    ServerHostOrIP: str
-    RemoteDirectory: str
-    UserName: NotRequired[str]
-    Password: NotRequired[str]
-    SSHKey: NotRequired[str]
-    PassPhrase: NotRequired[str]
-    FileNames: NotRequired[str]
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
 
 
 class VIOSUpdateUSBSource(_VIOSUpdateOptional):
-    ResourceType: Literal["USB"]
-    USBDevice: str
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
 
 
 class VIOSUpdateIBMWebsiteSource(_VIOSUpdateOptional):
-    ResourceType: Literal["IBMWebsite"]
+    ResourceType: Annotated[
+        Literal["IBMWebsite"], Field(description="IBM website image source.")
+    ]
 
 
 VIOSUpdateSource = (
@@ -569,37 +588,37 @@ VIOSUpdateSource = (
 
 
 class VIOSUpgradeHMCSource(TypedDict):
-    ResourceType: Literal["HMC"]
-    Name: str
-    Disks: str
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    Disks: _VIOS_DISKS
 
 
 class VIOSUpgradeNFSSource(_VIOSOptionalSource):
-    ResourceType: Literal["NFS"]
-    ServerHostOrIP: str
-    RemoteDirectory: str
-    Disks: str
-    FileNames: NotRequired[str]
-    MountLocation: NotRequired[str]
-    MountOptions: NotRequired[str]
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
 
 
 class VIOSUpgradeSFTPSource(_VIOSOptionalSource):
-    ResourceType: Literal["SFTP"]
-    ServerHostOrIP: str
-    RemoteDirectory: str
-    Disks: str
-    UserName: NotRequired[str]
-    Password: NotRequired[str]
-    SSHKey: NotRequired[str]
-    PassPhrase: NotRequired[str]
-    FileNames: NotRequired[str]
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
 
 
 class VIOSUpgradeUSBSource(_VIOSOptionalSource):
-    ResourceType: Literal["USB"]
-    USBDevice: str
-    Disks: str
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
+    Disks: _VIOS_DISKS
 
 
 VIOSUpgradeSource = (

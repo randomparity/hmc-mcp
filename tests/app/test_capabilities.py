@@ -566,6 +566,11 @@ def test_update_source_enums_match_runtime_constants():
         source["properties"]["ResourceType"]["const"] for source in upgrade_sources
     } == set(_VIOS_UPGRADE_RESOURCE_TYPES)
     assert all("ResourceType" in source["required"] for source in variants)
+    assert all(
+        property_schema.get("description")
+        for source in variants
+        for property_schema in source["properties"].values()
+    )
     update_required = {
         source["properties"]["ResourceType"]["const"]: set(source["required"])
         for source in update_sources
