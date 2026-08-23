@@ -21,7 +21,6 @@ VIOS_GET_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
-        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>
@@ -188,7 +187,6 @@ VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone
     <content>
       <VirtualIOServer xmlns="{UOM_NS}" schemaVersion="V1_0">
         <Metadata><Atom/></Metadata>
-        <UUID>{VIOS_UUID}</UUID>
         <AssociatedManagedSystem href="https://hmc.test:12443/rest/api/uom/ManagedSystem/{SYS_UUID}" rel="related"/>
         <VirtualSCSIMappings kb="CUD" kxe="false" schemaVersion="V1_0">
           <Metadata><Atom/></Metadata>

@@ -750,7 +750,9 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        vios_elem = _find_vios_element(root, vios_uuid)
+        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
+        if vios_elem is None:
+            vios_elem = root  # already the VirtualIOServer element
         sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
@@ -844,7 +846,9 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        vios_elem = _find_vios_element(root, vios_uuid)
+        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
+        if vios_elem is None:
+            vios_elem = root
         sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
