@@ -98,9 +98,14 @@ Focused tests must first fail on the old operation/path, old keys, schema,
 operation-specific invalid inputs, path injection, and missing `stdOut`
 projection. Builder tests then prove exact operation and parameter names;
 application/system tests prove exact paths and validation-before-I/O; schema
-tests prove the documented union; result tests cover list, singleton, empty,
-and malformed result forms. README text names the documented contract and the
-wait-only projection. `just test`, `just smoke`, and `just verify` must pass.
+tests prove the documented union. Result fixtures cover singleton and list
+forms; malformed or nonmatching entries before a valid `stdOut`; a first valid
+entry followed by empty, malformed, and valid duplicates; whitespace-only and
+non-string values; case-sensitive parameter names; preservation of the raw job;
+and `wait=False` returning unprojected submission metadata. They assert that the
+first non-empty string is trimmed and wins. README text names the documented
+contract and the wait-only projection. `just test`, `just smoke`, and
+`just verify` must pass.
 
 No live HMC is required to establish the static contract. If no suitable live
 VIOS update target is available, the handoff states that live validation was
