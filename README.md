@@ -826,8 +826,8 @@ its matching read-succeeded flag set means verified absence.
 
 | Tool                        | Description |
 |-----------------------------|-------------|
-| `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
-| `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
+| `hmc_get_pcm_preferences`   | Read managed-system monitoring flags |
+| `hmc_set_pcm_preferences`   | Enable/disable managed-system PCM collection |
 | `hmc_processed_metric_links`    | List processed metric documents (30s, ~2h retention) |
 | `hmc_processed_metrics`         | Download the newest processed metric document |
 | `hmc_aggregated_metric_links`   | List aggregated metric documents (trend rollup) |
@@ -836,11 +836,14 @@ its matching read-succeeded flag set means verified absence.
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
 > links. The `*_metric_links` tools return the link list, while the `*_metrics`
 > tools download the most recent document (or `{}` when none are in range). The CLI
-> `metrics show` accepts `--fetch` to do both in one step. Long-term
+> `metrics show` accepts `--fetch` to do both in one step. Logical-partition
+> processed and aggregated metrics require the owning managed system through
+> `system_name_or_uuid` (MCP) or `--system` (CLI); their endpoint is nested
+> below that system. Long-term
 > monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
-> before processed/aggregated metrics accumulate. Categories include
-> `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
-> `VirtualIOServer`, `SharedStoragePool`, `Cluster`.
+> before processed/aggregated metrics accumulate. Preferences and raw Long
+> Term Monitor feeds are documented only for `ManagedSystem`, not
+> `LogicalPartition`.
 
 **Users & access (HMC user administration)**
 

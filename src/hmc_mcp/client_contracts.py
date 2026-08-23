@@ -103,6 +103,8 @@ class PcmClient(Protocol):
         start_ts: str,
         end_ts: str | None,
         no_of_samples: int | None,
+        *,
+        system_uuid: str | None = None,
     ) -> list[dict[str, str]]: ...
 
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]: ...

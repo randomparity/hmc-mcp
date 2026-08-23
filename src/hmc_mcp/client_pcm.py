@@ -64,10 +64,18 @@ class PcmMixin:
         start_ts: str,
         end_ts: str | None = None,
         no_of_samples: int | None = None,
+        *,
+        system_uuid: str | None = None,
     ) -> list[dict[str, str]]:
         """Links to ProcessedMetrics JSON (30s granularity, ~2h retention)."""
         return await self._metrics_links(
-            category, resource_uuid, "ProcessedMetrics", start_ts, end_ts, no_of_samples
+            category,
+            resource_uuid,
+            "ProcessedMetrics",
+            start_ts,
+            end_ts,
+            no_of_samples,
+            system_uuid=system_uuid,
         )
 
     async def get_aggregated_metric_links(
@@ -77,6 +85,8 @@ class PcmMixin:
         start_ts: str,
         end_ts: str | None = None,
         no_of_samples: int | None = None,
+        *,
+        system_uuid: str | None = None,
     ) -> list[dict[str, str]]:
         """Links to AggregatedMetrics JSON (long-term rollup)."""
         return await self._metrics_links(
@@ -86,6 +96,7 @@ class PcmMixin:
             start_ts,
             end_ts,
             no_of_samples,
+            system_uuid=system_uuid,
         )
 
     async def get_ltm_metric_links(
@@ -96,6 +107,11 @@ class PcmMixin:
         end_ts: str | None = None,
     ) -> list[dict[str, str]]:
         """Links to raw Long Term Monitor metrics JSON."""
+        if category != "ManagedSystem":
+            raise ValueError(
+                "Long Term Monitor metrics are documented only for ManagedSystem; "
+                "LogicalPartition is not supported."
+            )
         return await self._metrics_links(
             category,
             resource_uuid,
@@ -113,14 +129,31 @@ class PcmMixin:
         start_ts: str,
         end_ts: str | None,
         no_of_samples: int | None,
+        *,
+        system_uuid: str | None = None,
     ) -> list[dict[str, str]]:
-
+        if category == "LogicalPartition":
+            if system_uuid is None:
+                raise ValueError(
+                    "LogicalPartition metrics require the owning system_name_or_uuid."
+                )
+            resource_path = (
+                f"ManagedSystem/{system_uuid}/LogicalPartition/{resource_uuid}"
+            )
+        elif category == "ManagedSystem":
+            if system_uuid is not None:
+                raise ValueError(
+                    "system_name_or_uuid is valid only for LogicalPartition metrics."
+                )
+            resource_path = f"ManagedSystem/{resource_uuid}"
+        else:
+            resource_path = f"{category}/{resource_uuid}"
         query: dict[str, str] = {"StartTS": start_ts}
         if end_ts:
             query["EndTS"] = end_ts
         if no_of_samples:
             query["NoOfSamples"] = str(no_of_samples)
-        path = f"/rest/api/pcm/{category}/{resource_uuid}/{kind}?{urlencode(query)}"
+        path = f"/rest/api/pcm/{resource_path}/{kind}?{urlencode(query)}"
         return await self.get_metrics_feed(path)
 
     async def fetch_json(self: PcmClient, link: str) -> dict[str, Any]:

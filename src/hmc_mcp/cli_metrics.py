@@ -27,7 +27,7 @@ from .operations_pcm import (
 @metrics_app.command("prefs")
 def metrics_prefs(
     category: PcmCategory = typer.Argument(
-        ..., help="ManagedSystem or LogicalPartition"
+        ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
 ) -> None:
@@ -41,7 +41,7 @@ def metrics_prefs(
 @metrics_app.command("set-prefs")
 def metrics_set_prefs(
     category: PcmCategory = typer.Argument(
-        ..., help="ManagedSystem or LogicalPartition"
+        ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     ltm: bool | None = typer.Option(
@@ -93,6 +93,11 @@ def metrics_show(
     fetch: bool = typer.Option(
         False, "--fetch", help="Also download the latest JSON doc"
     ),
+    system_name_or_uuid: str | None = typer.Option(
+        None,
+        "--system",
+        help="Owning managed system; required for LogicalPartition",
+    ),
 ) -> None:
     """Get PCM metrics (processed by default; --aggregated for rollups)."""
 
@@ -101,7 +106,14 @@ def metrics_show(
             kind = "aggregated" if aggregated else "processed"
             operation = metric_data if fetch else metric_links
             return await operation(
-                hmc, category, resource_uuid, kind, start, end, samples
+                hmc,
+                category,
+                resource_uuid,
+                kind,
+                start,
+                end,
+                samples,
+                system_name_or_uuid,
             )
 
     result = _run(_go)
