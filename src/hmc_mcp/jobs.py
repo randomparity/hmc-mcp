@@ -22,6 +22,8 @@ from .xmlutil import WEB_NS, escapes_string_arguments
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
+RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
+REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 
@@ -150,13 +152,13 @@ def _job_error(resource: dict[str, Any], status: str) -> str | None:
                 name = parameter.get("ParameterName")
                 value = parameter.get("ParameterValue")
                 if (
-                    name in {"result", "ErrorData"}
+                    name in {"result", "detailedStatus", "ErrorData"}
                     and name not in messages
                     and isinstance(value, str)
                     and value.strip()
                 ):
                     messages[name] = value.strip()
-            for name in ("ErrorData", "result"):
+            for name in ("ErrorData", "detailedStatus", "result"):
                 if name in messages:
                     return messages[name]
 
@@ -442,11 +444,46 @@ def migrate_recover_lpar_job() -> str:
     return build_job_request("MigrateRecover", "LogicalPartition")
 
 
-def remote_restart_lpar_job(target_system: str) -> str:
-    """RemoteRestart job: restart a failed LPAR on another managed system."""
-    return build_job_request(
-        "RemoteRestart", "LogicalPartition", _lpm_params(target_system, {})
-    )
+def remote_restart_lpar_job(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    *,
+    target_managed_system: str | None = None,
+    target_managed_system_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
+) -> str:
+    """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
+        raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
+    if operation != "cleanup" and not (
+        target_managed_system or target_managed_system_uuid
+    ):
+        raise ValueError(
+            f"RemoteRestart {operation!r} requires a target managed system"
+        )
+    if target_managed_system and target_managed_system_uuid:
+        raise ValueError("Specify a target managed-system name or UUID, not both")
+    if use_current_data and operation != "restart":
+        raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
+    if retain_devices and operation != "cleanup":
+        raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
+    params = {
+        "Operation": operation,
+        "managedSystem": managed_system,
+        "logicalPartitionUuid": logical_partition_uuid,
+    }
+    if target_managed_system:
+        params["targetManagedSystem"] = target_managed_system
+    if target_managed_system_uuid:
+        params["targetManagedSystemUUID"] = target_managed_system_uuid
+    if use_current_data:
+        params["usecurrdata"] = "true"
+    if retain_devices:
+        params["retaindev"] = "true"
+    return build_job_request("RemoteRestart", "LogicalPartition", params)
 
 
 # ---------------------------------------------------------------------- #

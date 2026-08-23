@@ -195,8 +195,8 @@ class FakeHMC:
         self._record("lpar_migrate_recover", lpar_uuid)
         return self.job
 
-    async def lpar_remote_restart(self, lpar_uuid, target):
-        self._record("lpar_remote_restart", lpar_uuid, target)
+    async def lpar_remote_restart(self, lpar_uuid, operation, source, **kwargs):
+        self._record("lpar_remote_restart", lpar_uuid, operation, source, **kwargs)
         return self.job
 
     async def create_volume_group(self, vios_uuid, name, physical_volumes):
@@ -2132,8 +2132,28 @@ def test_lpars_get_msp_via_ssh(monkeypatch):
             ("lpar_migrate_recover", (LPAR_UUID,), {}),
         ),
         (
-            ["lpars", "remote-restart", LPAR_NAME, "--target", "sys1", "--yes"],
-            ("lpar_remote_restart", (LPAR_UUID, "sys1"), {}),
+            [
+                "lpars",
+                "remote-restart",
+                LPAR_NAME,
+                "--operation",
+                "restart",
+                "--system",
+                "sys1",
+                "--target",
+                "target",
+                "--yes",
+            ],
+            (
+                "lpar_remote_restart",
+                (LPAR_UUID, "restart", "sys1"),
+                {
+                    "target_managed_system": "target",
+                    "target_managed_system_uuid": None,
+                    "use_current_data": False,
+                    "retain_devices": False,
+                },
+            ),
         ),
     ],
 )
@@ -2196,8 +2216,12 @@ def test_migrate_cli_rejects_effective_wait_timing_before_confirmation(fake_hmc)
             "lpars",
             "remote-restart",
             LPAR_NAME,
-            "--target",
+            "--operation",
+            "restart",
+            "--system",
             "sys1",
+            "--target",
+            "target",
             "--yes",
         ],
     ],

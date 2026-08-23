@@ -190,6 +190,22 @@ def test_job_outcome_prefers_error_data_regardless_of_parameter_order(names) -> 
     assert job_outcome("job-id", job).error == "failure text"
 
 
+def test_job_outcome_surfaces_detailed_status_when_error_data_is_absent() -> None:
+    job = {
+        "Resource": {
+            "Status": "FAILED",
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "detailedStatus",
+                    "ParameterValue": "target system unavailable",
+                }
+            },
+        }
+    }
+
+    assert job_outcome("job-id", job).error == "target system unavailable"
+
+
 def test_job_outcome_tolerates_truthy_non_mapping_resource() -> None:
     outcome = job_outcome(" requested-id ", {"Resource": "unexpected"})
 

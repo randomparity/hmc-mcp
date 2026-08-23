@@ -324,7 +324,9 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by issue #385, which added the ``capture_lpar_console``
+        Last moved by issue #401, which made the destructive RemoteRestart
+        operation and source-system selector explicit (ADR 0078). Before that,
+        issue #385 added the ``capture_lpar_console``
     operation, the ``ConsoleCapture`` result model, and the
     ``ConsoleHeldError`` contention error (ADR 0072). Before that, #375
     added the ``list_lpar_ownership`` operation (bulk per-system LPAR
@@ -357,10 +359,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #385: capture_lpar_console / ConsoleCapture / ConsoleHeldError
-    # joined the manifest (ADR 0072; #375's list_lpar_ownership moved it
-    # before that).
-    expected_digest = "577c7dc9d26cdca8fc8ed9d19e5712d19a48d292c82011f1b3d04042464e67b7"  # pragma: allowlist secret
+    # Moved by #401: RemoteRestart requires explicit operation/source selectors
+    # and conditional options (ADR 0078).
+    expected_digest = "fe73fdecf2910dc786c309f79c401387aafc8ea9e92db61792e307f180b4014a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
