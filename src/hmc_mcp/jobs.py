@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import HMCError
 from .xmlutil import WEB_NS, escapes_string_arguments
@@ -662,6 +662,142 @@ _VIOS_UPGRADE_REQUIRED = {
     "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
     "USB": frozenset({"USBDevice", "Disks"}),
 }
+
+
+_PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
+
+
+class SRIOVAdapterUpdateModel(BaseModel):
+    """One documented SR-IOV adapter update selection."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    AdapterID: Annotated[str, Field(description="SR-IOV adapter identifier.")]
+    SubType: Annotated[
+        Literal["adapterdriver", "Adapter", "adapterdriver,adapter"],
+        Field(description="Documented SR-IOV firmware update subtype."),
+    ]
+
+
+class SystemFirmwareUpdateModel(BaseModel):
+    """System firmware and nested SR-IOV work for PlatformUpdate."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "Upgrade", "NoUpdate"],
+        Field(description="System firmware action."),
+    ]
+    UpdateOrder: Annotated[int, Field(description="Platform update execution order.")]
+    SRIOVAdapterUpdate: Annotated[
+        list[SRIOVAdapterUpdateModel] | None,
+        Field(description="SR-IOV adapters updated with the system firmware step."),
+    ] = None
+
+    @model_validator(mode="after")
+    def reject_empty_sriov(self) -> "SystemFirmwareUpdateModel":
+        """Reject an explicitly empty adapter selection."""
+        if self.SRIOVAdapterUpdate == []:
+            raise ValueError("SRIOVAdapterUpdate must contain at least one adapter")
+        return self
+
+
+class IOAdapterUpdateModel(BaseModel):
+    """One documented VIOS-owned IO-adapter firmware update."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    Id: Annotated[str, Field(description="VIOS partition identifier.")]
+    Device: Annotated[str, Field(description="IO-adapter device name.")]
+    Repository: Annotated[
+        Literal["MOUNTPOINT", "SFTP", "USB", "IBMWebsite", "DISK", "disk"],
+        Field(description="Documented IO-adapter image repository."),
+    ]
+
+
+class VIOSPlatformUpdate(BaseModel):
+    """One VIOS update and its optional nested IO-adapter work."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "update", "Upgrade", "NoUpdate"],
+        Field(description="VIOS update action."),
+    ]
+    VIOSName: Annotated[str, Field(description="VIOS name.")]
+    UpdateOrder: Annotated[
+        int | None, Field(description="Platform update execution order.")
+    ] = None
+    Name: Annotated[str | None, Field(description="VIOS image name.")] = None
+    ResourceType: Annotated[
+        Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"] | None,
+        Field(description="VIOS image source."),
+    ] = None
+    IOAdapterUpdate: Annotated[
+        list[IOAdapterUpdateModel] | None,
+        Field(description="IO adapters owned by this VIOS."),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_update_shape(self) -> "VIOSPlatformUpdate":
+        """Enforce conditional resource and non-empty adapter requirements."""
+        if self.UpdateType != "NoUpdate" and self.ResourceType is None:
+            raise ValueError(f"ResourceType is required for {self.UpdateType}")
+        if self.IOAdapterUpdate == []:
+            raise ValueError("IOAdapterUpdate must contain at least one adapter")
+        return self
+
+
+class PlatformUpdateParameter(BaseModel):
+    """Strict documented parameter object for the PlatformUpdate operation."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    SystemFirmwareUpdate: Annotated[
+        SystemFirmwareUpdateModel | None,
+        Field(description="System firmware and SR-IOV update selection."),
+    ] = None
+    VIOSUpdate: Annotated[
+        list[VIOSPlatformUpdate] | None,
+        Field(description="VIOS and IO-adapter update selections."),
+    ] = None
+
+    @model_validator(mode="after")
+    def require_update_action(self) -> "PlatformUpdateParameter":
+        """Reject requests that contain no firmware or adapter action."""
+        if self.VIOSUpdate == []:
+            raise ValueError("VIOSUpdate must contain at least one VIOS")
+        system_action = self.SystemFirmwareUpdate is not None and (
+            self.SystemFirmwareUpdate.UpdateType != "NoUpdate"
+            or self.SystemFirmwareUpdate.SRIOVAdapterUpdate is not None
+        )
+        vios_action = any(
+            update.UpdateType != "NoUpdate" or update.IOAdapterUpdate is not None
+            for update in self.VIOSUpdate or []
+        )
+        if not system_action and not vios_action:
+            raise ValueError("PlatformUpdate requires at least one update action")
+        return self
+
+
+SRIOVAdapterUpdate = SRIOVAdapterUpdateModel
+SystemFirmwareUpdate = SystemFirmwareUpdateModel
+IOAdapterUpdate = IOAdapterUpdateModel
+
+
+def platform_update_job(parameters: PlatformUpdateParameter) -> dict[str, Any]:
+    """Build the documented native JSON PlatformUpdate JobRequest."""
+    return {
+        "JobRequest": {
+            "RequestedOperation": {
+                "OperationName": "PlatformUpdate",
+                "GroupName": "ManagedSystem",
+            },
+            "JobParameters": {
+                "JobParameter": [
+                    {
+                        "ParameterName": "PlatformUpdateParameter",
+                        "ParameterValue": parameters.model_dump(exclude_none=True),
+                    }
+                ]
+            },
+        }
+    }
 
 
 class RepositorySource(TypedDict, total=False):
