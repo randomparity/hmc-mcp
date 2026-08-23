@@ -46,7 +46,7 @@ def _lpar_summary(
         # Description (REST field; full text from the resource if present)
         "description": res.get("Description"),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
-        # (vSCSI adapter → vios_partition_id → VIOS UUID → ViosStorageDetail
+        # (vSCSI adapter → vios_partition_id → VIOS UUID → mapping groups
         #  filtered by LPAR link) and is not included here. List VIOS resources to
         #  retrieve per-VIOS storage mappings, then filter by the LPAR's
         #  partition ID.

@@ -226,13 +226,15 @@ class SystemsMixin:
         return await self.list_uom("VirtualIOServer")
 
     async def get_vios_storage_detail(self, vios_uuid: str) -> dict[str, Any] | None:
-        """GET VirtualIOServer storage-detail group (device mappings).
+        """GET VirtualIOServer device mappings.
 
-        Fetches /rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail
-        and returns the parsed entry, which includes VirtualSCSIMappings and
-        VirtualFibreChannelMappings populated with physical/virtual device info.
+        Requests the documented ViosSCSIMapping and ViosFCMapping groups and
+        returns the parsed entry with both mapping collections populated.
         """
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
+        path = (
+            f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+            "?group=ViosSCSIMapping&group=ViosFCMapping"
+        )
         xml = await self._get(path, "VirtualIOServer")
         if not xml:
             return None
