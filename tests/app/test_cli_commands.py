@@ -3211,6 +3211,24 @@ def test_metrics_show_logical_partition_forwards_owning_system(fake_hmc):
     ]
 
 
+def test_metrics_show_logical_partition_requires_owning_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "LogicalPartition",
+            LPAR_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "system_name_or_uuid" in str(result.exception)
+    assert fake_hmc.calls == []
+
+
 def test_metrics_show_rejects_system_selector_for_managed_system(fake_hmc):
     result = RUNNER.invoke(
         cli.app,

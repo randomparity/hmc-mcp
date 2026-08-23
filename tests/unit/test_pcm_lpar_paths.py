@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from hmc_mcp import server_metrics
 from hmc_mcp.client import HMCClient
 from hmc_mcp.operations_pcm import (
     get_pcm_preferences,
@@ -34,12 +35,15 @@ async def test_processed_lpar_path_is_nested_under_owning_system(mock_hmc):
     ).mock(return_value=httpx.Response(200, text=FEED))
 
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.get_processed_metric_links(
-            "LogicalPartition",
-            LPAR_UUID,
-            "2026-08-07T11:00:00Z",
-            system_uuid=SYSTEM_UUID,
-        ) == []
+        assert (
+            await hmc.get_processed_metric_links(
+                "LogicalPartition",
+                LPAR_UUID,
+                "2026-08-07T11:00:00Z",
+                system_uuid=SYSTEM_UUID,
+            )
+            == []
+        )
 
     assert route.called
 
@@ -56,9 +60,7 @@ async def test_resolve_pcm_lpar_scopes_name_to_owning_system():
 
     assert target.resource_uuid == LPAR_UUID
     assert target.system_uuid == SYSTEM_UUID
-    hmc.find_partition_by_name.assert_awaited_once_with(
-        "aix1", system_uuid=SYSTEM_UUID
-    )
+    hmc.find_partition_by_name.assert_awaited_once_with("aix1", system_uuid=SYSTEM_UUID)
 
 
 @pytest.mark.asyncio
@@ -121,3 +123,36 @@ def test_metric_tools_preserve_positional_profile_slot(tool):
     parameters = list(inspect.signature(tool).parameters)
 
     assert parameters.index("profile") < parameters.index("system_name_or_uuid")
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (
+            hmc_processed_metrics,
+            ("LogicalPartition", LPAR_UUID, "2026-08-07T11:00:00Z"),
+        ),
+        (
+            hmc_processed_metric_links,
+            ("LogicalPartition", LPAR_UUID, "2026-08-07T11:00:00Z"),
+        ),
+    ],
+)
+def test_metric_tools_reject_missing_lpar_owner_before_client(monkeypatch, tool, args):
+    def fail_client_entry(_profile):
+        pytest.fail("invalid metric target entered the HMC client")
+
+    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+
+    with pytest.raises(ValueError, match="system_name_or_uuid"):
+        tool(*args)
+
+
+def test_preferences_tool_rejects_lpar_before_client(monkeypatch):
+    def fail_client_entry(_profile):
+        pytest.fail("unsupported preference target entered the HMC client")
+
+    monkeypatch.setattr(server_metrics, "client_from_env", fail_client_entry)
+
+    with pytest.raises(ValueError, match="ManagedSystem"):
+        server_metrics.hmc_get_pcm_preferences("LogicalPartition", LPAR_UUID)
