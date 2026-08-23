@@ -26,6 +26,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, get_args
+from xml.etree import ElementTree as ET  # nosec B405
+
+from defusedxml import ElementTree as DET
 
 from .xmlutil import ATOM_NS, WEB_NS, escapes_string_arguments
 
@@ -1076,13 +1079,20 @@ def build_hmc_user_document(
             f'  <UserDescription kb="CUR" kxe="false">{description}</UserDescription>'
         )
     if associated_task_role is not None:
-        parts.append(f'  <AssociatedTaskRole href="{associated_task_role}"/>')
-    if associated_resource_roles:
-        parts.append("  <AssociatedResourceRoles>")
-        parts.extend(
-            f'    <ResourceRole href="{role}"/>' for role in associated_resource_roles
-        )
-        parts.append("  </AssociatedResourceRoles>")
+        if associated_task_role:
+            parts.append(f'  <AssociatedTaskRole href="{associated_task_role}"/>')
+        else:
+            parts.append('  <AssociatedTaskRole kb="CUR" kxe="false"/>')
+    if associated_resource_roles is not None:
+        if associated_resource_roles:
+            parts.append("  <AssociatedResourceRoles>")
+            parts.extend(
+                f'    <ResourceRole href="{role}"/>'
+                for role in associated_resource_roles
+            )
+            parts.append("  </AssociatedResourceRoles>")
+        else:
+            parts.append('  <AssociatedResourceRoles kb="CUR" kxe="false"/>')
     for name, value in (
         ("PasswordExpiry", password_expiry),
         ("SessionTimeout", session_timeout),
@@ -1156,6 +1166,37 @@ def build_remote_access_document(
         parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
     parts.extend(f'  <{name} kb="CUR" kxe="false"/>' for name in cleared)
     return _document_envelope("ManagementConsole", "\n".join(parts), UOM_NS)
+
+
+def merge_remote_access_document(
+    current_xml: str,
+    values: dict[str, str | int | bool] | None = None,
+    clear_fields: list[str] | None = None,
+) -> str:
+    """Merge explicit RemoteAccess changes into the current console document."""
+    # Validate the requested mutation before parsing or changing the current document.
+    build_remote_access_document(values, clear_fields)
+    root = DET.fromstring(current_xml.encode("utf-8"))
+    console = root if root.tag.rsplit("}", 1)[-1] == "ManagementConsole" else None
+    if console is None:
+        console = root.find(".//{*}ManagementConsole")
+    if console is None:
+        raise ValueError("RemoteAccess response does not contain ManagementConsole")
+
+    children = {child.tag.rsplit("}", 1)[-1]: child for child in console}
+    for name, value in (values or {}).items():
+        child = children.get(name)
+        if child is None:
+            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
+        child.text = str(value).lower() if isinstance(value, bool) else str(value)
+    for name in clear_fields or []:
+        child = children.get(name)
+        if child is None:
+            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
+        child.clear()
+        child.set("kb", "CUR")
+        child.set("kxe", "false")
+    return ET.tostring(console, encoding="unicode")
 
 
 # ====================================================================== #

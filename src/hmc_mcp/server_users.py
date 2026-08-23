@@ -178,8 +178,9 @@ def hmc_modify_user(
         password: Replacement password, or None to leave unchanged.
         description: Replacement description, or None to leave unchanged.
         authentication_type: Replacement authentication type.
-        associated_task_role: Replacement TaskRole href.
-        associated_resource_roles: Replacement ResourceRole hrefs.
+        associated_task_role: Replacement TaskRole href; empty clears the role.
+        associated_resource_roles: Replacement ResourceRole hrefs; an empty list
+            removes all resource roles.
         password_expiry: Replacement password-expiry interval.
         session_timeout: Replacement session timeout.
         verify_session_timeout: Replacement timeout-verification setting.
@@ -313,10 +314,12 @@ def hmc_configure_remote_access(
         clear_fields: Documented properties to clear with empty XML elements.
         profile: TOML profile name, or the environment default when omitted.
     """
-    xml = build_remote_access_document(values, clear_fields)
+    # Validate before opening a network session; the client then merges these
+    # explicit changes into the current RemoteAccess group before posting.
+    build_remote_access_document(values, clear_fields)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.configure_remote_access(console_uuid, xml)
+            return await hmc.configure_remote_access(console_uuid, values, clear_fields)
 
     return _run(_go)

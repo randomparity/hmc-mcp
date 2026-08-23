@@ -58,6 +58,17 @@ def test_user_profile_builder_rejects_unknown_authentication_type() -> None:
         build_hmc_user_document(authentication_type="radius")
 
 
+def test_user_profile_builder_distinguishes_omitted_and_cleared_roles() -> None:
+    omitted = build_hmc_user_document()
+    cleared = build_hmc_user_document(
+        associated_task_role="", associated_resource_roles=[]
+    )
+    assert "AssociatedTaskRole" not in omitted
+    assert "AssociatedResourceRoles" not in omitted
+    assert '<AssociatedTaskRole kb="CUR" kxe="false"/>' in cleared
+    assert '<AssociatedResourceRoles kb="CUR" kxe="false"/>' in cleared
+
+
 @pytest.mark.asyncio
 async def test_user_profile_crud_uses_nested_uom_paths(mock_hmc) -> None:
     collection = f"/rest/api/uom/ManagementConsole/{CONSOLE}/UserProfile"

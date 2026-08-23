@@ -2,11 +2,13 @@
 
 import httpx
 import pytest
+from defusedxml import ElementTree as DET
 
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.documents import build_remote_access_document
+from hmc_mcp.errors import HMCError
 
 CONSOLE = "console-1"
 PATH = f"/rest/api/uom/ManagementConsole/{CONSOLE}?group=RemoteAccess"
@@ -50,7 +52,7 @@ def test_remote_access_builder_rejects_invalid_updates(values, clears, message) 
 
 
 @pytest.mark.asyncio
-async def test_remote_access_get_and_post_use_grouped_uom_path(mock_hmc) -> None:
+async def test_remote_access_get_merge_and_post_preserve_unmodified_fields(mock_hmc) -> None:
     get_route = mock_hmc.get(PATH).mock(
         return_value=httpx.Response(200, text=REMOTE_ACCESS)
     )
@@ -60,22 +62,39 @@ async def test_remote_access_get_and_post_use_grouped_uom_path(mock_hmc) -> None
     async with HMCClient(make_config()) as hmc:
         result = await hmc.get_remote_access(CONSOLE)
         updated = await hmc.configure_remote_access(
-            CONSOLE, build_remote_access_document({"LdapEnabled": True})
+            CONSOLE, {"LdapEnabled": False}, ["KerberosAuthenticationEnabled"]
         )
     assert result["Resource"]["PrimaryLdapUri"] == "ldaps://directory"
     assert updated is not None
     assert get_route.called and post_route.called
     assert (
+        get_route.calls[0].request.headers["accept"]
+        == "application/vnd.ibm.powervm.web+xml; type=ManagementConsole"
+    )
+    assert (
         "type=ManagementConsole" in post_route.calls[0].request.headers["content-type"]
     )
+    posted = DET.fromstring(post_route.calls[0].request.content)
+    fields = {node.tag.rsplit("}", 1)[-1]: node.text for node in posted}
+    assert fields["LdapEnabled"] == "false"
+    assert fields["PrimaryLdapUri"] == "ldaps://directory"
+    assert fields["KerberosAuthenticationEnabled"] is None
 
 
 @pytest.mark.asyncio
 async def test_remote_access_empty_responses_are_none(mock_hmc) -> None:
-    mock_hmc.get(PATH).mock(return_value=httpx.Response(204))
+    mock_hmc.get(PATH).mock(return_value=httpx.Response(200, text=REMOTE_ACCESS))
     mock_hmc.post(PATH).mock(return_value=httpx.Response(202, text=""))
     async with HMCClient(make_config()) as hmc:
-        assert await hmc.get_remote_access(CONSOLE) is None
-        assert (
-            await hmc.configure_remote_access(CONSOLE, "<ManagementConsole/>") is None
-        )
+        assert await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, []) is None
+
+
+@pytest.mark.asyncio
+async def test_remote_access_get_failure_does_not_post(mock_hmc) -> None:
+    get_route = mock_hmc.get(PATH).mock(return_value=httpx.Response(503, text="down"))
+    post_route = mock_hmc.post(PATH).mock(return_value=httpx.Response(200))
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="GET"):
+            await hmc.configure_remote_access(CONSOLE, {"LdapEnabled": True}, [])
+    assert get_route.called
+    assert not post_route.called
