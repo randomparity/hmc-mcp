@@ -29,9 +29,7 @@ def _client(validation: dict, migration: dict | None = None) -> AsyncMock:
     return client
 
 
-@pytest.mark.parametrize(
-    "status", ["COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"]
-)
+@pytest.mark.parametrize("status", ["COMPLETED", "COMPLETED_OK"])
 @pytest.mark.asyncio
 async def test_default_waits_for_validation_then_submits_migration(status: str) -> None:
     client = _client(_job(status))
@@ -69,7 +67,7 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     client.wait_for_job.assert_awaited_once()
 
 
-@pytest.mark.parametrize("status", ["FAILED", "EXCEPTION"])
+@pytest.mark.parametrize("status", ["FAILED", "EXCEPTION", "COMPLETED_WITH_WARNINGS"])
 @pytest.mark.asyncio
 async def test_failed_validation_blocks_migration_and_surfaces_detail(
     status: str,
