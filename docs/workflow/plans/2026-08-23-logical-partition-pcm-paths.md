@@ -54,18 +54,24 @@ no request.
 ## Task 3: Expose owner selection and preference errors
 
 Files: `src/hmc_mcp/server_metrics.py`, `src/hmc_mcp/operations_pcm.py`,
-`src/hmc_mcp/cli_metrics.py`, `tests/unit/test_pcm.py`.
+`src/hmc_mcp/cli_metrics.py`, `tests/unit/test_pcm.py`,
+`tests/app/test_cli_commands.py`.
 
 Interfaces: the four processed/aggregated MCP tools and CLI `metrics show` add
 optional `system_name_or_uuid`; preference operations reject
 `LogicalPartition` before resolution.
 
-1. Add tool tests for selector forwarding, missing-owner errors, preference
-   rejection, and unchanged managed-system calls.
-2. Run the focused test; expect the new tests to fail.
-3. Thread the selector through helpers and update docstrings/CLI help; add the
-   preference category guard.
-4. Run the focused test; expect success, then commit.
+1. Add operation and MCP tests for selector forwarding, missing-owner errors,
+   preference rejection, and supplied-owner rejection for `ManagedSystem`;
+   assert rejected calls invoke neither a resolver nor an HTTP client method.
+2. Add CLI tests that invoke `metrics show LogicalPartition <lpar> --system
+   <owner> --start <timestamp>`, assert owner forwarding, verify the `--system`
+   help spelling, and cover both missing-owner and managed-system misuse errors.
+3. Run `uv run pytest -q --no-cov tests/unit/test_pcm.py
+   tests/app/test_cli_commands.py`; expect the new cases to fail.
+4. Thread the selector through helpers and update docstrings/CLI help; add the
+   preference and selector/category guards before resource resolution.
+5. Run the same focused command; expect success, then commit.
 
 Acceptance: users can select the owner where supported and receive actionable
 errors where no endpoint exists.
