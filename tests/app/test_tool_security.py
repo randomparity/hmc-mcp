@@ -283,7 +283,6 @@ def test_lpm_tools_declare_their_source_system(tool_name):
     assert ("managed_system", "system_name_or_uuid") in pairs
 
 
-
 def test_provision_lpar_declares_its_nested_selectors():
     """#260: the VIOS identities one level below the signature are declared.
 
@@ -301,7 +300,6 @@ def test_provision_lpar_declares_its_nested_selectors():
         ("vios", "network.vios_partition_id", True),
         ("vios", "storage.vios_uuid", True),
     ]
-
 
 
 def test_backup_vios_non_exhaustive_scope_keeps_required_selector_metadata():
@@ -1550,6 +1548,7 @@ def hmc_probe(lpar_name_or_uuid: str, profile: str | None = None):
 _PAYLOAD_SOURCE_ARGUMENTS = frozenset(
     {
         "repository",
+        "platform_update",
         "install_source",
         "nim_gateway",
         "nim_subnetmask",
@@ -1605,7 +1604,7 @@ def test_payload_source_arguments_are_out_of_the_target_dimension_by_decision():
             ["install_source", "nim_gateway", "nim_subnetmask", "vios_ip"],
         ),
         "hmc_update_console_software": (True, ["repository"]),
-        "hmc_update_firmware": (True, ["repository"]),
+        "hmc_update_firmware": (True, ["platform_update"]),
         "hmc_upload_iso": (True, ["iso_source"]),
         "hmc_vios_update": (True, ["repository"]),
     }

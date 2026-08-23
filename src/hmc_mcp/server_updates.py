@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
+import re
 from typing import Any, Literal, cast
 from urllib.parse import quote
 
@@ -16,12 +17,12 @@ from .errors import HMCError
 from .jobs import (
     TERMINAL_JOB_STATUSES,
     ConsoleUpdateSource,
-    RepositorySource,
+    PlatformUpdateParameter,
     VIOSSource,
     VIOSUpdateSource,
     VIOSUpgradeSource,
-    update_firmware_job,
     update_hmc_job,
+    platform_update_job,
     update_vios_job,
     upgrade_vios_job,
     validate_wait_timing,
@@ -37,7 +38,10 @@ def _with_vios_stdout(
     if not wait or not isinstance(result, dict) or "stdOut" in result:
         return result
     resource = result.get("Resource")
-    if not isinstance(resource, dict) or resource.get("Status") not in TERMINAL_JOB_STATUSES:
+    if (
+        not isinstance(resource, dict)
+        or resource.get("Status") not in TERMINAL_JOB_STATUSES
+    ):
         return result
     output = vios_stdout(result)
     if output is None:
@@ -51,6 +55,49 @@ async def _update_op(
     """Submit an update/upgrade job on an already-open *hmc* client; optionally wait for terminal state."""
     job = await submit_fn(hmc)
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
+
+
+async def _platform_update_op(
+    hmc, submit_fn, wait: bool, timeout_seconds: int, poll_interval: int
+) -> dict[str, Any] | None:
+    """Submit PlatformUpdate without inventing an id-only polling endpoint."""
+    job = await submit_fn(hmc)
+    if not wait:
+        return job
+    if job is not None:
+        resource = job.get("Resource")
+        status = resource.get("Status") if isinstance(resource, dict) else None
+        if isinstance(status, str) and status in TERMINAL_JOB_STATUSES:
+            return job
+        link = job.get("link")
+        if not isinstance(link, str) or not link.strip():
+            raise HMCError(
+                "PlatformUpdate was accepted but cannot be polled because the HMC "
+                "returned a nonterminal response without a selfLink"
+            )
+    return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
+
+
+_PLATFORM_UPDATE_VERSION = re.compile(r"V(\d+)R(\d+)M(\d+)")
+_MINIMUM_PLATFORM_UPDATE_VERSION = (11, 1, 1111)
+
+
+def _require_platform_update_version(console: dict[str, Any] | None) -> None:
+    """Require documented PlatformUpdate support before resolving a target."""
+    resource = console.get("Resource") if isinstance(console, dict) else None
+    version = resource.get("VersionInfo") if isinstance(resource, dict) else None
+    match = (
+        _PLATFORM_UPDATE_VERSION.fullmatch(version)
+        if isinstance(version, str)
+        else None
+    )
+    parsed = tuple(int(part) for part in match.groups()) if match else None
+    if parsed is None or parsed < _MINIMUM_PLATFORM_UPDATE_VERSION:
+        observed = version if isinstance(version, str) and version else "unavailable"
+        raise ValueError(
+            "PlatformUpdate requires HMC 11.1.1111 or later; "
+            f"the connected HMC reported {observed!r}. Upgrade the HMC before retrying."
+        )
 
 
 tool, register_tools, tool_security = tool_module()
@@ -228,23 +275,23 @@ def hmc_vios_update(
 @tool(effect="destructive", operation="update.firmware", target_kind="managed_system")
 def hmc_update_firmware(
     system_name_or_uuid: str,
-    repository: RepositorySource,
+    platform_update: PlatformUpdateParameter,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Submit a managed system firmware update job.
+    """Submit a documented Power11 PlatformUpdate job.
 
-    repository describes the firmware image source (same format as
-    hmc_update_console_software). Submits an UpdateFirmware job to ManagedSystem; poll
-    hmc_get_job for status.
+    Requires HMC 11.1.1111 or later. ``platform_update`` explicitly selects
+    system firmware, SR-IOV, VIOS, and IO-adapter work using IBM's nested JSON
+    shape. Poll hmc_get_job for status when the HMC supplies a self link.
 
     Set wait=True to block until the job reaches a terminal state.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        repository: NFS, SFTP, or HMC-disk firmware source configuration.
+        platform_update: Strict documented PlatformUpdate parameter object.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -255,12 +302,13 @@ def hmc_update_firmware(
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            _require_platform_update_version(await hmc.get_console_info())
             system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            return await _update_op(
+            return await _platform_update_op(
                 hmc,
-                lambda hmc2: hmc2.submit_job(
-                    f"/rest/api/uom/ManagedSystem/{system_uuid}/do/UpdateFirmware",
-                    update_firmware_job(repository),
+                lambda hmc2: hmc2.submit_platform_update(
+                    system_uuid,
+                    platform_update_job(platform_update),
                 ),
                 wait,
                 timeout_seconds,

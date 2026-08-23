@@ -9,7 +9,7 @@ from pydantic import TypeAdapter
 
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
-    RepositorySource,
+    PlatformUpdateParameter,
     VIOSUpdateSource,
     VIOSUpgradeSource,
     job_identifier,
@@ -20,10 +20,13 @@ from hmc_mcp.jobs import (
 )
 
 
-def test_repository_source_builds_a_pydantic_type_adapter() -> None:
-    schema = TypeAdapter(RepositorySource).json_schema()
+def test_platform_update_builds_a_pydantic_schema() -> None:
+    schema = PlatformUpdateParameter.model_json_schema()
 
-    assert set(schema["properties"]) == set(RepositorySource.__annotations__)
+    assert set(schema["properties"]) == {
+        "SystemFirmwareUpdate",
+        "VIOSUpdate",
+    }
 
 
 @pytest.mark.parametrize("source", [VIOSUpdateSource, VIOSUpgradeSource])
