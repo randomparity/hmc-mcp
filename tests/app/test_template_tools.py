@@ -127,6 +127,7 @@ def test_deploy_partition_template_submits_job(monkeypatch, mock_hmc):
     body = route.calls.last.request.content.decode()
     assert "Deploy</OperationName>" in body
     assert "TargetUuid" in body and TARGET_SYSTEM_UUID in body
+    assert "TemplateUuid" in body and "draft-uuid" in body
     assert "K_X_API_SESSION_MEMENTO" in body
     assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["JobID"] == "job-uuid-999"

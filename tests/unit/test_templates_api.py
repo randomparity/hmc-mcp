@@ -37,10 +37,10 @@ TEMPLATE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 
 def test_deploy_job():
-    xml = deploy_partition_template_job("sys-uuid", "memento-1")
+    xml = deploy_partition_template_job("draft-uuid", "sys-uuid", "memento-1")
     assert "Deploy" in xml
     assert "TargetUuid" in xml and "sys-uuid" in xml
-    assert "TemplateUuid" not in xml  # draft UUID is in the URL, not a parameter
+    assert "TemplateUuid" in xml and "draft-uuid" in xml
     assert "K_X_API_SESSION_MEMENTO" in xml and "memento-1" in xml
 
 
@@ -85,5 +85,8 @@ async def test_deploy_partition_template(mock_hmc):
     async with HMCClient(make_config()) as hmc:
         job = await hmc.deploy_partition_template("draft-uuid", "sys-uuid")
     body = route.calls.last.request.content.decode()
-    assert "Deploy" in body and "TargetUuid" in body and "sys-uuid" in body
+    assert "Deploy" in body
+    assert "TargetUuid" in body and "sys-uuid" in body
+    assert "TemplateUuid" in body and "draft-uuid" in body
+    assert "K_X_API_SESSION_MEMENTO" in body
     assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"

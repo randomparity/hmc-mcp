@@ -491,12 +491,14 @@ def remote_restart_lpar_job(
 # ---------------------------------------------------------------------- #
 
 
-def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
+def deploy_partition_template_job(
+    draft_template_uuid: str, target_system_uuid: str, memento: str
+) -> str:
     """PartitionTemplate Deploy job.
 
-    target_system_uuid is the managed system to create the partition on;
-    memento is the X-API session ID of the logged-in user.
-    The draft template UUID is encoded in the URL, not as a parameter.
+    draft_template_uuid is the transformed template replica to deploy;
+    target_system_uuid is the managed system to create the partition on; memento
+    is the X-API session ID of the logged-in user.
     """
     return build_job_request(
         "Deploy",
@@ -504,6 +506,7 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
         {
             "K_X_API_SESSION_MEMENTO": memento,
             "TargetUuid": target_system_uuid,
+            "TemplateUuid": draft_template_uuid,
         },
     )
 

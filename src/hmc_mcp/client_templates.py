@@ -66,7 +66,9 @@ class TemplatesMixin:
         """
 
         memento = self._session_token or ""
-        xml = deploy_partition_template_job(target_system_uuid, memento)
+        xml = deploy_partition_template_job(
+            draft_template_uuid, target_system_uuid, memento
+        )
         return await self.submit_job(
             f"/rest/api/templates/PartitionTemplate/{draft_template_uuid}/do/deploy",
             xml,
