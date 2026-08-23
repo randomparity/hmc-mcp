@@ -789,8 +789,11 @@ class HMCClient(
         self, resource_type: str, property_name: str, property_value: str
     ) -> list[dict[str, Any]]:
         """GET /rest/api/uom/{ResourceType}/search/({Property}=={Value})."""
+        encoded_property = quote(property_name, safe="")
+        encoded_value = quote(property_value, safe="")
         path = (
-            f"/rest/api/uom/{resource_type}/search/({property_name}=={property_value})"
+            f"/rest/api/uom/{resource_type}/search/"
+            f"({encoded_property}=={encoded_value})"
         )
         xml = await self._get(path, resource_type)
         if not xml:

@@ -604,6 +604,43 @@ async def test_find_partition_by_name(mock_hmc):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("property_name", "property_value", "encoded_expression"),
+    [
+        (
+            "Partition Name",
+            "web server & db%#1+café",
+            "Partition%20Name==web%20server%20%26%20db%25%231%2Bcaf%C3%A9",
+        ),
+        ("State", "running", "State==running"),
+    ],
+)
+async def test_search_uom_encodes_only_interpolated_grammar_components(
+    mock_hmc, property_name, property_value, encoded_expression
+):
+    path = f"/rest/api/uom/LogicalPartition/search/({encoded_expression})"
+    route = mock_hmc.get(path).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        assert (
+            await hmc.search_uom("LogicalPartition", property_name, property_value)
+            == []
+        )
+
+    assert route.calls.last.request.url.raw_path.decode() == path
+
+
+@pytest.mark.asyncio
+async def test_search_uom_error_names_encoded_request_path(mock_hmc):
+    path = "/rest/api/uom/LogicalPartition/search/(PartitionName==web%20server)"
+    mock_hmc.get(path).mock(return_value=httpx.Response(500, text="failed"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="PartitionName==web%20server"):
+            await hmc.search_uom("LogicalPartition", "PartitionName", "web server")
+
+
+@pytest.mark.asyncio
 async def test_submit_power_on_job(mock_hmc):
     route = mock_hmc.put("/rest/api/uom/LogicalPartition/lpar-uuid/do/PowerOn").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
