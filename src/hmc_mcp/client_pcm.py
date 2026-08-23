@@ -23,6 +23,7 @@ class PcmMixin:
         self: PcmClient, category: str, resource_uuid: str
     ) -> dict[str, Any]:
         """Get PCM preferences for a resource (e.g. ManagedSystem)."""
+        _require_managed_system_preferences(category)
 
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
         xml = await self._get(path)
@@ -37,6 +38,7 @@ class PcmMixin:
         the updated preferences document (``{}`` when the response body is
         empty).
         """
+        _require_managed_system_preferences(category)
 
         xml = build_pcm_preferences_document(**flags)
         path = f"/rest/api/pcm/{category}/{resource_uuid}/preferences"
@@ -179,3 +181,11 @@ class PcmMixin:
                 f"GET {url} returned a JSON {type(document).__name__}; expected an object"
             )
         return document
+
+
+def _require_managed_system_preferences(category: str) -> None:
+    if category != "ManagedSystem":
+        raise ValueError(
+            "PCM preferences are documented only for ManagedSystem; "
+            "LogicalPartition is not supported."
+        )

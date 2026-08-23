@@ -85,3 +85,17 @@ async def test_ltm_rejects_lpar_before_request():
         )
 
     hmc._metrics_links.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_pcm_preferences", "set_pcm_preferences"])
+async def test_direct_client_rejects_lpar_preferences_before_request(method):
+    hmc = AsyncMock()
+    args = ("LogicalPartition", LPAR_UUID)
+    kwargs = {"LongTermMonitorEnabled": True} if method.startswith("set") else {}
+
+    with pytest.raises(ValueError, match="ManagedSystem"):
+        await getattr(HMCClient, method)(hmc, *args, **kwargs)
+
+    hmc._get.assert_not_awaited()
+    hmc._post_pcm.assert_not_awaited()
