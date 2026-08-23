@@ -9,7 +9,7 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, NotRequired, Protocol, get_args
+from typing import Annotated, Any, Literal, NotRequired, Protocol, Required, get_args
 from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
@@ -461,8 +461,10 @@ _CONSOLE_UPDATE_MEDIA_TYPES = frozenset(get_args(ConsoleUpdateMediaType))
 class ConsoleUpdateSource(TypedDict, total=False):
     """Documented parameters for ``UpdateManagementConsole``."""
 
-    MediaType: Annotated[
-        ConsoleUpdateMediaType, Field(description="Location of the update image.")
+    MediaType: Required[
+        Annotated[
+            ConsoleUpdateMediaType, Field(description="Location of the update image.")
+        ]
     ]
     ServerHostOrIP: Annotated[str, Field(description="Remote server hostname or IP.")]
     UserName: Annotated[str, Field(description="Remote server username.")]

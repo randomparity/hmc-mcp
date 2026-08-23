@@ -504,6 +504,10 @@ def test_update_source_enums_match_runtime_constants():
         "repository"
     ]["properties"]["MediaType"]
     assert set(media_type["enum"]) == set(_CONSOLE_UPDATE_MEDIA_TYPES)
+    repository = by_name["hmc_update_console_software"].parameters["properties"][
+        "repository"
+    ]
+    assert repository["required"] == ["MediaType"]
 
     repo_type = by_name["hmc_vios_update"].parameters["properties"]["repository"][
         "properties"
