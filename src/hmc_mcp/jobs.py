@@ -9,7 +9,7 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, NotRequired, Protocol, get_args
+from typing import Annotated, Any, Literal, NotRequired, Protocol, Required, get_args
 from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
@@ -452,6 +452,38 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
 
 
 RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
+ConsoleUpdateMediaType = Literal[
+    "USB", "NFS", "SFTP", "FTP", "IBMWebsite", "Disk", "VirtualMedia", "CDDVD"
+]
+_CONSOLE_UPDATE_MEDIA_TYPES = frozenset(get_args(ConsoleUpdateMediaType))
+
+
+class ConsoleUpdateSource(TypedDict, total=False):
+    """Documented parameters for ``UpdateManagementConsole``."""
+
+    MediaType: Required[
+        Annotated[
+            ConsoleUpdateMediaType, Field(description="Location of the update image.")
+        ]
+    ]
+    ServerHostOrIP: Annotated[str, Field(description="Remote server hostname or IP.")]
+    UserName: Annotated[str, Field(description="Remote server username.")]
+    Password: Annotated[str, Field(description="Remote server password.")]
+    SFTPKey: Annotated[str, Field(description="SSH private key for SFTP.")]
+    PassPhrase: Annotated[str, Field(description="SFTP private-key passphrase.")]
+    Directory: Annotated[str, Field(description="HMC-local update-image directory.")]
+    UpdateFile: Annotated[str, Field(description="Update image filename.")]
+    MountLocation: Annotated[str, Field(description="NFS mount location.")]
+    MountOptions: Annotated[str, Field(description="Additional NFS mount options.")]
+    PTFNumber: Annotated[str, Field(description="PTF number for IBMWebsite.")]
+    Device: Annotated[str, Field(description="USB, optical, or virtual-media device.")]
+    RestartConsole: Annotated[
+        Literal["True", "False"],
+        Field(description="Restart the console after the update."),
+    ]
+
+
+_CONSOLE_UPDATE_KEYS = frozenset(ConsoleUpdateSource.__annotations__)
 
 
 class RepositorySource(TypedDict, total=False):
@@ -539,23 +571,20 @@ def _repository_params(repository: RepositorySource) -> dict[str, str]:
     return {str(k): str(v) for k, v in repository.items() if v is not None}
 
 
-def update_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software update (Install PTFs).
-
-    target: ManagementConsole/{uuid}/do/Update
-    """
+def update_hmc_job(source: ConsoleUpdateSource) -> str:
+    """Build a documented ``UpdateManagementConsole`` request."""
+    unknown = set(source) - _CONSOLE_UPDATE_KEYS
+    if unknown:
+        raise ValueError(
+            f"Unknown console update parameter(s): {', '.join(sorted(unknown))}. "
+            f"Recognised parameters: {', '.join(sorted(_CONSOLE_UPDATE_KEYS))}."
+        )
+    if "MediaType" not in source:
+        raise ValueError("Console update source is missing required 'MediaType'.")
     return build_job_request(
-        "Update", "ManagementConsole", _repository_params(repository)
-    )
-
-
-def upgrade_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
-
-    target: ManagementConsole/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "ManagementConsole", _repository_params(repository)
+        "UpdateManagementConsole",
+        "ManagementConsole",
+        {key: str(value) for key, value in source.items() if value is not None},
     )
 
 
@@ -587,4 +616,3 @@ def update_firmware_job(repository: RepositorySource) -> str:
     return build_job_request(
         "UpdateFirmware", "ManagedSystem", _repository_params(repository)
     )
-
