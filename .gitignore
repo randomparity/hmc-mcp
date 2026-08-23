@@ -23,3 +23,7 @@ scorecard.png
 
 # local Claude Code settings
 .claude/settings.local.json
+
+# Local reference docs
+docs/refs/
+AGENTS.local.md
