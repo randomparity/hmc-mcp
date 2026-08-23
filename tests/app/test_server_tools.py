@@ -149,7 +149,7 @@ def test_run_command_passes_cmd_through(monkeypatch):
 def test_get_job_parses_entry(monkeypatch, mock_hmc):
     """hmc_get_job returns the parsed job resource dict."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     result = hmc_get_job("job-uuid-999")
@@ -160,7 +160,7 @@ def test_get_job_parses_entry(monkeypatch, mock_hmc):
 def test_get_job_empty_returns_none(monkeypatch, mock_hmc):
     """hmc_get_job returns None when the server returns no content."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(204)
     )
     assert hmc_get_job("job-uuid-999") is None
@@ -724,7 +724,7 @@ def test_update_firmware_wait_returns_terminal_submission_without_poll(
             },
         )
     )
-    poll = mock_hmc.get("/rest/api/uom/Job/platform-job")
+    poll = mock_hmc.get("/rest/api/uom/jobs/platform-job")
 
     result = hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE, wait=True)
 
@@ -791,7 +791,7 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     submit_route = mock_hmc.put(
         f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_update_console_software(
@@ -1002,7 +1002,7 @@ JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
 def test_wait_for_job_immediate_completed(monkeypatch, mock_hmc):
     """hmc_wait_for_job returns immediately when the first poll is COMPLETED."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_wait_for_job("job-uuid-999")
@@ -1032,7 +1032,7 @@ def test_wait_for_job_surfaces_terminal_failure(
 ):
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=response)
     )
 
@@ -1048,7 +1048,7 @@ def test_wait_for_job_surfaces_terminal_failure(
 
 def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)  # Status=RUNNING
     )
     # timeout=0 means the deadline is already past after the first poll
@@ -1064,7 +1064,7 @@ def test_wait_for_job_timeout_is_explicit(monkeypatch, mock_hmc):
 def test_wait_for_job_empty_resource_returns_timed_out_shape(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_EMPTY_RESOURCE)
     )
 
@@ -1091,7 +1091,7 @@ def test_get_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     result = hmc_get_job("job-uuid-999", job_href=_JOB_OP_HREF)
@@ -1106,7 +1106,7 @@ def test_wait_for_job_with_href_uses_direct_path(monkeypatch, mock_hmc):
     href_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     result = hmc_wait_for_job(
@@ -1187,7 +1187,7 @@ def test_power_on_with_wait_uses_job_self_link(monkeypatch, mock_hmc):
     poll_route = mock_hmc.get(_JOB_OP_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED_WITH_LINK)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     result = hmc_power_on_lpar(LPAR_UUID, wait=True, poll_interval=1)
