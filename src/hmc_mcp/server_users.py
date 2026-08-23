@@ -1,77 +1,68 @@
-"""MCP tools for HMC user, password policy, and LDAP management."""
+"""MCP tools for documented HMC user, role, and remote-access resources."""
 
 from __future__ import annotations
 
-from .tool_registry import tool_module
-
 from typing import Any
 
-from ._app import (
-    _run,
-)
-
+from ._app import _run
+from .client_users import AuthenticationFilter
 from .common import client_from_env
-from .client_users import (
-    LdapRemovalResource,
-    UserType,
-    validate_ldap_removal_resource,
-)
 from .documents import (
-    PASSWORD_POLICY_CREATION_DEFAULTS,
-    PasswordPolicySettings,
-    TaskRole,
+    AuthenticationType,
     build_hmc_user_document,
-    build_ldap_config_document,
-    build_password_policy_document,
+    build_remote_access_document,
 )
-
+from .tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
 
 
 @tool(effect="read", operation="user.list", target_kind="console")
 def hmc_list_users(
-    user_type: UserType = "all",
+    console_uuid: str,
+    authentication_type: AuthenticationFilter = "all",
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List HMC user accounts filtered by type.
+    """List UserProfile children of a management console.
 
-    ``local`` selects local HMC accounts, ``kerberos`` selects
-    (Kerberos/LDAP-backed accounts), or 'all' (default).
-    Returns one dict per user: {UUID, title, link, ResourceType, Resource}
-    where Resource holds the flattened HmcUser fields.
+    Obtain ``console_uuid`` from ``hmc_console_info``. The optional filter is
+    ``local``, ``ldap``, ``kerberos``, or ``all``.
 
     Args:
-        user_type: ``local``, ``kerberos``, or ``all`` accounts.
-        profile: TOML profile name, or the environment-default HMC when omitted.
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        authentication_type: Authentication source filter.
+        profile: TOML profile name, or the environment default when omitted.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.list_hmc_users(user_type)
+            return await hmc.list_hmc_users(console_uuid, authentication_type)
 
     return _run(_go)
 
 
-@tool(effect="read", operation="user.get", target_kind="user", extra_targets=(("user", "name"),))
+@tool(
+    effect="read",
+    operation="user.get",
+    target_kind="user",
+    extra_targets=(("user", "user_profile_uuid"),),
+)
 def hmc_get_user(
-    name: str,
+    console_uuid: str,
+    user_profile_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Get one HMC user account by username.
-
-    Returns None only when the HMC sends an empty successful response. A
-    missing account reported as HTTP 404 raises HMCError like other REST
-    lookup failures.
+    """Get a UserProfile by its management-console and profile UUIDs.
 
     Args:
-        name: Exact HMC login username.
-        profile: TOML profile name, or the environment-default HMC when omitted.
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        user_profile_uuid: UserProfile UUID returned by ``hmc_list_users``.
+        profile: TOML profile name, or the environment default when omitted.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.get_hmc_user(name)
+            return await hmc.get_hmc_user(console_uuid, user_profile_uuid)
 
     return _run(_go)
 
@@ -80,44 +71,58 @@ def hmc_get_user(
     effect="mutate",
     operation="user.create",
     target_kind="user",
-    extra_targets=(("user", "name"),),
+    extra_targets=(("user", "user_id"),),
 )
 def hmc_create_user(
-    name: str,
-    taskrole: TaskRole,
+    console_uuid: str,
+    user_id: str,
     password: str,
-    description: str = "",
-    pwage: int = 0,
+    authentication_type: AuthenticationType = "Local",
+    *,
+    description: str | None = None,
+    associated_task_role: str | None = None,
+    associated_resource_roles: list[str] | None = None,
+    session_timeout: int | None = None,
+    allow_web_remote_access: bool | None = None,
+    allow_ssh_remote_access: bool | None = None,
+    remote_user_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Create a new HMC local user account.
+    """Create a documented UOM UserProfile below a management console.
 
-    name is the login username. taskrole controls what the user can do
-    (e.g. 'hmcoperator', 'hmcviewer', 'hmcsuperadmin'). password is the
-    initial password. description is optional. pwage is the password
-    expiration in days (0 = never expires). This creates a real account —
-    confirm the taskrole before calling. Returns the created user resource
-    dict, or None when the HMC returns an empty successful response.
+    Role values are UOM role-resource hrefs returned by the role-list tools.
+    Returns None when the HMC returns an empty successful response.
 
     Args:
-        name: Login username for the new local account.
-        taskrole: HMC authorization role assigned to the account.
-        password: Initial account password.
-        description: Optional human-readable account description.
-        pwage: Password lifetime in days; ``0`` means it never expires.
-        profile: TOML profile name, or the environment-default HMC when omitted.
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        user_id: Login identifier for the new profile.
+        password: Initial profile password.
+        authentication_type: Local, LDAP, or Kerberos authentication.
+        description: Optional human-readable profile description.
+        associated_task_role: TaskRole href returned by the role-list tool.
+        associated_resource_roles: ResourceRole hrefs assigned to the profile.
+        session_timeout: Session timeout value accepted by the HMC.
+        allow_web_remote_access: Whether web remote access is allowed.
+        allow_ssh_remote_access: Whether SSH remote access is allowed.
+        remote_user_id: Directory-side user identifier.
+        profile: TOML profile name, or the environment default when omitted.
     """
     xml = build_hmc_user_document(
-        username=name,
-        taskrole=taskrole,
+        user_id=user_id,
+        authentication_type=authentication_type,
         password=password,
-        description=description or None,
-        pwage=pwage,
+        description=description,
+        associated_task_role=associated_task_role,
+        associated_resource_roles=associated_resource_roles,
+        session_timeout=session_timeout,
+        allow_web_remote_access=allow_web_remote_access,
+        allow_ssh_remote_access=allow_ssh_remote_access,
+        remote_user_id=remote_user_id,
     )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.create_hmc_user(xml)
+            return await hmc.create_hmc_user(console_uuid, xml)
 
     return _run(_go)
 
@@ -126,41 +131,56 @@ def hmc_create_user(
     effect="mutate",
     operation="user.modify",
     target_kind="user",
-    extra_targets=(("user", "name"),),
+    extra_targets=(("user", "user_profile_uuid"),),
 )
 def hmc_modify_user(
-    name: str,
-    taskrole: TaskRole | None = None,
+    console_uuid: str,
+    user_profile_uuid: str,
+    *,
     password: str | None = None,
     description: str | None = None,
-    enable: bool | None = None,
+    authentication_type: AuthenticationType | None = None,
+    associated_task_role: str | None = None,
+    associated_resource_roles: list[str] | None = None,
+    session_timeout: int | None = None,
+    allow_web_remote_access: bool | None = None,
+    allow_ssh_remote_access: bool | None = None,
+    remote_user_id: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Modify an existing HMC user account.
+    """Modify supplied fields of a UOM UserProfile identified by UUID.
 
-    Only the fields you supply are changed. enable=True re-enables a
-    disabled account; enable=False disables it. Use hmc_get_user(name) to
-    confirm the current state before calling. Returns the updated user
-    resource dict, or None when the HMC returns an empty successful response.
+    Returns None when the HMC returns an empty successful response.
 
     Args:
-        name: Exact username of the account to modify.
-        taskrole: Replacement HMC role, or ``None`` to leave it unchanged.
-        password: Replacement password, or ``None`` to leave it unchanged.
-        description: Replacement description, or ``None`` to leave it unchanged.
-        enable: ``True`` to enable, ``False`` to disable, or ``None`` unchanged.
-        profile: TOML profile name, or the environment-default HMC when omitted.
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        user_profile_uuid: UserProfile UUID returned by ``hmc_list_users``.
+        password: Replacement password, or None to leave unchanged.
+        description: Replacement description, or None to leave unchanged.
+        authentication_type: Replacement authentication type.
+        associated_task_role: Replacement TaskRole href.
+        associated_resource_roles: Replacement ResourceRole hrefs.
+        session_timeout: Replacement session timeout.
+        allow_web_remote_access: Replacement web-access setting.
+        allow_ssh_remote_access: Replacement SSH-access setting.
+        remote_user_id: Replacement directory-side identifier.
+        profile: TOML profile name, or the environment default when omitted.
     """
     xml = build_hmc_user_document(
-        taskrole=taskrole,
+        authentication_type=authentication_type,
         password=password,
         description=description,
-        enable=enable,
+        associated_task_role=associated_task_role,
+        associated_resource_roles=associated_resource_roles,
+        session_timeout=session_timeout,
+        allow_web_remote_access=allow_web_remote_access,
+        allow_ssh_remote_access=allow_ssh_remote_access,
+        remote_user_id=remote_user_id,
     )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await hmc.modify_hmc_user(name, xml)
+            return await hmc.modify_hmc_user(console_uuid, user_profile_uuid, xml)
 
     return _run(_go)
 
@@ -169,242 +189,104 @@ def hmc_modify_user(
     effect="destructive",
     operation="user.delete",
     target_kind="user",
-    extra_targets=(("user", "name"),),
+    extra_targets=(("user", "user_profile_uuid"),),
 )
-def hmc_delete_user(name: str, profile: str | None = None) -> str:
-    """Delete an HMC user account by username.
-
-    This permanently removes the account — it is irreversible. Confirm
-    the username with hmc_get_user(name) before calling. Returns a confirmation
-    string (immediate delete — no job to poll).
-
-    Args:
-        name: Exact username of the account to permanently remove.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            await hmc.delete_hmc_user(name)
-            return f"Deleted HMC user {name}"
-
-    return _run(_go)
-
-
-@tool(effect="read", operation="policy.list", target_kind="console")
-def hmc_list_password_policies(
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """List defined HMC password-policy resources.
-
-    Args:
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_password_policies()
-
-    return _run(_go)
-
-
-@tool(effect="read", operation="policy.status", target_kind="console")
-def hmc_list_password_policy_status(
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """Get activation-status resources for HMC password policies.
-
-    Args:
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.list_password_policy_status()
-
-    return _run(_go)
-
-
-@tool(effect="mutate", operation="policy.create", target_kind="password_policy")
-def hmc_create_password_policy(
-    policy_name: str,
-    settings: PasswordPolicySettings = PASSWORD_POLICY_CREATION_DEFAULTS,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Create a new HMC password policy.
-
-    policy_name is the unique name for the policy. settings contains password
-    age, length, character-class, history, and warning requirements. Omitted
-    settings use the HMC-compatible creation defaults. Confirm policy_name
-    before calling. Returns the created policy resource dict, or None when the
-    HMC returns an empty successful response.
-
-    Args:
-        policy_name: Unique name for the new password policy.
-        settings: Password requirements; omitted fields use creation defaults.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    xml = build_password_policy_document(
-        policy_name=policy_name,
-        settings=settings,
-    )
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.create_password_policy(xml)
-
-    return _run(_go)
-
-
-@tool(effect="mutate", operation="policy.modify", target_kind="password_policy")
-def hmc_modify_password_policy(
-    policy_name: str,
-    settings: PasswordPolicySettings = PasswordPolicySettings(),
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Modify an existing HMC password policy.
-
-    Only non-None fields in settings are changed. Use hmc_list_password_policies
-    to confirm the current state before calling. To activate or deactivate a
-    policy, use the HMC console — the REST API activates a policy by name via
-    the PolicyType=status query path rather than a direct field change.
-    Returns the updated policy resource dict, or None when the HMC returns an
-    empty successful response.
-
-    Args:
-        policy_name: Exact password-policy name to modify.
-        settings: Partial requirements; ``None`` fields remain unchanged.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    xml = build_password_policy_document(
-        settings=settings,
-    )
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.modify_password_policy(policy_name, xml)
-
-    return _run(_go)
-
-
-@tool(effect="destructive", operation="policy.delete", target_kind="password_policy")
-def hmc_delete_password_policy(policy_name: str, profile: str | None = None) -> str:
-    """Delete an HMC password policy by name.
-
-    This permanently removes the policy — it is irreversible.  Confirm
-    the policy_name with hmc_list_password_policies before calling. Returns
-    a confirmation string (immediate delete — no job to poll).
-
-    Args:
-        policy_name: Exact password-policy name to permanently remove.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            await hmc.delete_password_policy(policy_name)
-            return f"Deleted HMC password policy {policy_name}"
-
-    return _run(_go)
-
-
-@tool(effect="read", operation="ldap.get", target_kind="console")
-def hmc_get_ldap_config(profile: str | None = None) -> dict[str, Any] | None:
-    """Get the current HMC LDAP server configuration.
-
-    Returns a single resource dict describing the configured LDAP server URL,
-    base DN, bind DN, search filter, and HMC group mappings, or None if no
-    LDAP is configured.
-    Equivalent to Ansible ``hmc_user`` state=ldap_facts.
-
-    Args:
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.get_ldap_config()
-
-    return _run(_go)
-
-
-@tool(effect="mutate", operation="ldap.configure", target_kind="console")
-def hmc_configure_ldap(
-    server_url: str,
-    base_dn: str | None = None,
-    bind_dn: str | None = None,
-    bind_pw: str | None = None,
-    search_filter: str | None = None,
-    hmc_groups: str | None = None,
-    group_member_attributes: str | None = None,
-    profile: str | None = None,
-) -> dict[str, Any] | None:
-    """Configure the HMC LDAP server integration.
-
-    server_url is the LDAP or LDAPS URL (e.g. 'ldap://ldap.example.com' or
-    'ldaps://ldap.example.com:636'). Only the fields you supply are changed.
-
-    Equivalent to Ansible ``hmc_user`` action=configure_ldap.
-    Returns the updated LDAP configuration resource dict, or None when the HMC
-    returns an empty successful response.
-
-    Args:
-        server_url: LDAP or LDAPS server URL, including an optional port.
-        base_dn: LDAP search base, such as ``dc=example,dc=com``.
-        bind_dn: Distinguished name used to bind for directory searches.
-        bind_pw: Password for the bind account.
-        search_filter: LDAP search filter, such as ``(objectClass=person)``.
-        hmc_groups: Comma-separated LDAP groups mapped to HMC access.
-        group_member_attributes: LDAP attribute used for group membership.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    xml = build_ldap_config_document(
-        server_url=server_url,
-        base_dn=base_dn,
-        bind_dn=bind_dn,
-        bind_pw=bind_pw,
-        search_filter=search_filter,
-        hmc_groups=hmc_groups,
-        group_member_attributes=group_member_attributes,
-    )
-
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            return await hmc.configure_ldap(xml)
-
-    return _run(_go)
-
-
-@tool(effect="destructive", operation="ldap.remove", target_kind="console")
-def hmc_remove_ldap_config(
-    resource: LdapRemovalResource, profile: str | None = None
+def hmc_delete_user(
+    console_uuid: str, user_profile_uuid: str, profile: str | None = None
 ) -> str:
-    """Remove a component of the HMC LDAP server configuration.
-
-    resource selects what to remove.  Valid values:
-      'backup'                  — remove the backup LDAP server
-      'ldap'                    — remove the entire LDAP configuration
-      'binddn'                  — remove the bind DN
-      'bindpw'                  — remove the bind password
-      'searchfilter'            — remove the custom search filter
-      'hmcgroups'               — remove HMC group mappings
-      'groupmemberattributes'   — remove group-member attribute settings
-
-    Equivalent to Ansible ``hmc_user`` action=remove_ldap_config.
-    Use hmc_get_ldap_config to inspect the current state before calling.
-    Returns a confirmation string (immediate delete — no job to poll).
+    """Permanently delete a UOM UserProfile identified by UUID.
 
     Args:
-        resource: LDAP component to remove: ``backup``, ``ldap``, ``binddn``,
-            ``bindpw``, ``searchfilter``, ``hmcgroups``, or
-            ``groupmemberattributes``.
-        profile: TOML profile name, or the environment-default HMC when omitted.
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        user_profile_uuid: UserProfile UUID returned by ``hmc_list_users``.
+        profile: TOML profile name, or the environment default when omitted.
     """
-    validate_ldap_removal_resource(resource)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            await hmc.remove_ldap_config(resource)
-            return f"Removed LDAP configuration component: {resource}"
+            await hmc.delete_hmc_user(console_uuid, user_profile_uuid)
+            return f"Deleted HMC user profile {user_profile_uuid}"
+
+    return _run(_go)
+
+
+@tool(effect="read", operation="task_role.list", target_kind="console")
+def hmc_list_task_roles(
+    console_uuid: str, profile: str | None = None
+) -> list[dict[str, Any]]:
+    """List TaskRole children of a management console.
+
+    Args:
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        profile: TOML profile name, or the environment default when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.list_task_roles(console_uuid)
+
+    return _run(_go)
+
+
+@tool(effect="read", operation="resource_role.list", target_kind="console")
+def hmc_list_resource_roles(
+    console_uuid: str, profile: str | None = None
+) -> list[dict[str, Any]]:
+    """List ResourceRole children of a management console.
+
+    Args:
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        profile: TOML profile name, or the environment default when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.list_resource_roles(console_uuid)
+
+    return _run(_go)
+
+
+@tool(effect="read", operation="remote_access.get", target_kind="console")
+def hmc_get_remote_access(
+    console_uuid: str, profile: str | None = None
+) -> dict[str, Any] | None:
+    """Read the ManagementConsole RemoteAccess property group.
+
+    Args:
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        profile: TOML profile name, or the environment default when omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.get_remote_access(console_uuid)
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="remote_access.configure", target_kind="console")
+def hmc_configure_remote_access(
+    console_uuid: str,
+    values: dict[str, str | int | bool] | None = None,
+    clear_fields: list[str] | None = None,
+    profile: str | None = None,
+) -> dict[str, Any] | None:
+    """Set or explicitly clear documented LDAP/Kerberos RemoteAccess fields.
+
+    ``values`` maps documented property names to values. ``clear_fields``
+    emits empty elements and cannot overlap with ``values``.
+    Returns None when the HMC returns an empty successful response.
+
+    Args:
+        console_uuid: ManagementConsole UUID from ``hmc_console_info``.
+        values: Documented RemoteAccess property names and replacement values.
+        clear_fields: Documented properties to clear with empty XML elements.
+        profile: TOML profile name, or the environment default when omitted.
+    """
+    xml = build_remote_access_document(values, clear_fields)
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await hmc.configure_remote_access(console_uuid, xml)
 
     return _run(_go)

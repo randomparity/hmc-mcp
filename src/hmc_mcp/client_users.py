@@ -1,8 +1,4 @@
-"""HMCClient users mixin.
-
-The full client is assembled in :mod:`hmc_mcp.client` by inheriting every
-domain mixin; this module only defines methods for users.
-"""
+"""Documented UOM user and remote-access client operations."""
 
 from __future__ import annotations
 
@@ -11,169 +7,91 @@ from typing import Any, Literal, get_args
 
 from .client_parse import _parse_feed
 
-UserType = Literal["local", "kerberos", "all"]
-LdapRemovalResource = Literal[
-    "backup",
-    "ldap",
-    "binddn",
-    "bindpw",
-    "searchfilter",
-    "hmcgroups",
-    "groupmemberattributes",
-]
-
-_VALID_USER_TYPES = frozenset(get_args(UserType))
-LDAP_REMOVAL_RESOURCES = frozenset(get_args(LdapRemovalResource))
-
-
-def validate_ldap_removal_resource(
-    resource: LdapRemovalResource,
-) -> LdapRemovalResource:
-    """Validate the LDAP component used in the destructive removal URL."""
-    if resource not in LDAP_REMOVAL_RESOURCES:
-        raise ValueError(
-            f"Invalid LDAP removal resource {resource!r}. "
-            f"Must be one of: {', '.join(sorted(LDAP_REMOVAL_RESOURCES))}"
-        )
-    return resource
+AuthenticationFilter = Literal["local", "ldap", "kerberos", "all"]
+_AUTHENTICATION_TYPES = {"local": "Local", "ldap": "LDAP", "kerberos": "Kerberos"}
+_VALID_AUTHENTICATION_FILTERS = frozenset(get_args(AuthenticationFilter))
 
 
 class UsersMixin:
-    _web_get: Callable[..., Awaitable[str]]
-    _web_post: Callable[..., Awaitable[str]]
-    _web_delete: Callable[..., Awaitable[None]]
+    """Operations below a documented UOM ``ManagementConsole`` resource."""
 
-    # ------------------------------------------------------------------ #
-    # web-endpoint response parsing
-    # ------------------------------------------------------------------ #
-    def _web_entries(self, xml_text: str, context: str) -> list[dict[str, Any]]:
-        """Parse a web-endpoint response into entry dicts; empty body → []."""
-        if not (xml_text or "").strip():
-            return []
-        return _parse_feed(xml_text, context)
+    _get: Callable[..., Awaitable[str]]
+    _put: Callable[..., Awaitable[str]]
+    _post: Callable[..., Awaitable[str]]
+    _delete: Callable[..., Awaitable[None]]
 
-    def _first_web_entry(self, xml_text: str, context: str) -> dict[str, Any] | None:
-        """Parse a web-endpoint response into its first entry, or None."""
-        entries = self._web_entries(xml_text, context)
+    @staticmethod
+    def _entries(xml_text: str, path: str) -> list[dict[str, Any]]:
+        return _parse_feed(xml_text, path) if (xml_text or "").strip() else []
+
+    @classmethod
+    def _first_entry(cls, xml_text: str, path: str) -> dict[str, Any] | None:
+        entries = cls._entries(xml_text, path)
         return entries[0] if entries else None
 
-    # ------------------------------------------------------------------ #
-    # HMC user management (/rest/api/web/HmcUser)
-    # ------------------------------------------------------------------ #
-    async def list_hmc_users(self, user_type: UserType = "all") -> list[dict[str, Any]]:
-        """GET /rest/api/web/HmcUser, optionally filtered by UserType.
+    @staticmethod
+    def _child_path(console_uuid: str, child_type: str) -> str:
+        return f"/rest/api/uom/ManagementConsole/{console_uuid}/{child_type}"
 
-        user_type is one of 'local', 'kerberos', or 'all' (default).
-        Returns one parsed entry dict per account.
-
-        Raises:
-            ValueError: If *user_type* is not one of the recognised values.
-        """
-        if user_type not in _VALID_USER_TYPES:
+    async def list_hmc_users(
+        self,
+        console_uuid: str,
+        authentication_type: AuthenticationFilter = "all",
+    ) -> list[dict[str, Any]]:
+        """List documented ``UserProfile`` children of a management console."""
+        if authentication_type not in _VALID_AUTHENTICATION_FILTERS:
             raise ValueError(
-                f"Invalid user_type {user_type!r}. "
-                f"Must be one of: {', '.join(sorted(_VALID_USER_TYPES))}"
+                f"Invalid authentication_type {authentication_type!r}. Must be one of: "
+                f"{', '.join(sorted(_VALID_AUTHENTICATION_FILTERS))}"
             )
-        path = "/rest/api/web/HmcUser"
-        if user_type != "all":
-            path += f"?UserType={user_type}"
-        return self._web_entries(await self._web_get(path), path)
+        path = self._child_path(console_uuid, "UserProfile")
+        entries = self._entries(await self._get(path, "UserProfile"), path)
+        if authentication_type == "all":
+            return entries
+        expected = _AUTHENTICATION_TYPES[authentication_type]
+        return [
+            entry
+            for entry in entries
+            if (entry.get("Resource") or {}).get("AuthenticationType") == expected
+        ]
 
-    async def get_hmc_user(self, name: str) -> dict[str, Any] | None:
-        """GET /rest/api/web/HmcUser/{name}.
-
-        Returns the parsed resource dict, or None when the server returns no
-        content.
-        """
-        path = f"/rest/api/web/HmcUser/{name}"
-        return self._first_web_entry(await self._web_get(path), path)
-
-    async def create_hmc_user(self, user_xml: str) -> dict[str, Any] | None:
-        """POST an HmcUser document to /rest/api/web/HmcUser.
-
-        Returns the created resource dict, or None on an empty response.
-        """
-        return self._first_web_entry(
-            await self._web_post("/rest/api/web/HmcUser", user_xml),
-            "/rest/api/web/HmcUser",
-        )
-
-    async def modify_hmc_user(self, name: str, user_xml: str) -> dict[str, Any] | None:
-        """POST a partial HmcUser document to /rest/api/web/HmcUser/{name}.
-
-        Returns the updated resource dict, or None on an empty response.
-        """
-        path = f"/rest/api/web/HmcUser/{name}"
-        return self._first_web_entry(await self._web_post(path, user_xml), path)
-
-    async def delete_hmc_user(self, name: str) -> None:
-        """DELETE /rest/api/web/HmcUser/{name}."""
-        await self._web_delete(f"/rest/api/web/HmcUser/{name}")
-
-    # ------------------------------------------------------------------ #
-    # HMC LDAP server configuration (/rest/api/web/HmcLdapServer)
-    # ------------------------------------------------------------------ #
-    async def get_ldap_config(self) -> dict[str, Any] | None:
-        """GET /rest/api/web/HmcLdapServer.
-
-        Returns the parsed LDAP server configuration dict, or None when no
-        LDAP is configured.
-        """
-        path = "/rest/api/web/HmcLdapServer"
-        return self._first_web_entry(await self._web_get(path), path)
-
-    async def configure_ldap(self, ldap_xml: str) -> dict[str, Any] | None:
-        """POST an HmcLdapServer document to /rest/api/web/HmcLdapServer.
-
-        Returns the updated configuration dict, or None on an empty response.
-        """
-        return self._first_web_entry(
-            await self._web_post("/rest/api/web/HmcLdapServer", ldap_xml),
-            "/rest/api/web/HmcLdapServer",
-        )
-
-    async def remove_ldap_config(self, resource: LdapRemovalResource) -> None:
-        """POST to /rest/api/web/HmcLdapServer?Remove={resource}.
-
-        resource is one of: 'backup', 'ldap', 'binddn', 'bindpw',
-        'searchfilter', 'hmcgroups', 'groupmemberattributes'.
-        """
-        validate_ldap_removal_resource(resource)
-        await self._web_post(f"/rest/api/web/HmcLdapServer?Remove={resource}", "")
-
-    # ------------------------------------------------------------------ #
-    # HMC password policy management (/rest/api/web/HmcPasswordPolicy)
-    # ------------------------------------------------------------------ #
-    async def list_password_policies(self) -> list[dict[str, Any]]:
-        """Return defined policies from GET /rest/api/web/HmcPasswordPolicy."""
-        path = "/rest/api/web/HmcPasswordPolicy"
-        return self._web_entries(await self._web_get(path), path)
-
-    async def list_password_policy_status(self) -> list[dict[str, Any]]:
-        """Return activation status entries for HMC password policies."""
-        path = "/rest/api/web/HmcPasswordPolicy?PolicyType=status"
-        return self._web_entries(await self._web_get(path), path)
-
-    async def create_password_policy(self, policy_xml: str) -> dict[str, Any] | None:
-        """POST an HmcPasswordPolicy document to /rest/api/web/HmcPasswordPolicy.
-
-        Returns the created policy dict, or None on an empty response.
-        """
-        return self._first_web_entry(
-            await self._web_post("/rest/api/web/HmcPasswordPolicy", policy_xml),
-            "/rest/api/web/HmcPasswordPolicy",
-        )
-
-    async def modify_password_policy(
-        self, name: str, policy_xml: str
+    async def get_hmc_user(
+        self, console_uuid: str, user_profile_uuid: str
     ) -> dict[str, Any] | None:
-        """POST a partial HmcPasswordPolicy document to /rest/api/web/HmcPasswordPolicy/{name}.
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        return self._first_entry(await self._get(path, "UserProfile"), path)
 
-        Returns the updated policy dict, or None on an empty response.
-        """
-        path = f"/rest/api/web/HmcPasswordPolicy/{name}"
-        return self._first_web_entry(await self._web_post(path, policy_xml), path)
+    async def create_hmc_user(
+        self, console_uuid: str, user_xml: str
+    ) -> dict[str, Any] | None:
+        path = self._child_path(console_uuid, "UserProfile")
+        return self._first_entry(await self._put(path, user_xml, "UserProfile"), path)
 
-    async def delete_password_policy(self, name: str) -> None:
-        """DELETE /rest/api/web/HmcPasswordPolicy/{name}."""
-        await self._web_delete(f"/rest/api/web/HmcPasswordPolicy/{name}")
+    async def modify_hmc_user(
+        self, console_uuid: str, user_profile_uuid: str, user_xml: str
+    ) -> dict[str, Any] | None:
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        return self._first_entry(await self._post(path, user_xml, "UserProfile"), path)
+
+    async def delete_hmc_user(self, console_uuid: str, user_profile_uuid: str) -> None:
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        await self._delete(path)
+
+    async def list_task_roles(self, console_uuid: str) -> list[dict[str, Any]]:
+        path = self._child_path(console_uuid, "TaskRole")
+        return self._entries(await self._get(path, "TaskRole"), path)
+
+    async def list_resource_roles(self, console_uuid: str) -> list[dict[str, Any]]:
+        path = self._child_path(console_uuid, "ResourceRole")
+        return self._entries(await self._get(path, "ResourceRole"), path)
+
+    async def get_remote_access(self, console_uuid: str) -> dict[str, Any] | None:
+        path = f"/rest/api/uom/ManagementConsole/{console_uuid}?group=RemoteAccess"
+        return self._first_entry(await self._get(path, "ManagementConsole"), path)
+
+    async def configure_remote_access(
+        self, console_uuid: str, remote_access_xml: str
+    ) -> dict[str, Any] | None:
+        path = f"/rest/api/uom/ManagementConsole/{console_uuid}?group=RemoteAccess"
+        xml = await self._post(path, remote_access_xml, "ManagementConsole")
+        return self._first_entry(xml, path)

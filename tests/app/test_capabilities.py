@@ -268,15 +268,12 @@ def test_closed_vocab_enum_matches_runtime_constant():
     constant so either side changing alone is caught.
     """
     from hmc_mcp.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client_users import (
-        LDAP_REMOVAL_RESOURCES,
-        _VALID_USER_TYPES,
-    )
+    from hmc_mcp.client_users import _VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.documents import (
         PARTITION_TYPES,
         SHARING_MODES,
         STORAGE_KINDS,
-        TASK_ROLES,
+        AUTHENTICATION_TYPES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
@@ -303,14 +300,13 @@ def test_closed_vocab_enum_matches_runtime_constant():
     assert backup_type["default"] in _VALID_BACKUP_TYPES
 
     expected_enums = {
-        ("hmc_create_user", "taskrole"): TASK_ROLES,
+        ("hmc_create_user", "authentication_type"): AUTHENTICATION_TYPES,
         ("hmc_list_adapters", "adapter_type"): ADAPTER_TYPES,
         ("hmc_delete_adapter", "adapter_type"): ADAPTER_TYPES,
         ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
         ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
-        ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
-        ("hmc_list_users", "user_type"): _VALID_USER_TYPES,
+        ("hmc_list_users", "authentication_type"): _VALID_AUTHENTICATION_FILTERS,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }
@@ -523,12 +519,10 @@ def test_partition_creation_tools_share_resource_object_schema():
         assert legacy_name not in vios_properties
 
 
-def test_password_policy_mutations_use_settings_object_schema():
+def test_password_policy_tools_are_absent_without_a_documented_target():
     by_name = _tools_by_name()
     for tool_name in ("hmc_create_password_policy", "hmc_modify_password_policy"):
-        properties = by_name[tool_name].parameters["properties"]
-        assert set(properties) == {"policy_name", "settings", "profile"}
-        assert properties["settings"]["type"] == "object"
+        assert tool_name not in by_name
 
 
 def test_update_source_enums_match_runtime_constants():
