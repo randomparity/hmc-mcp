@@ -168,7 +168,7 @@ def hmc_update_console_software(
     return _run(_go)
 
 
-@tool(effect="read", operation="update.list_ptfs", target_kind="console")
+@tool(effect="mutate", operation="update.list_ptfs", target_kind="console")
 def hmc_get_available_hmc_ptfs(
     console_uuid: str,
     profile: str | None = None,

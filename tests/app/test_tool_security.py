@@ -187,6 +187,14 @@ def test_declared_effects_use_the_closed_vocabulary():
         assert security.effect in EFFECTS, name
 
 
+def test_available_hmc_ptfs_is_mutating_job_submission():
+    security = TOOL_SECURITY["hmc_get_available_hmc_ptfs"]
+    tool = _tools_by_name()["hmc_get_available_hmc_ptfs"]
+
+    assert security.effect == "mutate"
+    assert tool.annotations.readOnlyHint is False
+
+
 def test_selectors_and_connection_arguments_are_public_parameters():
     """G3: every declared selector is really an argument a caller supplies."""
     for name, tool in _tools_by_name(True).items():
