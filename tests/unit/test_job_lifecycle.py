@@ -10,9 +10,12 @@ from pydantic import TypeAdapter
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
     RepositorySource,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
+    vios_stdout,
     wait_for_submitted_job,
 )
 
@@ -21,6 +24,71 @@ def test_repository_source_builds_a_pydantic_type_adapter() -> None:
     schema = TypeAdapter(RepositorySource).json_schema()
 
     assert set(schema["properties"]) == set(RepositorySource.__annotations__)
+
+
+@pytest.mark.parametrize("source", [VIOSUpdateSource, VIOSUpgradeSource])
+def test_vios_source_builds_a_pydantic_type_adapter(source) -> None:
+    schema = TypeAdapter(source).json_schema()
+
+    variants = [
+        schema["$defs"][entry["$ref"].rsplit("/", 1)[1]] for entry in schema["anyOf"]
+    ]
+    assert all("ResourceType" in variant["properties"] for variant in variants)
+    assert all("ResourceType" in variant["required"] for variant in variants)
+
+
+def test_vios_source_properties_are_operation_specific() -> None:
+    update_schema = TypeAdapter(VIOSUpdateSource).json_schema()
+    upgrade_schema = TypeAdapter(VIOSUpgradeSource).json_schema()
+    update = [
+        update_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in update_schema["anyOf"]
+    ]
+    upgrade = [
+        upgrade_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in upgrade_schema["anyOf"]
+    ]
+
+    assert all(
+        "RestartVIOS" in properties and "Disks" not in properties
+        for properties in update
+    )
+    assert all(
+        "Disks" in properties and "RestartVIOS" not in properties
+        for properties in upgrade
+    )
+
+
+@pytest.mark.parametrize(
+    ("parameters", "expected"),
+    [
+        ({"ParameterName": "stdOut", "ParameterValue": " log "}, "log"),
+        (
+            [
+                None,
+                {"ParameterName": "stdout", "ParameterValue": "wrong case"},
+                {"ParameterName": "stdOut", "ParameterValue": 7},
+                {"ParameterName": "stdOut", "ParameterValue": "  first  "},
+                {"ParameterName": "stdOut", "ParameterValue": "second"},
+            ],
+            "first",
+        ),
+        ({"ParameterName": "stdOut", "ParameterValue": "   "}, None),
+        ("malformed", None),
+    ],
+)
+def test_vios_stdout_extracts_first_nonempty_string(parameters, expected) -> None:
+    job = {"Resource": {"Results": {"JobParameter": parameters}}}
+
+    assert vios_stdout(job) == expected
+
+
+@pytest.mark.parametrize(
+    "job",
+    [None, {}, {"Resource": "bad"}, {"Resource": {"Results": "bad"}}],
+)
+def test_vios_stdout_ignores_malformed_job_shapes(job) -> None:
+    assert vios_stdout(job) is None
 
 
 @pytest.mark.parametrize(

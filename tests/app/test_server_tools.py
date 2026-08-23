@@ -48,6 +48,17 @@ CONSOLE_SOURCE = {
     "Directory": "/images/hmc",
     "RestartConsole": "False",
 }
+VIOS_UPDATE_SOURCE = {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+}
+VIOS_UPGRADE_SOURCE = {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+    "Disks": "hdisk1",
+}
 
 # A single-LPAR Atom feed; {name} is the partition name.
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -436,37 +447,148 @@ def test_hmc_update_encodes_console_uuid_as_one_path_segment(monkeypatch, mock_h
 
 
 def test_vios_update_kind_update(monkeypatch, mock_hmc):
-    """hmc_vios_update with kind='update' PUTs an Update job to VirtualIOServer."""
+    """The update kind submits the documented UpdateVIOS job."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
+    route = mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
+    ).mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_vios_update(VIOS_UUID, REPO, kind="update")
+    hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, kind="update")
     body = route.calls.last.request.content.decode()
-    assert "Update</OperationName>" in body
+    assert "UpdateVIOS</OperationName>" in body
     assert "repo.example.com" in body
 
 
 def test_vios_update_kind_upgrade(monkeypatch, mock_hmc):
-    """hmc_vios_update with kind='upgrade' PUTs an Upgrade job to VirtualIOServer."""
+    """The upgrade kind submits the documented UpgradeVIOS job."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade").mock(
+    route = mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
+    ).mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_vios_update(VIOS_UUID, REPO, kind="upgrade")
+    hmc_vios_update(VIOS_UUID, VIOS_UPGRADE_SOURCE, kind="upgrade")
     body = route.calls.last.request.content.decode()
-    assert "Upgrade</OperationName>" in body
+    assert "UpgradeVIOS</OperationName>" in body
     assert "repo.example.com" in body
 
 
 def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
     """hmc_vios_update defaults to kind='update' when kind is omitted."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
+    route = mock_hmc.put(
+        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
+    ).mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_vios_update(VIOS_UUID, REPO)
-    assert route.calls.last.request.url.path.endswith("/do/Update")
+    hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE)
+    assert route.calls.last.request.url.path.endswith("/do/UpdateVIOS")
+
+
+def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    hostile_uuid = "allowed/do/Shutdown?ignored="
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates.resolve_vios_uuid",
+        AsyncMock(return_value=hostile_uuid),
+    )
+    route = mock_hmc.put(
+        "/rest/api/uom/VirtualIOServer/allowed%2Fdo%2FShutdown%3Fignored%3D"
+        "/do/UpdateVIOS"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_vios_update(hostile_uuid, VIOS_UPDATE_SOURCE)
+
+    assert route.called
+
+
+@pytest.mark.parametrize(
+    ("source", "kind", "message"),
+    [
+        ({"Name": "image"}, "update", "ResourceType"),
+        ({"ResourceType": "NFS", "unknown": "x"}, "update", "unknown"),
+        ({"ResourceType": "NFS", "Disks": "hdisk1"}, "update", "Disks"),
+        ({"ResourceType": "NFS", "RestartVIOS": "false"}, "upgrade", "RestartVIOS"),
+        ({"ResourceType": "IBMWebsite"}, "upgrade", "IBMWebsite"),
+        ({"ResourceType": "NFS"}, "update", "RemoteDirectory"),
+        ({"ResourceType": "HMC", "Name": "image"}, "upgrade", "Disks"),
+    ],
+)
+def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, message):
+    def fail_client(_profile):
+        raise AssertionError("client created")
+
+    monkeypatch.setattr("hmc_mcp.server_updates.client_from_env", fail_client)
+
+    with pytest.raises(ValueError, match=message):
+        hmc_vios_update(VIOS_UUID, source, kind=kind)
+
+
+def _vios_job_with_stdout(status="COMPLETED", top_level=None):
+    job = {
+        "Resource": {
+            "Status": status,
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "stdOut",
+                    "ParameterValue": "  install log  ",
+                }
+            },
+        }
+    }
+    if top_level is not None:
+        job["stdOut"] = top_level
+    return job
+
+
+def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    raw = _vios_job_with_stdout()
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
+
+    assert result["stdOut"] == "install log"
+    assert result is not raw
+    assert "stdOut" not in raw
+    assert result["Resource"] is raw["Resource"]
+
+
+@pytest.mark.parametrize(
+    ("wait", "job"),
+    [
+        (False, _vios_job_with_stdout()),
+        (True, _vios_job_with_stdout(status="RUNNING")),
+    ],
+)
+def test_vios_stdout_is_not_projected_without_terminal_wait(
+    monkeypatch, mock_hmc, wait, job
+):
+    _hmc_env(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=job)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
+
+    assert result is job
+    assert "stdOut" not in result
+
+
+def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    raw = _vios_job_with_stdout(top_level="raw value")
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
+
+    assert result is raw
+    assert result["stdOut"] == "raw value"
 
 
 def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):

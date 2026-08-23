@@ -95,9 +95,8 @@ def _unwrap(annotation: Any) -> Any:
     """
     if get_origin(annotation) in (typing.Union, types.UnionType):
         members = [a for a in get_args(annotation) if a is not type(None)]
-        if len(members) != 1:
-            raise UnsupportedAnnotation(annotation)
-        return _unwrap(members[0])
+        if len(members) == 1:
+            return _unwrap(members[0])
     return annotation
 
 
@@ -124,6 +123,9 @@ def _carries_string(annotation: Any) -> bool:
     """
     annotation = _unwrap(annotation)
     origin = get_origin(annotation)
+    if origin in (typing.Union, types.UnionType):
+        member_results = [_carries_string(member) for member in get_args(annotation)]
+        return any(member_results)
     if origin is Literal:
         return False
     if annotation in _SCALAR_ANNOTATIONS:
@@ -143,6 +145,8 @@ def _sample(annotation: Any, *, tainted: bool) -> Any:
     """Build a call value for *annotation*, carrying PAYLOAD when tainted."""
     annotation = _unwrap(annotation)
     origin = get_origin(annotation)
+    if origin in (typing.Union, types.UnionType):
+        return _sample(get_args(annotation)[0], tainted=tainted)
     if origin is Literal:
         return get_args(annotation)[0]
     if annotation is str:
@@ -169,14 +173,18 @@ def _sample(annotation: Any, *, tainted: bool) -> Any:
     raise UnsupportedAnnotation(annotation)
 
 
-def _call_kwargs(builder: Any, tainted_parameter: str | None) -> dict[str, Any]:
+def _call_kwargs(
+    builder: Any,
+    tainted_parameter: str | None,
+    tainted_annotation: Any | None = None,
+) -> dict[str, Any]:
     """Benign values for every required parameter, plus one tainted parameter."""
     kwargs: dict[str, Any] = {}
     hints = get_type_hints(builder)
     for name, parameter in inspect.signature(builder).parameters.items():
         annotation = hints[name]
         if name == tainted_parameter:
-            kwargs[name] = _sample(annotation, tainted=True)
+            kwargs[name] = _sample(tainted_annotation or annotation, tainted=True)
         elif parameter.default is inspect.Parameter.empty:
             kwargs[name] = _sample(annotation, tainted=False)
     return kwargs
@@ -194,7 +202,29 @@ def _parameter_cases(predicate: Any) -> list[tuple[str, Any, str]]:
     return cases
 
 
-STRING_CASES = _parameter_cases(_carries_string)
+def _string_parameter_cases() -> list[tuple[str, Any, str, Any]]:
+    """Expand union parameters so every string-carrying member is exercised."""
+    cases = []
+    for module, name, builder in _builders():
+        hints = get_type_hints(builder)
+        module_name = module.__name__.rsplit(".", 1)[-1]
+        for parameter in inspect.signature(builder).parameters:
+            annotation = _unwrap(hints[parameter])
+            members = (
+                get_args(annotation)
+                if get_origin(annotation) in (typing.Union, types.UnionType)
+                else (annotation,)
+            )
+            member_results = [_carries_string(member) for member in members]
+            for member, carries_string in zip(members, member_results, strict=True):
+                if carries_string:
+                    suffix = getattr(member, "__name__", "value")
+                    case_id = f"{module_name}.{name}.{parameter}.{suffix}"
+                    cases.append((case_id, builder, parameter, member))
+    return cases
+
+
+STRING_CASES = _string_parameter_cases()
 VOCABULARY_CASES = _parameter_cases(_is_closed_vocabulary)
 
 
@@ -252,13 +282,18 @@ def test_builders_are_discovered():
 
 
 @pytest.mark.parametrize(
-    ("builder", "parameter"),
-    [(builder, parameter) for _, builder, parameter in STRING_CASES],
-    ids=[case_id for case_id, _, _ in STRING_CASES],
+    ("builder", "parameter", "annotation"),
+    [
+        (builder, parameter, annotation)
+        for _, builder, parameter, annotation in STRING_CASES
+    ],
+    ids=[case_id for case_id, _, _, _ in STRING_CASES],
 )
-def test_metacharacters_round_trip_without_changing_structure(builder, parameter):
+def test_metacharacters_round_trip_without_changing_structure(
+    builder, parameter, annotation
+):
     try:
-        tainted = builder(**_call_kwargs(builder, parameter))
+        tainted = builder(**_call_kwargs(builder, parameter, annotation))
     except ValueError as rejected:
         # A closed vocabulary refused the value outright: no document was
         # produced, so neither malformed output nor injection is reachable.
@@ -272,9 +307,7 @@ def test_metacharacters_round_trip_without_changing_structure(builder, parameter
     )
 
     benign_kwargs = _call_kwargs(builder, None)
-    benign_kwargs[parameter] = _sample(
-        get_type_hints(builder)[parameter], tainted=False
-    )
+    benign_kwargs[parameter] = _sample(annotation, tainted=False)
     assert _structure(tainted) == _structure(builder(**benign_kwargs)), (
         f"{builder.__name__}({parameter}=...) changed the document structure"
     )
@@ -377,7 +410,7 @@ def test_vscsi_target_device_cannot_add_a_second_lpar_href():
         storage_kind="VirtualDisk",
         storage_name="disk1",
         lpar_link="https://h/LP/AUTH",
-        target_device='x</TargetDevice><AssociatedLogicalPartition '
+        target_device="x</TargetDevice><AssociatedLogicalPartition "
         'xmlns="http://www.w3.org/2005/Atom" rel="related" href="https://h/LP/EVIL"/>'
         "<TargetDevice>y",
     )
@@ -400,9 +433,7 @@ def test_job_parameter_value_cannot_add_a_target_managed_system():
     )
 
     parsed = DET.fromstring(xml.encode("utf-8"))
-    names = [
-        el.text for el in parsed.iter() if localname(el.tag) == "ParameterName"
-    ]
+    names = [el.text for el in parsed.iter() if localname(el.tag) == "ParameterName"]
     assert names.count("TargetManagedSystemName") == 1
 
 
@@ -416,7 +447,8 @@ def test_repository_password_with_an_ampersand_stays_well_formed():
     )
 
     values = [
-        el.text for el in DET.fromstring(xml.encode("utf-8")).iter()
+        el.text
+        for el in DET.fromstring(xml.encode("utf-8")).iter()
         if localname(el.tag) == "ParameterValue"
     ]
     assert "a&b<c" in values
@@ -515,9 +547,7 @@ def test_characters_xml_cannot_carry_are_rejected(value, codepoint):
         documents.build_hmc_user_document(username=value)
 
 
-@pytest.mark.parametrize(
-    "value", ["a\tb", "a\nb", "a\rb", "caf\u00e9", "\U0001f600"]
-)
+@pytest.mark.parametrize("value", ["a\tb", "a\nb", "a\rb", "caf\u00e9", "\U0001f600"])
 def test_characters_xml_can_carry_are_accepted(value):
     xml = documents.build_hmc_user_document(username=value)
 
@@ -550,7 +580,10 @@ def test_escaping_an_escaped_value_is_a_no_op():
 @pytest.mark.parametrize(
     "builder",
     [builder for _, _, builder in _builders()],
-    ids=[f"{module.__name__.rsplit('.', 1)[-1]}.{name}" for module, name, _ in _builders()],
+    ids=[
+        f"{module.__name__.rsplit('.', 1)[-1]}.{name}"
+        for module, name, _ in _builders()
+    ],
 )
 def test_benign_input_produces_no_entity_at_all(builder):
     """The byte-for-byte claim, asserted for every builder rather than two."""
@@ -568,6 +601,6 @@ def test_valid_input_is_unchanged_by_escaping():
         documents.build_lpar_document(name="lpar1")
     )
     assert (
-        "<ParameterValue kb=\"CUR\" kxe=\"false\">false</ParameterValue>"
+        '<ParameterValue kb="CUR" kxe="false">false</ParameterValue>'
         in jobs.power_on_lpar_job()
     )

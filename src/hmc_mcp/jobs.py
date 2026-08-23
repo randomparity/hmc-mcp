@@ -9,6 +9,7 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal, NotRequired, Protocol, Required, get_args
 from urllib.parse import urlparse
 
@@ -161,6 +162,30 @@ def _job_error(resource: dict[str, Any], status: str) -> str | None:
 
     if isinstance(exception_message, str) and exception_message.strip():
         return exception_message.strip()
+    return None
+
+
+def vios_stdout(job: dict[str, Any] | None) -> str | None:
+    """Return the first usable ``stdOut`` value from a VIOS job result."""
+    resource = (job or {}).get("Resource")
+    if not isinstance(resource, dict):
+        return None
+    results = resource.get("Results")
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        value = parameter.get("ParameterValue")
+        if parameter.get("ParameterName") == "stdOut" and isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
     return None
 
 
@@ -456,6 +481,10 @@ ConsoleUpdateMediaType = Literal[
     "USB", "NFS", "SFTP", "FTP", "IBMWebsite", "Disk", "VirtualMedia", "CDDVD"
 ]
 _CONSOLE_UPDATE_MEDIA_TYPES = frozenset(get_args(ConsoleUpdateMediaType))
+VIOSUpdateResourceType = Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"]
+VIOSUpgradeResourceType = Literal["HMC", "NFS", "SFTP", "USB"]
+_VIOS_UPDATE_RESOURCE_TYPES = frozenset(get_args(VIOSUpdateResourceType))
+_VIOS_UPGRADE_RESOURCE_TYPES = frozenset(get_args(VIOSUpgradeResourceType))
 
 
 class ConsoleUpdateSource(TypedDict, total=False):
@@ -484,6 +513,155 @@ class ConsoleUpdateSource(TypedDict, total=False):
 
 
 _CONSOLE_UPDATE_KEYS = frozenset(ConsoleUpdateSource.__annotations__)
+
+_VIOS_NAME = Annotated[str, Field(description="Name of the VIOS image.")]
+_VIOS_SERVER = Annotated[str, Field(description="Remote server host or IP.")]
+_VIOS_REMOTE_DIRECTORY = Annotated[str, Field(description="Remote image directory.")]
+_VIOS_FILE_NAMES = Annotated[str, Field(description="Comma-separated image files.")]
+_VIOS_MOUNT_LOCATION = Annotated[str, Field(description="NFS mount location.")]
+_VIOS_MOUNT_OPTIONS = Annotated[str, Field(description="Additional NFS mount options.")]
+_VIOS_USER = Annotated[str, Field(description="Remote SFTP user name.")]
+_VIOS_PASSWORD = Annotated[str, Field(description="Remote SFTP password.")]
+_VIOS_SSH_KEY = Annotated[str, Field(description="SSH private key for SFTP.")]
+_VIOS_PASSPHRASE = Annotated[str, Field(description="SSH-key passphrase.")]
+_VIOS_USB_DEVICE = Annotated[str, Field(description="USB device name.")]
+_VIOS_DISKS = Annotated[
+    str, Field(description="Comma-separated free physical volumes.")
+]
+
+
+class _VIOSOptionalSource(TypedDict, total=False):
+    Name: _VIOS_NAME
+    SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
+
+
+class _VIOSUpdateOptional(_VIOSOptionalSource, total=False):
+    RestartVIOS: Annotated[str, Field(description="Restart the VIOS after the update.")]
+
+
+class VIOSUpdateHMCSource(TypedDict):
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    RestartVIOS: NotRequired[
+        Annotated[str, Field(description="Restart the VIOS after the update.")]
+    ]
+
+
+class VIOSUpdateNFSSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
+
+
+class VIOSUpdateSFTPSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+
+
+class VIOSUpdateUSBSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
+
+
+class VIOSUpdateIBMWebsiteSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[
+        Literal["IBMWebsite"], Field(description="IBM website image source.")
+    ]
+
+
+VIOSUpdateSource = (
+    VIOSUpdateHMCSource
+    | VIOSUpdateNFSSource
+    | VIOSUpdateSFTPSource
+    | VIOSUpdateUSBSource
+    | VIOSUpdateIBMWebsiteSource
+)
+
+
+class VIOSUpgradeHMCSource(TypedDict):
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    Disks: _VIOS_DISKS
+
+
+class VIOSUpgradeNFSSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
+
+
+class VIOSUpgradeSFTPSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+
+
+class VIOSUpgradeUSBSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
+    Disks: _VIOS_DISKS
+
+
+VIOSUpgradeSource = (
+    VIOSUpgradeHMCSource
+    | VIOSUpgradeNFSSource
+    | VIOSUpgradeSFTPSource
+    | VIOSUpgradeUSBSource
+)
+
+
+VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
+_VIOS_COMMON_KEYS = frozenset(
+    {
+        "Name",
+        "ServerHostOrIP",
+        "UserName",
+        "Password",
+        "SSHKey",
+        "PassPhrase",
+        "RemoteDirectory",
+        "FileNames",
+        "MountLocation",
+        "MountOptions",
+        "USBDevice",
+        "SaveFile",
+        "ResourceType",
+    }
+)
+_VIOS_UPDATE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "RestartVIOS"}
+_VIOS_UPGRADE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "Disks"}
+_VIOS_UPDATE_REQUIRED = {
+    "HMC": frozenset({"Name"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "USB": frozenset({"USBDevice"}),
+    "IBMWebsite": frozenset(),
+}
+_VIOS_UPGRADE_REQUIRED = {
+    "HMC": frozenset({"Name", "Disks"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "USB": frozenset({"USBDevice", "Disks"}),
+}
 
 
 class RepositorySource(TypedDict, total=False):
@@ -588,24 +766,67 @@ def update_hmc_job(source: ConsoleUpdateSource) -> str:
     )
 
 
-def update_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS update.
+def _vios_params(
+    source: Mapping[str, Any],
+    operation: str,
+    allowed_keys: frozenset[str],
+    resource_types: frozenset[str],
+    required_keys: Mapping[str, frozenset[str]],
+) -> dict[str, str]:
+    """Validate and stringify one documented VIOS job request."""
+    unknown = set(source) - allowed_keys
+    if unknown:
+        raise ValueError(
+            f"Unknown {operation} parameter(s): {', '.join(sorted(unknown))}. "
+            f"Recognised parameters: {', '.join(sorted(allowed_keys))}."
+        )
+    resource_type = source.get("ResourceType")
+    if resource_type is None:
+        raise ValueError(f"{operation} source is missing required 'ResourceType'.")
+    if resource_type not in resource_types:
+        expected = ", ".join(sorted(resource_types))
+        raise ValueError(
+            f"Invalid {operation} ResourceType {resource_type!r}. "
+            f"Expected one of: {expected}."
+        )
+    missing = {key for key in required_keys[resource_type] if source.get(key) is None}
+    if missing:
+        raise ValueError(
+            f"{operation} ResourceType {resource_type!r} requires parameter(s): "
+            f"{', '.join(sorted(missing))}."
+        )
+    save_file = source.get("SaveFile")
+    if (
+        isinstance(save_file, str)
+        and save_file.lower() == "true"
+        and source.get("Name") is None
+    ):
+        raise ValueError(f"{operation} SaveFile='true' requires parameter: Name.")
+    return {key: str(value) for key, value in source.items() if value is not None}
 
-    target: VirtualIOServer/{uuid}/do/Update
-    """
-    return build_job_request(
-        "Update", "VirtualIOServer", _repository_params(repository)
+
+def update_vios_job(source: VIOSUpdateSource) -> str:
+    """Build a documented ``UpdateVIOS`` request."""
+    params = _vios_params(
+        source,
+        "UpdateVIOS",
+        _VIOS_UPDATE_KEYS,
+        _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPDATE_REQUIRED,
     )
+    return build_job_request("UpdateVIOS", "VirtualIOServer", params)
 
 
-def upgrade_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS upgrade.
-
-    target: VirtualIOServer/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "VirtualIOServer", _repository_params(repository)
+def upgrade_vios_job(source: VIOSUpgradeSource) -> str:
+    """Build a documented ``UpgradeVIOS`` request."""
+    params = _vios_params(
+        source,
+        "UpgradeVIOS",
+        _VIOS_UPGRADE_KEYS,
+        _VIOS_UPGRADE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_REQUIRED,
     )
+    return build_job_request("UpgradeVIOS", "VirtualIOServer", params)
 
 
 def update_firmware_job(repository: RepositorySource) -> str:
