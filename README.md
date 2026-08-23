@@ -869,6 +869,41 @@ its matching read-succeeded flag set means verified absence.
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |
 
+`hmc_vios_update` uses IBM's operation-specific parameter names. Every source
+requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or
+`IBMWebsite` and may include `RestartVIOS`; upgrades accept `HMC`, `NFS`,
+`SFTP`, or `USB` and may include `Disks`. For example:
+
+```json
+{
+  "vios_name_or_uuid": "vios1",
+  "kind": "update",
+  "repository": {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+    "Name": "update.iso",
+    "RestartVIOS": "false"
+  }
+}
+```
+
+```json
+{
+  "vios_name_or_uuid": "vios1",
+  "kind": "upgrade",
+  "repository": {
+    "ResourceType": "HMC",
+    "Name": "install.iso",
+    "Disks": "hdisk1"
+  }
+}
+```
+
+With `wait=true`, a terminal job's documented `stdOut` result is also exposed
+at the top level when present. Invalid or cross-operation parameters are
+rejected before connecting to the HMC.
+
 **LPAR profiles (backup / restore)**
 
 | Tool                         | Description |
