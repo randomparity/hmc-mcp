@@ -88,6 +88,16 @@ def test_remote_restart_preserves_target_uuid_parameter():
     assert "targetManagedSystem</ParameterName>" not in xml
 
 
+def test_remote_restart_rejects_unknown_runtime_operation():
+    with pytest.raises(ValueError, match="operation must be one of"):
+        remote_restart_lpar_job(
+            "reboot",  # type: ignore[arg-type]
+            "src",
+            "lpar-uuid",
+            target_managed_system="tgt",
+        )
+
+
 # -- client methods ------------------------------------------------------- #
 
 

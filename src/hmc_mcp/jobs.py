@@ -23,6 +23,7 @@ from .xmlutil import WEB_NS, escapes_string_arguments
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
 RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
+REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 
@@ -454,6 +455,9 @@ def remote_restart_lpar_job(
     retain_devices: bool = False,
 ) -> str:
     """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
+        raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
     if operation != "cleanup" and not (
         target_managed_system or target_managed_system_uuid
     ):

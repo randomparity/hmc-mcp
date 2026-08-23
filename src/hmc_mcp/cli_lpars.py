@@ -12,7 +12,7 @@ from rich.table import Table
 from typing import cast
 
 from .common import is_uuid
-from .jobs import RemoteRestartOperation
+from .jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
 from .cli_app import (
     _client,
     _first_field,
@@ -417,10 +417,9 @@ def lpars_remote_restart(
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
     validate_wait_timing(wait, timeout, interval)
-    allowed = {"validate", "recover", "restart", "cleanup", "cancel"}
-    if operation not in allowed:
+    if operation not in REMOTE_RESTART_OPERATIONS:
         raise typer.BadParameter(
-            f"operation must be one of: {', '.join(sorted(allowed))}"
+            f"operation must be one of: {', '.join(sorted(REMOTE_RESTART_OPERATIONS))}"
         )
 
     async def _fn(hmc):
