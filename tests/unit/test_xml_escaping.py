@@ -95,9 +95,8 @@ def _unwrap(annotation: Any) -> Any:
     """
     if get_origin(annotation) in (typing.Union, types.UnionType):
         members = [a for a in get_args(annotation) if a is not type(None)]
-        if len(members) != 1:
-            raise UnsupportedAnnotation(annotation)
-        return _unwrap(members[0])
+        if len(members) == 1:
+            return _unwrap(members[0])
     return annotation
 
 
@@ -124,6 +123,8 @@ def _carries_string(annotation: Any) -> bool:
     """
     annotation = _unwrap(annotation)
     origin = get_origin(annotation)
+    if origin in (typing.Union, types.UnionType):
+        return any(_carries_string(member) for member in get_args(annotation))
     if origin is Literal:
         return False
     if annotation in _SCALAR_ANNOTATIONS:
@@ -143,6 +144,8 @@ def _sample(annotation: Any, *, tainted: bool) -> Any:
     """Build a call value for *annotation*, carrying PAYLOAD when tainted."""
     annotation = _unwrap(annotation)
     origin = get_origin(annotation)
+    if origin in (typing.Union, types.UnionType):
+        return _sample(get_args(annotation)[0], tainted=tainted)
     if origin is Literal:
         return get_args(annotation)[0]
     if annotation is str:
