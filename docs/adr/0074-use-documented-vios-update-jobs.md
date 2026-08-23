@@ -36,10 +36,11 @@ connection:
 parameter, and `IBMWebsite` on upgrade are rejected.
 
 The builders and REST paths use `UpdateVIOS` and `UpgradeVIOS`. A waited result
-exposes the first non-empty string-valued `stdOut` job parameter, in response
-order, as a trimmed top-level copy while retaining the complete raw job
-structure. Empty or whitespace-only values, non-string values, and malformed
-result structures add no projection; duplicate entries remain visible in the
+whose status is in the shared terminal-status set exposes the first non-empty
+string-valued `stdOut` job parameter, in response order, as a trimmed top-level
+copy while retaining the complete raw job structure. Empty or whitespace-only
+values, non-string values, malformed result structures, and timed-out
+nonterminal jobs add no projection; duplicate entries remain visible in the
 raw job. An asynchronous submission remains unchanged because no operation
 result exists yet.
 

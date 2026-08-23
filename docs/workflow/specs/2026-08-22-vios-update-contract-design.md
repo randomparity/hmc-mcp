@@ -41,12 +41,14 @@ Update builds `OperationName=UpdateVIOS` and submits to
 segment before the fixed operation suffix is appended.
 
 When `wait=False`, the tool returns the submission metadata unchanged. When
-`wait=True`, it keeps the complete terminal job mapping. If
+`wait=True`, it keeps the complete returned job mapping. Only when its
+`Resource.Status` belongs to the shared `TERMINAL_JOB_STATUSES` set and
 `Resource.Results.JobParameter` contains a mapping or list entry with
 `ParameterName == "stdOut"` and a non-empty string `ParameterValue`, the
 returned mapping also has top-level `stdOut` containing the trimmed first such
 value in response order. Empty, non-string, malformed, or later duplicate
-result entries do not add or replace that projection and do not hide the raw job.
+result entries do not add or replace that projection and do not hide the raw
+job. A timed-out nonterminal job does not project partial output.
 
 ## Components and data flow
 
@@ -102,8 +104,9 @@ tests prove the documented union. Result fixtures cover singleton and list
 forms; malformed or nonmatching entries before a valid `stdOut`; a first valid
 entry followed by empty, malformed, and valid duplicates; whitespace-only and
 non-string values; case-sensitive parameter names; preservation of the raw job;
-and `wait=False` returning unprojected submission metadata. They assert that the
-first non-empty string is trimmed and wins. README text names the documented
+and `wait=False` returning unprojected submission metadata. A nonterminal
+waited job containing `stdOut` proves partial output is not projected. Tests
+assert that the first non-empty string is trimmed and wins. README text names the documented
 contract and the wait-only projection. `just test`, `just smoke`, and
 `just verify` must pass.
 
