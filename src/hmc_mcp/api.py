@@ -144,6 +144,11 @@ from hmc_mcp.operations_templates import (
 from hmc_mcp.operations_vios import power_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import SriovMode
+from hmc_mcp.console_capture import (
+    ConsoleCapture,
+    ConsoleHeldError,
+    capture_lpar_console,
+)
 
 __all__ = [
     "HMCClient",
@@ -275,4 +280,7 @@ __all__ = [
     "get_partition_template",
     "deploy_partition_template",
     "power_vios",
+    "capture_lpar_console",
+    "ConsoleCapture",
+    "ConsoleHeldError",
 ]

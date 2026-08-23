@@ -75,6 +75,7 @@ from . import (
     server_adapters,
     server_capacity,
     server_composite,
+    server_console,
     server_health,
     server_jobs,
     server_lpar_config,
@@ -91,6 +92,9 @@ from . import (
     server_updates,
     server_users,
     server_vios,
+)
+from .server_console import (
+    hmc_capture_lpar_console as hmc_capture_lpar_console,
 )
 
 from .server_systems import (
@@ -283,6 +287,7 @@ TOOL_MODULES = (
     server_system_resources,
     server_composite,
     server_provision,
+    server_console,
 )
 
 

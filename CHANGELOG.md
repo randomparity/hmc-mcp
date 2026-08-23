@@ -35,8 +35,22 @@ carry a `### Facade manifest` section.
   call covers every partition on a managed system. Partitions with no description
   (REST `<Description>` element absent), a non-token description (`unparsed`), and a valid
   ownership stamp (`owned`/`owner`) are reported as distinct facts; none are dropped.
+- Bounded, non-interactive LPAR console capture: `capture_lpar_console`
+  operation, `ConsoleCapture` / `ConsoleHeldError` facade exports, and the
+  `hmc_capture_lpar_console` MCP tool (#385, ADR 0072). Runs `mkvterm` over a
+  dedicated asyncssh process session with stdin sealed by construction (no
+  code path can write to the partition console), enforces client-side
+  duration/max-bytes/idle bounds, returns raw bytes (truncation never splits a
+  multi-byte UTF-8 or incomplete ANSI escape sequence), detects vterm
+  contention by the recorded stdout sentinel (exit code is always 0), and
+  runs `rmvterm` on every exit path — with `released` true only after an
+  independent-session mkvterm probe proves the slot free. Designed from the
+  P1–P8 live-hardware prototype recorded on #385 (HMC V10R3 M1060); only idle
+  partition streams were observed live, so the ANSI truncation rule is
+  protocol-derived.
 
 ### Changed
+
 
 - `HMC_AGENT_ID` values containing double quotes or backslashes are rejected at config load
   instead of being passed through into SSH command construction (#386).
@@ -69,6 +83,8 @@ carry a `### Facade manifest` section.
 ### Facade manifest
 
 - Added: `set_lpar_ownership_description`.
+- Added: `capture_lpar_console`, `ConsoleCapture`, `ConsoleHeldError` (#385,
+  ADR 0072); this moves the frozen public signature digest.
 - Added: `list_lpar_ownership`.
 - Removed: none.
 - Renamed: none.
