@@ -100,7 +100,6 @@ LEGACY_READ_ONLY = frozenset(
         "hmc_list_task_roles",
         "hmc_list_resource_roles",
         "hmc_get_remote_access",
-        "hmc_get_available_hmc_ptfs",
         "hmc_list_vios_backups",
         "hmc_get_lpar_description",
         "hmc_get_lpar_msp",
