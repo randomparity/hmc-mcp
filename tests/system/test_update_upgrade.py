@@ -9,6 +9,8 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.jobs import (
     _REPOSITORY_TYPES,
     _REQUIRED_KEYS,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
     update_firmware_job,
     update_hmc_job,
     update_vios_job,
@@ -21,6 +23,18 @@ from hmc_mcp.jobs import (
 # ---------------------------------------------------------------------- #
 
 REPO_NFS = {"type": "nfs", "host": "repo.example.com", "path": "/images/hmc"}
+VIOS_UPDATE_NFS: VIOSUpdateSource = {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+    "RestartVIOS": "false",
+}
+VIOS_UPGRADE_NFS: VIOSUpgradeSource = {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+    "Disks": "hdisk1,hdisk2",
+}
 
 
 def test_update_hmc_job_xml():
@@ -41,15 +55,21 @@ def test_update_hmc_job_rejects_unknown_parameter():
 
 
 def test_update_vios_job_xml():
-    xml = update_vios_job(REPO_NFS)
-    assert "Update" in xml
-    assert "VirtualIOServer" in xml
+    xml = update_vios_job(VIOS_UPDATE_NFS)
+
+    assert "<OperationName kb=\"ROR\" kxe=\"false\">UpdateVIOS</OperationName>" in xml
+    assert "<GroupName kb=\"ROR\" kxe=\"false\">VirtualIOServer</GroupName>" in xml
+    assert "<ParameterName kb=\"ROR\" kxe=\"false\">ResourceType</ParameterName>" in xml
+    assert "<ParameterName kb=\"ROR\" kxe=\"false\">RestartVIOS</ParameterName>" in xml
 
 
 def test_upgrade_vios_job_xml():
-    xml = upgrade_vios_job(REPO_NFS)
-    assert "Upgrade" in xml
-    assert "VirtualIOServer" in xml
+    xml = upgrade_vios_job(VIOS_UPGRADE_NFS)
+
+    assert "<OperationName kb=\"ROR\" kxe=\"false\">UpgradeVIOS</OperationName>" in xml
+    assert "<GroupName kb=\"ROR\" kxe=\"false\">VirtualIOServer</GroupName>" in xml
+    assert "<ParameterName kb=\"ROR\" kxe=\"false\">ResourceType</ParameterName>" in xml
+    assert "<ParameterName kb=\"ROR\" kxe=\"false\">Disks</ParameterName>" in xml
 
 
 def test_update_firmware_job_xml():
@@ -58,39 +78,36 @@ def test_update_firmware_job_xml():
     assert "ManagedSystem" in xml
 
 
-def test_repository_params_none_values_excluded():
-    """None values in the repository dict must not appear as job parameters."""
-    xml = update_vios_job({"type": "nfs", "host": None, "path": "/images"})
-    assert "host" not in xml
-    assert "/images" in xml
+def test_vios_params_none_values_excluded():
+    xml = update_vios_job({"ResourceType": "NFS", "Name": None})  # type: ignore[typeddict-item]
+
+    assert "<ParameterName kb=\"ROR\" kxe=\"false\">Name</ParameterName>" not in xml
 
 
-def test_repository_params_unknown_key_rejected():
-    """A misspelled key must fail fast instead of reaching the HMC."""
-    with pytest.raises(ValueError, match="Unknown repository key.*hst"):
-        update_vios_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
+def test_vios_update_unknown_parameter_rejected():
+    with pytest.raises(ValueError, match="Unknown UpdateVIOS parameter.*type"):
+        update_vios_job({"ResourceType": "NFS", "type": "nfs"})  # type: ignore[typeddict-unknown-key]
 
 
-def test_repository_params_missing_type_rejected():
-    """A repository dict without 'type' must fail fast, not build a job."""
-    with pytest.raises(ValueError, match="missing 'type'"):
-        update_vios_job({"host": "repo.example.com", "path": "/images"})
+@pytest.mark.parametrize("builder", [update_vios_job, upgrade_vios_job])
+def test_vios_source_requires_resource_type(builder):
+    with pytest.raises(ValueError, match="missing required 'ResourceType'"):
+        builder({"Name": "image"})
 
 
-def test_repository_params_unknown_type_rejected():
-    with pytest.raises(ValueError, match="Unknown repository type"):
-        update_vios_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
+def test_vios_update_rejects_upgrade_parameter():
+    with pytest.raises(ValueError, match="Unknown UpdateVIOS parameter.*Disks"):
+        update_vios_job({"ResourceType": "NFS", "Disks": "hdisk1"})  # type: ignore[typeddict-unknown-key]
 
 
-def test_repository_params_missing_required_key_rejected():
-    """nfs requires host+path; a missing one must fail fast."""
-    with pytest.raises(ValueError, match="requires key.*host"):
-        update_vios_job({"type": "nfs", "path": "/images"})
+def test_vios_upgrade_rejects_update_parameter():
+    with pytest.raises(ValueError, match="Unknown UpgradeVIOS parameter.*RestartVIOS"):
+        upgrade_vios_job({"ResourceType": "NFS", "RestartVIOS": "false"})  # type: ignore[typeddict-unknown-key]
 
 
-def test_repository_params_disk_requires_nothing():
-    xml = update_vios_job({"type": "disk"})
-    assert "Update" in xml
+def test_vios_upgrade_rejects_ibm_website():
+    with pytest.raises(ValueError, match="Invalid UpgradeVIOS ResourceType"):
+        upgrade_vios_job({"ResourceType": "IBMWebsite"})  # type: ignore[typeddict-item]
 
 
 def test_repository_types_cover_required_key_sets():
@@ -156,37 +173,33 @@ async def test_hmc_get_available_hmc_ptfs(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_hmc_vios_update_update(mock_hmc):
-    """Client layer: Update job reaches VirtualIOServer/do/Update."""
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    """Client layer: UpdateVIOS reaches its documented operation path."""
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
+    route = mock_hmc.put(path).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
-            f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Update",
-            update_vios_job(REPO_NFS),
+            path,
+            update_vios_job(VIOS_UPDATE_NFS),
         )
 
     assert route.called
     assert job is not None
     body = route.calls.last.request.content.decode()
-    assert "Update" in body
+    assert "UpdateVIOS" in body
     assert "VirtualIOServer" in body
 
 
 @pytest.mark.asyncio
 async def test_hmc_vios_update_upgrade(mock_hmc):
-    """Client layer: Upgrade job reaches VirtualIOServer/do/Upgrade."""
-    route = mock_hmc.put(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    """Client layer: UpgradeVIOS reaches its documented operation path."""
+    path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
+    route = mock_hmc.put(path).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
-            f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/Upgrade",
-            upgrade_vios_job(
-                {"type": "sftp", "host": "sftp.example.com", "path": "/vios"}
-            ),
+            path,
+            upgrade_vios_job(VIOS_UPGRADE_NFS),
         )
 
     assert route.called

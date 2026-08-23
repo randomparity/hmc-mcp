@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import quote
 
 from ._app import (
@@ -16,6 +16,9 @@ from .errors import HMCError
 from .jobs import (
     ConsoleUpdateSource,
     RepositorySource,
+    VIOSSource,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
     update_firmware_job,
     update_hmc_job,
     update_vios_job,
@@ -151,7 +154,7 @@ def hmc_get_available_hmc_ptfs(
 @tool(effect="destructive", operation="update.vios", target_kind="vios")
 def hmc_vios_update(
     vios_name_or_uuid: str,
-    repository: RepositorySource,
+    repository: VIOSSource,
     kind: Literal["update", "upgrade"] = "update",
     wait: bool = False,
     timeout_seconds: int = 300,
@@ -161,15 +164,15 @@ def hmc_vios_update(
     """Submit a VIOS software update or upgrade job.
 
     kind='update' installs fixes (PTF level); kind='upgrade' performs a full
-    VIOS version upgrade. repository describes the image source (same format as
-    hmc_update_console_software). Submits an Update or Upgrade job to VirtualIOServer; poll
+    VIOS version upgrade. repository uses the documented VIOS operation
+    parameter names. Submits UpdateVIOS or UpgradeVIOS to VirtualIOServer; poll
     hmc_get_job for status.
 
     Set wait=True to block until the job reaches a terminal state.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        repository: NFS, SFTP, or HMC-disk software source configuration.
+        repository: Documented VIOS update or upgrade job parameters.
         kind: ``update`` for PTFs or ``upgrade`` for a full version upgrade.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
@@ -177,11 +180,11 @@ def hmc_vios_update(
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     if kind == "update":
-        job_xml = update_vios_job(repository)
-        operation = "Update"
+        job_xml = update_vios_job(cast(VIOSUpdateSource, repository))
+        operation = "UpdateVIOS"
     elif kind == "upgrade":
-        job_xml = upgrade_vios_job(repository)
-        operation = "Upgrade"
+        job_xml = upgrade_vios_job(cast(VIOSUpgradeSource, repository))
+        operation = "UpgradeVIOS"
     else:
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -189,10 +192,11 @@ def hmc_vios_update(
     async def _go():
         async with client_from_env(profile) as hmc:
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
+            vios_path_id = quote(vios_uuid, safe="")
             return await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
-                    f"/rest/api/uom/VirtualIOServer/{vios_uuid}/do/{operation}",
+                    f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/{operation}",
                     job_xml,
                 ),
                 wait,

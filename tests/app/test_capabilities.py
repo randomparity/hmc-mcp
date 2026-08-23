@@ -496,7 +496,11 @@ def test_update_source_enums_match_runtime_constants():
 
     Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.jobs import _CONSOLE_UPDATE_MEDIA_TYPES, _REPOSITORY_TYPES
+    from hmc_mcp.jobs import (
+        _CONSOLE_UPDATE_MEDIA_TYPES,
+        _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_RESOURCE_TYPES,
+    )
 
     by_name = _tools_by_name()
 
@@ -509,10 +513,20 @@ def test_update_source_enums_match_runtime_constants():
     ]
     assert repository["required"] == ["MediaType"]
 
-    repo_type = by_name["hmc_vios_update"].parameters["properties"]["repository"][
-        "properties"
-    ]["type"]
-    assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
+    vios_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"]
+    update_source, upgrade_source = vios_sources["anyOf"]
+    assert update_source["required"] == ["ResourceType"]
+    assert upgrade_source["required"] == ["ResourceType"]
+    assert set(update_source["properties"]["ResourceType"]["enum"]) == set(
+        _VIOS_UPDATE_RESOURCE_TYPES
+    )
+    assert set(upgrade_source["properties"]["ResourceType"]["enum"]) == set(
+        _VIOS_UPGRADE_RESOURCE_TYPES
+    )
+    assert "RestartVIOS" in update_source["properties"]
+    assert "Disks" not in update_source["properties"]
+    assert "Disks" in upgrade_source["properties"]
+    assert "RestartVIOS" not in upgrade_source["properties"]
 
 
 def test_metrics_tools_have_stable_output_schemas():

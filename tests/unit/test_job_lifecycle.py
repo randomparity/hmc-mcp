@@ -10,6 +10,8 @@ from pydantic import TypeAdapter
 from hmc_mcp.errors import HMCError
 from hmc_mcp.jobs import (
     RepositorySource,
+    VIOSUpdateSource,
+    VIOSUpgradeSource,
     job_identifier,
     job_outcome,
     validate_wait_timing,
@@ -21,6 +23,22 @@ def test_repository_source_builds_a_pydantic_type_adapter() -> None:
     schema = TypeAdapter(RepositorySource).json_schema()
 
     assert set(schema["properties"]) == set(RepositorySource.__annotations__)
+
+
+@pytest.mark.parametrize("source", [VIOSUpdateSource, VIOSUpgradeSource])
+def test_vios_source_builds_a_pydantic_type_adapter(source) -> None:
+    schema = TypeAdapter(source).json_schema()
+
+    assert "ResourceType" in schema["properties"]
+    assert schema["required"] == ["ResourceType"]
+
+
+def test_vios_source_properties_are_operation_specific() -> None:
+    update = TypeAdapter(VIOSUpdateSource).json_schema()["properties"]
+    upgrade = TypeAdapter(VIOSUpgradeSource).json_schema()["properties"]
+
+    assert "RestartVIOS" in update and "Disks" not in update
+    assert "Disks" in upgrade and "RestartVIOS" not in upgrade
 
 
 @pytest.mark.parametrize(
