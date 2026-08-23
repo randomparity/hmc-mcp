@@ -17,9 +17,10 @@ system first, and resolves a named partition within it; UUID partitions pass
 through after the owner is resolved.
 
 The four processed/aggregated MCP tools gain an optional
-`system_name_or_uuid`. It is required only for `LogicalPartition`; omitting it
-raises a clear `ValueError` before network I/O. Managed-system calls ignore no
-new value: supplying the selector for that category is rejected as misuse.
+`system_name_or_uuid`, and CLI `metrics show` gains the equivalent optional
+`--system` selector. It is required only for `LogicalPartition`; omitting it
+raises a clear `ValueError` before network I/O. Supplying the selector for a
+managed-system request is rejected as misuse on both interfaces.
 
 Client processed and aggregated methods accept `system_uuid` as a keyword-only
 argument. For `LogicalPartition`, it is required and produces
@@ -43,9 +44,10 @@ unchanged.
 
 Focused tests prove nested processed and aggregated paths for named and UUID
 partitions, owner resolution and ambiguity behavior, early preference and LTM
-rejection, and unchanged managed-system paths. Tests assert rejected calls make
-no HTTP request. The repository test, smoke, and verify recipes remain the
-release gates.
+rejection, and unchanged managed-system paths. MCP and CLI tests cover selector
+forwarding, missing selectors, and managed-system misuse. Tests assert rejected
+calls make no HTTP request. The repository test, smoke, and verify recipes
+remain the release gates.
 
 ## Durable execution context
 
