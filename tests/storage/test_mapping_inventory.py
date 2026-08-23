@@ -105,6 +105,7 @@ VIOS_PARENT_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
 VIOS_POST_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
 VIOS_PARENT = f"""<VirtualIOServer
   xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  <UUID>{VIOS_UUID}</UUID>
   <UnrelatedLink href="/rest/api/uom/ManagedSystem/11111111-1111-1111-1111-111111111111"/>
   <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings>
@@ -208,7 +209,10 @@ async def test_delete_storage_mapping_posts_parent_without_exact_mapping(mock_hm
     assert request.headers["content-type"].endswith("type=VirtualIOServer")
     root = ET.fromstring(request.content)
     ns = {"uom": "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"}
-    assert [node.text for node in root.findall(".//uom:UUID", ns)] == ["mapping-10"]
+    assert [
+        node.text
+        for node in root.findall(".//uom:VirtualSCSIMapping/uom:UUID", ns)
+    ] == ["mapping-10"]
     assert root.findtext("uom:ResourceMonitoringControlState", namespaces=ns) == "active"
 
 
@@ -217,7 +221,7 @@ async def test_delete_storage_mapping_posts_parent_without_exact_mapping(mock_hm
     ("mapping_uuid", "document", "message"),
     [
         ("missing", VIOS_PARENT, "not found"),
-        ("mapping-1", VIOS_PARENT.replace("mapping-10", "mapping-1"), "matched 2"),
+        ("mapping-1", VIOS_PARENT.replace("mapping-10", "mapping-1"), "duplicated"),
     ],
 )
 async def test_delete_storage_mapping_fails_closed_without_post(
@@ -290,7 +294,7 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
     [
         f'<feed xmlns="http://www.w3.org/2005/Atom">{VIOS_PARENT}{VIOS_PARENT}</feed>',
         VIOS_PARENT.replace(
-            "<AssociatedManagedSystem", "<UUID>wrong-vios</UUID><AssociatedManagedSystem"
+            f"<UUID>{VIOS_UUID}</UUID>", "<UUID>wrong-vios</UUID>"
         ),
     ],
 )
@@ -301,5 +305,28 @@ async def test_delete_storage_mapping_rejects_ambiguous_vios_document(
     posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="VIOS resources|identity does not match"):
+            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+    assert not posted.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "document",
+    [
+        VIOS_PARENT.replace(
+            "<UUID>mapping-1</UUID>",
+            "<UUID>mapping-1</UUID><UUID>different</UUID>",
+        ),
+        VIOS_PARENT.replace("<UUID>mapping-10</UUID>", ""),
+        VIOS_PARENT.replace("mapping-10", "mapping-1"),
+    ],
+)
+async def test_delete_storage_mapping_rejects_malformed_mapping_identity(
+    mock_hmc, document
+):
+    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
+    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="invalid UUID|duplicated"):
             await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
     assert not posted.called

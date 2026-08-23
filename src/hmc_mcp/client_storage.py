@@ -40,9 +40,7 @@ def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
         )
     vios_elem = resources[0]
     identities = vios_elem.findall(f"{{{_UOM_NS}}}UUID")
-    if identities and (
-        len(identities) != 1 or (identities[0].text or "").strip() != vios_uuid
-    ):
+    if len(identities) != 1 or (identities[0].text or "").strip() != vios_uuid:
         raise HMCError(
             f"VirtualIOServer response identity does not match {vios_uuid!r}",
             200,
@@ -257,12 +255,19 @@ class StorageMixin:
             raise HMCError(
                 f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
             )
-        matches = [
-            mapping
-            for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping")
-            if (mapping.findtext(f"{{{_UOM_NS}}}UUID") or "").strip()
-            == mapping_uuid
-        ]
+        identities: dict[str, ET.Element] = {}
+        for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping"):
+            uuid_elements = mapping.findall(f"{{{_UOM_NS}}}UUID")
+            if len(uuid_elements) != 1 or not (uuid_elements[0].text or "").strip():
+                raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
+            identity = (uuid_elements[0].text or "").strip()
+            if identity in identities:
+                raise HMCError(
+                    f"VirtualSCSIMapping UUID {identity!r} is duplicated; "
+                    "refusing an ambiguous detach"
+                )
+            identities[identity] = mapping
+        matches = [identities[mapping_uuid]] if mapping_uuid in identities else []
         if not matches:
             raise HMCError(
                 f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"

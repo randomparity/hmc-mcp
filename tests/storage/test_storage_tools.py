@@ -132,6 +132,7 @@ def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     parent = f"""<VirtualIOServer
       xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
       <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
       <VirtualSCSIMappings>
         <VirtualSCSIMapping><UUID>map-1</UUID></VirtualSCSIMapping>
