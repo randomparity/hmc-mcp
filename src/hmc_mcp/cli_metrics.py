@@ -21,6 +21,8 @@ from .operations_pcm import (
     metric_links,
     preference_flags,
     set_pcm_preferences,
+    validate_pcm_metric_target,
+    validate_pcm_preferences_category,
 )
 
 
@@ -32,6 +34,7 @@ def metrics_prefs(
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
+    validate_pcm_preferences_category(category)
 
     prefs = _with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_uuid))
 
@@ -67,6 +70,7 @@ def metrics_set_prefs(
     flags = preference_flags(ltm, aggregation, stm, compute_ltm, energy)
     if not flags:
         _usage_error("No flags supplied; nothing to change.")
+    validate_pcm_preferences_category(category)
 
     if not yes and not typer.confirm(
         f"Enable/disable PCM monitoring on {category} {resource_uuid}?"
@@ -100,6 +104,7 @@ def metrics_show(
     ),
 ) -> None:
     """Get PCM metrics (processed by default; --aggregated for rollups)."""
+    validate_pcm_metric_target(category, system_name_or_uuid)
 
     async def _go():
         async with _client() as hmc:

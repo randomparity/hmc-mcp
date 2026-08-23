@@ -3227,7 +3227,7 @@ def test_metrics_show_rejects_system_selector_for_managed_system(fake_hmc):
     )
 
     assert result.exit_code == 1
-    assert "only for LogicalPartition" in result.output
+    assert "only for LogicalPartition" in str(result.exception)
     assert fake_hmc.calls == []
 
 

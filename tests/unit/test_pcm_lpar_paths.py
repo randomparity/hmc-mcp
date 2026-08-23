@@ -1,5 +1,6 @@
 """Logical-partition PCM path and unsupported-endpoint contracts."""
 
+import inspect
 from unittest.mock import AsyncMock
 
 import httpx
@@ -10,6 +11,12 @@ from hmc_mcp.operations_pcm import (
     get_pcm_preferences,
     resolve_pcm_resource,
     set_pcm_preferences,
+)
+from hmc_mcp.server import (
+    hmc_aggregated_metric_links,
+    hmc_aggregated_metrics,
+    hmc_processed_metric_links,
+    hmc_processed_metrics,
 )
 
 from conftest import make_config
@@ -99,3 +106,18 @@ async def test_direct_client_rejects_lpar_preferences_before_request(method):
 
     hmc._get.assert_not_awaited()
     hmc._post_pcm.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        hmc_processed_metrics,
+        hmc_processed_metric_links,
+        hmc_aggregated_metrics,
+        hmc_aggregated_metric_links,
+    ],
+)
+def test_metric_tools_preserve_positional_profile_slot(tool):
+    parameters = list(inspect.signature(tool).parameters)
+
+    assert parameters.index("profile") < parameters.index("system_name_or_uuid")

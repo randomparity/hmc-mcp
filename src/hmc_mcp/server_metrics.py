@@ -19,6 +19,8 @@ from .operations_pcm import (
     metric_links,
     preference_flags,
     set_pcm_preferences,
+    validate_pcm_metric_target,
+    validate_pcm_preferences_category,
 )
 
 
@@ -40,6 +42,8 @@ def hmc_get_pcm_preferences(
         resource_name_or_uuid: Name or UUID of the selected system.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+
+    validate_pcm_preferences_category(category)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -89,6 +93,7 @@ def hmc_set_pcm_preferences(
     )
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
+    validate_pcm_preferences_category(category)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -106,8 +111,8 @@ def hmc_processed_metrics(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    system_name_or_uuid: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Download the newest processed PCM metrics JSON document.
 
@@ -136,8 +141,8 @@ def hmc_processed_metrics(
         start_ts,
         end_ts,
         no_of_samples,
-        profile,
-        system_name_or_uuid,
+        profile=profile,
+        system_name_or_uuid=system_name_or_uuid,
     )
 
 
@@ -148,8 +153,8 @@ def hmc_processed_metric_links(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    system_name_or_uuid: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List processed PCM metric documents available in the requested range.
 
@@ -169,8 +174,8 @@ def hmc_processed_metric_links(
         start_ts,
         end_ts,
         no_of_samples,
-        profile,
-        system_name_or_uuid,
+        profile=profile,
+        system_name_or_uuid=system_name_or_uuid,
     )
 
 
@@ -181,8 +186,8 @@ def hmc_aggregated_metrics(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    system_name_or_uuid: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Download the newest aggregated PCM metrics JSON document.
 
@@ -212,8 +217,8 @@ def hmc_aggregated_metrics(
         start_ts,
         end_ts,
         no_of_samples,
-        profile,
-        system_name_or_uuid,
+        profile=profile,
+        system_name_or_uuid=system_name_or_uuid,
     )
 
 
@@ -226,8 +231,8 @@ def hmc_aggregated_metric_links(
     start_ts: str,
     end_ts: str | None = None,
     no_of_samples: int | None = None,
-    system_name_or_uuid: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
     """List aggregated PCM metric documents available in the requested range.
 
@@ -247,8 +252,8 @@ def hmc_aggregated_metric_links(
         start_ts,
         end_ts,
         no_of_samples,
-        profile,
-        system_name_or_uuid,
+        profile=profile,
+        system_name_or_uuid=system_name_or_uuid,
     )
 
 
@@ -262,6 +267,8 @@ def _metrics_links(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
+    validate_pcm_metric_target(category, system_name_or_uuid)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await metric_links(
@@ -288,6 +295,8 @@ def _metrics_fetch(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
+    validate_pcm_metric_target(category, system_name_or_uuid)
+
     async def _go():
         async with client_from_env(profile) as hmc:
             return await metric_data(

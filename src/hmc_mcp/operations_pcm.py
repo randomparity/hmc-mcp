@@ -49,11 +49,24 @@ async def resolve_pcm_resource(
     return PcmResource(resource)
 
 
-def _require_managed_system_preferences(category: PcmCategory) -> None:
+def validate_pcm_preferences_category(category: PcmCategory) -> None:
     if category != "ManagedSystem":
         raise ValueError(
             "PCM preferences are documented only for ManagedSystem; "
             "LogicalPartition is not supported."
+        )
+
+
+def validate_pcm_metric_target(
+    category: PcmCategory, system_name_or_uuid: str | None
+) -> None:
+    if category == "LogicalPartition" and system_name_or_uuid is None:
+        raise ValueError(
+            "LogicalPartition metrics require the owning system_name_or_uuid."
+        )
+    if category == "ManagedSystem" and system_name_or_uuid is not None:
+        raise ValueError(
+            "system_name_or_uuid is valid only for LogicalPartition metrics."
         )
 
 
@@ -77,7 +90,7 @@ def preference_flags(
 async def get_pcm_preferences(
     hmc: HMCClient, category: PcmCategory, resource: str
 ) -> dict[str, Any]:
-    _require_managed_system_preferences(category)
+    validate_pcm_preferences_category(category)
     target = await resolve_pcm_resource(hmc, category, resource)
     try:
         return await hmc.get_pcm_preferences(category, target.resource_uuid)
@@ -94,7 +107,7 @@ async def set_pcm_preferences(
 ) -> dict[str, Any]:
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
-    _require_managed_system_preferences(category)
+    validate_pcm_preferences_category(category)
     target = await resolve_pcm_resource(hmc, category, resource)
     try:
         return await hmc.set_pcm_preferences(category, target.resource_uuid, **flags)
@@ -113,6 +126,7 @@ async def metric_links(
     no_of_samples: int | None,
     system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
+    validate_pcm_metric_target(category, system_name_or_uuid)
     target = await resolve_pcm_resource(
         hmc, category, resource, system_name_or_uuid=system_name_or_uuid
     )
