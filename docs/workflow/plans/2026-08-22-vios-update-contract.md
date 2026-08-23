@@ -73,7 +73,7 @@ pytest/respx, ruff, ty, and uv.
    `RepositorySource` and bare operation names:
 
    ```sh
-   uv run --no-sync pytest -q tests/system/test_update_upgrade.py \
+   uv run --no-sync pytest -q --no-cov tests/system/test_update_upgrade.py \
      tests/unit/test_job_lifecycle.py tests/app/test_capabilities.py
    ```
 
@@ -148,7 +148,7 @@ both precise request shapes; firmware tests remain unchanged and passing.
 3. Run:
 
    ```sh
-   uv run --no-sync pytest -q tests/unit/test_job_lifecycle.py \
+   uv run --no-sync pytest -q --no-cov tests/unit/test_job_lifecycle.py \
      tests/app/test_server_tools.py -k 'vios or stdout'
    ```
 
