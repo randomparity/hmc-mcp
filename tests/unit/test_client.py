@@ -1282,7 +1282,7 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:
@@ -1295,8 +1295,8 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
-    """get_job(uuid) without job_href uses the legacy /rest/api/uom/Job/{uuid} path."""
-    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    """get_job(uuid) without job_href uses the documented global jobs path."""
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -1306,12 +1306,60 @@ async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_get_job_global_path_propagates_http_error(mock_hmc):
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="GET /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.get_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
+async def test_delete_job_uses_documented_global_path(mock_hmc):
+    route = mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(204)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999")
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_prefers_self_href(mock_hmc):
+    route = mock_hmc.delete(_JOB_HREF).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999", job_href=_JOB_HREF)
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_propagates_http_error(mock_hmc):
+    mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(500, text="Delete failed")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="DELETE /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.delete_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
 async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     """wait_for_job passes job_href to get_job so polling uses the SELF link."""
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:

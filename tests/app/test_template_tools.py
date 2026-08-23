@@ -177,7 +177,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_deploy_partition_template(
@@ -226,7 +226,7 @@ def test_deploy_partition_template_completed_stamps_the_new_lpar(monkeypatch, mo
     mock_hmc.put("/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     stamp = AsyncMock(return_value=(True, []))
