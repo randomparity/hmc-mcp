@@ -140,7 +140,11 @@ both precise request shapes; firmware tests remain unchanged and passing.
    `/do/UpgradeVIOS` paths and bodies. Add a hostile selector test matching the
    console path-segment test. Add wait tests proving the raw terminal mapping is
    retained with top-level `stdOut`, and non-wait submission metadata is
-   unchanged without a projection.
+   unchanged without a projection. Parameterize public-tool calls for missing
+   `ResourceType`, an unknown key, `Disks` on update, `RestartVIOS` on upgrade,
+   and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
+   raises `AssertionError("client created")` and assert each call raises its
+   expected `ValueError`, proving the complete invalid matrix fails before I/O.
 3. Run:
 
    ```sh
@@ -202,8 +206,24 @@ as a mapping to the submission parser result.
    and the wait-only `stdOut` behavior. Remove statements that VIOS shares the
    console repository format.
 2. Compare the implemented paths, enums, and parameter sets against all four
-   named Power10/Power11 captures from the spec. Use `rg` and line-numbered
-   reads; any disagreement is a source/test correction, not a doc caveat.
+   Power10/Power11 captures from the spec. Resolve the main repository root and
+   its sibling reference roots without embedding a host-private path:
+
+   ```sh
+   repo_root=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+   reference_parent=$(dirname "$repo_root")
+   p10="$reference_parent/hmc-rest-api-p10/jobs/virtualioserver-jobs"
+   p11="$reference_parent/hmc-rest-api-p11/jobs/virtualioserver-jobs"
+   test -r "$p10/140-updatevios_virtualioserver-job.md"
+   test -r "$p10/141-upgradevios_virtualioserver-job.md"
+   test -r "$p11/160-updatevios_virtualioserver-job.md"
+   test -r "$p11/161-upgradevios_virtualioserver-job.md"
+   ```
+
+   Use `rg -n` and line-numbered reads on each exact file to compare the
+   Resource path, `OperationName`, every request-table parameter,
+   `ResourceType` values, and response-table `stdOut`. A missing reference is a
+   blocker; any disagreement is a source/test correction, not a doc caveat.
 3. Run `just test`, `just smoke`, then `just verify` bare. Each must exit 0.
    Run `git status --porcelain` after verification and require no untracked or
    unstaged generated artifact.
