@@ -95,13 +95,19 @@ paths use the exact template `/rest/api/pcm/ManagedSystem/{system_uuid}/`
    every rejected case performs no resolver/client request.
 2. Add failing CLI tests invoking `metrics show LogicalPartition <lpar>
    --system <owner> --start <timestamp>`, missing-owner and ManagedSystem-misuse
-   cases, and `--help` spelling. Update any fake-client method signatures with
-   the keyword-only `system_uuid` argument.
+   cases, and `--help` spelling. Add MCP schema and CLI help assertions proving
+   preference descriptions for `hmc_get_pcm_preferences`,
+   `hmc_set_pcm_preferences`, `metrics prefs`, and `metrics set-prefs` advertise
+   only `ManagedSystem`. Update any fake-client method signatures with the
+   keyword-only `system_uuid` argument.
 3. Run `uv run pytest -q --no-cov tests/unit/test_pcm.py
    tests/app/test_cli_commands.py`; expect failures in the new assertions.
 4. Implement the complete signatures and validation above. Resolve the system
    before the partition, scope named LPAR lookup with that system UUID, retain
    both UUIDs in `PcmResource`, and reject unsupported combinations before I/O.
+   Update both preference MCP docstrings/argument descriptions and both CLI
+   preference command help strings to remove LogicalPartition as a supported
+   category.
 5. Run the same focused command and `just typecheck`; expect success.
 6. Update README PCM guidance to show the LogicalPartition owner selector,
    nested processed/aggregated support, and ManagedSystem-only preferences and
