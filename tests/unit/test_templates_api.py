@@ -1,5 +1,7 @@
 """Tests for Template Library (query + deploy) — /rest/api/templates/."""
 
+from xml.etree import ElementTree
+
 import httpx
 import pytest
 
@@ -38,10 +40,18 @@ TEMPLATE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def test_deploy_job():
     xml = deploy_partition_template_job("draft-uuid", "sys-uuid", "memento-1")
+    root = ElementTree.fromstring(xml)
+    parameters = {
+        parameter[1].text: parameter[2].text
+        for parameter in root.iter()
+        if parameter.tag.endswith("JobParameter")
+    }
     assert "Deploy" in xml
-    assert "TargetUuid" in xml and "sys-uuid" in xml
-    assert "TemplateUuid" in xml and "draft-uuid" in xml
-    assert "K_X_API_SESSION_MEMENTO" in xml and "memento-1" in xml
+    assert parameters == {
+        "K_X_API_SESSION_MEMENTO": "memento-1",
+        "TargetUuid": "sys-uuid",
+        "TemplateUuid": "draft-uuid",
+    }
 
 
 @pytest.mark.asyncio
@@ -86,7 +96,13 @@ async def test_deploy_partition_template(mock_hmc):
         job = await hmc.deploy_partition_template("draft-uuid", "sys-uuid")
     body = route.calls.last.request.content.decode()
     assert "Deploy" in body
-    assert "TargetUuid" in body and "sys-uuid" in body
-    assert "TemplateUuid" in body and "draft-uuid" in body
-    assert "K_X_API_SESSION_MEMENTO" in body
+    root = ElementTree.fromstring(body)
+    parameters = {
+        parameter[1].text: parameter[2].text
+        for parameter in root.iter()
+        if parameter.tag.endswith("JobParameter")
+    }
+    assert parameters["K_X_API_SESSION_MEMENTO"]
+    assert parameters["TargetUuid"] == "sys-uuid"
+    assert parameters["TemplateUuid"] == "draft-uuid"
     assert job is not None and job["Resource"]["JobID"] == "job-uuid-999"
