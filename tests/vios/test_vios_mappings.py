@@ -9,7 +9,7 @@ from conftest import make_config
 
 BASE = "https://hmc.test"
 
-# Minimal ViosStorageDetail entry with a vSCSI server mapping and an NPIV port mapping.
+# Minimal VIOS mapping entry with a vSCSI server mapping and an NPIV port mapping.
 VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:vios-uuid-1</id>
@@ -48,10 +48,10 @@ VIOS_STORAGE_DETAIL_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="
 
 @pytest.mark.asyncio
 async def test_get_vios_storage_detail(mock_hmc):
-    """get_vios_storage_detail GETs the ViosStorageDetail group and returns parsed data."""
+    """get_vios_storage_detail requests both documented mapping groups."""
     route = mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/vios-uuid-1",
-        params={"group": "ViosStorageDetail"},
+        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(200, text=VIOS_STORAGE_DETAIL_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
@@ -77,7 +77,7 @@ async def test_get_vios_storage_detail_not_found(mock_hmc):
     """get_vios_storage_detail returns None on 204 (empty)."""
     mock_hmc.get(
         "/rest/api/uom/VirtualIOServer/missing-uuid",
-        params={"group": "ViosStorageDetail"},
+        params=[("group", "ViosSCSIMapping"), ("group", "ViosFCMapping")],
     ).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:

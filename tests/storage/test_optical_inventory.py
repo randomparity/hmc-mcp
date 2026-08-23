@@ -5,7 +5,7 @@ import pytest
 
 from conftest import make_config
 
-from hmc_mcp.client import HMCClient
+from hmc_mcp.client import HMCClient, HMCError
 
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 SYS_UUID = "00000000-0000-0000-0000-000000000099"
@@ -106,7 +106,7 @@ CREATE_MAPPING_RESPONSE = """<?xml version="1.0" encoding="UTF-8" standalone="ye
 </feed>
 """
 
-VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosStorageDetail"
+VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}?group=ViosSCSIMapping"
 
 
 @pytest.mark.asyncio
@@ -140,6 +140,18 @@ async def test_list_optical_mappings_empty(mock_hmc):
         mappings = await hmc.list_optical_mappings(VIOS_UUID)
 
     assert mappings == []
+
+
+@pytest.mark.asyncio
+async def test_list_optical_mappings_propagates_bad_request(mock_hmc):
+    """A rejected documented group is an API error, not an empty inventory."""
+    mock_hmc.get(VIOS_PATH).mock(return_value=httpx.Response(400, text="bad request"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await hmc.list_optical_mappings(VIOS_UUID)
+
+    assert raised.value.status_code == 400
 
 
 @pytest.mark.asyncio

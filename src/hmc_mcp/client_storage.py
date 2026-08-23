@@ -171,23 +171,10 @@ class StorageMixin:
         Returns mappings with backing storage details (PhysicalVolume or VirtualDisk)
         and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
 
-        Note: requires ``?group=ViosStorageDetail`` which is not supported on all
-        HMC firmware levels.  When the HMC returns HTTP 400 for this group, the
-        method returns an empty list and logs a warning rather than raising.
+        Requests the documented ``ViosSCSIMapping`` extended group.
         """
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
-        try:
-            xml = await self._get(path, "VirtualIOServer")
-        except HMCError as exc:
-            if exc.status_code == 400 and "ViosStorageDetail" in str(exc):
-                import logging
-                logging.getLogger(__name__).warning(
-                    "ViosStorageDetail group not supported on this HMC firmware "
-                    "(HTTP 400); returning empty mapping list. "
-                    "Upgrade HMC firmware to enable storage-mapping queries."
-                )
-                return []
-            raise
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
+        xml = await self._get(path, "VirtualIOServer")
         if not xml:
             return []
 
@@ -608,18 +595,8 @@ class StorageMixin:
         Returns only mappings that reference VirtualOpticalMedia backing, with media
         details and client LPAR information. Use lpar_uuid to scope mappings to a single LPAR.
         """
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosStorageDetail"
-        try:
-            xml = await self._get(path, "VirtualIOServer")
-        except HMCError as exc:
-            if exc.status_code == 400 and "ViosStorageDetail" in str(exc):
-                import logging
-                logging.getLogger(__name__).warning(
-                    "ViosStorageDetail group not supported on this HMC firmware "
-                    "(HTTP 400); returning empty optical-mapping list."
-                )
-                return []
-            raise
+        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}?group=ViosSCSIMapping"
+        xml = await self._get(path, "VirtualIOServer")
         if not xml:
             return []
 
