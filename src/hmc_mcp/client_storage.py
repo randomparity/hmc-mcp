@@ -283,18 +283,13 @@ class StorageMixin:
                     "refusing an ambiguous detach"
                 )
             identities[identity] = mapping
-        matches = [identities[mapping_uuid]] if mapping_uuid in identities else []
-        if not matches:
+        target = identities.get(mapping_uuid)
+        if target is None:
             raise HMCError(
                 f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
             )
-        if len(matches) != 1:
-            raise HMCError(
-                f"Storage mapping UUID {mapping_uuid!r} matched {len(matches)} mappings; "
-                "refusing an ambiguous detach"
-            )
 
-        mappings.remove(matches[0])
+        mappings.remove(target)
         system_uuid = _extract_system_uuid_from_vios(vios_elem)
         post_path = (
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
