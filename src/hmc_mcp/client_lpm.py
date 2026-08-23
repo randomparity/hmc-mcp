@@ -25,9 +25,7 @@ class LpmMixin:
     # ------------------------------------------------------------------ #
     # Live Partition Mobility (LPM)
     # ------------------------------------------------------------------ #
-    async def _lpar_job(
-        self, lpar_uuid: str, operation: str, job_xml: str
-    ) -> dict[str, Any] | None:
+    async def _lpar_job(self, lpar_uuid: str, operation: str, job_xml: str) -> dict[str, Any] | None:
         return await self.submit_job(
             f"/rest/api/uom/LogicalPartition/{lpar_uuid}/do/{operation}", job_xml
         )
@@ -44,11 +42,7 @@ class LpmMixin:
         """Migrate (LPM) an LPAR to another managed system."""
 
         xml = migrate_lpar_job(
-            target_system,
-            target_profile_name,
-            destination_lpar_id,
-            shared_proc_pool_id,
-            wait_time,
+            target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
         )
         return await self._lpar_job(lpar_uuid, "Migrate", xml)
 
@@ -64,11 +58,7 @@ class LpmMixin:
         """Validate whether an LPM migration would succeed."""
 
         xml = migrate_validate_lpar_job(
-            target_system,
-            target_profile_name,
-            destination_lpar_id,
-            shared_proc_pool_id,
-            wait_time,
+            target_system, target_profile_name, destination_lpar_id, shared_proc_pool_id, wait_time
         )
         return await self._lpar_job(lpar_uuid, "MigrateValidate", xml)
 
@@ -80,9 +70,7 @@ class LpmMixin:
     async def lpar_migrate_recover(self, lpar_uuid: str) -> dict[str, Any] | None:
         """Recover an LPAR after a failed LPM migration."""
 
-        return await self._lpar_job(
-            lpar_uuid, "MigrateRecover", migrate_recover_lpar_job()
-        )
+        return await self._lpar_job(lpar_uuid, "MigrateRecover", migrate_recover_lpar_job())
 
     async def lpar_remote_restart(
         self,

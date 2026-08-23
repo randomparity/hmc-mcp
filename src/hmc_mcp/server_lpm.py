@@ -18,7 +18,8 @@ from .operations_lpm import (
 )
 
 from typing import cast
-from hmc_mcp.jobs import RemoteRestartOperation
+
+from .jobs import RemoteRestartOperation
 
 
 tool, register_tools, tool_security = tool_module()
