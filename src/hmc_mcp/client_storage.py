@@ -27,6 +27,30 @@ _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
+def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
+    """Return the one VIOS resource and reject ambiguous or mismatched documents."""
+    tag = f"{{{_UOM_NS}}}VirtualIOServer"
+    resources = ([root] if root.tag == tag else []) + root.findall(f".//{tag}")
+    if len(resources) != 1:
+        raise HMCError(
+            f"VirtualIOServer GET response contained {len(resources)} VIOS resources; "
+            "expected exactly one",
+            200,
+            ET.tostring(root, encoding="unicode")[:500],
+        )
+    vios_elem = resources[0]
+    identities = vios_elem.findall(f"{{{_UOM_NS}}}UUID")
+    if identities and (
+        len(identities) != 1 or (identities[0].text or "").strip() != vios_uuid
+    ):
+        raise HMCError(
+            f"VirtualIOServer response identity does not match {vios_uuid!r}",
+            200,
+            ET.tostring(vios_elem, encoding="unicode")[:500],
+        )
+    return vios_elem
+
+
 def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
     """Extract the exact ManagedSystem UUID associated with one VIOS element."""
     links = vios_elem.findall(f"{{{_UOM_NS}}}AssociatedManagedSystem")
@@ -227,15 +251,7 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-        if vios_elem is None and root.tag == f"{{{_UOM_NS}}}VirtualIOServer":
-            vios_elem = root
-        if vios_elem is None:
-            raise HMCError(
-                "VirtualIOServer GET response has no VirtualIOServer resource",
-                200,
-                vios_xml,
-            )
+        vios_elem = _find_vios_element(root, vios_uuid)
         mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings is None:
             raise HMCError(
@@ -729,11 +745,7 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        # Feed has one <entry><content><VirtualIOServer>...
-        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-        if vios_elem is None:
-            vios_elem = root  # already the VirtualIOServer element
-
+        vios_elem = _find_vios_element(root, vios_uuid)
         sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
@@ -827,10 +839,7 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
-        if vios_elem is None:
-            vios_elem = root
-
+        vios_elem = _find_vios_element(root, vios_uuid)
         sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")

@@ -282,3 +282,24 @@ async def test_delete_storage_mapping_rejects_untrusted_system_link(
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="AssociatedManagedSystem"):
             await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "document",
+    [
+        f'<feed xmlns="http://www.w3.org/2005/Atom">{VIOS_PARENT}{VIOS_PARENT}</feed>',
+        VIOS_PARENT.replace(
+            "<AssociatedManagedSystem", "<UUID>wrong-vios</UUID><AssociatedManagedSystem"
+        ),
+    ],
+)
+async def test_delete_storage_mapping_rejects_ambiguous_vios_document(
+    mock_hmc, document
+):
+    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
+    posted = mock_hmc.post(VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="VIOS resources|identity does not match"):
+            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
+    assert not posted.called
