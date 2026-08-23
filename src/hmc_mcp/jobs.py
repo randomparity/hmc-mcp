@@ -563,6 +563,19 @@ class VIOSUpgradeSource(_VIOSSourceBase, total=False):
 VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
 _VIOS_UPDATE_KEYS = frozenset(VIOSUpdateSource.__annotations__)
 _VIOS_UPGRADE_KEYS = frozenset(VIOSUpgradeSource.__annotations__)
+_VIOS_UPDATE_REQUIRED = {
+    "HMC": frozenset({"Name"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "USB": frozenset({"USBDevice"}),
+    "IBMWebsite": frozenset(),
+}
+_VIOS_UPGRADE_REQUIRED = {
+    "HMC": frozenset({"Name", "Disks"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "USB": frozenset({"USBDevice", "Disks"}),
+}
 
 
 class RepositorySource(TypedDict, total=False):
@@ -672,6 +685,7 @@ def _vios_params(
     operation: str,
     allowed_keys: frozenset[str],
     resource_types: frozenset[str],
+    required_keys: Mapping[str, frozenset[str]],
 ) -> dict[str, str]:
     """Validate and stringify one documented VIOS job request."""
     unknown = set(source) - allowed_keys
@@ -689,6 +703,17 @@ def _vios_params(
             f"Invalid {operation} ResourceType {resource_type!r}. "
             f"Expected one of: {expected}."
         )
+    missing = {
+        key for key in required_keys[resource_type] if source.get(key) is None
+    }
+    if missing:
+        raise ValueError(
+            f"{operation} ResourceType {resource_type!r} requires parameter(s): "
+            f"{', '.join(sorted(missing))}."
+        )
+    save_file = source.get("SaveFile")
+    if isinstance(save_file, str) and save_file.lower() == "true" and "Name" not in source:
+        raise ValueError(f"{operation} SaveFile='true' requires parameter: Name.")
     return {key: str(value) for key, value in source.items() if value is not None}
 
 
@@ -699,6 +724,7 @@ def update_vios_job(source: VIOSUpdateSource) -> str:
         "UpdateVIOS",
         _VIOS_UPDATE_KEYS,
         _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPDATE_REQUIRED,
     )
     return build_job_request("UpdateVIOS", "VirtualIOServer", params)
 
@@ -710,6 +736,7 @@ def upgrade_vios_job(source: VIOSUpgradeSource) -> str:
         "UpgradeVIOS",
         _VIOS_UPGRADE_KEYS,
         _VIOS_UPGRADE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_REQUIRED,
     )
     return build_job_request("UpgradeVIOS", "VirtualIOServer", params)
 

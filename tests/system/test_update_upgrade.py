@@ -79,7 +79,13 @@ def test_update_firmware_job_xml():
 
 
 def test_vios_params_none_values_excluded():
-    xml = update_vios_job({"ResourceType": "NFS", "Name": None})  # type: ignore[typeddict-item]
+    source: VIOSUpdateSource = {
+        "ResourceType": "NFS",
+        "ServerHostOrIP": "repo.example.com",
+        "RemoteDirectory": "/images",
+        "Name": None,  # type: ignore[typeddict-item]
+    }
+    xml = update_vios_job(source)
 
     assert "<ParameterName kb=\"ROR\" kxe=\"false\">Name</ParameterName>" not in xml
 
@@ -108,6 +114,34 @@ def test_vios_upgrade_rejects_update_parameter():
 def test_vios_upgrade_rejects_ibm_website():
     with pytest.raises(ValueError, match="Invalid UpgradeVIOS ResourceType"):
         upgrade_vios_job({"ResourceType": "IBMWebsite"})  # type: ignore[typeddict-item]
+
+
+@pytest.mark.parametrize(
+    ("builder", "source", "missing"),
+    [
+        (update_vios_job, {"ResourceType": "HMC"}, "Name"),
+        (update_vios_job, {"ResourceType": "NFS"}, "RemoteDirectory.*ServerHostOrIP"),
+        (update_vios_job, {"ResourceType": "SFTP"}, "RemoteDirectory.*ServerHostOrIP"),
+        (update_vios_job, {"ResourceType": "USB"}, "USBDevice"),
+        (upgrade_vios_job, {"ResourceType": "HMC", "Name": "image"}, "Disks"),
+        (upgrade_vios_job, {"ResourceType": "USB", "Disks": "hdisk1"}, "USBDevice"),
+    ],
+)
+def test_vios_source_requires_resource_specific_parameters(builder, source, missing):
+    with pytest.raises(ValueError, match=missing):
+        builder(source)
+
+
+def test_vios_save_file_requires_name():
+    source = {
+        "ResourceType": "NFS",
+        "ServerHostOrIP": "repo.example.com",
+        "RemoteDirectory": "/images",
+        "SaveFile": "true",
+    }
+
+    with pytest.raises(ValueError, match="SaveFile='true'.*Name"):
+        update_vios_job(source)
 
 
 def test_repository_types_cover_required_key_sets():

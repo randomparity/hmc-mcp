@@ -511,6 +511,8 @@ def test_vios_update_encodes_uuid_as_one_path_segment(monkeypatch, mock_hmc):
         ({"ResourceType": "NFS", "Disks": "hdisk1"}, "update", "Disks"),
         ({"ResourceType": "NFS", "RestartVIOS": "false"}, "upgrade", "RestartVIOS"),
         ({"ResourceType": "IBMWebsite"}, "upgrade", "IBMWebsite"),
+        ({"ResourceType": "NFS"}, "update", "RemoteDirectory"),
+        ({"ResourceType": "HMC", "Name": "image"}, "upgrade", "Disks"),
     ],
 )
 def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, message):
