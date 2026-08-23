@@ -258,11 +258,18 @@ def test_platform_update_models_reject_unknown_keys(model, value) -> None:
     ("model", "value"),
     [
         (SRIOVAdapterUpdate, {"AdapterID": "", "SubType": "Adapter"}),
+        (SRIOVAdapterUpdate, {"AdapterID": "   ", "SubType": "Adapter"}),
         (IOAdapterUpdate, {"Id": "", "Device": "nvme0", "Repository": "disk"}),
+        (IOAdapterUpdate, {"Id": "   ", "Device": "nvme0", "Repository": "disk"}),
         (IOAdapterUpdate, {"Id": "1", "Device": "", "Repository": "disk"}),
+        (IOAdapterUpdate, {"Id": "1", "Device": "   ", "Repository": "disk"}),
         (
             VIOSPlatformUpdate,
             {"UpdateType": "Update", "VIOSName": "", "ResourceType": "HMC"},
+        ),
+        (
+            VIOSPlatformUpdate,
+            {"UpdateType": "Update", "VIOSName": "   ", "ResourceType": "HMC"},
         ),
         (
             VIOSPlatformUpdate,
@@ -273,10 +280,19 @@ def test_platform_update_models_reject_unknown_keys(model, value) -> None:
                 "Name": "",
             },
         ),
+        (
+            VIOSPlatformUpdate,
+            {
+                "UpdateType": "Update",
+                "VIOSName": "vios1",
+                "ResourceType": "HMC",
+                "Name": "   ",
+            },
+        ),
     ],
 )
 def test_platform_update_models_reject_blank_identifiers(model, value) -> None:
-    with pytest.raises(ValidationError, match="at least 1 character"):
+    with pytest.raises(ValidationError, match="at least 1 character|pattern"):
         model.model_validate(value)
 
 
