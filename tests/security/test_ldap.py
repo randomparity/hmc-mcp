@@ -28,6 +28,14 @@ def test_remote_access_builder_sets_clears_and_escapes() -> None:
     assert '<SecondaryLdapUri kb="CUR" kxe="false"/>' in xml
 
 
+def test_remote_access_builder_covers_documented_kerberos_names() -> None:
+    xml = build_remote_access_document(
+        {"KerberosEnabled": True, "kerberosRemoteUserId": "directory-user"}
+    )
+    assert ">true</KerberosEnabled>" in xml
+    assert ">directory-user</kerberosRemoteUserId>" in xml
+
+
 @pytest.mark.parametrize(
     ("values", "clears", "message"),
     [

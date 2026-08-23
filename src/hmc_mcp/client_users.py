@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, get_args
+from urllib.parse import quote
 
 from .client_parse import _parse_feed
 
@@ -31,7 +32,8 @@ class UsersMixin:
 
     @staticmethod
     def _child_path(console_uuid: str, child_type: str) -> str:
-        return f"/rest/api/uom/ManagementConsole/{console_uuid}/{child_type}"
+        console_path_id = quote(console_uuid, safe="")
+        return f"/rest/api/uom/ManagementConsole/{console_path_id}/{child_type}"
 
     async def list_hmc_users(
         self,
@@ -58,7 +60,8 @@ class UsersMixin:
     async def get_hmc_user(
         self, console_uuid: str, user_profile_uuid: str
     ) -> dict[str, Any] | None:
-        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        profile_path_id = quote(user_profile_uuid, safe="")
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._get(path, "UserProfile"), path)
 
     async def create_hmc_user(
@@ -70,11 +73,13 @@ class UsersMixin:
     async def modify_hmc_user(
         self, console_uuid: str, user_profile_uuid: str, user_xml: str
     ) -> dict[str, Any] | None:
-        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        profile_path_id = quote(user_profile_uuid, safe="")
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         return self._first_entry(await self._post(path, user_xml, "UserProfile"), path)
 
     async def delete_hmc_user(self, console_uuid: str, user_profile_uuid: str) -> None:
-        path = f"{self._child_path(console_uuid, 'UserProfile')}/{user_profile_uuid}"
+        profile_path_id = quote(user_profile_uuid, safe="")
+        path = f"{self._child_path(console_uuid, 'UserProfile')}/{profile_path_id}"
         await self._delete(path)
 
     async def list_task_roles(self, console_uuid: str) -> list[dict[str, Any]]:
@@ -86,12 +91,14 @@ class UsersMixin:
         return self._entries(await self._get(path, "ResourceRole"), path)
 
     async def get_remote_access(self, console_uuid: str) -> dict[str, Any] | None:
-        path = f"/rest/api/uom/ManagementConsole/{console_uuid}?group=RemoteAccess"
+        console_path_id = quote(console_uuid, safe="")
+        path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         return self._first_entry(await self._get(path, "ManagementConsole"), path)
 
     async def configure_remote_access(
         self, console_uuid: str, remote_access_xml: str
     ) -> dict[str, Any] | None:
-        path = f"/rest/api/uom/ManagementConsole/{console_uuid}?group=RemoteAccess"
+        console_path_id = quote(console_uuid, safe="")
+        path = f"/rest/api/uom/ManagementConsole/{console_path_id}?group=RemoteAccess"
         xml = await self._post(path, remote_access_xml, "ManagementConsole")
         return self._first_entry(xml, path)

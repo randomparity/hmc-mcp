@@ -34,12 +34,22 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
         password="<&",
         associated_task_role="https://h/TaskRole/1?x=1&y=2",
         associated_resource_roles=["https://h/ResourceRole/2"],
+        password_expiry=30,
+        verify_session_timeout=True,
+        idle_session_timeout=15,
+        user_inactivity=60,
+        minimum_password_age=1,
         allow_ssh_remote_access=False,
     )
     assert "UserProfile" in xml
     assert "HmcUser" not in xml
     assert "a&amp;b" in xml and "&lt;&amp;" in xml
     assert "AssociatedTaskRole" in xml and "AssociatedResourceRoles" in xml
+    assert ">30</PasswordExpiry>" in xml
+    assert ">true</VerifySessionTimeout>" in xml
+    assert ">15</IdleSessionTimeout>" in xml
+    assert ">60</UserInactivity>" in xml
+    assert ">1</MinimumPasswordAge>" in xml
     assert ">false</AllowSSHRemoteAccess>" in xml
 
 
@@ -102,3 +112,13 @@ async def test_role_lists_use_documented_child_resources(mock_hmc) -> None:
         assert len(await hmc.list_task_roles(CONSOLE)) == 1
         assert await hmc.list_resource_roles(CONSOLE) == []
     assert task.called and resource.called
+
+
+@pytest.mark.asyncio
+async def test_user_path_identifiers_are_encoded_as_single_segments(mock_hmc) -> None:
+    route = mock_hmc.get(
+        "/rest/api/uom/ManagementConsole/console%2Fother/UserProfile/profile%2Fother"
+    ).mock(return_value=httpx.Response(204))
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.get_hmc_user("console/other", "profile/other") is None
+    assert route.called
