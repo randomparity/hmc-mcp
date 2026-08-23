@@ -321,10 +321,13 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient._request)["return"].__module__ == "httpx"
     assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
+
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #401, which made the destructive RemoteRestart
+        Last moved by issue #400, which added the owning-system selector to
+        logical-partition PCM metric operations (ADR 0077). Before that, issue
+        #401 made the destructive RemoteRestart
         operation and source-system selector explicit (ADR 0078). Before that,
         issue #385 added the ``capture_lpar_console``
     operation, the ``ConsoleCapture`` result model, and the
@@ -359,9 +362,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #401: RemoteRestart requires explicit operation/source selectors
-    # and conditional options (ADR 0078).
-    expected_digest = "fe73fdecf2910dc786c309f79c401387aafc8ea9e92db61792e307f180b4014a"  # pragma: allowlist secret
+    # Moved by #400: LogicalPartition PCM metrics require an owning-system
+    # selector (ADR 0077).
+    expected_digest = "bcc4c3b9918babe7d31b8560ab8d6836b4e6b87effe2ecc06d02913eab7127b0"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

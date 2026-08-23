@@ -601,6 +601,18 @@ def test_metrics_tools_have_stable_output_schemas():
         assert "mode" not in tool.parameters.get("properties", {})
 
 
+@pytest.mark.parametrize(
+    "tool_name", ["hmc_get_pcm_preferences", "hmc_set_pcm_preferences"]
+)
+def test_pcm_preference_tools_describe_managed_system_only(tool_name):
+    tool = _tools_by_name()[tool_name]
+    category = tool.parameters["properties"]["category"]
+
+    assert "ManagedSystem" in tool.description
+    assert "ManagedSystem" in category["description"]
+    assert "LogicalPartition" not in category["description"]
+
+
 def test_wait_for_job_has_one_stable_output_schema():
     by_name = _tools_by_name()
     schema = by_name["hmc_wait_for_job"].output_schema

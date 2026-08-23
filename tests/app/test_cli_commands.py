@@ -400,8 +400,16 @@ class FakeHMC:
         self._record("set_pcm_preferences", category, uuid, **flags)
 
     async def get_processed_metric_links(
-        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+        self,
+        category,
+        uuid,
+        start_ts,
+        end_ts=None,
+        no_of_samples=None,
+        *,
+        system_uuid=None,
     ):
+        kwargs = {"system_uuid": system_uuid} if system_uuid is not None else {}
         self._record(
             "get_processed_metric_links",
             category,
@@ -409,12 +417,21 @@ class FakeHMC:
             start_ts,
             end_ts,
             no_of_samples,
+            **kwargs,
         )
         return self.metric_links
 
     async def get_aggregated_metric_links(
-        self, category, uuid, start_ts, end_ts=None, no_of_samples=None
+        self,
+        category,
+        uuid,
+        start_ts,
+        end_ts=None,
+        no_of_samples=None,
+        *,
+        system_uuid=None,
     ):
+        kwargs = {"system_uuid": system_uuid} if system_uuid is not None else {}
         self._record(
             "get_aggregated_metric_links",
             category,
@@ -422,6 +439,7 @@ class FakeHMC:
             start_ts,
             end_ts,
             no_of_samples,
+            **kwargs,
         )
         return self.metric_links
 
@@ -3166,6 +3184,79 @@ def test_metrics_show_aggregated(fake_hmc):
             {},
         )
     ]
+
+
+def test_metrics_show_logical_partition_forwards_owning_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "LogicalPartition",
+            LPAR_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_hmc.calls == [
+        (
+            "get_processed_metric_links",
+            ("LogicalPartition", LPAR_UUID, "2024-01-01T00:00:00Z", None, None),
+            {"system_uuid": SYSTEM_UUID},
+        )
+    ]
+
+
+def test_metrics_show_logical_partition_requires_owning_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "LogicalPartition",
+            LPAR_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "system_name_or_uuid" in str(result.exception)
+    assert fake_hmc.calls == []
+
+
+def test_metrics_show_rejects_system_selector_for_managed_system(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "metrics",
+            "show",
+            "ManagedSystem",
+            SYSTEM_UUID,
+            "--system",
+            SYSTEM_UUID,
+            "--start",
+            "2024-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "only for LogicalPartition" in str(result.exception)
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("command", ["prefs", "set-prefs"])
+def test_metrics_preference_help_is_managed_system_only(command):
+    result = RUNNER.invoke(cli.app, ["metrics", command, "--help"])
+
+    assert result.exit_code == 0
+    assert "ManagedSystem" in result.stdout
+    assert "preferences are" in result.stdout
+    assert "unavailable" in result.stdout
 
 
 def test_metrics_show_fetch_downloads_latest(fake_hmc):

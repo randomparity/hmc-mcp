@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from .client import HMCClient
@@ -17,14 +18,56 @@ PCM_CATEGORIES: frozenset[PcmCategory] = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class PcmResource:
+    resource_uuid: str
+    system_uuid: str | None = None
+
+
 async def resolve_pcm_resource(
-    hmc: HMCClient, category: PcmCategory, resource: str
-) -> str:
+    hmc: HMCClient,
+    category: PcmCategory,
+    resource: str,
+    system_name_or_uuid: str | None = None,
+) -> PcmResource:
     if category == "ManagedSystem":
-        return await resolve_system_uuid(hmc, resource)
+        if system_name_or_uuid is not None:
+            raise ValueError(
+                "system_name_or_uuid is valid only for LogicalPartition metrics."
+            )
+        return PcmResource(await resolve_system_uuid(hmc, resource))
     if category == "LogicalPartition":
-        return await resolve_lpar_uuid(hmc, resource)
-    return resource
+        if system_name_or_uuid is None:
+            raise ValueError(
+                "LogicalPartition metrics require the owning system_name_or_uuid."
+            )
+        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+        resource_uuid = await resolve_lpar_uuid(
+            hmc, resource, system_name_or_uuid=system_uuid
+        )
+        return PcmResource(resource_uuid, system_uuid)
+    return PcmResource(resource)
+
+
+def validate_pcm_preferences_category(category: PcmCategory) -> None:
+    if category != "ManagedSystem":
+        raise ValueError(
+            "PCM preferences are documented only for ManagedSystem; "
+            "LogicalPartition is not supported."
+        )
+
+
+def validate_pcm_metric_target(
+    category: PcmCategory, system_name_or_uuid: str | None
+) -> None:
+    if category == "LogicalPartition" and system_name_or_uuid is None:
+        raise ValueError(
+            "LogicalPartition metrics require the owning system_name_or_uuid."
+        )
+    if category == "ManagedSystem" and system_name_or_uuid is not None:
+        raise ValueError(
+            "system_name_or_uuid is valid only for LogicalPartition metrics."
+        )
 
 
 def preference_flags(
@@ -47,9 +90,10 @@ def preference_flags(
 async def get_pcm_preferences(
     hmc: HMCClient, category: PcmCategory, resource: str
 ) -> dict[str, Any]:
-    resource_uuid = await resolve_pcm_resource(hmc, category, resource)
+    validate_pcm_preferences_category(category)
+    target = await resolve_pcm_resource(hmc, category, resource)
     try:
-        return await hmc.get_pcm_preferences(category, resource_uuid)
+        return await hmc.get_pcm_preferences(category, target.resource_uuid)
     except HMCError as exc:
         translate_pcm_error(exc)
         raise
@@ -63,9 +107,10 @@ async def set_pcm_preferences(
 ) -> dict[str, Any]:
     if not flags:
         raise ValueError("No preference flags supplied; nothing to change.")
-    resource_uuid = await resolve_pcm_resource(hmc, category, resource)
+    validate_pcm_preferences_category(category)
+    target = await resolve_pcm_resource(hmc, category, resource)
     try:
-        return await hmc.set_pcm_preferences(category, resource_uuid, **flags)
+        return await hmc.set_pcm_preferences(category, target.resource_uuid, **flags)
     except HMCError as exc:
         translate_pcm_error(exc)
         raise
@@ -79,15 +124,26 @@ async def metric_links(
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, str]]:
-    resource_uuid = await resolve_pcm_resource(hmc, category, resource)
+    validate_pcm_metric_target(category, system_name_or_uuid)
+    target = await resolve_pcm_resource(
+        hmc, category, resource, system_name_or_uuid=system_name_or_uuid
+    )
     fetch = (
         hmc.get_processed_metric_links
         if kind == "processed"
         else hmc.get_aggregated_metric_links
     )
     try:
-        return await fetch(category, resource_uuid, start_ts, end_ts, no_of_samples)
+        return await fetch(
+            category,
+            target.resource_uuid,
+            start_ts,
+            end_ts,
+            no_of_samples,
+            system_uuid=target.system_uuid,
+        )
     except HMCError as exc:
         translate_pcm_error(exc)
         raise
@@ -101,9 +157,17 @@ async def metric_data(
     start_ts: str,
     end_ts: str | None,
     no_of_samples: int | None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any]:
     links = await metric_links(
-        hmc, category, resource, kind, start_ts, end_ts, no_of_samples
+        hmc,
+        category,
+        resource,
+        kind,
+        start_ts,
+        end_ts,
+        no_of_samples,
+        system_name_or_uuid,
     )
     if not links:
         return {}

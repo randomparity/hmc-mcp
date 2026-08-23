@@ -387,13 +387,14 @@ def test_aggregated_metric_links(monkeypatch, mock_hmc):
     assertion confirms endpoint routing, not just that some href ends in _2.json.
     """
     _hmc_env(monkeypatch)
-    _route_metrics_feed(
-        mock_hmc, "LogicalPartition", "00000000-0000-0000-0000-000000000002", "AggregatedMetrics",
-        text=AGGREGATED_FEED,
-    )
+    mock_hmc.get(
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/"
+        "LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics"
+    ).mock(return_value=httpx.Response(200, text=AGGREGATED_FEED))
 
     result = hmc_aggregated_metric_links(
         "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z",
+        system_name_or_uuid="00000000-0000-0000-0000-000000000001",
     )
 
     assert len(result) == 1
@@ -409,16 +410,17 @@ def test_aggregated_metrics_mode_fetch_fetches_latest(monkeypatch, mock_hmc):
     the stub and raise an error rather than silently passing.
     """
     _hmc_env(monkeypatch)
-    _route_metrics_feed(
-        mock_hmc, "LogicalPartition", "00000000-0000-0000-0000-000000000002", "AggregatedMetrics",
-        text=AGGREGATED_FEED,
-    )
+    mock_hmc.get(
+        "/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/"
+        "LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics"
+    ).mock(return_value=httpx.Response(200, text=AGGREGATED_FEED))
     mock_hmc.get(
         "/rest/api/pcm/AggregatedMetrics/LogicalPartition_lpar_2.json"
     ).mock(return_value=httpx.Response(200, json=METRICS_JSON))
 
     result = hmc_aggregated_metrics(
-        "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
+        "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z",
+        system_name_or_uuid="00000000-0000-0000-0000-000000000001",
     )
 
     assert result == METRICS_JSON
@@ -513,26 +515,28 @@ def test_processed_metrics_403_actionable(monkeypatch, mock_hmc):
 def test_aggregated_metrics_406_actionable(monkeypatch, mock_hmc):
     """hmc_aggregated_metrics on HTTP 406 raises HMCError mentioning 'not licensed'."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/pcm/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
         return_value=httpx.Response(406, text="<error>Not Acceptable</error>")
     )
 
     with pytest.raises(HMCError, match="(?i)not licensed or not enabled"):
         hmc_aggregated_metrics(
-            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
+            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z",
+            system_name_or_uuid="00000000-0000-0000-0000-000000000001",
         )
 
 
 def test_aggregated_metrics_403_actionable(monkeypatch, mock_hmc):
     """hmc_aggregated_metrics on HTTP 403 raises HMCError mentioning PCM authority."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/pcm/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
+    mock_hmc.get("/rest/api/pcm/ManagedSystem/00000000-0000-0000-0000-000000000001/LogicalPartition/00000000-0000-0000-0000-000000000002/AggregatedMetrics").mock(
         return_value=httpx.Response(403, text="<error>Forbidden</error>")
     )
 
     with pytest.raises(HMCError, match="(?i)does not have PCM authority"):
         hmc_aggregated_metrics(
-            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z"
+            "LogicalPartition", "00000000-0000-0000-0000-000000000002", "2026-08-07T11:00:00Z",
+            system_name_or_uuid="00000000-0000-0000-0000-000000000001",
         )
 
 
