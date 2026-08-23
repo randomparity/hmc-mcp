@@ -42,19 +42,8 @@ TERMINAL_JOB_STATUSES = frozenset(
         "FAILED_TO_START",
     }
 )
-FAILED_JOB_STATUSES = frozenset(
-    {
-        "COMPLETED_WITH_ERROR",
-        "EXCEPTION",
-        "FAILED",
-        "FAILED_BEFORE_COMPLETION",
-        "FAILED_BEFORE_COMPLETION_RETRY",
-        "FAILED_TO_START",
-    }
-)
-SUCCESSFUL_JOB_STATUSES = frozenset(
-    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"}
-)
+SUCCESSFUL_JOB_STATUSES = frozenset({"COMPLETED", "COMPLETED_OK"})
+FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
 
 
 @dataclass(frozen=True)
@@ -111,11 +100,9 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
     resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
-    error = (
-        _job_error(resource, status)
-        if isinstance(status, str) and status in FAILED_JOB_STATUSES
-        else None
-    )
+    error = None
+    if isinstance(status, str) and status in FAILED_JOB_STATUSES:
+        error = _job_error(resource, status) or f"Job ended with status {status}"
     return JobOutcome(
         job_id=(job_identifier(job) if job is not None else None)
         or requested_id.strip(),
