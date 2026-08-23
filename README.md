@@ -867,7 +867,23 @@ its matching read-succeeded flag set means verified absence.
 | `hmc_update_console_software` | Submit the documented `UpdateManagementConsole` PTF update job; `kind=upgrade` is refused because upgrades require IBM's multi-job workflow |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
-| `hmc_update_firmware`        | Submit a managed-system firmware update job |
+| `hmc_update_firmware`        | Submit the Power11 `PlatformUpdate` job (HMC 11.1.1111 or later) |
+
+`hmc_update_firmware` accepts IBM's nested `PlatformUpdateParameter` JSON.
+It rejects older HMC releases before submitting the destructive operation.
+For example, a system-firmware update is:
+
+```json
+{
+  "system_name_or_uuid": "system1",
+  "platform_update": {
+    "SystemFirmwareUpdate": {
+      "UpdateType": "Update",
+      "UpdateOrder": 1
+    }
+  }
+}
+```
 
 `hmc_vios_update` uses IBM's operation-specific parameter names. Every source
 requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or

@@ -10,6 +10,7 @@ boundary (``asyncssh.connect``) like the vNIC tests do.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -17,6 +18,7 @@ import httpx
 import pytest
 
 from hmc_mcp.errors import HMCError
+from hmc_mcp.jobs import PlatformUpdateParameter, SystemFirmwareUpdate
 from hmc_mcp.documents import LparResources
 from hmc_mcp.server import (
     hmc_create_lpar,
@@ -59,6 +61,25 @@ VIOS_UPGRADE_SOURCE = {
     "RemoteDirectory": "/images/vios",
     "Disks": "hdisk1",
 }
+PLATFORM_UPDATE = PlatformUpdateParameter(
+    SystemFirmwareUpdate=SystemFirmwareUpdate(UpdateType="Update", UpdateOrder=1)
+)
+
+
+def _console_feed(version: str | None) -> str:
+    version_xml = f"<VersionInfo>{version}</VersionInfo>" if version is not None else ""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:uuid:{MC_UUID}</id>
+    <content type="application/vnd.ibm.powervm.uom+xml">
+      <ManagementConsole xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        {version_xml}
+      </ManagementConsole>
+    </content>
+  </entry>
+</feed>"""
+
 
 # A single-LPAR Atom feed; {name} is the partition name.
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -451,9 +472,7 @@ def test_vios_update_kind_update(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
-    ).mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, kind="update")
     body = route.calls.last.request.content.decode()
     assert "UpdateVIOS</OperationName>" in body
@@ -465,9 +484,7 @@ def test_vios_update_kind_upgrade(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpgradeVIOS"
-    ).mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_vios_update(VIOS_UUID, VIOS_UPGRADE_SOURCE, kind="upgrade")
     body = route.calls.last.request.content.decode()
     assert "UpgradeVIOS</OperationName>" in body
@@ -479,9 +496,7 @@ def test_vios_update_default_kind_is_update(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     route = mock_hmc.put(
         f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/do/UpdateVIOS"
-    ).mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE)
     assert route.calls.last.request.url.path.endswith("/do/UpdateVIOS")
 
@@ -609,16 +624,165 @@ def test_vios_update_invalid_kind_raises(monkeypatch, mock_hmc):
     assert not route.called
 
 
-def test_update_firmware_submits_job(monkeypatch, mock_hmc):
-    """hmc_update_firmware PUTs an UpdateFirmware job to the ManagedSystem."""
+def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
+    """A supported HMC receives the documented native JSON PlatformUpdate."""
     _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+    )
     route = mock_hmc.put(
-        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/UpdateFirmware"
-    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    hmc_update_firmware(SYSTEM_UUID, REPO)
-    body = route.calls.last.request.content.decode()
-    assert "UpdateFirmware</OperationName>" in body
-    assert "repo.example.com" in body
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate"
+    ).mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "id": "platform-job",
+                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "selfLink": None,
+            },
+        )
+    )
+
+    result = hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE)
+
+    assert route.called
+    assert result == {
+        "UUID": "platform-job",
+        "Resource": {"Status": "COMPLETED"},
+    }
+    assert json.loads(route.calls.last.request.content) == {
+        "JobRequest": {
+            "RequestedOperation": {
+                "OperationName": "PlatformUpdate",
+                "GroupName": "ManagedSystem",
+            },
+            "JobParameters": {
+                "JobParameter": [
+                    {
+                        "ParameterName": "PlatformUpdateParameter",
+                        "ParameterValue": {
+                            "SystemFirmwareUpdate": {
+                                "UpdateType": "Update",
+                                "UpdateOrder": 1,
+                            }
+                        },
+                    }
+                ]
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "version", ["V10R3M1060", "V11R1M1110", "secret\nvalue", f"V{'9' * 5000}R1M1"]
+)
+def test_update_firmware_rejects_unsupported_hmc_version(
+    monkeypatch, mock_hmc, version
+):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed(version))
+    )
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate")
+
+    with pytest.raises(
+        ValueError, match="PlatformUpdate requires HMC 11.1.1111"
+    ) as error:
+        hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE)
+
+    assert version not in str(error.value)
+    assert not route.called
+
+
+def test_update_firmware_rejects_missing_hmc_version(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed(None))
+    )
+    route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate")
+
+    with pytest.raises(ValueError, match="PlatformUpdate requires HMC 11.1.1111"):
+        hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE)
+
+    assert not route.called
+
+
+def test_update_firmware_wait_returns_terminal_submission_without_poll(
+    monkeypatch, mock_hmc
+):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed("V11R2M1200"))
+    )
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "id": "platform-job",
+                "content": {"JobResponse": {"Status": "COMPLETED"}},
+                "selfLink": None,
+            },
+        )
+    )
+    poll = mock_hmc.get("/rest/api/uom/Job/platform-job")
+
+    result = hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE, wait=True)
+
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED"
+    assert not poll.called
+
+
+def test_update_firmware_wait_rejects_unpollable_accepted_job(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+    )
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "id": "platform-job",
+                "content": {"JobResponse": {"Status": "RUNNING"}},
+                "selfLink": None,
+            },
+        )
+    )
+
+    with pytest.raises(HMCError, match="accepted.*cannot be polled"):
+        hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE, wait=True)
+
+
+def test_update_firmware_wait_polls_supplied_self_link(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.get("/rest/api/uom/ManagementConsole").mock(
+        return_value=httpx.Response(200, text=_console_feed("V11R1M1111"))
+    )
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate").mock(
+        return_value=httpx.Response(
+            202,
+            json={
+                "id": "platform-job",
+                "content": {"JobResponse": {"Status": "RUNNING"}},
+                "selfLink": "/rest/api/uom/Job/platform-job",
+            },
+        )
+    )
+    poll = mock_hmc.get("/rest/api/uom/Job/platform-job").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+
+    result = hmc_update_firmware(
+        SYSTEM_UUID,
+        PLATFORM_UPDATE,
+        wait=True,
+        timeout_seconds=60,
+        poll_interval=1,
+    )
+
+    assert poll.called
+    assert result is not None
+    assert result["Resource"]["Status"] == "COMPLETED"
 
 
 def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):

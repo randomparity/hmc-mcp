@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import HMCError
 from .xmlutil import WEB_NS, escapes_string_arguments
@@ -476,7 +476,6 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
 ConsoleUpdateMediaType = Literal[
     "USB", "NFS", "SFTP", "FTP", "IBMWebsite", "Disk", "VirtualMedia", "CDDVD"
 ]
@@ -664,89 +663,153 @@ _VIOS_UPGRADE_REQUIRED = {
 }
 
 
-class RepositorySource(TypedDict, total=False):
-    """Software source for an update/upgrade job.
+_PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    Recognised keys:
-        type        – repository type: nfs | sftp | disk | ibmfixcentral
-        host        – NFS/SFTP server hostname or IP
-        path        – NFS export path or SFTP remote path
-        user        – SFTP username
-        sftp_pw     – SFTP login credential
-        mount_loc   – local mount point for NFS
-        insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
-        ibm_id      – IBM FixCentral account ID
-        ibm_token   – IBM FixCentral account token
-    """
 
-    type: NotRequired[
-        Annotated[RepositoryType, Field(description="Repository transport type.")]
-    ]
-    host: Annotated[
-        str, Field(description="NFS or SFTP server hostname or IP address.")
-    ]
-    path: Annotated[str, Field(description="NFS export path or SFTP remote path.")]
-    user: Annotated[str, Field(description="SFTP login username.")]
-    sftp_pw: Annotated[str, Field(description="SFTP login password.")]
-    mount_loc: Annotated[
-        str, Field(description="HMC-local mount point for an NFS source.")
-    ]
-    insecure: Annotated[
+class SRIOVAdapterUpdateModel(BaseModel):
+    """One documented SR-IOV adapter update selection."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    AdapterID: Annotated[
         str,
-        Field(description="IBM Fix Central certificate-check setting: true or false."),
+        Field(min_length=1, pattern=r"\S", description="SR-IOV adapter identifier."),
     ]
-    ibm_id: Annotated[str, Field(description="IBM Fix Central account identifier.")]
-    ibm_token: Annotated[str, Field(description="IBM Fix Central access token.")]
+    SubType: Annotated[
+        Literal["adapterdriver", "Adapter", "adapterdriver,adapter"],
+        Field(description="Documented SR-IOV firmware update subtype."),
+    ]
 
 
-_REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
+class SystemFirmwareUpdateModel(BaseModel):
+    """System firmware and nested SR-IOV work for PlatformUpdate."""
 
-# The accepted repository types, derived from the RepositoryType Literal so the
-# annotation and the runtime enforcement cannot drift.
-_REPOSITORY_TYPES = frozenset(get_args(RepositoryType))
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "Upgrade", "NoUpdate"],
+        Field(description="System firmware action."),
+    ]
+    UpdateOrder: Annotated[int, Field(description="Platform update execution order.")]
+    SRIOVAdapterUpdate: Annotated[
+        list[SRIOVAdapterUpdateModel] | None,
+        Field(description="SR-IOV adapters updated with the system firmware step."),
+    ] = None
 
-# Required keys per repository type; a missing one fails fast with a clear
-# message instead of producing a job the HMC rejects at runtime.
-_REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
-    "nfs": frozenset({"host", "path"}),
-    "sftp": frozenset({"host", "path"}),
-    "disk": frozenset(),
-    "ibmfixcentral": frozenset({"ibm_id", "ibm_token"}),
-}
+    @model_validator(mode="after")
+    def reject_empty_sriov(self) -> "SystemFirmwareUpdateModel":
+        """Reject an explicitly empty adapter selection."""
+        if self.SRIOVAdapterUpdate == []:
+            raise ValueError("SRIOVAdapterUpdate must contain at least one adapter")
+        return self
 
 
-def _repository_params(repository: RepositorySource) -> dict[str, str]:
-    """Convert a repository dict to JobParameter key/value pairs.
+class IOAdapterUpdateModel(BaseModel):
+    """One documented VIOS-owned IO-adapter firmware update."""
 
-    Unknown keys are rejected, the repository type must be present, and
-    required keys are checked per repository type, so a typo like
-    ``{'type': 'nfs', 'hst': '...'}`` fails here with an actionable message
-    instead of producing a job the HMC rejects at runtime.
-    """
-    unknown = set(repository) - _REPOSITORY_KEYS
-    if unknown:
-        raise ValueError(
-            f"Unknown repository key(s): {', '.join(sorted(unknown))}. "
-            f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
+    model_config = _PLATFORM_MODEL_CONFIG
+    Id: Annotated[
+        str,
+        Field(min_length=1, pattern=r"\S", description="VIOS partition identifier."),
+    ]
+    Device: Annotated[
+        str, Field(min_length=1, pattern=r"\S", description="IO-adapter device name.")
+    ]
+    Repository: Annotated[
+        Literal["MOUNTPOINT", "SFTP", "USB", "IBMWebsite", "DISK", "disk"],
+        Field(description="Documented IO-adapter image repository."),
+    ]
+
+
+class VIOSPlatformUpdate(BaseModel):
+    """One VIOS update and its optional nested IO-adapter work."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "update", "Upgrade", "NoUpdate"],
+        Field(description="VIOS update action."),
+    ]
+    VIOSName: Annotated[
+        str, Field(min_length=1, pattern=r"\S", description="VIOS name.")
+    ]
+    UpdateOrder: Annotated[
+        int | None, Field(description="Platform update execution order.")
+    ] = None
+    Name: Annotated[
+        str | None,
+        Field(min_length=1, pattern=r"\S", description="VIOS image name."),
+    ] = None
+    ResourceType: Annotated[
+        Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"] | None,
+        Field(description="VIOS image source."),
+    ] = None
+    IOAdapterUpdate: Annotated[
+        list[IOAdapterUpdateModel] | None,
+        Field(description="IO adapters owned by this VIOS."),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_update_shape(self) -> "VIOSPlatformUpdate":
+        """Enforce conditional resource and non-empty adapter requirements."""
+        if self.UpdateType != "NoUpdate" and self.ResourceType is None:
+            raise ValueError(f"ResourceType is required for {self.UpdateType}")
+        if self.IOAdapterUpdate == []:
+            raise ValueError("IOAdapterUpdate must contain at least one adapter")
+        return self
+
+
+class PlatformUpdateParameter(BaseModel):
+    """Strict documented parameter object for the PlatformUpdate operation."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    SystemFirmwareUpdate: Annotated[
+        SystemFirmwareUpdateModel | None,
+        Field(description="System firmware and SR-IOV update selection."),
+    ] = None
+    VIOSUpdate: Annotated[
+        list[VIOSPlatformUpdate] | None,
+        Field(description="VIOS and IO-adapter update selections."),
+    ] = None
+
+    @model_validator(mode="after")
+    def require_update_action(self) -> "PlatformUpdateParameter":
+        """Reject requests that contain no firmware or adapter action."""
+        if self.VIOSUpdate == []:
+            raise ValueError("VIOSUpdate must contain at least one VIOS")
+        system_action = self.SystemFirmwareUpdate is not None and (
+            self.SystemFirmwareUpdate.UpdateType != "NoUpdate"
+            or self.SystemFirmwareUpdate.SRIOVAdapterUpdate is not None
         )
-    repo_type = repository.get("type")
-    expected = ", ".join(sorted(_REPOSITORY_TYPES))
-    if repo_type is None:
-        raise ValueError(
-            f"Repository dict is missing 'type'. Expected one of: {expected}."
+        vios_action = any(
+            update.UpdateType != "NoUpdate" or update.IOAdapterUpdate is not None
+            for update in self.VIOSUpdate or []
         )
-    required = _REQUIRED_KEYS.get(repo_type)
-    if required is None:
-        raise ValueError(
-            f"Unknown repository type {repo_type!r}. Expected one of: {expected}."
-        )
-    missing = required - set(repository)
-    if missing:
-        raise ValueError(
-            f"Repository type {repo_type!r} requires key(s): "
-            f"{', '.join(sorted(missing))}."
-        )
-    return {str(k): str(v) for k, v in repository.items() if v is not None}
+        if not system_action and not vios_action:
+            raise ValueError("PlatformUpdate requires at least one update action")
+        return self
+
+
+SRIOVAdapterUpdate = SRIOVAdapterUpdateModel
+SystemFirmwareUpdate = SystemFirmwareUpdateModel
+IOAdapterUpdate = IOAdapterUpdateModel
+
+
+def platform_update_job(parameters: PlatformUpdateParameter) -> dict[str, Any]:
+    """Build the documented native JSON PlatformUpdate JobRequest."""
+    return {
+        "JobRequest": {
+            "RequestedOperation": {
+                "OperationName": "PlatformUpdate",
+                "GroupName": "ManagedSystem",
+            },
+            "JobParameters": {
+                "JobParameter": [
+                    {
+                        "ParameterName": "PlatformUpdateParameter",
+                        "ParameterValue": parameters.model_dump(exclude_none=True),
+                    }
+                ]
+            },
+        }
+    }
 
 
 def update_hmc_job(source: ConsoleUpdateSource) -> str:
@@ -827,13 +890,3 @@ def upgrade_vios_job(source: VIOSUpgradeSource) -> str:
         _VIOS_UPGRADE_REQUIRED,
     )
     return build_job_request("UpgradeVIOS", "VirtualIOServer", params)
-
-
-def update_firmware_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a managed system firmware update.
-
-    target: ManagedSystem/{uuid}/do/UpdateFirmware
-    """
-    return build_job_request(
-        "UpdateFirmware", "ManagedSystem", _repository_params(repository)
-    )

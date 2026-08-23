@@ -12,9 +12,10 @@ from __future__ import annotations
 import os
 import warnings
 from collections.abc import AsyncIterator
+from collections.abc import Mapping
 from typing import Any
 import re
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from . import audit
 from .client_contracts import httpx
@@ -41,6 +42,7 @@ from .client_users import UsersMixin
 
 # Media-type fragments used by the HMC API.
 MEDIA_WEB = "application/vnd.ibm.powervm.web+xml"
+MEDIA_WEB_JSON = "application/vnd.ibm.powervm.web+json"
 MEDIA_UOM = "application/vnd.ibm.powervm.uom+xml"
 
 # The two RFC 3986 dot-segments. Held as a frozenset and compared per path
@@ -152,6 +154,59 @@ def _verify_ssl_source(config: HMCConfig) -> str:
     ):
         return "explicit-argument"
     return "environment:HMC_VERIFY_SSL"
+
+
+def _platform_response_error(field: str) -> HMCError:
+    """Build a payload-safe malformed PlatformUpdate response error."""
+    return HMCError(f"Malformed PlatformUpdate response: invalid {field}")
+
+
+def _normalize_platform_update_response(payload: Any) -> dict[str, Any]:
+    """Normalize IBM's JSON PlatformUpdate job into the shared job shape."""
+    if not isinstance(payload, dict):
+        raise _platform_response_error("root")
+    job_id = payload.get("id")
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise _platform_response_error("id")
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        raise _platform_response_error("content")
+    response = content.get("JobResponse")
+    if not isinstance(response, dict):
+        raise _platform_response_error("JobResponse")
+    status = response.get("Status")
+    if not isinstance(status, str) or not status.strip():
+        raise _platform_response_error("Status")
+    self_link = payload.get("selfLink")
+    if self_link is not None and (
+        not isinstance(self_link, str) or not self_link.strip()
+    ):
+        raise _platform_response_error("selfLink")
+
+    resource = dict(response)
+    if "Result" in resource:
+        results = resource.pop("Result")
+        if not isinstance(results, list):
+            raise _platform_response_error("Result")
+        normalized_results: list[dict[str, str]] = []
+        for entry in results:
+            if not isinstance(entry, dict):
+                raise _platform_response_error("Result entry")
+            name = entry.get("ParameterName")
+            value = entry.get("ParameterValue")
+            if not isinstance(name, str) or not name.strip():
+                raise _platform_response_error("Result ParameterName")
+            if not isinstance(value, str):
+                raise _platform_response_error("Result ParameterValue")
+            normalized_results.append(
+                {"ParameterName": name, "ParameterValue": value}
+            )
+        resource["Results"] = {"JobParameter": normalized_results}
+
+    normalized: dict[str, Any] = {"UUID": job_id.strip(), "Resource": resource}
+    if isinstance(self_link, str):
+        normalized["link"] = self_link.strip()
+    return normalized
 
 
 
@@ -821,6 +876,33 @@ class HMCClient(
             raise HMCError(f"PUT {job_path} failed", resp.status_code, resp.text)
         entries = _parse_feed(resp.text, job_path) if resp.text else []
         return entries[0] if entries else None
+
+    async def submit_platform_update(
+        self, system_uuid: str, job_request: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        """PUT one native JSON PlatformUpdate request and normalize its job."""
+        system_path_id = quote(system_uuid, safe="")
+        path = f"/rest/api/uom/ManagedSystem/{system_path_id}/do/PlatformUpdate"
+        resp = await self._request(
+            "PUT",
+            path,
+            json=job_request,
+            headers={
+                "Content-Type": f"{MEDIA_WEB_JSON}; type=JobRequest",
+                "Accept": "application/json",
+            },
+        )
+        if resp.status_code not in (200, 201, 202, 204):
+            raise HMCError(f"PUT {path} failed", resp.status_code)
+        if not resp.content or not resp.text.strip():
+            return None
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            raise HMCError(
+                "Malformed PlatformUpdate response: body is not valid JSON"
+            ) from exc
+        return _normalize_platform_update_response(payload)
 
     async def get_job(
         self,
