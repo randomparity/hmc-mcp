@@ -923,12 +923,8 @@ class HMCClient(
         if job_href:
             path = urlparse(job_href).path
             _reject_non_job_path(path)
-            xml = await self._web_get(path)
-            if not xml:
-                return None
-            entries = _parse_feed(xml, path)
-            return entries[0] if entries else None
-        path = f"/rest/api/uom/jobs/{job_uuid}"
+        else:
+            path = f"/rest/api/uom/jobs/{job_uuid}"
         xml = await self._web_get(path)
         if not xml:
             return None
