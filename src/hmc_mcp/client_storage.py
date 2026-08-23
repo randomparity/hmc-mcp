@@ -27,22 +27,25 @@ _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
-def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
-    """Extract the ManagedSystem UUID from a VirtualIOServer document.
-
-    Parses the AssociatedManagedSystem href attribute which contains the
-    system-scoped path:  .../uom/ManagedSystem/{sys_uuid}
-    """
-    match = _re.search(
-        r"/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})",
-        vios_xml,
+def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
+    """Extract the exact ManagedSystem UUID associated with one VIOS element."""
+    links = vios_elem.findall(f"{{{_UOM_NS}}}AssociatedManagedSystem")
+    if len(links) != 1:
+        raise HMCError(
+            "VirtualIOServer must have exactly one AssociatedManagedSystem link",
+            200,
+            ET.tostring(vios_elem, encoding="unicode")[:500],
+        )
+    href = links[0].get("href", "")
+    match = _re.fullmatch(
+        r"(?:https?://[^/]+)?/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})/?",
+        href,
     )
     if not match:
         raise HMCError(
-            "Cannot find ManagedSystem UUID in VirtualIOServer document. "
-            "The VIOS response is missing AssociatedManagedSystem href.",
+            "AssociatedManagedSystem href does not contain an exact ManagedSystem UUID",
             200,
-            vios_xml[:500],
+            repr(href),
         )
     return match.group(1)
 
@@ -253,7 +256,7 @@ class StorageMixin:
             )
 
         mappings.remove(matches[0])
-        system_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
+        system_uuid = _extract_system_uuid_from_vios(vios_elem)
         post_path = (
             f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
         )
@@ -716,10 +719,7 @@ class StorageMixin:
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
-        # Step 2 — Extract system UUID from AssociatedManagedSystem href
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
-
-        # Step 3 — Parse raw XML and locate VirtualSCSIMappings element
+        # Step 2 — Parse raw XML and locate VirtualSCSIMappings element
         try:
             root = ET.fromstring(vios_xml)
         except ET.ParseError as exc:
@@ -731,6 +731,8 @@ class StorageMixin:
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root  # already the VirtualIOServer element
+
+        sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
@@ -816,8 +818,6 @@ class StorageMixin:
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
-
         try:
             root = ET.fromstring(vios_xml)
         except ET.ParseError as exc:
@@ -828,6 +828,8 @@ class StorageMixin:
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root
+
+        sys_uuid = _extract_system_uuid_from_vios(vios_elem)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:

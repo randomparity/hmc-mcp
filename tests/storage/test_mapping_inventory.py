@@ -105,6 +105,7 @@ VIOS_PARENT_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}"
 VIOS_POST_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
 VIOS_PARENT = f"""<VirtualIOServer
   xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+  <UnrelatedLink href="/rest/api/uom/ManagedSystem/11111111-1111-1111-1111-111111111111"/>
   <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
   <VirtualSCSIMappings>
     <VirtualSCSIMapping><UUID>mapping-1</UUID></VirtualSCSIMapping>
@@ -257,3 +258,25 @@ async def test_delete_storage_mapping_rejects_empty_selector(mock_hmc):
         with pytest.raises(HMCError, match="must not be empty"):
             await hmc.delete_storage_mapping(VIOS_UUID, "")
     assert not fetched.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "document",
+    [
+        VIOS_PARENT.replace("AssociatedManagedSystem", "WrongAssociation"),
+        VIOS_PARENT.replace(
+            "<AssociatedManagedSystem",
+            "<AssociatedManagedSystem href=\"/rest/api/uom/ManagedSystem/"
+            f"{SYSTEM_UUID}\"/><AssociatedManagedSystem",
+        ),
+        VIOS_PARENT.replace(SYSTEM_UUID, "not-a-uuid"),
+    ],
+)
+async def test_delete_storage_mapping_rejects_untrusted_system_link(
+    mock_hmc, document
+):
+    mock_hmc.get(VIOS_PARENT_PATH).mock(return_value=httpx.Response(200, text=document))
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="AssociatedManagedSystem"):
+            await hmc.delete_storage_mapping(VIOS_UUID, "mapping-1")
