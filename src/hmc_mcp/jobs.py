@@ -663,14 +663,16 @@ _VIOS_UPGRADE_REQUIRED = {
 }
 
 
-_PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
+_PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class SRIOVAdapterUpdateModel(BaseModel):
     """One documented SR-IOV adapter update selection."""
 
     model_config = _PLATFORM_MODEL_CONFIG
-    AdapterID: Annotated[str, Field(description="SR-IOV adapter identifier.")]
+    AdapterID: Annotated[
+        str, Field(min_length=1, description="SR-IOV adapter identifier.")
+    ]
     SubType: Annotated[
         Literal["adapterdriver", "Adapter", "adapterdriver,adapter"],
         Field(description="Documented SR-IOV firmware update subtype."),
@@ -703,8 +705,8 @@ class IOAdapterUpdateModel(BaseModel):
     """One documented VIOS-owned IO-adapter firmware update."""
 
     model_config = _PLATFORM_MODEL_CONFIG
-    Id: Annotated[str, Field(description="VIOS partition identifier.")]
-    Device: Annotated[str, Field(description="IO-adapter device name.")]
+    Id: Annotated[str, Field(min_length=1, description="VIOS partition identifier.")]
+    Device: Annotated[str, Field(min_length=1, description="IO-adapter device name.")]
     Repository: Annotated[
         Literal["MOUNTPOINT", "SFTP", "USB", "IBMWebsite", "DISK", "disk"],
         Field(description="Documented IO-adapter image repository."),
@@ -719,11 +721,13 @@ class VIOSPlatformUpdate(BaseModel):
         Literal["Update", "update", "Upgrade", "NoUpdate"],
         Field(description="VIOS update action."),
     ]
-    VIOSName: Annotated[str, Field(description="VIOS name.")]
+    VIOSName: Annotated[str, Field(min_length=1, description="VIOS name.")]
     UpdateOrder: Annotated[
         int | None, Field(description="Platform update execution order.")
     ] = None
-    Name: Annotated[str | None, Field(description="VIOS image name.")] = None
+    Name: Annotated[str | None, Field(min_length=1, description="VIOS image name.")] = (
+        None
+    )
     ResourceType: Annotated[
         Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"] | None,
         Field(description="VIOS image source."),

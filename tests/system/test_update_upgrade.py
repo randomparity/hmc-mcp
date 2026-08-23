@@ -84,9 +84,7 @@ def test_platform_update_job_uses_nested_native_json() -> None:
             UpdateType="NoUpdate",
             UpdateOrder=3,
             SRIOVAdapterUpdate=[
-                SRIOVAdapterUpdate(
-                    AdapterID="1", SubType="adapterdriver,adapter"
-                )
+                SRIOVAdapterUpdate(AdapterID="1", SubType="adapterdriver,adapter")
             ],
         ),
         VIOSUpdate=[
@@ -254,6 +252,39 @@ def test_platform_update_requires_resource_for_vios_update() -> None:
 def test_platform_update_models_reject_unknown_keys(model, value) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         model.model_validate(value)
+
+
+@pytest.mark.parametrize(
+    ("model", "value"),
+    [
+        (SRIOVAdapterUpdate, {"AdapterID": "", "SubType": "Adapter"}),
+        (IOAdapterUpdate, {"Id": "", "Device": "nvme0", "Repository": "disk"}),
+        (IOAdapterUpdate, {"Id": "1", "Device": "", "Repository": "disk"}),
+        (
+            VIOSPlatformUpdate,
+            {"UpdateType": "Update", "VIOSName": "", "ResourceType": "HMC"},
+        ),
+        (
+            VIOSPlatformUpdate,
+            {
+                "UpdateType": "Update",
+                "VIOSName": "vios1",
+                "ResourceType": "HMC",
+                "Name": "",
+            },
+        ),
+    ],
+)
+def test_platform_update_models_reject_blank_identifiers(model, value) -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        model.model_validate(value)
+
+
+def test_platform_update_models_do_not_coerce_update_order() -> None:
+    with pytest.raises(ValidationError, match="valid integer"):
+        SystemFirmwareUpdate.model_validate(
+            {"UpdateType": "Update", "UpdateOrder": "1"}
+        )
 
 
 def test_vios_params_none_values_excluded():
