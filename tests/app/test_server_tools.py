@@ -802,33 +802,79 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     assert result["Resource"]["Status"] == "COMPLETED"
 
 
-def test_list_available_hmc_ptfs(monkeypatch, mock_hmc):
-    """hmc_get_available_hmc_ptfs GETs the SoftwareUpdate group."""
+def test_list_available_hmc_ptfs_returns_submitted_job(monkeypatch, mock_hmc):
+    """hmc_get_available_hmc_ptfs submits the documented list job."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get(
-        f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate"
-    ).mock(return_value=httpx.Response(200, text=JOB_ENTRY))
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     result = hmc_get_available_hmc_ptfs(MC_UUID)
     assert route.called
     assert result["Resource"]["JobID"] == "job-uuid-999"
+    body = route.calls.last.request.content.decode()
+    assert "ListManagementConsoleUpdates" in body
+    assert "ManagementConsole" in body
+    assert "<JobParameter schemaVersion" not in body
 
 
-def test_list_available_hmc_ptfs_unsupported(monkeypatch, mock_hmc):
-    """hmc_get_available_hmc_ptfs converts HTTP 400 REST0026 to actionable error."""
+def test_list_available_hmc_ptfs_preserves_positional_profile(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    error_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        "<HttpErrorResponseResult><Message>REST0026 Unknown extended attribute group SoftwareUpdate</Message>"
-        "</HttpErrorResponseResult>"
-    )
-    mock_hmc.get(
-        f"/rest/api/uom/ManagementConsole/{MC_UUID}?group=SoftwareUpdate"
-    ).mock(return_value=httpx.Response(400, text=error_xml))
-    with pytest.raises(
-        HMCError,
-        match="SoftwareUpdate attribute group not supported on this HMC version",
-    ):
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    result = hmc_get_available_hmc_ptfs(MC_UUID, "default")
+
+    assert route.called
+    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert all(call.request.method != "GET" for call in mock_hmc.calls)
+
+
+def test_list_available_hmc_ptfs_surfaces_job_error(monkeypatch, mock_hmc):
+    """Job submission errors retain their server diagnosis."""
+    _hmc_env(monkeypatch)
+    mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    ).mock(return_value=httpx.Response(500, text="repository unavailable"))
+    with pytest.raises(HMCError, match="repository unavailable"):
         hmc_get_available_hmc_ptfs(MC_UUID)
+
+
+def test_list_available_hmc_ptfs_waits_for_result(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    poll = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
+    )
+
+    result = hmc_get_available_hmc_ptfs(
+        MC_UUID, wait=True, timeout_seconds=60, poll_interval=1
+    )
+
+    assert poll.called
+    assert result["Resource"]["Status"] == "COMPLETED"
+
+
+@pytest.mark.parametrize(
+    ("timeout_seconds", "poll_interval", "message"),
+    [(-1, 1, "timeout_seconds"), (60, 0, "poll_interval")],
+)
+def test_list_available_hmc_ptfs_validates_wait_timing_before_io(
+    monkeypatch, mock_hmc, timeout_seconds, poll_interval, message
+):
+    _hmc_env(monkeypatch)
+
+    with pytest.raises(ValueError, match=message):
+        hmc_get_available_hmc_ptfs(
+            MC_UUID,
+            wait=True,
+            timeout_seconds=timeout_seconds,
+            poll_interval=poll_interval,
+        )
+
+    assert not mock_hmc.calls
 
 
 # ---------------------------------------------------------------------- #

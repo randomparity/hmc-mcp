@@ -100,7 +100,6 @@ LEGACY_READ_ONLY = frozenset(
         "hmc_list_task_roles",
         "hmc_list_resource_roles",
         "hmc_get_remote_access",
-        "hmc_get_available_hmc_ptfs",
         "hmc_list_vios_backups",
         "hmc_get_lpar_description",
         "hmc_get_lpar_msp",
@@ -185,6 +184,14 @@ def test_annotations_are_derived_from_the_effect_class():
 def test_declared_effects_use_the_closed_vocabulary():
     for name, security in TOOL_SECURITY.items():
         assert security.effect in EFFECTS, name
+
+
+def test_available_hmc_ptfs_is_mutating_job_submission():
+    security = TOOL_SECURITY["hmc_get_available_hmc_ptfs"]
+    tool = _tools_by_name()["hmc_get_available_hmc_ptfs"]
+
+    assert security.effect == "mutate"
+    assert tool.annotations.readOnlyHint is False
 
 
 def test_selectors_and_connection_arguments_are_public_parameters():
