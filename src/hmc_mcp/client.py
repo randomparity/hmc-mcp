@@ -909,24 +909,21 @@ class HMCClient(
         When *job_href* is provided (the SELF link returned by ``submit_job``),
         it is used directly so the request hits the per-operation path.
 
-        HMC versions that do not expose ``Job`` as a root UOM resource type
-        return HTTP 400 on ``GET /rest/api/uom/Job/{uuid}``.  Those versions
-        use the ``web+xml`` content type for job responses (the SELF link in
-        the submission response points to ``/rest/api/uom/jobs/{id}`` and
-        requires ``Accept: application/vnd.ibm.powervm.web+xml``).  When a
-        ``job_href`` is supplied the request is sent with the ``web+xml``
-        Accept header so it works on both endpoint shapes (see issue #95).
-        Without ``job_href`` the legacy uom path is used for backward compat.
+        The documented global endpoint is ``/rest/api/uom/jobs/{id}`` and uses
+        the ``web+xml`` content type. When ``job_href`` is supplied, its job
+        path remains preferred so per-operation SELF links work as returned by
+        the HMC (see issue #95).
         """
         if job_href:
             path = urlparse(job_href).path
             _reject_non_job_path(path)
-            xml = await self._web_get(path)
-            if not xml:
-                return None
-            entries = _parse_feed(xml, path)
-            return entries[0] if entries else None
-        return await self.get_uom("Job", job_uuid)
+        else:
+            path = f"/rest/api/uom/jobs/{job_uuid}"
+        xml = await self._web_get(path)
+        if not xml:
+            return None
+        entries = _parse_feed(xml, path)
+        return entries[0] if entries else None
 
     async def wait_for_job(
         self,
@@ -968,8 +965,16 @@ class HMCClient(
                 return entry
             entry = await self.get_job(job_uuid, job_href=job_href)
 
-    async def delete_job(self, job_uuid: str) -> None:
-        await self._delete(f"/rest/api/uom/Job/{job_uuid}")
+    async def delete_job(
+        self,
+        job_uuid: str,
+        *,
+        job_href: str | None = None,
+    ) -> None:
+        """Delete a job, preferring its SELF link when available."""
+        path = urlparse(job_href).path if job_href else f"/rest/api/uom/jobs/{job_uuid}"
+        _reject_non_job_path(path)
+        await self._delete(path)
 
     # ------------------------------------------------------------------ #
     # Raw escape hatch
