@@ -158,9 +158,14 @@ def test_every_registered_parameter_has_a_description(arbitrary_command_enabled)
         }
         assert missing == {}
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_arbitrary_command_tool_is_disabled_by_default():
@@ -185,18 +190,38 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 
     try:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            True, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            True, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
         tools = [
             tool
@@ -206,17 +231,32 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
         assert "hmc_run_command" not in _tools_by_name()
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(
-            False, mcp, permits=_HATCH.permits_tool, authorize=dispatch_authorizer(_HATCH)
-        ))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
@@ -514,19 +554,36 @@ def test_update_source_enums_match_runtime_constants():
     assert repository["required"] == ["MediaType"]
 
     vios_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"]
-    update_source, upgrade_source = vios_sources["anyOf"]
-    assert update_source["required"] == ["ResourceType"]
-    assert upgrade_source["required"] == ["ResourceType"]
-    assert set(update_source["properties"]["ResourceType"]["enum"]) == set(
-        _VIOS_UPDATE_RESOURCE_TYPES
-    )
-    assert set(upgrade_source["properties"]["ResourceType"]["enum"]) == set(
-        _VIOS_UPGRADE_RESOURCE_TYPES
-    )
-    assert "RestartVIOS" in update_source["properties"]
-    assert "Disks" not in update_source["properties"]
-    assert "Disks" in upgrade_source["properties"]
-    assert "RestartVIOS" not in upgrade_source["properties"]
+    variants = vios_sources["anyOf"]
+    update_sources = [
+        source for source in variants if "RestartVIOS" in source["properties"]
+    ]
+    upgrade_sources = [source for source in variants if "Disks" in source["properties"]]
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in update_sources
+    } == set(_VIOS_UPDATE_RESOURCE_TYPES)
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in upgrade_sources
+    } == set(_VIOS_UPGRADE_RESOURCE_TYPES)
+    assert all("ResourceType" in source["required"] for source in variants)
+    update_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in update_sources
+    }
+    upgrade_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in upgrade_sources
+    }
+    assert update_required["HMC"] == {"ResourceType", "Name"}
+    assert update_required["NFS"] == {
+        "ResourceType",
+        "ServerHostOrIP",
+        "RemoteDirectory",
+    }
+    assert update_required["USB"] == {"ResourceType", "USBDevice"}
+    assert all("Disks" in required for required in upgrade_required.values())
+    assert all("Disks" not in source["properties"] for source in update_sources)
+    assert all("RestartVIOS" not in source["properties"] for source in upgrade_sources)
 
 
 def test_metrics_tools_have_stable_output_schemas():

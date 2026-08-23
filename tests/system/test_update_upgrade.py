@@ -57,19 +57,19 @@ def test_update_hmc_job_rejects_unknown_parameter():
 def test_update_vios_job_xml():
     xml = update_vios_job(VIOS_UPDATE_NFS)
 
-    assert "<OperationName kb=\"ROR\" kxe=\"false\">UpdateVIOS</OperationName>" in xml
-    assert "<GroupName kb=\"ROR\" kxe=\"false\">VirtualIOServer</GroupName>" in xml
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">ResourceType</ParameterName>" in xml
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">RestartVIOS</ParameterName>" in xml
+    assert '<OperationName kb="ROR" kxe="false">UpdateVIOS</OperationName>' in xml
+    assert '<GroupName kb="ROR" kxe="false">VirtualIOServer</GroupName>' in xml
+    assert '<ParameterName kb="ROR" kxe="false">ResourceType</ParameterName>' in xml
+    assert '<ParameterName kb="ROR" kxe="false">RestartVIOS</ParameterName>' in xml
 
 
 def test_upgrade_vios_job_xml():
     xml = upgrade_vios_job(VIOS_UPGRADE_NFS)
 
-    assert "<OperationName kb=\"ROR\" kxe=\"false\">UpgradeVIOS</OperationName>" in xml
-    assert "<GroupName kb=\"ROR\" kxe=\"false\">VirtualIOServer</GroupName>" in xml
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">ResourceType</ParameterName>" in xml
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">Disks</ParameterName>" in xml
+    assert '<OperationName kb="ROR" kxe="false">UpgradeVIOS</OperationName>' in xml
+    assert '<GroupName kb="ROR" kxe="false">VirtualIOServer</GroupName>' in xml
+    assert '<ParameterName kb="ROR" kxe="false">ResourceType</ParameterName>' in xml
+    assert '<ParameterName kb="ROR" kxe="false">Disks</ParameterName>' in xml
 
 
 def test_update_firmware_job_xml():
@@ -87,7 +87,7 @@ def test_vios_params_none_values_excluded():
     }
     xml = update_vios_job(source)
 
-    assert "<ParameterName kb=\"ROR\" kxe=\"false\">Name</ParameterName>" not in xml
+    assert '<ParameterName kb="ROR" kxe="false">Name</ParameterName>' not in xml
 
 
 def test_vios_update_unknown_parameter_rejected():
@@ -132,16 +132,17 @@ def test_vios_source_requires_resource_specific_parameters(builder, source, miss
         builder(source)
 
 
-def test_vios_save_file_requires_name():
-    source = {
-        "ResourceType": "NFS",
-        "ServerHostOrIP": "repo.example.com",
-        "RemoteDirectory": "/images",
-        "SaveFile": "true",
-    }
+@pytest.mark.parametrize(
+    ("builder", "source"),
+    [
+        (update_vios_job, {**VIOS_UPDATE_NFS, "SaveFile": "true", "Name": None}),
+        (upgrade_vios_job, {**VIOS_UPGRADE_NFS, "SaveFile": "true", "Name": None}),
+    ],
+)
+def test_vios_save_file_requires_usable_name(builder, source):
 
     with pytest.raises(ValueError, match="SaveFile='true'.*Name"):
-        update_vios_job(source)
+        builder(source)
 
 
 def test_repository_types_cover_required_key_sets():

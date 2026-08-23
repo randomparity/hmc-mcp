@@ -872,7 +872,11 @@ its matching read-succeeded flag set means verified absence.
 `hmc_vios_update` uses IBM's operation-specific parameter names. Every source
 requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or
 `IBMWebsite` and may include `RestartVIOS`; upgrades accept `HMC`, `NFS`,
-`SFTP`, or `USB` and may include `Disks`. For example:
+`SFTP`, or `USB` and require `Disks`. For example:
+
+HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
+`RemoteDirectory`, USB sources require `USBDevice`, and every upgrade requires
+`Disks`. Setting `SaveFile` to `true` also requires `Name`.
 
 ```json
 {

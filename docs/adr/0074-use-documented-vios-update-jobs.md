@@ -32,8 +32,11 @@ connection:
 | `UpdateVIOS` | `HMC`, `NFS`, `SFTP`, `USB`, `IBMWebsite` | `Name`, `ServerHostOrIP`, `UserName`, `Password`, `SSHKey`, `PassPhrase`, `RemoteDirectory`, `FileNames`, `MountLocation`, `MountOptions`, `USBDevice`, `SaveFile` | `RestartVIOS` |
 | `UpgradeVIOS` | `HMC`, `NFS`, `SFTP`, `USB` | `Name`, `ServerHostOrIP`, `UserName`, `Password`, `SSHKey`, `PassPhrase`, `RemoteDirectory`, `FileNames`, `MountLocation`, `MountOptions`, `USBDevice`, `SaveFile` | `Disks` |
 
-`ResourceType` is required. Unknown keys, the other operation's exclusive
-parameter, and `IBMWebsite` on upgrade are rejected.
+`ResourceType` is required. Each resource variant also exposes its source
+requirements in the public schema: `Name` for HMC, server and remote directory
+for NFS/SFTP, and device for USB; upgrade requires `Disks`. `SaveFile=true`
+requires `Name`. Unknown keys, the other operation's exclusive parameter, and
+`IBMWebsite` on upgrade are rejected.
 
 The builders and REST paths use `UpdateVIOS` and `UpgradeVIOS`. A waited result
 whose status is in the shared terminal-status set exposes the first non-empty

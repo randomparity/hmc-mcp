@@ -515,54 +515,121 @@ class ConsoleUpdateSource(TypedDict, total=False):
 _CONSOLE_UPDATE_KEYS = frozenset(ConsoleUpdateSource.__annotations__)
 
 
-class _VIOSSourceBase(TypedDict, total=False):
-    """Parameters shared by the documented VIOS update operations."""
-
+class _VIOSOptionalSource(TypedDict, total=False):
     Name: Annotated[str, Field(description="Name of the VIOS image.")]
-    ServerHostOrIP: Annotated[str, Field(description="Remote server host or IP.")]
-    UserName: Annotated[str, Field(description="Remote SFTP user name.")]
-    Password: Annotated[str, Field(description="Remote SFTP password.")]
-    SSHKey: Annotated[str, Field(description="SSH private key for SFTP.")]
-    PassPhrase: Annotated[str, Field(description="SSH-key passphrase.")]
-    RemoteDirectory: Annotated[str, Field(description="Remote image directory.")]
-    FileNames: Annotated[str, Field(description="Comma-separated image files.")]
-    MountLocation: Annotated[str, Field(description="NFS mount location.")]
-    MountOptions: Annotated[str, Field(description="Additional NFS mount options.")]
-    USBDevice: Annotated[str, Field(description="USB device name.")]
     SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
 
 
-class VIOSUpdateSource(_VIOSSourceBase, total=False):
-    """Documented parameters for ``UpdateVIOS``."""
-
-    ResourceType: Required[
-        Annotated[
-            VIOSUpdateResourceType,
-            Field(description="Location of the VIOS update image."),
-        ]
-    ]
-    RestartVIOS: Annotated[
-        str, Field(description="Restart the VIOS after the update.")
-    ]
+class _VIOSUpdateOptional(_VIOSOptionalSource, total=False):
+    RestartVIOS: Annotated[str, Field(description="Restart the VIOS after the update.")]
 
 
-class VIOSUpgradeSource(_VIOSSourceBase, total=False):
-    """Documented parameters for ``UpgradeVIOS``."""
+class VIOSUpdateHMCSource(TypedDict):
+    ResourceType: Literal["HMC"]
+    Name: str
+    RestartVIOS: NotRequired[str]
 
-    ResourceType: Required[
-        Annotated[
-            VIOSUpgradeResourceType,
-            Field(description="Location of the VIOS installation image."),
-        ]
-    ]
-    Disks: Annotated[
-        str, Field(description="Comma-separated free physical volumes.")
-    ]
+
+class VIOSUpdateNFSSource(_VIOSUpdateOptional):
+    ResourceType: Literal["NFS"]
+    ServerHostOrIP: str
+    RemoteDirectory: str
+    FileNames: NotRequired[str]
+    MountLocation: NotRequired[str]
+    MountOptions: NotRequired[str]
+
+
+class VIOSUpdateSFTPSource(_VIOSUpdateOptional):
+    ResourceType: Literal["SFTP"]
+    ServerHostOrIP: str
+    RemoteDirectory: str
+    UserName: NotRequired[str]
+    Password: NotRequired[str]
+    SSHKey: NotRequired[str]
+    PassPhrase: NotRequired[str]
+    FileNames: NotRequired[str]
+
+
+class VIOSUpdateUSBSource(_VIOSUpdateOptional):
+    ResourceType: Literal["USB"]
+    USBDevice: str
+
+
+class VIOSUpdateIBMWebsiteSource(_VIOSUpdateOptional):
+    ResourceType: Literal["IBMWebsite"]
+
+
+VIOSUpdateSource = (
+    VIOSUpdateHMCSource
+    | VIOSUpdateNFSSource
+    | VIOSUpdateSFTPSource
+    | VIOSUpdateUSBSource
+    | VIOSUpdateIBMWebsiteSource
+)
+
+
+class VIOSUpgradeHMCSource(TypedDict):
+    ResourceType: Literal["HMC"]
+    Name: str
+    Disks: str
+
+
+class VIOSUpgradeNFSSource(_VIOSOptionalSource):
+    ResourceType: Literal["NFS"]
+    ServerHostOrIP: str
+    RemoteDirectory: str
+    Disks: str
+    FileNames: NotRequired[str]
+    MountLocation: NotRequired[str]
+    MountOptions: NotRequired[str]
+
+
+class VIOSUpgradeSFTPSource(_VIOSOptionalSource):
+    ResourceType: Literal["SFTP"]
+    ServerHostOrIP: str
+    RemoteDirectory: str
+    Disks: str
+    UserName: NotRequired[str]
+    Password: NotRequired[str]
+    SSHKey: NotRequired[str]
+    PassPhrase: NotRequired[str]
+    FileNames: NotRequired[str]
+
+
+class VIOSUpgradeUSBSource(_VIOSOptionalSource):
+    ResourceType: Literal["USB"]
+    USBDevice: str
+    Disks: str
+
+
+VIOSUpgradeSource = (
+    VIOSUpgradeHMCSource
+    | VIOSUpgradeNFSSource
+    | VIOSUpgradeSFTPSource
+    | VIOSUpgradeUSBSource
+)
 
 
 VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
-_VIOS_UPDATE_KEYS = frozenset(VIOSUpdateSource.__annotations__)
-_VIOS_UPGRADE_KEYS = frozenset(VIOSUpgradeSource.__annotations__)
+_VIOS_COMMON_KEYS = frozenset(
+    {
+        "Name",
+        "ServerHostOrIP",
+        "UserName",
+        "Password",
+        "SSHKey",
+        "PassPhrase",
+        "RemoteDirectory",
+        "FileNames",
+        "MountLocation",
+        "MountOptions",
+        "USBDevice",
+        "SaveFile",
+        "ResourceType",
+    }
+)
+_VIOS_UPDATE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "RestartVIOS"}
+_VIOS_UPGRADE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "Disks"}
 _VIOS_UPDATE_REQUIRED = {
     "HMC": frozenset({"Name"}),
     "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
@@ -703,16 +770,18 @@ def _vios_params(
             f"Invalid {operation} ResourceType {resource_type!r}. "
             f"Expected one of: {expected}."
         )
-    missing = {
-        key for key in required_keys[resource_type] if source.get(key) is None
-    }
+    missing = {key for key in required_keys[resource_type] if source.get(key) is None}
     if missing:
         raise ValueError(
             f"{operation} ResourceType {resource_type!r} requires parameter(s): "
             f"{', '.join(sorted(missing))}."
         )
     save_file = source.get("SaveFile")
-    if isinstance(save_file, str) and save_file.lower() == "true" and "Name" not in source:
+    if (
+        isinstance(save_file, str)
+        and save_file.lower() == "true"
+        and source.get("Name") is None
+    ):
         raise ValueError(f"{operation} SaveFile='true' requires parameter: Name.")
     return {key: str(value) for key, value in source.items() if value is not None}
 

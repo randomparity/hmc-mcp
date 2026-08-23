@@ -30,16 +30,33 @@ def test_repository_source_builds_a_pydantic_type_adapter() -> None:
 def test_vios_source_builds_a_pydantic_type_adapter(source) -> None:
     schema = TypeAdapter(source).json_schema()
 
-    assert "ResourceType" in schema["properties"]
-    assert schema["required"] == ["ResourceType"]
+    variants = [
+        schema["$defs"][entry["$ref"].rsplit("/", 1)[1]] for entry in schema["anyOf"]
+    ]
+    assert all("ResourceType" in variant["properties"] for variant in variants)
+    assert all("ResourceType" in variant["required"] for variant in variants)
 
 
 def test_vios_source_properties_are_operation_specific() -> None:
-    update = TypeAdapter(VIOSUpdateSource).json_schema()["properties"]
-    upgrade = TypeAdapter(VIOSUpgradeSource).json_schema()["properties"]
+    update_schema = TypeAdapter(VIOSUpdateSource).json_schema()
+    upgrade_schema = TypeAdapter(VIOSUpgradeSource).json_schema()
+    update = [
+        update_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in update_schema["anyOf"]
+    ]
+    upgrade = [
+        upgrade_schema["$defs"][entry["$ref"].rsplit("/", 1)[1]]["properties"]
+        for entry in upgrade_schema["anyOf"]
+    ]
 
-    assert "RestartVIOS" in update and "Disks" not in update
-    assert "Disks" in upgrade and "RestartVIOS" not in upgrade
+    assert all(
+        "RestartVIOS" in properties and "Disks" not in properties
+        for properties in update
+    )
+    assert all(
+        "Disks" in properties and "RestartVIOS" not in properties
+        for properties in upgrade
+    )
 
 
 @pytest.mark.parametrize(

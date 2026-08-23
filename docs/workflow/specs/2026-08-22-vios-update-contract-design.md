@@ -29,11 +29,12 @@ existing `kind` argument:
 - Upgrade accepts `ResourceType` values `HMC`, `NFS`, `SFTP`, and `USB`, the
   same common optional fields, and `Disks`; it does not accept `RestartVIOS`.
 
-`ResourceType` is required for both operations. Unknown parameter names,
-`Disks` on update, `RestartVIOS` on upgrade, and `IBMWebsite` on upgrade raise
-an actionable `ValueError` before client creation. IBM does not state universal
-media-specific requirements for the remaining fields, so this change does not
-invent them. Values are stringified and escaped by the existing XML builder.
+`ResourceType` is required for both operations. The public union also requires
+`Name` for HMC, `ServerHostOrIP` and `RemoteDirectory` for NFS/SFTP, and
+`USBDevice` for USB; upgrade additionally requires `Disks`. When `SaveFile` is
+true, `Name` is required. Unknown and cross-operation parameters raise an
+actionable `ValueError` before client creation. Values are stringified and
+escaped by the existing XML builder.
 
 Update builds `OperationName=UpdateVIOS` and submits to
 `/rest/api/uom/VirtualIOServer/{encoded UUID}/do/UpdateVIOS`. Upgrade uses

@@ -22,9 +22,10 @@ pytest/respx, ruff, ty, and uv.
   `Password`, `SSHKey`, `PassPhrase`, `RemoteDirectory`, `FileNames`,
   `MountLocation`, `MountOptions`, `USBDevice`, and `SaveFile`.
 - Only update accepts `RestartVIOS`; only upgrade accepts `Disks`.
-- `ResourceType`, unknown keys, cross-operation keys, and upgrade
-  `IBMWebsite` fail before client creation. Do not invent media-specific
-  required fields absent from IBM's references.
+- `ResourceType`, resource-specific source fields, upgrade `Disks`, and
+  `Name` when saving an image are required in both schema and runtime.
+  Unknown keys, cross-operation keys, and upgrade `IBMWebsite` fail before
+  client creation.
 - Encode the resolved VIOS UUID as one URL path segment.
 - Only a waited result whose `Resource.Status` belongs to
   `TERMINAL_JOB_STATUSES` projects the first non-empty string `stdOut`, trimmed,
