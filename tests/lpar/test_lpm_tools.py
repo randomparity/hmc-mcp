@@ -34,7 +34,11 @@ JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
-    (hmc_remote_restart_lpar, "RemoteRestart", (LPAR_UUID, "vrml12-fsp")),
+    (
+        hmc_remote_restart_lpar,
+        "RemoteRestart",
+        (LPAR_UUID, "restart", "source-system", "vrml12-fsp"),
+    ),
 ]
 LPM_RECOVERY_OPERATION_CASES = [
     (abort_lpar_migration, "lpar_migrate_abort", (LPAR_UUID,)),
@@ -42,7 +46,7 @@ LPM_RECOVERY_OPERATION_CASES = [
     (
         remote_restart_lpar,
         "lpar_remote_restart",
-        (LPAR_UUID, "target-system"),
+        (LPAR_UUID, "restart", "source-system"),
     ),
 ]
 
@@ -121,9 +125,11 @@ def test_remote_restart_lpar_submits_job(monkeypatch, mock_hmc):
     """hmc_remote_restart_lpar PUTs a RemoteRestart job with the target."""
     _hmc_env(monkeypatch)
     route = _job_route(mock_hmc, "RemoteRestart")
-    hmc_remote_restart_lpar(LPAR_UUID, "vrml12-fsp")
+    hmc_remote_restart_lpar(LPAR_UUID, "restart", "source-system", "vrml12-fsp")
     body = route.calls.last.request.content.decode()
     assert "RemoteRestart</OperationName>" in body
+    assert "restart" in body
+    assert "source-system" in body
     assert "vrml12-fsp" in body
 
 

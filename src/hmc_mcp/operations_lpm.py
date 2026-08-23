@@ -6,9 +6,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .client import HMCClient
-from .common import resolve_lpar_uuid, resolve_system_name
+from .common import is_uuid, resolve_lpar_uuid, resolve_system_name
 from .jobs import (
     JobOutcome,
+    RemoteRestartOperation,
     SUCCESSFUL_JOB_STATUSES,
     job_identifier,
     job_outcome,
@@ -140,20 +141,38 @@ async def recover_lpar_migration(
 async def remote_restart_lpar(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
+    operation: RemoteRestartOperation,
+    system_name_or_uuid: str,
     *,
+    target_system_name_or_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
-    system_name_or_uuid: str | None = None,
 ) -> LpmResult:
-    """Resolve both selectors and remotely restart a failed partition."""
+    """Resolve selectors and submit an explicit RemoteRestart operation."""
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     lpar_uuid = await resolve_lpar_uuid(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
     )
-    target_system = await resolve_system_name(hmc, target_system_name_or_uuid)
-    job = await hmc.lpar_remote_restart(lpar_uuid, target_system)
+    source_system = await resolve_system_name(hmc, system_name_or_uuid)
+    target_name = None
+    target_uuid = None
+    if target_system_name_or_uuid is not None:
+        if is_uuid(target_system_name_or_uuid):
+            target_uuid = target_system_name_or_uuid
+        else:
+            target_name = target_system_name_or_uuid
+    job = await hmc.lpar_remote_restart(
+        lpar_uuid,
+        operation,
+        source_system,
+        target_managed_system=target_name,
+        target_managed_system_uuid=target_uuid,
+        use_current_data=use_current_data,
+        retain_devices=retain_devices,
+    )
     return LpmResult(
         lpar_uuid,
         await _finish_job(hmc, job, wait, timeout_seconds, poll_interval),

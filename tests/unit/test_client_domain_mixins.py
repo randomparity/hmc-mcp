@@ -300,7 +300,9 @@ async def test_lpm_mixin_submits_each_operation_to_lpar_endpoint():
     await client.lpar_migrate_validate("lpar-1", "target-system")
     await client.lpar_migrate_abort("lpar-1")
     await client.lpar_migrate_recover("lpar-1")
-    await client.lpar_remote_restart("lpar-1", "target-system")
+    await client.lpar_remote_restart(
+        "lpar-1", "restart", "source-system", target_managed_system="target-system"
+    )
 
     operations = [
         call.args[0].rsplit("/", 1)[-1] for call in client.submit_job.await_args_list
@@ -341,8 +343,7 @@ async def test_network_mixin_routes_empty_feeds_and_delete():
     client._put.assert_awaited_once()
     assert (
         "https://hmc.test:12443/rest/api/uom/ManagedSystem/system-1/"
-        "VirtualSwitch/switch-1"
-        in client._put.await_args.args[1]
+        "VirtualSwitch/switch-1" in client._put.await_args.args[1]
     )
     assert client._put.await_args.kwargs == {
         "resource_type": "VirtualNetwork",
@@ -416,8 +417,7 @@ async def test_storage_mixin_uses_active_base_for_volume_group_url():
     url, _ = await client._get_vg_raw_xml("vios-1", "vg-1")
 
     assert url == (
-        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/"
-        "VolumeGroup/vg-1"
+        "https://hmc.test:12443/rest/api/uom/VirtualIOServer/vios-1/VolumeGroup/vg-1"
     )
 
 
@@ -435,8 +435,7 @@ async def test_storage_mixin_uses_active_base_in_optical_mapping():
     body = client._request.await_args.kwargs["content"]
     assert (
         f"https://hmc.test:12443/rest/api/uom/ManagedSystem/{system_uuid}/"
-        "LogicalPartition/lpar-1"
-        in body
+        "LogicalPartition/lpar-1" in body
     )
 
 
