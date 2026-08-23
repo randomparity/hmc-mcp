@@ -15,8 +15,8 @@ class HMCCLIError(HMCError):
     """An HMC CLI operation failed or was refused before execution."""
 
 
-async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
-    """Execute one HMC CLI command over SSH and return its stdout."""
+def _connect_kwargs(config: HMCConfig) -> dict[str, Any]:
+    """Build the ``asyncssh.connect`` keyword arguments for *config*."""
     config.validate_credentials(require_password=not config.ssh_key_file)
     connect_kwargs: dict[str, Any] = {
         "host": config.host,
@@ -28,10 +28,14 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
         connect_kwargs["password"] = None
     else:
         connect_kwargs["password"] = config.password
+    return connect_kwargs
 
+
+async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
+    """Execute one HMC CLI command over SSH and return its stdout."""
     try:
         async with asyncio.timeout(config.ssh_timeout):
-            async with asyncssh.connect(**connect_kwargs) as connection:
+            async with asyncssh.connect(**_connect_kwargs(config)) as connection:
                 result = await connection.run(
                     cmd, check=True, timeout=config.ssh_timeout
                 )
@@ -60,6 +64,27 @@ async def run_hmc_command(config: HMCConfig, cmd: str) -> str:
             getattr(exc, "stderr", None) or getattr(exc, "stdout", None) or str(exc)
         )
         raise HMCCLIError(f"SSH command failed: {detail.strip()}") from exc
+
+
+async def open_hmc_connection(config: HMCConfig) -> asyncssh.SSHClientConnection:
+    """Open one long-lived SSH connection hosting a streaming HMC process.
+
+    Unlike :func:`run_hmc_command` this connection stays open when the call
+    returns and no command timeout bounds it: its caller streams a remote
+    process that never exits on its own (the partition console). The caller
+    owns the lifetime and must close the connection. The connect itself stays
+    bounded by ``config.ssh_timeout`` so an unreachable HMC fails actionably.
+    """
+    try:
+        async with asyncio.timeout(config.ssh_timeout):
+            return await asyncssh.connect(**_connect_kwargs(config))
+    except TimeoutError as exc:
+        raise HMCCLIError(
+            f"SSH connection to {config.host} timed out after "
+            f"{config.ssh_timeout:.0f}s."
+        ) from exc
+    except asyncssh.Error as exc:
+        raise HMCCLIError(f"SSH connection failed: {str(exc).strip()}") from exc
 
 
 async def run_hmc_cli(cmd: str, config: HMCConfig | None = None) -> str:

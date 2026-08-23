@@ -146,6 +146,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_partition_template",
         "deploy_partition_template",
         "power_vios",
+        "capture_lpar_console",
+        "ConsoleCapture",
+        "ConsoleHeldError",
     ]
 
 
@@ -296,6 +299,11 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_partition_templates",
         },
         "hmc_mcp.operations_vios": {"power_vios"},
+        "hmc_mcp.console_capture": {
+            "capture_lpar_console",
+            "ConsoleCapture",
+            "ConsoleHeldError",
+        },
         "hmc_mcp.ssh": {"HMCCLIError"},
         "hmc_mcp.ssh_commands": {"SriovMode"},
     }
@@ -313,20 +321,21 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient._request)["return"].__module__ == "httpx"
     assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
-
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-    Last moved by issue #375, which added the ``list_lpar_ownership``
-    operation (bulk per-system LPAR ownership read; ADR 0071). Before that,
-    ADR 0067 added the ``stamp_policy`` field to ``LparCreation`` (issue
-    #377), and before that ADR 0066 added
-    ``set_lpar_ownership_description`` (issue #376), and before it ADR 0064
-    added the optional ``caller_token`` parameter to ``provision_lpar``.
-    Before that, ADR 0059 changed ``HMCConfig.port``'s default from 12443
-    to 443. ADR 0058 added
-    declarative LPAR PCIe assignments, and ADR 0054 added the normalized PCIe
-    inventory models and operations. Before that, ADR 0050 added
+    Last moved by issue #385, which added the ``capture_lpar_console``
+    operation, the ``ConsoleCapture`` result model, and the
+    ``ConsoleHeldError`` contention error (ADR 0072). Before that, #375
+    added the ``list_lpar_ownership`` operation (bulk per-system LPAR
+    ownership read; ADR 0071). Before that, ADR 0067 added the
+    ``stamp_policy`` field to ``LparCreation`` (issue #377), and before that
+    ADR 0066 added ``set_lpar_ownership_description`` (issue #376), and
+    before it ADR 0064 added the optional ``caller_token`` parameter to
+    ``provision_lpar``. Before that, ADR 0059 changed ``HMCConfig.port``'s
+    default from 12443 to 443. ADR 0058 added declarative LPAR PCIe
+    assignments, and ADR 0054 added the normalized PCIe inventory models and
+    operations. Before that, ADR 0050 added
     ``HMCConfig.iso_url_allowlist`` — a pydantic model's ``__init__``
     signature is derived from its fields, so a new setting moves the digest
     even though no operation's parameters changed. Before that, ADR 0049
@@ -348,9 +357,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #375: the list_lpar_ownership operation joined the manifest
-    # (ADR 0071; ADR 0067's stamp_policy moved it before that).
-    expected_digest = "9de7e06421f7b28ce8bbda4b5dd4524e09b9fb84ee4a86c7987e537f022c5233"  # pragma: allowlist secret
+    # Moved by #385: capture_lpar_console / ConsoleCapture / ConsoleHeldError
+    # joined the manifest (ADR 0072; #375's list_lpar_ownership moved it
+    # before that).
+    expected_digest = "577c7dc9d26cdca8fc8ed9d19e5712d19a48d292c82011f1b3d04042464e67b7"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
