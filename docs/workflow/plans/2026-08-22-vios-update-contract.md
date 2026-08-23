@@ -66,10 +66,7 @@ pytest/respx, ruff, ty, and uv.
 2. Update `tests/unit/test_job_lifecycle.py` to construct Pydantic adapters for
    both VIOS source types and assert their exact property sets and required
    discriminator.
-3. Update `tests/app/test_capabilities.py` to assert the public tool schema is
-   the union of the update and upgrade source contracts and that each branch
-   carries its exact `ResourceType` enum.
-4. Run the focused tests and confirm they fail against the old generic
+3. Run the focused tests and confirm they fail against the old generic
    `RepositorySource` and bare operation names:
 
    ```sh
@@ -77,7 +74,7 @@ pytest/respx, ruff, ty, and uv.
      tests/unit/test_job_lifecycle.py tests/app/test_capabilities.py
    ```
 
-5. In `src/hmc_mcp/jobs.py`, define the exact interfaces:
+4. In `src/hmc_mcp/jobs.py`, define the exact interfaces:
 
    ```python
    VIOSUpdateResourceType = Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"]
@@ -112,15 +109,15 @@ pytest/respx, ruff, ty, and uv.
    unknown or missing parameters with operation-named actionable messages,
    stringifies non-`None` values, and is called by the two builders. Render
    `UpdateVIOS` and `UpgradeVIOS` respectively.
-6. Run the focused tests and expect all selected tests to pass. Run
+5. Run the focused tests and expect all selected tests to pass. Run
    `uv run --no-sync ruff check src/hmc_mcp/jobs.py` and
    `uv run --no-sync ty check src/hmc_mcp/jobs.py`; expect exit 0.
-7. Commit the explicit source and test paths with subject
+6. Commit the explicit source and test paths with subject
    `fix: use documented VIOS update job requests`.
 
 Acceptance: generated XML contains only the selected documented operation and
-keys; every invalid selected-operation contract fails; rendered schema exposes
-both precise request shapes; firmware tests remain unchanged and passing.
+keys; every invalid selected-operation contract fails; both precise request
+types build Pydantic schemas; firmware tests remain unchanged and passing.
 
 ## Task 2: Submit exact paths and project waited stdOut
 
@@ -145,6 +142,9 @@ both precise request shapes; firmware tests remain unchanged and passing.
    and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
    raises `AssertionError("client created")` and assert each call raises its
    expected `ValueError`, proving the complete invalid matrix fails before I/O.
+   Update `tests/app/test_capabilities.py` to assert the newly annotated public
+   tool schema is the union of the update and upgrade source contracts and that
+   each branch carries its exact `ResourceType` enum.
 3. Run:
 
    ```sh
