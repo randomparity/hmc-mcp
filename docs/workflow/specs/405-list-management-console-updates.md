@@ -3,8 +3,9 @@
 Issue #405 replaces the invalid `SoftwareUpdate` group request with IBM's documented
 `ListManagementConsoleUpdates` job.
 
-The public tool accepts `console_uuid`, `wait=False`, `timeout_seconds=300`,
-`poll_interval=5`, and `profile=None`. Timing arguments are validated before client I/O.
+The public tool preserves `console_uuid, profile=None` positional binding and adds
+keyword-only `wait=False`, `timeout_seconds=300`, and `poll_interval=5`. Timing arguments
+are validated before client I/O.
 The request is a parameterless XML JobRequest naming operation
 `ListManagementConsoleUpdates` and group `ManagementConsole`, submitted to
 `/rest/api/uom/ManagementConsole/{UUID}/do/ListManagementConsoleUpdates`.

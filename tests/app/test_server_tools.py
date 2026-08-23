@@ -817,6 +817,19 @@ def test_list_available_hmc_ptfs_returns_submitted_job(monkeypatch, mock_hmc):
     assert "<JobParameter schemaVersion" not in body
 
 
+def test_list_available_hmc_ptfs_preserves_positional_profile(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/ListManagementConsoleUpdates"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    result = hmc_get_available_hmc_ptfs(MC_UUID, "default")
+
+    assert route.called
+    assert result["Resource"]["JobID"] == "job-uuid-999"
+    assert all(call.request.method != "GET" for call in mock_hmc.calls)
+
+
 def test_list_available_hmc_ptfs_surfaces_job_error(monkeypatch, mock_hmc):
     """Job submission errors retain their server diagnosis."""
     _hmc_env(monkeypatch)

@@ -171,10 +171,11 @@ def hmc_update_console_software(
 @tool(effect="read", operation="update.list_ptfs", target_kind="console")
 def hmc_get_available_hmc_ptfs(
     console_uuid: str,
+    profile: str | None = None,
+    *,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
-    profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Submit the documented job that lists available HMC PTFs.
 
