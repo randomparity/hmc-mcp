@@ -78,7 +78,7 @@ async def _platform_update_op(
     return await wait_for_submitted_job(hmc, job, wait, timeout_seconds, poll_interval)
 
 
-_PLATFORM_UPDATE_VERSION = re.compile(r"V(\d+)R(\d+)M(\d+)")
+_PLATFORM_UPDATE_VERSION = re.compile(r"V([0-9]{1,4})R([0-9]{1,4})M([0-9]{1,4})")
 _MINIMUM_PLATFORM_UPDATE_VERSION = (11, 1, 1111)
 
 

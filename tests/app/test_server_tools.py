@@ -673,7 +673,9 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     }
 
 
-@pytest.mark.parametrize("version", ["V10R3M1060", "V11R1M1110", "secret\nvalue"])
+@pytest.mark.parametrize(
+    "version", ["V10R3M1060", "V11R1M1110", "secret\nvalue", f"V{'9' * 5000}R1M1"]
+)
 def test_update_firmware_rejects_unsupported_hmc_version(
     monkeypatch, mock_hmc, version
 ):
