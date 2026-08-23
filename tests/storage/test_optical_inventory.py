@@ -180,6 +180,25 @@ async def test_create_optical_mapping_submits_document(mock_hmc):
     assert result["Storage"]["VirtualOpticalMedia"]["MediaName"] == "test.iso"
 
 
+@pytest.mark.asyncio
+async def test_create_optical_mapping_preserves_permissive_system_link(mock_hmc):
+    """Issue #403 strict detach parsing does not narrow existing optical responses."""
+    response = VIOS_GET_FEED.replace(
+        f"/ManagedSystem/{SYS_UUID}\"", f"/ManagedSystem/{SYS_UUID}/details\""
+    )
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=response)
+    )
+    posted = mock_hmc.post(
+        f"/rest/api/uom/ManagedSystem/{SYS_UUID}/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=CREATE_MAPPING_RESPONSE))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.create_optical_mapping(VIOS_UUID, "test.iso", LPAR_UUID)
+
+    assert posted.called
+
+
 # VIOS document containing one optical mapping for LPAR_UUID / test.iso
 VIOS_GET_FEED_WITH_MAPPING = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

@@ -27,6 +27,22 @@ _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
+def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
+    """Extract the first ManagedSystem UUID from a VIOS response."""
+    match = _re.search(
+        r"/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})",
+        vios_xml,
+    )
+    if not match:
+        raise HMCError(
+            "Cannot find ManagedSystem UUID in VirtualIOServer document. "
+            "The VIOS response is missing AssociatedManagedSystem href.",
+            200,
+            vios_xml[:500],
+        )
+    return match.group(1)
+
+
 def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
     """Return the one VIOS resource and reject ambiguous or mismatched documents."""
     tag = f"{{{_UOM_NS}}}VirtualIOServer"
@@ -753,7 +769,7 @@ class StorageMixin:
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root  # already the VirtualIOServer element
-        sys_uuid = _extract_system_uuid_from_vios(vios_elem)
+        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
@@ -849,7 +865,7 @@ class StorageMixin:
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root
-        sys_uuid = _extract_system_uuid_from_vios(vios_elem)
+        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
