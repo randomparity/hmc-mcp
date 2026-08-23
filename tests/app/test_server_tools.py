@@ -421,6 +421,20 @@ def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
     assert route.calls.last.request.url.path.endswith("/do/UpdateManagementConsole")
 
 
+def test_hmc_update_encodes_console_uuid_as_one_path_segment(monkeypatch, mock_hmc):
+    """A selector cannot redirect the authorized update to another operation."""
+    _hmc_env(monkeypatch)
+    hostile_uuid = "allowed/do/ShutdownHMC?ignored="
+    route = mock_hmc.put(
+        "/rest/api/uom/ManagementConsole/allowed%2Fdo%2FShutdownHMC%3Fignored%3D"
+        "/do/UpdateManagementConsole"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+
+    hmc_update_console_software(hostile_uuid, CONSOLE_SOURCE)
+
+    assert route.called
+
+
 def test_vios_update_kind_update(monkeypatch, mock_hmc):
     """hmc_vios_update with kind='update' PUTs an Update job to VirtualIOServer."""
     _hmc_env(monkeypatch)

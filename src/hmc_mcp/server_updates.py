@@ -5,6 +5,7 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from typing import Any, Literal
+from urllib.parse import quote
 
 from ._app import (
     _run,
@@ -82,10 +83,12 @@ def hmc_update_console_software(
 
     async def _go():
         async with client_from_env(profile) as hmc:
+            console_path_id = quote(console_uuid, safe="")
             return await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
-                    f"/rest/api/uom/ManagementConsole/{console_uuid}/do/UpdateManagementConsole",
+                    f"/rest/api/uom/ManagementConsole/{console_path_id}"
+                    "/do/UpdateManagementConsole",
                     job_xml,
                 ),
                 wait,
