@@ -673,7 +673,7 @@ def test_update_firmware_submits_platform_update(monkeypatch, mock_hmc):
     }
 
 
-@pytest.mark.parametrize("version", ["V10R3M1060", "V11R1M1110", "not-a-version"])
+@pytest.mark.parametrize("version", ["V10R3M1060", "V11R1M1110", "secret\nvalue"])
 def test_update_firmware_rejects_unsupported_hmc_version(
     monkeypatch, mock_hmc, version
 ):
@@ -683,9 +683,12 @@ def test_update_firmware_rejects_unsupported_hmc_version(
     )
     route = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/do/PlatformUpdate")
 
-    with pytest.raises(ValueError, match="PlatformUpdate requires HMC 11.1.1111"):
+    with pytest.raises(
+        ValueError, match="PlatformUpdate requires HMC 11.1.1111"
+    ) as error:
         hmc_update_firmware(SYSTEM_UUID, PLATFORM_UPDATE)
 
+    assert version not in str(error.value)
     assert not route.called
 
 

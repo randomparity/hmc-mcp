@@ -93,10 +93,11 @@ def _require_platform_update_version(console: dict[str, Any] | None) -> None:
     )
     parsed = tuple(int(part) for part in match.groups()) if match else None
     if parsed is None or parsed < _MINIMUM_PLATFORM_UPDATE_VERSION:
-        observed = version if isinstance(version, str) and version else "unavailable"
+        classification = "below the minimum" if parsed is not None else "unavailable"
         raise ValueError(
             "PlatformUpdate requires HMC 11.1.1111 or later; "
-            f"the connected HMC reported {observed!r}. Upgrade the HMC before retrying."
+            f"the connected HMC version is {classification}. "
+            "Upgrade the HMC before retrying."
         )
 
 
