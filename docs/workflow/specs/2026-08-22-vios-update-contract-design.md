@@ -10,8 +10,10 @@ Power11 reference captures. Live-HMC validation is attempted only when a safe
 target and credentials are already available; its absence is reported rather
 than engineered around.
 
-ADR 0074 records the request-shape and result-projection decision. ADR 0004
-continues to govern the consolidated `kind="update" | "upgrade"` entry point.
+ADR 0074 records the request-shape and result-projection decision. The issue
+and frozen campaign scope retain the consolidated
+`kind="update" | "upgrade"` entry point; its shared outer result remains
+consistent with ADR 0012.
 
 ## Public contract
 
@@ -41,9 +43,10 @@ segment before the fixed operation suffix is appended.
 When `wait=False`, the tool returns the submission metadata unchanged. When
 `wait=True`, it keeps the complete terminal job mapping. If
 `Resource.Results.JobParameter` contains a mapping or list entry with
-`ParameterName == "stdOut"` and a string `ParameterValue`, the returned mapping
-also has top-level `stdOut` containing the trimmed value. Empty, non-string, or
-malformed result entries do not add that projection and do not hide the raw job.
+`ParameterName == "stdOut"` and a non-empty string `ParameterValue`, the
+returned mapping also has top-level `stdOut` containing the trimmed first such
+value in response order. Empty, non-string, malformed, or later duplicate
+result entries do not add or replace that projection and do not hide the raw job.
 
 ## Components and data flow
 
