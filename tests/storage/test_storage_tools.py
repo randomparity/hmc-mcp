@@ -32,6 +32,7 @@ from hmc_mcp.server import (
     hmc_map_storage_to_lpar,
     hmc_list_shared_storage_pools,
 )
+from hmc_mcp.server_storage import hmc_detach_storage_mapping
 
 from conftest import JOB_ENTRY
 
@@ -41,6 +42,7 @@ VG_UUID = "vg-uuid-0001"
 ADAPTER_UUID = "adapter-uuid-0001"
 CLUSTER_UUID = "cluster-uuid-0001"
 SSP_UUID = "ssp-uuid-0001"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -124,6 +126,30 @@ def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
     with pytest.raises(ValueError, match="adapter_type"):
         hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
     assert not mock_hmc.calls
+
+
+def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    parent = f"""<VirtualIOServer
+      xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
+      <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
+      <VirtualSCSIMappings>
+        <VirtualSCSIMapping><UUID>map-1</UUID></VirtualSCSIMapping>
+        <VirtualSCSIMapping><UUID>map-2</UUID></VirtualSCSIMapping>
+      </VirtualSCSIMappings>
+    </VirtualIOServer>"""
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=parent)
+    )
+    posted = mock_hmc.post(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=""))
+
+    assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+    assert posted.called
+    assert "map-1" not in posted.calls.last.request.content.decode()
+    assert "map-2" in posted.calls.last.request.content.decode()
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):

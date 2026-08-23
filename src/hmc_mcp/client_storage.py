@@ -28,11 +28,7 @@ _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
 def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
-    """Extract the ManagedSystem UUID from a VirtualIOServer document.
-
-    Parses the AssociatedManagedSystem href attribute which contains the
-    system-scoped path:  .../uom/ManagedSystem/{sys_uuid}
-    """
+    """Extract the first ManagedSystem UUID from a VIOS response."""
     match = _re.search(
         r"/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})",
         vios_xml,
@@ -43,6 +39,53 @@ def _extract_system_uuid_from_vios_xml(vios_xml: str) -> str:
             "The VIOS response is missing AssociatedManagedSystem href.",
             200,
             vios_xml[:500],
+        )
+    return match.group(1)
+
+
+def _find_vios_element(root: ET.Element, vios_uuid: str) -> ET.Element:
+    """Return the one VIOS resource and reject ambiguous or mismatched documents."""
+    tag = f"{{{_UOM_NS}}}VirtualIOServer"
+    resources = ([root] if root.tag == tag else []) + root.findall(f".//{tag}")
+    if len(resources) != 1:
+        raise HMCError(
+            f"VirtualIOServer GET response contained {len(resources)} VIOS resources; "
+            "expected exactly one",
+            200,
+            ET.tostring(root, encoding="unicode")[:500],
+        )
+    vios_elem = resources[0]
+    identities = vios_elem.findall(f"{{{_UOM_NS}}}UUID")
+    if len(identities) != 1 or (identities[0].text or "").strip() != vios_uuid:
+        raise HMCError(
+            f"VirtualIOServer response identity does not match {vios_uuid!r}",
+            200,
+            ET.tostring(vios_elem, encoding="unicode")[:500],
+        )
+    return vios_elem
+
+
+def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
+    """Extract the exact ManagedSystem UUID associated with one VIOS element."""
+    links = vios_elem.findall(f"{{{_UOM_NS}}}AssociatedManagedSystem")
+    if len(links) != 1:
+        raise HMCError(
+            "VirtualIOServer must have exactly one AssociatedManagedSystem link",
+            200,
+            ET.tostring(vios_elem, encoding="unicode")[:500],
+        )
+    href = links[0].get("href", "")
+    match = _re.fullmatch(
+        r"(?:https?://[^/]+)?/rest/api/uom/ManagedSystem/"
+        r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?",
+        href,
+    )
+    if not match:
+        raise HMCError(
+            "AssociatedManagedSystem href does not contain an exact ManagedSystem UUID",
+            200,
+            repr(href),
         )
     return match.group(1)
 
@@ -205,13 +248,65 @@ class StorageMixin:
     async def delete_storage_mapping(
         self: StorageClient, vios_uuid: str, mapping_uuid: str
     ) -> None:
-        """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+        """Detach one mapping through its parent VirtualIOServer document."""
+        if not mapping_uuid:
+            raise HMCError("Storage mapping UUID must not be empty")
 
-        This removes the mapping only; the backing storage (PhysicalVolume or
-        VirtualDisk) is preserved.
-        """
-        path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}/VirtualSCSIMapping/{mapping_uuid}"
-        await self._delete(path)
+        get_path = f"/rest/api/uom/VirtualIOServer/{vios_uuid}"
+        vios_xml = await self._get(
+            get_path, "VirtualIOServer", include_schema_version=False
+        )
+        if not vios_xml:
+            raise HMCError(f"GET {get_path} returned empty response", 200, "")
+        try:
+            root = ET.fromstring(vios_xml)
+        except ET.ParseError as exc:
+            raise HMCError(
+                "VirtualIOServer GET response is not valid XML", 200, vios_xml
+            ) from exc
+
+        vios_elem = _find_vios_element(root, vios_uuid)
+        mappings = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
+        if mappings is None:
+            raise HMCError(
+                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+            )
+        identities: dict[str, ET.Element] = {}
+        for mapping in mappings.findall(f"{{{_UOM_NS}}}VirtualSCSIMapping"):
+            uuid_elements = mapping.findall(f"{{{_UOM_NS}}}UUID")
+            if len(uuid_elements) != 1 or not (uuid_elements[0].text or "").strip():
+                raise HMCError("VirtualSCSIMapping has an invalid UUID identity")
+            identity = (uuid_elements[0].text or "").strip()
+            if identity in identities:
+                raise HMCError(
+                    f"VirtualSCSIMapping UUID {identity!r} is duplicated; "
+                    "refusing an ambiguous detach"
+                )
+            identities[identity] = mapping
+        target = identities.get(mapping_uuid)
+        if target is None:
+            raise HMCError(
+                f"Storage mapping {mapping_uuid!r} not found on VIOS {vios_uuid!r}"
+            )
+
+        mappings.remove(target)
+        system_uuid = _extract_system_uuid_from_vios(vios_elem)
+        post_path = (
+            f"/rest/api/uom/ManagedSystem/{system_uuid}/VirtualIOServer/{vios_uuid}"
+        )
+        response = await self._request(
+            "POST",
+            post_path,
+            content=ET.tostring(vios_elem, encoding="unicode"),
+            headers={
+                "Accept": "*/*",
+                "Content-Type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+            },
+        )
+        if response.status_code not in (200, 201, 202):
+            raise HMCError(
+                f"POST {post_path} failed", response.status_code, response.text
+            )
 
     # ------------------------------------------------------------------ #
     # Virtual Media Repository / Virtual Optical Media (VolumeGroup POSTs)
@@ -658,10 +753,7 @@ class StorageMixin:
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
-        # Step 2 — Extract system UUID from AssociatedManagedSystem href
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
-
-        # Step 3 — Parse raw XML and locate VirtualSCSIMappings element
+        # Step 2 — Parse raw XML and locate VirtualSCSIMappings element
         try:
             root = ET.fromstring(vios_xml)
         except ET.ParseError as exc:
@@ -669,10 +761,10 @@ class StorageMixin:
                 "VirtualIOServer GET response is not valid XML", 200, vios_xml
             ) from exc
 
-        # Feed has one <entry><content><VirtualIOServer>...
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root  # already the VirtualIOServer element
+        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
@@ -758,8 +850,6 @@ class StorageMixin:
         if not vios_xml:
             raise HMCError(f"GET {get_path} returned empty response", 200, "")
 
-        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
-
         try:
             root = ET.fromstring(vios_xml)
         except ET.ParseError as exc:
@@ -770,6 +860,7 @@ class StorageMixin:
         vios_elem = root.find(f".//{{{_UOM_NS}}}VirtualIOServer")
         if vios_elem is None:
             vios_elem = root
+        sys_uuid = _extract_system_uuid_from_vios_xml(vios_xml)
 
         mappings_elem = vios_elem.find(f"{{{_UOM_NS}}}VirtualSCSIMappings")
         if mappings_elem is None:
