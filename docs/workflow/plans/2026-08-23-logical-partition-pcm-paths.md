@@ -17,7 +17,7 @@ their owning managed system and reject unsupported combinations. The Python
 Files: `src/hmc_mcp/client_pcm.py`, `src/hmc_mcp/client_contracts.py`,
 `src/hmc_mcp/operations_pcm.py`, `src/hmc_mcp/server_metrics.py`,
 `src/hmc_mcp/cli_metrics.py`, `tests/unit/test_pcm.py`, and
-`tests/app/test_cli_commands.py`.
+`tests/app/test_cli_commands.py`, and `README.md`.
 
 This is one task because the client, operation, MCP, and CLI signature changes
 must land together: no intermediate commit can both require an LPAR owner and
@@ -103,11 +103,16 @@ paths use the exact template `/rest/api/pcm/ManagedSystem/{system_uuid}/`
    before the partition, scope named LPAR lookup with that system UUID, retain
    both UUIDs in `PcmResource`, and reject unsupported combinations before I/O.
 5. Run the same focused command and `just typecheck`; expect success.
-6. Commit the complete coherent change.
+6. Update README PCM guidance to show the LogicalPartition owner selector,
+   nested processed/aggregated support, and ManagedSystem-only preferences and
+   Long Term Monitor behavior. Compare every documented invocation with the
+   final function and CLI signatures.
+7. Commit the complete coherent change.
 
 Acceptance: exact documented URLs are requested, every invalid combination is
 actionable and side-effect-free, managed-system behavior is unchanged, and all
-typed protocol and public adapter signatures agree.
+typed protocol and public adapter signatures agree. README examples follow the
+new owner and category restrictions.
 
 ## Task 2: Verify and ship
 
