@@ -63,8 +63,9 @@ console record, missing version, malformed version, or lower version raises `Val
 `PlatformUpdate` and the `HMC 11.1.1111 or later` requirement. This occurs before system-name
 resolution and before submission, ensuring unsupported HMCs receive no PlatformUpdate write.
 
-After the gate, existing system resolution supplies the UUID. The new
-`HMCClient.submit_json_job(path, request)` performs PUT with
+After the gate, existing system resolution supplies the UUID. The new operation-scoped
+`HMCClient.submit_platform_update(system_uuid, request)` URL-quotes the UUID, constructs the fixed
+PlatformUpdate path internally, and performs PUT with
 `Content-Type: application/vnd.ibm.powervm.web+json; type=JobRequest` and
 `Accept: application/json`. It accepts only the native request mapping, checks the existing job
 success statuses, and parses a JSON response when present. Empty success responses remain `None`.
@@ -115,7 +116,7 @@ exercise unknown keys at the top level and each nested level through the actual 
 HTTPX's `json=` encoding serializes string values rather than concatenating JSON, preventing
 structural injection. JSON submission errors suppress the HMC response body so reflected input
 values do not cross back into MCP error output.
-System UUIDs retain path quoting. The existing destructive-tool authorization metadata continues
+System UUIDs are quoted inside the operation-scoped client method. The existing destructive-tool authorization metadata continues
 to gate invocation. Errors name operation and version requirements but do not include credentials
 or payload values.
 
@@ -151,7 +152,8 @@ update during tests, or broaden the repository's authorization model.
 
 ## Scope and rollback
 
-Only the update builder/types, narrow JSON client method, firmware tool, directly relevant tests,
-README, ADR 0075, and generated artifacts required by guardrails may change. A git revert restores
-the former client and tool contract; it also restores the known-invalid UpdateFirmware behavior,
-so rollback is operationally safe only by disabling the tool until this correction returns.
+Only the update builder/types, PlatformUpdate-specific JSON client method, firmware tool, directly
+relevant tests, README, ADR 0075, and generated artifacts required by guardrails may change. Do not deploy code
+reverted to the known-invalid UpdateFirmware behavior; there is no supported per-tool disable
+control. Correct forward or take the entire MCP service out of service until a corrected build is
+deployed, then verify the deployed revision before restoring service.

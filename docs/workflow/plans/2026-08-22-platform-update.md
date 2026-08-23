@@ -50,18 +50,20 @@ tested; empty adapter lists and all-NoUpdate/no-adapter requests fail.
 **Files:** modify `src/hmc_mcp/client.py`; modify `tests/system/test_update_upgrade.py`.
 
 **Interfaces:** define
-`HMCClient.submit_json_job(job_path: str, job_request: Mapping[str, Any]) -> dict[str, Any] | None`.
+`HMCClient.submit_platform_update(system_uuid: str, job_request: Mapping[str, Any]) -> dict[str, Any] | None`.
 Task 3 calls it. Existing `submit_job(str, str)` remains unchanged.
 
-1. Add async tests for exact PUT headers/body, normalization of IBM's lowercase `id`, nested
+1. Add async tests proving an unsafe UUID is quoted into the one fixed PlatformUpdate path, exact
+   PUT headers/body, normalization of IBM's lowercase `id`, nested
    `content.JobResponse`, `Result`, and `selfLink`, plus empty success, non-success, malformed
    successful JSON, and valid JSON with wrong root, id, content, JobResponse, Status, selfLink,
    Result, and result-entry field types. Add a non-2xx response that echoes a sentinel submitted
    value and assert the sanitized `HMCError` omits it. Pass a documented failure result through
    `job_outcome`. Run
-   `uv run pytest -q --no-cov tests/system/test_update_upgrade.py -k submit_json_job`; expect attribute-error
+   `uv run pytest -q --no-cov tests/system/test_update_upgrade.py -k submit_platform_update`; expect attribute-error
    failures.
-2. Implement the method with HTTPX `json=`, exact headers, existing 200/201/202 acceptance,
+2. Implement the method with internal UUID quoting, the fixed PlatformUpdate path, HTTPX `json=`,
+   exact headers, existing 200/201/202 acceptance,
    complete response normalization, and actionable `HMCError` failures. Run the focused tests;
    expect pass.
 3. Run the existing XML submission tests beside the new tests; expect pass and unchanged headers.
@@ -84,18 +86,19 @@ profile: str | None = None) -> dict[str, Any] | None`. Add private
 timeout_seconds, poll_interval)`. The latter returns a normalized terminal response directly,
 passes only link-bearing nonterminal responses to `wait_for_submitted_job`, and raises the
 accepted-but-unpollable error for a nonterminal response without a link. Use
-`platform_update_job(PlatformUpdateParameter)` plus `HMCClient.submit_json_job`.
+   `platform_update_job(PlatformUpdateParameter)` plus `HMCClient.submit_platform_update`.
 
 1. Replace the app test with supported-version exact-path/body tests and add older, missing,
    malformed, empty-input, `wait=True` terminal JSON-response, and nonterminal-without-selfLink
    cases that assert no guessed polling; add a link-bearing nonterminal case that proves the
    existing poller receives the link. Replace the obsolete RepositorySource lifecycle-schema test
-   with PlatformUpdate model/schema coverage. Add a quoted-UUID case and regression tests proving
-   the XML update helpers retain their existing wait behavior. Run
+   with PlatformUpdate model/schema coverage. Assert the tool passes the resolved UUID to the
+   operation-scoped client method; path quoting belongs to Task 2. Add regression tests proving the
+   XML update helpers retain their existing wait behavior. Run
    `uv run pytest -q --no-cov tests/app/test_server_tools.py -k firmware`; expect failures against the old
    contract.
 2. Implement strict version parsing, model validation, version lookup before system resolution,
-   quoted system UUID, PlatformUpdate-local terminal/link/no-link wait branching, and submission.
+   PlatformUpdate-local terminal/link/no-link wait branching, and submission by resolved UUID.
    Remove `update_firmware_job`, firmware-only `RepositorySource`, `RepositoryType`, validation
    maps, `_repository_params`, and their obsolete imports now that their consumers are replaced.
    Run the focused app tests plus
