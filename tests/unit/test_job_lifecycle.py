@@ -15,6 +15,7 @@ from hmc_mcp.jobs import (
     job_identifier,
     job_outcome,
     validate_wait_timing,
+    vios_stdout,
     wait_for_submitted_job,
 )
 
@@ -39,6 +40,38 @@ def test_vios_source_properties_are_operation_specific() -> None:
 
     assert "RestartVIOS" in update and "Disks" not in update
     assert "Disks" in upgrade and "RestartVIOS" not in upgrade
+
+
+@pytest.mark.parametrize(
+    ("parameters", "expected"),
+    [
+        ({"ParameterName": "stdOut", "ParameterValue": " log "}, "log"),
+        (
+            [
+                None,
+                {"ParameterName": "stdout", "ParameterValue": "wrong case"},
+                {"ParameterName": "stdOut", "ParameterValue": 7},
+                {"ParameterName": "stdOut", "ParameterValue": "  first  "},
+                {"ParameterName": "stdOut", "ParameterValue": "second"},
+            ],
+            "first",
+        ),
+        ({"ParameterName": "stdOut", "ParameterValue": "   "}, None),
+        ("malformed", None),
+    ],
+)
+def test_vios_stdout_extracts_first_nonempty_string(parameters, expected) -> None:
+    job = {"Resource": {"Results": {"JobParameter": parameters}}}
+
+    assert vios_stdout(job) == expected
+
+
+@pytest.mark.parametrize(
+    "job",
+    [None, {}, {"Resource": "bad"}, {"Resource": {"Results": "bad"}}],
+)
+def test_vios_stdout_ignores_malformed_job_shapes(job) -> None:
+    assert vios_stdout(job) is None
 
 
 @pytest.mark.parametrize(

@@ -523,6 +523,72 @@ def test_vios_invalid_source_fails_before_client(monkeypatch, source, kind, mess
         hmc_vios_update(VIOS_UUID, source, kind=kind)
 
 
+def _vios_job_with_stdout(status="COMPLETED", top_level=None):
+    job = {
+        "Resource": {
+            "Status": status,
+            "Results": {
+                "JobParameter": {
+                    "ParameterName": "stdOut",
+                    "ParameterValue": "  install log  ",
+                }
+            },
+        }
+    }
+    if top_level is not None:
+        job["stdOut"] = top_level
+    return job
+
+
+def test_vios_waited_terminal_result_projects_stdout(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    raw = _vios_job_with_stdout()
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
+
+    assert result["stdOut"] == "install log"
+    assert result is not raw
+    assert "stdOut" not in raw
+    assert result["Resource"] is raw["Resource"]
+
+
+@pytest.mark.parametrize(
+    ("wait", "job"),
+    [
+        (False, _vios_job_with_stdout()),
+        (True, _vios_job_with_stdout(status="RUNNING")),
+    ],
+)
+def test_vios_stdout_is_not_projected_without_terminal_wait(
+    monkeypatch, mock_hmc, wait, job
+):
+    _hmc_env(monkeypatch)
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=job)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=wait)
+
+    assert result is job
+    assert "stdOut" not in result
+
+
+def test_vios_stdout_does_not_overwrite_raw_top_level_value(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    raw = _vios_job_with_stdout(top_level="raw value")
+    monkeypatch.setattr(
+        "hmc_mcp.server_updates._update_op", AsyncMock(return_value=raw)
+    )
+
+    result = hmc_vios_update(VIOS_UUID, VIOS_UPDATE_SOURCE, wait=True)
+
+    assert result is raw
+    assert result["stdOut"] == "raw value"
+
+
 def test_hmc_update_invalid_kind_raises(monkeypatch, mock_hmc):
     """hmc_update_console_software raises ValueError for an unknown kind, never reaching the HMC."""
     _hmc_env(monkeypatch)

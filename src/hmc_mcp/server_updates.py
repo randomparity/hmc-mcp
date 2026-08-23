@@ -14,6 +14,7 @@ from ._app import (
 from .common import client_from_env, resolve_system_uuid, resolve_vios_uuid
 from .errors import HMCError
 from .jobs import (
+    TERMINAL_JOB_STATUSES,
     ConsoleUpdateSource,
     RepositorySource,
     VIOSSource,
@@ -24,8 +25,24 @@ from .jobs import (
     update_vios_job,
     upgrade_vios_job,
     validate_wait_timing,
+    vios_stdout,
     wait_for_submitted_job,
 )
+
+
+def _with_vios_stdout(
+    result: dict[str, Any] | None, wait: bool
+) -> dict[str, Any] | None:
+    """Project completed VIOS job output without altering the raw job payload."""
+    if not wait or not isinstance(result, dict) or "stdOut" in result:
+        return result
+    resource = result.get("Resource")
+    if not isinstance(resource, dict) or resource.get("Status") not in TERMINAL_JOB_STATUSES:
+        return result
+    output = vios_stdout(result)
+    if output is None:
+        return result
+    return {**result, "stdOut": output}
 
 
 async def _update_op(
@@ -193,7 +210,7 @@ def hmc_vios_update(
         async with client_from_env(profile) as hmc:
             vios_uuid = await resolve_vios_uuid(hmc, vios_name_or_uuid)
             vios_path_id = quote(vios_uuid, safe="")
-            return await _update_op(
+            result = await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
                     f"/rest/api/uom/VirtualIOServer/{vios_path_id}/do/{operation}",
@@ -203,6 +220,7 @@ def hmc_vios_update(
                 timeout_seconds,
                 poll_interval,
             )
+            return _with_vios_stdout(result, wait)
 
     return _run(_go)
 

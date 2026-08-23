@@ -165,6 +165,30 @@ def _job_error(resource: dict[str, Any], status: str) -> str | None:
     return None
 
 
+def vios_stdout(job: dict[str, Any] | None) -> str | None:
+    """Return the first usable ``stdOut`` value from a VIOS job result."""
+    resource = (job or {}).get("Resource")
+    if not isinstance(resource, dict):
+        return None
+    results = resource.get("Results")
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        value = parameter.get("ParameterValue")
+        if parameter.get("ParameterName") == "stdOut" and isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
+    return None
+
+
 async def wait_for_submitted_job(
     client: JobWaitClient,
     job: dict[str, Any] | None,
