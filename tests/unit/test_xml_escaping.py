@@ -408,7 +408,11 @@ def test_job_parameter_value_cannot_add_a_target_managed_system():
 
 def test_repository_password_with_an_ampersand_stays_well_formed():
     xml = jobs.update_hmc_job(
-        {"type": "sftp", "host": "h", "path": "/p", "user": "u", "sftp_pw": "a&b<c"}
+        {
+            "MediaType": "SFTP",
+            "ServerHostOrIP": "h",
+            "Password": "a&b<c",  # pragma: allowlist secret
+        }
     )
 
     values = [

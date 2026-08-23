@@ -864,7 +864,7 @@ its matching read-succeeded flag set means verified absence.
 
 | Tool                         | Description |
 |------------------------------|-------------|
-| `hmc_update_console_software` | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
+| `hmc_update_console_software` | Submit the documented `UpdateManagementConsole` PTF update job; `kind=upgrade` is refused because upgrades require IBM's multi-job workflow |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
 | `hmc_update_firmware`        | Submit a managed-system firmware update job |

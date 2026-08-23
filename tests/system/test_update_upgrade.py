@@ -11,7 +11,6 @@ from hmc_mcp.jobs import (
     _REQUIRED_KEYS,
     update_firmware_job,
     update_hmc_job,
-    upgrade_hmc_job,
     update_vios_job,
     upgrade_vios_job,
 )
@@ -25,16 +24,20 @@ REPO_NFS = {"type": "nfs", "host": "repo.example.com", "path": "/images/hmc"}
 
 
 def test_update_hmc_job_xml():
-    xml = update_hmc_job(REPO_NFS)
-    assert "Update" in xml
+    xml = update_hmc_job({"MediaType": "NFS", "ServerHostOrIP": "repo.example.com"})
+    assert "UpdateManagementConsole" in xml
     assert "ManagementConsole" in xml
-    assert "nfs" in xml
+    assert "MediaType" in xml
 
 
-def test_upgrade_hmc_job_xml():
-    xml = upgrade_hmc_job(REPO_NFS)
-    assert "Upgrade" in xml
-    assert "ManagementConsole" in xml
+def test_update_hmc_job_requires_media_type():
+    with pytest.raises(ValueError, match="missing required 'MediaType'"):
+        update_hmc_job({"ServerHostOrIP": "repo.example.com"})
+
+
+def test_update_hmc_job_rejects_unknown_parameter():
+    with pytest.raises(ValueError, match="Unknown console update parameter.*type"):
+        update_hmc_job({"MediaType": "NFS", "type": "nfs"})
 
 
 def test_update_vios_job_xml():
@@ -57,7 +60,7 @@ def test_update_firmware_job_xml():
 
 def test_repository_params_none_values_excluded():
     """None values in the repository dict must not appear as job parameters."""
-    xml = update_hmc_job({"type": "nfs", "host": None, "path": "/images"})
+    xml = update_vios_job({"type": "nfs", "host": None, "path": "/images"})
     assert "host" not in xml
     assert "/images" in xml
 
@@ -65,28 +68,28 @@ def test_repository_params_none_values_excluded():
 def test_repository_params_unknown_key_rejected():
     """A misspelled key must fail fast instead of reaching the HMC."""
     with pytest.raises(ValueError, match="Unknown repository key.*hst"):
-        update_hmc_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
+        update_vios_job({"type": "nfs", "hst": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_missing_type_rejected():
     """A repository dict without 'type' must fail fast, not build a job."""
     with pytest.raises(ValueError, match="missing 'type'"):
-        update_hmc_job({"host": "repo.example.com", "path": "/images"})
+        update_vios_job({"host": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_unknown_type_rejected():
     with pytest.raises(ValueError, match="Unknown repository type"):
-        update_hmc_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
+        update_vios_job({"type": "ftp", "host": "repo.example.com", "path": "/images"})
 
 
 def test_repository_params_missing_required_key_rejected():
     """nfs requires host+path; a missing one must fail fast."""
     with pytest.raises(ValueError, match="requires key.*host"):
-        update_hmc_job({"type": "nfs", "path": "/images"})
+        update_vios_job({"type": "nfs", "path": "/images"})
 
 
 def test_repository_params_disk_requires_nothing():
-    xml = update_hmc_job({"type": "disk"})
+    xml = update_vios_job({"type": "disk"})
     assert "Update" in xml
 
 
@@ -122,32 +125,14 @@ CONSOLE_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 @pytest.mark.asyncio
 async def test_hmc_update_console_software_update(mock_hmc):
-    """Client layer: Update job reaches ManagementConsole/do/Update."""
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
+    """Client layer: documented update job reaches ManagementConsole."""
+    path = f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/UpdateManagementConsole"
+    route = mock_hmc.put(path).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
 
     async with HMCClient(make_config()) as hmc:
         job = await hmc.submit_job(
-            f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Update",
-            update_hmc_job(REPO_NFS),
-        )
-
-    assert route.called
-    assert job is not None
-
-
-@pytest.mark.asyncio
-async def test_hmc_update_console_software_upgrade(mock_hmc):
-    """Client layer: Upgrade job reaches ManagementConsole/do/Upgrade."""
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
-
-    async with HMCClient(make_config()) as hmc:
-        job = await hmc.submit_job(
-            f"/rest/api/uom/ManagementConsole/{HMC_UUID}/do/Upgrade",
-            upgrade_hmc_job({"type": "disk"}),
+            path,
+            update_hmc_job({"MediaType": "NFS", "ServerHostOrIP": "repo.example.com"}),
         )
 
     assert route.called

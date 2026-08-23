@@ -42,6 +42,12 @@ SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 VIOS_UUID = "00000000-0000-0000-0000-000000000003"
 MC_UUID = "mc-uuid-0001"
+CONSOLE_SOURCE = {
+    "MediaType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "Directory": "/images/hmc",
+    "RestartConsole": "False",
+}
 
 # A single-LPAR Atom feed; {name} is the partition name.
 LPAR_FEED = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -380,38 +386,39 @@ def test_foreign_owned_delete_issues_no_write(monkeypatch, mock_hmc):
 
 
 def test_hmc_update_kind_update(monkeypatch, mock_hmc):
-    """hmc_update_console_software with kind='update' PUTs an Update job to ManagementConsole."""
+    """Console updates use IBM's documented operation and parameters."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
-    hmc_update_console_software(MC_UUID, REPO, kind="update")
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="update")
     body = route.calls.last.request.content.decode()
-    assert "Update</OperationName>" in body
+    assert "UpdateManagementConsole</OperationName>" in body
+    assert "MediaType</ParameterName>" in body
+    assert "ServerHostOrIP</ParameterName>" in body
     assert "repo.example.com" in body
     assert "/images/hmc" in body
 
 
 def test_hmc_update_kind_upgrade(monkeypatch, mock_hmc):
-    """hmc_update_console_software with kind='upgrade' PUTs an Upgrade job to ManagementConsole."""
+    """A nonexistent single-job console upgrade is refused before I/O."""
     _hmc_env(monkeypatch)
     route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Upgrade").mock(
         return_value=httpx.Response(202, text=JOB_ENTRY)
     )
-    hmc_update_console_software(MC_UUID, REPO, kind="upgrade")
-    body = route.calls.last.request.content.decode()
-    assert "Upgrade</OperationName>" in body
-    assert "repo.example.com" in body
+    with pytest.raises(ValueError, match="SaveUpgradeData"):
+        hmc_update_console_software(MC_UUID, CONSOLE_SOURCE, kind="upgrade")
+    assert not route.called
 
 
 def test_hmc_update_default_kind_is_update(monkeypatch, mock_hmc):
     """hmc_update_console_software defaults to kind='update' when kind is omitted."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.put(f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update").mock(
-        return_value=httpx.Response(202, text=JOB_ENTRY)
-    )
-    hmc_update_console_software(MC_UUID, REPO)
-    assert route.calls.last.request.url.path.endswith("/do/Update")
+    route = mock_hmc.put(
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
+    ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
+    hmc_update_console_software(MC_UUID, CONSOLE_SOURCE)
+    assert route.calls.last.request.url.path.endswith("/do/UpdateManagementConsole")
 
 
 def test_vios_update_kind_update(monkeypatch, mock_hmc):
@@ -482,13 +489,13 @@ def test_hmc_update_wait_true_polls_to_completion(monkeypatch, mock_hmc):
     """hmc_update_console_software(wait=True) submits the job then polls until COMPLETED."""
     _hmc_env(monkeypatch)
     submit_route = mock_hmc.put(
-        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/Update"
+        f"/rest/api/uom/ManagementConsole/{MC_UUID}/do/UpdateManagementConsole"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
     poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_update_console_software(
-        MC_UUID, REPO, wait=True, timeout_seconds=60, poll_interval=1
+        MC_UUID, CONSOLE_SOURCE, wait=True, timeout_seconds=60, poll_interval=1
     )
     assert submit_route.called
     assert poll_route.called

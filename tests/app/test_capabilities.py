@@ -491,22 +491,23 @@ def test_password_policy_mutations_use_settings_object_schema():
         assert properties["settings"]["type"] == "object"
 
 
-def test_repository_type_enum_matches_runtime_constant():
-    """The MCP enum for RepositorySource.type must not drift from the Literal.
+def test_update_source_enums_match_runtime_constants():
+    """Rendered console and VIOS source enums must not drift from runtime.
 
-    The repository TypedDict's ``type`` field is annotated with the
-    RepositoryType Literal, which renders as an enum in the tool schema; the
-    jobs layer validates against _REQUIRED_KEYS keyed by that same set. This
-    pins the rendered schema to the runtime set so either side changing alone
-    is caught.
+    Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.jobs import _REPOSITORY_TYPES
+    from hmc_mcp.jobs import _CONSOLE_UPDATE_MEDIA_TYPES, _REPOSITORY_TYPES
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_update_console_software"].parameters["properties"][
+    media_type = by_name["hmc_update_console_software"].parameters["properties"][
         "repository"
-    ]["properties"]["type"]
+    ]["properties"]["MediaType"]
+    assert set(media_type["enum"]) == set(_CONSOLE_UPDATE_MEDIA_TYPES)
+
+    repo_type = by_name["hmc_vios_update"].parameters["properties"]["repository"][
+        "properties"
+    ]["type"]
     assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
 
 

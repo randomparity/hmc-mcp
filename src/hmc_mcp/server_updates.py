@@ -13,10 +13,10 @@ from ._app import (
 from .common import client_from_env, resolve_system_uuid, resolve_vios_uuid
 from .errors import HMCError
 from .jobs import (
+    ConsoleUpdateSource,
     RepositorySource,
     update_firmware_job,
     update_hmc_job,
-    upgrade_hmc_job,
     update_vios_job,
     upgrade_vios_job,
     validate_wait_timing,
@@ -38,22 +38,23 @@ tool, register_tools, tool_security = tool_module()
 @tool(effect="destructive", operation="update.console", target_kind="console")
 def hmc_update_console_software(
     console_uuid: str,
-    repository: RepositorySource,
+    repository: ConsoleUpdateSource,
     kind: Literal["update", "upgrade"] = "update",
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
 ) -> dict[str, Any] | None:
-    """Submit an HMC software update or upgrade job.
+    """Submit a documented HMC software update job.
 
-    kind='update' installs PTFs (patch level); kind='upgrade' performs a full
-    HMC version upgrade. repository is a dict describing the software source:
-        {"type": "nfs", "host": "repo.example.com", "path": "/images/hmc"}
-        {"type": "sftp", "host": "repo.example.com", "path": "/hmc", "user": "admin", "sftp_pw": "..."}
-        {"type": "disk"}  # use files already on the HMC disk
+    kind='update' installs PTFs. ``upgrade`` is refused because IBM documents
+    a multi-job upgrade workflow, not one ManagementConsole Upgrade operation.
+    repository uses the documented UpdateManagementConsole parameter names::
 
-    Submits an Update or Upgrade job to ManagementConsole; poll hmc_get_job
+        {"MediaType": "NFS", "ServerHostOrIP": "repo.example.com",
+         "Directory": "/images/hmc", "RestartConsole": "False"}
+
+    Submits UpdateManagementConsole to ManagementConsole; poll hmc_get_job
     for status. console_uuid is the ManagementConsole UUID (from
     hmc_console_info).
 
@@ -61,21 +62,22 @@ def hmc_update_console_software(
 
     Args:
         console_uuid: Management-console UUID returned by ``hmc_console_info``.
-        repository: NFS, SFTP, or HMC-disk software source configuration.
-        kind: ``update`` for PTFs or ``upgrade`` for a full version upgrade.
+        repository: Documented ``UpdateManagementConsole`` job parameters.
+        kind: ``update``; ``upgrade`` raises with multi-job workflow guidance.
         wait: Wait for the submitted job to reach a terminal state.
         timeout_seconds: Maximum wait duration in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    if kind == "update":
-        job_xml = update_hmc_job(repository)
-        operation = "Update"
-    elif kind == "upgrade":
-        job_xml = upgrade_hmc_job(repository)
-        operation = "Upgrade"
-    else:
+    if kind == "upgrade":
+        raise ValueError(
+            "HMC upgrades are not a single ManagementConsole job. Use the documented "
+            "multi-job workflow beginning with SaveUpgradeData, followed by "
+            "DownloadNetworkInstallImages, SetAlternateDiskStartup, and ShutdownHMC."
+        )
+    if kind != "update":
         raise ValueError(f"Unknown kind {kind!r}. Expected 'update' or 'upgrade'.")
+    job_xml = update_hmc_job(repository)
     validate_wait_timing(wait, timeout_seconds, poll_interval)
 
     async def _go():
@@ -83,7 +85,7 @@ def hmc_update_console_software(
             return await _update_op(
                 hmc,
                 lambda hmc2: hmc2.submit_job(
-                    f"/rest/api/uom/ManagementConsole/{console_uuid}/do/{operation}",
+                    f"/rest/api/uom/ManagementConsole/{console_uuid}/do/UpdateManagementConsole",
                     job_xml,
                 ),
                 wait,
