@@ -49,6 +49,8 @@ returned mapping also has top-level `stdOut` containing the trimmed first such
 value in response order. Empty, non-string, malformed, or later duplicate
 result entries do not add or replace that projection and do not hide the raw
 job. A timed-out nonterminal job does not project partial output.
+A pre-existing top-level `stdOut` is raw response data: it is retained and the
+nested value does not overwrite it.
 
 ## Components and data flow
 
@@ -106,9 +108,10 @@ entry followed by empty, malformed, and valid duplicates; whitespace-only and
 non-string values; case-sensitive parameter names; preservation of the raw job;
 and `wait=False` returning unprojected submission metadata. A nonterminal
 waited job containing `stdOut` proves partial output is not projected. Tests
-assert that the first non-empty string is trimmed and wins. README text names the documented
-contract and the wait-only projection. `just test`, `just smoke`, and
-`just verify` must pass.
+also prove a pre-existing top-level `stdOut` is preserved. They assert that the
+first non-empty string is trimmed and wins. README text names the documented
+contract and the wait-only projection. `just test`, `just smoke`, and `just verify`
+must pass.
 
 No live HMC is required to establish the static contract. If no suitable live
 VIOS update target is available, the handoff states that live validation was

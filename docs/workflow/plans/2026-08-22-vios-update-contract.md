@@ -28,7 +28,8 @@ pytest/respx, ruff, ty, and uv.
 - Encode the resolved VIOS UUID as one URL path segment.
 - Only a waited result whose `Resource.Status` belongs to
   `TERMINAL_JOB_STATUSES` projects the first non-empty string `stdOut`, trimmed,
-  at the top level; preserve raw, nonterminal, and submission-only results.
+  at the top level; preserve raw, nonterminal, and submission-only results and
+  never overwrite a pre-existing top-level `stdOut`.
 - Keep `RepositorySource` and firmware behavior unchanged. Do not restore the
   removed generic console update behavior or add compatibility shims.
 - Use no new dependency. Keep Python functions within repository complexity,
@@ -139,8 +140,9 @@ types build Pydantic schemas; firmware tests remain unchanged and passing.
    console path-segment test. Add wait tests proving the raw terminal mapping is
    retained with top-level `stdOut`, and non-wait submission metadata is
    unchanged without a projection. Add a timed-out `RUNNING` waited result that
-   contains `stdOut` and assert no top-level projection. Parameterize
-   public-tool calls for missing
+   contains `stdOut` and assert no top-level projection. Add a terminal result
+   with an existing top-level `stdOut` and assert that raw value is preserved.
+   Parameterize public-tool calls for missing
    `ResourceType`, an unknown key, `Disks` on update, `RestartVIOS` on upgrade,
    and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
    raises `AssertionError("client created")` and assert each call raises its
@@ -187,8 +189,8 @@ types build Pydantic schemas; firmware tests remain unchanged and passing.
    `client_from_env`, encode `quote(vios_uuid, safe="")`, submit to the fixed
    suffix, and after `_update_op` add a top-level `stdOut` only when
    `wait is True`, the result is a mapping, its nested `Resource.Status` is in
-   `TERMINAL_JOB_STATUSES`, and `vios_stdout(result)` returns a value. Copy the
-   mapping before augmentation.
+   `TERMINAL_JOB_STATUSES`, no top-level `stdOut` exists, and
+   `vios_stdout(result)` returns a value. Copy the mapping before augmentation.
 6. Run the focused tests and static checks for the two changed modules; expect
    exit 0. Run `just smoke`; expect the tool count summary and exit 0.
 7. Commit with subject `fix: submit documented VIOS update operations`.

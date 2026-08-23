@@ -41,8 +41,9 @@ string-valued `stdOut` job parameter, in response order, as a trimmed top-level
 copy while retaining the complete raw job structure. Empty or whitespace-only
 values, non-string values, malformed result structures, and timed-out
 nonterminal jobs add no projection; duplicate entries remain visible in the
-raw job. An asynchronous submission remains unchanged because no operation
-result exists yet.
+raw job. A pre-existing top-level `stdOut` is retained and prevents the
+convenience projection from overwriting it. An asynchronous submission remains
+unchanged because no operation result exists yet.
 
 ## Consequences
 
