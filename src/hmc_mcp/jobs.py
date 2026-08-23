@@ -829,6 +829,11 @@ def update_hmc_job(source: ConsoleUpdateSource) -> str:
     )
 
 
+def list_management_console_updates_job() -> str:
+    """Build the parameterless ``ListManagementConsoleUpdates`` request."""
+    return build_job_request("ListManagementConsoleUpdates", "ManagementConsole")
+
+
 def _vios_params(
     source: Mapping[str, Any],
     operation: str,
