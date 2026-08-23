@@ -38,7 +38,9 @@ def _extract_system_uuid_from_vios(vios_elem: ET.Element) -> str:
         )
     href = links[0].get("href", "")
     match = _re.fullmatch(
-        r"(?:https?://[^/]+)?/rest/api/uom/ManagedSystem/([0-9a-fA-F-]{36})/?",
+        r"(?:https?://[^/]+)?/rest/api/uom/ManagedSystem/"
+        r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?",
         href,
     )
     if not match:

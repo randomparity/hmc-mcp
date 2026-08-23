@@ -271,6 +271,8 @@ async def test_delete_storage_mapping_rejects_empty_selector(mock_hmc):
             f"{SYSTEM_UUID}\"/><AssociatedManagedSystem",
         ),
         VIOS_PARENT.replace(SYSTEM_UUID, "not-a-uuid"),
+        VIOS_PARENT.replace(SYSTEM_UUID, "------------------------------------"),
+        VIOS_PARENT.replace(SYSTEM_UUID, "a" * 36),
     ],
 )
 async def test_delete_storage_mapping_rejects_untrusted_system_link(
