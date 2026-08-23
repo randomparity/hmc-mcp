@@ -51,14 +51,16 @@ pytest/respx, ruff, ty, and uv.
   cases.
 - `README.md`: corrected operator-facing request and result contract.
 
-## Task 1: Pin the documented builder and schema contract
+## Task 1: Correct the request contract and submission path
 
 **Interfaces**
 
 - Produces `VIOSUpdateSource`, `VIOSUpgradeSource`, `VIOSSource`,
   `update_vios_job(VIOSUpdateSource) -> str`, and
   `upgrade_vios_job(VIOSUpgradeSource) -> str` in `hmc_mcp.jobs`.
-- Later tasks consume `VIOSSource` in `hmc_vios_update` and the two builders.
+- Produces the public `hmc_vios_update(..., repository: VIOSSource, ...)`
+  signature and exact operation selection/path in `server_updates.py`.
+- Task 2 consumes the corrected public path and adds only result projection.
 - Existing `RepositorySource` remains the input to `update_firmware_job`.
 
 1. Replace old VIOS fixtures in `tests/system/test_update_upgrade.py` with
@@ -68,15 +70,25 @@ pytest/respx, ruff, ty, and uv.
 2. Update `tests/unit/test_job_lifecycle.py` to construct Pydantic adapters for
    both VIOS source types and assert their exact property sets and required
    discriminator.
-3. Run the focused tests and confirm they fail against the old generic
+3. Change VIOS application tests to expect exact `/do/UpdateVIOS` and
+   `/do/UpgradeVIOS` paths and bodies. Add a hostile selector test matching the
+   console path-segment test. Parameterize public-tool calls for missing
+   `ResourceType`, an unknown key, `Disks` on update, `RestartVIOS` on upgrade,
+   and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
+   raises `AssertionError("client created")` and assert each call raises its
+   expected `ValueError`, proving the invalid matrix fails before I/O. Update
+   `tests/app/test_capabilities.py` to assert the public tool schema is the
+   union of both source contracts and that each branch has its exact enum.
+4. Run the focused tests and confirm they fail against the old generic
    `RepositorySource` and bare operation names:
 
    ```sh
    uv run --no-sync pytest -q --no-cov tests/system/test_update_upgrade.py \
-     tests/unit/test_job_lifecycle.py tests/app/test_capabilities.py
+     tests/unit/test_job_lifecycle.py tests/app/test_server_tools.py \
+     tests/app/test_capabilities.py
    ```
 
-4. In `src/hmc_mcp/jobs.py`, define the exact interfaces:
+5. In `src/hmc_mcp/jobs.py`, define the exact interfaces:
 
    ```python
    VIOSUpdateResourceType = Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"]
@@ -96,11 +108,11 @@ pytest/respx, ruff, ty, and uv.
        USBDevice: Annotated[str, Field(description="USB device name.")]
        SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
 
-   class VIOSUpdateSource(_VIOSSourceBase):
+   class VIOSUpdateSource(_VIOSSourceBase, total=False):
        ResourceType: Required[VIOSUpdateResourceType]
        RestartVIOS: Annotated[str, Field(description="Restart VIOS after update.")]
 
-   class VIOSUpgradeSource(_VIOSSourceBase):
+   class VIOSUpgradeSource(_VIOSSourceBase, total=False):
        ResourceType: Required[VIOSUpgradeResourceType]
        Disks: Annotated[str, Field(description="Comma-separated free physical volumes.")]
 
@@ -111,21 +123,26 @@ pytest/respx, ruff, ty, and uv.
    unknown or missing parameters with operation-named actionable messages,
    stringifies non-`None` values, and is called by the two builders. Render
    `UpdateVIOS` and `UpgradeVIOS` respectively.
-5. Run the focused tests and expect all selected tests to pass. Run
-   `uv run --no-sync ruff check src/hmc_mcp/jobs.py` and
-   `uv run --no-sync ty check src/hmc_mcp/jobs.py`; expect exit 0.
-6. Commit the explicit source and test paths with subject
+6. In `src/hmc_mcp/server_updates.py`, annotate `repository: VIOSSource`,
+   select `operation = "UpdateVIOS" | "UpgradeVIOS"`, build and validate before
+   `client_from_env`, encode `quote(vios_uuid, safe="")`, and submit to the
+   fixed operation suffix.
+7. Run the builder, application, lifecycle, and capabilities tests with
+   `--no-cov`; expect all selected tests to pass. Run
+   `uv run --no-sync ruff check src/hmc_mcp/jobs.py src/hmc_mcp/server_updates.py`
+   and the full configured `uv run --no-sync ty check`; expect exit 0.
+8. Commit the explicit source and test paths with subject
    `fix: use documented VIOS update job requests`.
 
-Acceptance: generated XML contains only the selected documented operation and
-keys; every invalid selected-operation contract fails; both precise request
-types build Pydantic schemas; firmware tests remain unchanged and passing.
+Acceptance: generated XML and HTTP requests contain only the selected
+documented operation/path/keys; every invalid contract fails before I/O; the
+public schema contains both precise request types; firmware remains unchanged.
 
-## Task 2: Submit exact paths and project waited stdOut
+## Task 2: Project waited terminal stdOut
 
 **Interfaces**
 
-- Consumes Task 1's `VIOSSource`, builders, and operation validation.
+- Consumes Task 1's corrected public operation and request contract.
 - Produces `vios_stdout(job: dict[str, Any] | None) -> str | None` in
   `hmc_mcp.jobs` and corrected `hmc_vios_update` behavior.
 - Preserves `_update_op` and shared wait lifecycle semantics.
@@ -135,21 +152,11 @@ types build Pydantic schemas; firmware tests remain unchanged and passing.
    entry before a valid value; exact case-sensitive name; whitespace-only and
    non-string values; and a first valid value followed by empty, malformed, and
    valid duplicates. Assert the first non-empty string is trimmed and wins.
-2. Change VIOS application tests to expect exact `/do/UpdateVIOS` and
-   `/do/UpgradeVIOS` paths and bodies. Add a hostile selector test matching the
-   console path-segment test. Add wait tests proving the raw terminal mapping is
+2. Add application wait tests proving the raw terminal mapping is
    retained with top-level `stdOut`, and non-wait submission metadata is
    unchanged without a projection. Add a timed-out `RUNNING` waited result that
    contains `stdOut` and assert no top-level projection. Add a terminal result
    with an existing top-level `stdOut` and assert that raw value is preserved.
-   Parameterize public-tool calls for missing
-   `ResourceType`, an unknown key, `Disks` on update, `RestartVIOS` on upgrade,
-   and `IBMWebsite` on upgrade; replace `client_from_env` with a function that
-   raises `AssertionError("client created")` and assert each call raises its
-   expected `ValueError`, proving the complete invalid matrix fails before I/O.
-   Update `tests/app/test_capabilities.py` to assert the newly annotated public
-   tool schema is the union of the update and upgrade source contracts and that
-   each branch carries its exact `ResourceType` enum.
 3. Run:
 
    ```sh
@@ -157,7 +164,7 @@ types build Pydantic schemas; firmware tests remain unchanged and passing.
      tests/app/test_server_tools.py -k 'vios or stdout'
    ```
 
-   Expect failures on the old paths, absent parser, and unencoded selector.
+   Expect failures on the absent parser and result projection.
 4. Add this structural parser in `src/hmc_mcp/jobs.py`:
 
    ```python
@@ -184,10 +191,7 @@ types build Pydantic schemas; firmware tests remain unchanged and passing.
        return None
    ```
 
-5. In `server_updates.py`, annotate `repository: VIOSSource`, select
-   `operation = "UpdateVIOS" | "UpgradeVIOS"`, validate/build before
-   `client_from_env`, encode `quote(vios_uuid, safe="")`, submit to the fixed
-   suffix, and after `_update_op` add a top-level `stdOut` only when
+5. In `server_updates.py`, after `_update_op` add a top-level `stdOut` only when
    `wait is True`, the result is a mapping, its nested `Resource.Status` is in
    `TERMINAL_JOB_STATUSES`, no top-level `stdOut` exists, and
    `vios_stdout(result)` returns a value. Copy the mapping before augmentation.
