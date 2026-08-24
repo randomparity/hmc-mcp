@@ -61,11 +61,11 @@ The stored artifact is one UTF-8 JSON object. JSON member names are case-sensiti
 }
 ```
 
-All displayed root and identity members are required. `source.hmc.name`, `source.hmc.version`,
-`source.system.name`, and `source.lpar.name` may be null when the HMC does not report them; UUIDs,
-system machine type/model and serial, and the numeric partition ID may not be null. Stable UUIDs
-are the primary identities. Machine type/model plus serial guards against a UUID copied from the
-wrong system. Names are descriptive and never identity substitutes.
+All displayed root and identity members are required. `source.hmc.name`, `source.hmc.version`, and
+`source.system.name` may be null when the HMC does not report them; `source.lpar.name`, UUIDs,
+system machine type/model and serial, and the numeric partition ID may not be null or blank.
+Stable UUIDs are the primary identities. Machine type/model plus serial guards against a UUID
+copied from the wrong system. Names are descriptive and never identity substitutes.
 
 `captured_at` is the completion time of the capture. `observed_at` is the time represented by the
 observation payload and must not be later than `captured_at`. Both are RFC 3339 timestamps with an
@@ -114,7 +114,8 @@ integer `minimum`, `desired`, and `maximum`, ordered minimum ≤ desired ≤ max
 contains exactly boolean `dedicated`; positive numeric `minimum`, `desired`, and `maximum`, ordered
 minimum ≤ desired ≤ maximum; positive integer `virtual_minimum`, `virtual_desired`, and
 `virtual_maximum`, similarly ordered; `sharing_mode`, one of `keep_idle_procs`, `share_idle_procs`,
-`share_idle_procs_active`, `share_idle_procs_always`, or `uncapped`; and boolean `uncapped`.
+`share_idle_procs_active`, `share_idle_procs_always`, `capped`, or `uncapped`; and boolean
+`uncapped`.
 Dedicated processor values must be integers and require `uncapped: false`; shared values may be
 fractional. Memory is in MiB. No additional normalized property is valid in version 1.
 
@@ -125,8 +126,9 @@ mapping is exact: `min_mem`, `desired_mem`, and `max_mem` map to the three memor
 `min_proc_units`, `desired_proc_units`, and `max_proc_units` map to the three processor values;
 `min_procs`, `desired_procs`, and `max_procs` map to the three virtual values; and HMC
 `sharing_mode` values `keep_idle_procs`, `share_idle_procs`, `share_idle_procs_active`,
-`share_idle_procs_always`, and `uncap` map respectively to the normalized values of the same name
-except `uncap`, which maps to `uncapped`. Normalized `uncapped` is true only for `uncap`. A missing
+`share_idle_procs_always`, `cap`, and `uncap` map respectively to the normalized values of the same
+name except `cap` and `uncap`, which map to `capped` and `uncapped`. Normalized `uncapped` is true
+only for `uncap` and false for every other mode. A missing
 required native attribute, unknown mapped value, or inability to derive any required normalized
 field is an unsupported version-1 profile and fails validation; no comparison is skipped. A
 mismatch is malformed input. Replay never substitutes normalized values into an otherwise valid
@@ -213,5 +215,5 @@ destination versions; version 1 defines no converter, metadata, or write behavio
 - Branch: `feat/portable-lpar-snapshot-contract-313`
 - Base branch: `main`
 - Guardrails: `just test`, `just smoke`, `just verify`
-- Architecture: host `x86_64`; targets `amd64`, `arm64`, and `ppc64le`; relationship `included`
+- Architecture: host `x86_64`; no target declared; relationship `no-target-declared`
 - ADR-index coupling: no index

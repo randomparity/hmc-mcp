@@ -12,8 +12,8 @@ member, validation boundary, replay rule, and compatibility rule needed by later
 - Configuration is replayable; observations, including current and predicted scores, never are.
 - Native HMC profile data is replay authority and the normalized projection must agree with it.
 - Reserved CLI commands live under `hmc-mcp snapshot`; MCP identifiers live under `snapshot.*`.
-- Host is `x86_64`; targets are `amd64`, `arm64`, and `ppc64le`; the host is included. The design
-  is architecture-independent.
+- Host is `x86_64`; no target architecture is declared; relationship `no-target-declared`. The
+  design is architecture-independent.
 - Run `just test`, `just smoke`, and `just verify`.
 
 ## Task 1: Record the complete contract
