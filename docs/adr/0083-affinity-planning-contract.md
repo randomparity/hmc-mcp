@@ -19,8 +19,9 @@ Keep current observations and planning separate in names and results. Add a vali
 prioritized and excluded instances to `calcscore` operations. An explicit selector is non-empty,
 contains duplicate-free nonblank structurally safe names or duplicate-free positive IDs. When both
 are present, prioritized and excluded selectors use the same representation and cannot overlap.
-Each selector's aggregate encoded value is capped at 4096 UTF-8 bytes as a conservative package
-request-safety ceiling for the remote command budget, not as a claimed HMC capability.
+The fully rendered aggregate selector-option package, including flags, separators, and shell
+quoting, is capped at 4096 UTF-8 bytes as a conservative package request-safety ceiling for the
+remote command budget, not as a claimed HMC capability.
 Expose current system score,
 predicted partition scores, and predicted system score as shared async operations and mirror them
 through MCP and CLI. Preserve HMC fields while requiring the scope-specific current and predicted
