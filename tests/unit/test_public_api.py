@@ -103,6 +103,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "PartitionType",
         "list_fc_ports",
         "get_lpar_memopt_score",
+        "get_minimum_affinity_policy",
         "get_system_memopt_score",
         "list_lpar_memopt_scores",
         "plan_lpar_memopt_scores",
@@ -110,6 +111,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "MemoptLparSelector",
         "MemoptResourceGroupSelector",
         "ResourceGroupAffinityResult",
+        "MinimumAffinityPolicyResult",
         "list_resource_group_memopt_scores",
         "plan_resource_group_memopt_scores",
         "list_sea_adapters",
@@ -286,7 +288,8 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "VnicCapabilityError",
             "VnicPartialError",
             "add_vnic",
-            "get_lpar_memopt_score",
+                "get_lpar_memopt_score",
+                "get_minimum_affinity_policy",
             "get_system_memopt_score",
             "list_fc_ports",
             "list_lpar_memopt_scores",
@@ -294,7 +297,8 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "plan_system_memopt_score",
             "MemoptLparSelector",
             "MemoptResourceGroupSelector",
-            "ResourceGroupAffinityResult",
+                "ResourceGroupAffinityResult",
+                "MinimumAffinityPolicyResult",
             "list_resource_group_memopt_scores",
             "plan_resource_group_memopt_scores",
             "list_sea_adapters",
@@ -362,7 +366,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #312, which added capability-aware resource-group affinity.
+        Last moved by issue #315, which added the Power11 minimum-affinity policy read.
+        Before that, issue #312 added capability-aware resource-group affinity.
         Before that, issue #311 added read-only affinity planning operations.
         Before that, issue #310 added the LPAR memory-optimization score operations.
         Before that, issue #400 added the owning-system selector to
@@ -402,8 +407,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #314: portable snapshot capture and local reads are reusable.
-    expected_digest = "6ebce01320972aa2a766d96af9fdea4162aea66fb65ede85ad69cda2159d203b"  # pragma: allowlist secret
+    # Moved by #315: minimum-affinity policy reads are reusable under ADR 0086.
+    expected_digest = "a7a25affda5682db5fda2630a45cd243835dbf34fa08136d2f4ff413cbf8530a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

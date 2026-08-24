@@ -10,8 +10,10 @@ from ._app import (
 )
 from .common import build_config, client_from_env
 from .operations_ssh_network import (
+    MinimumAffinityPolicyResult,
     ResourceGroupAffinityResult,
     get_lpar_memopt_score,
+    get_minimum_affinity_policy,
     get_system_memopt_score,
     list_lpar_memopt_scores,
     plan_lpar_memopt_scores,
@@ -62,6 +64,26 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
         "POWER11",
     }
 )
+
+
+@tool(effect="read", operation="lpar.get_minimum_affinity_policy", target_kind="lpar")
+def hmc_get_minimum_affinity_policy(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+) -> MinimumAffinityPolicyResult:
+    """Return an LPAR's minimum-affinity policy when supported.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: get_minimum_affinity_policy(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
 
 
 @tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")

@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import asyncio
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
+from fastmcp import Client
+from typer.testing import CliRunner
 
+from hmc_mcp import cli_lpars, server_lpar_config
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.cli import app
 from hmc_mcp.config import HMCConfig
-from hmc_mcp.operations_ssh_network import get_minimum_affinity_policy
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations_ssh_network import (
+    MinimumAffinityPolicyResult,
+    get_minimum_affinity_policy,
+)
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import query_minimum_affinity_policy
 
@@ -101,3 +112,84 @@ async def test_shared_policy_operation_resolves_names_and_wraps_result():
     assert result.min_affinity_score_action == "fail"
     assert result.unavailable_reason is None
 
+
+def test_mcp_policy_adapter_delegates_to_shared_operation():
+    expected = MinimumAffinityPolicyResult(
+        "available", "system", "lpar", 75, "warn", None
+    )
+    operation = AsyncMock(return_value=expected)
+    with (
+        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch.object(server_lpar_config, "get_minimum_affinity_policy", operation),
+    ):
+        actual = server_lpar_config.hmc_get_minimum_affinity_policy(
+            "system", "lpar"
+        )
+
+    assert actual == expected
+    operation.assert_awaited_once_with(ANY, "system", "lpar")
+
+
+def test_mcp_registers_minimum_affinity_policy_as_lpar_read():
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    async def names():
+        async with Client(create_mcp(policy)) as client:
+            return {tool.name for tool in await client.list_tools()}
+
+    assert "hmc_get_minimum_affinity_policy" in asyncio.run(names())
+    security = TOOL_SECURITY["hmc_get_minimum_affinity_policy"]
+    assert security.effect == "read"
+    assert [(target.kind, target.argument) for target in security.targets] == [
+        ("managed_system", "system_name_or_uuid"),
+        ("lpar", "lpar_name_or_uuid"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (
+            MinimumAffinityPolicyResult(
+                "available", "system", "lpar", 75, "warn", None
+            ),
+            "minimum affinity score: 75 (warn)",
+        ),
+        (
+            MinimumAffinityPolicyResult(
+                "capability-unavailable", "system", "lpar", None, None, "upgrade"
+            ),
+            "unavailable: upgrade",
+        ),
+    ],
+)
+def test_cli_policy_human_output(result, expected):
+    with patch.object(
+        cli_lpars, "get_minimum_affinity_policy", AsyncMock(return_value=result)
+    ):
+        invocation = CliRunner().invoke(
+            app, ["lpars", "get-minimum-affinity-policy", "lpar", "system"]
+        )
+    assert invocation.exit_code == 0, invocation.output
+    assert expected in invocation.output
+
+
+def test_cli_policy_json_delegates():
+    expected = MinimumAffinityPolicyResult(
+        "available", "system", "lpar", 100, "fail", None
+    )
+    operation = AsyncMock(return_value=expected)
+    with patch.object(cli_lpars, "get_minimum_affinity_policy", operation):
+        invocation = CliRunner().invoke(
+            app,
+            [
+                "lpars",
+                "get-minimum-affinity-policy",
+                "lpar",
+                "system",
+                "--json",
+            ],
+        )
+    assert invocation.exit_code == 0, invocation.output
+    assert '"min_affinity_score": 100' in invocation.output
+    operation.assert_awaited_once_with(ANY, "system", "lpar")
