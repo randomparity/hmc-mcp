@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
 import pytest
+
+from hmc_mcp.config import HMCConfig
+from hmc_mcp import ssh_commands
 
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -169,6 +173,64 @@ def test_numeric_dispatch_uses_intent_revealing_workflow_names():
     assert runner.SUBTASKS[2] is runner.inventory_network
     assert runner.SUBTASKS[9] is runner.mutate_virtual_networking
     assert runner.SUBTASKS[15] is runner.restore_lpar_baseline
+
+
+@pytest.mark.asyncio
+async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatch):
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+    await runner.inventory_lpar_profiles(None, state)
+
+    affinity_calls = [call for call in calls if "memopt" in call[0]]
+    assert affinity_calls == [
+        (
+            "hmc_get_lpar_memopt_score",
+            {"system_name_or_uuid": "ltczz386", "lpar_name_or_uuid": "ltczz386-lp3"},
+        ),
+        ("hmc_list_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        ("hmc_get_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
+        ("hmc_plan_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        ("hmc_plan_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_affinity_live_paths_use_only_current_and_calcscore_commands(monkeypatch):
+    commands = []
+    outputs = iter(
+        [
+            "curr_sys_score=70",
+            "lpar_name=web,lpar_id=3,curr_lpar_score=60,predicted_lpar_score=80",
+            "curr_sys_score=70,predicted_sys_score=85",
+        ]
+    )
+
+    async def capture(_config, command):
+        commands.append(command)
+        return next(outputs)
+
+    monkeypatch.setattr(ssh_commands, "run_hmc_command", capture)
+    config = HMCConfig(host="h", user="u", _env_file=None)
+    await ssh_commands.get_system_memopt_score(config, "sys1")
+    await ssh_commands.plan_lpar_memopt_scores(config, "sys1")
+    await ssh_commands.plan_system_memopt_score(config, "sys1")
+
+    assert commands == [
+        "lsmemopt -m sys1 -r sys -o currscore",
+        "lsmemopt -m sys1 -r lpar -o calcscore",
+        "lsmemopt -m sys1 -r sys -o calcscore",
+    ]
+
+
+def test_live_runner_contains_no_executable_optmem_command():
+    source = _RUNNER_PATH.read_text(encoding="utf-8")
+    assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
 
 
 @pytest.mark.asyncio

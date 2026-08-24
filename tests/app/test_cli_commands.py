@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from hmc_mcp import cli, cli_app, operations_lpar, ssh_commands
+from hmc_mcp import cli, cli_app, cli_lpars, operations_lpar, ssh_commands
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_ssh_network import VnicChangeResult, VnicPartialError
@@ -2230,6 +2230,147 @@ def test_lpars_memopt_scores_empty(monkeypatch):
 
     assert result.exit_code == 0
     assert "No memory-optimization scores reported" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("command", "operation", "payload", "expected"),
+    [
+        (
+            "system-memopt-score",
+            "get_system_memopt_score",
+            {"curr_sys_score": "72"},
+            "current: 72",
+        ),
+        (
+            "plan-memopt-scores",
+            "plan_lpar_memopt_scores",
+            [
+                {
+                    "lpar_name": "web",
+                    "lpar_id": "3",
+                    "curr_lpar_score": "61",
+                    "predicted_lpar_score": "84",
+                    "prediction_guaranteed": False,
+                }
+            ],
+            "prediction guaranteed: no",
+        ),
+        (
+            "plan-system-memopt-score",
+            "plan_system_memopt_score",
+            {
+                "curr_sys_score": "70",
+                "predicted_sys_score": "88",
+                "prediction_guaranteed": False,
+            },
+            "predicted: 88",
+        ),
+    ],
+)
+def test_affinity_cli_human_output(monkeypatch, command, operation, payload, expected):
+    async def fake_operation(*_args, **_kwargs):
+        return payload
+
+    monkeypatch.setattr(cli_lpars, operation, fake_operation)
+    result = RUNNER.invoke(cli.app, ["lpars", command, "sys1"])
+
+    assert result.exit_code == 0
+    assert expected in unstyle(result.stdout)
+
+
+def test_affinity_planning_cli_json_and_name_selectors(monkeypatch):
+    captured = {}
+
+    async def fake_operation(_config, system, prioritized, excluded):
+        captured.update(system=system, prioritized=prioritized, excluded=excluded)
+        return [{"prediction_guaranteed": False}]
+
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--prioritize-name",
+            "api",
+            "--exclude-name",
+            "batch",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == [{"prediction_guaranteed": False}]
+    assert captured["system"] == "sys1"
+    assert captured["prioritized"].names == ("web", "api")
+    assert captured["excluded"].names == ("batch",)
+
+
+def test_affinity_planning_cli_id_selectors(monkeypatch):
+    captured = {}
+
+    async def fake_operation(_config, _system, prioritized, excluded):
+        captured.update(prioritized=prioritized, excluded=excluded)
+        return {"prediction_guaranteed": False}
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-system-memopt-score",
+            "sys1",
+            "--prioritize-id",
+            "2",
+            "--exclude-id",
+            "9",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["prioritized"].ids == (2,)
+    assert captured["excluded"].ids == (9,)
+
+
+def test_affinity_planning_cli_rejects_mixed_selector_forms(monkeypatch):
+    called = False
+
+    async def fake_operation(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--exclude-id",
+            "9",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must use the same representation" in result.output
+    assert called is False
+
+
+def test_affinity_cli_propagates_hmc_errors(monkeypatch):
+    async def fail(*_args, **_kwargs):
+        raise ssh_commands.HMCCLIError("calcscore unavailable")
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fail)
+    result = RUNNER.invoke(cli.app, ["lpars", "plan-system-memopt-score", "sys1"])
+
+    assert result.exit_code == 1
+    assert "calcscore unavailable" in result.output
 
 
 @pytest.mark.parametrize(
