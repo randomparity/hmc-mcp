@@ -117,7 +117,9 @@ minimum ≤ desired ≤ maximum; positive integer `virtual_minimum`, `virtual_de
 `share_idle_procs_active`, `share_idle_procs_always`, `capped`, or `uncapped`; and boolean
 `uncapped`.
 Dedicated processor values must be integers and require `uncapped: false`; shared values may be
-fractional. Memory is in MiB. No additional normalized property is valid in version 1.
+fractional. `dedicated` is true exactly when `sharing_mode` is one of the four dedicated modes;
+it is false exactly when the mode is `capped` or `uncapped`. Memory is in MiB. No additional
+normalized property is valid in version 1.
 
 Native data is replay authority. Before replay, the implementation derives every normalized field
 required by version 1 from `native.data` and requires equality with the stored projection. The
@@ -201,7 +203,8 @@ destination versions; version 1 defines no converter, metadata, or write behavio
   member ordering and insignificant whitespace are not contractual.
 - Reject every missing required member, unknown member, wrong type, duplicate member, blank
   identity, malformed timestamp, later observation timestamp, duplicate/unsorted capability, and
-  native/normalized mismatch with the precise JSON Pointer.
+  native/normalized mismatch with the precise JSON Pointer. Reject every contradictory
+  `dedicated`, `sharing_mode`, and `uncapped` combination.
 - Prove absent capability differs from unsupported capability and absent optional observation
   differs from a present null score.
 - Prove both structural and replay validation reject unknown capability context and schema versions.
