@@ -740,6 +740,20 @@ async def inventory_lpar_profiles(client: Client, state: RunState) -> None:
     )
     record(state, 4, "hmc_plan_system_memopt_score", st, data)
 
+    st, data = await call(
+        client,
+        "hmc_list_resource_group_memopt_scores",
+        system_name_or_uuid=context.system_name,
+    )
+    record(state, 4, "hmc_list_resource_group_memopt_scores", st, data)
+
+    st, data = await call(
+        client,
+        "hmc_plan_resource_group_memopt_scores",
+        system_name_or_uuid=context.system_name,
+    )
+    record(state, 4, "hmc_plan_resource_group_memopt_scores", st, data)
+
 
 # ---------------------------------------------------------------------------
 # ST5 — Metrics & Templates
@@ -2288,9 +2302,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
                 break
         if not context.vmedia_iso_name and isinstance(data, list) and data:
             # Flat list of dicts without Atom envelope
-            context.vmedia_iso_name = (
-                data[0].get("MediaName") or _ISO_MEDIA_NAME
-            )
+            context.vmedia_iso_name = data[0].get("MediaName") or _ISO_MEDIA_NAME
 
     # Step 5 — Re-upload the same content under a second name (dedup check)
     print(f"  ⏳ Uploading ISO via HTTP ({_ISO_URL}) again — expect dedup hit…")
@@ -2414,8 +2426,8 @@ async def vmedia_mount_unmount(client: Client, state: RunState) -> None:
         # Dig into Resource wrapper if present
         if not context.vmedia_mapping_uuid:
             resource = data.get("Resource") or {}
-            context.vmedia_mapping_uuid = (
-                resource.get("ElementID") or resource.get("UUID")
+            context.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
+                "UUID"
             )
     print(f"  mapping_uuid: {context.vmedia_mapping_uuid}")
 
@@ -2512,7 +2524,9 @@ _PROTECTED_LPARS = {"ltczz386-lp1", "ltczz386-lp2"}
 
 async def vmedia_boot_verification(client: Client, state: RunState) -> None:
     context = state.context
-    print("\n=== ST20: Boot Verification: Power Off → CD Boot → Power On → Verify → Restore ===")
+    print(
+        "\n=== ST20: Boot Verification: Power Off → CD Boot → Power On → Verify → Restore ==="
+    )
 
     _skip_names = [
         "hmc_upload_iso (re-upload for boot test)",
@@ -2613,8 +2627,8 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
         )
         if not context.vmedia_mapping_uuid:
             resource = data.get("Resource") or {}
-            context.vmedia_mapping_uuid = (
-                resource.get("ElementID") or resource.get("UUID")
+            context.vmedia_mapping_uuid = resource.get("ElementID") or resource.get(
+                "UUID"
             )
     if st != "PASS":
         for name in _skip_names[3:]:
@@ -2695,8 +2709,10 @@ async def vmedia_boot_verification(client: Client, state: RunState) -> None:
             context.vmedia_mapping_uuid = None
     else:
         skip(
-            state, 20, "hmc_unmount_optical_media (boot test cleanup)",
-            "no mapping UUID to unmount"
+            state,
+            20,
+            "hmc_unmount_optical_media (boot test cleanup)",
+            "no mapping UUID to unmount",
         )
 
     # Step 11 — Restore boot order
@@ -2804,18 +2820,22 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
             lpar_uuid=lp3_uuid,
             devices=context.vmedia_orig_boot_order,
         )
-        record(state, 22, "hmc_set_lpar_boot_order (boot order restore guard)", st, data)
+        record(
+            state, 22, "hmc_set_lpar_boot_order (boot order restore guard)", st, data
+        )
         if st == "PASS":
             context.vmedia_orig_boot_order = []
     elif not context.vmedia_orig_boot_order:
         skip(
-            state, 22,
+            state,
+            22,
             "hmc_set_lpar_boot_order (boot order restore guard)",
             "no saved boot order to restore",
         )
     else:
         skip(
-            state, 22,
+            state,
+            22,
             "hmc_set_lpar_boot_order (boot order restore guard)",
             "lp3_uuid not available",
         )
@@ -2854,9 +2874,11 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
                     mapping_uuid=m_uuid,
                 )
                 record(
-                    state, 22,
+                    state,
+                    22,
                     f"hmc_unmount_optical_media (orphan {m_uuid[:8]}…)",
-                    st_u, data_u,
+                    st_u,
+                    data_u,
                 )
 
     # Step 3 — Media cleanup
@@ -2871,9 +2893,8 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
         if st == "PASS":
             media_list = data if isinstance(data, list) else []
             for entry in media_list:
-                media_name = (
-                    entry.get("MediaName")
-                    or (_resource(entry)).get("MediaName")
+                media_name = entry.get("MediaName") or (_resource(entry)).get(
+                    "MediaName"
                 )
                 if media_name:
                     st_d, data_d = await call(
@@ -2884,9 +2905,11 @@ async def vmedia_teardown(client: Client, state: RunState) -> None:
                         media_name=media_name,
                     )
                     record(
-                        state, 22,
+                        state,
+                        22,
                         f"hmc_delete_optical_media ({media_name})",
-                        st_d, data_d,
+                        st_d,
+                        data_d,
                     )
     else:
         skip(state, 22, "hmc_list_optical_media (media cleanup)", "no VG UUID")
@@ -2966,7 +2989,7 @@ SUBTASKS = {
 SUBTASK_GROUPS: dict[str, list[int]] = {
     "round2": list(range(0, 16)),
     "vmedia": list(range(16, 23)),
-    "all":    list(range(0, 23)),
+    "all": list(range(0, 23)),
 }
 
 
@@ -3011,8 +3034,7 @@ async def main(
     state = RunState()
     context = state.context
     print(
-        f"Starting live integration tests at "
-        f"{datetime.now(timezone.utc).isoformat()}"
+        f"Starting live integration tests at {datetime.now(timezone.utc).isoformat()}"
     )
     print(f"HMC_SCHEMA_VERSION={os.environ.get('HMC_SCHEMA_VERSION', '(not set)')}")
 
@@ -3022,10 +3044,7 @@ async def main(
     elif group is not None:
         tasks = SUBTASK_GROUPS.get(group, [])
         if not tasks:
-            print(
-                f"Unknown group {group!r}. "
-                f"Valid groups: {', '.join(SUBTASK_GROUPS)}"
-            )
+            print(f"Unknown group {group!r}. Valid groups: {', '.join(SUBTASK_GROUPS)}")
             return 1
     else:
         tasks = sorted(SUBTASKS.keys())
@@ -3112,6 +3131,8 @@ if __name__ == "__main__":
 
     raise SystemExit(
         asyncio.run(
-            main(subtask_filter=subtask_num, results_path=results_file, group=group_name)
+            main(
+                subtask_filter=subtask_num, results_path=results_file, group=group_name
+            )
         )
     )

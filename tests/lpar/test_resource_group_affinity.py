@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 from fastmcp import Client
+from typer.testing import CliRunner
 
 from hmc_mcp import server_lpar_config
+from hmc_mcp import cli_lpars
 from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.legacy_policy import compile_legacy_policy
@@ -17,6 +19,7 @@ from hmc_mcp.operations_ssh_network import (
     list_resource_group_memopt_scores,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
+from hmc_mcp.cli import app
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import (
     MemoptResourceGroupSelector,
@@ -254,3 +257,47 @@ def test_mcp_registers_both_resource_group_affinity_tools():
         "hmc_list_resource_group_memopt_scores",
         "hmc_plan_resource_group_memopt_scores",
     } <= asyncio.run(names())
+
+
+def test_resource_group_cli_delegates_id_zero_and_prints_json():
+    expected = ResourceGroupAffinityResult(
+        "available",
+        "current",
+        "system",
+        MemoptResourceGroupSelector(ids=(0,)),
+        [],
+        None,
+    )
+    operation = AsyncMock(return_value=expected)
+    with patch.object(cli_lpars, "list_resource_group_memopt_scores", operation):
+        result = CliRunner().invoke(
+            app,
+            [
+                "lpars",
+                "resource-group-memopt-scores",
+                "system",
+                "--resource-group-id",
+                "0",
+                "--json",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert '"capability": "available"' in result.output
+    operation.assert_awaited_once_with(
+        ANY, "system", MemoptResourceGroupSelector(ids=(0,))
+    )
+
+
+def test_resource_group_cli_rejects_mixed_selectors():
+    result = CliRunner().invoke(
+        app,
+        [
+            "lpars",
+            "resource-group-memopt-scores",
+            "system",
+            "--resource-group-name",
+            "Default Resource Group",
+            "--all",
+        ],
+    )
+    assert result.exit_code == 2

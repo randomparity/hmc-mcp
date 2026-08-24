@@ -58,6 +58,8 @@ from .operations_ssh_network import (
     list_lpar_memopt_scores,
     plan_lpar_memopt_scores,
     plan_system_memopt_score,
+    list_resource_group_memopt_scores,
+    plan_resource_group_memopt_scores,
 )
 from .documents import (
     LparResources,
@@ -68,6 +70,7 @@ from .documents import (
 )
 from .ssh_commands import (
     MemoptLparSelector,
+    MemoptResourceGroupSelector,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
@@ -192,6 +195,94 @@ def _run_memopt_plan(
         prioritize_name, prioritize_id, exclude_name, exclude_id
     )
     return _run(lambda: operation(_ssh_config(), system_name, prioritized, excluded))
+
+
+def _resource_group_selector(
+    names: list[str] | None, ids: list[int] | None, all_groups: bool
+) -> MemoptResourceGroupSelector:
+    modes = sum((bool(names), bool(ids), all_groups))
+    if modes > 1:
+        _usage_error(
+            "Use only one of --resource-group-name, --resource-group-id, or --all"
+        )
+    try:
+        if names:
+            return MemoptResourceGroupSelector(names=tuple(names))
+        if ids:
+            return MemoptResourceGroupSelector(ids=tuple(ids))
+        return MemoptResourceGroupSelector(all=True)
+    except ValueError as error:
+        _usage_error(str(error))
+        raise AssertionError("_usage_error must raise") from error
+
+
+def _run_resource_group_memopt(
+    operation,
+    system_name: str,
+    names: list[str] | None,
+    ids: list[int] | None,
+    all_groups: bool,
+    as_json: bool,
+) -> None:
+    selector = _resource_group_selector(names, ids, all_groups)
+    result = _run(lambda: operation(_ssh_config(), system_name, selector))
+    if as_json:
+        _print_json(asdict(result))
+        return
+    if result.capability == "capability-unavailable":
+        console.print(
+            f"[yellow]Capability unavailable:[/yellow] {result.unavailable_reason}"
+        )
+        return
+    if not result.items:
+        console.print("[yellow]No resource-group affinity scores reported[/yellow]")
+        return
+    for item in result.items:
+        line = (
+            f"{item['resource_group_name']} (id {item['resource_group_id']}): "
+            f"current: {item['curr_score']}"
+        )
+        if result.mode == "calculated":
+            line += f"; predicted: {item['predicted_score']}; prediction guaranteed: no"
+        console.print(line)
+
+
+@lpars_app.command("resource-group-memopt-scores")
+def lpars_resource_group_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    resource_group_name: list[str] | None = typer.Option(None, "--resource-group-name"),
+    resource_group_id: list[int] | None = typer.Option(None, "--resource-group-id"),
+    all_groups: bool = typer.Option(False, "--all"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """List current resource-group affinity scores when supported."""
+    _run_resource_group_memopt(
+        list_resource_group_memopt_scores,
+        system_name,
+        resource_group_name,
+        resource_group_id,
+        all_groups,
+        as_json,
+    )
+
+
+@lpars_app.command("plan-resource-group-memopt-scores")
+def lpars_plan_resource_group_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    resource_group_name: list[str] | None = typer.Option(None, "--resource-group-name"),
+    resource_group_id: list[int] | None = typer.Option(None, "--resource-group-id"),
+    all_groups: bool = typer.Option(False, "--all"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Calculate potential resource-group affinity scores without running DPO."""
+    _run_resource_group_memopt(
+        plan_resource_group_memopt_scores,
+        system_name,
+        resource_group_name,
+        resource_group_id,
+        all_groups,
+        as_json,
+    )
 
 
 @lpars_app.command("plan-memopt-scores")
@@ -698,7 +789,7 @@ def lpars_create(
         "--caller-token",
         help="Optional tracking reference embedded in the partition description "
         "as '\\[caller <token>]' (ADR 0064); 1–64 printable ASCII characters, "
-        "no whitespace or , = \" [ ] \\",
+        'no whitespace or , = " [ ] \\',
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:

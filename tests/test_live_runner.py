@@ -197,6 +197,8 @@ async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatc
         ("hmc_get_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
         ("hmc_plan_lpar_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
         ("hmc_plan_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
+        ("hmc_list_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        ("hmc_plan_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
     ]
 
 
