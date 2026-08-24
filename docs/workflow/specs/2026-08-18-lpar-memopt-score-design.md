@@ -21,8 +21,9 @@ In scope: `lsmemopt -r lpar -o currscore` only. Out of scope (future
 follow-up): `calcscore` (potential scores with `-p`/`--id` prioritize and
 `-x`/`--xid` exclude options), multi-value `--filter` (its HMC CLI syntax
 requires literal embedded double quotes), resource-group scores
-(`-r resgroup`), system-wide scores (`-r sys`), and any `hmc_mcp.api`
-public-facade export (ADR 0029 keeps those opt-in).
+(`-r resgroup`), system-wide scores (`-r sys`), and unrelated `hmc_mcp.api`
+facade work. The two authorized score-operation exports and their ADR 0029
+contract evidence are in scope.
 
 ## Commands and parsing (verified on hmc5.labda.sva.de, P9 9009 systems)
 
@@ -59,16 +60,21 @@ str}` — consistent with `hmc_list_fc_ports` / `hmc_list_vnics` results.
   `HMCCLIError` when the HMC exits 0 but reports no row (anomalous); a
   non-zero exit (e.g. `The partition named X was not found.`) surfaces as
   `HMCCLIError` from the transport, as with every SSH tool.
-- `server_lpar_config.py` hosts the two MCP tools tagged `_READ_ONLY`, using
-  the file's established `_ssh_with_client(...)` shorthand (REST-first name
-  resolution with `lssyscfg` SSH fallback via `resolve_ssh_names`).
-- `cli_lpars.py` hosts the two CLI commands; each resolves name-or-UUID
-  selectors inline with `resolve_ssh_names` before calling the
-  `ssh_commands` function (no new operations module is introduced).
+- `operations_ssh_network.py` owns the shared, presentation-neutral workflows.
+  Each resolves name-or-UUID selectors through `resolve_ssh_names` and then
+  calls the corresponding `ssh_commands` primitive, following ADR 0013.
+- `server_lpar_config.py` hosts the two MCP tools tagged `_READ_ONLY`; both
+  delegate to the shared operation through the existing profile-aware client
+  boundary.
+- `cli_lpars.py` hosts the two CLI commands and delegates to the same shared
+  operations after loading the selected SSH profile.
 - Registration: both tool names are added to `READ_ONLY_TOOLS` in `_app.py`
-  and re-exported from `server.py`. No ADR is required: this is a straight
-  read-only tool following the existing SSH/CLI pattern (ADR 0013, 0015,
-  0025), with no new architectural decision.
+  and re-exported from `server.py`. Because ADR 0029 selects every public
+  asynchronous operation for the supported reusable API, both operations are
+  exported from `hmc_mcp.api`, with the facade inventory and contract tests
+  updated in the same change. The operator explicitly authorized that additive
+  contract expansion for issue #310. No new ADR is required: the change applies
+  accepted ADRs 0013, 0015, 0025, and 0029 without changing their decisions.
 
 ## Testing
 

@@ -4,9 +4,9 @@
 two `lpars` CLI commands.
 
 **Architecture:** `ssh_commands.py` owns the fixed-verb HMC CLI commands and
-parsing; `server_lpar_config.py` exposes the MCP tools via the
-`_ssh_with_client` shorthand; `cli_lpars.py` resolves selectors inline with
-`resolve_ssh_names` and shares the same `ssh_commands` functions.
+parsing; `operations_ssh_network.py` owns selector-aware workflows shared by
+the MCP and CLI adapters; `hmc_mcp.api` exports those async operations under
+ADR 0029; both presentations delegate to the shared operations.
 Verified live on hmc5.labda.sva.de (P9 9009 systems): default output is
 `lpar_name=…,lpar_id=…,curr_lpar_score=…` key=value rows, score may be the
 literal string `none`, unknown LPAR exits non-zero.
@@ -18,8 +18,9 @@ pytest, Ruff, ty, prek.
 
 - Branch `lpar_score`; base `main`.
 - Guardrails: `just verify`; `UV_NO_SYNC=1 uv run prek run --all-files`.
-- No new dependencies, no ADR, no `hmc_mcp.api` facade export, no `HMC_*`
-  env var, no multi-value `--filter`, no `calcscore` support.
+- No new dependencies, no ADR, no `HMC_*` env var, no multi-value `--filter`,
+  no `calcscore` support. Add the two async operations to `hmc_mcp.api` and its
+  contract inventory/tests, as explicitly authorized for issue #310.
 - Both tools are read-only: `_READ_ONLY` annotations, `READ_ONLY_TOOLS`
   registry entries, rendered descriptions for every parameter.
 - Public payload keeps raw HMC keys as strings
@@ -50,10 +51,11 @@ coroutines.
 5. Commit explicit paths with
    `feat: add lsmemopt currscore SSH commands`.
 
-## Task 2: MCP tools, registration, re-exports
+## Task 2: Shared operations, facade, MCP tools, registration, re-exports
 
-**Files:** modify `src/hmc_mcp/server_lpar_config.py`,
-`src/hmc_mcp/_app.py`, `src/hmc_mcp/server.py`; extend
+**Files:** modify `src/hmc_mcp/operations_ssh_network.py`, the `hmc_mcp.api`
+facade and contract inventory/tests, `src/hmc_mcp/server_lpar_config.py`,
+`src/hmc_mcp/_app.py`, and `src/hmc_mcp/server.py`; extend
 `tests/lpar/test_memopt_score.py`.
 
 **Interfaces:**
@@ -63,14 +65,15 @@ profile: str | None = None) -> dict[str, str]` and
 lpar_name_or_uuid: str | None = None, profile: str | None = None) ->
 list[dict[str, str]]`, both `_READ_ONLY`.
 
-1. Add full-stack tests through the public tools (mock_hmc +
+1. Add operation and full-stack tests through the reusable API and public tools (mock_hmc +
    mock_uuid_resolution + patched asyncssh.connect): UUID → REST resolution,
    name pass-through, returned dicts, `none` score, unknown-LPAR
    `HMCCLIError`, list-empty `[]`.
 2. Run the focused tests plus `uv run --no-sync pytest -q
    tests/app/test_capabilities.py`; expect failures for the absent tools.
-3. Add the two `@tool(annotations=_READ_ONLY)` wrappers with exhaustive
-   Google-style Args docstrings (every parameter rendered), the two
+3. Add the shared selector-aware async operations, their facade exports and
+   contract inventory, the two `@tool(annotations=_READ_ONLY)` wrappers with
+   exhaustive Google-style Args docstrings (every parameter rendered), the two
    `READ_ONLY_TOOLS` entries, and the `server.py` re-exports.
 4. Rerun focused tests; expect green. Break one registry entry, observe the
    capability test fail, restore it, and rerun green.
@@ -83,8 +86,8 @@ list[dict[str, str]]`, both `_READ_ONLY`.
 `tests/app/test_cli_commands.py`, `README.md`.
 
 **Interfaces:** `hmc-mcp lpars memopt-score LPAR SYSTEM [--json]` and
-`hmc-mcp lpars memopt-scores SYSTEM [--lpar NAME] [--json]`, name-or-UUID
-selectors resolved with `resolve_ssh_names` before the SSH call.
+`hmc-mcp lpars memopt-scores SYSTEM [--lpar NAME] [--json]`, delegating
+name-or-UUID selector resolution to the shared operations before the SSH call.
 
 1. Add CLI wiring tests (monkeypatch `ssh_commands.run_hmc_command`):
    exit 0 with expected output for both commands, `--json` shape, exit 1 on
@@ -92,7 +95,7 @@ selectors resolved with `resolve_ssh_names` before the SSH call.
 2. Run the focused CLI tests; expect failures.
 3. Implement both commands using the `lpars` group conventions (LPAR
    argument first on the single-score command, as with `get-description`),
-   calling the Task 1 coroutines.
+   calling the Task 2 shared operations.
 4. Add two README rows to the "LPAR / system properties (SSH/CLI)" table.
 5. Rerun focused tests; expect green.
 6. Commit explicit paths with `feat: add lpars memopt-score CLI commands`.
