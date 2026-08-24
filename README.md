@@ -229,6 +229,9 @@ hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)
 hmc-mcp lpars state mylpar           # just "running", "not activated", ...
 hmc-mcp lpars summary mylpar         # one-call summary: state, RMC, memory, CPU, OS, adapters
+hmc-mcp lpars system-memopt-score sys1
+hmc-mcp lpars plan-memopt-scores sys1 --prioritize-name web --exclude-name batch
+hmc-mcp lpars plan-system-memopt-score sys1 --prioritize-id 3 --exclude-id 9 --json
 hmc-mcp lpars create web01 --system <uuid> --mem 8192 --vcpus 2
 hmc-mcp lpars modify web01 --mem 16384 --procs 2.0   # assign resources
 hmc-mcp lpars delete web01           # destroy (must be powered off)
@@ -255,6 +258,11 @@ blast-radius or provisioning summary, which is friendlier for automation than
 raw HMC payloads. Every entry is the parsed uom resource:
 `{UUID, title, link, ResourceType, Resource}` where `Resource` is the flattened
 XML (namespace-stripped, HMC bookkeeping attributes removed).
+
+The memory-affinity planning commands are read-only `lsmemopt` calculations.
+Repeat `--prioritize-name`, `--prioritize-id`, `--exclude-name`, or `--exclude-id`
+to describe a scenario, using names or IDs consistently. Calculated scores are
+predictions, not guarantees of placement, and these commands never start optimization.
 
 `hmc-mcp lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.
@@ -946,6 +954,9 @@ rejected before connecting to the HMC.
 | `hmc_set_lpar_msp`          | Set the MSP flag |
 | `hmc_get_lpar_memopt_score` | Get an LPAR's current memory-optimization score (`lsmemopt -o currscore`) |
 | `hmc_list_lpar_memopt_scores` | List memory-optimization scores for a system's LPARs |
+| `hmc_get_system_memopt_score` | Get a system's current memory-optimization score (`lsmemopt -o currscore`) |
+| `hmc_plan_lpar_memopt_scores` | Predict LPAR scores for a read-only scenario (`lsmemopt -o calcscore`) |
+| `hmc_plan_system_memopt_score` | Predict a system score for a read-only scenario (`lsmemopt -o calcscore`) |
 | `hmc_get_proc_compat_modes` | List processor compatibility modes a system supports |
 | `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
 | `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |

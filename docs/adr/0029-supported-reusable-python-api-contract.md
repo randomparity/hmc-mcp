@@ -82,7 +82,8 @@ built-in containers are not facade exports. The initial inventory is:
   and `PartitionType`; underscore helpers are internal.
 - `operations_ssh_network`: operations `list_fc_ports`, `list_sea_adapters`,
   `get_lpar_memopt_score`, `list_lpar_memopt_scores`, `set_sriov_adapter_mode`,
-  `list_vnics`, `add_vnic`, and `remove_vnic`; type `SriovMode`; no public-name
+  `get_system_memopt_score`, `plan_lpar_memopt_scores`, `plan_system_memopt_score`,
+  `list_vnics`, `add_vnic`, and `remove_vnic`; types `MemoptLparSelector` and `SriovMode`; no public-name
   exclusions.
 - `operations_storage`: operations `list_volume_groups`, `create_volume_group`,
   `create_virtual_disk`, `map_storage`, `create_media_repository`, `create_optical_media`,

@@ -54,7 +54,10 @@ from .operations_lpm import (
 )
 from .operations_ssh_network import (
     get_lpar_memopt_score,
+    get_system_memopt_score,
     list_lpar_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_system_memopt_score,
 )
 from .documents import (
     LparResources,
@@ -64,6 +67,7 @@ from .documents import (
     build_lpar_document,
 )
 from .ssh_commands import (
+    MemoptLparSelector,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
@@ -71,7 +75,37 @@ from .ssh_commands import (
     set_lpar_msp,
     set_lpar_proc_compat,
     validate_caller_token,
+    validate_memopt_scenario,
 )
+
+
+def _memopt_selectors(
+    prioritize_name: list[str] | None,
+    prioritize_id: list[int] | None,
+    exclude_name: list[str] | None,
+    exclude_id: list[int] | None,
+) -> tuple[MemoptLparSelector | None, MemoptLparSelector | None]:
+    """Build shared planning selectors and fail as CLI usage errors."""
+    prioritize_name = prioritize_name or []
+    prioritize_id = prioritize_id or []
+    exclude_name = exclude_name or []
+    exclude_id = exclude_id or []
+    try:
+        prioritized = (
+            MemoptLparSelector(tuple(prioritize_name), tuple(prioritize_id))
+            if prioritize_name or prioritize_id
+            else None
+        )
+        excluded = (
+            MemoptLparSelector(tuple(exclude_name), tuple(exclude_id))
+            if exclude_name or exclude_id
+            else None
+        )
+        validate_memopt_scenario(prioritized, excluded)
+        return prioritized, excluded
+    except ValueError as error:
+        _usage_error(str(error))
+        raise AssertionError("_usage_error must raise") from error
 
 
 def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
@@ -131,6 +165,91 @@ def lpars_memopt_scores(
             str(row.get("curr_lpar_score", "")),
         )
     console.print(table)
+
+
+@lpars_app.command("system-memopt-score")
+def lpars_system_memopt_score(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get a managed system's current memory-optimization affinity score."""
+    score = _run(lambda: get_system_memopt_score(_ssh_config(), system_name))
+    if as_json:
+        _print_json(score)
+        return
+    console.print(f"current: {score['curr_sys_score']}")
+
+
+def _run_memopt_plan(
+    operation,
+    system_name: str,
+    prioritize_name: list[str] | None,
+    prioritize_id: list[int] | None,
+    exclude_name: list[str] | None,
+    exclude_id: list[int] | None,
+):
+    prioritized, excluded = _memopt_selectors(
+        prioritize_name, prioritize_id, exclude_name, exclude_id
+    )
+    return _run(lambda: operation(_ssh_config(), system_name, prioritized, excluded))
+
+
+@lpars_app.command("plan-memopt-scores")
+def lpars_plan_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    prioritize_name: list[str] | None = typer.Option(None, "--prioritize-name"),
+    prioritize_id: list[int] | None = typer.Option(None, "--prioritize-id"),
+    exclude_name: list[str] | None = typer.Option(None, "--exclude-name"),
+    exclude_id: list[int] | None = typer.Option(None, "--exclude-id"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Predict LPAR affinity scores without applying optimization."""
+    scores = _run_memopt_plan(
+        plan_lpar_memopt_scores,
+        system_name,
+        prioritize_name,
+        prioritize_id,
+        exclude_name,
+        exclude_id,
+    )
+    if as_json:
+        _print_json(scores)
+        return
+    for score in scores:
+        console.print(
+            f"{score['lpar_name']} (id {score['lpar_id']}): "
+            f"current: {score['curr_lpar_score']}; "
+            f"predicted: {score['predicted_lpar_score']}; "
+            "prediction guaranteed: no"
+        )
+
+
+@lpars_app.command("plan-system-memopt-score")
+def lpars_plan_system_memopt_score(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    prioritize_name: list[str] | None = typer.Option(None, "--prioritize-name"),
+    prioritize_id: list[int] | None = typer.Option(None, "--prioritize-id"),
+    exclude_name: list[str] | None = typer.Option(None, "--exclude-name"),
+    exclude_id: list[int] | None = typer.Option(None, "--exclude-id"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Predict system affinity score without applying optimization."""
+    score = _run_memopt_plan(
+        plan_system_memopt_score,
+        system_name,
+        prioritize_name,
+        prioritize_id,
+        exclude_name,
+        exclude_id,
+    )
+    if as_json:
+        _print_json(score)
+        return
+    console.print(
+        f"current: {score['curr_sys_score']}; "
+        f"predicted: {score['predicted_sys_score']}; "
+        "prediction guaranteed: no"
+    )
 
 
 @lpars_app.command("summary")

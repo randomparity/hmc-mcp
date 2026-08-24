@@ -465,6 +465,39 @@ def test_a_matching_connection_with_a_withheld_target_raises_the_target_error():
         _authorize(LAB_NARROW, "hmc_delete_lpar", _delete(system="sys-2"))
 
 
+@pytest.mark.parametrize(
+    "tool",
+    ["hmc_plan_lpar_memopt_scores", "hmc_plan_system_memopt_score"],
+)
+def test_affinity_scenario_lpars_are_not_authorization_targets(tool):
+    arguments = {
+        "system_name_or_uuid": "sys-1",
+        "prioritized": {"names": ["not-in-lpar-grant"]},
+        "excluded": {"ids": [99]},
+        "profile": "lab",
+    }
+    grants = [
+        {
+            "tools": [tool, "hmc_get_lpar_memopt_score"],
+            "connections": ["lab"],
+            "targets": {"managed_system": ["sys-1"], "lpar": ["other"]},
+        }
+    ]
+
+    assert _authorize(grants, tool, arguments) is None
+    with pytest.raises(TargetScopeError):
+        _authorize(
+            [
+                {
+                    **grants[0],
+                    "targets": {"managed_system": ["sys-2"], "lpar": ["other"]},
+                }
+            ],
+            tool,
+            arguments,
+        )
+
+
 def test_the_message_selection_cannot_change_the_decision():
     """A call the split grants *do* cover is permitted, not merely mis-labelled.
 
