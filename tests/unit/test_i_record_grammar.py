@@ -212,13 +212,19 @@ def test_build_attribute_record_accepts_a_trailing_quoted_pair():
         quoted=("backing_devices",),
     )
     assert record == 'port_vlan_id=7,"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
-    ) == '"backing_devices=dev1,dev2"'
-    assert build_attribute_record(
-        [("backing_devices", "dev1"), ("port_vlan_id", 7)],
-        quoted=("backing_devices",),
-    ) == "backing_devices=dev1,port_vlan_id=7"
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1,dev2")], quoted=("backing_devices",)
+        )
+        == '"backing_devices=dev1,dev2"'
+    )
+    assert (
+        build_attribute_record(
+            [("backing_devices", "dev1"), ("port_vlan_id", 7)],
+            quoted=("backing_devices",),
+        )
+        == "backing_devices=dev1,port_vlan_id=7"
+    )
 
 
 def test_build_attribute_record_refuses_a_duplicate_across_marked_and_unmarked():
@@ -398,9 +404,7 @@ def test_sync_lpar_profile_rejects_a_hostile_lpar_name():
 
 def test_assign_profile_io_slot_rejects_a_hostile_drc_index():
     with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(
-            assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE)
-        )
+        asyncio.run(assign_profile_io_slot(_config(), "sys", "lpar1", "prof1", HOSTILE))
 
 
 def test_assign_profile_io_slot_rejects_a_hostile_profile_name():
@@ -423,7 +427,6 @@ def test_assign_profile_io_slot_rejects_a_hostile_lpar_name():
 
 BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
-
 
 
 # The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
@@ -677,9 +680,7 @@ def _selected_literals(node: ast.AST, predicate) -> list[ast.AST]:
         | _keyword_value_constants(node)
     )
     return [
-        child
-        for child in ast.walk(node)
-        if id(child) not in skip and predicate(child)
+        child for child in ast.walk(node) if id(child) not in skip and predicate(child)
     ]
 
 
@@ -735,9 +736,7 @@ def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
                 ):
                     problems.append(ast.unparse(literal))
         return problems
-    return _unguarded_payloads_for(
-        func, _is_an_a_record_literal, "-a", BUILDER_NAME
-    )
+    return _unguarded_payloads_for(func, _is_an_a_record_literal, "-a", BUILDER_NAME)
 
 
 def _unguarded_filter_values(
@@ -790,15 +789,11 @@ def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
     sites = _selected_functions(predicate)
     assert sites, f"no {label} sites found — the AST scan stopped working"
 
-    skipping = {
-        name: unguarded
-        for name, node in sites
-        if (unguarded := checker(node))
-    }
+    skipping = {name: unguarded for name, node in sites if (unguarded := checker(node))}
     assert not skipping, (
         f"these {label} payloads are not built by their shared builder: "
         f"{skipping}. shlex.quote protects the shell word only; the "
-        'grammar\'s own ",", "=" and "\"" structure needs the builder.'
+        'grammar\'s own ",", "=" and """ structure needs the builder.'
     )
 
 
@@ -868,6 +863,7 @@ def test_the_scan_finds_every_known_site():
         "read_sriov_lpar_state",
         "read_sriov_profile_ports",
         "list_fc_ports",
+        "list_lpar_memopt_scores",
         "list_sea_adapters",
         "list_vnics",
         "list_vnic_rows",

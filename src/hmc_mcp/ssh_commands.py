@@ -997,7 +997,8 @@ async def list_lpar_memopt_scores(
     if lpar_name is not None:
         if not lpar_name.strip():
             raise ValueError("lpar_name must not be empty")
-        command += f" --filter lpar_names={shlex.quote(lpar_name)}"
+        lpar_filter = build_filter([("lpar_names", lpar_name)])
+        command += f" --filter {shlex.quote(lpar_filter)}"
     output = await run_hmc_command(config, command)
     if not output.strip():
         return []
@@ -1026,12 +1027,17 @@ async def get_lpar_memopt_score(
     if not lpar_name.strip():
         raise ValueError("lpar_name must not be empty")
     rows = await list_lpar_memopt_scores(config, system_name, lpar_name)
-    if not rows:
+    if len(rows) != 1:
         raise HMCCLIError(
-            "lsmemopt reported no memory-optimization score for LPAR "
-            f"{lpar_name!r} on system {system_name!r}"
+            f"lsmemopt query for LPAR {lpar_name!r} on system {system_name!r} "
+            f"returned {len(rows)} rows; expected exactly 1"
         )
-    return rows[0]
+    row = rows[0]
+    if row["lpar_name"] != lpar_name:
+        raise HMCCLIError(
+            f"lsmemopt reported LPAR {row['lpar_name']!r}; expected {lpar_name!r}"
+        )
+    return row
 
 
 async def list_memory_pools(

@@ -106,13 +106,13 @@ def test_get_lpar_memopt_score_preserves_none_score():
 def test_get_lpar_memopt_score_quotes_selectors():
     """Names needing shell quoting are shlex-quoted in the command."""
     cfg = _config()
-    conn = _make_ssh_mock(SCORE_ROW)
+    conn = _make_ssh_mock("lpar_name=my lpar,lpar_id=1,curr_lpar_score=100")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
         asyncio.run(get_lpar_memopt_score(cfg, "sys one", "my lpar"))
 
     expected_cmd = (
-        "lsmemopt -m 'sys one' -r lpar -o currscore --filter lpar_names='my lpar'"
+        "lsmemopt -m 'sys one' -r lpar -o currscore --filter 'lpar_names=my lpar'"
     )
     conn.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
 
@@ -137,7 +137,33 @@ def test_get_lpar_memopt_score_raises_when_no_row_reported():
 
     with (
         patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
-        pytest.raises(HMCCLIError, match="no memory-optimization score"),
+        pytest.raises(HMCCLIError, match="returned 0 rows; expected exactly 1"),
+    ):
+        asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
+
+
+def test_get_lpar_memopt_score_rejects_multiple_rows():
+    """A single-LPAR query fails rather than selecting an arbitrary row."""
+    cfg = _config()
+    conn = _make_ssh_mock(MULTI_ROW)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="returned 2 rows; expected exactly 1"),
+    ):
+        asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
+
+
+def test_get_lpar_memopt_score_rejects_mismatched_row():
+    """A single-LPAR query fails when the HMC reports a different partition."""
+    cfg = _config()
+    conn = _make_ssh_mock(SECOND_ROW)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        pytest.raises(
+            HMCCLIError, match="reported LPAR 'dapurea1t'; expected 'p9da10v1t'"
+        ),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
 
@@ -228,6 +254,19 @@ def test_list_lpar_memopt_scores_rejects_empty_filter_name():
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
         with pytest.raises(ValueError, match="lpar_name"):
             asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, "  "))
+
+    conn.run.assert_not_called()
+
+
+@pytest.mark.parametrize("bad_name", ["lpar,other=1", 'lpar"', "lpar=bad"])
+def test_list_lpar_memopt_scores_rejects_filter_grammar(bad_name):
+    """HMC filter delimiters are rejected before any SSH round-trip."""
+    cfg = _config()
+    conn = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+        with pytest.raises(HMCCLIError, match="lpar_names"):
+            asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, bad_name))
 
     conn.run.assert_not_called()
 
