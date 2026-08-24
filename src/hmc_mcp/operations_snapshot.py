@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+import math
 from typing import Any
 
 from hmc_mcp.client import HMCClient
@@ -71,12 +72,36 @@ def _text(value: Any, label: str, *, optional: bool = False) -> str | None:
 
 
 def _positive_int(value: Any, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"Snapshot capture requires integer {label}")
     try:
         result = int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Snapshot capture requires integer {label}") from exc
     if result <= 0:
         raise ValueError(f"Snapshot capture requires positive {label}")
+    return result
+
+
+def _runtime_int(value: Any, label: str) -> int | None:
+    if value in (None, 0, "0"):
+        return None
+    return _positive_int(value, label)
+
+
+def _runtime_float(value: Any, label: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"Snapshot capture requires numeric {label}")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Snapshot capture requires numeric {label}") from exc
+    if result == 0:
+        return None
+    if not math.isfinite(result) or result < 0:
+        raise ValueError(f"Snapshot capture requires positive finite {label} or zero")
     return result
 
 
@@ -95,9 +120,9 @@ def _placement(resource: dict[str, Any]) -> dict[str, object]:
         "state": _text(resource.get("PartitionState"), "LPAR state"),
         "rmc_state": _text(resource.get("ResourceMonitoringControlState"), "RMC state", optional=True),
         "processor_mode": mode,
-        "current_memory_mib": _positive_int(memory, "current memory") if memory is not None else None,
-        "current_processor_units": float(units) if units is not None else None,
-        "dedicated_processors": _positive_int(dedicated, "dedicated processors") if dedicated is not None else None,
+        "current_memory_mib": _runtime_int(memory, "current memory"),
+        "current_processor_units": _runtime_float(units, "current processor units"),
+        "dedicated_processors": _runtime_int(dedicated, "dedicated processors"),
     }
 
 

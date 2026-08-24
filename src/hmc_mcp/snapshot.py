@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import stat
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,9 @@ MAX_SNAPSHOT_BYTES = 1024 * 1024
 PROFILE_MEDIA_TYPE = "text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"
 PLACEMENT_MEDIA_TYPE = "application/vnd.hmc-mcp.runtime-placement+json;version=1"
 SCORES_MEDIA_TYPE = "application/vnd.hmc-mcp.affinity-scores+json;version=1"
+_RFC3339 = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
 
 
 class SnapshotValidationError(ValueError):
@@ -46,12 +50,32 @@ class HmcIdentity(_Value):
     name: str | None
     version: str | None
 
+    @field_validator("uuid")
+    @classmethod
+    def nonblank_uuid(cls, value: str) -> str:
+        return _nonblank(value)
+
+    @field_validator("name", "version")
+    @classmethod
+    def nonblank_optional(cls, value: str | None) -> str | None:
+        return _nonblank(value) if value is not None else None
+
 
 class SystemIdentity(_Value):
     uuid: str = Field(min_length=1)
     name: str | None
     machine_type_model: str = Field(min_length=1)
     serial: str = Field(min_length=1)
+
+    @field_validator("uuid", "machine_type_model", "serial")
+    @classmethod
+    def nonblank_required(cls, value: str) -> str:
+        return _nonblank(value)
+
+    @field_validator("name")
+    @classmethod
+    def nonblank_name(cls, value: str | None) -> str | None:
+        return _nonblank(value) if value is not None else None
 
 
 class LparIdentity(_Value):
@@ -62,9 +86,7 @@ class LparIdentity(_Value):
     @field_validator("uuid", "name")
     @classmethod
     def nonblank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("identity must not be blank")
-        return value
+        return _nonblank(value)
 
 
 class SnapshotSource(_Value):
@@ -225,6 +247,12 @@ def _pointer(location: tuple[Any, ...]) -> str:
     )
 
 
+def _nonblank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("identity must not be blank")
+    return value
+
+
 def _error(
     pointer: str, rule: str, correction: str = "correct the snapshot document"
 ) -> NoReturn:
@@ -311,7 +339,12 @@ def _load(text: str) -> Any:
     _bounded(text)
     try:
         _DuplicateScanner(text).scan()
-        return json.loads(text)
+        return json.loads(
+            text,
+            parse_constant=lambda value: _error(
+                "/", f"non-standard JSON constant {value} is not permitted"
+            ),
+        )
     except SnapshotValidationError:
         raise
     except json.JSONDecodeError as exc:
@@ -397,6 +430,8 @@ def parse_snapshot(text: str) -> LparSnapshot:
         prepared = dict(value)
         captured = prepared.get("captured_at")
         if isinstance(captured, str):
+            if _RFC3339.fullmatch(captured) is None:
+                _error("/captured_at", "timestamp must use RFC 3339 syntax")
             try:
                 prepared["captured_at"] = datetime.fromisoformat(
                     captured.replace("Z", "+00:00")
@@ -411,6 +446,11 @@ def parse_snapshot(text: str) -> LparSnapshot:
             prepared["observations"] = dict(observations)
             observed = observations.get("observed_at")
             if isinstance(observed, str):
+                if _RFC3339.fullmatch(observed) is None:
+                    _error(
+                        "/observations/observed_at",
+                        "timestamp must use RFC 3339 syntax",
+                    )
                 try:
                     prepared["observations"]["observed_at"] = datetime.fromisoformat(
                         observed.replace("Z", "+00:00")
@@ -434,12 +474,16 @@ def parse_snapshot(text: str) -> LparSnapshot:
 
 def serialize_snapshot(snapshot: LparSnapshot) -> str:
     """Serialize a validated snapshot as deterministic UTF-8 JSON text."""
-    text = json.dumps(
-        snapshot.model_dump(mode="json", exclude_none=True),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=False,
-    )
+    try:
+        text = json.dumps(
+            snapshot.model_dump(mode="json", exclude_none=True),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=False,
+            allow_nan=False,
+        )
+    except ValueError:
+        _error("/", "snapshot contains a non-finite JSON number")
     _bounded(text)
     return text
 

@@ -134,6 +134,30 @@ def test_numeric_strings_are_not_coerced() -> None:
         parse_snapshot(json.dumps(document))
 
 
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_nonstandard_json_constants_are_rejected(constant: str) -> None:
+    with pytest.raises(SnapshotValidationError, match="non-standard JSON constant"):
+        inspect_snapshot(
+            '{"format":"hmc-mcp.lpar-snapshot","version":1,"value":'
+            + constant
+            + "}"
+        )
+
+
+def test_required_source_identities_reject_whitespace() -> None:
+    document = _document()
+    document["source"]["system"]["serial"] = " "
+    with pytest.raises(SnapshotValidationError, match="/source/system/serial"):
+        parse_snapshot(json.dumps(document))
+
+
+def test_timestamp_requires_rfc3339_separator_and_offset() -> None:
+    document = _document()
+    document["captured_at"] = "2026-08-24 20:00:01+00:00"
+    with pytest.raises(SnapshotValidationError, match="/captured_at"):
+        parse_snapshot(json.dumps(document))
+
+
 def test_serializer_enforces_reader_size_limit() -> None:
     document = _document()
     document["configuration"]["native"]["data"] += ",padding=" + ("x" * 1_048_576)

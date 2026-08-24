@@ -6,6 +6,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_snapshot import capture_lpar_snapshot
+from hmc_mcp.operations_snapshot import _placement
 from hmc_mcp.operations_ssh_network import ResourceGroupAffinityResult
 from hmc_mcp.ssh_commands import MemoptResourceGroupSelector
 
@@ -48,3 +49,34 @@ async def test_capture_propagates_observation_failure(monkeypatch) -> None:
     monkeypatch.setattr("hmc_mcp.operations_snapshot.get_lpar_memopt_score", AsyncMock(side_effect=TimeoutError("timed out")))
     with pytest.raises(TimeoutError, match="timed out"):
         await capture_lpar_snapshot(hmc, HMCConfig(host="h", user="u", password="p", _env_file=None), "sys", "aix", "default")
+
+
+def test_placement_maps_inactive_zero_allocations_to_null() -> None:
+    assert _placement(
+        {
+            "PartitionState": "not activated",
+            "HasDedicatedProcessors": "false",
+            "CurrentMemory": "0",
+            "CurrentProcessingUnits": "0.0",
+        }
+    ) == {
+        "state": "not activated",
+        "rmc_state": None,
+        "processor_mode": "shared",
+        "current_memory_mib": None,
+        "current_processor_units": None,
+        "dedicated_processors": None,
+    }
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-1"])
+def test_placement_rejects_invalid_processor_units(value: str) -> None:
+    with pytest.raises(ValueError, match="positive finite"):
+        _placement(
+            {
+                "PartitionState": "running",
+                "HasDedicatedProcessors": "false",
+                "CurrentMemory": "1024",
+                "CurrentProcessingUnits": value,
+            }
+        )
