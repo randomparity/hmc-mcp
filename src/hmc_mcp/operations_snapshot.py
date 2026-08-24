@@ -81,7 +81,13 @@ def _positive_int(value: Any, label: str) -> int:
 
 
 def _placement(resource: dict[str, Any]) -> dict[str, object]:
-    mode = "dedicated" if resource.get("HasDedicatedProcessors") is True else "shared"
+    dedicated_value = resource.get("HasDedicatedProcessors")
+    if dedicated_value in (True, "true"):
+        mode = "dedicated"
+    elif dedicated_value in (False, "false"):
+        mode = "shared"
+    else:
+        raise ValueError("Snapshot capture requires true/false HasDedicatedProcessors")
     memory = resource.get("CurrentMemory")
     units = resource.get("CurrentProcessingUnits") if mode == "shared" else None
     dedicated = resource.get("DedicatedProcessors") if mode == "dedicated" else None
@@ -129,13 +135,20 @@ async def capture_lpar_snapshot(
     predicted_system = await plan_system_memopt_score(config, system_name)
     current_groups = await list_resource_group_memopt_scores(config, system_name)
     predicted_groups = await plan_resource_group_memopt_scores(config, system_name)
-    mtms = _text(
-        system_resource.get("MachineTypeModelSerialNumber"), "system MTMS"
-    )
-    assert isinstance(mtms, str)
-    if "*" not in mtms:
-        raise ValueError("Snapshot capture requires system MTMS in type-model*serial form")
-    machine_type_model, serial = mtms.split("*", 1)
+    mtms = system_resource.get("MachineTypeModelSerialNumber")
+    if isinstance(mtms, dict):
+        machine_type = _text(mtms.get("MachineType"), "system machine type")
+        model = _text(mtms.get("Model"), "system model")
+        serial = _text(mtms.get("SerialNumber"), "system serial")
+        assert isinstance(machine_type, str) and isinstance(model, str)
+        assert isinstance(serial, str)
+        machine_type_model = f"{machine_type}-{model}"
+    else:
+        mtms_text = _text(mtms, "system MTMS")
+        assert isinstance(mtms_text, str)
+        if "*" not in mtms_text:
+            raise ValueError("Snapshot capture requires system MTMS in type-model*serial form")
+        machine_type_model, serial = mtms_text.split("*", 1)
     hmc_uuid = _text(console.get("UUID") if console else None, "HMC UUID")
     system_id = _text(system.get("UUID") if system else None, "system UUID")
     lpar_id = _text(lpar.get("UUID") if lpar else None, "LPAR UUID")

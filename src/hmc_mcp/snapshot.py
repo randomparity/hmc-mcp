@@ -38,7 +38,7 @@ class SnapshotValidationError(ValueError):
 
 
 class _Value(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class HmcIdentity(_Value):
@@ -236,19 +236,82 @@ def _bounded(text: str) -> None:
         _error("/", "document exceeds 1 MiB", "provide a snapshot no larger than 1 MiB")
 
 
-def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            _error(f"/{key.replace('~', '~0').replace('/', '~1')}", "duplicate JSON member")
-        result[key] = value
-    return result
+class _DuplicateScanner:
+    def __init__(self, text: str):
+        self.text = text
+        self.decoder = json.JSONDecoder()
+
+    def scan(self) -> None:
+        end = self._value(0, ())
+        if self.text[end:].strip():
+            return
+
+    def _space(self, index: int) -> int:
+        while index < len(self.text) and self.text[index].isspace():
+            index += 1
+        return index
+
+    def _value(self, index: int, path: tuple[Any, ...]) -> int:
+        index = self._space(index)
+        if index >= len(self.text):
+            return index
+        if self.text[index] == "{":
+            return self._object(index, path)
+        if self.text[index] == "[":
+            return self._array(index, path)
+        try:
+            _, end = self.decoder.raw_decode(self.text, index)
+        except json.JSONDecodeError:
+            return len(self.text)
+        return end
+
+    def _object(self, index: int, path: tuple[Any, ...]) -> int:
+        index = self._space(index + 1)
+        keys: set[str] = set()
+        if index < len(self.text) and self.text[index] == "}":
+            return index + 1
+        while index < len(self.text):
+            try:
+                key, end = self.decoder.raw_decode(self.text, index)
+            except json.JSONDecodeError:
+                return len(self.text)
+            if not isinstance(key, str):
+                return len(self.text)
+            if key in keys:
+                _error(_pointer((*path, key)), "duplicate JSON member")
+            keys.add(key)
+            index = self._space(end)
+            if index >= len(self.text) or self.text[index] != ":":
+                return len(self.text)
+            index = self._space(self._value(index + 1, (*path, key)))
+            if index < len(self.text) and self.text[index] == "}":
+                return index + 1
+            if index >= len(self.text) or self.text[index] != ",":
+                return len(self.text)
+            index = self._space(index + 1)
+        return index
+
+    def _array(self, index: int, path: tuple[Any, ...]) -> int:
+        index = self._space(index + 1)
+        offset = 0
+        if index < len(self.text) and self.text[index] == "]":
+            return index + 1
+        while index < len(self.text):
+            index = self._space(self._value(index, (*path, offset)))
+            if index < len(self.text) and self.text[index] == "]":
+                return index + 1
+            if index >= len(self.text) or self.text[index] != ",":
+                return len(self.text)
+            index = self._space(index + 1)
+            offset += 1
+        return index
 
 
 def _load(text: str) -> Any:
     _bounded(text)
     try:
-        return json.loads(text, object_pairs_hook=_pairs)
+        _DuplicateScanner(text).scan()
+        return json.loads(text)
     except SnapshotValidationError:
         raise
     except json.JSONDecodeError as exc:
@@ -331,7 +394,33 @@ def parse_snapshot(text: str) -> LparSnapshot:
     if not isinstance(value, dict):
         _error("/", "snapshot root must be an object")
     try:
-        return LparSnapshot.model_validate(value)
+        prepared = dict(value)
+        captured = prepared.get("captured_at")
+        if isinstance(captured, str):
+            try:
+                prepared["captured_at"] = datetime.fromisoformat(
+                    captured.replace("Z", "+00:00")
+                )
+            except ValueError:
+                _error("/captured_at", "timestamp must be valid RFC 3339")
+        capabilities = prepared.get("capabilities")
+        if isinstance(capabilities, list):
+            prepared["capabilities"] = tuple(capabilities)
+        observations = prepared.get("observations")
+        if isinstance(observations, dict):
+            prepared["observations"] = dict(observations)
+            observed = observations.get("observed_at")
+            if isinstance(observed, str):
+                try:
+                    prepared["observations"]["observed_at"] = datetime.fromisoformat(
+                        observed.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    _error(
+                        "/observations/observed_at",
+                        "timestamp must be valid RFC 3339",
+                    )
+        return LparSnapshot.model_validate(prepared)
     except ValidationError as exc:
         item = exc.errors(include_input=False)[0]
         message = item["msg"]
@@ -345,12 +434,14 @@ def parse_snapshot(text: str) -> LparSnapshot:
 
 def serialize_snapshot(snapshot: LparSnapshot) -> str:
     """Serialize a validated snapshot as deterministic UTF-8 JSON text."""
-    return json.dumps(
+    text = json.dumps(
         snapshot.model_dump(mode="json", exclude_none=True),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=False,
     )
+    _bounded(text)
+    return text
 
 
 def read_snapshot(path: Path) -> LparSnapshot:

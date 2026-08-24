@@ -19,8 +19,8 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
     hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {"UUID": "hmc-1", "Resource": {"HostName": "hmc", "Version": "V11R1M1110"}}
-    hmc.get_managed_system.return_value = {"UUID": "sys-1", "Resource": {"SystemName": "sys", "MachineTypeModelSerialNumber": "9080-HEX*ABC"}}
-    hmc.get_logical_partition.return_value = {"UUID": "lpar-1", "Resource": {"PartitionName": "aix", "PartitionID": 7, "PartitionState": "running", "ResourceMonitoringControlState": "active", "CurrentMemory": 8192, "CurrentProcessingUnits": 1.0, "HasDedicatedProcessors": False}}
+    hmc.get_managed_system.return_value = {"UUID": "sys-1", "Resource": {"SystemName": "sys", "MachineTypeModelSerialNumber": {"MachineType": "9080", "Model": "HEX", "SerialNumber": "ABC"}}}
+    hmc.get_logical_partition.return_value = {"UUID": "lpar-1", "Resource": {"PartitionName": "aix", "PartitionID": 7, "PartitionState": "running", "ResourceMonitoringControlState": "active", "CurrentMemory": 8192, "CurrentProcessingUnits": 1.0, "HasDedicatedProcessors": "false"}}
     monkeypatch.setattr("hmc_mcp.operations_snapshot.read_lpar_profile_record", AsyncMock(return_value=PROFILE))
     monkeypatch.setattr("hmc_mcp.operations_snapshot.get_lpar_memopt_score", AsyncMock(return_value={"curr_lpar_score": "95"}))
     monkeypatch.setattr("hmc_mcp.operations_snapshot.get_system_memopt_score", AsyncMock(return_value={"curr_sys_score": "90"}))

@@ -118,6 +118,41 @@ def test_duplicate_members_are_rejected() -> None:
         parse_snapshot('{"format":"hmc-mcp.lpar-snapshot","version":1,"version":1}')
 
 
+def test_nested_duplicate_reports_full_pointer() -> None:
+    text = serialize_snapshot(parse_snapshot(json.dumps(_document())))
+    text = text.replace('"minimum":4096', '"minimum":4096,"minimum":4096', 1)
+    with pytest.raises(
+        SnapshotValidationError, match=r"/configuration/normalized/memory_mib/minimum"
+    ):
+        parse_snapshot(text)
+
+
+def test_numeric_strings_are_not_coerced() -> None:
+    document = _document()
+    document["source"]["lpar"]["partition_id"] = "7"
+    with pytest.raises(SnapshotValidationError, match="/source/lpar/partition_id"):
+        parse_snapshot(json.dumps(document))
+
+
+def test_serializer_enforces_reader_size_limit() -> None:
+    document = _document()
+    document["configuration"]["native"]["data"] += ",padding=" + ("x" * 1_048_576)
+    snapshot = parse_snapshot(json.dumps(_document()))
+    oversized = snapshot.model_copy(
+        update={
+            "configuration": snapshot.configuration.model_copy(
+                update={
+                    "native": snapshot.configuration.native.model_copy(
+                        update={"data": document["configuration"]["native"]["data"]}
+                    )
+                }
+            )
+        }
+    )
+    with pytest.raises(SnapshotValidationError, match="1 MiB"):
+        serialize_snapshot(oversized)
+
+
 def test_native_profile_never_appears_in_diagnostic() -> None:
     document = _document()
     secret = document["configuration"]["native"]["data"]
@@ -137,4 +172,3 @@ def test_inspection_identifies_unsupported_version_without_validation() -> None:
 def test_raw_text_limit_is_utf8_bytes() -> None:
     with pytest.raises(SnapshotValidationError, match="1 MiB"):
         inspect_snapshot('"' + ("é" * 524_288) + '"')
-
