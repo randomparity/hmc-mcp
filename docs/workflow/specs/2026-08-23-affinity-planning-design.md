@@ -93,8 +93,10 @@ scores because that would misstate capability.
 
 The added boundary is user-controlled selector data entering an SSH command. Authenticated MCP and
 local CLI callers are untrusted with respect to command structure. The selector type validates
-scalar form and rejects delimiters/control characters, and the command builder shell-quotes the
-joined value. Existing access-policy target authorization continues to constrain MCP system/LPAR
+scalar form and rejects delimiters/control characters. It also caps each aggregate encoded selector
+at 4096 UTF-8 bytes as a conservative package request-safety ceiling for the remote command budget;
+this is not an assertion about an HMC capability. The command builder shell-quotes the joined value.
+Existing access-policy target authorization continues to constrain MCP system/LPAR
 operations, and existing SSH configuration owns credentials and host trust. HMC output is untrusted
 structured text: the existing parser plus required-field and cardinality checks prevents malformed
 responses from becoming valid results. Threats in HMC firmware, credential provisioning, and

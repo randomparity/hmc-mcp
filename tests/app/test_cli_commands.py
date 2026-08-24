@@ -2362,6 +2362,28 @@ def test_affinity_planning_cli_rejects_mixed_selector_forms(monkeypatch):
     assert called is False
 
 
+def test_affinity_planning_cli_rejects_oversized_selector_before_operation(
+    monkeypatch,
+):
+    operation = AsyncMock()
+    monkeypatch.setattr(cli_lpars, "plan_lpar_memopt_scores", operation)
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-memopt-scores",
+            "sys1",
+            "--prioritize-name",
+            "a" * 4097,
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "names exceed 4096 UTF-8 bytes" in result.output
+    operation.assert_not_awaited()
+
+
 def test_affinity_planning_cli_rejects_overlapping_selectors(monkeypatch):
     called = False
 

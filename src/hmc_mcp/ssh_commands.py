@@ -18,6 +18,18 @@ from .config import HMCConfig
 from .documents import LparResources
 from .ssh import HMCCLIError, run_hmc_command
 
+_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
+
+
+def _validate_memopt_selector_size(field_name: str, values: Sequence[str]) -> None:
+    """Bound one encoded selector field to the package's remote-command budget."""
+    encoded_size = len(",".join(values).encode("utf-8"))
+    if encoded_size > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES:
+        raise ValueError(
+            f"memopt LPAR selector {field_name} exceed "
+            f"{_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES} UTF-8 bytes"
+        )
+
 
 @dataclass(frozen=True)
 class MemoptLparSelector:
@@ -55,6 +67,7 @@ class MemoptLparSelector:
                 raise ValueError(
                     "memopt LPAR selector names must not contain duplicates"
                 )
+            _validate_memopt_selector_size("names", self.names)
         if self.ids:
             if any(
                 not isinstance(lpar_id, int)
@@ -65,6 +78,7 @@ class MemoptLparSelector:
                 raise ValueError("memopt LPAR selector ids must be positive integers")
             if len(set(self.ids)) != len(self.ids):
                 raise ValueError("memopt LPAR selector ids must not contain duplicates")
+            _validate_memopt_selector_size("ids", tuple(map(str, self.ids)))
 
 
 def validate_memopt_scenario(

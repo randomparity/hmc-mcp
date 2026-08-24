@@ -8,9 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from hmc_mcp import server_lpar_config
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.operations_ssh_network import (
     get_system_memopt_score as get_system_memopt_score_operation,
     plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
@@ -23,6 +27,7 @@ from hmc_mcp.ssh_commands import (
     plan_lpar_memopt_scores,
     plan_system_memopt_score,
 )
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
 SYSTEM = "p10-system"
 LPAR_ROWS = (
@@ -210,6 +215,76 @@ def test_selector_accepts_one_representation_and_is_frozen():
     assert ids.ids == (1, 42)
     with pytest.raises(FrozenInstanceError):
         names.names = ("changed",)  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("size", [4095, 4096])
+def test_selector_accepts_names_at_or_below_package_safety_ceiling(size):
+    selector = MemoptLparSelector(names=("a" * size,))
+
+    assert len(",".join(selector.names).encode("utf-8")) == size
+
+
+def test_selector_rejects_aggregate_names_above_package_safety_ceiling():
+    names = ("a" * 2048, "é" * 1024, "b")
+
+    with pytest.raises(
+        ValueError,
+        match=r"memopt LPAR selector names exceed 4096 UTF-8 bytes",
+    ):
+        MemoptLparSelector(names=names)
+
+
+@pytest.mark.parametrize("size", [4095, 4096])
+def test_selector_accepts_ids_at_or_below_package_safety_ceiling(size):
+    selector = MemoptLparSelector(ids=(10 ** (size - 1),))
+
+    assert len(",".join(map(str, selector.ids)).encode("utf-8")) == size
+
+
+def test_selector_rejects_aggregate_ids_above_package_safety_ceiling():
+    ids = (10**2047, 2 * 10**2047)
+
+    with pytest.raises(
+        ValueError,
+        match=r"memopt LPAR selector ids exceed 4096 UTF-8 bytes",
+    ):
+        MemoptLparSelector(ids=ids)
+
+
+def test_oversized_selector_is_rejected_before_resolution_or_transport():
+    resolve = AsyncMock()
+
+    with patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve):
+        with pytest.raises(ValueError, match="names exceed 4096 UTF-8 bytes"):
+            asyncio.run(
+                plan_lpar_memopt_scores_operation(
+                    _config(), SYSTEM, MemoptLparSelector(names=("a" * 4097,))
+                )
+            )
+
+    resolve.assert_not_awaited()
+
+
+def test_mcp_rejects_oversized_selector_before_shared_operation():
+    operation = AsyncMock()
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+    application = create_mcp(policy)
+
+    async def call_tool():
+        async with Client(application) as client:
+            return await client.call_tool(
+                "hmc_plan_lpar_memopt_scores",
+                {
+                    "system_name_or_uuid": SYSTEM,
+                    "prioritized": {"names": ["a" * 4097]},
+                },
+            )
+
+    with patch.object(server_lpar_config, "plan_lpar_memopt_scores", operation):
+        with pytest.raises(ToolError, match="names exceed 4096 UTF-8 bytes"):
+            asyncio.run(call_tool())
+
+    operation.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
