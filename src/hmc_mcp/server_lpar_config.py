@@ -21,9 +21,10 @@ from .ssh_commands import (
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
-    validate_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
+    validate_lpar_description,
+    validate_memopt_scenario,
 )
 from .operations_lpar import set_lpar_ownership_description
 from typing import Literal
@@ -129,6 +130,7 @@ def hmc_plan_lpar_memopt_scores(
         excluded: Optional LPAR names or IDs to exclude from the scenario.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+    validate_memopt_scenario(prioritized, excluded)
     return _run(
         lambda: plan_lpar_memopt_scores(
             build_config(profile=profile),
@@ -154,6 +156,7 @@ def hmc_plan_system_memopt_score(
         excluded: Optional LPAR names or IDs to exclude from the scenario.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
+    validate_memopt_scenario(prioritized, excluded)
     return _run(
         lambda: plan_system_memopt_score(
             build_config(profile=profile),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 from dataclasses import FrozenInstanceError
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,6 +27,7 @@ from hmc_mcp.ssh_commands import (
     get_system_memopt_score,
     plan_lpar_memopt_scores,
     plan_system_memopt_score,
+    validate_memopt_scenario,
 )
 from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
@@ -217,56 +219,42 @@ def test_selector_accepts_one_representation_and_is_frozen():
         names.names = ("changed",)  # type: ignore[misc]
 
 
-@pytest.mark.parametrize("size", [4095, 4096])
-def test_selector_accepts_names_at_or_below_package_safety_ceiling(size):
-    selector = MemoptLparSelector(names=("a" * size,))
-
-    assert len(",".join(selector.names).encode("utf-8")) == size
-
-
-def test_selector_rejects_aggregate_names_above_package_safety_ceiling():
-    names = ("a" * 2048, "é" * 1024, "b")
-
-    with pytest.raises(
-        ValueError,
-        match=r"memopt LPAR selector names exceed 4096 UTF-8 bytes",
-    ):
-        MemoptLparSelector(names=names)
+def _quote_heavy_dual_selector_package(extra_byte: bool = False):
+    prioritized = MemoptLparSelector(names=("'" * 400 + "a" * 42,))
+    excluded = MemoptLparSelector(names=("'" * 400 + "b" * (42 + extra_byte),))
+    package = (
+        f" -p {shlex.quote(prioritized.names[0])} -x {shlex.quote(excluded.names[0])}"
+    )
+    return prioritized, excluded, package
 
 
-@pytest.mark.parametrize("size", [4095, 4096])
-def test_selector_accepts_ids_at_or_below_package_safety_ceiling(size):
-    selector = MemoptLparSelector(ids=(10 ** (size - 1),))
+def test_selector_package_accepts_exact_quoted_aggregate_safety_ceiling():
+    prioritized, excluded, package = _quote_heavy_dual_selector_package()
 
-    assert len(",".join(map(str, selector.ids)).encode("utf-8")) == size
+    validate_memopt_scenario(prioritized, excluded)
 
-
-def test_selector_rejects_aggregate_ids_above_package_safety_ceiling():
-    ids = (10**2047, 2 * 10**2047)
-
-    with pytest.raises(
-        ValueError,
-        match=r"memopt LPAR selector ids exceed 4096 UTF-8 bytes",
-    ):
-        MemoptLparSelector(ids=ids)
+    assert len(package.encode("utf-8")) == 4096
 
 
 def test_oversized_selector_is_rejected_before_resolution_or_transport():
     resolve = AsyncMock()
+    prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
 
     with patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve):
-        with pytest.raises(ValueError, match="names exceed 4096 UTF-8 bytes"):
+        with pytest.raises(ValueError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(
                 plan_lpar_memopt_scores_operation(
-                    _config(), SYSTEM, MemoptLparSelector(names=("a" * 4097,))
+                    _config(), SYSTEM, prioritized, excluded
                 )
             )
 
+    assert len(package.encode("utf-8")) == 4097
     resolve.assert_not_awaited()
 
 
 def test_mcp_rejects_oversized_selector_before_shared_operation():
     operation = AsyncMock()
+    prioritized, excluded, package = _quote_heavy_dual_selector_package(extra_byte=True)
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
     application = create_mcp(policy)
 
@@ -276,14 +264,16 @@ def test_mcp_rejects_oversized_selector_before_shared_operation():
                 "hmc_plan_lpar_memopt_scores",
                 {
                     "system_name_or_uuid": SYSTEM,
-                    "prioritized": {"names": ["a" * 4097]},
+                    "prioritized": {"names": list(prioritized.names)},
+                    "excluded": {"names": list(excluded.names)},
                 },
             )
 
     with patch.object(server_lpar_config, "plan_lpar_memopt_scores", operation):
-        with pytest.raises(ToolError, match="names exceed 4096 UTF-8 bytes"):
+        with pytest.raises(ToolError, match="option package exceeds 4096 UTF-8 bytes"):
             asyncio.run(call_tool())
 
+    assert len(package.encode("utf-8")) == 4097
     operation.assert_not_awaited()
 
 

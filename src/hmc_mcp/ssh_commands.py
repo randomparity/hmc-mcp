@@ -21,16 +21,6 @@ from .ssh import HMCCLIError, run_hmc_command
 _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
 
 
-def _validate_memopt_selector_size(field_name: str, values: Sequence[str]) -> None:
-    """Bound one encoded selector field to the package's remote-command budget."""
-    encoded_size = len(",".join(values).encode("utf-8"))
-    if encoded_size > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES:
-        raise ValueError(
-            f"memopt LPAR selector {field_name} exceed "
-            f"{_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES} UTF-8 bytes"
-        )
-
-
 @dataclass(frozen=True)
 class MemoptLparSelector:
     """Select LPARs by name or ID for an affinity-planning scenario."""
@@ -67,7 +57,6 @@ class MemoptLparSelector:
                 raise ValueError(
                     "memopt LPAR selector names must not contain duplicates"
                 )
-            _validate_memopt_selector_size("names", self.names)
         if self.ids:
             if any(
                 not isinstance(lpar_id, int)
@@ -78,7 +67,6 @@ class MemoptLparSelector:
                 raise ValueError("memopt LPAR selector ids must be positive integers")
             if len(set(self.ids)) != len(self.ids):
                 raise ValueError("memopt LPAR selector ids must not contain duplicates")
-            _validate_memopt_selector_size("ids", tuple(map(str, self.ids)))
 
 
 def validate_memopt_scenario(
@@ -86,16 +74,28 @@ def validate_memopt_scenario(
     excluded: MemoptLparSelector | None,
 ) -> None:
     """Validate relationships between affinity-planning selectors."""
-    if prioritized is None or excluded is None:
-        return
-    if bool(prioritized.names) != bool(excluded.names):
+    if (
+        prioritized is not None
+        and excluded is not None
+        and bool(prioritized.names) != bool(excluded.names)
+    ):
         raise ValueError(
             "prioritized and excluded selectors must use the same representation"
         )
-    prioritized_values = prioritized.names or prioritized.ids
-    excluded_values = excluded.names or excluded.ids
-    if set(prioritized_values) & set(excluded_values):
+    prioritized_values = (prioritized.names or prioritized.ids) if prioritized else ()
+    excluded_values = (excluded.names or excluded.ids) if excluded else ()
+    if (
+        prioritized is not None
+        and excluded is not None
+        and (set(prioritized_values) & set(excluded_values))
+    ):
         raise ValueError("prioritized and excluded selectors must not overlap")
+    option_package = _render_memopt_selector_options(prioritized, excluded)
+    if len(option_package.encode("utf-8")) > _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES:
+        raise ValueError(
+            "memopt LPAR selector option package exceeds "
+            f"{_MEMOPT_SELECTOR_SAFETY_CEILING_BYTES} UTF-8 bytes"
+        )
 
 
 # ---------------------------------------------------------------------- #
@@ -1133,13 +1133,11 @@ async def get_lpar_memopt_score(
     return rows[0]
 
 
-def _memopt_selector_options(
+def _render_memopt_selector_options(
     prioritized: MemoptLparSelector | None,
     excluded: MemoptLparSelector | None,
 ) -> str:
-    """Validate a planning scenario and render its fixed selector options."""
-    validate_memopt_scenario(prioritized, excluded)
-
+    """Render a planning scenario's fixed selector-option package."""
     options: list[str] = []
     for selector, name_flag, id_flag in (
         (prioritized, "-p", "--id"),
@@ -1152,6 +1150,15 @@ def _memopt_selector_options(
         rendered = shlex.quote(",".join(str(value) for value in values))
         options.append(f" {flag} {rendered}")
     return "".join(options)
+
+
+def _memopt_selector_options(
+    prioritized: MemoptLparSelector | None,
+    excluded: MemoptLparSelector | None,
+) -> str:
+    """Validate a planning scenario and render its fixed selector options."""
+    validate_memopt_scenario(prioritized, excluded)
+    return _render_memopt_selector_options(prioritized, excluded)
 
 
 def _validated_memopt_rows(

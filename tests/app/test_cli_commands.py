@@ -2375,12 +2375,14 @@ def test_affinity_planning_cli_rejects_oversized_selector_before_operation(
             "plan-memopt-scores",
             "sys1",
             "--prioritize-name",
-            "a" * 4097,
+            "'" * 400 + "a" * 42,
+            "--exclude-name",
+            "'" * 400 + "b" * 43,
         ],
     )
 
     assert result.exit_code == 2
-    assert "names exceed 4096 UTF-8 bytes" in result.output
+    assert "option package exceeds 4096 UTF-8 bytes" in result.output
     operation.assert_not_awaited()
 
 
