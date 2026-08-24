@@ -161,6 +161,22 @@ def test_noncapability_failure_propagates():
             )
 
 
+def test_error_that_only_mentions_hsclca00_propagates():
+    runner = AsyncMock(
+        side_effect=[V11, HMCCLIError("diagnostic says HSCLCA00 was not returned")]
+    )
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", runner):
+        with pytest.raises(HMCCLIError, match="was not returned"):
+            asyncio.run(
+                query_resource_group_memopt_scores(
+                    _config(),
+                    "system",
+                    MemoptResourceGroupSelector(all=True),
+                    calculated=False,
+                )
+            )
+
+
 @pytest.mark.parametrize(
     "output", ["", " \n", "resource_group_name,resource_group_id,curr_score\n"]
 )

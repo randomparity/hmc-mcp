@@ -33,6 +33,7 @@ _RESOURCE_GROUP_CALCULATED_FIELDS = (
     "protected_lpar_names",
     "protected_lpar_ids",
 )
+_HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
 
 
 @dataclass(frozen=True)
@@ -192,7 +193,8 @@ async def query_resource_group_memopt_scores(
     try:
         output = await run_hmc_command(config, command)
     except HMCCLIError as error:
-        if "HSCLCA00" not in str(error):
+        match = _HMC_ERROR_CODE.search(str(error))
+        if match is None or match.group(1) != "HSCLCA00":
             raise
         return ResourceGroupMemoptQuery(
             [],
