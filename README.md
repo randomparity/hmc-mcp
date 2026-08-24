@@ -264,6 +264,19 @@ Repeat `--prioritize-name`, `--prioritize-id`, `--exclude-name`, or `--exclude-i
 to describe a scenario, using names or IDs consistently. Calculated scores are
 predictions, not guarantees of placement, and these commands never start optimization.
 
+Portable snapshots capture one named LPAR profile together with source identity and separate
+timestamped placement and affinity observations:
+
+```bash
+hmc-mcp snapshot capture sys1 aix1 default --output aix1.snapshot.json
+hmc-mcp snapshot validate aix1.snapshot.json
+hmc-mcp snapshot inspect aix1.snapshot.json
+```
+
+Capture refuses to overwrite an existing local file. Validation and inspection are local and
+perform no HMC I/O. Snapshots do not expose a replay command; observation data is diagnostic and
+never part of the replayable profile configuration.
+
 `hmc-mcp lpars decommission` enforces the ADR 0011 ownership token even for
 `--dry-run`; use `--ownership-override` only after explicit operator approval.
 

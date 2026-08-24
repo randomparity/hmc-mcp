@@ -1823,7 +1823,9 @@ async def read_lpar_profile_record(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> str:
     """Read exactly one native LPAR profile attribute record."""
-    filters = f"lpar_names={lpar_name},profile_names={profile_name}"
+    filters = build_filter(
+        [("lpar_names", lpar_name), ("profile_names", profile_name)]
+    )
     command = (
         f"lssyscfg -r prof -m {shlex.quote(system_name)} "
         f"--filter {shlex.quote(filters)}"

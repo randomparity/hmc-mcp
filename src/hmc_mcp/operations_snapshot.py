@@ -30,8 +30,11 @@ from hmc_mcp.snapshot import (
     SnapshotCapability,
     SnapshotConfiguration,
     SnapshotObservations,
+    SnapshotInspection,
     SnapshotSource,
     SystemIdentity,
+    inspect_snapshot,
+    parse_snapshot,
     _normalized_from_profile,
     _parse_profile,
 )
@@ -40,6 +43,17 @@ from hmc_mcp.ssh_commands import read_lpar_profile_record
 
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
+
+
+async def validate_lpar_snapshot(document: str) -> dict[str, object]:
+    """Validate local snapshot JSON through the supported async API contract."""
+    snapshot = parse_snapshot(document)
+    return {"valid": True, "format": snapshot.format, "version": snapshot.version}
+
+
+async def inspect_lpar_snapshot(document: str) -> SnapshotInspection:
+    """Inspect local snapshot identity through the supported async API contract."""
+    return inspect_snapshot(document)
 
 
 def _resource(entry: dict[str, Any] | None, label: str) -> dict[str, Any]:

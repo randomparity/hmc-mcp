@@ -355,13 +355,18 @@ def serialize_snapshot(snapshot: LparSnapshot) -> str:
 
 def read_snapshot(path: Path) -> LparSnapshot:
     """Read a bounded regular UTF-8 snapshot file and validate it."""
+    return parse_snapshot(read_snapshot_text(path))
+
+
+def read_snapshot_text(path: Path) -> str:
+    """Read bounded UTF-8 snapshot text from a non-symlink regular file."""
     try:
-        info = path.stat()
+        info = path.lstat()
         if not stat.S_ISREG(info.st_mode):
             _error("/", "snapshot path must name a regular file")
         if info.st_size > MAX_SNAPSHOT_BYTES:
             _error("/", "document exceeds 1 MiB")
-        return parse_snapshot(path.read_text(encoding="utf-8"))
+        return path.read_text(encoding="utf-8")
     except SnapshotValidationError:
         raise
     except (OSError, UnicodeError) as exc:

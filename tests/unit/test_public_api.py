@@ -159,6 +159,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "capture_lpar_console",
         "ConsoleCapture",
         "ConsoleHeldError",
+        "SnapshotInspection",
+        "SnapshotValidationError",
+        "capture_lpar_snapshot",
+        "inspect_lpar_snapshot",
+        "validate_lpar_snapshot",
     ]
 
 
@@ -324,6 +329,15 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "ConsoleCapture",
             "ConsoleHeldError",
         },
+        "hmc_mcp.operations_snapshot": {
+            "capture_lpar_snapshot",
+            "inspect_lpar_snapshot",
+            "validate_lpar_snapshot",
+        },
+        "hmc_mcp.snapshot": {
+            "SnapshotInspection",
+            "SnapshotValidationError",
+        },
         "hmc_mcp.ssh": {"HMCCLIError"},
         "hmc_mcp.ssh_commands": {"SriovMode"},
     }
@@ -385,8 +399,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #312: resource-group affinity operations and result types are reusable.
-    expected_digest = "97e9faa04078742b765701706a74b2bce16d801f5c4c63cf3ff722b0c427c033"  # pragma: allowlist secret
+    # Moved by #314: portable snapshot capture and local reads are reusable.
+    expected_digest = "5123cf7583a35c8daf7fd2336d05c45611991dc11f3ea02773a25e2c4c577ad9"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

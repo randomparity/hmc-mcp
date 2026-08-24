@@ -159,6 +159,15 @@ from hmc_mcp.console_capture import (
     ConsoleHeldError,
     capture_lpar_console,
 )
+from hmc_mcp.operations_snapshot import (
+    capture_lpar_snapshot,
+    inspect_lpar_snapshot,
+    validate_lpar_snapshot,
+)
+from hmc_mcp.snapshot import (
+    SnapshotInspection,
+    SnapshotValidationError,
+)
 
 __all__ = [
     "HMCClient",
@@ -303,4 +312,9 @@ __all__ = [
     "capture_lpar_console",
     "ConsoleCapture",
     "ConsoleHeldError",
+    "SnapshotInspection",
+    "SnapshotValidationError",
+    "capture_lpar_snapshot",
+    "inspect_lpar_snapshot",
+    "validate_lpar_snapshot",
 ]
