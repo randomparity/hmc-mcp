@@ -11,11 +11,55 @@ import io
 import re
 import shlex
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
 from .documents import LparResources
 from .ssh import HMCCLIError, run_hmc_command
+
+
+@dataclass(frozen=True)
+class MemoptLparSelector:
+    """Select LPARs by name or ID for an affinity-planning scenario."""
+
+    names: tuple[str, ...] = ()
+    ids: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.names and not self.ids:
+            raise ValueError("memopt LPAR selector must not be empty")
+        if self.names and self.ids:
+            raise ValueError("memopt LPAR selector must contain names or ids, not both")
+        if self.names:
+            if any(
+                not isinstance(name, str)
+                or not name.strip()
+                or "," in name
+                or any(
+                    ord(character) < 32 or ord(character) == 127 for character in name
+                )
+                for name in self.names
+            ):
+                raise ValueError(
+                    "memopt LPAR selector names must be nonblank and contain no "
+                    "commas or control characters"
+                )
+            if len(set(self.names)) != len(self.names):
+                raise ValueError(
+                    "memopt LPAR selector names must not contain duplicates"
+                )
+        if self.ids:
+            if any(
+                not isinstance(lpar_id, int)
+                or isinstance(lpar_id, bool)
+                or lpar_id <= 0
+                for lpar_id in self.ids
+            ):
+                raise ValueError("memopt LPAR selector ids must be positive integers")
+            if len(set(self.ids)) != len(self.ids):
+                raise ValueError("memopt LPAR selector ids must not contain duplicates")
+
 
 # ---------------------------------------------------------------------- #
 # HMC CLI -i attribute record grammar (see ADR 0045)
@@ -1050,6 +1094,106 @@ async def get_lpar_memopt_score(
             "returned 0 rows; expected exactly 1"
         )
     return rows[0]
+
+
+def _memopt_selector_options(
+    prioritized: MemoptLparSelector | None,
+    excluded: MemoptLparSelector | None,
+) -> str:
+    """Validate a planning scenario and render its fixed selector options."""
+    if prioritized is not None and excluded is not None:
+        prioritized_uses_names = bool(prioritized.names)
+        excluded_uses_names = bool(excluded.names)
+        if prioritized_uses_names != excluded_uses_names:
+            raise ValueError(
+                "prioritized and excluded selectors must use the same representation"
+            )
+        prioritized_values = prioritized.names or prioritized.ids
+        excluded_values = excluded.names or excluded.ids
+        if set(prioritized_values) & set(excluded_values):
+            raise ValueError("prioritized and excluded selectors must not overlap")
+
+    options: list[str] = []
+    for selector, name_flag, id_flag in (
+        (prioritized, "-p", "--id"),
+        (excluded, "-x", "--xid"),
+    ):
+        if selector is None:
+            continue
+        flag = name_flag if selector.names else id_flag
+        values = selector.names or selector.ids
+        rendered = shlex.quote(",".join(str(value) for value in values))
+        options.append(f" {flag} {rendered}")
+    return "".join(options)
+
+
+def _validated_memopt_rows(
+    output: str,
+    required: Collection[str],
+) -> list[dict[str, object]]:
+    """Parse affinity-score rows and require every scope-specific field."""
+    rows: list[dict[str, object]] = _parse_lshwres_output(output)
+    for index, row in enumerate(rows, start=1):
+        missing = sorted(set(required) - row.keys())
+        if missing:
+            raise HMCCLIError(
+                f"lsmemopt row {index} is missing required fields: {', '.join(missing)}"
+            )
+    return rows
+
+
+async def get_system_memopt_score(
+    config: HMCConfig, system_name: str
+) -> dict[str, object]:
+    """Return the current system memory-affinity score via SSH."""
+    command = f"lsmemopt -m {shlex.quote(system_name)} -r sys -o currscore"
+    output = await run_hmc_command(config, command)
+    rows = _parse_lshwres_output(output)
+    if len(rows) != 1:
+        raise HMCCLIError(
+            f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
+        )
+    return _validated_memopt_rows(output, {"curr_sys_score"})[0]
+
+
+async def plan_lpar_memopt_scores(
+    config: HMCConfig,
+    system_name: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+) -> list[dict[str, object]]:
+    """Return predicted LPAR memory-affinity scores via SSH."""
+    command = f"lsmemopt -m {shlex.quote(system_name)} -r lpar -o calcscore"
+    command += _memopt_selector_options(prioritized, excluded)
+    rows = _validated_memopt_rows(
+        await run_hmc_command(config, command),
+        {"lpar_name", "lpar_id", "curr_lpar_score", "predicted_lpar_score"},
+    )
+    for row in rows:
+        row["prediction_guaranteed"] = False
+    return rows
+
+
+async def plan_system_memopt_score(
+    config: HMCConfig,
+    system_name: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+) -> dict[str, object]:
+    """Return a predicted system memory-affinity score via SSH."""
+    command = f"lsmemopt -m {shlex.quote(system_name)} -r sys -o calcscore"
+    command += _memopt_selector_options(prioritized, excluded)
+    output = await run_hmc_command(config, command)
+    rows = _parse_lshwres_output(output)
+    if len(rows) != 1:
+        raise HMCCLIError(
+            f"lsmemopt system query returned {len(rows)} rows; expected exactly 1"
+        )
+    result = _validated_memopt_rows(output, {"curr_sys_score", "predicted_sys_score"})[
+        0
+    ]
+    result["prediction_guaranteed"] = False
+    return result
 
 
 async def list_memory_pools(
