@@ -181,7 +181,13 @@ def hmc_list_resource_group_memopt_scores(
     selector: MemoptResourceGroupSelector | None = None,
     profile: str | None = None,
 ) -> ResourceGroupAffinityResult:
-    """Return current resource-group affinity scores when supported."""
+    """Return current resource-group affinity scores when supported.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        selector: Resource-group names, IDs, or all groups; all when omitted.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: list_resource_group_memopt_scores(
             build_config(profile=profile), system_name_or_uuid, selector
@@ -199,7 +205,13 @@ def hmc_plan_resource_group_memopt_scores(
     selector: MemoptResourceGroupSelector | None = None,
     profile: str | None = None,
 ) -> ResourceGroupAffinityResult:
-    """Return potential resource-group affinity scores without running DPO."""
+    """Return potential resource-group affinity scores without running DPO.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        selector: Resource-group names, IDs, or all groups; all when omitted.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
     return _run(
         lambda: plan_resource_group_memopt_scores(
             build_config(profile=profile), system_name_or_uuid, selector
