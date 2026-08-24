@@ -229,6 +229,7 @@ hmc-mcp lpars list --system <uuid>   # LPARs of one system
 hmc-mcp lpars show mylpar            # by name or UUID (JSON)
 hmc-mcp lpars state mylpar           # just "running", "not activated", ...
 hmc-mcp lpars summary mylpar         # one-call summary: state, RMC, memory, CPU, OS, adapters
+hmc-mcp lpars get-minimum-affinity-policy mylpar sys1 --json
 hmc-mcp lpars system-memopt-score sys1
 hmc-mcp lpars plan-memopt-scores sys1 --prioritize-name web --exclude-name batch
 hmc-mcp lpars plan-system-memopt-score sys1 --prioritize-id 3 --exclude-id 9 --json
@@ -263,6 +264,13 @@ The memory-affinity planning commands are read-only `lsmemopt` calculations.
 Repeat `--prioritize-name`, `--prioritize-id`, `--exclude-name`, or `--exclude-id`
 to describe a scenario, using names or IDs consistently. Calculated scores are
 predictions, not guarantees of placement, and these commands never start optimization.
+
+The minimum-affinity policy command is also read-only. It first checks whether the managed
+system advertises `POWER11` processor compatibility, then explicitly requests
+`min_affinity_score` and `min_affinity_score_action` through `lssyscfg`. The score is validated
+as an integer from 0 through 100 and the action as `none`, `warn`, or `fail`. Systems without
+that capability remain usable and return an actionable `capability-unavailable` reason. This
+surface does not provide a setter; portable snapshots record the policy only when supported.
 
 Portable snapshots capture one named LPAR profile together with source identity and separate
 timestamped placement and affinity observations:
@@ -966,6 +974,7 @@ rejected before connecting to the HMC.
 | `hmc_get_lpar_msp`          | Get the Migratable Service Partition flag |
 | `hmc_set_lpar_msp`          | Set the MSP flag |
 | `hmc_get_lpar_memopt_score` | Get an LPAR's current memory-optimization score (`lsmemopt -o currscore`) |
+| `hmc_get_minimum_affinity_policy` | Get a validated Power11 minimum-affinity policy, or an actionable capability-absence reason |
 | `hmc_list_lpar_memopt_scores` | List memory-optimization scores for a system's LPARs |
 | `hmc_get_system_memopt_score` | Get a system's current memory-optimization score (`lsmemopt -o currscore`) |
 | `hmc_plan_lpar_memopt_scores` | Predict LPAR scores for a read-only scenario (`lsmemopt -o calcscore`) |
