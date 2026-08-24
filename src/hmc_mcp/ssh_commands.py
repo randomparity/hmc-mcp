@@ -1819,6 +1819,25 @@ async def _change_profile_io_slot(
     return await run_hmc_command(config, command)
 
 
+async def read_lpar_profile_record(
+    config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
+) -> str:
+    """Read exactly one native LPAR profile attribute record."""
+    filters = f"lpar_names={lpar_name},profile_names={profile_name}"
+    command = (
+        f"lssyscfg -r prof -m {shlex.quote(system_name)} "
+        f"--filter {shlex.quote(filters)}"
+    )
+    output = await run_hmc_command(config, command)
+    records = [line for line in output.splitlines() if line]
+    if len(records) != 1:
+        raise HMCCLIError(
+            "lssyscfg profile capture expected exactly one record; "
+            f"received {len(records)}"
+        )
+    return records[0]
+
+
 # ---------------------------------------------------------------------- #
 # NIM install via the HMC CLI ``installios`` command (ADR 0070)
 # ---------------------------------------------------------------------- #
