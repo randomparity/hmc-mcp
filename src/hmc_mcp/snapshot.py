@@ -6,7 +6,7 @@ import json
 import math
 import re
 import stat
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NoReturn, Self, cast
 
@@ -143,7 +143,9 @@ class ProcessorProjection(_Value):
         if not all(math.isfinite(value) for value in values):
             raise ValueError("processor values must be finite")
         if not self.minimum <= self.desired <= self.maximum:
-            raise ValueError("processor values must satisfy minimum <= desired <= maximum")
+            raise ValueError(
+                "processor values must satisfy minimum <= desired <= maximum"
+            )
         if not self.virtual_minimum <= self.virtual_desired <= self.virtual_maximum:
             raise ValueError("virtual processor values must be ordered")
         dedicated_modes = {
@@ -170,6 +172,11 @@ class SnapshotConfiguration(_Value):
     profile_name: str = Field(min_length=1)
     native: NativeProfile
     normalized: NormalizedConfiguration
+
+    @field_validator("profile_name")
+    @classmethod
+    def nonblank_profile(cls, value: str) -> str:
+        return _nonblank(value)
 
 
 class ObservationEnvelope(_Value):
@@ -208,14 +215,22 @@ class LparSnapshot(_Value):
             None,
         )
         if profile is None or not profile.supported or profile.collection != "hmc-cli":
-            raise ValueError("lpar-profile-record capability must be supported via hmc-cli")
+            raise ValueError(
+                "lpar-profile-record capability must be supported via hmc-cli"
+            )
         self._check_observation(
-            "runtime-placement", self.observations.runtime_placement, PLACEMENT_MEDIA_TYPE
+            "runtime-placement",
+            self.observations.runtime_placement,
+            PLACEMENT_MEDIA_TYPE,
         )
-        self._check_observation("affinity-scores", self.observations.scores, SCORES_MEDIA_TYPE)
+        self._check_observation(
+            "affinity-scores", self.observations.scores, SCORES_MEDIA_TYPE
+        )
         native = _parse_profile(self.configuration.native.data)
         if native.get("name") != self.configuration.profile_name:
-            raise ValueError("native profile name must equal configuration profile_name")
+            raise ValueError(
+                "native profile name must equal configuration profile_name"
+            )
         if native.get("lpar_name") != self.source.lpar.name:
             raise ValueError("native lpar_name must equal source LPAR name")
         expected = _normalized_from_profile(native)
@@ -226,7 +241,9 @@ class LparSnapshot(_Value):
     def _check_observation(
         self, name: str, value: ObservationEnvelope | None, media_type: str
     ) -> None:
-        capability = next((item for item in self.capabilities if item.name == name), None)
+        capability = next(
+            (item for item in self.capabilities if item.name == name), None
+        )
         if value is not None and (capability is None or not capability.supported):
             raise ValueError(f"{name} observation requires a supported capability")
         if value is not None and value.media_type != media_type:
@@ -364,16 +381,26 @@ def _parse_profile(record: str) -> dict[str, str]:
         if any(ord(character) < 32 or ord(character) == 127 for character in value):
             raise ValueError("native profile contains a control character")
         if any(character in value for character in ',="'):
-            raise ValueError("native profile contains unsupported quoting or delimiters")
+            raise ValueError(
+                "native profile contains unsupported quoting or delimiters"
+            )
         values[key] = value
     return values
 
 
 def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
     required = (
-        "min_mem", "desired_mem", "max_mem", "proc_mode", "min_proc_units",
-        "desired_proc_units", "max_proc_units", "min_procs", "desired_procs",
-        "max_procs", "sharing_mode",
+        "min_mem",
+        "desired_mem",
+        "max_mem",
+        "proc_mode",
+        "min_proc_units",
+        "desired_proc_units",
+        "max_proc_units",
+        "min_procs",
+        "desired_procs",
+        "max_procs",
+        "sharing_mode",
     )
     missing = [key for key in required if key not in values]
     if missing:
@@ -392,7 +419,8 @@ def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
     try:
         return NormalizedConfiguration(
             memory_mib=MemoryProjection(
-                minimum=int(values["min_mem"]), desired=int(values["desired_mem"]),
+                minimum=int(values["min_mem"]),
+                desired=int(values["desired_mem"]),
                 maximum=int(values["max_mem"]),
             ),
             processors=ProcessorProjection(
@@ -474,9 +502,14 @@ def parse_snapshot(text: str) -> LparSnapshot:
 
 def serialize_snapshot(snapshot: LparSnapshot) -> str:
     """Serialize a validated snapshot as deterministic UTF-8 JSON text."""
+    payload = snapshot.model_dump(mode="json", exclude_none=True)
+    payload["captured_at"] = _writer_timestamp(snapshot.captured_at)
+    payload["observations"]["observed_at"] = _writer_timestamp(
+        snapshot.observations.observed_at
+    )
     try:
         text = json.dumps(
-            snapshot.model_dump(mode="json", exclude_none=True),
+            payload,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=False,
@@ -486,6 +519,12 @@ def serialize_snapshot(snapshot: LparSnapshot) -> str:
         _error("/", "snapshot contains a non-finite JSON number")
     _bounded(text)
     return text
+
+
+def _writer_timestamp(value: datetime) -> str:
+    return (
+        value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
 
 
 def read_snapshot(path: Path) -> LparSnapshot:

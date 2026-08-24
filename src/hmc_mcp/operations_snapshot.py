@@ -84,6 +84,8 @@ def _positive_int(value: Any, label: str) -> int:
 
 
 def _runtime_int(value: Any, label: str) -> int | None:
+    if isinstance(value, bool):
+        raise ValueError(f"Snapshot capture requires integer {label}")
     if value in (None, 0, "0"):
         return None
     return _positive_int(value, label)
@@ -118,7 +120,9 @@ def _placement(resource: dict[str, Any]) -> dict[str, object]:
     dedicated = resource.get("DedicatedProcessors") if mode == "dedicated" else None
     return {
         "state": _text(resource.get("PartitionState"), "LPAR state"),
-        "rmc_state": _text(resource.get("ResourceMonitoringControlState"), "RMC state", optional=True),
+        "rmc_state": _text(
+            resource.get("ResourceMonitoringControlState"), "RMC state", optional=True
+        ),
         "processor_mode": mode,
         "current_memory_mib": _runtime_int(memory, "current memory"),
         "current_processor_units": _runtime_float(units, "current processor units"),
@@ -172,12 +176,18 @@ async def capture_lpar_snapshot(
         mtms_text = _text(mtms, "system MTMS")
         assert isinstance(mtms_text, str)
         if "*" not in mtms_text:
-            raise ValueError("Snapshot capture requires system MTMS in type-model*serial form")
+            raise ValueError(
+                "Snapshot capture requires system MTMS in type-model*serial form"
+            )
         machine_type_model, serial = mtms_text.split("*", 1)
     hmc_uuid = _text(console.get("UUID") if console else None, "HMC UUID")
     system_id = _text(system.get("UUID") if system else None, "system UUID")
     lpar_id = _text(lpar.get("UUID") if lpar else None, "LPAR UUID")
-    assert isinstance(hmc_uuid, str) and isinstance(system_id, str) and isinstance(lpar_id, str)
+    assert (
+        isinstance(hmc_uuid, str)
+        and isinstance(system_id, str)
+        and isinstance(lpar_id, str)
+    )
     snapshot = LparSnapshot(
         format="hmc-mcp.lpar-snapshot",
         version=1,
@@ -186,24 +196,42 @@ async def capture_lpar_snapshot(
             hmc=HmcIdentity(
                 uuid=hmc_uuid,
                 name=_text(console_resource.get("HostName"), "HMC name", optional=True),
-                version=_text(console_resource.get("Version"), "HMC version", optional=True),
+                version=_text(
+                    console_resource.get("Version"), "HMC version", optional=True
+                ),
             ),
             system=SystemIdentity(
                 uuid=system_id,
-                name=_text(system_resource.get("SystemName"), "system name", optional=True),
+                name=_text(
+                    system_resource.get("SystemName"), "system name", optional=True
+                ),
                 machine_type_model=machine_type_model,
                 serial=serial,
             ),
             lpar=LparIdentity(
                 uuid=lpar_id,
                 name=lpar_name,
-                partition_id=_positive_int(lpar_resource.get("PartitionID"), "partition ID"),
+                partition_id=_positive_int(
+                    lpar_resource.get("PartitionID"), "partition ID"
+                ),
             ),
         ),
         capabilities=(
-            SnapshotCapability(name="affinity-scores", version=1, supported=True, collection="hmc-cli"),
-            SnapshotCapability(name="lpar-profile-record", version=1, supported=True, collection="hmc-cli"),
-            SnapshotCapability(name="runtime-placement", version=1, supported=True, collection="hmc-rest"),
+            SnapshotCapability(
+                name="affinity-scores", version=1, supported=True, collection="hmc-cli"
+            ),
+            SnapshotCapability(
+                name="lpar-profile-record",
+                version=1,
+                supported=True,
+                collection="hmc-cli",
+            ),
+            SnapshotCapability(
+                name="runtime-placement",
+                version=1,
+                supported=True,
+                collection="hmc-rest",
+            ),
         ),
         configuration=SnapshotConfiguration(
             profile_name=profile_name,
@@ -212,7 +240,9 @@ async def capture_lpar_snapshot(
         ),
         observations=SnapshotObservations(
             observed_at=observed_at,
-            runtime_placement=ObservationEnvelope(media_type=PLACEMENT_MEDIA_TYPE, data=_placement(lpar_resource)),
+            runtime_placement=ObservationEnvelope(
+                media_type=PLACEMENT_MEDIA_TYPE, data=_placement(lpar_resource)
+            ),
             scores=ObservationEnvelope(
                 media_type=SCORES_MEDIA_TYPE,
                 data={

@@ -138,9 +138,7 @@ def test_numeric_strings_are_not_coerced() -> None:
 def test_nonstandard_json_constants_are_rejected(constant: str) -> None:
     with pytest.raises(SnapshotValidationError, match="non-standard JSON constant"):
         inspect_snapshot(
-            '{"format":"hmc-mcp.lpar-snapshot","version":1,"value":'
-            + constant
-            + "}"
+            '{"format":"hmc-mcp.lpar-snapshot","version":1,"value":' + constant + "}"
         )
 
 
@@ -151,11 +149,30 @@ def test_required_source_identities_reject_whitespace() -> None:
         parse_snapshot(json.dumps(document))
 
 
+def test_profile_name_rejects_whitespace() -> None:
+    document = _document()
+    document["configuration"]["profile_name"] = " "
+    document["configuration"]["native"]["data"] = document["configuration"]["native"][
+        "data"
+    ].replace("name=default", "name= ")
+    with pytest.raises(SnapshotValidationError, match="/configuration/profile_name"):
+        parse_snapshot(json.dumps(document))
+
+
 def test_timestamp_requires_rfc3339_separator_and_offset() -> None:
     document = _document()
     document["captured_at"] = "2026-08-24 20:00:01+00:00"
     with pytest.raises(SnapshotValidationError, match="/captured_at"):
         parse_snapshot(json.dumps(document))
+
+
+def test_serializer_canonicalizes_timestamps_to_utc_seconds() -> None:
+    document = _document()
+    document["captured_at"] = "2026-08-24T13:00:01.987654-07:00"
+    document["observations"]["observed_at"] = "2026-08-24T13:00:00.123456-07:00"
+    payload = json.loads(serialize_snapshot(parse_snapshot(json.dumps(document))))
+    assert payload["captured_at"] == "2026-08-24T20:00:01Z"
+    assert payload["observations"]["observed_at"] == "2026-08-24T20:00:00Z"
 
 
 def test_serializer_enforces_reader_size_limit() -> None:
