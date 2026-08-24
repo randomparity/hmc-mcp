@@ -84,6 +84,7 @@ from . import (
     server_metrics,
     server_network,
     server_profiles,
+    server_snapshot,
     server_provision,
     server_storage,
     server_system_resources,
@@ -237,6 +238,11 @@ from .server_profiles import (
     hmc_sync_lpar_profile as hmc_sync_lpar_profile,
     hmc_unassign_dedicated_pcie_slot as hmc_unassign_dedicated_pcie_slot,
 )
+from .server_snapshot import (
+    hmc_snapshot_capture as hmc_snapshot_capture,
+    hmc_snapshot_inspect as hmc_snapshot_inspect,
+    hmc_snapshot_validate as hmc_snapshot_validate,
+)
 from .server_lpar_config import (
     hmc_get_lpar_description as hmc_get_lpar_description,
     hmc_get_lpar_msp as hmc_get_lpar_msp,
@@ -286,6 +292,7 @@ TOOL_MODULES = (
     server_users,
     server_updates,
     server_profiles,
+    server_snapshot,
     server_lpar_config,
     server_system_resources,
     server_composite,

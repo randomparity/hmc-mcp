@@ -72,4 +72,5 @@ verify: static test smoke build verify-artifacts
     uv run --no-sync hmc-mcp network --help >/dev/null
     uv run --no-sync hmc-mcp templates --help >/dev/null
     uv run --no-sync hmc-mcp metrics --help >/dev/null
+    uv run --no-sync hmc-mcp snapshot --help >/dev/null
     @echo "verify: all groups load OK"

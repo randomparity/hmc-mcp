@@ -483,7 +483,12 @@ def test_arbitrary_command_is_absent_by_default_and_maximally_classified():
 
 def test_only_local_tools_open_no_hmc_connection():
     """G10: every tool that reaches an HMC declares how its connection is chosen."""
-    local_only = {"hmc_list_configured_hosts", "hmc_effective_permissions"}
+    local_only = {
+        "hmc_list_configured_hosts",
+        "hmc_effective_permissions",
+        "hmc_snapshot_validate",
+        "hmc_snapshot_inspect",
+    }
     for name, security in TOOL_SECURITY.items():
         if name in local_only:
             assert security.target_kind == "none", name
@@ -1191,6 +1196,8 @@ _NOT_EXHAUSTIVE = frozenset(
         "hmc_list_resources",
         "hmc_list_shared_storage_pools",
         "hmc_list_systems",
+        "hmc_snapshot_validate",
+        "hmc_snapshot_inspect",
         "hmc_run_command",
         # Selectors, but they do not name every resource the call acts on.
         "hmc_backup_lpar_profiles",

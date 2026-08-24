@@ -37,6 +37,8 @@ _NO_NETWORK_TOOLS = frozenset(
     {
         "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
         "hmc_effective_permissions",  # reads this application's own registry
+        "hmc_snapshot_validate",  # validates caller-supplied JSON locally
+        "hmc_snapshot_inspect",  # inspects caller-supplied JSON locally
     }
 )
 
