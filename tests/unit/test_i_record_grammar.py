@@ -798,7 +798,7 @@ def test_every_site_is_built_by_its_shared_builder(label, predicate, checker):
     assert not skipping, (
         f"these {label} payloads are not built by their shared builder: "
         f"{skipping}. shlex.quote protects the shell word only; the "
-        'grammar\'s own ",", "=" and "\\\"" structure needs the builder.'
+        'grammar\'s own ",", "=" and "\"" structure needs the builder.'
     )
 
 
