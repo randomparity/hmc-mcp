@@ -868,6 +868,7 @@ def test_the_scan_finds_every_known_site():
         "read_sriov_lpar_state",
         "read_sriov_profile_ports",
         "list_fc_ports",
+        "list_lpar_memopt_scores",
         "list_sea_adapters",
         "list_vnics",
         "list_vnic_rows",

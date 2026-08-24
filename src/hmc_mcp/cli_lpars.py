@@ -52,6 +52,10 @@ from .operations_lpm import (
     recover_lpar_migration,
     remote_restart_lpar,
 )
+from .operations_ssh_network import (
+    get_lpar_memopt_score,
+    list_lpar_memopt_scores,
+)
 from .documents import (
     LparResources,
     PARTITION_TYPES,
@@ -80,6 +84,53 @@ def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
     except (OSError, json.JSONDecodeError, ValidationError) as error:
         _usage_error(f"Cannot load --pcie-assignments {path}: {error}")
         raise AssertionError("_usage_error must raise") from error
+
+
+@lpars_app.command("memopt-score")
+def lpars_memopt_score(
+    lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get an LPAR's current memory-optimization affinity score."""
+    score = _run(lambda: get_lpar_memopt_score(_ssh_config(), system_name, lpar_name))
+    if as_json:
+        _print_json(score)
+    else:
+        console.print(
+            f"{score['lpar_name']} (id {score['lpar_id']}): "
+            f"curr_lpar_score={score['curr_lpar_score']}"
+        )
+
+
+@lpars_app.command("memopt-scores")
+def lpars_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar_name: str | None = typer.Option(
+        None, "--lpar", help="Filter by LPAR name or UUID"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """List current memory-optimization affinity scores for a system's LPARs."""
+    scores = _run(
+        lambda: list_lpar_memopt_scores(_ssh_config(), system_name, lpar_name)
+    )
+    if as_json:
+        _print_json(scores)
+        return
+    if not scores:
+        console.print("[yellow]No memory-optimization scores reported[/yellow]")
+        return
+    table = Table(title=f"Memory-optimization scores on {system_name}")
+    for column in ("lpar_name", "lpar_id", "curr_lpar_score"):
+        table.add_column(column)
+    for row in scores:
+        table.add_row(
+            str(row.get("lpar_name", "")),
+            str(row.get("lpar_id", "")),
+            str(row.get("curr_lpar_score", "")),
+        )
+    console.print(table)
 
 
 @lpars_app.command("summary")

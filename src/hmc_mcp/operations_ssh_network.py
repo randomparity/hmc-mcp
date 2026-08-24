@@ -16,7 +16,9 @@ from hmc_mcp.operations_lpar import (
 from hmc_mcp.operations_pcie import _require_admitted_environment
 from hmc_mcp.ssh_commands import (
     add_vnic_backing,
+    get_lpar_memopt_score as _get_lpar_memopt_score,
     list_fc_ports as _list_fc_ports,
+    list_lpar_memopt_scores as _list_lpar_memopt_scores,
     list_sea_adapters as _list_sea_adapters,
     list_sriov_adapter_rows,
     list_sriov_configured_logical_port_rows,
@@ -114,6 +116,24 @@ async def list_vnics(
 ) -> list[dict[str, object]]:
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_vnics(config, cast(str, system_name), cast(str, lpar_name))
+
+
+async def get_lpar_memopt_score(
+    config: HMCConfig, system: str, lpar: str
+) -> dict[str, object]:
+    """Return one LPAR's current memory-optimization score."""
+    system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
+    return await _get_lpar_memopt_score(
+        config, cast(str, system_name), cast(str, lpar_name)
+    )
+
+
+async def list_lpar_memopt_scores(
+    config: HMCConfig, system: str, lpar: str | None = None
+) -> list[dict[str, object]]:
+    """Return current memory-optimization scores for selected system LPARs."""
+    system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
+    return await _list_lpar_memopt_scores(config, cast(str, system_name), lpar_name)
 
 
 def _required(value: str, name: str) -> str:

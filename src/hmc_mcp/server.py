@@ -240,7 +240,9 @@ from .server_profiles import (
 from .server_lpar_config import (
     hmc_get_lpar_description as hmc_get_lpar_description,
     hmc_get_lpar_msp as hmc_get_lpar_msp,
+    hmc_get_lpar_memopt_score as hmc_get_lpar_memopt_score,
     hmc_get_lpar_proc_compat as hmc_get_lpar_proc_compat,
+    hmc_list_lpar_memopt_scores as hmc_list_lpar_memopt_scores,
     hmc_set_lpar_description as hmc_set_lpar_description,
     hmc_set_lpar_msp as hmc_set_lpar_msp,
     hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,

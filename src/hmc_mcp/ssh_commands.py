@@ -993,6 +993,65 @@ async def remove_vnic_slot(
     return await run_hmc_command(config, command)
 
 
+async def list_lpar_memopt_scores(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """List current memory-optimization scores for a system's LPARs via SSH."""
+    command = f"lsmemopt -m {shlex.quote(system_name)} -r lpar -o currscore"
+    if lpar_name is not None:
+        if not lpar_name.strip():
+            raise ValueError("lpar_name must not be empty")
+        lpar_filter = build_filter([("lpar_names", lpar_name)])
+        command += f" --filter {shlex.quote(lpar_filter)}"
+    output = await run_hmc_command(config, command)
+    if not output.strip():
+        return []
+    rows = _parse_lshwres_output(output)
+    required = {"lpar_name", "lpar_id", "curr_lpar_score"}
+    for index, row in enumerate(rows, start=1):
+        missing = sorted(required - row.keys())
+        if missing:
+            raise HMCCLIError(
+                f"lsmemopt row {index} is missing required fields: {', '.join(missing)}"
+            )
+    if lpar_name is not None:
+        if len(rows) > 1:
+            raise HMCCLIError(
+                f"lsmemopt filtered query for LPAR {lpar_name!r} returned "
+                f"{len(rows)} rows; expected at most 1"
+            )
+        if rows and rows[0]["lpar_name"] != lpar_name:
+            raise HMCCLIError(
+                f"lsmemopt reported LPAR {rows[0]['lpar_name']!r}; "
+                f"expected {lpar_name!r}"
+            )
+    return rows
+
+
+async def get_lpar_memopt_score(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> dict[str, Any]:
+    """Return one LPAR's current memory-optimization score via SSH.
+
+    Raises:
+        ValueError: If *lpar_name* is empty.
+        HMCCLIError: If the HMC reports no score row for the partition.
+    """
+    if not lpar_name.strip():
+        raise ValueError("lpar_name must not be empty")
+    rows = await list_lpar_memopt_scores(config, system_name, lpar_name)
+    if not rows:
+        raise HMCCLIError(
+            f"lsmemopt query for LPAR {lpar_name!r} on system {system_name!r} "
+            "returned 0 rows; expected exactly 1"
+        )
+    return rows[0]
+
+
 async def list_memory_pools(
     config: HMCConfig,
     system_name: str,

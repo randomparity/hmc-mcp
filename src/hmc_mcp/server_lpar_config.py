@@ -8,6 +8,11 @@ from ._app import (
     _run,
     _ssh_with_client,
 )
+from .common import build_config, client_from_env
+from .operations_ssh_network import (
+    get_lpar_memopt_score,
+    list_lpar_memopt_scores,
+)
 
 from .ssh_commands import (
     get_lpar_description,
@@ -17,7 +22,6 @@ from .ssh_commands import (
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from .common import client_from_env
 from .operations_lpar import set_lpar_ownership_description
 from typing import Literal
 
@@ -50,6 +54,44 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
         "POWER11",
     }
 )
+
+
+@tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")
+def hmc_get_lpar_memopt_score(
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+) -> dict[str, object]:
+    """Return an LPAR's current memory-optimization affinity score.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: get_lpar_memopt_score(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
+
+
+@tool(effect="read", operation="lpar.list_memopt_scores", target_kind="managed_system")
+def hmc_list_lpar_memopt_scores(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, object]]:
+    """List current memory-optimization affinity scores for a system's LPARs.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Optional partition name or UUID to filter to.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: list_lpar_memopt_scores(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
 
 
 @tool(effect="read", operation="lpar.get_description", target_kind="lpar")

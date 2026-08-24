@@ -101,6 +101,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparResources",
         "PartitionType",
         "list_fc_ports",
+        "get_lpar_memopt_score",
+        "list_lpar_memopt_scores",
         "list_sea_adapters",
         "set_sriov_adapter_mode",
         "list_vnics",
@@ -269,7 +271,9 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "VnicCapabilityError",
             "VnicPartialError",
             "add_vnic",
+            "get_lpar_memopt_score",
             "list_fc_ports",
+            "list_lpar_memopt_scores",
             "list_sea_adapters",
             "list_vnics",
             "remove_vnic",
@@ -325,7 +329,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #400, which added the owning-system selector to
+        Last moved by issue #310, which added the LPAR memory-optimization
+        score operations. Before that, issue #400 added the owning-system selector to
         logical-partition PCM metric operations (ADR 0077). Before that, issue
         #401 made the destructive RemoteRestart
         operation and source-system selector explicit (ADR 0078). Before that,
@@ -362,9 +367,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #400: LogicalPartition PCM metrics require an owning-system
-    # selector (ADR 0077).
-    expected_digest = "bcc4c3b9918babe7d31b8560ab8d6836b4e6b87effe2ecc06d02913eab7127b0"  # pragma: allowlist secret
+    # Moved by #310: current LPAR memory-optimization scores are reusable API
+    # operations under ADR 0029.
+    expected_digest = "41344e8e8218937deef3428971c44c1d39c3c7c937843dd6dab56ab4a6682fca"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
