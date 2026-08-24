@@ -6,8 +6,17 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastmcp import Client
 
+from hmc_mcp import server_lpar_config
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.operations_ssh_network import (
+    ResourceGroupAffinityResult,
+    list_resource_group_memopt_scores,
+)
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import (
     MemoptResourceGroupSelector,
@@ -185,3 +194,63 @@ def test_malformed_resource_group_output_is_actionable(output):
                     calculated=False,
                 )
             )
+
+
+def test_shared_operation_resolves_system_and_defaults_to_all():
+    query = AsyncMock(
+        return_value=type("Query", (), {"items": [], "unavailable_reason": None})()
+    )
+    with (
+        patch(
+            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+            AsyncMock(return_value=("resolved-system", None)),
+        ) as resolve,
+        patch(
+            "hmc_mcp.operations_ssh_network.query_resource_group_memopt_scores", query
+        ),
+    ):
+        result = asyncio.run(
+            list_resource_group_memopt_scores(_config(), "system-uuid")
+        )
+    assert result.capability == "available"
+    assert result.selector == MemoptResourceGroupSelector(all=True)
+    resolve.assert_awaited_once_with(_config(), "system-uuid", None)
+    query.assert_awaited_once_with(
+        _config(),
+        "resolved-system",
+        MemoptResourceGroupSelector(all=True),
+        calculated=False,
+    )
+
+
+def test_mcp_adapter_delegates_to_shared_operation():
+    expected = ResourceGroupAffinityResult(
+        "capability-unavailable",
+        "current",
+        "system",
+        MemoptResourceGroupSelector(all=True),
+        [],
+        "upgrade HMC",
+    )
+    operation = AsyncMock(return_value=expected)
+    with (
+        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch.object(
+            server_lpar_config, "list_resource_group_memopt_scores", operation
+        ),
+    ):
+        actual = server_lpar_config.hmc_list_resource_group_memopt_scores("system")
+    assert actual == expected
+
+
+def test_mcp_registers_both_resource_group_affinity_tools():
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    async def names():
+        async with Client(create_mcp(policy)) as client:
+            return {tool.name for tool in await client.list_tools()}
+
+    assert {
+        "hmc_list_resource_group_memopt_scores",
+        "hmc_plan_resource_group_memopt_scores",
+    } <= asyncio.run(names())

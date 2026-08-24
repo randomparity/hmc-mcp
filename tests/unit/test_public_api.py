@@ -107,6 +107,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "plan_lpar_memopt_scores",
         "plan_system_memopt_score",
         "MemoptLparSelector",
+        "MemoptResourceGroupSelector",
+        "ResourceGroupAffinityResult",
+        "list_resource_group_memopt_scores",
+        "plan_resource_group_memopt_scores",
         "list_sea_adapters",
         "set_sriov_adapter_mode",
         "list_vnics",
@@ -282,6 +286,10 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "plan_lpar_memopt_scores",
             "plan_system_memopt_score",
             "MemoptLparSelector",
+            "MemoptResourceGroupSelector",
+            "ResourceGroupAffinityResult",
+            "list_resource_group_memopt_scores",
+            "plan_resource_group_memopt_scores",
             "list_sea_adapters",
             "list_vnics",
             "remove_vnic",
@@ -337,7 +345,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #311, which added read-only affinity planning operations.
+        Last moved by issue #312, which added capability-aware resource-group affinity.
+        Before that, issue #311 added read-only affinity planning operations.
         Before that, issue #310 added the LPAR memory-optimization score operations.
         Before that, issue #400 added the owning-system selector to
         logical-partition PCM metric operations (ADR 0077). Before that, issue
@@ -376,8 +385,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #311: affinity-planning operations and their selector are reusable.
-    expected_digest = "79704a4a87213eb80728f8a92c074eaa77ba342042ba6e3e30299bff96d0be2f"  # pragma: allowlist secret
+    # Moved by #312: resource-group affinity operations and result types are reusable.
+    expected_digest = "97e9faa04078742b765701706a74b2bce16d801f5c4c63cf3ff722b0c427c033"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

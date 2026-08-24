@@ -10,14 +10,18 @@ from ._app import (
 )
 from .common import build_config, client_from_env
 from .operations_ssh_network import (
+    ResourceGroupAffinityResult,
     get_lpar_memopt_score,
     get_system_memopt_score,
     list_lpar_memopt_scores,
     plan_lpar_memopt_scores,
     plan_system_memopt_score,
+    list_resource_group_memopt_scores,
+    plan_resource_group_memopt_scores,
 )
 from .ssh_commands import (
     MemoptLparSelector,
+    MemoptResourceGroupSelector,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
@@ -163,6 +167,42 @@ def hmc_plan_system_memopt_score(
             system_name_or_uuid,
             prioritized,
             excluded,
+        )
+    )
+
+
+@tool(
+    effect="read",
+    operation="resource_group.list_memopt_scores",
+    target_kind="managed_system",
+)
+def hmc_list_resource_group_memopt_scores(
+    system_name_or_uuid: str,
+    selector: MemoptResourceGroupSelector | None = None,
+    profile: str | None = None,
+) -> ResourceGroupAffinityResult:
+    """Return current resource-group affinity scores when supported."""
+    return _run(
+        lambda: list_resource_group_memopt_scores(
+            build_config(profile=profile), system_name_or_uuid, selector
+        )
+    )
+
+
+@tool(
+    effect="read",
+    operation="resource_group.plan_memopt_scores",
+    target_kind="managed_system",
+)
+def hmc_plan_resource_group_memopt_scores(
+    system_name_or_uuid: str,
+    selector: MemoptResourceGroupSelector | None = None,
+    profile: str | None = None,
+) -> ResourceGroupAffinityResult:
+    """Return potential resource-group affinity scores without running DPO."""
+    return _run(
+        lambda: plan_resource_group_memopt_scores(
+            build_config(profile=profile), system_name_or_uuid, selector
         )
     )
 

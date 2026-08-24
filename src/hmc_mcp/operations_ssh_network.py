@@ -16,6 +16,7 @@ from hmc_mcp.operations_lpar import (
 from hmc_mcp.operations_pcie import _require_admitted_environment
 from hmc_mcp.ssh_commands import (
     MemoptLparSelector,
+    MemoptResourceGroupSelector,
     add_vnic_backing,
     get_lpar_memopt_score as _get_lpar_memopt_score,
     get_system_memopt_score as _get_system_memopt_score,
@@ -30,6 +31,7 @@ from hmc_mcp.ssh_commands import (
     list_vnics as _list_vnics,
     plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
     plan_system_memopt_score as _plan_system_memopt_score,
+    query_resource_group_memopt_scores,
     validate_memopt_scenario,
     read_vios_identity,
     remove_vnic_slot,
@@ -102,6 +104,18 @@ class VnicPartialError(RuntimeError):
         self.result = result
 
 
+@dataclass(frozen=True)
+class ResourceGroupAffinityResult:
+    """Stable envelope separating affinity scores from capability absence."""
+
+    capability: Literal["available", "capability-unavailable"]
+    mode: Literal["current", "calculated"]
+    system: str
+    selector: MemoptResourceGroupSelector
+    items: list[dict[str, object]]
+    unavailable_reason: str | None
+
+
 async def list_fc_ports(
     config: HMCConfig, system: str, lpar: str | None = None
 ) -> list[dict[str, str]]:
@@ -172,6 +186,53 @@ async def plan_system_memopt_score(
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _plan_system_memopt_score(
         config, cast(str, system_name), prioritized, excluded
+    )
+
+
+async def _resource_group_memopt_scores(
+    config: HMCConfig,
+    system: str,
+    selector: MemoptResourceGroupSelector | None,
+    *,
+    calculated: bool,
+) -> ResourceGroupAffinityResult:
+    selected = selector or MemoptResourceGroupSelector(all=True)
+    system_name, _ = await resolve_ssh_names(config, system, None)
+    resolved = cast(str, system_name)
+    query = await query_resource_group_memopt_scores(
+        config, resolved, selected, calculated=calculated
+    )
+    return ResourceGroupAffinityResult(
+        capability=(
+            "capability-unavailable" if query.unavailable_reason else "available"
+        ),
+        mode="calculated" if calculated else "current",
+        system=resolved,
+        selector=selected,
+        items=query.items,
+        unavailable_reason=query.unavailable_reason,
+    )
+
+
+async def list_resource_group_memopt_scores(
+    config: HMCConfig,
+    system: str,
+    selector: MemoptResourceGroupSelector | None = None,
+) -> ResourceGroupAffinityResult:
+    """Return current resource-group affinity scores when supported."""
+    return await _resource_group_memopt_scores(
+        config, system, selector, calculated=False
+    )
+
+
+async def plan_resource_group_memopt_scores(
+    config: HMCConfig,
+    system: str,
+    selector: MemoptResourceGroupSelector | None = None,
+) -> ResourceGroupAffinityResult:
+    """Return potential resource-group affinity scores without running DPO."""
+    return await _resource_group_memopt_scores(
+        config, system, selector, calculated=True
     )
 
 

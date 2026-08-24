@@ -64,15 +64,15 @@ def test_create_mcp_returns_independent_complete_applications():
     # tool. Issue #399 replaces twelve unsupported user/password/LDAP tools
     # with nine documented UOM user/role/RemoteAccess tools. Issue #310 adds two
     # read-only LPAR memory-optimization score tools; #311 adds three read-only
-    # affinity-planning tools, for 139 total.
+    # affinity-planning tools; #312 adds two resource-group affinity tools, for 141 total.
     policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
 
     first = create_mcp(policy)
     second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 139
-    assert len(asyncio.run(second.list_tools())) == 139
+    assert len(asyncio.run(first.list_tools())) == 141
+    assert len(asyncio.run(second.list_tools())) == 141
 
 
 def test_operations_do_not_import_application_modules():
