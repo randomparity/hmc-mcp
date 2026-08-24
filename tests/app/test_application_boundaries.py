@@ -52,14 +52,26 @@ raise SystemExit(0 if len(asyncio.run(application.list_tools())) == 0 else 1)
 def test_create_mcp_returns_independent_complete_applications():
     import asyncio
 
-    from hmc_mcp.server import create_mcp
+    from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+    from hmc_mcp.legacy_policy import compile_legacy_policy
+    from hmc_mcp.server import TOOL_SECURITY, create_mcp
 
-    first = create_mcp()
-    second = create_mcp()
+    # ADR 0041 made the policy mandatory. The legacy-equivalent one registers exactly
+    # the surface the no-argument call used to. ADR 0054 adds four read-only normalized
+    # PCIe inventory tools. ADR 0055 replaces one unsafe assignment tool with
+    # symmetric dedicated and SR-IOV assign/unassign tools. #375 adds the read-only
+    # hmc_list_lpar_ownership and #385 the bounded hmc_capture_lpar_console
+    # tool. Issue #399 replaces twelve unsupported user/password/LDAP tools
+    # with nine documented UOM user/role/RemoteAccess tools. Issue #310 adds two
+    # read-only LPAR memory-optimization score tools, for 136 total.
+    policy = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+
+    first = create_mcp(policy)
+    second = create_mcp(policy)
 
     assert first is not second
-    assert len(asyncio.run(first.list_tools())) == 130
-    assert len(asyncio.run(second.list_tools())) == 130
+    assert len(asyncio.run(first.list_tools())) == 136
+    assert len(asyncio.run(second.list_tools())) == 136
 
 
 def test_operations_do_not_import_application_modules():
@@ -74,6 +86,37 @@ def test_operations_do_not_import_application_modules():
             if isinstance(node, ast.ImportFrom) and node.module is not None
         }
         assert not imports & forbidden, path
+
+
+def test_tool_registry_does_not_import_the_policy_modules():
+    """The dependency runs one way, which is why both gates travel as callables.
+
+    ``access_policy`` imports ``tool_registry`` for its ``ToolSecurity`` index and
+    ``connection_scope`` imports both, so an import in the other direction is a
+    cycle — and the reason ``permits`` (ADR 0037) and ``authorize`` (ADR 0038) are
+    parameters rather than the policy object.
+    """
+    package = Path(__file__).parents[2] / "src" / "hmc_mcp"
+    forbidden = {
+        "access_policy",
+        "connection_scope",
+        "hmc_mcp.access_policy",
+        "hmc_mcp.connection_scope",
+    }
+
+    path = package / "tool_registry.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            # `from . import access_policy` carries no module, which is the form
+            # server.py uses for its own tool modules — collect both halves.
+            if node.module is not None:
+                modules.add(node.module)
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+    assert not modules & forbidden, sorted(modules & forbidden)
 
 
 def test_lpar_summary_cli_delegates_to_neutral_operation():

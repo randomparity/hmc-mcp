@@ -9,13 +9,18 @@ exact HTTP exchanges needed to understand HMC/VIOS behavior without exposing
 a speculative public API.
 """
 
+import functools
+from collections.abc import AsyncIterator
+
 import httpx
 import pytest
+from defusedxml import ElementTree as DET
 
 from conftest import make_config
 
 from hmc_mcp.client import HMCClient
 from hmc_mcp.errors import HMCError
+from hmc_mcp.xmlutil import localname
 
 # --------------------------------------------------------------------------- #
 # Brokered file creation fixtures
@@ -144,6 +149,51 @@ VIOS_UUID = "00000000-0000-0000-0000-000000000001"
 VG_UUID = "00000000-0000-0000-0000-000000000002"
 MEDIA_NAME = "test-image.iso"
 BROKER_URI = "https://hmc.test:12443/rest/api/uom/BrokeredFile/broker-file-uuid-001"
+VG_PATH = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+
+# An ISO name an operator could plausibly type, carrying all five XML
+# metacharacters at once (#284).
+METACHARACTER_MEDIA_NAME = "R&D <a> \"b\" 'c'.iso"
+
+
+def _texts(body: str, element: str) -> list[str]:
+    """Parsed text of every *element* in a request body, in document order."""
+    parsed = DET.fromstring(body.encode("utf-8"))
+    return [el.text for el in parsed.iter() if localname(el.tag) == element]
+
+
+async def _aiter(*chunks: bytes) -> AsyncIterator[bytes]:
+    """Yield *chunks* from an async iterator, the body shape the upload takes."""
+    for chunk in chunks:
+        yield chunk
+
+
+class _StreamShapeTransport(httpx.AsyncBaseTransport):
+    """Record an outgoing body's shape *before* anything materializes it.
+
+    respx — like ``httpx.MockTransport`` — calls ``request.aread()`` before it
+    hands the request to a route, which replaces the outgoing stream with an
+    already-materialized ``ByteStream``. A test written against a respx route
+    therefore cannot tell a streamed body from a slurped one: ``request.content``
+    answers the same either way. This transport sits where respx would and reads
+    the stream itself, so the shape has something to be asserted against.
+    """
+
+    def __init__(self, response_text: str) -> None:
+        self._response_text = response_text
+        self.stream_is_async_only: bool | None = None
+        self.chunks: list[bytes] = []
+        self.headers: httpx.Headers | None = None
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        # `ByteStream` — what a `bytes` body produces — implements both, so
+        # "async and not sync" is what distinguishes a stream from a buffer.
+        self.stream_is_async_only = isinstance(
+            request.stream, httpx.AsyncByteStream
+        ) and not isinstance(request.stream, httpx.SyncByteStream)
+        self.headers = request.headers
+        self.chunks = [chunk async for chunk in request.stream]
+        return httpx.Response(200, text=self._response_text)
 
 
 # --------------------------------------------------------------------------- #
@@ -193,19 +243,63 @@ async def test_broker_file_create_missing_location_header(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_broker_file_upload_success(mock_hmc):
-    """Brokered file upload streams content and returns response text."""
+    """Brokered file upload sends the streamed content and returns response text."""
     upload_route = mock_hmc.put(BROKER_URI).mock(
         return_value=httpx.Response(200, text=BROKERED_FILE_UPLOAD_RESPONSE_200)
     )
 
     async with HMCClient(make_config()) as hmc:
-        result = await hmc._broker_file_upload(BROKER_URI, TEST_UPLOAD_CONTENT)
+        result = await hmc._broker_file_upload(
+            BROKER_URI, _aiter(TEST_UPLOAD_CONTENT), len(TEST_UPLOAD_CONTENT)
+        )
 
     assert upload_route.called
     request = upload_route.calls.last.request
+    # respx materialized the stream before recording the call, so `.content` is
+    # the reassembled body — what the HMC receives, not evidence of its shape.
+    # `test_broker_file_upload_sends_a_stream_the_body_never_buffers` owns that.
     assert request.content == TEST_UPLOAD_CONTENT
     assert request.headers["Content-Type"] == "application/octet-stream"
     assert request.headers["Content-Length"] == str(len(TEST_UPLOAD_CONTENT))
+    assert result == BROKERED_FILE_UPLOAD_RESPONSE_200
+
+
+@pytest.mark.asyncio
+async def test_broker_file_upload_sends_a_stream_the_body_never_buffers(monkeypatch):
+    """#308: the ISO leaves the process chunk by chunk, under a declared length.
+
+    Three properties, each of which a whole-file `content=bytes` upload breaks:
+    the outgoing body is an async-only stream; the chunks the caller yielded
+    arrive as separate chunks rather than one buffer; and the `Content-Length`
+    the HMC is promised equals the number of bytes that actually go out. The
+    third is what makes the second safe — an explicit `Content-Length` is also
+    why httpx does not fall back to `Transfer-Encoding: chunked` here.
+    """
+    chunks = [TEST_UPLOAD_CONTENT[:1000], TEST_UPLOAD_CONTENT[1000:3000],
+              TEST_UPLOAD_CONTENT[3000:]]
+    transport = _StreamShapeTransport(BROKERED_FILE_UPLOAD_RESPONSE_200)
+    monkeypatch.setattr(
+        "hmc_mcp.client.httpx.AsyncClient",
+        functools.partial(httpx.AsyncClient, transport=transport),
+    )
+
+    # No `async with`: logon would run through the same transport, and this
+    # primitive does not depend on the session it would establish.
+    hmc = HMCClient(make_config())
+    try:
+        result = await hmc._broker_file_upload(
+            BROKER_URI, _aiter(*chunks), len(TEST_UPLOAD_CONTENT)
+        )
+    finally:
+        await hmc._http.aclose()
+
+    assert transport.stream_is_async_only is True
+    assert transport.chunks == chunks
+    assert b"".join(transport.chunks) == TEST_UPLOAD_CONTENT
+    assert transport.headers["Content-Length"] == str(
+        sum(len(chunk) for chunk in transport.chunks)
+    )
+    assert "Transfer-Encoding" not in transport.headers
     assert result == BROKERED_FILE_UPLOAD_RESPONSE_200
 
 
@@ -225,6 +319,73 @@ async def test_broker_iso_import_success(mock_hmc):
     assert "LinkedFileURI" in request.content.decode()
     assert BROKER_URI in request.content.decode()
     assert result == BROKERED_ISO_IMPORT_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_broker_file_create_round_trips_metacharacters(mock_hmc):
+    """A media name carrying all five metacharacters reaches the HMC intact."""
+    create_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(
+            201,
+            text=BROKERED_FILE_CREATE_RESPONSE_201,
+            headers={"Location": BROKER_URI},
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_file_create(VIOS_UUID, VG_UUID, METACHARACTER_MEDIA_NAME)
+
+    body = create_route.calls.last.request.content.decode()
+    assert _texts(body, "Filename") == [METACHARACTER_MEDIA_NAME]
+
+
+@pytest.mark.asyncio
+async def test_broker_iso_import_round_trips_metacharacters(mock_hmc):
+    """Both interpolated values parse back exactly out of the sent body."""
+    import_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE)
+    )
+    tainted_uri = f"{BROKER_URI}?a=1&b=2"
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_iso_import(
+            VIOS_UUID, VG_UUID, METACHARACTER_MEDIA_NAME, tainted_uri
+        )
+
+    body = import_route.calls.last.request.content.decode()
+    assert _texts(body, "MediaName") == [METACHARACTER_MEDIA_NAME]
+    assert _texts(body, "LinkedFileURI") == [tainted_uri]
+
+
+@pytest.mark.asyncio
+async def test_broker_iso_import_media_name_cannot_redirect_the_broker_uri(mock_hmc):
+    """Unescaped, this named a second LinkedFileURI in a well-formed document."""
+    import_route = mock_hmc.post(VG_PATH).mock(
+        return_value=httpx.Response(200, text=BROKERED_ISO_IMPORT_RESPONSE)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc._broker_iso_import(
+            VIOS_UUID,
+            VG_UUID,
+            "a.iso</MediaName><LinkedFileURI>https://evil.test/x<MediaName>",
+            BROKER_URI,
+        )
+
+    body = import_route.calls.last.request.content.decode()
+    assert _texts(body, "LinkedFileURI") == [BROKER_URI]
+
+
+@pytest.mark.asyncio
+async def test_broker_file_create_rejects_an_unrepresentable_filename(mock_hmc):
+    """A character XML 1.0 cannot carry is refused before the request is sent."""
+    create_route = mock_hmc.post(VG_PATH)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match=r"U\+0000"):
+            await hmc._broker_file_create(VIOS_UUID, VG_UUID, "a\x00.iso")
+
+    assert not create_route.called
 
 
 @pytest.mark.asyncio
@@ -323,7 +484,9 @@ async def test_complete_brokered_upload_sequence(mock_hmc):
         assert broker_uri == BROKER_URI
 
         # Step 2: Upload content
-        upload_result = await hmc._broker_file_upload(broker_uri, TEST_UPLOAD_CONTENT)
+        upload_result = await hmc._broker_file_upload(
+            broker_uri, _aiter(TEST_UPLOAD_CONTENT), len(TEST_UPLOAD_CONTENT)
+        )
         assert upload_result == BROKERED_FILE_UPLOAD_RESPONSE_200
         assert upload_route.called
 

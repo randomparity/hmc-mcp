@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from dataclasses import asdict
+from decimal import Decimal
+import sys
+
 import typer
 from rich.table import Table
 
@@ -23,16 +28,212 @@ from .operations_network import (
     list_virtual_networks,
     list_virtual_switches,
 )
+from .operations_pcie import (
+    assign_dedicated_pcie_slot,
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
+    unassign_dedicated_pcie_slot,
+    assign_sriov_logical_port,
+    set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
+)
 from .operations_ssh_network import (
-    SriovMode,
+    VnicBackingSelector,
+    VnicPartialError,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
-    set_sriov_adapter_mode,
 )
+from .ssh_commands import SriovMode
 from .ssh_commands import PciClass, list_io_slots
+
+
+def _confirm_on_stderr(prompt: str) -> bool:
+    """Keep confirmation prompts and terminal input echoes off JSON stdout."""
+    with redirect_stdout(sys.stderr):
+        return typer.confirm(prompt, err=True)
+
+
+def _print_pcie_inventory(result, as_json: bool) -> None:
+    if as_json:
+        _print_json(asdict(result))
+        return
+    if result.capability == "capability-unavailable":
+        console.print(f"Capability unavailable: {result.unavailable_reason}")
+        return
+    if not result.items:
+        console.print(f"{result.resource_kind} available; no items found")
+        return
+
+    rows = [asdict(item) for item in result.items]
+    table = Table(title=f"{result.resource_kind} inventory on {result.system}")
+    for field_name in rows[0]:
+        table.add_column(field_name)
+    for row in rows:
+        table.add_row(
+            *(str(value) if value is not None else "-" for value in row.values())
+        )
+    console.print(table)
+
+
+@network_app.command("list-dedicated-pcie-slots")
+def network_list_dedicated_pcie_slots(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized dedicated PCIe slots on a managed system."""
+    result = _run(lambda: list_dedicated_slots(_ssh_config(), system_name))
+    _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("assign-dedicated-pcie-slot")
+def network_assign_dedicated_pcie_slot(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Assign a dedicated slot when safe profile readback is available."""
+    _with_client(
+        lambda hmc: assign_dedicated_pcie_slot(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
+    )
+
+
+@network_app.command("unassign-dedicated-pcie-slot")
+def network_unassign_dedicated_pcie_slot(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Unassign a dedicated slot when safe profile readback is available."""
+    _with_client(
+        lambda hmc: unassign_dedicated_pcie_slot(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            drc_index,
+            ownership_override=ownership_override,
+        )
+    )
+
+
+@network_app.command("list-sriov-adapters")
+def network_list_sriov_adapters(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV adapters or their unavailable capability."""
+    result = _run(lambda: list_sriov_adapters(_ssh_config(), system_name, adapter_id))
+    _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("list-sriov-physical-ports")
+def network_list_sriov_physical_ports(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    physical_port_id: str | None = typer.Option(None, "--physical-port-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV physical ports or their unavailable capability."""
+    result = _run(
+        lambda: list_sriov_physical_ports(
+            _ssh_config(), system_name, adapter_id, physical_port_id
+        )
+    )
+    _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("list-sriov-logical-ports")
+def network_list_sriov_logical_ports(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    adapter_id: str | None = typer.Option(None, "--adapter-id"),
+    physical_port_id: str | None = typer.Option(None, "--physical-port-id"),
+    logical_port_id: str | None = typer.Option(None, "--logical-port-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List normalized SR-IOV logical ports or their unavailable capability."""
+    result = _run(
+        lambda: list_sriov_logical_ports(
+            _ssh_config(),
+            system_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+        )
+    )
+    _print_pcie_inventory(result, as_json)
+
+
+@network_app.command("assign-sriov-logical-port")
+def network_assign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: float,
+    profile_name: str = typer.Option(..., "--profile-name"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Assign an evidence-backed Ethernet SR-IOV logical port."""
+    from decimal import Decimal
+
+    result = _with_client(
+        lambda hmc: assign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            Decimal(str(capacity_percent)),
+            profile_name=profile_name,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
+
+
+@network_app.command("unassign-sriov-logical-port")
+def network_unassign_sriov_logical_port(
+    system_name: str,
+    lpar_name: str,
+    profile_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
+) -> None:
+    """Unassign a profile logical port on a Not Activated LPAR."""
+    result = _with_client(
+        lambda hmc: unassign_sriov_logical_port(
+            hmc,
+            system_name,
+            lpar_name,
+            profile_name,
+            adapter_id,
+            physical_port_id,
+            logical_port_id,
+            ownership_override=ownership_override,
+        )
+    )
+    _print_json(asdict(result))
 
 
 @network_app.command("list-switches")
@@ -190,19 +391,14 @@ def network_set_sriov_mode(
         ..., help="Physical adapter ID (from `hmc-mcp network list-io-slots`)"
     ),
     mode: SriovMode = typer.Argument(..., help="'sriov' or 'dedicated'"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode (HMC CLI via SSH)."""
-    if not yes and not typer.confirm(
-        f"Set adapter {adapter_id} on system '{system_name}' to '{mode}' mode?"
-    ):
-        raise typer.Abort()
+    """Verify an adapter's current mode; transitions fail closed."""
     result = _run(
         lambda: set_sriov_adapter_mode(_ssh_config(), system_name, adapter_id, mode)
     )
 
     console.print(
-        f"[green]Adapter {adapter_id} set to '{mode}' mode on '{system_name}'[/green]"
+        f"[green]Adapter {adapter_id} verified in '{mode}' mode on '{system_name}'[/green]"
     )
     if result.strip():
         console.print(result.strip())
@@ -224,57 +420,77 @@ def network_list_vnics(
 def network_add_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    capacity: int = typer.Option(..., "--capacity", "-c", help="vNIC capacity (1–100)"),
-    virtual_switch_name: str = typer.Option(
-        ..., "--virtual-switch-name", help="Virtual switch name"
-    ),
-    vlan: int = typer.Option(..., "--vlan", help="Port VLAN ID"),
-    backing_devices: str | None = typer.Option(
-        None, "--backing-devices", help="Backing devices (opaque string, v1 only)"
-    ),
+    vios_name: str = typer.Option(..., "--vios-name"),
+    vios_lpar_id: str = typer.Option(..., "--vios-lpar-id"),
+    adapter_id: str = typer.Option(..., "--adapter-id"),
+    physical_port_id: str = typer.Option(..., "--physical-port-id"),
+    capacity_percent: float = typer.Option(..., "--capacity-percent"),
+    port_vlan_id: int = typer.Option(..., "--port-vlan-id"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Add a vNIC to an LPAR (HMC CLI via SSH, v1 minimal parameters)."""
-    if not yes and not typer.confirm(
-        f"Add vNIC (capacity={capacity}, switch={virtual_switch_name}, vlan={vlan}) "
+    """Add and verify a vNIC with one typed SR-IOV backing selector."""
+    if not yes and not _confirm_on_stderr(
+        f"Add vNIC (VIOS={vios_name}, adapter={adapter_id}, "
+        f"port={physical_port_id}, capacity={capacity_percent}, vlan={port_vlan_id}) "
         f"to '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
-    result = _run(
-        lambda: add_vnic(
-            _ssh_config(),
-            system_name,
-            lpar,
-            capacity,
-            virtual_switch_name,
-            vlan,
-            backing_devices,
-        )
-    )
+    async def operation(hmc):
+        try:
+            return await add_vnic(
+                hmc,
+                system_name,
+                lpar,
+                VnicBackingSelector(
+                    vios_name,
+                    vios_lpar_id,
+                    adapter_id,
+                    physical_port_id,
+                    Decimal(str(capacity_percent)),
+                ),
+                port_vlan_id,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            return exc
 
-    console.print(f"[green]vNIC added to '{lpar}' on '{system_name}'[/green]")
-    if result.strip():
-        console.print(result.strip())
+    outcome = _with_client(operation)
+    result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
+    _print_json(asdict(result))
+    if isinstance(outcome, VnicPartialError):
+        raise typer.Exit(1)
 
 
 @network_app.command("remove-vnic")
 def network_remove_vnic(
     system_name: str = typer.Argument(..., help="Managed system name or UUID"),
     lpar: str = typer.Argument(..., help="LPAR name or UUID"),
-    vnic_id: str = typer.Argument(..., help="vNIC ID (from list-vnics)"),
+    slot_num: str = typer.Argument(..., help="vNIC slot number (from list-vnics)"),
+    ownership_override: bool = typer.Option(False, "--ownership-override"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a vNIC from an LPAR (HMC CLI via SSH)."""
-    if not yes and not typer.confirm(
-        f"Remove vNIC {vnic_id} from '{lpar}' on '{system_name}'?"
+    if not yes and not _confirm_on_stderr(
+        f"Remove vNIC slot {slot_num} from '{lpar}' on '{system_name}'?"
     ):
         raise typer.Abort()
 
-    result = _run(lambda: remove_vnic(_ssh_config(), system_name, lpar, vnic_id))
+    async def operation(hmc):
+        try:
+            return await remove_vnic(
+                hmc,
+                system_name,
+                lpar,
+                slot_num,
+                ownership_override=ownership_override,
+            )
+        except VnicPartialError as exc:
+            return exc
 
-    console.print(
-        f"[green]vNIC {vnic_id} removed from '{lpar}' on '{system_name}'[/green]"
-    )
-    if result.strip():
-        console.print(result.strip())
+    outcome = _with_client(operation)
+    result = outcome.result if isinstance(outcome, VnicPartialError) else outcome
+    _print_json(asdict(result))
+    if isinstance(outcome, VnicPartialError):
+        raise typer.Exit(1)

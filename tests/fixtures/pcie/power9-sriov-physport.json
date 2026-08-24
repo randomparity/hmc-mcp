@@ -1,0 +1,15 @@
+{
+  "record_kind": "contract-evidence",
+  "evidence_kind": "documentation",
+  "documentation_family": "Power9",
+  "hmc_release": "not-established",
+  "source_url": "https://www.ibm.com/docs/en/power9/0000-REF?topic=POWER9_REF%2Fp9edm%2Flshwres.htm",
+  "source_locator": "lshwres > -r sriov > --rsubtype physport > --level eth > adapter_ids,phys_port_ids",
+  "claim_summary": "Ethernet physical-port inventory has stable selectors, but no read projection is admitted.",
+  "support": "unknown",
+  "admitted_claims": [
+    "system + adapter_id + phys_port_id selectors",
+    "physical-port selector grammar uses --level eth",
+    "read fields remain unknown"
+  ]
+}

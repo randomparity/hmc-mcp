@@ -54,9 +54,17 @@ class _ScriptedClient:
 def _isolate_runner(monkeypatch) -> None:
     monkeypatch.setattr(runner, "Client", _FakeClient)
 
-    async def configure(enabled: bool, application) -> None:
+    async def configure(enabled, application, *, permits=None, authorize=None) -> None:
         assert enabled is True
-        assert application is runner.mcp
+        # The old assertion here was `application is runner.mcp`. ADR 0041 removed that
+        # module-level object, and the identity check had nothing left to compare
+        # against — so this asserts the property the runner actually needs instead:
+        # the toggle is handed the gates of the policy the runner composed, and that
+        # policy grants the escape hatch. Called with neither, `permits=None` would
+        # register the tool whatever the policy said and `authorize=None` would leave
+        # its handler unwrapped, which is how a live run stops being evidence.
+        assert permits is not None and authorize is not None
+        assert permits("hmc_run_command") is True
         return None
 
     monkeypatch.setattr(runner, "configure_arbitrary_command_tool", configure)
@@ -318,6 +326,51 @@ async def test_lpar_lifecycle_sequences_create_power_and_cleanup(monkeypatch):
     ]
     assert state.context.scratch_uuid is None
     assert state.context.job_uuid_sample == "job-uuid"
+
+
+@pytest.mark.parametrize(
+    "baseline",
+    ["web tier, prod", "owner=alice", "em—dash", "desc\x00bad"],
+)
+def test_unrestorable_description_names_the_reason(baseline):
+    """A baseline the CLI cannot round-trip is reported, not silently retried.
+
+    The runner defers to the server's validator, so the ``-i`` record grammar
+    of ADR 0045 skips the restore instead of failing it.
+    """
+    reason = runner._unrestorable_description(baseline)
+    assert isinstance(reason, str) and reason
+
+
+@pytest.mark.parametrize("baseline", ["", "plain text", "[hmc-mcp owner:a created:x]"])
+def test_restorable_description_is_not_blocked(baseline):
+    """An ordinary baseline description is restored, not skipped."""
+    assert runner._unrestorable_description(baseline) is None
+
+
+@pytest.mark.asyncio
+async def test_lpar_property_workflow_skips_an_unrestorable_description(monkeypatch):
+    """A baseline carrying a record delimiter is skipped rather than rewritten."""
+    calls = []
+
+    async def scripted_call(_client, tool, **kwargs):
+        calls.append((tool, kwargs))
+        if tool == "hmc_run_command":
+            return "PASS", "aixlinux"
+        return "PASS", {}
+
+    monkeypatch.setattr(runner, "call", scripted_call)
+    state = runner.RunState()
+    state.context.lp3_baseline["description"] = "web tier, prod"
+
+    await runner.mutate_lpar_properties(None, state)
+
+    descriptions = [
+        kwargs["description"]
+        for tool, kwargs in calls
+        if tool == "hmc_set_lpar_description"
+    ]
+    assert descriptions == ["MCP live-test probe R2 safe to clear"]
 
 
 @pytest.mark.asyncio

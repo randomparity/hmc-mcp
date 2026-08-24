@@ -20,6 +20,7 @@ import tomllib
 import warnings
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,15 +46,76 @@ def validate_agent_id(agent_id: str) -> None:
     forbidden = {
         ",": "commas corrupt the HMC CLI -i parser",
         "=": "equals signs corrupt the HMC CLI -i parser",
+        '"': "double quotes are the HMC CLI -i record escape",
         "[": "brackets break the ownership token format",
         "]": "brackets break the ownership token format",
         "/": "the HMC REST API rejects '/' in X-Audit-Memento",
         ":": "colons make audit and ownership token formats ambiguous",
+        "\\": "backslash behaviour inside an HMC CLI -i record is unverified "
+        "(ADR 0045)",
         " ": "spaces corrupt the ownership token in the CLI -i parser",
     }
     for character, reason in forbidden.items():
         if character in agent_id:
             raise ValueError(f"agent_id contains {character!r}; {reason}")
+
+
+ISO_URL_ALLOWLIST_HELP = (
+    "Set HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the TOML profile) to a "
+    "comma-separated list of hosts, each written as 'host' or 'host:port' with "
+    "no scheme and no path — for example "
+    "HMC_ISO_URL_ALLOWLIST=iso.example.internal,localhost:18765"
+)
+
+
+def parse_iso_url_allowlist(value: str) -> tuple[tuple[str, int | None], ...]:
+    """Parse the ISO download allowlist into ``(host, port_or_None)`` pairs.
+
+    *value* is a comma-separated list of ``host`` or ``host:port`` entries;
+    empty entries are dropped, so a trailing comma is not an error. An entry
+    without a port permits any port on that host.
+
+    Each entry is parsed as a URL authority rather than split by hand, so
+    bracketed IPv6 literals (``[::1]:18765``) and out-of-range ports are handled
+    by the standard library. Anything that is not a bare authority — a scheme, a
+    path, credentials, a query — raises ``ValueError`` naming the entry: an
+    operator who writes ``https://iso.example.internal/isos/`` would otherwise
+    get an allowlist that silently matches nothing.
+    """
+    entries: list[tuple[str, int | None]] = []
+    for raw in value.split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        parts = urlsplit(f"//{entry}")
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} has an unusable port: {exc}. "
+                + ISO_URL_ALLOWLIST_HELP
+            ) from exc
+        if port == 0:
+            # Port 0 is not a destination, and it is falsy: an entry carrying it
+            # would compare unequal to every URL's port and silently match
+            # nothing.
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} has an unusable port: port "
+                "must be between 1 and 65535. " + ISO_URL_ALLOWLIST_HELP
+            )
+        if not parts.hostname or parts.username is not None:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} is not a host or host:port. "
+                + ISO_URL_ALLOWLIST_HELP
+            )
+        if parts.path or parts.query or parts.fragment:
+            raise ValueError(
+                f"iso_url_allowlist entry {entry!r} carries a scheme, path, or "
+                "query; the allowlist matches hosts, not URL prefixes. "
+                + ISO_URL_ALLOWLIST_HELP
+            )
+        entries.append((parts.hostname, port))
+    return tuple(entries)
 
 
 class HMCConfig(BaseSettings):
@@ -65,7 +127,7 @@ class HMCConfig(BaseSettings):
     )
 
     host: str = Field(default="", description="HMC hostname or IP address")
-    port: int = Field(default=12443, description="HMC REST API port")
+    port: int = Field(default=443, description="HMC REST API port")
     user: str = Field(default="", description="HMC user name")
     password: str = Field(default="", description="HMC password")
     ssh_key_file: str | None = Field(default=None, description="Path to SSH private key file (HMC_SSH_KEY_FILE)")
@@ -94,10 +156,34 @@ class HMCConfig(BaseSettings):
         description=(
             "Per-agent identifier folded into the X-Audit-Memento header as "
             "hmc-mcp:<agent_id>. Used for multi-agent LPAR ownership attribution. "
-            "Must be 1–64 printable ASCII characters with no commas, = signs, or "
-            "square brackets. (HMC_AGENT_ID)"
+            "Must be 1–64 printable ASCII characters with no commas, = signs, "
+            "square brackets, double quotes, or backslashes — any of those would "
+            "corrupt the ownership stamp in the HMC CLI -i parser or the "
+            "description grammar. (HMC_AGENT_ID)"
         ),
     )
+
+    iso_url_allowlist: str = Field(
+        default="",
+        description=(
+            "Comma-separated hosts that hmc_upload_iso may download an ISO from, "
+            "each written as 'host' or 'host:port'. An entry without a port "
+            "permits any port on that host. Empty (the default) refuses every "
+            "URL: the tool fetches from the MCP server's network position, so "
+            "there is no safe default destination. (HMC_ISO_URL_ALLOWLIST)"
+        ),
+    )
+
+    @field_validator("iso_url_allowlist")
+    @classmethod
+    def _validate_iso_url_allowlist(cls, v: str) -> str:
+        parse_iso_url_allowlist(v)
+        return v
+
+    @property
+    def iso_url_allowlist_entries(self) -> tuple[tuple[str, int | None], ...]:
+        """The allowlist as ``(host, port_or_None)`` pairs; empty when unset."""
+        return parse_iso_url_allowlist(self.iso_url_allowlist)
 
     @field_validator("agent_id")
     @classmethod
@@ -211,6 +297,82 @@ def config_dir() -> Path:
     return base / "hmc-mcp"
 
 
+def _selected_config_path(config_path: Path | None) -> Path | None:
+    """Return *config_path*, or the platform-native path when it is None.
+
+    Raises ConfigError when the platform-native path cannot be resolved:
+    :func:`resolve_config_path` reaches ``Path.home()``, which raises
+    RuntimeError under a uid with no passwd entry and no HOME — a container or a
+    systemd unit. ``access_policy.load_access_policy`` guards the same case.
+    """
+    if config_path is not None:
+        return config_path
+    try:
+        return resolve_config_path()
+    except (RuntimeError, ValueError) as exc:
+        raise ConfigError(f"cannot resolve the config path: {exc}") from exc
+
+
+def _read_config_document(path: Path) -> dict[str, Any]:
+    """Read and parse *path*, converting every failure into a ConfigError.
+
+    Returns ``{}`` when the file is absent: an absent config file is an empty
+    configuration everywhere it is read. There is deliberately no ``exists()``
+    pre-check — that is a TOCTOU, and the absent case is the FileNotFoundError
+    arm below.
+
+    Every other failure is a ConfigError naming *path*, so the callers that
+    document ConfigError as their failure type tell the truth and a
+    ``try/except ConfigError`` around one of them actually catches. This is the
+    single read-and-parse for config.toml; see
+    ``access_policy.load_access_policy`` for the same conversion over the
+    access-policy file.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        # A directory at the path or an unreadable mode lands in OSError;
+        # ValueError covers an unusable path string, such as an embedded null
+        # byte, which read_text raises before it reaches the filesystem.
+        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
+    except RecursionError as exc:
+        # tomllib recurses on nested arrays and inline tables, so a deeply nested
+        # document exhausts the stack before it can report a syntax error. A
+        # RecursionError carries no message, hence the fixed clause.
+        raise ConfigError(
+            f"{path}: TOML parse error: document nesting is too deep"
+        ) from exc
+
+
+def _coerce_profiles(raw: Any, path: str | Path | None) -> dict[str, Any]:
+    """Validate and return the ``profiles`` table as ``dict[str, Any]``.
+
+    ``raw`` is the parsed value of the top-level ``profiles`` key (or None when
+    absent). Mirrors :func:`_coerce_nicknames` for the other half of profile
+    selection: without it ``doc.get("profiles", {}).keys()`` raises an
+    AttributeError from the middle of a dict access when the key is not a table,
+    and ``name not in profiles`` quietly degrades into a substring test.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"{path}: 'profiles' must be a table of profile name to settings, "
+            f"got {type(raw).__name__}"
+        )
+    # TOML keys are always strings; str() states that for the type checker, which
+    # sees only the untyped mapping the isinstance check above narrowed to.
+    return {str(name): entry for name, entry in raw.items()}
+
+
 def list_profiles_with_default(
     config_path: Path | None = None,
 ) -> tuple[list[str], str | None]:
@@ -218,33 +380,25 @@ def list_profiles_with_default(
 
     Never resolves secrets — safe for diagnostics.
     Returns ([], None) when the file is absent or path is None.
-    Raises ConfigError on TOML parse errors.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
+    path = _selected_config_path(config_path)
+    if path is None:
         return [], None
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    names = list(doc.get("profiles", {}).keys())
-    default = doc.get("default_profile")
-    return names, default
+    doc = _read_config_document(path)
+    return list(_coerce_profiles(doc.get("profiles"), path)), doc.get(
+        "default_profile"
+    )
 
 
 def list_profiles(config_path: Path | None = None) -> list[str]:
     """Return profile names from the config file; empty list when absent.
 
     Never resolves secrets — safe for tab-completion and diagnostics.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
-        return []
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    return list(doc.get("profiles", {}).keys())
+    return list_profiles_with_default(config_path=config_path)[0]
+
 
 def _coerce_nicknames(raw: Any, path: str | Path | None) -> dict[str, str]:
     """Validate and return the ``nicknames`` table as ``dict[str, str]``.
@@ -275,59 +429,57 @@ def list_nicknames(config_path: Path | None = None) -> dict[str, str]:
 
     Never resolves secrets - safe for diagnostics and display.
     Returns ``{}`` when the file is absent or path is None.
-    Raises ConfigError on TOML parse errors or a malformed nicknames table.
+    Raises ConfigError on every read, decode, parse, or structure failure.
     """
-    path = config_path if config_path is not None else resolve_config_path()
-    if path is None or not path.exists():
+    path = _selected_config_path(config_path)
+    if path is None:
         return {}
-    try:
-        doc = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-    return _coerce_nicknames(doc.get("nicknames"), path)
+    return _coerce_nicknames(_read_config_document(path).get("nicknames"), path)
 
 
-def load_profile(
-    profile: str | None = None,
+def list_profiles_and_nicknames(
     config_path: Path | None = None,
-) -> HMCConfig:
-    """Load and return an HMCConfig for the selected profile.
+) -> tuple[list[str], dict[str, str]]:
+    """Return (profile_names, nicknames) from one TOML read.
 
-    Profile selection order:
-      1. explicit ``profile`` argument
-      2. ``HMC_PROFILE`` environment variable
-      3. ``default_profile`` key in the TOML file
-      4. ConfigError
+    Never resolves secrets — safe for diagnostics and for authorization decisions
+    that must mirror :func:`load_profile`'s selection order. One read rather than
+    ``list_profiles()`` plus ``list_nicknames()`` so that the two halves of a
+    single decision cannot be taken from two different versions of the file.
 
-    Precedence (highest to lowest):
-      explicit HMCConfig constructor args > HMC_* env vars > TOML profile values
-
-    Checkout-local .env files are NOT loaded.
-
-    Args:
-        profile: Profile name to select, or None to use env/TOML default.
-        config_path: Override the config file path (for testing).
-
-    Returns:
-        HMCConfig populated from the selected profile with env-var overrides.
-
-    Raises:
-        ConfigError: When the file cannot be parsed, no profile is selected,
-            the selected profile is absent, or secret config is invalid.
+    Returns ``([], {})`` when the file is absent or *config_path* is None.
+    Every other failure is a ConfigError: this feeds ADR 0038's authorization
+    decision, whose denial message must interpolate no path and no raw exception
+    text, so an unreadable file, a non-UTF-8 one, and a malformed table must all
+    arrive as one recognizable type rather than as an OSError or an
+    AttributeError from the middle of a dict access.
     """
-    path = config_path if config_path is not None else resolve_config_path()
+    path = _selected_config_path(config_path)
+    if path is None:
+        return [], {}
+    doc = _read_config_document(path)
+    return list(_coerce_profiles(doc.get("profiles"), path)), _coerce_nicknames(
+        doc.get("nicknames"), path
+    )
 
-    # Determine selected profile name
+
+def _load_profile_from_document(
+    doc: dict[str, Any],
+    path: Path | None,
+    profile: str | None = None,
+) -> HMCConfig:
+    """Build an HMCConfig for *profile* from an already-parsed *doc*.
+
+    Shared by :func:`load_profile`, which reads and parses *path* itself, and
+    by a caller that already holds the parsed document for this invocation —
+    such as ``config_show``, which needs the same document for credential
+    presence and nickname resolution and must not parse ``config.toml`` a
+    second time to also select a profile (issue #295). *path* is used only for
+    error messages; it is not re-read here.
+    """
     name = profile or os.environ.get("HMC_PROFILE")
-    doc: dict[str, Any] = {}
-
-    if path is not None and path.exists():
-        try:
-            doc = tomllib.loads(path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"{path}: TOML parse error: {exc}") from exc
-        if name is None:
-            name = doc.get("default_profile")
+    if name is None:
+        name = doc.get("default_profile")
 
     if name is None:
         raise ConfigError(
@@ -335,7 +487,7 @@ def load_profile(
             "--profile / HMC_PROFILE supplied"
         )
 
-    profiles = doc.get("profiles", {})
+    profiles = _coerce_profiles(doc.get("profiles"), path)
 
     # Validate the nicknames table structure whenever the key is
     # present, so a malformed table is a ConfigError regardless of
@@ -368,7 +520,15 @@ def load_profile(
                 f"available nicknames: {nickname_names}"
               )
 
-    entry = dict(profiles[name])
+    selected = profiles[name]
+    if not isinstance(selected, dict):
+        # Without this, dict() on a non-table raises a bare ValueError whose
+        # message is about update sequences, not about the config file.
+        raise ConfigError(
+            f"{path}: profile {name!r} must be a table of settings, "
+            f"got {type(selected).__name__}"
+        )
+    entry = dict(selected)
 
     # Validate and resolve secret fields
     if "password" in entry and "password_env" in entry:
@@ -395,3 +555,37 @@ def load_profile(
         if (env_prefix + k.upper()) not in os.environ
     }
     return HMCConfig(_env_file=None, **filtered_entry)  # ty: ignore[unknown-argument]
+
+
+def load_profile(
+    profile: str | None = None,
+    config_path: Path | None = None,
+) -> HMCConfig:
+    """Load and return an HMCConfig for the selected profile.
+
+    Profile selection order:
+      1. explicit ``profile`` argument
+      2. ``HMC_PROFILE`` environment variable
+      3. ``default_profile`` key in the TOML file
+      4. ConfigError
+
+    Precedence (highest to lowest):
+      explicit HMCConfig constructor args > HMC_* env vars > TOML profile values
+
+    Checkout-local .env files are NOT loaded.
+
+    Args:
+        profile: Profile name to select, or None to use env/TOML default.
+        config_path: Override the config file path (for testing).
+
+    Returns:
+        HMCConfig populated from the selected profile with env-var overrides.
+
+    Raises:
+        ConfigError: When the file cannot be read, decoded, or parsed, when a
+            table it needs is malformed, when no profile is selected, when the
+            selected profile is absent, or when secret config is invalid.
+    """
+    path = _selected_config_path(config_path)
+    doc: dict[str, Any] = {} if path is None else _read_config_document(path)
+    return _load_profile_from_document(doc, path, profile)

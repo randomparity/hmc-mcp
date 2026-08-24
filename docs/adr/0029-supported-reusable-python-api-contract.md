@@ -64,7 +64,8 @@ built-in containers are not facade exports. The initial inventory is:
   internal.
 - `operations_lpar`: operations `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
-  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, and `rename_lpar`; types `LparCreation`,
+  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`, and
+  `set_lpar_ownership_description`; types `LparCreation`,
   `LparCreationResult`, and `LparPowerResult`; synchronous result helper `power_on_outcome` and
   ownership parser `parse_lpar_ownership_owner` are excluded; underscore helpers are internal.
 - `operations_lpm`: operations `migrate_lpar`, `abort_lpar_migration`,
@@ -80,8 +81,9 @@ built-in containers are not facade exports. The initial inventory is:
   `ProvisionNetwork`, `ProvisionStorage`, `ProvisionResult`, `AttachDiskResult`, `LparResources`,
   and `PartitionType`; underscore helpers are internal.
 - `operations_ssh_network`: operations `list_fc_ports`, `list_sea_adapters`,
-  `set_sriov_adapter_mode`, `list_vnics`, `add_vnic`, and `remove_vnic`; type `SriovMode`; no
-  public-name exclusions.
+  `get_lpar_memopt_score`, `list_lpar_memopt_scores`, `set_sriov_adapter_mode`,
+  `list_vnics`, `add_vnic`, and `remove_vnic`; type `SriovMode`; no public-name
+  exclusions.
 - `operations_storage`: operations `list_volume_groups`, `create_volume_group`,
   `create_virtual_disk`, `map_storage`, `create_media_repository`, `create_optical_media`,
   `delete_media_repository`, `create_logical_unit`, and `delete_logical_unit`; types `StorageKind`,

@@ -95,16 +95,22 @@ Common causes worth checking first:
 
 ## Guardrail commands
 
-Before pushing any branch, run the full suite inside that branch's worktree:
+Use the quiet recipes by default so successful checks do not consume agent
+context. Failures still replay their complete diagnostics.
 
 ```sh
-just verify   # uv run pytest -q + scripts/smoke_mcp.py + all CLI groups
+just test          # tests + exact coverage gate; compact success summary
+just smoke         # MCP handshake; tool count only
+just verify        # full pre-push guardrail
 ```
 
-`scripts/smoke_mcp.py` imports `hmc_mcp.server` directly and surfaces
-import-time syntax errors that pytest collection may swallow. Run it explicitly
-if pytest collection fails before any tests execute:
+Use verbose recipes only when live progress or expanded diagnostics are needed:
 
 ```sh
-uv run python scripts/smoke_mcp.py
+just test-verbose   # live pytest output + missing-lines coverage
+just smoke-verbose  # list every exposed MCP tool
 ```
+
+Before pushing, run `just verify` inside the branch worktree. If pytest fails
+during collection, run `just smoke`; it imports `hmc_mcp.server` directly and
+can expose an import-time syntax error that collection obscures.

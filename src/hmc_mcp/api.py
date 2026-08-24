@@ -3,7 +3,12 @@
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
-from hmc_mcp.documents import BootDeviceSelector, LparResources, PartitionType, StorageKind
+from hmc_mcp.documents import (
+    BootDeviceSelector,
+    LparResources,
+    PartitionType,
+    StorageKind,
+)
 from hmc_mcp.errors import HMCError, HMCTransportError
 from hmc_mcp.jobs import DeviceType, LuType
 from hmc_mcp.operations_adapters import (
@@ -31,6 +36,8 @@ from hmc_mcp.operations_lpar import (
     power_lpar,
     rename_lpar,
     resolve_lpar_ownership_names,
+    list_lpar_ownership,
+    set_lpar_ownership_description,
     stamp_created_lpar_ownership,
 )
 from hmc_mcp.operations_lpm import (
@@ -56,6 +63,39 @@ from hmc_mcp.operations_pcm import (
     resolve_pcm_resource,
     set_pcm_preferences,
 )
+from hmc_mcp.operations_pcie import (
+    DedicatedSlot,
+    InventoryResult,
+    InventorySelector,
+    PcieAssignmentUnavailableError,
+    SriovAdapter,
+    SriovLogicalPort,
+    SriovPhysicalPort,
+    assign_dedicated_pcie_slot,
+    list_dedicated_slots,
+    list_sriov_adapters,
+    list_sriov_logical_ports,
+    list_sriov_physical_ports,
+    unassign_dedicated_pcie_slot,
+    SriovLogicalPortCapabilityError,
+    SriovLogicalPortChangeResult,
+    SriovLogicalPortPartialError,
+    SriovLogicalPortSnapshot,
+    assign_sriov_logical_port,
+    set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
+)
+from hmc_mcp.operations_assignments import (
+    AssignmentResult,
+    AssignmentStep,
+    DedicatedPcieAssignment,
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+    SriovLogicalPortAssignment,
+    VnicAssignment,
+    apply_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
     ProvisionNetwork,
@@ -65,12 +105,19 @@ from hmc_mcp.operations_provision import (
     provision_lpar,
 )
 from hmc_mcp.operations_ssh_network import (
+    VnicBackingSelector,
+    VnicBackingSnapshot,
+    VnicCapabilityError,
+    VnicChangeResult,
+    VnicPartialError,
+    VnicSnapshot,
     add_vnic,
+    get_lpar_memopt_score,
     list_fc_ports,
+    list_lpar_memopt_scores,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
-    set_sriov_adapter_mode,
 )
 from .operations_storage import (
     create_logical_unit,
@@ -99,6 +146,11 @@ from hmc_mcp.operations_templates import (
 from hmc_mcp.operations_vios import power_vios
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import SriovMode
+from hmc_mcp.console_capture import (
+    ConsoleCapture,
+    ConsoleHeldError,
+    capture_lpar_console,
+)
 
 __all__ = [
     "HMCClient",
@@ -125,8 +177,10 @@ __all__ = [
     "authorize_decommission_lpar_ownership_snapshot",
     "authorize_lpar_mutation",
     "resolve_lpar_ownership_names",
+    "list_lpar_ownership",
     "stamp_created_lpar_ownership",
     "create_and_stamp_lpar",
+    "set_lpar_ownership_description",
     "delete_lpar",
     "power_lpar",
     "rename_lpar",
@@ -154,6 +208,26 @@ __all__ = [
     "metric_data",
     "PcmCategory",
     "MetricKind",
+    "DedicatedSlot",
+    "InventoryResult",
+    "InventorySelector",
+    "PcieAssignmentUnavailableError",
+    "SriovAdapter",
+    "SriovLogicalPort",
+    "SriovPhysicalPort",
+    "assign_dedicated_pcie_slot",
+    "list_dedicated_slots",
+    "list_sriov_adapters",
+    "list_sriov_logical_ports",
+    "list_sriov_physical_ports",
+    "unassign_dedicated_pcie_slot",
+    "SriovLogicalPortCapabilityError",
+    "SriovLogicalPortChangeResult",
+    "SriovLogicalPortPartialError",
+    "SriovLogicalPortSnapshot",
+    "assign_sriov_logical_port",
+    "set_sriov_adapter_mode",
+    "unassign_sriov_logical_port",
     "attach_disk_to_lpar",
     "provision_lpar",
     "ProvisionNetwork",
@@ -163,12 +237,29 @@ __all__ = [
     "LparResources",
     "PartitionType",
     "list_fc_ports",
+    "get_lpar_memopt_score",
+    "list_lpar_memopt_scores",
     "list_sea_adapters",
     "set_sriov_adapter_mode",
     "list_vnics",
+    "VnicBackingSelector",
+    "VnicBackingSnapshot",
+    "VnicSnapshot",
+    "VnicChangeResult",
+    "VnicCapabilityError",
+    "VnicPartialError",
     "add_vnic",
     "remove_vnic",
     "SriovMode",
+    "AssignmentResult",
+    "AssignmentStep",
+    "DedicatedPcieAssignment",
+    "LparPcieAssignments",
+    "LparPcieWorkflowResult",
+    "SriovLogicalPortAssignment",
+    "VnicAssignment",
+    "apply_lpar_pcie_assignments",
+    "prevalidate_lpar_pcie_assignments",
     "list_volume_groups",
     "create_volume_group",
     "create_virtual_disk",
@@ -193,4 +284,7 @@ __all__ = [
     "get_partition_template",
     "deploy_partition_template",
     "power_vios",
+    "capture_lpar_console",
+    "ConsoleCapture",
+    "ConsoleHeldError",
 ]

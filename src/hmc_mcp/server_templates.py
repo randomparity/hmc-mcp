@@ -7,7 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _READ_ONLY,
     _run,
 )
 
@@ -19,10 +18,10 @@ from .operations_templates import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="template.list", target_kind="console")
 def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, Any]]:
     """List all partition templates in the HMC template library.
 
@@ -37,7 +36,7 @@ def hmc_list_partition_templates(profile: str | None = None) -> list[dict[str, A
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="template.get", target_kind="template")
 def hmc_get_partition_template(
     template_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -58,7 +57,7 @@ def hmc_get_partition_template(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="template.deploy", target_kind="managed_system")
 def hmc_deploy_partition_template(
     draft_template_uuid: str,
     target_system_name_or_uuid: str,

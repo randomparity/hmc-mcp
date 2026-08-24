@@ -5,11 +5,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 import respx
 
 from hmc_mcp.server import hmc_create_lpar
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
 SYSTEM_UUID = "aaaa0000-0000-0000-0000-000000000001"
 LPAR_UUID = "bbbb0000-0000-0000-0000-000000000001"
 
@@ -149,3 +150,41 @@ def test_create_lpar_result_shape_without_agent_id(monkeypatch):
     assert result.lpar is not None
     assert result.ownership_stamped is True
     assert result.warnings == ()
+
+
+def test_create_lpar_invalid_caller_token_zero_routes(monkeypatch):
+    """A malformed token fails before any HMC traffic (spec guarantee 3)."""
+    _env(monkeypatch)
+    with respx.mock(base_url=BASE, assert_all_called=False) as router:
+        _setup_mock(router)
+        with pytest.raises(ValueError, match="caller_token"):
+            hmc_create_lpar(system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
+                            caller_token="a=b")
+        assert all(not route.called for route in router.routes)
+
+
+def test_create_lpar_valid_caller_token_stamped(monkeypatch):
+    """A valid token threads through to the composed ownership stamp."""
+    captured: dict[str, str] = {}
+
+    async def capture_stamp(config, system_name, lpar_name, *, agent_id=None,
+                            caller_token=None):
+        captured["description"] = (
+            f"[hmc-mcp owner:hmc-mcp created:2026-08-21] [caller {caller_token}]"
+        )
+        return captured["description"]
+
+    _env(monkeypatch)
+    with respx.mock(base_url=BASE, assert_all_called=False) as router:
+        _setup_mock(router)
+        with patch(
+            "hmc_mcp.operations_lpar.stamp_lpar_ownership", new=capture_stamp
+        ):
+            result = hmc_create_lpar(
+                system_name_or_uuid=SYSTEM_UUID, name="test-lpar",
+                caller_token="CHG-9",
+            )
+    assert result.resource_created is True
+    assert result.ownership_stamped is True
+    assert result.warnings == ()
+    assert captured["description"].endswith("[caller CHG-9]")

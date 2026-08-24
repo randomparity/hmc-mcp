@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from conftest import assert_only_these_client_methods_used
+
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
     ProvisionStorage,
@@ -130,3 +132,35 @@ async def test_attach_disk_rejects_invalid_capacity_before_mutating() -> None:
         )
 
     client.create_virtual_disk.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_attach_disk_dry_run_makes_no_unclassified_call() -> None:
+    """R18: the whole call set is pinned, not three negatives.
+
+    The test above names the three mutations it expects not to happen. That
+    stays green if a fourth is added, which is the inference epic #218
+    requirement 5 refuses. Here every method the handler touched is read back and
+    compared against the classified read-only set.
+    """
+    client = _client()
+
+    await attach_disk_to_lpar(
+        client,
+        "existing-lpar",
+        _storage(),
+        capacity_mib=1024,
+        vios_partition_id=2,
+        vios_slot=10,
+        dry_run=True,
+    )
+
+    used = assert_only_these_client_methods_used(
+        client,
+        frozenset({
+            "find_partition_by_name",  # read: resolve the LPAR name to a UUID
+            "get_logical_partition",  # read: UUID pass-through validation
+            "list_volume_groups",  # read: volume-group precondition check
+        }),
+    )
+    assert used, "the handler touched nothing; the dry-run path was not exercised"

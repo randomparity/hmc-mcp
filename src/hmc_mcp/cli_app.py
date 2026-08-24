@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, NoReturn, TypeVar
+from typing import Any, Final, NoReturn, TypeVar
 
 import typer
 from typer._click.globals import get_current_context
 from typer._click.core import ParameterSource
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from .common import build_config, client_from_env, is_uuid, run_with_client
@@ -33,6 +35,10 @@ from .client import HMCClient
 from .config import HMCConfig
 
 _T = TypeVar("_T")
+
+#: The level names ``--audit-level`` accepts. The audit record's own split —
+#: permits at INFO, denials at WARNING (#224) — is what these select from.
+_AUDIT_LEVELS: Final = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 app = typer.Typer(
     name="hmc-mcp",
@@ -83,7 +89,14 @@ app.add_typer(raw_app, name="raw")
 memory_pools_app = typer.Typer(help="Shared memory pools.", no_args_is_help=True)
 app.add_typer(memory_pools_app, name="memory-pools")
 
-config_app = typer.Typer(help="Profile configuration commands.", no_args_is_help=True)
+config_app = typer.Typer(
+    # Not "profile configuration": this group writes two different files. Naming
+    # only profiles here would assert the conflation the docs work to refuse, in
+    # the surface an operator reaches straight from `serve`'s refusal.
+    help="Connection profiles (config.toml) and server access policies "
+    "(access-policy.toml).",
+    no_args_is_help=True,
+)
 app.add_typer(config_app, name="config")
 
 
@@ -190,12 +203,14 @@ def _ssh_config() -> HMCConfig:
 def _run(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure, routing failures to the CLI error path.
 
-    typer.Abort propagates so typer renders its own "Aborted." message;
-    any other exception is reported via _fail and exits with code 1.
+    typer.Abort and typer.Exit are click's control-flow signals, not failures --
+    both subclass RuntimeError, so they must be re-raised before the catch-all or
+    "Aborted." is swallowed and a chosen exit code is rewritten to 1. Any other
+    exception is reported via _fail and exits with code 1.
     """
     try:
         return asyncio.run(fn())
-    except typer.Abort:
+    except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:
         _fail(exc)
@@ -206,10 +221,12 @@ def _with_client(fn: Callable[[HMCClient], Awaitable[_T]]) -> _T:
 
     Collapses the pervasive ``async def _go`` + ``X = _run(_go)`` idiom into
     one line for the common case where the body is a single client call.
+
+    Control-flow signals pass through untouched, as in :func:`_run`.
     """
     try:
         return run_with_client(_client, fn)
-    except typer.Abort:
+    except (typer.Abort, typer.Exit):
         raise
     except Exception as exc:
         _fail(exc)
@@ -258,21 +275,76 @@ def _output(
         _print_json(entries)
 
 
-def _fail(exc: Exception) -> NoReturn:
-    err_console.print(f"[red]Error:[/red] {exc}")
-    raise typer.Exit(code=1)
+def _fail(exc: Exception, *, code: int = 1) -> NoReturn:
+    """Report *exc* through the error console and exit with *code*.
+
+    ``code`` lets a command distinguish failure classes to a script — the default
+    1 stays every caller's runtime-error exit.
+    """
+    err_console.print(f"[red]Error:[/red] {escape(str(exc))}")
+    raise typer.Exit(code=code)
 
 
 def _usage_error(message: str) -> NoReturn:
     """Report invalid command arguments using Typer's usage-error exit code."""
-    err_console.print(f"[red]Error:[/red] {message}")
+    err_console.print(f"[red]Error:[/red] {escape(message)}")
     raise typer.Exit(code=2)
 
 
 def _partition_not_found(value: str) -> NoReturn:
     """Report a failed partition lookup consistently across CLI domains."""
-    err_console.print(f"[yellow]Partition '{value}' not found[/yellow]")
+    err_console.print(f"[yellow]Partition '{escape(value)}' not found[/yellow]")
     raise typer.Exit(code=1)
+
+
+def _policy_file() -> tuple[str, bool] | None:
+    """The access-policy path and whether it exists, or ``None`` if unresolvable.
+
+    ``config_dir()`` reaches ``Path.home()``, which raises under a uid with no passwd
+    entry and no ``HOME`` — a container or a systemd unit. A refusal that raises while
+    rendering itself is worse than one that omits the path, so this returns ``None``
+    there and the caller falls through to ``load_access_policy``, whose own guard
+    reports it.
+
+    ``tuple[str, bool] | None`` rather than ``str | None``: the predecessor this replaces
+    collapsed *unresolvable* and *resolvable-but-absent* into one ``None``, and the
+    absent case is precisely the one the refusal most needs the path for.
+    """
+    from .access_policy import resolve_access_policy_path
+
+    try:
+        path = resolve_access_policy_path()
+        # `is_symlink()` as well as `exists()`: `exists()` follows the link, so a
+        # dangling symlink — the natural way to point a container or unit at a mounted
+        # policy, since `--access-policy` takes a NAME and not a path — reads as absent
+        # here while the generator's O_EXCL create fails EEXIST on it. That pair would
+        # tell the operator to run a generator that then tells them the file already
+        # exists, with neither message mentioning a symlink. Reporting it as present
+        # lets the load path speak instead, and its error names the resolved target.
+        return str(path), path.exists() or path.is_symlink()
+    except (RuntimeError, OSError, ValueError):
+        return None
+
+
+def _no_policy_selected(detail: str) -> str:
+    """The migration text both refusals share.
+
+    One text, because an operator meeting either has the same next step, and because
+    nothing at this point distinguishes an upgrade from a first run — which is why it
+    names the narrower documented examples as well as the generator. A message offering
+    only the generator would send every fresh install to the widest policy expressible.
+    """
+    resolved = _policy_file()
+    where = f" ({resolved[0]})" if resolved is not None else ""
+    return (
+        f"{detail}\n\n"
+        "hmc-mcp will not serve without an access policy. To keep what an unpolicied "
+        "server exposed, generate one and review it:\n"
+        "    hmc-mcp config init-access-policy\n"
+        f"then start the server with --access-policy legacy-equivalent{where}.\n"
+        "For a new deployment, prefer one of the narrower examples in the README "
+        "(read-only, or limited mutation) over the generated legacy-equivalent policy."
+    )
 
 
 @app.command()
@@ -295,6 +367,24 @@ def serve(
         "--enable-arbitrary-command",
         help="Expose hmc_run_command, which can execute any HMC CLI command.",
     ),
+    audit_level: str | None = typer.Option(
+        None,
+        "--audit-level",
+        metavar="LEVEL",
+        help="Minimum level for authorization audit records on stderr: permits "
+        "are INFO, denials WARNING. DEBUG and INFO keep both; WARNING keeps "
+        "denials only; ERROR or CRITICAL silences the stream.",
+    ),
+    access_policy: str | None = typer.Option(
+        None,
+        "--access-policy",
+        metavar="NAME",
+        help="REQUIRED. Enforce the named access policy from access-policy.toml: "
+        "the server registers only the tools it permits, and refuses a call whose "
+        "selected connection or target its grant does not name. Run "
+        "'hmc-mcp config init-access-policy' to generate a policy matching what an "
+        "unpolicied server exposed.",
+    ),
 ) -> None:
     """Run the MCP server (stdio by default — what agents expect).
 
@@ -303,6 +393,17 @@ def serve(
     arbitrary HMC CLI execution. Bind only to loopback (the default). To reach the server
     beyond localhost you must pass ``--allow-remote`` AND put an authenticated
     reverse proxy (MCP gateway or HTTPS proxy with bearer-token auth) in front.
+
+    ``--access-policy NAME`` is **required**: the server refuses to start without
+    one rather than serving unbounded. It registers only the tools that policy
+    permits, and refuses any call whose selected HMC connection or target the
+    granting entry does not name — so a grant's ``connections`` must hold profile
+    keys, or ``<default>`` when ``HMC_HOST`` selects the connection from the
+    environment.
+
+    Run ``hmc-mcp config init-access-policy`` to generate a policy granting what an
+    unpolicied server used to grant, review the file it writes, then pass its name
+    here. Call ``hmc_effective_permissions`` to see what a running server exposes.
     """
     from . import server
 
@@ -316,20 +417,68 @@ def serve(
             "configure the server with HMC_* environment variables or a configured HMC_PROFILE"
         )
 
+    # Validated here rather than left to logging: a typo would otherwise surface
+    # as a bare ValueError from Logger.setLevel partway through composition, after
+    # the sink has begun installing, instead of a usage error — like every other
+    # refusal above — that starts nothing.
+    level: int | None = None
+    if audit_level is not None:
+        name = audit_level.upper()
+        if name not in _AUDIT_LEVELS:
+            raise typer.BadParameter(
+                f"unknown --audit-level {audit_level!r}; use one of "
+                + ", ".join(_AUDIT_LEVELS)
+            )
+        resolved = logging.getLevelName(name)
+        assert isinstance(resolved, int), name  # guaranteed by _AUDIT_LEVELS
+        level = resolved
+
+    from .access_policy import AccessPolicyError, load_access_policy
+
+    # A usage error: the invocation is incomplete. Checked after the HMC-option
+    # rejection above, which is also exit 2 — that ordering is what
+    # `test_serve_rejects_command_line_hmc_options` observes.
+    if access_policy is None:
+        _usage_error(_no_policy_selected("serve requires --access-policy NAME"))
+
+    # Not a usage error: the command line was right and the environment was not.
+    # Without this the likeliest upgrade order — edit the launcher, then discover the
+    # file is missing — reaches `load_access_policy`'s unreadable-file arm and prints
+    # "cannot be read: [Errno 2]", naming neither the generator nor the remedy. An
+    # unresolvable path yields None and falls through to that guard instead.
+    resolved = _policy_file()
+    if resolved is not None and not resolved[1]:
+        _fail(
+            FileNotFoundError(
+                _no_policy_selected(f"no access-policy file at {resolved[0]}")
+            )
+        )
+
+    try:
+        policy = load_access_policy(access_policy, server.TOOL_SECURITY)
+    except AccessPolicyError as exc:
+        _fail(exc)
+
     if http:
         try:
             server.main_http(
+                policy,
                 host=listen_host,
                 port=port,
                 enable_arbitrary_command=enable_arbitrary_command,
                 allow_remote=allow_remote,
+                audit_level=level,
             )
         except ValueError as exc:
             raise typer.BadParameter(
                 f"{exc} Re-run with --allow-remote if you understand the risk."
             ) from exc
     else:
-        server.main_stdio(enable_arbitrary_command=enable_arbitrary_command)
+        server.main_stdio(
+            policy,
+            enable_arbitrary_command=enable_arbitrary_command,
+            audit_level=level,
+        )
 
 
 async def _resolve_partition_uuid(hmc, name_or_uuid: str) -> str | None:

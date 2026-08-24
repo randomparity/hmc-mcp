@@ -5,27 +5,28 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _READ_ONLY,
+    _run,
     _ssh_with_client,
+)
+from .common import build_config, client_from_env
+from .operations_ssh_network import (
+    get_lpar_memopt_score,
+    list_lpar_memopt_scores,
 )
 
 from .ssh_commands import (
-    validate_lpar_description,
     get_lpar_description,
     get_lpar_msp,
-    get_lpar_memopt_score,
     get_lpar_proc_compat,
-    list_lpar_memopt_scores,
-    set_lpar_description,
+    validate_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
 )
-from .operations_lpar import authorize_lpar_mutation
-from .client import HMCClient
-from typing import Any, Literal
+from .operations_lpar import set_lpar_ownership_description
+from typing import Literal
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 ProcessorCompatibilityMode = Literal[
     "default",
@@ -55,7 +56,45 @@ PROCESSOR_COMPATIBILITY_MODES: frozenset[ProcessorCompatibilityMode] = frozenset
 )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_memopt_score", target_kind="lpar")
+def hmc_get_lpar_memopt_score(
+    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
+) -> dict[str, object]:
+    """Return an LPAR's current memory-optimization affinity score.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: get_lpar_memopt_score(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
+
+
+@tool(effect="read", operation="lpar.list_memopt_scores", target_kind="managed_system")
+def hmc_list_lpar_memopt_scores(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, object]]:
+    """List current memory-optimization affinity scores for a system's LPARs.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        lpar_name_or_uuid: Optional partition name or UUID to filter to.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: list_lpar_memopt_scores(
+            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
+
+
+@tool(effect="read", operation="lpar.get_description", target_kind="lpar")
 def hmc_get_lpar_description(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
@@ -76,7 +115,7 @@ def hmc_get_lpar_description(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_description", target_kind="lpar")
 def hmc_set_lpar_description(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -90,37 +129,38 @@ def hmc_set_lpar_description(
     Foreign-owned or malformed tokens are rejected. Set ownership_override=True
     only after explicit operator approval.
 
+    A description carrying a character the HMC's attribute record treats as
+    structure is rejected, with an error naming the character. The HMC writes
+    the description through that record, so such text would be read as further
+    attributes rather than as the description (ADR 0045).
+
     WARNING: This changes LPAR configuration on the selected HMC.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        description: New printable-ASCII partition description.
+        description: New printable-ASCII partition description, carrying no
+            character the HMC attribute record treats as structure.
         ownership_override: Permit overwriting a foreign or malformed ownership token
             only after explicit operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
     validate_lpar_description(description)
 
-    async def _set(config, system_name, lpar_name):
-        hmc = HMCClient(config)
-        await authorize_lpar_mutation(
-            hmc,
-            system_name,
-            lpar_name,
-            ownership_override=ownership_override,
-        )
-        return await set_lpar_description(config, system_name, lpar_name, description)
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await set_lpar_ownership_description(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                description,
+                ownership_override=ownership_override,
+            )
 
-    return _ssh_with_client(
-        _set,
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+    return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_msp", target_kind="lpar")
 def hmc_get_lpar_msp(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> bool:
@@ -141,7 +181,7 @@ def hmc_get_lpar_msp(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_msp", target_kind="lpar")
 def hmc_set_lpar_msp(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -169,7 +209,7 @@ def hmc_set_lpar_msp(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_proc_compat", target_kind="lpar")
 def hmc_get_lpar_proc_compat(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, str]:
@@ -190,7 +230,7 @@ def hmc_get_lpar_proc_compat(
     )
 
 
-@tool
+@tool(effect="mutate", operation="lpar.set_proc_compat", target_kind="lpar")
 def hmc_set_lpar_proc_compat(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -211,63 +251,6 @@ def hmc_set_lpar_proc_compat(
     return _ssh_with_client(
         lambda config, system_name, lpar_name: set_lpar_proc_compat(
             config, system_name, lpar_name, mode
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
-
-
-@tool(annotations=_READ_ONLY)
-def hmc_get_lpar_memopt_score(
-    system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
-) -> dict[str, Any]:
-    """Return an LPAR's current memory-optimization (affinity) score.
-
-    Runs ``lsmemopt -m <system> -r lpar -o currscore --filter
-    lpar_names=<lpar>`` over SSH and returns the reported row with the HMC's
-    own fields ``lpar_name``, ``lpar_id``, and ``curr_lpar_score`` (a 0-100
-    decimal string, or the literal ``none`` when the partition is not
-    subject to memory optimization).
-
-    Args:
-        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: get_lpar_memopt_score(
-            config, system_name, lpar_name
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
-
-
-@tool(annotations=_READ_ONLY)
-def hmc_list_lpar_memopt_scores(
-    system_name_or_uuid: str,
-    lpar_name_or_uuid: str | None = None,
-    profile: str | None = None,
-) -> list[dict[str, Any]]:
-    """List current memory-optimization (affinity) scores for a system's LPARs.
-
-    Runs ``lsmemopt -m <system> -r lpar -o currscore`` over SSH and returns
-    one dict per LPAR with the HMC's own fields ``lpar_name``, ``lpar_id``,
-    and ``curr_lpar_score`` (a 0-100 decimal string, or the literal
-    ``none`` when the partition is not subject to memory optimization).
-    Pass *lpar_name_or_uuid* to restrict the result to a single partition.
-
-    Args:
-        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        lpar_name_or_uuid: Optional partition name or UUID to filter to; all
-            partitions of the system are listed when omitted.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-    """
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: list_lpar_memopt_scores(
-            config, system_name, lpar_name
         ),
         system_name_or_uuid=system_name_or_uuid,
         lpar_name_or_uuid=lpar_name_or_uuid,

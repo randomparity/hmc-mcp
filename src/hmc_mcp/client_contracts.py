@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol
@@ -79,6 +80,7 @@ class PcmClient(Protocol):
 
     config: HMCConfig
     _http: httpx.AsyncClient
+    _rest_base_url: str
 
     async def _request(
         self, method: str, path: str, **kwargs: Any
@@ -101,6 +103,8 @@ class PcmClient(Protocol):
         start_ts: str,
         end_ts: str | None,
         no_of_samples: int | None,
+        *,
+        system_uuid: str | None = None,
     ) -> list[dict[str, str]]: ...
 
     async def get_metrics_feed(self, path: str) -> list[dict[str, str]]: ...
@@ -110,6 +114,9 @@ class StorageClient(Protocol):
     """Host state and operations required by :class:`client_storage.StorageMixin`."""
 
     config: HMCConfig
+    _rest_base_url: str
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any: ...
 
     async def _get(
         self,
@@ -138,6 +145,18 @@ class StorageClient(Protocol):
 
     def get_lpar_link(self, lpar_uuid: str) -> str: ...
 
-    async def _post_volume_group_op(
-        self, vios_uuid: str, vg_uuid: str, xml: str
+    async def _get_vg_raw_xml(
+        self, vios_uuid: str, vg_uuid: str
+    ) -> tuple[str, ET.Element]: ...
+
+    async def _post_vg_xml(
+        self, vios_uuid: str, vg_uuid: str, vg_elem: ET.Element
     ) -> dict[str, Any] | None: ...
+
+    def _build_mr_element(self, size_mib: int) -> ET.Element: ...
+
+    def _insert_mr_at_correct_position(
+        self, vg_elem: ET.Element, mr_elem: ET.Element
+    ) -> None: ...
+
+    def _find_vmlib(self, vg_elem: ET.Element) -> ET.Element | None: ...

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
+import json
 
 import typer
+from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
 from typing import cast
 
 from .common import is_uuid
+from .jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
 from .cli_app import (
     _client,
     _first_field,
@@ -30,11 +34,16 @@ from .server_lpar_config import ProcessorCompatibilityMode
 from .server_systems import PartitionState
 from .operations_lpar import (
     LparCreation,
-    authorize_lpar_mutation,
     create_and_stamp_lpar,
     delete_lpar,
     power_lpar,
     rename_lpar,
+    set_lpar_ownership_description,
+)
+from .operations_assignments import (
+    LparPcieAssignments,
+    _apply_validated_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
 )
 from .operations_decommission import decommission_lpar
 from .operations_lpm import (
@@ -42,6 +51,10 @@ from .operations_lpm import (
     migrate_lpar,
     recover_lpar_migration,
     remote_restart_lpar,
+)
+from .operations_ssh_network import (
+    get_lpar_memopt_score,
+    list_lpar_memopt_scores,
 )
 from .documents import (
     LparResources,
@@ -53,15 +66,71 @@ from .documents import (
 from .ssh_commands import (
     get_lpar_description,
     get_lpar_msp,
-    get_lpar_memopt_score,
     get_lpar_proc_compat,
     get_proc_compat_modes,
-    list_lpar_memopt_scores,
-    set_lpar_description,
     set_lpar_msp,
     set_lpar_proc_compat,
+    validate_caller_token,
 )
-from .ssh_selectors import resolve_ssh_names
+
+
+def _load_pcie_assignments(path: Path | None) -> LparPcieAssignments:
+    """Load the shared assignment schema from a JSON document."""
+    if path is None:
+        return LparPcieAssignments()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return TypeAdapter(LparPcieAssignments).validate_python(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as error:
+        _usage_error(f"Cannot load --pcie-assignments {path}: {error}")
+        raise AssertionError("_usage_error must raise") from error
+
+
+@lpars_app.command("memopt-score")
+def lpars_memopt_score(
+    lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get an LPAR's current memory-optimization affinity score."""
+    score = _run(lambda: get_lpar_memopt_score(_ssh_config(), system_name, lpar_name))
+    if as_json:
+        _print_json(score)
+    else:
+        console.print(
+            f"{score['lpar_name']} (id {score['lpar_id']}): "
+            f"curr_lpar_score={score['curr_lpar_score']}"
+        )
+
+
+@lpars_app.command("memopt-scores")
+def lpars_memopt_scores(
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    lpar_name: str | None = typer.Option(
+        None, "--lpar", help="Filter by LPAR name or UUID"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """List current memory-optimization affinity scores for a system's LPARs."""
+    scores = _run(
+        lambda: list_lpar_memopt_scores(_ssh_config(), system_name, lpar_name)
+    )
+    if as_json:
+        _print_json(scores)
+        return
+    if not scores:
+        console.print("[yellow]No memory-optimization scores reported[/yellow]")
+        return
+    table = Table(title=f"Memory-optimization scores on {system_name}")
+    for column in ("lpar_name", "lpar_id", "curr_lpar_score"):
+        table.add_column(column)
+    for row in scores:
+        table.add_row(
+            str(row.get("lpar_name", "")),
+            str(row.get("lpar_id", "")),
+            str(row.get("curr_lpar_score", "")),
+        )
+    console.print(table)
 
 
 @lpars_app.command("summary")
@@ -379,7 +448,15 @@ def lpars_migrate_recover(
 @lpars_app.command("remote-restart")
 def lpars_remote_restart(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
-    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    operation: str = typer.Option(..., "--operation", help="RemoteRestart operation"),
+    system: str = typer.Option(
+        ..., "--system", help="Source managed system name or UUID"
+    ),
+    target: str | None = typer.Option(
+        None, "--target", help="Target managed system name or UUID"
+    ),
+    use_current_data: bool = typer.Option(False, "--use-current-data"),
+    retain_devices: bool = typer.Option(False, "--retain-devices"),
     wait: bool = typer.Option(
         False, "--wait/--no-wait", help="Wait for job completion"
     ),
@@ -391,18 +468,26 @@ def lpars_remote_restart(
 ) -> None:
     """Remote-restart a failed LPAR on another managed system."""
     validate_wait_timing(wait, timeout, interval)
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        raise typer.BadParameter(
+            f"operation must be one of: {', '.join(sorted(REMOTE_RESTART_OPERATIONS))}"
+        )
 
     async def _fn(hmc):
         return await remote_restart_lpar(
             hmc,
             name_or_uuid,
-            target,
+            cast(RemoteRestartOperation, operation),
+            system,
+            target_system_name_or_uuid=target,
+            use_current_data=use_current_data,
+            retain_devices=retain_devices,
             wait=wait,
             timeout_seconds=timeout,
             poll_interval=interval,
         )
 
-    _lpm_run(name_or_uuid, _fn, "RemoteRestart", target, yes)
+    _lpm_run(name_or_uuid, _fn, f"RemoteRestart {operation}", target, yes)
 
 
 def _power_lpar(
@@ -484,6 +569,18 @@ def lpars_create(
     capped: bool = typer.Option(
         False, "--capped", help="Cap shared CPU (default uncapped)"
     ),
+    pcie_assignments: Path | None = typer.Option(
+        None,
+        "--pcie-assignments",
+        help="JSON file using the declarative LparPcieAssignments schema",
+    ),
+    caller_token: str | None = typer.Option(
+        None,
+        "--caller-token",
+        help="Optional tracking reference embedded in the partition description "
+        "as '\\[caller <token>]' (ADR 0064); 1–64 printable ASCII characters, "
+        'no whitespace or , = " [ ] \\',
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Create a new LPAR on a managed system.
@@ -491,6 +588,8 @@ def lpars_create(
     Creates the partition powered off with a default profile; storage/network
     and boot settings are configured afterwards via the HMC.
     """
+    if caller_token is not None:
+        validate_caller_token(caller_token)
     if partition_type not in PARTITION_TYPES:
         _usage_error(
             f"--type must be one of {', '.join(PARTITION_TYPES)}, got {partition_type!r}"
@@ -513,10 +612,12 @@ def lpars_create(
         max_vcpus=max_vcpus,
         uncapped=not capped,
     )
+    assignments = _load_pcie_assignments(pcie_assignments)
 
     async def _go():
         async with _client() as hmc:
-            return await create_and_stamp_lpar(
+            await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
+            creation = await create_and_stamp_lpar(
                 hmc,
                 system,
                 LparCreation(
@@ -524,15 +625,26 @@ def lpars_create(
                     partition_type,
                     resources,
                     partition_id=partition_id,
+                    caller_token=caller_token,
                 ),
             )
+            if creation.lpar is None:
+                return creation, None
+            outcome = await _apply_validated_lpar_pcie_assignments(
+                hmc, system, name, assignments
+            )
+            return creation, outcome
 
-    result = _run(_go)
+    result, assignment_result = _run(_go)
 
     console.print(f"[green]Created LPAR '{name}'[/green]")
     _print_json(result.lpar)
     for warning in result.warnings:
         err_console.print(f"[yellow]Warning: {warning}[/yellow]")
+    if assignment_result is not None and assignment_result.steps:
+        _print_json(asdict(assignment_result))
+        if not assignment_result.workflow_completed:
+            raise typer.Exit(1)
 
 
 @lpars_app.command("modify")
@@ -569,6 +681,11 @@ def lpars_modify(
         "--ownership-override",
         help="Bypass ownership protection after operator approval",
     ),
+    pcie_assignments: Path | None = typer.Option(
+        None,
+        "--pcie-assignments",
+        help="JSON file using the declarative LparPcieAssignments schema",
+    ),
 ) -> None:
     """Change an LPAR's name and/or resource assignment (memory / CPU).
 
@@ -576,26 +693,32 @@ def lpars_modify(
     dynamic (DLPAR) operations and need RMC up; otherwise they apply on next
     activation.
     """
-    if all(
-        v is None
-        for v in (
-            new_name,
-            min_memory,
-            memory,
-            max_memory,
-            min_procs,
-            procs,
-            max_procs,
-            min_vcpus,
-            vcpus,
-            max_vcpus,
-            dedicated,
-            capped,
+    assignments = _load_pcie_assignments(pcie_assignments)
+    if (
+        all(
+            v is None
+            for v in (
+                new_name,
+                min_memory,
+                memory,
+                max_memory,
+                min_procs,
+                procs,
+                max_procs,
+                min_vcpus,
+                vcpus,
+                max_vcpus,
+                dedicated,
+                capped,
+            )
         )
+        and assignments == LparPcieAssignments()
     ):
         _usage_error("Nothing to change — pass at least one option")
     if new_name is not None and system is None:
         _usage_error("--system is required when renaming an LPAR")
+    if assignments != LparPcieAssignments() and system is None:
+        _usage_error("--system is required when assigning PCIe resources")
     resources = LparResources(
         min_memory=min_memory,
         desired_memory=memory,
@@ -628,6 +751,8 @@ def lpars_modify(
 
     async def _go():
         async with _client() as hmc:
+            if system is not None:
+                await prevalidate_lpar_pcie_assignments(hmc, system, assignments)
             if not yes:
                 if not typer.confirm(f"Apply changes to '{name_or_uuid}'?"):
                     raise typer.Abort()
@@ -639,7 +764,7 @@ def lpars_modify(
                     new_name,
                     ownership_override=ownership_override,
                 )
-                if not has_resource_changes:
+                if not has_resource_changes and assignments == LparPcieAssignments():
                     return uuid, updated
                 selector = uuid
             else:
@@ -648,7 +773,22 @@ def lpars_modify(
             if uuid is None:
                 return None, None
             xml = build_lpar_document(name=None, resources=resources)
-            return uuid, await hmc.modify_logical_partition(uuid, xml)
+            updated = (
+                await hmc.modify_logical_partition(uuid, xml)
+                if has_resource_changes
+                else None
+            )
+            assignment_result = await _apply_validated_lpar_pcie_assignments(
+                hmc,
+                cast(str, system),
+                selector,
+                assignments,
+                ownership_override=ownership_override,
+            )
+            return uuid, {
+                "resources": updated,
+                "assignments": asdict(assignment_result),
+            }
 
     uuid, updated = _run(_go)
 
@@ -799,7 +939,11 @@ def lpars_get_description(
 def lpars_set_description(
     lpar_name: str = typer.Argument(..., help="LPAR name"),
     system_name: str = typer.Argument(..., help="Managed system name"),
-    description: str = typer.Argument(..., help="New description text"),
+    description: str = typer.Argument(
+        ...,
+        help="New description text (printable ASCII, no HMC attribute-record "
+        "structure; the error names the character)",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(
         False,
@@ -815,14 +959,12 @@ def lpars_set_description(
 
     async def _go():
         async with _client() as hmc:
-            await authorize_lpar_mutation(
+            return await set_lpar_ownership_description(
                 hmc,
                 system_name,
                 lpar_name,
+                description,
                 ownership_override=ownership_override,
-            )
-            return await set_lpar_description(
-                hmc.config, system_name, lpar_name, description
             )
 
     result = _run(_go)
@@ -920,63 +1062,6 @@ def lpars_set_proc_compat(
         console.print(result.strip())
 
 
-@lpars_app.command("memopt-score")
-def lpars_memopt_score(
-    lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
-    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
-) -> None:
-    """Get an LPAR's current memory-optimization (affinity) score (HMC CLI via SSH)."""
-
-    async def _go():
-        config = _ssh_config()
-        sys_name, lpar = await resolve_ssh_names(config, system_name, lpar_name)
-        return await get_lpar_memopt_score(config, cast(str, sys_name), cast(str, lpar))
-
-    score = _run(_go)
-    if as_json:
-        _print_json(score)
-    else:
-        console.print(
-            f"{score['lpar_name']} (id {score['lpar_id']}): "
-            f"curr_lpar_score={score['curr_lpar_score']}"
-        )
-
-
-@lpars_app.command("memopt-scores")
-def lpars_memopt_scores(
-    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
-    lpar_name: str | None = typer.Option(
-        None, "--lpar", help="Filter by LPAR name or UUID"
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
-) -> None:
-    """List current memory-optimization (affinity) scores for a system's LPARs (HMC CLI via SSH)."""
-
-    async def _go():
-        config = _ssh_config()
-        sys_name, lpar = await resolve_ssh_names(config, system_name, lpar_name)
-        return await list_lpar_memopt_scores(config, cast(str, sys_name), lpar)
-
-    scores = _run(_go)
-    if as_json:
-        _print_json(scores)
-        return
-    if not scores:
-        console.print("[yellow]No memory-optimization scores reported[/yellow]")
-        return
-    table = Table(title=f"Memory-optimization scores on {system_name}")
-    for column in ("lpar_name", "lpar_id", "curr_lpar_score"):
-        table.add_column(column)
-    for row in scores:
-        table.add_row(
-            row.get("lpar_name", ""),
-            row.get("lpar_id", ""),
-            row.get("curr_lpar_score", ""),
-        )
-    console.print(table)
-
-
 @lpars_app.command("provision")
 def lpars_provision(
     system: str = typer.Option(
@@ -1018,6 +1103,11 @@ def lpars_provision(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Validate preconditions only; do not create"
     ),
+    pcie_assignments: Path | None = typer.Option(
+        None,
+        "--pcie-assignments",
+        help="JSON file using the declarative LparPcieAssignments schema",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
@@ -1029,6 +1119,8 @@ def lpars_provision(
     and remaining steps as "skipped". No automatic rollback is performed.
     """
     from .operations_provision import ProvisionNetwork, ProvisionStorage, provision_lpar
+
+    assignments = _load_pcie_assignments(pcie_assignments)
 
     if partition_type not in PARTITION_TYPES:
         _usage_error(
@@ -1069,6 +1161,7 @@ def lpars_provision(
                 partition_type=partition_type,
                 power_on=power_on,
                 dry_run=dry_run,
+                assignments=assignments,
             )
 
     result = _run(_go)
@@ -1125,10 +1218,10 @@ def lpars_read_boot_order(
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
 ) -> None:
     """Read an LPAR's boot order state (pending and current).
-    
+
     Returns the boot device order for the LPAR, including both the pending
     boot string (next boot) and the current boot device list.
-    
+
     Example:
         lpars read-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
@@ -1141,7 +1234,7 @@ def lpars_read_boot_order(
             lpar_uuid=lpar_uuid,
         )
     )
-    
+
     _print_json(result)
 
 
@@ -1149,22 +1242,26 @@ def lpars_read_boot_order(
 def lpars_set_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
-    devices: str = typer.Argument(..., help="Ordered boot device list (comma-separated: cd,disk,network)"),
+    devices: str = typer.Argument(
+        ..., help="Ordered boot device list (comma-separated: cd,disk,network)"
+    ),
     *,
-    ownership_override: bool = typer.Option(False, "--ownership-override", help="Skip ownership token validation"),
+    ownership_override: bool = typer.Option(
+        False, "--ownership-override", help="Skip ownership token validation"
+    ),
 ) -> None:
     """Set an LPAR's boot order to a validated device selector list.
-    
+
     Sets the PendingBootString to an ordered list of boot device selectors.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Args:
         system_name: Managed system name.
         lpar_uuid: UUID of the logical partition.
         devices: Ordered list of boot device selectors (cd, disk, network),
                  comma-separated. The first device is tried first, then the second, etc.
         ownership_override: If True, skip ownership token validation.
-        
+
     Example:
         lpars set-boot-order system1 lpar-uuid-123 "network,cd,disk"
     """
@@ -1173,17 +1270,17 @@ def lpars_set_boot_order(
 
     # Parse and validate device list
     device_list = [d.strip() for d in devices.split(",") if d.strip()]
-    
+
     for device in device_list:
         if device not in BOOT_DEVICE_SELECTORS:
             raise typer.BadParameter(
                 f"Invalid boot device selector: {device!r}. "
                 f"Must be one of: {', '.join(BOOT_DEVICE_SELECTORS)}"
             )
-    
+
     if not device_list:
         raise typer.BadParameter("Boot order must contain at least one device")
-    
+
     result = _with_client(
         lambda hmc: set_lpar_boot_order(
             hmc,
@@ -1193,7 +1290,7 @@ def lpars_set_boot_order(
             ownership_override=ownership_override,
         )
     )
-    
+
     console.print(f"[green]Boot order set to: {', '.join(device_list)}[/green]")
     _print_json(result)
 
@@ -1203,13 +1300,15 @@ def lpars_clear_boot_order(
     system_name: str = typer.Argument(..., help="Managed system name"),
     lpar_uuid: str = typer.Argument(..., help="Logical partition UUID"),
     *,
-    ownership_override: bool = typer.Option(False, "--ownership-override", help="Skip ownership token validation"),
+    ownership_override: bool = typer.Option(
+        False, "--ownership-override", help="Skip ownership token validation"
+    ),
 ) -> None:
     """Clear an LPAR's boot order (restore HMC defaults).
-    
+
     Clears the PendingBootString, restoring the default boot behavior.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Example:
         lpars clear-boot-order system1 aaaa0000-0000-0000-0000-000000000001
     """
@@ -1223,6 +1322,6 @@ def lpars_clear_boot_order(
             ownership_override=ownership_override,
         )
     )
-    
+
     console.print("[green]Boot order cleared (restored defaults)[/green]")
     _print_json(result)

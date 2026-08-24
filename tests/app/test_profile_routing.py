@@ -15,9 +15,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 import respx
 
-from hmc_mcp.server import mcp
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
+
 
 
 # These tools make no network calls and therefore have no profile= parameter.
@@ -25,6 +36,7 @@ from hmc_mcp.server import mcp
 _NO_NETWORK_TOOLS = frozenset(
     {
         "hmc_list_configured_hosts",  # reads TOML config only; no HMC connection
+        "hmc_effective_permissions",  # reads this application's own registry
     }
 )
 
@@ -121,13 +133,13 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         respx.mock(assert_all_called=False) as router_a,
     ):
         # Alpha profile → hmc-a.test
-        router_a.put("https://hmc-a.test:12443/rest/api/web/Logon").mock(
+        router_a.put("https://hmc-a.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(200, text=LOGON)
         )
-        router_a.delete("https://hmc-a.test:12443/rest/api/web/Logon").mock(
+        router_a.delete("https://hmc-a.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(204)
         )
-        router_a.get("https://hmc-a.test:12443/rest/api/uom/ManagementConsole").mock(
+        router_a.get("https://hmc-a.test/rest/api/uom/ManagementConsole").mock(
             return_value=httpx.Response(200, text=CONSOLE_A)
         )
 
@@ -139,13 +151,13 @@ def test_sequential_profile_routing(tmp_path, monkeypatch):
         respx.mock(assert_all_called=False) as router_b,
     ):
         # Beta profile → hmc-b.test
-        router_b.put("https://hmc-b.test:12443/rest/api/web/Logon").mock(
+        router_b.put("https://hmc-b.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(200, text=LOGON)
         )
-        router_b.delete("https://hmc-b.test:12443/rest/api/web/Logon").mock(
+        router_b.delete("https://hmc-b.test/rest/api/web/Logon").mock(
             return_value=httpx.Response(204)
         )
-        router_b.get("https://hmc-b.test:12443/rest/api/uom/ManagementConsole").mock(
+        router_b.get("https://hmc-b.test/rest/api/uom/ManagementConsole").mock(
             return_value=httpx.Response(200, text=CONSOLE_B)
         )
 
@@ -265,3 +277,59 @@ def test_nickname_reaches_client_from_env(tmp_path, monkeypatch):
     client = client_from_env(profile="big-iron")
 
     assert client.config.host == "prod-hmc.test"
+
+
+# ---------------------------------------------------------------------- #
+# T-6: the two handlers that declared a profile and discarded it (#222)
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        (
+            "hmc_set_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+                "devices": ["network"],
+            },
+        ),
+        (
+            "hmc_clear_lpar_boot_order",
+            {
+                "system_name_or_uuid": "sys-1",
+                "lpar_uuid": "11111111-2222-3333-4444-555555555555",
+            },
+        ),
+    ],
+)
+def test_boot_order_tools_route_the_profile_they_declare(
+    monkeypatch, tool_name, arguments
+):
+    """Both declared and documented `profile` while opening the default client.
+
+    Authorization in #222 decides on the declared argument, so a handler that
+    discards it authorizes one connection and reaches another.
+    """
+    from hmc_mcp import server_lpars
+
+    seen: list[str | None] = []
+
+    class _Recorder:
+        async def __aenter__(self):
+            raise AssertionError("the test stops before any HMC request")
+
+        async def __aexit__(self, *exc):
+            return False
+
+    def _capture(profile=None, **overrides):
+        seen.append(profile)
+        return _Recorder()
+
+    monkeypatch.setattr(server_lpars, "client_from_env", _capture)
+
+    with pytest.raises(AssertionError, match="stops before any HMC request"):
+        getattr(server_lpars, tool_name)(**arguments, profile="beta")
+
+    assert seen == ["beta"]

@@ -9,9 +9,20 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmc_mcp.errors import HMCError
-from hmc_mcp.jobs import FAILED_JOB_STATUSES
 from hmc_mcp import operations_health
 from hmc_mcp.operations_health import FleetHealthResult, fleet_health
+
+_ACTIONABLE_TERMINAL_STATUSES = {
+    "CANCELED_BEFORE_START",
+    "CANCELED_WHILE_RUNNING",
+    "COMPLETED_WITH_ERROR",
+    "COMPLETED_WITH_WARNINGS",
+    "EXCEPTION",
+    "FAILED",
+    "FAILED_BEFORE_COMPLETION",
+    "FAILED_BEFORE_COMPLETION_RETRY",
+    "FAILED_TO_START",
+}
 
 
 def _entry(uuid: object, **resource: object) -> dict:
@@ -117,22 +128,24 @@ async def test_degraded_estate_returns_curated_sorted_exceptions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_all_canonical_failed_job_statuses_are_reported() -> None:
+async def test_all_actionable_terminal_job_statuses_are_reported() -> None:
     client = _healthy_client()
     client.list_uom.return_value = [
         _entry(f"job-{status}", JobName=status, Status=status)
-        for status in sorted(FAILED_JOB_STATUSES)
+        for status in sorted(_ACTIONABLE_TERMINAL_STATUSES)
     ] + [
         _entry("job-ok", JobName="ok", Status="COMPLETED_OK"),
         _entry("job-running", JobName="running", Status="RUNNING"),
-        _entry("job-warning", JobName="warning", Status="COMPLETED_WITH_WARNINGS"),
         _entry("job-unknown", JobName="unknown", Status="mystery"),
     ]
 
     result = await fleet_health(client)
 
-    assert {job["status"] for job in result.failed_jobs} == FAILED_JOB_STATUSES
-    assert all(job["error"] == "unknown" for job in result.failed_jobs)
+    assert {job["status"] for job in result.failed_jobs} == _ACTIONABLE_TERMINAL_STATUSES
+    assert all(
+        job["error"] == f"Job ended with status {job['status']}"
+        for job in result.failed_jobs
+    )
 
 
 @pytest.mark.asyncio

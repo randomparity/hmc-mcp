@@ -7,11 +7,11 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
-    "asyncssh==2.24.0",
-    "defusedxml==0.7.1",
-    "httpx==0.28.1",
-    "pydantic==2.13.4",
-    "pydantic-settings==2.15.0",
+    "asyncssh>=2.24.0,<3",
+    "defusedxml>=0.7.1,<1",
+    "httpx>=0.28.1,<1",
+    "pydantic>=2.13.4,<3",
+    "pydantic-settings>=2.15.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +20,7 @@ app = [
     "mcp==1.29.0",
     "rich==15.0.0",
     "typer==0.27.1",
+    "uvicorn==0.52.1",
 ]
 
 [project.urls]
@@ -63,6 +64,10 @@ include = ["src/hmc_mcp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
-# Keep the package-wide gate at the rounded full-suite baseline. Run a focused
+# Package-wide coverage gate lives in [tool.coverage.report]. Run a focused
 # subset with `--no-cov` when package-wide coverage is not meaningful.
-addopts = "--cov=hmc_mcp --cov-report=term-missing --cov-fail-under=90"
+addopts = "--cov=hmc_mcp --cov-report="
+
+[tool.coverage.report]
+fail_under = 90
+precision = 2

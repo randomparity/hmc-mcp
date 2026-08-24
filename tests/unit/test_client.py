@@ -1,19 +1,155 @@
 """Tests for HMCClient against a mocked HMC (respx)."""
 
 import asyncio
+import json
+import logging
+import traceback
 import warnings
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+import respx
+from defusedxml import ElementTree as DET
 
+from hmc_mcp import audit
 from hmc_mcp.client import HMCClient, HMCError
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCTransportError
 from hmc_mcp.jobs import build_job_request
+from hmc_mcp.xmlutil import localname
 
-from conftest import make_config
+from conftest import LOGON_RESPONSE, make_config
 
-BASE = "https://hmc.test:12443"
+BASE = "https://hmc.test"
+
+
+@pytest.mark.asyncio
+async def test_implicit_port_falls_back_to_12443_after_logon_transport_failure():
+    with respx.mock(assert_all_called=False) as router:
+        primary = router.put(
+            url__regex=r"https://hmc\.test/rest/api/web/Logon"
+        ).mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        legacy = router.put(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(
+            return_value=httpx.Response(200, text=LOGON_RESPONSE)
+        )
+        metrics = router.get(
+            url__regex=(
+                r"https://hmc\.test:12443/rest/api/pcm/ProcessedMetrics/"
+                r"ManagedSystem_sys_2\.json"
+            )
+        ).mock(return_value=httpx.Response(200, json={"systemUtil": {}}))
+        logoff = router.delete(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(
+            return_value=httpx.Response(204)
+        )
+
+        async with HMCClient(make_config(verify_ssl=True)) as client:
+            assert client.is_logged_on
+            await client.fetch_json(
+                "/rest/api/pcm/ProcessedMetrics/ManagedSystem_sys_2.json"
+            )
+
+    assert primary.call_count == 1
+    assert legacy.call_count == 1
+    assert metrics.call_count == 1
+    assert logoff.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("port", [443, 12443])
+async def test_explicit_port_transport_failure_is_hard_failure(port):
+    with respx.mock(assert_all_called=False) as router:
+        selected_url = (
+            r"https://hmc\.test/rest/api/web/Logon"
+            if port == 443
+            else rf"https://hmc\.test:{port}/rest/api/web/Logon"
+        )
+        selected = router.put(url__regex=selected_url).mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        legacy = None
+        if port == 443:
+            legacy = router.put(
+                url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+            ).mock(
+                side_effect=AssertionError("explicit ports must not fall back")
+            )
+
+        client = HMCClient(make_config(port=port, verify_ssl=True))
+        with pytest.raises(HMCTransportError):
+            await client.logon()
+        await client._http.aclose()
+
+    assert selected.call_count == 1
+    if legacy is not None:
+        assert legacy.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_existing_session_token_prevents_fallback_on_repeated_logon():
+    with respx.mock(assert_all_called=False) as router:
+        primary = router.put(
+            url__regex=r"https://hmc\.test/rest/api/web/Logon"
+        ).mock(
+            side_effect=[
+                httpx.Response(200, text=LOGON_RESPONSE),
+                httpx.ConnectError("connection refused"),
+            ]
+        )
+        legacy = router.put(
+            url__regex=r"https://hmc\.test:12443/rest/api/web/Logon"
+        ).mock(side_effect=AssertionError("an existing session must not fall back"))
+
+        client = HMCClient(make_config(verify_ssl=True))
+        token = await client.logon()
+        with pytest.raises(HMCTransportError):
+            await client.logon()
+        await client._http.aclose()
+
+    assert client._session_token == token
+    assert primary.call_count == 2
+    assert legacy.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_close_failure_aborts_fallback_before_legacy_client_is_created():
+    client = HMCClient(make_config(verify_ssl=True))
+    client._request = AsyncMock(side_effect=HMCTransportError("primary failed"))
+    client._http.aclose = AsyncMock(side_effect=RuntimeError("close failed"))
+    client._new_http_client = MagicMock()
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        await client.logon()
+
+    client._new_http_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_closing_aborts_fallback():
+    close_started = asyncio.Event()
+
+    async def suspended_close():
+        close_started.set()
+        await asyncio.Event().wait()
+
+    client = HMCClient(make_config(verify_ssl=True))
+    client._request = AsyncMock(side_effect=HMCTransportError("primary failed"))
+    client._http.aclose = AsyncMock(side_effect=suspended_close)
+    client._new_http_client = MagicMock()
+
+    logon = asyncio.create_task(client.logon())
+    await close_started.wait()
+    logon.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await logon
+    client._new_http_client.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -97,6 +233,55 @@ async def test_logon_logoff(mock_hmc):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 202, 204])
+async def test_logoff_accepts_success_statuses(mock_hmc, status):
+    mock_hmc.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(status))
+    client = HMCClient(make_config())
+    await client.logon()
+    assert client.is_logged_on
+
+    await client.logoff()
+
+    assert not client.is_logged_on
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 404, 500])
+async def test_logoff_rejects_unexpected_status_and_clears_state(mock_hmc, status):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        return_value=httpx.Response(status, text="<Message>nope</Message>")
+    )
+    client = HMCClient(make_config())
+    await client.logon()
+
+    with pytest.raises(HMCError) as raised:
+        await client.logoff()
+
+    assert raised.value.status_code == status
+    assert not client.is_logged_on
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
+async def test_logoff_transport_failure_is_distinct_and_clears_state(mock_hmc):
+    mock_hmc.delete("/rest/api/web/Logon").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    client = HMCClient(make_config())
+    await client.logon()
+
+    with pytest.raises(HMCTransportError):
+        await client.logoff()
+
+    assert not client.is_logged_on
+    assert client._session_token is None
+    # The dead token is gone from the shared header store, so no subsequent
+    # request can carry it.
+    assert "X-API-Session" not in client._http.headers
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body_error", "logoff_error", "close_error", "expected_error"),
     [
@@ -142,6 +327,17 @@ async def test_context_exit_preserves_primary_error_and_always_closes(
 
 
 @pytest.mark.asyncio
+async def test_logon_with_test_config_is_silent_by_default(mock_hmc):
+    """The shared mock-client factory enables TLS verification by default."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        async with HMCClient(make_config()):
+            pass
+
+    assert not [warning for warning in caught if "verification" in str(warning.message)]
+
+
+@pytest.mark.asyncio
 async def test_logon_warns_when_verify_ssl_disabled(mock_hmc):
     """Logon with verify_ssl=False emits an explicit MITM warning."""
     with pytest.warns(UserWarning, match="certificate verification is disabled"):
@@ -170,6 +366,188 @@ async def test_logon_failure(mock_hmc):
             pass
     assert exc_info.value.status_code == 401
     assert client._http.is_closed
+
+
+def _capture_audit() -> list[dict]:
+    """Collect parsed audit records. Logger isolation is conftest's autouse fixture."""
+    events: list[dict] = []
+
+    class _Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            events.append(json.loads(record.getMessage()))
+
+    logger = logging.getLogger(audit.AUDIT_LOGGER_NAME)
+    logger.addHandler(_Collect())
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    return events
+
+
+@pytest.mark.asyncio
+async def test_tls_disabled_audit_event_is_once_per_construction_not_per_request(
+    mock_hmc,
+):
+    """#379. N constructions emit N records; M requests on one client add none.
+
+    Per-request would flood the sink; per-process would miss a later client built
+    with different settings. The record is the audit stream's answer to "were our
+    HMC credentials ever sent over an unverified channel", so it must exist once
+    per client and never scale with traffic.
+    """
+    mock_hmc.get("/rest/api/hmc").mock(
+        return_value=httpx.Response(200, text="<feed/>")
+    )
+    caught = _capture_audit()
+
+    for _ in range(3):
+        async with HMCClient(make_config(verify_ssl=False)) as client:
+            for _ in range(5):
+                await client._get("/rest/api/hmc")
+
+    assert len(caught) == 3
+    assert {record["event"] for record in caught} == {"tls-verification-disabled"}
+
+
+@pytest.mark.asyncio
+async def test_no_tls_audit_event_when_verification_enabled(mock_hmc):
+    """#379. A verified connection produces no record — the event marks a gap."""
+    caught = _capture_audit()
+    async with HMCClient(make_config(verify_ssl=True)):
+        pass
+    assert caught == []
+
+
+@pytest.mark.parametrize(
+    ("environ_value", "kwargs", "expected_source"),
+    [
+        # The conftest autouse fixture sets HMC_VERIFY_SSL=true; an explicit
+        # False argument overrides it, and pydantic-settings' source priority
+        # makes that the record's answer even when the two agree.
+        (None, {"verify_ssl": False}, "explicit-argument"),
+        ("true", {"verify_ssl": False}, "explicit-argument"),
+        # No explicit argument: the environment supplied the value pydantic
+        # folded into the constructor kwargs.
+        ("false", {}, "environment:HMC_VERIFY_SSL"),
+        # Neither: the field default, which is the case an operator upgrading
+        # with no configuration at all is in.
+        (None, {}, "field-default"),
+    ],
+)
+def test_tls_audit_record_names_where_the_setting_came_from(
+    monkeypatch, environ_value, kwargs, expected_source
+):
+    """#379. `source` says which knob to turn, per the acceptance criteria."""
+    if environ_value is None:
+        monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    else:
+        monkeypatch.setenv("HMC_VERIFY_SSL", environ_value)
+
+    config_kwargs = {
+        # make_config() forces verify_ssl=True; these cases need the real
+        # default to flow through unset.
+        "host": "hmc.test",
+        "user": "hscroot",
+        "password": "abc123",
+        "_env_file": None,
+    }
+    config_kwargs.update(kwargs)
+    caught = _capture_audit()
+    HMCClient(HMCConfig(**config_kwargs))
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == expected_source
+    assert caught[0]["host"] == "hmc.test"
+    # No credential material in the record — construction-time state only.
+    assert "abc123" not in json.dumps(caught[0])
+
+
+@pytest.mark.asyncio
+async def test_logon_body_carries_escaped_credentials_to_the_transport(mock_hmc):
+    """The reported defect, proved at the wire rather than at the builder (#284).
+
+    The credentials come from ``HMCConfig``, so nothing on the argument
+    boundary sees them; this is the only place that proves what is sent.
+    """
+    user = "a</UserID><UserID>root"
+    metacharacters = "R&D <a> \"b\" 'c'"
+
+    async with HMCClient(make_config(user=user, password=metacharacters)):
+        pass
+
+    logon = next(
+        call
+        for call in mock_hmc.calls
+        if call.request.method == "PUT"
+        and call.request.url.path == "/rest/api/web/Logon"
+    )
+    parsed = DET.fromstring(logon.request.content)
+    assert [el.text for el in parsed.iter() if localname(el.tag) == "UserID"] == [user]
+    assert [el.text for el in parsed.iter() if localname(el.tag) == "Password"] == [
+        metacharacters
+    ]
+
+
+@pytest.mark.asyncio
+async def test_logon_refuses_a_password_xml_cannot_carry_before_sending(mock_hmc):
+    """Rejected at the encoding boundary, and the message quotes no credential."""
+    unrepresentable = "unleakable\x00"
+    client = HMCClient(make_config(password=unrepresentable))
+    try:
+        with pytest.raises(ValueError, match=r"U\+0000") as raised:
+            await client.logon()
+    finally:
+        await client._http.aclose()
+
+    assert "unleakable" not in str(raised.value)
+    assert not mock_hmc.calls
+
+
+@pytest.mark.asyncio
+async def test_logon_failure_never_quotes_the_credentials(mock_hmc):
+    """The defect lives in the credential path, so the fix must not leak it."""
+    leaky = "unleakable&<value>"
+    mock_hmc.put("/rest/api/web/Logon").mock(
+        return_value=httpx.Response(401, text="<error>bad credentials</error>")
+    )
+
+    with pytest.raises(HMCError) as raised:
+        async with HMCClient(make_config(password=leaky)):
+            pass
+
+    reported = "\n".join(
+        (str(raised.value), repr(raised.value), *getattr(raised.value, "__notes__", ()))
+    )
+    # The fragment rather than the whole value: an escaped or partially
+    # rendered leak would slip past a check for the exact string.
+    assert "unleakable" not in reported
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ConnectError("connection refused"), httpx.ConnectTimeout("")],
+    ids=["transport", "timeout"],
+)
+async def test_a_failed_logon_traceback_carries_no_credential(failure, mock_hmc):
+    """The body holds the credential, so no diagnostic about sending it may.
+
+    Formatted over the whole chain rather than the raised message alone:
+    ``_request`` re-raises ``from`` the httpx error, whose request object holds
+    the rendered body, and a rendered traceback is where that would surface.
+    """
+    leaky = "unleakable&<value>"
+    mock_hmc.put("/rest/api/web/Logon").mock(side_effect=failure)
+
+    with pytest.raises(HMCTransportError) as raised:
+        async with HMCClient(make_config(password=leaky)):
+            pass
+
+    rendered = "".join(
+        traceback.format_exception(
+            type(raised.value), raised.value, raised.value.__traceback__
+        )
+    )
+    assert "unleakable" not in rendered
 
 
 @pytest.mark.asyncio
@@ -223,6 +601,43 @@ async def test_find_partition_by_name(mock_hmc):
         found = await hmc.find_partition_by_name("lpar2")
     assert found is not None
     assert found["Resource"]["PartitionName"] == "lpar2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("property_name", "property_value", "encoded_expression"),
+    [
+        (
+            "Partition Name",
+            "web server & db%#1+café",
+            "Partition%20Name==web%20server%20%26%20db%25%231%2Bcaf%C3%A9",
+        ),
+        ("State", "running", "State==running"),
+    ],
+)
+async def test_search_uom_encodes_only_interpolated_grammar_components(
+    mock_hmc, property_name, property_value, encoded_expression
+):
+    path = f"/rest/api/uom/LogicalPartition/search/({encoded_expression})"
+    route = mock_hmc.get(path).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        assert (
+            await hmc.search_uom("LogicalPartition", property_name, property_value)
+            == []
+        )
+
+    assert route.calls.last.request.url.raw_path.decode() == path
+
+
+@pytest.mark.asyncio
+async def test_search_uom_error_names_encoded_request_path(mock_hmc):
+    path = "/rest/api/uom/LogicalPartition/search/(PartitionName==web%20server)"
+    mock_hmc.get(path).mock(return_value=httpx.Response(500, text="failed"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="PartitionName==web%20server"):
+            await hmc.search_uom("LogicalPartition", "PartitionName", "web server")
 
 
 @pytest.mark.asyncio
@@ -904,7 +1319,7 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:
@@ -917,8 +1332,8 @@ async def test_get_job_uses_href_when_provided(mock_hmc):
 
 @pytest.mark.asyncio
 async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
-    """get_job(uuid) without job_href uses the legacy /rest/api/uom/Job/{uuid} path."""
-    route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    """get_job(uuid) without job_href uses the documented global jobs path."""
+    route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY)
     )
     async with HMCClient(make_config()) as hmc:
@@ -928,12 +1343,60 @@ async def test_get_job_falls_back_to_global_path_when_no_href(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_get_job_global_path_propagates_http_error(mock_hmc):
+    mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="GET /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.get_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
+async def test_delete_job_uses_documented_global_path(mock_hmc):
+    route = mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(204)
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999")
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_prefers_self_href(mock_hmc):
+    route = mock_hmc.delete(_JOB_HREF).mock(return_value=httpx.Response(204))
+
+    async with HMCClient(make_config()) as hmc:
+        await hmc.delete_job("job-uuid-999", job_href=_JOB_HREF)
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_delete_job_propagates_http_error(mock_hmc):
+    mock_hmc.delete("/rest/api/uom/jobs/job-uuid-999").mock(
+        return_value=httpx.Response(500, text="Delete failed")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match="DELETE /rest/api/uom/jobs/job-uuid-999 failed"
+        ):
+            await hmc.delete_job("job-uuid-999")
+
+
+@pytest.mark.asyncio
 async def test_wait_for_job_uses_href_when_provided(mock_hmc):
     """wait_for_job passes job_href to get_job so polling uses the SELF link."""
     href_route = mock_hmc.get(_JOB_HREF).mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
-    global_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    global_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
     )
     async with HMCClient(make_config()) as hmc:

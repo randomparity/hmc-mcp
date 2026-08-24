@@ -1,4 +1,23 @@
-"""Tests for hmc-mcp config init/list/show commands (issue #125)."""
+"""Tests for hmc-mcp config init/list/show/init-access-policy commands.
+
+The first three are issue #125. `init-access-policy` is issue #225; it covers
+docs/workflow/specs/2026-08-19-fail-closed-startup-design.md.
+
+Spec item -> node id:
+  R11  test_init_access_policy_writes_a_loadable_policy_at_0600
+  R11  test_init_access_policy_refuses_to_overwrite_and_names_the_remedy
+  R11  test_init_access_policy_reports_an_unresolvable_config_home
+  R11a test_init_access_policy_output_redirects_the_write
+  R9b  test_init_access_policy_refuses_a_key_that_cannot_be_a_connection
+  R11  test_a_write_failure_after_the_create_leaves_no_partial_file
+  287  test_init_access_policy_output_collision_names_a_different_remedy
+  287  test_init_access_policy_output_at_the_default_path_uses_output_case
+
+`config_dir()` is steered by patching `sys.platform` to "linux" and setting
+XDG_CONFIG_HOME, which is this module's established idiom: on darwin `config_dir()`
+reads `Path.home()` with no environment override, so without it these tests would
+write into the developer's own config directory.
+"""
 
 from __future__ import annotations
 
@@ -209,6 +228,86 @@ def test_show_absent_config_file_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
+def test_show_unreadable_config_file_error(tmp_path, monkeypatch):
+    """An unreadable config.toml exits 1 with a message, not a traceback (#257)."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    try:
+        with patch.object(sys, "platform", "linux"):
+            result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+    finally:
+        cfg.chmod(0o600)
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "cannot be read" in result.output
+
+
+def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
+    """`profiles = "x"` exits 1 instead of an AttributeError traceback (#257)."""
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    # Substring stops short of the table/of wrap: rich hard-folds at 80 columns.
+    assert "'profiles' must be a" in result.output
+
+
+def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
+    """`config list` reports an unreadable file rather than raising (#257)."""
+    cfg = _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with patch.object(sys, "platform", "linux"):
+            result = RUNNER.invoke(cli.app, ["config", "list"])
+    finally:
+        cfg.chmod(0o600)
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "cannot be read" in result.output
+
+
+def test_list_non_table_profiles_key_error(tmp_path, monkeypatch):
+    """`profiles = "x"` exits 1 instead of an AttributeError traceback (#257, #300).
+
+    `config list` now derives `names` from `_coerce_profiles` directly rather
+    than through `list_profiles_with_default` (#300); this pins that the
+    error handling PR #294 unified survives that change.
+    """
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", "profiles = 'not-a-table'\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "'profiles' must be a" in result.output
+
+
+def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
+    """`nicknames = "x"` exits 1 instead of an AttributeError traceback (#300).
+
+    `config list` now derives `nicknames` from `_coerce_nicknames` directly
+    rather than through `list_nicknames` (#300); this pins that the error
+    handling PR #294 unified survives that change.
+    """
+    _write_toml(
+        tmp_path / "hmc-mcp" / "config.toml",
+        "nicknames = 'not-a-table'\n\n[profiles.prod]\nhost='h'\nuser='u'\n"
+        "password='p'  # pragma: allowlist secret\n",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "'nicknames' must be a" in result.output
+
+
 def test_show_no_profile_no_default_error(tmp_path, monkeypatch):
     """show exits 1 when no --profile, no HMC_PROFILE, no default_profile in TOML."""
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", NO_DEFAULT_TOML)
@@ -351,3 +450,393 @@ def test_show_env_nickname_target_differs_from_default(tmp_path, monkeypatch):
     assert data["resolved_from"] == "staging"
     assert data["host"] == "stg-hmc.example.com"
     assert "prod-hmc.example.com" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Read count (issue #295) — one parse of config.toml per invocation
+# ---------------------------------------------------------------------------
+
+
+def test_show_reads_config_document_exactly_once(tmp_path, monkeypatch):
+    """config show parses config.toml once, not three times (#295).
+
+    Patches the shared choke point `_read_config_document` in both the module
+    that owns it (`hmc_mcp.config`, where `list_nicknames`/`load_profile`
+    resolve the name as a module global at call time) and
+    `hmc_mcp.cli_config`'s own imported name (its direct call site), so every
+    read reaches the same counter regardless of which call site makes it.
+    """
+    from unittest.mock import MagicMock
+
+    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.config as config_mod
+
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+
+    counter = MagicMock(wraps=config_mod._read_config_document)
+    with (
+        patch.object(config_mod, "_read_config_document", counter),
+        patch.object(cli_config_mod, "_read_config_document", counter),
+        patch.object(sys, "platform", "linux"),
+    ):
+        result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
+
+    assert result.exit_code == 0, result.output
+    assert counter.call_count == 1
+
+
+def test_list_reads_config_document_exactly_once(tmp_path, monkeypatch):
+    """config list parses config.toml once, not twice (#300).
+
+    Same technique as test_show_reads_config_document_exactly_once: patch the
+    shared choke point `_read_config_document` in both the owning module and
+    `hmc_mcp.cli_config`'s own imported name, so a read from either call site
+    reaches the same counter. `config list` calls no other module-level
+    reader (no `load_profile`), so both reads previously came from
+    `cli_config`'s own call sites — patching the module-owned name alone
+    would not have observed the second one.
+    """
+    from unittest.mock import MagicMock
+
+    import hmc_mcp.cli_config as cli_config_mod
+    import hmc_mcp.config as config_mod
+
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", NICKNAME_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+
+    counter = MagicMock(wraps=config_mod._read_config_document)
+    with (
+        patch.object(config_mod, "_read_config_document", counter),
+        patch.object(cli_config_mod, "_read_config_document", counter),
+        patch.object(sys, "platform", "linux"),
+    ):
+        result = RUNNER.invoke(cli.app, ["config", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert counter.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# config init-access-policy (issue #225)
+# ---------------------------------------------------------------------------
+
+POLICY_ARGV = ["config", "init-access-policy"]
+
+
+def _generate(tmp_path, monkeypatch, *extra):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    with patch.object(sys, "platform", "linux"):
+        return RUNNER.invoke(cli.app, [*POLICY_ARGV, *extra])
+
+
+def test_init_access_policy_writes_a_loadable_policy_at_0600(tmp_path, monkeypatch):
+    """R11: the file a server has to read, created the way `config init` creates one."""
+    from hmc_mcp.access_policy import load_access_policy
+    from hmc_mcp.legacy_policy import LEGACY_POLICY_NAME
+    from hmc_mcp.server import TOOL_SECURITY
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0, result.output
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    assert target.exists()
+    assert "access-policy.toml" in result.output
+
+    # Loaded through the real loader, not re-parsed here: the claim is that a server
+    # could start on this file.
+    policy = load_access_policy(LEGACY_POLICY_NAME, TOOL_SECURITY, path=target)
+    assert policy.tools == frozenset(set(TOOL_SECURITY) - {"hmc_run_command"})
+
+    if sys.platform != "win32":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_init_access_policy_refuses_to_overwrite_and_names_the_remedy(
+    tmp_path, monkeypatch
+):
+    """R11: it cannot destroy a reviewed policy, and it says what to do instead.
+
+    R5's refusal points every operator here unconditionally — nothing at that point
+    distinguishes an upgrade from a first run — so the deployment that already has an
+    authored-but-unselected file arrives at this error, and a bare "already exists"
+    would be a dead end.
+    """
+    first = _generate(tmp_path, monkeypatch)
+    assert first.exit_code == 0, first.output
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    before = target.read_bytes()
+
+    second = _generate(tmp_path, monkeypatch)
+
+    assert second.exit_code == 1
+    assert target.read_bytes() == before
+    assert "--output" in second.output
+
+
+def test_init_access_policy_output_collision_names_a_different_remedy(
+    tmp_path, monkeypatch
+):
+    """#287: a scratch --output collision is not the default-path failure.
+
+    The operator already used --output once; telling them to "write to a scratch path
+    with --output PATH" again is circular — it is exactly the action that just failed.
+    The message must name a remedy that differs from it (delete the file, or choose a
+    different --output PATH) and must not claim the colliding file is a reviewed
+    policy, since it may just be a stale scratch file from an earlier attempt.
+    """
+    scratch = tmp_path / "scratch" / "new-policy.toml"
+
+    first = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+    assert first.exit_code == 0, first.output
+    before = scratch.read_bytes()
+
+    second = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+    # rich hard-wraps a non-tty at 80 columns, so a long path may carry an inserted
+    # newline; flatten before checking for path substrings.
+    flattened = second.output.replace("\n", "")
+
+    assert second.exit_code == 1
+    assert scratch.read_bytes() == before
+    assert str(scratch) in flattened
+    assert "write to a scratch path with --output PATH" not in flattened
+    assert "reviewed policy" not in flattened
+
+
+def test_init_access_policy_output_at_the_default_path_uses_output_case(
+    tmp_path, monkeypatch
+):
+    """#287: the discriminator is whether --output was passed, not the resolved path.
+
+    An operator can point --output directly at the platform-native path. Comparing
+    the resolved target against the platform default would misclassify this as the
+    "reviewed policy" case even though the operator explicitly named the path with
+    --output; the handler must key off the presence of --output itself.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    default_target = tmp_path / "hmc-mcp" / "access-policy.toml"
+
+    with patch.object(sys, "platform", "linux"):
+        first = RUNNER.invoke(
+            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
+        )
+        assert first.exit_code == 0, first.output
+        second = RUNNER.invoke(
+            cli.app, [*POLICY_ARGV, "--output", str(default_target)]
+        )
+
+    flattened = second.output.replace("\n", "")
+    assert second.exit_code == 1
+    assert "write to a scratch path with --output PATH" not in flattened
+    assert "reviewed policy" not in flattened
+
+
+def test_init_access_policy_output_redirects_the_write(tmp_path, monkeypatch):
+    """R11a: the only way to regenerate, since the command cannot overwrite."""
+    scratch = tmp_path / "scratch" / "new-policy.toml"
+
+    result = _generate(tmp_path, monkeypatch, "--output", str(scratch))
+
+    assert result.exit_code == 0, result.output
+    assert scratch.exists()
+    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+    if sys.platform != "win32":
+        assert stat.S_IMODE(scratch.stat().st_mode) == 0o600
+
+
+def test_init_access_policy_refuses_a_key_that_cannot_be_a_connection(
+    tmp_path, monkeypatch
+):
+    """R9b: escaping makes it parse; ADR 0036's entry rules still have to pass.
+
+    `[profiles." prod"]` is legal TOML that `load_profile` resolves today, so this is a
+    working deployment. The generation must fail before any file exists rather than
+    leave one that refuses to load, and the message must reach past the policy document
+    the operator never wrote to the config key they did.
+    """
+    config_dir = tmp_path / "hmc-mcp"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
+    )
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 1
+    assert not (config_dir / "access-policy.toml").exists()
+    output = result.output
+    assert "config.toml" in output
+    assert "padded" in output
+
+
+def test_init_access_policy_reports_an_unresolvable_config_home(tmp_path, monkeypatch):
+    """R11: the generator resolves the same path `serve` does, under the same guard."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+
+    def _no_home(cls):
+        raise RuntimeError("Could not determine home directory")
+
+    monkeypatch.setattr(Path, "home", classmethod(_no_home))
+
+    with patch.object(sys, "platform", "linux"):
+        result = RUNNER.invoke(cli.app, POLICY_ARGV)
+
+    assert result.exit_code == 1
+    assert "HOME" in result.output or "XDG_CONFIG_HOME" in result.output
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="exercises the POSIX fdopen path")
+def test_a_write_failure_after_the_create_leaves_no_partial_file(tmp_path, monkeypatch):
+    """R11: O_EXCL alone only covers a failure at `open`.
+
+    ENOSPC, EDQUOT or EIO after the descriptor exists would otherwise leave a truncated
+    file — which exists, so the command's own no-overwrite rule refuses to regenerate
+    over it, and does not compile, so `serve` refuses too. That is a deployment that can
+    neither start nor recover without a manual delete.
+    """
+    import hmc_mcp.cli_config as cli_config
+
+    def _explode(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(cli_config.os, "fdopen", _explode)
+
+    result = _generate(tmp_path, monkeypatch)
+
+    assert result.exit_code == 1
+    assert not (tmp_path / "hmc-mcp" / "access-policy.toml").exists()
+
+
+def test_every_spec_numbered_test_named_in_the_header_still_exists():
+    """A header naming a deleted test is worse than no header (see #224)."""
+    import re
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    header = source.split('"""', 2)[1]
+
+    named = set(re.findall(r"^  \w+\s+(test_\w+)$", header, flags=re.MULTILINE))
+    defined = set(re.findall(r"^def (test_\w+)", source, flags=re.MULTILINE))
+
+    assert named, "the header maps no test; the guard would pass vacuously"
+    assert named <= defined, f"named but not defined: {sorted(named - defined)}"
+# ---------------------------------------------------------------------------
+# config diff-access-policy (issue #276)
+# ---------------------------------------------------------------------------
+
+DIFF_ARGV = ["config", "diff-access-policy"]
+
+
+def _generate_and_deploy(tmp_path, monkeypatch, config_toml=None):
+    """Generate the platform-native policy with init-access-policy; return its path."""
+    if config_toml is not None:
+        config_dir = tmp_path / "hmc-mcp"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "config.toml").write_text(config_toml, encoding="utf-8")
+    target = tmp_path / "hmc-mcp" / "access-policy.toml"
+    result = _generate(tmp_path, monkeypatch)
+    assert result.exit_code == 0, result.output
+    return target
+
+
+def test_diff_access_policy_is_green_when_the_deployed_policy_is_current(
+    tmp_path, monkeypatch
+):
+    """#276: exit 0, and no diff hunks, when the deployed document matches this build."""
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 0, result.output
+    assert not [
+        line
+        for line in result.output.splitlines()
+        if line.startswith(("+", "-"))
+    ], result.output
+
+
+def test_diff_access_policy_shows_a_tool_a_later_release_added(tmp_path, monkeypatch):
+    """#276 drift arm 1: TOOL_SECURITY grew after generation; the diff names the tool.
+
+    Patching `server.TOOL_SECURITY` works because the command imports it inside the
+    handler, at call time — the same attribute `init-access-policy` renders from.
+    """
+    from dataclasses import replace
+
+    import hmc_mcp.server as server_mod
+
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+    drifted = dict(server_mod.TOOL_SECURITY)
+    drifted["hmc_hypothetical_tool"] = replace(next(iter(drifted.values())))
+
+    with patch.object(server_mod, "TOOL_SECURITY", drifted):
+        result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 1, result.output
+    added = [line for line in result.output.splitlines() if line.startswith("+")]
+    assert any('"hmc_hypothetical_tool"' in line for line in added)
+
+
+def test_diff_access_policy_shows_a_profile_added_after_generation(
+    tmp_path, monkeypatch
+):
+    """#276 drift arm 2: a profile key config.toml gains after the policy was written."""
+    deployed = _generate_and_deploy(tmp_path, monkeypatch, TWO_PROFILE_TOML)
+    config_dir = tmp_path / "hmc-mcp"
+    (config_dir / "config.toml").write_text(
+        TWO_PROFILE_TOML
+        + '\n[profiles.staging]\n'
+        + 'host = "staging.example.com"\n'
+        + 'user = "admin"\n'
+        + 'password_env = "HMC_STAGING_PW"  # pragma: allowlist secret\n',
+        encoding="utf-8",
+    )
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 1, result.output
+    assert '"staging"' in result.output
+
+
+def test_diff_access_policy_reports_an_unreadable_deployed_file(tmp_path, monkeypatch):
+    """#276 error arm: a path with no policy behind it exits distinctly, naming the path."""
+    missing = tmp_path / "nowhere" / "access-policy.toml"
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(missing)])
+
+    assert result.exit_code == 3
+    flattened = result.output.replace("\n", "")
+    assert str(missing) in flattened
+    assert "init-access-policy" in flattened
+
+
+def test_diff_access_policy_reports_a_non_text_deployed_file(tmp_path, monkeypatch):
+    """#276 error arm: bytes that are not a TOML document are refused, not diffed."""
+    deployed = tmp_path / "access-policy.bin"
+    deployed.write_bytes(b"\x00\xff\xfe")
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 3
+
+
+def test_diff_access_policy_generation_failure_beats_the_deployed_file_check(
+    tmp_path, monkeypatch
+):
+    """#276 error arm: generation failure exits 4 even with a readable deployed file.
+
+    A padded profile key fails rendering (R9b); the deployed document beside it is
+    fine and never gets read. Distinct from the exit-3 unreadable-deployed arm above.
+    """
+    deployed = _generate_and_deploy(tmp_path, monkeypatch)
+    config_dir = tmp_path / "hmc-mcp"
+    (config_dir / "config.toml").write_text(
+        '[profiles." prod"]\nhost = "a"\n', encoding="utf-8"
+    )
+
+    result = RUNNER.invoke(cli.app, [*DIFF_ARGV, str(deployed)])
+
+    assert result.exit_code == 4
+    assert "padded" in result.output

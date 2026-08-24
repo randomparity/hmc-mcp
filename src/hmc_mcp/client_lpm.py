@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .jobs import (
+    RemoteRestartOperation,
     migrate_abort_lpar_job,
     migrate_lpar_job,
     migrate_recover_lpar_job,
@@ -71,7 +72,25 @@ class LpmMixin:
 
         return await self._lpar_job(lpar_uuid, "MigrateRecover", migrate_recover_lpar_job())
 
-    async def lpar_remote_restart(self, lpar_uuid: str, target_system: str) -> dict[str, Any] | None:
-        """Remote-restart a failed LPAR on another managed system."""
-
-        return await self._lpar_job(lpar_uuid, "RemoteRestart", remote_restart_lpar_job(target_system))
+    async def lpar_remote_restart(
+        self,
+        lpar_uuid: str,
+        operation: RemoteRestartOperation,
+        managed_system: str,
+        *,
+        target_managed_system: str | None = None,
+        target_managed_system_uuid: str | None = None,
+        use_current_data: bool = False,
+        retain_devices: bool = False,
+    ) -> dict[str, Any] | None:
+        """Submit an explicit RemoteRestart operation for a failed LPAR."""
+        xml = remote_restart_lpar_job(
+            operation,
+            managed_system,
+            lpar_uuid,
+            target_managed_system=target_managed_system,
+            target_managed_system_uuid=target_managed_system_uuid,
+            use_current_data=use_current_data,
+            retain_devices=retain_devices,
+        )
+        return await self._lpar_job(lpar_uuid, "RemoteRestart", xml)

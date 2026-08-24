@@ -46,7 +46,7 @@ def _lpar_summary(
         # Description (REST field; full text from the resource if present)
         "description": res.get("Description"),
         # Note: mapped vSCSI storage requires VIOS UUID resolution
-        # (vSCSI adapter → vios_partition_id → VIOS UUID → ViosStorageDetail
+        # (vSCSI adapter → vios_partition_id → VIOS UUID → mapping groups
         #  filtered by LPAR link) and is not included here. List VIOS resources to
         #  retrieve per-VIOS storage mappings, then filter by the LPAR's
         #  partition ID.
@@ -54,7 +54,11 @@ def _lpar_summary(
     }
 
 
-async def lpar_summary(hmc: HMCClient, lpar_name_or_uuid: str) -> dict[str, Any]:
+async def lpar_summary(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    system_name_or_uuid: str | None = None,
+) -> dict[str, Any]:
     """One-call LPAR summary: state, RMC, memory/CPU, OS, adapter count, description.
 
     Composes data from three HMC endpoints in a single call:
@@ -83,7 +87,9 @@ async def lpar_summary(hmc: HMCClient, lpar_name_or_uuid: str) -> dict[str, Any]
 
     Raises ``ValueError`` when the partition cannot be found.
     """
-    lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+    lpar_uuid = await resolve_lpar_uuid(
+        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+    )
     lpar, adapters = await _fetch_lpar_data(hmc, lpar_uuid)
     return _lpar_summary(lpar, adapters)
 

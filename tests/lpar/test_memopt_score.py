@@ -34,7 +34,9 @@ MULTI_ROW = f"{SCORE_ROW}\n{SECOND_ROW}\n"
 
 def _config() -> HMCConfig:
     return HMCConfig(
-        host="hmc.test", user="hscroot", password="abc123",  # pragma: allowlist secret
+        host="hmc.test",
+        user="hscroot",
+        password="abc123",  # pragma: allowlist secret
         _env_file=None,
     )
 
@@ -204,6 +206,18 @@ def test_list_lpar_memopt_scores_empty_output_returns_empty_list():
         result = asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, None))
 
     assert result == []
+
+
+def test_list_lpar_memopt_scores_rejects_malformed_rows():
+    """A row missing required HMC fields fails with an actionable error."""
+    cfg = _config()
+    conn = _make_ssh_mock("lpar_name=p9da10v1t,curr_lpar_score=100")
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="missing required fields: lpar_id"),
+    ):
+        asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME))
 
 
 def test_list_lpar_memopt_scores_rejects_empty_filter_name():

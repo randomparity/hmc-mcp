@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from ._app import _READ_ONLY, _run
+from ._app import _run
 from .common import client_from_env
 from .operations_health import fleet_health
 from .tool_registry import tool_module
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="health.fleet", target_kind="console")
 def hmc_fleet_health(profile: str | None = None) -> dict[str, Any]:
     """Return exception-only health across managed systems, partitions, and jobs.
 

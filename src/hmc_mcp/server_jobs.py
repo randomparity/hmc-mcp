@@ -6,7 +6,7 @@ from .tool_registry import tool_module
 
 from typing import Any
 
-from ._app import _READ_ONLY, _run, _run_limited_collection
+from ._app import _run, _run_limited_collection
 from .common import client_from_env
 from .errors import HMCError
 from .jobs import JobOutcome, job_outcome
@@ -21,10 +21,21 @@ def _is_unsupported_job_listing(exc: HMCError) -> bool:
     )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+# Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
+# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# job identity while the server reads another, so ADR 0039 grants this tool only
+# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
+# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+@tool(
+    effect="read",
+    operation="job.get",
+    target_kind="job",
+    exhaustive_targets=False,
+)
 def hmc_get_job(
     job_uuid: str,
     job_href: str | None = None,
@@ -45,7 +56,7 @@ def hmc_get_job(
     return _run(operation)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="job.list", target_kind="console")
 def hmc_list_recent_jobs(
     limit: int = 20,
     profile: str | None = None,
@@ -78,7 +89,18 @@ def hmc_list_recent_jobs(
         ) from exc
 
 
-@tool(annotations=_READ_ONLY)
+# Not exhaustive: `job_href` is a caller-supplied URI whose path replaces the
+# `job_uuid` selector outright — `client.get_job` fetches `urlparse(job_href).path`
+# and never looks at `job_uuid`. A `targets` table would therefore authorize one
+# job identity while the server reads another, so ADR 0039 grants this tool only
+# under `targets = "all-targets"`. ADR 0036 already noted that a job UUID is
+# minted by the HMC at runtime and so cannot usefully appear in an allowlist.
+@tool(
+    effect="read",
+    operation="job.wait",
+    target_kind="job",
+    exhaustive_targets=False,
+)
 def hmc_wait_for_job(
     job_uuid: str,
     timeout_seconds: int = 300,

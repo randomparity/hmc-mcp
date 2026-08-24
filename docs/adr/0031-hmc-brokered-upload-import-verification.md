@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Amended 2026-08-20 by ADR 0052 — see *Amendment* below; the decision
+recorded here stands, one signature it lists has changed.
 
 ## Context
 
@@ -27,7 +28,7 @@ We verified the brokered upload/import sequence through transport primitives and
 Added private methods to `HMCClient` (prefix `_` to indicate private/verification-only):
 
 - `_broker_file_create(vios_uuid, vg_uuid, filename) -> str`
-- `_broker_file_upload(broker_uri, content) -> str`
+- `_broker_file_upload(broker_uri, content) -> str` *(amended — see below)*
 - `_broker_iso_import(vios_uuid, vg_uuid, media_name, broker_uri) -> str`
 - `_broker_file_cleanup(broker_uri) -> None`
 - `_verify_imported_checksum(vios_uuid, vg_uuid, media_name) -> dict[str, str] | None`
@@ -138,8 +139,31 @@ The fixtures are designed to be updated after live verification against real HMC
 
 - **Block on live HMC verification.** Documentation-based verification provides sufficient confidence to proceed with implementation. Live verification will refine the fixtures and surface any version-specific differences.
 
+## Amendment (2026-08-20, ADR 0052, issue #308)
+
+`_broker_file_upload` no longer takes the content as `bytes`. Its signature is
+now:
+
+```python
+_broker_file_upload(broker_uri, content: AsyncIterator[bytes], content_length: int) -> str
+```
+
+Nothing else in this ADR changes. The endpoint contracts, media types, the
+`Content-Length` requirement, cleanup behavior, and the decision to keep these
+primitives private all stand — this is how the body is supplied, not what is
+sent. `Content-Length` is now passed in rather than derived with `len(content)`,
+because there is no materialized body to measure.
+
+The reason is recorded in ADR 0052: the sole caller, `upload_iso`, was reading
+the entire staged ISO into memory to satisfy the old `bytes` parameter, bounded
+only by a 100 GiB download limit. The body is now streamed from the staged file
+in chunks. `content` must be an **async** iterator (httpx's `AsyncClient`
+refuses a sync one), and it is consumed exactly once — ADR 0052 records what was
+checked to establish that nothing in this path replays a sent request.
+
 ## References
 
+- ADR 0052: `hmc_upload_iso` streams the staged ISO to the file broker
 - Issue #201: Verify HMC media-upload, checksum, and import capabilities
 - Issue #200: Media upload saga (parent epic)
 - Issue #203: Public media upload API (follow-up)

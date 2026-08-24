@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
+from dataclasses import asdict
+from decimal import Decimal
+import json
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
     _run,
     _run_limited_collection,
 )
@@ -22,20 +23,26 @@ from .operations_network import (
     list_virtual_switches,
 )
 from .operations_ssh_network import (
-    SriovMode,
+    VnicBackingSelector,
+    VnicPartialError,
     add_vnic,
     list_fc_ports,
     list_sea_adapters,
     list_vnics,
     remove_vnic,
+)
+from .operations_pcie import (
+    SriovMode,
+    assign_sriov_logical_port,
     set_sriov_adapter_mode,
+    unassign_sriov_logical_port,
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_switches", target_kind="managed_system")
 def hmc_list_virtual_switches(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -61,7 +68,7 @@ def hmc_list_virtual_switches(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_networks", target_kind="managed_system")
 def hmc_list_virtual_networks(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -84,7 +91,7 @@ def hmc_list_virtual_networks(
     return _run_limited_collection(_go, limit)
 
 
-@tool
+@tool(effect="mutate", operation="network.create_network", target_kind="managed_system")
 def hmc_create_virtual_network(
     system_name_or_uuid: str,
     name: str,
@@ -118,7 +125,11 @@ def hmc_create_virtual_network(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(
+    effect="destructive",
+    operation="network.delete_network",
+    target_kind="managed_system",
+)
 def hmc_delete_virtual_network(
     system_name_or_uuid: str, network_uuid: str, profile: str | None = None
 ) -> str:
@@ -142,7 +153,7 @@ def hmc_delete_virtual_network(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_bridges", target_kind="managed_system")
 def hmc_list_network_bridges(
     system_name_or_uuid: str,
     profile: str | None = None,
@@ -165,7 +176,7 @@ def hmc_list_network_bridges(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_fc_ports", target_kind="managed_system")
 def hmc_list_fc_ports(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -196,7 +207,7 @@ def hmc_list_fc_ports(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="network.list_sea", target_kind="managed_system")
 def hmc_list_sea_adapters(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
@@ -227,18 +238,14 @@ def hmc_list_sea_adapters(
     )
 
 
-@tool
+@tool(effect="mutate", operation="sriov.set_mode", target_kind="managed_system")
 def hmc_set_sriov_adapter_mode(
     system_name_or_uuid: str,
     adapter_id: str,
     mode: SriovMode,
     profile: str | None = None,
 ) -> str:
-    """Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode.
-
-    Runs ``chhwres -r sriov -m <system_name> -o s --id <adapter_id>
-    -a "sriov_adapter_mode=<mode>"`` on the HMC via SSH and returns the raw
-    command output.
+    """Verify that a physical adapter is already in the requested mode.
 
     The system may be given by CLI name or by UUID; a UUID is resolved to
     its CLI name via REST (falling back to an lssyscfg lookup over SSH when
@@ -251,8 +258,8 @@ def hmc_set_sriov_adapter_mode(
       - ``"sriov"``      — enable SR-IOV mode (shared virtual functions)
       - ``"dedicated"``  — disable SR-IOV, use as a dedicated (passthrough) adapter
 
-    WARNING: Changing SR-IOV adapter mode affects all partitions using virtual
-    functions on that adapter. Confirm system_name_or_uuid and adapter_id before calling.
+    Mode transitions are not admitted by the available same-family evidence and
+    fail closed without mutation.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -268,16 +275,104 @@ def hmc_set_sriov_adapter_mode(
     )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="mutate", operation="sriov.assign_logical_port", target_kind="lpar")
+def hmc_assign_sriov_logical_port(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    capacity_percent: float,
+    profile_name: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Assign an evidence-backed Ethernet SR-IOV logical port.
+
+    Args:
+        system_name_or_uuid: Managed system name or UUID.
+        lpar_name_or_uuid: Target partition name or UUID.
+        adapter_id: Normalized SR-IOV adapter ID.
+        physical_port_id: Normalized parent physical-port ID.
+        logical_port_id: Normalized unconfigured logical-port ID.
+        capacity_percent: Requested percentage capacity from 1 through 100.
+        profile_name: Exact profile whose unchanged state is verified.
+        ownership_override: Permit a separately approved ADR 0011 ownership override.
+        profile: TOML connection profile name.
+    """
+    from dataclasses import asdict
+    from decimal import Decimal
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return asdict(
+                await assign_sriov_logical_port(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    adapter_id,
+                    physical_port_id,
+                    logical_port_id,
+                    Decimal(str(capacity_percent)),
+                    profile_name=profile_name,
+                    ownership_override=ownership_override,
+                )
+            )
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="sriov.unassign_logical_port", target_kind="lpar")
+def hmc_unassign_sriov_logical_port(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    adapter_id: str,
+    physical_port_id: str,
+    logical_port_id: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Unassign a profile logical port on a Not Activated LPAR.
+
+    Args:
+        system_name_or_uuid: Managed system name or UUID.
+        lpar_name_or_uuid: Target partition name or UUID.
+        profile_name: Exact partition profile to update and verify.
+        adapter_id: Normalized SR-IOV adapter ID.
+        physical_port_id: Normalized parent physical-port ID.
+        logical_port_id: Normalized logical-port ID to remove.
+        ownership_override: Permit a separately approved ADR 0011 ownership override.
+        profile: TOML connection profile name.
+    """
+    from dataclasses import asdict
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return asdict(
+                await unassign_sriov_logical_port(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    profile_name,
+                    adapter_id,
+                    physical_port_id,
+                    logical_port_id,
+                    ownership_override=ownership_override,
+                )
+            )
+
+    return _run(_go)
+
+
+@tool(effect="read", operation="vnic.list", target_kind="lpar")
 def hmc_list_vnics(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
     """List vNICs (SR-IOV-backed Virtual NICs) on an LPAR via the HMC CLI.
 
-    Runs ``lshwres -r virtualio --rsubtype vnic --level lpar -m <system_name>
-    --filter lpar_names=<lpar_name>`` on the HMC via SSH and returns one dict
-    per vNIC with fields such as ``vnic_id``, ``capacity``, ``vswitch_name``,
-    ``port_vlan_id``, and ``backing_devices``.
+    Returns the HMC inventory for the selected partition, including slot and
+    backing-device readback fields.
 
     The system and partition may be given by CLI name or by UUID; UUIDs
     are resolved to their CLI names via REST (falling back to an lssyscfg
@@ -290,108 +385,103 @@ def hmc_list_vnics(
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: list_vnics(
-            build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_vnics(
+                hmc.config, system_name_or_uuid, lpar_name_or_uuid
+            )
+
+    return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="vnic.add", target_kind="lpar")
 def hmc_add_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    capacity: int,
-    virtual_switch_name: str,
+    vios_name: str,
+    vios_lpar_id: str,
+    adapter_id: str,
+    physical_port_id: str,
+    capacity_percent: float,
     port_vlan_id: int,
-    backing_devices: str | None = None,
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Add a vNIC (SR-IOV-backed Virtual NIC) to an LPAR via the HMC CLI.
 
-    Runs ``chhwres -r virtualio --rsubtype vnic -o a -m <system_name>
-    --filter lpar_names=<lpar_name> -a "<attrs>"`` on the HMC via SSH.
-
-    The system and partition may be given by CLI name or by UUID; UUIDs
-    are resolved to their CLI names via REST (falling back to an lssyscfg
-    lookup over SSH when the REST API is unreachable) before the command
-    runs.
-
-    **V1 scope boundary:** Only the following parameters are supported in
-    this version: ``capacity``, ``virtual_switch_name``, ``port_vlan_id``, and
-    ``backing_devices`` (optional, opaque string passed verbatim).  Complex
-    backing-device topology (multi-adapter failover, per-device SR-IOV
-    physical port IDs, capacity weights) is a follow-up and explicitly out
-    of scope for v1.
-
-    Returns the raw HMC command output on success.
-
-    WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name_or_uuid, lpar_name_or_uuid, and virtual_switch_name before calling.  The
-    underlying physical adapter must be in SR-IOV mode (see
-    ``hmc_set_sriov_adapter_mode``).
-
-    Raises:
-        HMCCLIError: If the HMC command fails, e.g. because the underlying
-            SR-IOV adapter is not in SR-IOV mode.
+    Verifies the selected VIOS, adapter, physical port, capacity, and final
+    HMC readback. Returns a structured mutation and reconciliation result.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        capacity: Requested vNIC capacity percentage.
-        virtual_switch_name: Backing switch name from ``hmc_list_virtual_switches``.
+        vios_name: VIOS partition name from managed-system inventory.
+        vios_lpar_id: VIOS partition ID matching ``vios_name``.
+        adapter_id: SR-IOV physical adapter identifier.
+        physical_port_id: Physical port identifier on ``adapter_id``.
+        capacity_percent: Requested backing capacity percentage.
         port_vlan_id: Port VLAN ID assigned to untagged traffic.
-        backing_devices: Optional opaque HMC backing-device attribute string.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: add_vnic(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-            capacity,
-            virtual_switch_name,
-            port_vlan_id,
-            backing_devices,
-        )
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            try:
+                result = await add_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    VnicBackingSelector(
+                        vios_name,
+                        vios_lpar_id,
+                        adapter_id,
+                        physical_port_id,
+                        Decimal(str(capacity_percent)),
+                    ),
+                    port_vlan_id,
+                    ownership_override=ownership_override,
+                )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+            return asdict(result)
+
+    return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="vnic.remove", target_kind="lpar")
 def hmc_remove_vnic(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
-    vnic_id: str,
+    slot_num: str,
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Remove a vNIC from an LPAR via the HMC CLI.
 
-    Runs ``chhwres -r virtualio --rsubtype vnic -o r -m <system_name>
-    --filter lpar_names=<lpar_name> -a "vnic_id=<vnic_id>"`` on the HMC
-    via SSH.
-
-    The system and partition may be given by CLI name or by UUID; UUIDs
-    are resolved to their CLI names via REST (falling back to an lssyscfg
-    lookup over SSH when the REST API is unreachable) before the command
-    runs.
-
-    ``vnic_id`` is the numeric ID as reported by ``hmc_list_vnics``.
-
-    WARNING: This modifies the LPAR configuration on the HMC. Confirm
-    system_name_or_uuid, lpar_name_or_uuid, and vnic_id before calling. Returns the HMC CLI
-    output (immediate delete — no job to poll).
+    Removes the selected slot after verification and returns a structured
+    mutation and reconciliation result.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
         lpar_name_or_uuid: Partition name or UUID from ``hmc_list_lpars``.
-        vnic_id: Numeric vNIC ID returned by ``hmc_list_vnics``.
+        slot_num: vNIC slot number returned by ``hmc_list_vnics``.
+        ownership_override: Bypass ownership rejection only after operator approval.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
-    return _run(
-        lambda: remove_vnic(
-            build_config(profile=profile),
-            system_name_or_uuid,
-            lpar_name_or_uuid,
-            vnic_id,
-        ),
-    )
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            try:
+                result = await remove_vnic(
+                    hmc,
+                    system_name_or_uuid,
+                    lpar_name_or_uuid,
+                    slot_num,
+                    ownership_override=ownership_override,
+                )
+            except VnicPartialError as exc:
+                evidence = json.dumps(asdict(exc.result), default=str)
+                raise VnicPartialError(f"{exc}; result={evidence}", exc.result) from exc
+            return asdict(result)
+
+    return _run(_go)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _DESTRUCTIVE,
     _run,
 )
 
@@ -20,11 +19,13 @@ from .operations_lpm import (
 
 from typing import cast
 
+from .jobs import RemoteRestartOperation
 
-tool, register_tools = tool_module()
+
+tool, register_tools, tool_security = tool_module()
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate", target_kind="lpar")
 def hmc_migrate_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
@@ -35,6 +36,7 @@ def hmc_migrate_lpar(
     poll_interval: int = 5,
     validate_first: bool = True,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Live-migrate (LPM) an LPAR to another managed system.
 
@@ -57,6 +59,9 @@ def hmc_migrate_lpar(
         poll_interval: Seconds between job-status requests while waiting.
         validate_first: Validate successfully before submitting migration when true.
         profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional SystemName or UUID of the source system,
+            disambiguating the partition name; when omitted the name is
+            searched fleet-wide.
     """
 
     async def _go():
@@ -71,13 +76,14 @@ def hmc_migrate_lpar(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
                 validate_first=validate_first,
+                system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
 
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate_validate", target_kind="lpar")
 def hmc_migrate_validate_lpar(
     lpar_name_or_uuid: str,
     target_system_name_or_uuid: str,
@@ -87,6 +93,7 @@ def hmc_migrate_validate_lpar(
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Validate whether an LPM migration of an LPAR to target_system would succeed.
 
@@ -103,6 +110,9 @@ def hmc_migrate_validate_lpar(
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional SystemName or UUID of the source system,
+            disambiguating the partition name; when omitted the name is
+            searched fleet-wide.
     """
 
     async def _go():
@@ -117,19 +127,21 @@ def hmc_migrate_validate_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                system_name_or_uuid=system_name_or_uuid,
             )
             return result.job
 
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.migrate_abort", target_kind="lpar")
 def hmc_migrate_abort_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Abort an in-progress LPM migration of an LPAR.
 
@@ -144,6 +156,9 @@ def hmc_migrate_abort_lpar(
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional SystemName or UUID of the source system,
+            disambiguating the partition name; when omitted the name is
+            searched fleet-wide.
     """
 
     async def _go():
@@ -154,19 +169,21 @@ def hmc_migrate_abort_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
 
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.migrate_recover", target_kind="lpar")
 def hmc_migrate_recover_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> JobOutcome:
     """Recover an LPAR after a failed LPM migration.
 
@@ -181,6 +198,9 @@ def hmc_migrate_recover_lpar(
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
         profile: Optional TOML profile name; uses environment defaults when omitted.
+        system_name_or_uuid: Optional SystemName or UUID of the source system,
+            disambiguating the partition name; when omitted the name is
+            searched fleet-wide.
     """
 
     async def _go():
@@ -191,16 +211,21 @@ def hmc_migrate_recover_lpar(
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
+                system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
 
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.remote_restart", target_kind="lpar")
 def hmc_remote_restart_lpar(
     lpar_name_or_uuid: str,
-    target_system_name_or_uuid: str,
+    operation: RemoteRestartOperation,
+    system_name_or_uuid: str,
+    target_system_name_or_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
@@ -215,7 +240,11 @@ def hmc_remote_restart_lpar(
 
     Args:
         lpar_name_or_uuid: Failed partition name or UUID.
-        target_system_name_or_uuid: Managed-system name or UUID on which to restart.
+        operation: Explicit validate, recover, restart, cleanup, or cancel action.
+        system_name_or_uuid: Source managed-system name or UUID.
+        target_system_name_or_uuid: Target name or UUID; optional only for cleanup.
+        use_current_data: Use current configuration data; restart only.
+        retain_devices: Retain devices; cleanup only.
         wait: Wait for the remote-restart job's terminal outcome when true.
         timeout_seconds: Maximum client-side wait in seconds.
         poll_interval: Seconds between job-status requests while waiting.
@@ -227,7 +256,11 @@ def hmc_remote_restart_lpar(
             result = await remote_restart_lpar(
                 hmc,
                 lpar_name_or_uuid,
-                target_system_name_or_uuid,
+                operation,
+                system_name_or_uuid,
+                target_system_name_or_uuid=target_system_name_or_uuid,
+                use_current_data=use_current_data,
+                retain_devices=retain_devices,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,

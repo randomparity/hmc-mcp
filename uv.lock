@@ -708,6 +708,7 @@ app = [
     { name = "mcp" },
     { name = "rich" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -728,15 +729,16 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncssh", specifier = "==2.24.0" },
-    { name = "defusedxml", specifier = "==0.7.1" },
+    { name = "asyncssh", specifier = ">=2.24.0,<3" },
+    { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "fastmcp-slim", extras = ["server"], marker = "extra == 'app'", specifier = "==3.4.7" },
-    { name = "httpx", specifier = "==0.28.1" },
+    { name = "httpx", specifier = ">=0.28.1,<1" },
     { name = "mcp", marker = "extra == 'app'", specifier = "==1.29.0" },
-    { name = "pydantic", specifier = "==2.13.4" },
-    { name = "pydantic-settings", specifier = "==2.15.0" },
+    { name = "pydantic", specifier = ">=2.13.4,<3" },
+    { name = "pydantic-settings", specifier = ">=2.15.0,<3" },
     { name = "rich", marker = "extra == 'app'", specifier = "==15.0.0" },
     { name = "typer", marker = "extra == 'app'", specifier = "==0.27.1" },
+    { name = "uvicorn", marker = "extra == 'app'", specifier = "==0.52.1" },
 ]
 provides-extras = ["app"]
 

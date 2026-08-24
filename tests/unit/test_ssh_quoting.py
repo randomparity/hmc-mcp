@@ -13,6 +13,7 @@ command escape hatch.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import shlex
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,7 +21,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.server import (
-    hmc_add_vnic,
+    hmc_backup_vios,
     hmc_backup_lpar_profiles,
     hmc_list_memory_pools,
     hmc_remove_memory_pool,
@@ -28,6 +29,8 @@ from hmc_mcp.server import (
     hmc_set_lpar_description,
 )
 from hmc_mcp.ssh_commands import list_io_slots
+from hmc_mcp.operations_ssh_network import VnicBackingSelector, _required, _validated
+from decimal import Decimal
 
 from conftest import mock_uuid_resolution
 
@@ -58,6 +61,7 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
 
 
 def _captured_cmd(conn_mock) -> str:
@@ -68,6 +72,18 @@ def _captured_cmd(conn_mock) -> str:
 def _arg_after(args: list[str], option: str) -> str:
     """Return the argument following *option* in a shlex-split argv list."""
     return args[args.index(option) + 1]
+
+
+def _vios_client_factory():
+    hmc = AsyncMock()
+    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
+
+    @asynccontextmanager
+    async def factory(_profile):
+        yield hmc
+
+    return factory
 
 
 # ---------------------------------------------------------------------- #
@@ -92,45 +108,16 @@ async def test_list_io_slots_quotes_hostile_system_name():
 # ---------------------------------------------------------------------- #
 
 
-def test_add_vnic_quotes_hostile_vswitch(monkeypatch, mock_hmc):
-    """hmc_add_vnic keeps a hostile virtual_switch_name inside the quoted -a payload."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn = _make_ssh_mock("")
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_add_vnic(
-            system_name_or_uuid=SYSTEM_UUID,
-            lpar_name_or_uuid=LPAR_UUID,
-            capacity=2,
-            virtual_switch_name=HOSTILE,
-            port_vlan_id=100,
-        )
-
-    payload = f"capacity=2,vswitch_name={HOSTILE},port_vlan_id=100"
-    args = shlex.split(_captured_cmd(conn))
-    assert _arg_after(args, "-a") == payload
+def test_add_vnic_rejects_structural_selector_characters():
+    """Typed vNIC selectors reject characters that alter HMC payload structure."""
+    with pytest.raises(ValueError, match="alter HMC command structure"):
+        _validated(VnicBackingSelector(f"vios,{HOSTILE}", "2", "1", "0", Decimal("2")))
 
 
-def test_add_vnic_quotes_hostile_backing_devices(monkeypatch, mock_hmc):
-    """hmc_add_vnic keeps hostile backing_devices inside the quoted -a payload."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    conn = _make_ssh_mock("")
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_add_vnic(
-            system_name_or_uuid=SYSTEM_UUID,
-            lpar_name_or_uuid=LPAR_UUID,
-            capacity=2,
-            virtual_switch_name="ETHERNET0",
-            port_vlan_id=100,
-            backing_devices=f"U78DA.001.XYZ {HOSTILE}",
-        )
-
-    payload = f"capacity=2,vswitch_name=ETHERNET0,port_vlan_id=100,backing_devices=U78DA.001.XYZ {HOSTILE}"
-    args = shlex.split(_captured_cmd(conn))
-    assert _arg_after(args, "-a") == payload
+def test_remove_vnic_rejects_structural_slot_characters():
+    """Slot removal rejects characters that alter the HMC attribute payload."""
+    with pytest.raises(ValueError, match="alter HMC command structure"):
+        _required(f"4,{HOSTILE}", "slot_num")
 
 
 def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
@@ -179,16 +166,70 @@ def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):
     assert shlex.quote("/tmp/bak;id") in cmd
 
 
-def test_restore_vios_quotes_hostile_backup_name(monkeypatch):
-    """hmc_restore_vios shell-quotes a hostile backup_name (no REST resolution)."""
+@pytest.mark.parametrize(
+    ("tool", "arguments", "keywords"),
+    [
+        (
+            hmc_backup_vios,
+            (SYSTEM_NAME, SYSTEM_UUID),
+            {"backup_name": "vios;id"},
+        ),
+        (
+            hmc_restore_vios,
+            (SYSTEM_NAME, SYSTEM_UUID, "vios;id"),
+            {"backup_type": "ssp", "restart_if_required": False},
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_vios_backup_tools_quote_hostile_backup_name(
+    monkeypatch, tool, arguments, keywords
+):
+    """VIOS backup and restore shell-quote a hostile catalog name.
+
+    The hostile value carries a shell metacharacter but no path separator: ADR
+    0044's containment guard refuses a separator-bearing name before the command
+    is built, so a value with one would never reach the quoting this asserts.
+    Quoting and containment are separate controls and this proves the first.
+    """
+    _hmc_env(monkeypatch)
+    monkeypatch.setattr("hmc_mcp.server_vios.client_from_env", _vios_client_factory())
+    conn = _make_ssh_mock("")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
+        tool(*arguments, **keywords)
+
+    cmd = _captured_cmd(conn)
+    assert shlex.quote("vios;id") in cmd
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "keywords"),
+    [
+        (
+            hmc_backup_vios,
+            (HOSTILE, SYSTEM_UUID),
+            {"backup_name": "safe-backup"},
+        ),
+        (
+            hmc_restore_vios,
+            (HOSTILE, SYSTEM_UUID, "safe-backup"),
+            {"backup_type": "ssp", "restart_if_required": False},
+        ),
+    ],
+    ids=["backup", "restore"],
+)
+def test_vios_backup_tools_keep_hostile_direct_system_name_in_one_argument(
+    monkeypatch, tool, arguments, keywords
+):
+    """A caller-controlled direct system name remains one exact ``-m`` word."""
     _hmc_env(monkeypatch)
     conn = _make_ssh_mock("")
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn):
-        hmc_restore_vios(SYSTEM_UUID, "/backups/vios;id")
+        tool(*arguments, **keywords)
 
-    cmd = _captured_cmd(conn)
-    assert shlex.quote("/backups/vios;id") in cmd
+    assert _arg_after(shlex.split(_captured_cmd(conn)), "-m") == HOSTILE
 
 
 def test_resolved_system_name_is_quoted_too(monkeypatch, mock_hmc):

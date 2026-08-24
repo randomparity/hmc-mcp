@@ -2,11 +2,11 @@
 
 The MCP server tags every tool with ToolAnnotations (readOnlyHint /
 destructiveHint) so clients and gateways can gate on capability instead of
-treating every tool equally. The classification lives in server.py's
-READ_ONLY_TOOLS / DESTRUCTIVE_TOOLS sets; these tests pin the live registry to
-that spec so a new tool must pick a category and be tagged. They also cover the
-precondition guards on hmc_delete_lpar / hmc_delete_vios (refuse to delete a
-partition that is not powered off), the pattern established by
+treating every tool equally. The classification lives on each tool's
+ToolSecurity record; tests/app/test_tool_security.py holds the exhaustive
+registry contract, and these tests cover annotation-adjacent schema stability
+and the precondition guards on hmc_delete_lpar / hmc_delete_vios (refuse to
+delete a partition that is not powered off), the pattern established by
 hmc_remove_memory_pool.
 """
 
@@ -17,15 +17,35 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.dispatch_scope import dispatch_authorizer
+from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.client import HMCError
 from hmc_mcp.server import (
-    DESTRUCTIVE_TOOLS,
-    READ_ONLY_TOOLS,
+    TOOL_SECURITY,
+    create_mcp,
     hmc_decommission_lpar,
     hmc_delete_lpar,
     hmc_delete_vios,
-    mcp,
 )
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+_LEGACY = compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,))
+mcp = create_mcp(_LEGACY)
+
+# The escape hatch's gates come from a policy that *grants* it. Since ADR 0041
+# `configure_arbitrary_command_tool` requires both gates, and the flag and the grant
+# compose conjunctively (ADR 0036) — so a toggle test asserting "enabled means
+# registered" has to supply the grant as well as the flag, which is what an operator
+# enabling it actually does.
+_HATCH = compile_legacy_policy(
+    TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,), include_arbitrary_command=True
+)
+
 
 LPAR_UUID = "aaaa0000-0000-0000-0000-000000000001"
 
@@ -35,6 +55,7 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
 
 
 # ------------------------------------------------------------------ #
@@ -124,7 +145,10 @@ def test_every_registered_parameter_has_a_description(arbitrary_command_enabled)
     try:
         asyncio.run(
             server_command.configure_arbitrary_command_tool(
-                arbitrary_command_enabled, mcp
+                arbitrary_command_enabled,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
             )
         )
         missing = {
@@ -134,30 +158,14 @@ def test_every_registered_parameter_has_a_description(arbitrary_command_enabled)
         }
         assert missing == {}
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
-
-
-def test_classification_sets_are_disjoint():
-    assert not (READ_ONLY_TOOLS & DESTRUCTIVE_TOOLS)
-
-
-def test_every_registered_tool_matches_its_category():
-    """The live registry must carry exactly the documented annotations."""
-    by_name = _tools_by_name()
-    assert READ_ONLY_TOOLS | DESTRUCTIVE_TOOLS <= set(by_name)
-    for name, tool in by_name.items():
-        ann = tool.annotations
-        if name in READ_ONLY_TOOLS:
-            assert ann is not None and ann.readOnlyHint is True, name
-            assert ann.destructiveHint is not True, name
-        elif name in DESTRUCTIVE_TOOLS:
-            assert ann is not None and ann.destructiveHint is True, name
-            assert ann.readOnlyHint is not True, name
-        else:
-            # Untagged tools are state-changing lifecycle/admin operations.
-            assert ann is None or (
-                ann.readOnlyHint is not True and ann.destructiveHint is not True
-            ), name
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_arbitrary_command_tool_is_disabled_by_default():
@@ -165,8 +173,7 @@ def test_arbitrary_command_tool_is_disabled_by_default():
 
 
 def test_attach_disk_is_state_changing_not_destructive():
-    assert "hmc_attach_disk_to_lpar" not in READ_ONLY_TOOLS
-    assert "hmc_attach_disk_to_lpar" not in DESTRUCTIVE_TOOLS
+    assert TOOL_SECURITY["hmc_attach_disk_to_lpar"].effect == "mutate"
     annotations = _tools_by_name()["hmc_attach_disk_to_lpar"].annotations
     assert annotations is None or (
         annotations.readOnlyHint is not True and annotations.destructiveHint is not True
@@ -174,7 +181,7 @@ def test_attach_disk_is_state_changing_not_destructive():
 
 
 def test_fleet_health_is_read_only():
-    assert "hmc_fleet_health" in READ_ONLY_TOOLS
+    assert TOOL_SECURITY["hmc_fleet_health"].effect == "read"
     annotations = _tools_by_name()["hmc_fleet_health"].annotations
     assert annotations is not None and annotations.readOnlyHint is True
 
@@ -183,10 +190,38 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
     from hmc_mcp import server_command
 
     try:
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
-        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
-        asyncio.run(server_command.configure_arbitrary_command_tool(True, mcp))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                True,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
         tools = [
             tool
@@ -196,11 +231,32 @@ def test_arbitrary_command_tool_configuration_is_symmetric_and_idempotent():
         assert len(tools) == 1
         assert tools[0].annotations is not None
         assert tools[0].annotations.readOnlyHint is False
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
         assert "hmc_run_command" not in _tools_by_name()
     finally:
-        asyncio.run(server_command.configure_arbitrary_command_tool(False, mcp))
+        asyncio.run(
+            server_command.configure_arbitrary_command_tool(
+                False,
+                mcp,
+                permits=_HATCH.permits_tool,
+                authorize=dispatch_authorizer(_HATCH),
+            )
+        )
 
 
 def test_closed_vocab_enum_matches_runtime_constant():
@@ -212,15 +268,12 @@ def test_closed_vocab_enum_matches_runtime_constant():
     constant so either side changing alone is caught.
     """
     from hmc_mcp.client_adapters import ADAPTER_TYPES
-    from hmc_mcp.client_users import (
-        LDAP_REMOVAL_RESOURCES,
-        _VALID_USER_TYPES,
-    )
+    from hmc_mcp.client_users import _VALID_AUTHENTICATION_FILTERS
     from hmc_mcp.documents import (
         PARTITION_TYPES,
         SHARING_MODES,
         STORAGE_KINDS,
-        TASK_ROLES,
+        AUTHENTICATION_TYPES,
     )
     from hmc_mcp.jobs import DEVICE_TYPES, LU_TYPES
     from hmc_mcp.server_vios import _VALID_BACKUP_TYPES
@@ -247,20 +300,57 @@ def test_closed_vocab_enum_matches_runtime_constant():
     assert backup_type["default"] in _VALID_BACKUP_TYPES
 
     expected_enums = {
-        ("hmc_create_user", "taskrole"): TASK_ROLES,
+        ("hmc_create_user", "authentication_type"): AUTHENTICATION_TYPES,
         ("hmc_list_adapters", "adapter_type"): ADAPTER_TYPES,
         ("hmc_delete_adapter", "adapter_type"): ADAPTER_TYPES,
         ("hmc_map_storage_to_lpar", "storage_kind"): STORAGE_KINDS,
         ("hmc_create_logical_unit", "lu_type"): LU_TYPES,
         ("hmc_create_logical_unit", "device_type"): DEVICE_TYPES,
-        ("hmc_remove_ldap_config", "resource"): LDAP_REMOVAL_RESOURCES,
-        ("hmc_list_users", "user_type"): _VALID_USER_TYPES,
+        ("hmc_list_users", "authentication_type"): _VALID_AUTHENTICATION_FILTERS,
         ("hmc_set_sriov_adapter_mode", "mode"): _VALID_SRIOV_MODES,
         ("hmc_list_io_slots", "pci_class"): _VALID_PCI_CLASSES,
     }
     for (tool_name, parameter_name), values in expected_enums.items():
         parameter = by_name[tool_name].parameters["properties"][parameter_name]
         assert set(parameter["enum"]) == set(values)
+
+
+def test_vios_backup_and_restore_schemas_pin_the_supported_contracts():
+    """The public schemas expose every HMC input required by the replacement CLIs."""
+    by_name = _tools_by_name()
+
+    backup = by_name["hmc_backup_vios"].parameters
+    assert set(backup["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "profile",
+    }
+    assert set(backup["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+    }
+    assert backup["properties"]["backup_type"]["default"] == "vios"
+
+    restore = by_name["hmc_restore_vios"].parameters
+    assert set(restore["properties"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+        "restart_if_required",
+        "profile",
+    }
+    assert set(restore["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+    }
+    assert restore["properties"]["backup_type"]["enum"] == ["viosioconfig", "ssp"]
+    assert restore["properties"]["restart_if_required"]["default"] is False
 
 
 def test_parameter_normalization_contract_is_schema_pinned():
@@ -270,15 +360,22 @@ def test_parameter_normalization_contract_is_schema_pinned():
 
     by_name = _tools_by_name()
     replacements = {
-        "hmc_install_vios": {"hmc_timeout_minutes", "wait_timeout_seconds"},
-        "hmc_install_lpar_os": {"hmc_timeout_minutes", "wait_timeout_seconds"},
+        "hmc_install_vios": {"install_source", "system_name_or_uuid"},
+        "hmc_install_lpar_os": {"install_source", "system_name_or_uuid"},
         "hmc_attach_disk_to_lpar": {"capacity_mib"},
         "hmc_create_virtual_disk": {"capacity_mib"},
         "hmc_create_media_repository": {"size_mib"},
         "hmc_create_optical_media": {"size_mib"},
         "hmc_create_logical_unit": {"lu_size_gib"},
         "hmc_create_virtual_network": {"virtual_switch_id"},
-        "hmc_add_vnic": {"virtual_switch_name"},
+        "hmc_add_vnic": {
+            "vios_name",
+            "vios_lpar_id",
+            "adapter_id",
+            "physical_port_id",
+            "capacity_percent",
+            "port_vlan_id",
+        },
     }
     displaced = {
         "timeout",
@@ -292,11 +389,30 @@ def test_parameter_normalization_contract_is_schema_pinned():
         properties = set(by_name[tool_name].parameters["properties"])
         assert expected <= properties
         assert not (properties & displaced)
+    add_vnic = set(by_name["hmc_add_vnic"].parameters["properties"])
+    remove_vnic = set(by_name["hmc_remove_vnic"].parameters["properties"])
+    assert not add_vnic & {"backing_devices", "virtual_switch_name", "capacity"}
+    assert "slot_num" in remove_vnic
+    assert "vnic_id" not in remove_vnic
+    for properties in (
+        by_name["hmc_add_vnic"].parameters["properties"],
+        by_name["hmc_remove_vnic"].parameters["properties"],
+    ):
+        assert properties["ownership_override"]["default"] is False
     for install_tool in ("hmc_install_vios", "hmc_install_lpar_os"):
         properties = by_name[install_tool].parameters["properties"]
-        assert "timeout_seconds" not in properties
-        assert properties["hmc_timeout_minutes"]["default"] == 60
-        assert properties["wait_timeout_seconds"]["default"] is None
+        # ADR 0070: the REST job-polling surface is gone with the dead
+        # InstallLPAR/InstallVIOS endpoints; the CLI bridge exposes no wait.
+        assert not set(properties) & {
+            "nim_ip",
+            "wait",
+            "wait_timeout_seconds",
+            "poll_interval",
+            "hmc_timeout_minutes",
+        }
+        assert properties["profile_name"]["default"] == "default"
+        assert properties["vlan_id"]["default"] == "0"
+        assert properties["mac_address"]["default"] is None
 
     enum_contracts = {
         ("hmc_list_systems", "state"): MANAGED_SYSTEM_STATES,
@@ -347,7 +463,7 @@ def test_decommission_lpar_is_public_destructive_and_schema_stable():
     assert callable(hmc_decommission_lpar)
 
     tool = _tools_by_name()["hmc_decommission_lpar"]
-    assert "hmc_decommission_lpar" in DESTRUCTIVE_TOOLS
+    assert TOOL_SECURITY["hmc_decommission_lpar"].effect == "destructive"
     assert tool.annotations is not None and tool.annotations.destructiveHint is True
     assert tool.annotations.readOnlyHint is not True
 
@@ -403,31 +519,70 @@ def test_partition_creation_tools_share_resource_object_schema():
         assert legacy_name not in vios_properties
 
 
-def test_password_policy_mutations_use_settings_object_schema():
+def test_password_policy_tools_are_absent_without_a_documented_target():
     by_name = _tools_by_name()
     for tool_name in ("hmc_create_password_policy", "hmc_modify_password_policy"):
-        properties = by_name[tool_name].parameters["properties"]
-        assert set(properties) == {"policy_name", "settings", "profile"}
-        assert properties["settings"]["type"] == "object"
+        assert tool_name not in by_name
 
 
-def test_repository_type_enum_matches_runtime_constant():
-    """The MCP enum for RepositorySource.type must not drift from the Literal.
+def test_update_source_enums_match_runtime_constants():
+    """Rendered console and VIOS source enums must not drift from runtime.
 
-    The repository TypedDict's ``type`` field is annotated with the
-    RepositoryType Literal, which renders as an enum in the tool schema; the
-    jobs layer validates against _REQUIRED_KEYS keyed by that same set. This
-    pins the rendered schema to the runtime set so either side changing alone
-    is caught.
+    Each public tool schema is pinned to the corresponding runtime Literal.
     """
-    from hmc_mcp.jobs import _REPOSITORY_TYPES
+    from hmc_mcp.jobs import (
+        _CONSOLE_UPDATE_MEDIA_TYPES,
+        _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_RESOURCE_TYPES,
+    )
 
     by_name = _tools_by_name()
 
-    repo_type = by_name["hmc_update_console_software"].parameters["properties"][
+    media_type = by_name["hmc_update_console_software"].parameters["properties"][
         "repository"
-    ]["properties"]["type"]
-    assert set(repo_type["enum"]) == set(_REPOSITORY_TYPES)
+    ]["properties"]["MediaType"]
+    assert set(media_type["enum"]) == set(_CONSOLE_UPDATE_MEDIA_TYPES)
+    repository = by_name["hmc_update_console_software"].parameters["properties"][
+        "repository"
+    ]
+    assert repository["required"] == ["MediaType"]
+
+    vios_sources = by_name["hmc_vios_update"].parameters["properties"]["repository"]
+    variants = vios_sources["anyOf"]
+    update_sources = [
+        source for source in variants if "RestartVIOS" in source["properties"]
+    ]
+    upgrade_sources = [source for source in variants if "Disks" in source["properties"]]
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in update_sources
+    } == set(_VIOS_UPDATE_RESOURCE_TYPES)
+    assert {
+        source["properties"]["ResourceType"]["const"] for source in upgrade_sources
+    } == set(_VIOS_UPGRADE_RESOURCE_TYPES)
+    assert all("ResourceType" in source["required"] for source in variants)
+    assert all(
+        property_schema.get("description")
+        for source in variants
+        for property_schema in source["properties"].values()
+    )
+    update_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in update_sources
+    }
+    upgrade_required = {
+        source["properties"]["ResourceType"]["const"]: set(source["required"])
+        for source in upgrade_sources
+    }
+    assert update_required["HMC"] == {"ResourceType", "Name"}
+    assert update_required["NFS"] == {
+        "ResourceType",
+        "ServerHostOrIP",
+        "RemoteDirectory",
+    }
+    assert update_required["USB"] == {"ResourceType", "USBDevice"}
+    assert all("Disks" in required for required in upgrade_required.values())
+    assert all("Disks" not in source["properties"] for source in update_sources)
+    assert all("RestartVIOS" not in source["properties"] for source in upgrade_sources)
 
 
 def test_metrics_tools_have_stable_output_schemas():
@@ -444,6 +599,18 @@ def test_metrics_tools_have_stable_output_schemas():
             tool_name
         )
         assert "mode" not in tool.parameters.get("properties", {})
+
+
+@pytest.mark.parametrize(
+    "tool_name", ["hmc_get_pcm_preferences", "hmc_set_pcm_preferences"]
+)
+def test_pcm_preference_tools_describe_managed_system_only(tool_name):
+    tool = _tools_by_name()[tool_name]
+    category = tool.parameters["properties"]["category"]
+
+    assert "ManagedSystem" in tool.description
+    assert "ManagedSystem" in category["description"]
+    assert "LogicalPartition" not in category["description"]
 
 
 def test_wait_for_job_has_one_stable_output_schema():

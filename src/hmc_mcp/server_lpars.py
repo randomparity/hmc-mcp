@@ -7,7 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
     _run,
 )
 from .errors import HMCError
@@ -26,33 +25,33 @@ from .operations_decommission import DecommissionResult, decommission_lpar
 from .operations_lpar import (
     LparCreation,
     LparPowerOnOutcome,
-    LparCreationResult,
+    _check_lpar_write_error,
     create_and_stamp_lpar,
     delete_lpar,
+    list_lpar_ownership,
     power_lpar,
     power_on_outcome,
     rename_lpar,
 )
+from .operations_assignments import (
+    AssignmentStep,
+    LparPcieAssignments,
+    LparPcieWorkflowResult,
+    _apply_validated_lpar_pcie_assignments,
+    prevalidate_lpar_pcie_assignments,
+)
+from .ssh_commands import validate_caller_token
+
+tool, register_tools, tool_security = tool_module()
 
 
-def _check_lpar_write_error(exc: HMCError) -> None:
-    """Translate an LPAR write rejection while preserving its response body."""
-    if exc.status_code == 406:
-        raise HMCError(
-            "The HMC rejected the LPAR write request (Not Acceptable). "
-            "Likely causes: (1) Accept or Content-Type header mismatch — "
-            "the HMC may require a more specific media type; "
-            "(2) XML schema version mismatch — try setting "
-            "HMC_SCHEMA_VERSION=V1_0 in the environment and retrying.",
-            exc.status_code,
-            body=exc.body,
-        ) from exc
-
-
-tool, register_tools = tool_module()
-
-
-@tool
+# vNIC assignments name a nested VIOS that target extraction cannot authorize.
+@tool(
+    effect="mutate",
+    operation="lpar.create",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_create_lpar(
     system_name_or_uuid: str,
     name: str,
@@ -70,8 +69,10 @@ def hmc_create_lpar(
     os_type: OsType | None = None,
     keylock: Keylock | None = None,
     max_virtual_slots: int | None = None,
+    caller_token: str | None = None,
+    assignments: LparPcieAssignments = LparPcieAssignments(),
     profile: str | None = None,
-) -> LparCreationResult:
+) -> LparPcieWorkflowResult:
     """Create a new LPAR on a managed system.
 
     system_name_or_uuid: the target managed system — accepts either a
@@ -102,6 +103,9 @@ def hmc_create_lpar(
     - ``ownership_stamped`` — ``True`` when the description-field ownership token
       was written; ``False`` when the SSH stamp attempt failed; ``None`` when the
       stamp was not attempted (no LPAR body available to confirm the partition name).
+      With ``caller_token``, ``ownership_stamped=True`` confirms both the ownership
+      stamp and the caller segment landed (one combined write); ``False`` means both
+      were lost; ``None`` means the stamp was skipped — the reason is in ``warnings``.
     - ``warnings`` — list of human-readable warning strings (empty on clean success).
 
     Args:
@@ -113,13 +117,23 @@ def hmc_create_lpar(
         os_type: Optional target operating-system family: aix, linux, or ibmi.
         keylock: Optional initial keylock position: normal, manual, or auto.
         max_virtual_slots: Optional maximum number of virtual I/O slots.
+        caller_token: Optional caller tracking reference embedded in the partition
+            description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
+            1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
+        assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
+
+    if caller_token is not None:
+        validate_caller_token(caller_token)
 
     async def _go():
         async with client_from_env(profile) as hmc:
             try:
-                return await create_and_stamp_lpar(
+                await prevalidate_lpar_pcie_assignments(
+                    hmc, system_name_or_uuid, assignments
+                )
+                creation = await create_and_stamp_lpar(
                     hmc,
                     system_name_or_uuid,
                     LparCreation(
@@ -130,7 +144,30 @@ def hmc_create_lpar(
                         os_type,
                         keylock,
                         max_virtual_slots,
+                        caller_token,
                     ),
+                )
+                steps = [AssignmentStep("create", "ok", creation.lpar)]
+                if creation.lpar is None:
+                    return LparPcieWorkflowResult(
+                        True,
+                        False,
+                        None,
+                        creation.ownership_stamped,
+                        tuple(steps),
+                        creation.warnings,
+                    )
+                assignment_result = await _apply_validated_lpar_pcie_assignments(
+                    hmc, system_name_or_uuid, name, assignments
+                )
+                steps.extend(assignment_result.steps)
+                return LparPcieWorkflowResult(
+                    True,
+                    assignment_result.workflow_completed,
+                    creation.lpar,
+                    creation.ownership_stamped,
+                    tuple(steps),
+                    creation.warnings,
                 )
             except HMCError as exc:
                 _check_lpar_write_error(exc)
@@ -139,12 +176,21 @@ def hmc_create_lpar(
     return _run(_go)
 
 
-@tool
+# Assignment collections can name both a managed system and a nested VIOS.
+@tool(
+    effect="mutate",
+    operation="lpar.modify",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_modify_lpar(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
+    system_name_or_uuid: str | None = None,
+    assignments: LparPcieAssignments = LparPcieAssignments(),
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> dict[str, Any] | None:
+) -> LparPcieWorkflowResult:
     """Modify an LPAR's memory or CPU resource assignment.
 
     lpar_name_or_uuid: accepts either a PartitionName or a UUID
@@ -165,23 +211,52 @@ def hmc_modify_lpar(
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition to modify.
         resources: Memory and processor fields to change; omitted fields stay unchanged.
+        system_name_or_uuid: Managed-system selector required when assignments are present.
+        assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
+        ownership_override: Bypass assignment ownership rejection after operator approval.
         profile: Optional configured HMC profile name; uses the default when omitted.
     """
     xml = build_lpar_document(name=None, resources=resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-            try:
-                return await hmc.modify_logical_partition(lpar_uuid, xml)
-            except HMCError as exc:
-                _check_lpar_write_error(exc)
-                raise
+            if assignments != LparPcieAssignments() and system_name_or_uuid is None:
+                raise ValueError("system_name_or_uuid is required for PCIe assignments")
+            if system_name_or_uuid is not None:
+                await prevalidate_lpar_pcie_assignments(
+                    hmc, system_name_or_uuid, assignments
+                )
+            modified = None
+            steps: list[AssignmentStep] = []
+            if resources != LparResources():
+                lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+                try:
+                    modified = await hmc.modify_logical_partition(lpar_uuid, xml)
+                except HMCError as exc:
+                    _check_lpar_write_error(exc)
+                    raise
+                steps.append(AssignmentStep("resources", "ok", modified))
+            assignment_result = await _apply_validated_lpar_pcie_assignments(
+                hmc,
+                system_name_or_uuid or "",
+                lpar_name_or_uuid,
+                assignments,
+                ownership_override=ownership_override,
+            )
+            steps.extend(assignment_result.steps)
+            return LparPcieWorkflowResult(
+                False,
+                assignment_result.workflow_completed,
+                modified,
+                None,
+                tuple(steps),
+                (),
+            )
 
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.rename", target_kind="lpar")
 def hmc_rename_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -221,11 +296,12 @@ def hmc_rename_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.dlpar_proc", target_kind="lpar")
 def hmc_dlpar_proc(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
@@ -243,12 +319,16 @@ def hmc_dlpar_proc(
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
         resources: Processor fields to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     xml = build_dlpar_proc_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -258,11 +338,12 @@ def hmc_dlpar_proc(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.dlpar_mem", target_kind="lpar")
 def hmc_dlpar_mem(
     lpar_name_or_uuid: str,
     resources: LparResources = LparResources(),
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
@@ -277,12 +358,16 @@ def hmc_dlpar_mem(
         lpar_name_or_uuid: PartitionName or UUID of the running logical partition.
         resources: Memory fields in MiB to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     xml = build_dlpar_mem_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             try:
                 return await hmc.modify_logical_partition(lpar_uuid, xml)
             except HMCError as exc:
@@ -292,7 +377,7 @@ def hmc_dlpar_mem(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.delete", target_kind="lpar")
 def hmc_delete_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -339,7 +424,7 @@ def hmc_delete_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.decommission", target_kind="lpar")
 def hmc_decommission_lpar(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
@@ -404,7 +489,7 @@ def hmc_decommission_lpar(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="lpar.power_on", target_kind="lpar")
 def hmc_power_on_lpar(
     lpar_name_or_uuid: str,
     wait: bool = False,
@@ -412,6 +497,7 @@ def hmc_power_on_lpar(
     poll_interval: int = 5,
     force: bool = False,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition.
 
@@ -435,6 +521,8 @@ def hmc_power_on_lpar(
         poll_interval: Seconds between job polls when waiting; must be positive.
         force: Submit PowerOn even when the partition already reports running.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
@@ -445,6 +533,7 @@ def hmc_power_on_lpar(
                 hmc,
                 lpar_name_or_uuid,
                 power_on=True,
+                system_name_or_uuid=system_name_or_uuid,
                 force=force,
                 wait=wait,
                 timeout_seconds=timeout_seconds,
@@ -455,7 +544,7 @@ def hmc_power_on_lpar(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar.power_off", target_kind="lpar")
 def hmc_power_off_lpar(
     lpar_name_or_uuid: str,
     immediate: bool = False,
@@ -509,26 +598,26 @@ def hmc_power_off_lpar(
 # ====================================================================== #
 
 
-@tool
+@tool(effect="read", operation="boot_order.read", target_kind="lpar")
 def hmc_read_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Read an LPAR's boot order state (pending and current).
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
-    
+
     Returns the boot device order for the LPAR, including both the pending
     boot string (next boot) and the current boot device list.
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
-        
+
     Returns:
         Dictionary with boot order information containing:
         - lpar_uuid: UUID of the LPAR
@@ -551,7 +640,7 @@ def hmc_read_lpar_boot_order(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="boot_order.set", target_kind="lpar")
 def hmc_set_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
@@ -561,10 +650,10 @@ def hmc_set_lpar_boot_order(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Set an LPAR's boot order to a validated device selector list.
-    
+
     Sets the PendingBootString to an ordered list of boot device selectors.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
@@ -572,20 +661,20 @@ def hmc_set_lpar_boot_order(
                  The first device is tried first, then the second, etc.
         ownership_override: If True, skip ownership token validation.
         profile: Optional configured HMC profile name; uses the default when omitted.
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
         devices: Ordered list of boot device selectors (cd, disk, network).
                  The first device is tried first, then the second, etc.
         ownership_override: If True, skip ownership token validation.
-        
+
     Returns:
         Updated LPAR resource if successful, None otherwise.
-        
+
     Example:
         Set boot order to try network first, then CD, then disk:
-        
+
         >>> hmc_set_lpar_boot_order(
         ...     "system1",
         ...     "lpar-uuid-123",
@@ -595,7 +684,7 @@ def hmc_set_lpar_boot_order(
     from .operations_lpar import set_lpar_boot_order
 
     async def _go() -> dict[str, Any] | None:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             result = await set_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
@@ -608,7 +697,7 @@ def hmc_set_lpar_boot_order(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="boot_order.clear", target_kind="lpar")
 def hmc_clear_lpar_boot_order(
     system_name_or_uuid: str,
     lpar_uuid: str,
@@ -617,28 +706,28 @@ def hmc_clear_lpar_boot_order(
     profile: str | None = None,
 ) -> dict[str, Any] | None:
     """Clear an LPAR's boot order (restore HMC defaults).
-    
+
     Clears the PendingBootString, restoring the default boot behavior.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
         ownership_override: If True, skip ownership token validation.
         profile: Optional configured HMC profile name; uses the default when omitted.
-    
+
     Args:
         system_name_or_uuid: CLI name or UUID of the managed system.
         lpar_uuid: UUID of the logical partition.
         ownership_override: If True, skip ownership token validation.
-        
+
     Returns:
         Updated LPAR resource if successful, None otherwise.
     """
     from .operations_lpar import clear_lpar_boot_order
 
     async def _go() -> dict[str, Any] | None:
-        async with client_from_env() as hmc:
+        async with client_from_env(profile) as hmc:
             result = await clear_lpar_boot_order(
                 hmc,
                 system_name_or_uuid=system_name_or_uuid,
@@ -646,5 +735,34 @@ def hmc_clear_lpar_boot_order(
                 ownership_override=ownership_override,
             )
             return result
+
+    return _run(_go)
+
+
+@tool(effect="read", operation="lpar.list_ownership", target_kind="managed_system")
+def hmc_list_lpar_ownership(
+    system_name_or_uuid: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read parsed ownership for every LPAR on a system in one REST call.
+
+    Parses the advisory ADR 0011 ownership token out of each partition's
+    description via the bulk list feed, so one request covers the whole system
+    (#375). Every partition is returned: ``owned`` partitions carry the
+    ``owner`` agent id; a description with no well-formed stamp is reported
+    with ``unparsed=True``; a partition with no description at all has
+    ``description=None`` — the three facts stay distinct for reconciliation.
+
+    Args:
+        system_name_or_uuid: Optional SystemName or UUID whose partitions to
+            read; omitted reads the fleet-wide LogicalPartition feed in one
+            call (entries then carry no parent-system attribution).
+        profile: Optional configured HMC profile name; uses the default when
+            omitted.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await list_lpar_ownership(hmc, system_name_or_uuid)
 
     return _run(_go)

@@ -29,9 +29,7 @@ def _client(validation: dict, migration: dict | None = None) -> AsyncMock:
     return client
 
 
-@pytest.mark.parametrize(
-    "status", ["COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"]
-)
+@pytest.mark.parametrize("status", ["COMPLETED", "COMPLETED_OK"])
 @pytest.mark.asyncio
 async def test_default_waits_for_validation_then_submits_migration(status: str) -> None:
     client = _client(_job(status))
@@ -69,14 +67,14 @@ async def test_default_waits_for_validation_then_submits_migration(status: str) 
     client.wait_for_job.assert_awaited_once()
 
 
-@pytest.mark.parametrize("status", ["FAILED", "EXCEPTION"])
+@pytest.mark.parametrize("status", ["FAILED", "EXCEPTION", "COMPLETED_WITH_WARNINGS"])
 @pytest.mark.asyncio
 async def test_failed_validation_blocks_migration_and_surfaces_detail(
     status: str,
 ) -> None:
     client = _client(_job(status, error="validation detail"))
 
-    with pytest.raises(HMCError, match=f"status={status}.*validation detail"):
+    with pytest.raises(HMCError, match=f"status={status!r}.*validation detail"):
         await migrate_lpar(client, "lpar", "target")
 
     client.lpar_migrate.assert_not_awaited()
@@ -86,7 +84,7 @@ async def test_failed_validation_blocks_migration_and_surfaces_detail(
 async def test_canceled_validation_blocks_migration() -> None:
     client = _client(_job("CANCELED_WHILE_RUNNING"))
 
-    with pytest.raises(HMCError, match="status=CANCELED_WHILE_RUNNING"):
+    with pytest.raises(HMCError, match=r"status='CANCELED_WHILE_RUNNING'"):
         await migrate_lpar(client, "lpar", "target")
 
     client.lpar_migrate.assert_not_awaited()
@@ -96,7 +94,7 @@ async def test_canceled_validation_blocks_migration() -> None:
 async def test_timed_out_validation_blocks_migration() -> None:
     client = _client(_job("RUNNING"))
 
-    with pytest.raises(HMCError, match="status=RUNNING"):
+    with pytest.raises(HMCError, match="status='RUNNING'"):
         await migrate_lpar(client, "lpar", "target")
 
     client.lpar_migrate.assert_not_awaited()
@@ -139,3 +137,19 @@ async def test_effective_validation_timing_fails_before_resolution() -> None:
         await migrate_lpar(client, "lpar", "target", poll_interval=0)
 
     client.find_partition_by_name.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_validation_message_is_repr_quoted() -> None:
+    """HMC-supplied validation text cannot carry control characters into str()."""
+    hostile = "boom\n\x1b[31moverridden\u2028mid"
+    client = _client(_job("FAILED", error=hostile))
+
+    with pytest.raises(HMCError) as exc_info:
+        await migrate_lpar(client, "lpar", "target")
+
+    message = str(exc_info.value)
+    assert repr(hostile) in message
+    assert not any(
+        ord(ch) < 0x20 or ord(ch) == 0x7F or ch in "\u2028\u2029" for ch in message
+    )

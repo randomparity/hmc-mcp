@@ -134,11 +134,15 @@ def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     command = AsyncMock(return_value="restored")
-    monkeypatch.setattr(server_vios, "client_from_env", _client_factory(hmc))
+    monkeypatch.setattr(server_vios, "HMCClient", _client_factory(hmc))
     monkeypatch.setattr(server_vios, "run_hmc_cli", command)
 
     assert server_vios.hmc_restore_vios(
-        "vios1", "backup", system_name_or_uuid="system-name"
+        "system-name",
+        "vios1",
+        "backup",
+        backup_type="ssp",
+        restart_if_required=False,
     ) == "restored"
 
     hmc.find_vios_by_name.assert_awaited_once_with(

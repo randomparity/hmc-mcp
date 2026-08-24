@@ -1,5 +1,11 @@
 # ADR 0001: Pin Direct Dependencies and Automate Updates
 
+> **Partially superseded by [0068](0068-range-library-dependencies-pin-the-application-surface.md)**
+> (2026-08-22): the runtime `[project.dependencies]` pins are superseded by compatible
+> ranges, because ADR 0029 made this repository the reusable-library case this record's
+> premise excluded. The application-extra, development-group, build-backend, and
+> lockfile decisions remain accepted.
+
 ## Status
 
 Accepted

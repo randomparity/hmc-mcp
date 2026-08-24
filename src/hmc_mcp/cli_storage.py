@@ -375,7 +375,7 @@ def storage_list_mappings(
         table.add_column("Backing Storage", style="yellow")
         table.add_column("Type", style="magenta")
         for m in mappings:
-            mapping_uuid = m.get("ElementID", "")
+            mapping_uuid = m.get("UUID", "")
             storage = m.get("Storage", {})
             client = m.get("AssociatedLogicalPartition", {})
             client_name = client.get("PartitionName", "")
@@ -397,10 +397,10 @@ def storage_list_mappings(
 @storage_app.command("detach-mapping")
 def storage_detach_mapping(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    mapping_uuid: str = typer.Argument(..., help="UUID of the VirtualSCSIMapping to delete"),
+    mapping_uuid: str = typer.Argument(..., help="Exact UUID shown by storage list-mappings"),
     confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
 ) -> None:
-    """Delete a VirtualSCSIMapping (detaches storage from LPAR, preserves backing storage)."""
+    """Detach a VirtualSCSIMapping while preserving its backing storage."""
     if not confirm:
         typer.confirm(
             f"Delete storage mapping {mapping_uuid} on VIOS {vios}? "
@@ -412,12 +412,8 @@ def storage_detach_mapping(
         async with HMCClient(config) as hmc:
             from hmc_mcp.operations_storage import detach_storage_mapping
             await detach_storage_mapping(hmc, vios, mapping_uuid)
-    try:
-        _run(_go)
-        console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
-    except Exception as e:
-        console.print(f"[red]Failed to delete storage mapping: {e}[/red]")
-        raise typer.Exit(1)
+    _run(_go)
+    console.print(f"[green]Deleted storage mapping {mapping_uuid}[/green]")
 
 
 @storage_app.command("upload-iso")
@@ -425,11 +421,18 @@ def storage_upload_iso(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Argument(..., help="Volume Group UUID"),
     media_name: str = typer.Argument(..., help="Target name for the ISO in the repository"),
-    iso_source: str = typer.Argument(..., help="Path to local ISO file or HTTP(S) URL to download"),
+    iso_source: str = typer.Argument(
+        ...,
+        help="http(s) URL to download the ISO from; its host must be on "
+        "HMC_ISO_URL_ALLOWLIST",
+    ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
 ) -> None:
-    """Upload an ISO file to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC file broker.
 
+    ISO_SOURCE must be an http(s) URL; a local file path is not accepted. Its host
+    must be on HMC_ISO_URL_ALLOWLIST (or iso_url_allowlist in the profile) — with
+    no allowlist configured every URL is refused — and redirects are not followed.
     Computes SHA-256 and size before upload, refuses name collisions, and cleans
     up broker resources on every outcome.
     """

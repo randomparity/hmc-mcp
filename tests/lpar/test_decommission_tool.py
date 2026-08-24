@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from conftest import assert_only_these_client_methods_used
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.errors import HMCError
 from hmc_mcp.operations_decommission import DecommissionResult, decommission_lpar
@@ -886,3 +887,42 @@ async def test_decommission_stops_after_first_adapter_failure(monkeypatch: pytes
         "delete_adapter:VirtualSCSIClientAdapter:vscsi-1",
     ]
     hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_dry_run_makes_no_unclassified_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R18: the whole call set on the destructive tool's dry-run path.
+
+    `hmc_decommission_lpar` is the one whose dry-run path a caller is most likely
+    to trust, and the one that does the most before deciding: it builds the full
+    blast radius — every adapter of four kinds, every VIOS on the system and its
+    storage detail — before returning. Every one of those is a read, and pinning
+    the set is what makes that a classification rather than an assumption.
+
+    Two things happen on this path that a reader might not expect and that
+    ADR 0039 records rather than hides: an SSH `lssyscfg` runs to read the
+    ownership stamp, and with `ownership_override=True` a warning-level audit
+    line is written locally. Neither is an HMC mutation; both are patched out
+    here by `_patch_common`, which is why this test pins the REST surface only.
+    """
+    calls: list[str] = []
+    hmc = _client()
+    _patch_common(monkeypatch, calls)
+
+    result = await decommission_lpar(hmc, "system-a", "aix-prod", dry_run=True)
+
+    assert result.dry_run is True
+    assert result.resource_deleted is False
+    used = assert_only_these_client_methods_used(
+        hmc,
+        frozenset({
+            "list_logical_partitions",  # read: find the partition on the system
+            "get_logical_partition",  # read: its current state and attributes
+            "list_adapters",  # read: blast radius, four adapter kinds
+            "list_vios",  # read: every VIOS on the system
+            "get_vios_storage_detail",  # read: each VIOS's storage mappings
+        }),
+    )
+    assert used, "the handler touched nothing; the dry-run path was not exercised"

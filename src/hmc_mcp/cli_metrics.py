@@ -21,17 +21,20 @@ from .operations_pcm import (
     metric_links,
     preference_flags,
     set_pcm_preferences,
+    validate_pcm_metric_target,
+    validate_pcm_preferences_category,
 )
 
 
 @metrics_app.command("prefs")
 def metrics_prefs(
     category: PcmCategory = typer.Argument(
-        ..., help="ManagedSystem or LogicalPartition"
+        ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
 ) -> None:
     """Show PCM monitoring preferences for a resource."""
+    validate_pcm_preferences_category(category)
 
     prefs = _with_client(lambda hmc: get_pcm_preferences(hmc, category, resource_uuid))
 
@@ -41,7 +44,7 @@ def metrics_prefs(
 @metrics_app.command("set-prefs")
 def metrics_set_prefs(
     category: PcmCategory = typer.Argument(
-        ..., help="ManagedSystem or LogicalPartition"
+        ..., help="ManagedSystem (LogicalPartition preferences are unavailable)"
     ),
     resource_uuid: str = typer.Argument(..., help="Resource name or UUID"),
     ltm: bool | None = typer.Option(
@@ -67,6 +70,7 @@ def metrics_set_prefs(
     flags = preference_flags(ltm, aggregation, stm, compute_ltm, energy)
     if not flags:
         _usage_error("No flags supplied; nothing to change.")
+    validate_pcm_preferences_category(category)
 
     if not yes and not typer.confirm(
         f"Enable/disable PCM monitoring on {category} {resource_uuid}?"
@@ -93,15 +97,28 @@ def metrics_show(
     fetch: bool = typer.Option(
         False, "--fetch", help="Also download the latest JSON doc"
     ),
+    system_name_or_uuid: str | None = typer.Option(
+        None,
+        "--system",
+        help="Owning managed system; required for LogicalPartition",
+    ),
 ) -> None:
     """Get PCM metrics (processed by default; --aggregated for rollups)."""
+    validate_pcm_metric_target(category, system_name_or_uuid)
 
     async def _go():
         async with _client() as hmc:
             kind = "aggregated" if aggregated else "processed"
             operation = metric_data if fetch else metric_links
             return await operation(
-                hmc, category, resource_uuid, kind, start, end, samples
+                hmc,
+                category,
+                resource_uuid,
+                kind,
+                start,
+                end,
+                samples,
+                system_name_or_uuid,
             )
 
     result = _run(_go)

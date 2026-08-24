@@ -16,7 +16,17 @@ from hmc_mcp import (
     server_systems,
 )
 from hmc_mcp._app import _run_limited_collection
-from hmc_mcp.server import mcp
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
+
 
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
@@ -44,7 +54,7 @@ COLLECTION_TOOLS = {
     "hmc_list_adapters": (
         server_adapters,
         ("lpar-1",),
-        ["lpar_name_or_uuid", "adapter_type", "profile", "limit"],
+        ["lpar_name_or_uuid", "adapter_type", "profile", "limit", "system_name_or_uuid"],
     ),
     "hmc_list_virtual_switches": (
         server_network,
@@ -236,7 +246,7 @@ def test_adapter_type_selector_runs_before_results_are_capped():
 
     assert result == entries[:2]
     list_selected.assert_awaited_once_with(
-        client, "lpar-name", "VirtualSCSIClientAdapter"
+        client, "lpar-name", "VirtualSCSIClientAdapter", None
     )
 
 

@@ -15,7 +15,9 @@ from hmc_mcp.config import (
     ConfigError,
     HMCConfig,
     config_dir,
+    list_nicknames,
     list_profiles,
+    list_profiles_and_nicknames,
     list_profiles_with_default,
     load_profile,
     resolve_config_path,
@@ -114,6 +116,46 @@ def test_resolve_returns_none_when_absent(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # load_profile — selection and precedence
 # ---------------------------------------------------------------------------
+
+
+def test_omitted_port_defaults_to_443_without_explicit_provenance(monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+
+    config = HMCConfig(_env_file=None)
+
+    assert config.port == 443
+    assert "port" not in config.model_fields_set
+
+
+def test_constructor_port_is_explicit_even_when_it_matches_default(monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+
+    config = HMCConfig(port=443, _env_file=None)
+
+    assert config.port == 443
+    assert "port" in config.model_fields_set
+
+
+def test_environment_port_is_explicit(monkeypatch):
+    monkeypatch.setenv("HMC_PORT", "12443")
+
+    config = HMCConfig(_env_file=None)
+
+    assert config.port == 12443
+    assert "port" in config.model_fields_set
+
+
+def test_toml_port_is_explicit(tmp_path, monkeypatch):
+    monkeypatch.delenv("HMC_PORT", raising=False)
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        MINIMAL_TOML + "port = 12443\n",
+    )
+
+    config = load_profile("dev", config_path=cfg)
+
+    assert config.port == 12443
+    assert "port" in config.model_fields_set
 
 
 def test_load_profile_explicit(tmp_path, monkeypatch):
@@ -607,14 +649,198 @@ def test_well_formed_nicknames_do_not_block_plain_profile(tmp_path, monkeypatch)
 
 def test_list_nicknames_present(tmp_path):
     """list_nicknames returns the nicknames table as dict[str, str]."""
-    from hmc_mcp.config import list_nicknames
     cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
     assert list_nicknames(config_path=cfg) == {"big-iron": "prod", "staging": "stg"}
 
 
 def test_list_nicknames_absent(tmp_path):
     """list_nicknames returns {} when no nicknames table or no file."""
-    from hmc_mcp.config import list_nicknames
     cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
     assert list_nicknames(config_path=cfg) == {}
     assert list_nicknames(config_path=tmp_path / "nonexistent.toml") == {}
+
+
+# ---------------------------------------------------------------------------
+# list_profiles_and_nicknames (issue #222)
+# ---------------------------------------------------------------------------
+
+
+def test_list_profiles_and_nicknames_returns_both_tables(tmp_path):
+    """Both selection tables come back from one call, so they cannot disagree."""
+
+    cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
+    profiles, nicknames = list_profiles_and_nicknames(config_path=cfg)
+    assert set(profiles) == {"prod", "stg"}
+    assert nicknames == {"big-iron": "prod", "staging": "stg"}
+
+
+def test_list_profiles_and_nicknames_absent_file(tmp_path):
+    """An absent file is an empty configuration, not an error."""
+
+    assert list_profiles_and_nicknames(config_path=tmp_path / "nope.toml") == ([], {})
+
+
+def test_list_profiles_and_nicknames_rejects_malformed_nicknames(tmp_path):
+    """A malformed nicknames table raises, as it does for list_nicknames."""
+
+    cfg = _write_toml(
+        tmp_path / "config.toml",
+        NICKNAME_TOML.replace('big-iron = "prod"', "big-iron = 7"),
+    )
+    with pytest.raises(ConfigError, match="must map to a profile-key string"):
+        list_profiles_and_nicknames(config_path=cfg)
+
+
+# ---------------------------------------------------------------------------
+# The read-and-parse failure contract shared by every reader (issue #257)
+#
+# Each reader documents ConfigError as its failure type, so a
+# ``try/except ConfigError`` around any of them must actually catch. These cases
+# are parametrized over all five rather than written per reader: before #257
+# only list_profiles_and_nicknames converted them, and the other four leaked a
+# PermissionError, an IsADirectoryError, a UnicodeDecodeError, a RecursionError,
+# or an AttributeError naming the absolute config path.
+# ---------------------------------------------------------------------------
+
+_READERS = {
+    "list_profiles_with_default": lambda p: list_profiles_with_default(config_path=p),
+    "list_profiles": lambda p: list_profiles(config_path=p),
+    "list_nicknames": lambda p: list_nicknames(config_path=p),
+    "list_profiles_and_nicknames": lambda p: list_profiles_and_nicknames(config_path=p),
+    "load_profile": lambda p: load_profile("prod", config_path=p),
+}
+
+# Every reader that consults the ``profiles`` table. list_nicknames is absent
+# because it returns the other half of the document and never touches this one.
+_PROFILE_READERS = {
+    name: call for name, call in _READERS.items() if name != "list_nicknames"
+}
+
+
+@pytest.fixture(params=list(_READERS), ids=list(_READERS))
+def reader(request):
+    """Each config.toml reader in turn, called with an explicit config path."""
+    return _READERS[request.param]
+
+
+@pytest.fixture(params=list(_PROFILE_READERS), ids=list(_PROFILE_READERS))
+def profile_reader(request):
+    """Each reader that consults the ``profiles`` table."""
+    return _PROFILE_READERS[request.param]
+
+
+@pytest.fixture
+def unreadable_config(tmp_path):
+    """A well-formed config.toml with no read permission, restored on teardown."""
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    cfg.chmod(0o000)
+    yield cfg
+    cfg.chmod(0o600)
+
+
+def test_reader_rejects_an_unreadable_file(reader, unreadable_config):
+    """A PermissionError must arrive as a ConfigError, not as a raw OSError."""
+
+    with pytest.raises(ConfigError, match="cannot be read"):
+        reader(unreadable_config)
+
+
+def test_reader_rejects_a_directory(reader, tmp_path):
+    """A directory at the config path is an OSError on read, not an absent file."""
+
+    directory = tmp_path / "config.toml"
+    directory.mkdir()
+    with pytest.raises(ConfigError, match="cannot be read"):
+        reader(directory)
+
+
+def test_reader_rejects_a_null_byte_in_the_path(reader, tmp_path):
+    """read_text raises ValueError for an unusable path before it reaches the fs."""
+
+    cfg = _write_toml(tmp_path / "config.toml", TWO_PROFILE_TOML)
+    with pytest.raises(ConfigError, match="cannot be read"):
+        reader(Path(f"{cfg}\x00suffix"))
+
+
+def test_reader_rejects_non_utf8(reader, tmp_path):
+    """A latin-1 config file is a ConfigError, not a UnicodeDecodeError."""
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_bytes(b'[profiles.prod]\nhost = "caf\xe9"\n')
+    with pytest.raises(ConfigError, match="is not valid UTF-8"):
+        reader(cfg)
+
+
+def test_reader_rejects_invalid_toml(reader, tmp_path):
+    """A parse error is a ConfigError naming the path."""
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("this is [not valid toml ][[[", encoding="utf-8")
+    with pytest.raises(ConfigError, match="TOML parse error"):
+        reader(cfg)
+
+
+def test_reader_rejects_a_deeply_nested_document(reader, tmp_path):
+    """tomllib recurses on nested arrays; the stack runs out before the parser does."""
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("deep = " + "[" * 3000 + "]" * 3000, encoding="utf-8")
+    with pytest.raises(ConfigError, match="document nesting is too deep"):
+        reader(cfg)
+
+
+def test_reader_reports_an_unresolvable_home(reader, monkeypatch):
+    """Path.home() raises under a uid with no passwd entry and no HOME."""
+
+    def _no_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr("pathlib.Path.home", _no_home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    with pytest.raises(ConfigError, match="cannot resolve the config path"):
+        reader(None)
+
+
+@pytest.mark.parametrize(
+    ("name", "empty"),
+    [
+        ("list_profiles_with_default", ([], None)),
+        ("list_profiles", []),
+        ("list_nicknames", {}),
+        ("list_profiles_and_nicknames", ([], {})),
+    ],
+)
+def test_listing_reader_with_no_platform_config_file(name, empty, tmp_path, monkeypatch):
+    """No config.toml anywhere is an empty configuration, not a failure."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with patch.object(sys, "platform", "linux"):
+        assert _READERS[name](None) == empty
+
+
+def test_load_profile_with_no_platform_config_file(tmp_path, monkeypatch):
+    """load_profile has nothing to select from, so it raises rather than returns."""
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    with patch.object(sys, "platform", "linux"):
+        with pytest.raises(ConfigError, match="not found"):
+            _READERS["load_profile"](None)
+
+
+def test_profile_reader_rejects_a_non_table_profiles_key(profile_reader, tmp_path):
+    """`profiles = "x"` used to reach `.keys()` on a str, or a substring test."""
+
+    cfg = _write_toml(tmp_path / "config.toml", "profiles = 'not-a-table'\n")
+    with pytest.raises(ConfigError, match="'profiles' must be a table"):
+        profile_reader(cfg)
+
+
+def test_load_profile_rejects_a_non_table_profile_entry(tmp_path, monkeypatch):
+    """A selected profile that is not a table is a ConfigError, not dict()'s."""
+
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    cfg = _write_toml(tmp_path / "config.toml", "[profiles]\nprod = 'not-a-table'\n")
+    with pytest.raises(ConfigError, match="profile 'prod' must be a table"):
+        load_profile("prod", config_path=cfg)

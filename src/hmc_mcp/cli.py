@@ -1,7 +1,7 @@
 """hmc-mcp command line interface.
 
 Usage examples:
-    hmc-mcp serve                     # run the MCP server over stdio
+    hmc-mcp serve --access-policy NAME # run the MCP server over stdio
     hmc-mcp systems list              # list managed systems as a table
     hmc-mcp lpars list --json         # list LPARs as JSON
     hmc-mcp lpars show mylpar         # find an LPAR by name and show it

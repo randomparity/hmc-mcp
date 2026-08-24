@@ -7,9 +7,6 @@ from .tool_registry import tool_module
 from typing import Any
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
-    _STATE_CHANGING,
     _run,
     _run_limited_collection,
 )
@@ -51,10 +48,10 @@ from .operations_provision import (
 )
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="storage.list_volume_groups", target_kind="vios")
 def hmc_list_volume_groups(
     vios_name_or_uuid: str,
     profile: str | None = None,
@@ -80,7 +77,7 @@ def hmc_list_volume_groups(
     return _run_limited_collection(_go, limit)
 
 
-@tool
+@tool(effect="mutate", operation="storage.create_volume_group", target_kind="vios")
 def hmc_create_volume_group(
     vios_name_or_uuid: str,
     name: str,
@@ -109,7 +106,16 @@ def hmc_create_volume_group(
     return _run(_go)
 
 
-@tool
+# Not exhaustive for the same reason as the adapter pair, and one more: it
+# declares both `vios_uuid` and `vios_partition_id` as `vios` selectors and
+# nothing checks that they name the same VIOS, so the partition ID is a second,
+# unverified identity the allowlist cannot bound.
+@tool(
+    effect="mutate",
+    operation="storage.attach_disk",
+    target_kind="lpar",
+    exhaustive_targets=False,
+)
 def hmc_attach_disk_to_lpar(
     lpar_name_or_uuid: str,
     vios_uuid: str,
@@ -120,6 +126,7 @@ def hmc_attach_disk_to_lpar(
     vios_slot: int,
     dry_run: bool = False,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> AttachDiskResult:
     """Create and attach a virtual disk to an existing LPAR.
 
@@ -138,6 +145,8 @@ def hmc_attach_disk_to_lpar(
         vios_slot: Server-side virtual SCSI slot on the VIOS.
         dry_run: Validate all selectors and prerequisites without mutating the HMC.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
@@ -150,12 +159,13 @@ def hmc_attach_disk_to_lpar(
                 vios_partition_id=vios_partition_id,
                 vios_slot=vios_slot,
                 dry_run=dry_run,
+                system_name_or_uuid=system_name_or_uuid,
             )
 
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="storage.create_disk", target_kind="vios")
 def hmc_create_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -186,7 +196,7 @@ def hmc_create_virtual_disk(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="storage.delete_disk", target_kind="vios")
 def hmc_delete_virtual_disk(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -214,7 +224,7 @@ def hmc_delete_virtual_disk(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="storage.map", target_kind="vios")
 def hmc_map_storage_to_lpar(
     vios_name_or_uuid: str,
     storage_name: str,
@@ -222,6 +232,7 @@ def hmc_map_storage_to_lpar(
     storage_kind: StorageKind = "VirtualDisk",
     target_device: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Map backing storage to an LPAR via a Virtual SCSI mapping on a VIOS.
 
@@ -240,6 +251,8 @@ def hmc_map_storage_to_lpar(
             for a whole disk.
         target_device: Optional VIOS virtual-target-device name.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
@@ -251,13 +264,14 @@ def hmc_map_storage_to_lpar(
                 storage_name,
                 lpar_name_or_uuid,
                 target_device,
+                system_name_or_uuid,
             )
             return resource
 
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="media.create_repository", target_kind="vios")
 def hmc_create_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, size_mib: int, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -282,7 +296,7 @@ def hmc_create_media_repository(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="media.create", target_kind="vios")
 def hmc_create_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -312,7 +326,7 @@ def hmc_create_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.delete_repository", target_kind="vios")
 def hmc_delete_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> str:
@@ -335,7 +349,7 @@ def hmc_delete_media_repository(
 
     return _run(_go)
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.delete", target_kind="vios")
 def hmc_delete_optical_media(
     vios_name_or_uuid: str,
     vg_uuid: str,
@@ -362,7 +376,7 @@ def hmc_delete_optical_media(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.get_repository", target_kind="vios")
 def hmc_get_media_repository(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -384,7 +398,7 @@ def hmc_get_media_repository(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.list", target_kind="vios")
 def hmc_list_optical_media(
     vios_name_or_uuid: str, vg_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
@@ -406,11 +420,12 @@ def hmc_list_optical_media(
 
     return _run(_go)
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="storage.list_mappings", target_kind="vios")
 def hmc_list_storage_mappings(
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings on a VIOS, optionally filtered by LPAR.
 
@@ -422,29 +437,33 @@ def hmc_list_storage_mappings(
         lpar_name_or_uuid: Optional LPAR name or UUID to scope mappings to a
             single client LPAR.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await list_storage_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+            return await list_storage_mappings(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
+            )
 
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="storage.detach_mapping", target_kind="vios")
 def hmc_detach_storage_mapping(
     vios_name_or_uuid: str,
     mapping_uuid: str,
     profile: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping by UUID (detaches storage from LPAR).
+    """Detach a VirtualSCSIMapping by its inventory UUID.
 
     Removes the mapping only; the backing storage (PhysicalVolume or
     VirtualDisk) is preserved.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        mapping_uuid: Exact UUID returned by ``hmc_list_storage_mappings``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
@@ -456,7 +475,7 @@ def hmc_detach_storage_mapping(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.list", target_kind="console")
 def hmc_list_clusters(
     profile: str | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
@@ -476,7 +495,7 @@ def hmc_list_clusters(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.list_pools", target_kind="console")
 def hmc_list_shared_storage_pools(
     profile: str | None = None,
     limit: int | None = None,
@@ -497,7 +516,7 @@ def hmc_list_shared_storage_pools(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="cluster.get_pool", target_kind="shared_storage_pool")
 def hmc_get_shared_storage_pool(
     ssp_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -515,7 +534,7 @@ def hmc_get_shared_storage_pool(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="cluster.create_logical_unit", target_kind="cluster")
 def hmc_create_logical_unit(
     cluster_uuid: str,
     lu_name: str,
@@ -573,7 +592,7 @@ def hmc_create_logical_unit(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="cluster.delete_logical_unit", target_kind="cluster")
 def hmc_delete_logical_unit(
     cluster_uuid: str,
     lu_udid: str,
@@ -612,25 +631,32 @@ def hmc_delete_logical_unit(
 
     return _run(_go)
 
-@tool
+@tool(effect="mutate", operation="media.upload_iso", target_kind="vios")
 def hmc_upload_iso(
     vios_name_or_uuid: str,  # VIOS name or UUID to target
     vg_uuid: str,  # Volume Group UUID containing the media repository
     media_name: str,  # Target name for the ISO in the repository
-    iso_source: str,  # Path to local ISO file or HTTP(S) URL to download
+    iso_source: str,  # http(s) URL to download the ISO from
     profile: str | None = None,  # HMC profile name (uses default if omitted)
 ) -> dict[str, Any]:
-    """Upload an ISO file to a VIOS media repository via the HMC file broker.
+    """Upload an ISO to a VIOS media repository via the HMC file broker.
 
-    Computes SHA-256 and size before upload, refuses name collisions, and cleans
-    up broker resources on every outcome. Returns staged result data including
-    the imported media entry.
+    The ISO is downloaded from an http(s) URL, which is the only accepted source:
+    a path on the MCP server's filesystem is refused. The download runs from the
+    MCP server's network position, so the URL's host must be on the operator's
+    allowlist (`HMC_ISO_URL_ALLOWLIST`); with no allowlist configured every URL
+    is refused, and redirects are never followed. Computes SHA-256 and size
+    before upload, refuses name collisions, and cleans up broker resources on
+    every outcome. Returns staged result data including the imported media entry.
 
     Args:
         vios_name_or_uuid: VIOS name or UUID to target.
         vg_uuid: Volume Group UUID containing the media repository.
         media_name: Target name for the ISO in the repository.
-        iso_source: Path to local ISO file or HTTP(S) URL to download.
+        iso_source: http(s) URL to download the ISO from, served by a host on
+            the operator's `HMC_ISO_URL_ALLOWLIST`. Local filesystem paths are
+            not accepted, and the ISO must be served at this URL rather than
+            redirected from it.
         profile: HMC profile name (uses default if omitted).
 
     Returns:
@@ -638,7 +664,9 @@ def hmc_upload_iso(
 
     Raises:
         HMCError: For HMC API errors during broker operations or import.
-        ValueError: For local file validation errors (not readable, too large).
+        ValueError: If iso_source is not an http(s) URL, if its host is not on
+            the operator's allowlist, if the server answers with a redirect, or
+            if the download exceeds the size bound.
         FileExistsError: If media_name already exists in the repository.
     """
     async def _go():
@@ -648,12 +676,13 @@ def hmc_upload_iso(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="media.list_mappings", target_kind="vios")
 def hmc_list_optical_mappings(
     vios_name_or_uuid: str,
     lpar_name_or_uuid: str | None = None,
     profile: str | None = None,
     limit: int | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     """List VirtualSCSIMappings for optical media on a VIOS, optionally filtered by LPAR.
 
@@ -667,21 +696,26 @@ def hmc_list_optical_mappings(
         profile: TOML profile name, or the environment-default HMC when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            mappings = await list_optical_mappings(hmc, vios_name_or_uuid, lpar_name_or_uuid)
+            mappings = await list_optical_mappings(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, system_name_or_uuid
+            )
             return mappings if limit is None else mappings[:limit]
     return _run(_go)
 
 
-@tool(annotations=_STATE_CHANGING)
+@tool(effect="mutate", operation="media.mount", target_kind="vios")
 def hmc_mount_optical_media(
     vios_name_or_uuid: str,
     media_name: str,
     lpar_name_or_uuid: str,
     target_device: str | None = None,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Create a VirtualSCSIMapping for optical media (mount ISO to LPAR).
 
@@ -694,54 +728,81 @@ def hmc_mount_optical_media(
         lpar_name_or_uuid: LPAR name or UUID to mount the media to.
         target_device: Optional vtscsi target device name to pin the mapping.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            return await mount_optical_media(hmc, vios_name_or_uuid, media_name, lpar_name_or_uuid, target_device)
+            return await mount_optical_media(
+                hmc,
+                vios_name_or_uuid,
+                media_name,
+                lpar_name_or_uuid,
+                target_device,
+                system_name_or_uuid,
+            )
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.unmount", target_kind="vios")
 def hmc_unmount_optical_media(
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    lpar_name_or_uuid: str,
+    media_name: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping for optical media (unmount and detach).
+    """Remove a VirtualSCSIMapping for optical media (unmount and detach).
 
+    Identifies the mapping by the LPAR and media name rather than a UUID.
+    Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
     container) is preserved and can be remounted later.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
+        media_name: Name of the VirtualOpticalMedia (ISO) to unmount.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            await unmount_optical_media(hmc, vios_name_or_uuid, mapping_uuid)
-            return f"Unmounted optical mapping {mapping_uuid} from VIOS {vios_name_or_uuid}"
+            await unmount_optical_media(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name, system_name_or_uuid
+            )
+            return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="media.detach_mapping", target_kind="vios")
 def hmc_detach_optical_mapping(
     vios_name_or_uuid: str,
-    mapping_uuid: str,
+    lpar_name_or_uuid: str,
+    media_name: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str:
-    """Delete a VirtualSCSIMapping for optical media (detach mapping).
+    """Remove a VirtualSCSIMapping for optical media (detach mapping).
 
+    Identifies the mapping by the LPAR and media name rather than a UUID.
+    Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
     container) is preserved and can be remounted later.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        mapping_uuid: UUID of the VirtualSCSIMapping to delete.
+        lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
+        media_name: Name of the VirtualOpticalMedia (ISO) to detach.
         profile: TOML profile name, or the environment-default HMC when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
     async def _go():
         async with client_from_env(profile) as hmc:
-            await detach_optical_mapping(hmc, vios_name_or_uuid, mapping_uuid)
-            return f"Detached optical mapping {mapping_uuid} from VIOS {vios_name_or_uuid}"
+            await detach_optical_mapping(
+                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name, system_name_or_uuid
+            )
+            return f"Detached {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
     return _run(_go)

@@ -137,7 +137,7 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
 
     with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
         hmc_set_lpar_description(
-            "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner=alice env=prod", ownership_override=True
+            "22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111", "owner alice - prod", ownership_override=True
         )
 
     called_cmd = conn_mock.run.call_args[0][0]
@@ -145,7 +145,21 @@ def test_set_lpar_description_embeds_description(monkeypatch, mock_hmc):
     assert "-r lpar" in called_cmd
     assert "-m mysystem" in called_cmd
     assert "name=mylpar" in called_cmd
-    assert "description=owner=alice env=prod" in called_cmd
+    assert "description=owner alice - prod" in called_cmd
+
+
+def test_set_lpar_description_rejects_record_delimiters_in_description(monkeypatch):
+    """A description carrying ',' or '=' is refused — see ADR 0045.
+
+    This pins a narrowing of the tool's accepted input.  ``owner=alice
+    env=prod`` used to reach the HMC, which read everything after the second
+    ``=`` as further attributes: the caller never got the description it typed.
+    The refusal is now local and names the character.
+    """
+    _hmc_env(monkeypatch)
+    for bad in ["owner=alice env=prod", "web tier, prod"]:
+        with pytest.raises(ValueError, match="comma|equals sign"):
+            hmc_set_lpar_description(SYSTEM_UUID, LPAR_UUID, bad)
 
 
 # ---------------------------------------------------------------------- #
@@ -200,17 +214,29 @@ def test_set_lpar_description_accepts_empty_string(monkeypatch, mock_hmc):
     assert result == ""
 
 
-def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch):
+def test_foreign_owned_description_overwrite_issues_no_write(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     write = AsyncMock()
     with (
+        patch(
+            "hmc_mcp.operations_lpar.resolve_system_uuid",
+            new=AsyncMock(return_value=SYSTEM_UUID),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_uuid",
+            new=AsyncMock(return_value=LPAR_UUID),
+        ),
+        patch(
+            "hmc_mcp.operations_lpar.resolve_lpar_ownership_names",
+            new=AsyncMock(return_value=(SYSTEM_NAME, LPAR_NAME)),
+        ),
         patch(
             "hmc_mcp.operations_lpar.get_lpar_description",
             new=AsyncMock(
                 return_value="[hmc-mcp owner:other created:2026-08-14]"
             ),
         ),
-        patch("hmc_mcp.server_lpar_config.set_lpar_description", new=write),
+        patch("hmc_mcp.operations_lpar.set_lpar_description", new=write),
         pytest.raises(PermissionError, match="owned by 'other'"),
     ):
         hmc_set_lpar_description(SYSTEM_NAME, LPAR_NAME, "replacement")

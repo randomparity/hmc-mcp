@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from .tool_registry import tool_module
 
-import tomllib
 from typing import Any, Literal
 
 from ._app import (
-    _DESTRUCTIVE,
-    _READ_ONLY,
     _run,
     _run_limited_collection,
 )
@@ -22,7 +19,9 @@ from .common import (
 )
 from .config import (
     HMCConfig,
-    list_nicknames,
+    _coerce_nicknames,
+    _coerce_profiles,
+    _read_config_document,
     resolve_config_path,
 )
 from .documents import (
@@ -34,7 +33,7 @@ from .documents import (
 from .jobs import validate_wait_timing
 
 
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 ManagedSystemState = Literal[
     "operating",
@@ -98,7 +97,7 @@ PARTITION_STATES: frozenset[PartitionState] = frozenset(
 )
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="console.info", target_kind="console")
 def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     """Get HMC version, network configuration and links to managed systems.
 
@@ -115,7 +114,7 @@ def hmc_console_info(profile: str | None = None) -> dict[str, Any] | None:
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="config.list_hosts", target_kind="none", connection_argument=None)
 def hmc_list_configured_hosts() -> dict[str, Any]:
     """List all configured HMC profiles from the platform-native TOML config.
 
@@ -131,18 +130,13 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     if config_path is None:
         return {"profiles": [], "config_file": None}
 
-    try:
-        raw_text = config_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ValueError(f"{config_path}: cannot read config file: {exc}") from exc
-
-    try:
-        doc = tomllib.loads(raw_text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"{config_path}: TOML parse error: {exc}") from exc
+    # config's one read-and-parse: every read, decode, parse, and structure
+    # failure arrives as a ConfigError, which is a ValueError the MCP boundary
+    # surfaces as an error result naming the file.
+    doc = _read_config_document(config_path)
 
     default_profile = doc.get("default_profile")
-    profiles_raw: dict[str, Any] = doc.get("profiles", {})
+    profiles_raw: dict[str, Any] = _coerce_profiles(doc.get("profiles"), config_path)
 
     # Read the HMCConfig field defaults once — port and verify_ssl come from
     # the model, not hardcoded constants, so they stay in sync if the model changes.
@@ -179,8 +173,10 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
     # dangling target without resolving any credential. A malformed table raises
     # a ConfigError (a ValueError the MCP boundary surfaces as an error result);
     # it must NOT be swallowed into an empty inventory, which would hide a broken
-    # config while nickname-based connections silently fail.
-    nicknames = list_nicknames(config_path=config_path)
+    # config while nickname-based connections silently fail. Read from the
+    # document already parsed above (issue #295) rather than re-reading
+    # config.toml — the two halves of this inventory must come from one read.
+    nicknames = _coerce_nicknames(doc.get("nicknames"), config_path)
     profile_keys = set(profiles_raw)
     nickname_entries = [
           {"name": nick, "target": target, "target_exists": target in profile_keys}
@@ -194,7 +190,7 @@ def hmc_list_configured_hosts() -> dict[str, Any]:
       }
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="system.list", target_kind="console")
 def hmc_list_systems(
     state: ManagedSystemState | None = None,
     profile: str | None = None,
@@ -227,7 +223,7 @@ def hmc_list_systems(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.list", target_kind="managed_system")
 def hmc_list_lpars(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
@@ -262,41 +258,57 @@ def hmc_list_lpars(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get", target_kind="lpar")
 def hmc_get_lpar(
-    lpar_name_or_uuid: str, profile: str | None = None
+    lpar_name_or_uuid: str,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Get one logical partition by partition name or UUID.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
             if is_uuid(lpar_name_or_uuid):
                 return await hmc.get_logical_partition(lpar_name_or_uuid)
-            return await hmc.find_partition_by_name(lpar_name_or_uuid)
+            system_uuid = (
+                await resolve_system_uuid(hmc, system_name_or_uuid)
+                if system_name_or_uuid is not None
+                else None
+            )
+            return await hmc.find_partition_by_name(
+                lpar_name_or_uuid, system_uuid=system_uuid
+            )
 
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="lpar.get_state", target_kind="lpar")
 def hmc_get_lpar_state(
     lpar_name_or_uuid: str,
     profile: str | None = None,
+    system_name_or_uuid: str | None = None,
 ) -> str | None:
     """Return the current state of one LPAR by partition name or UUID.
 
     Args:
         lpar_name_or_uuid: PartitionName or UUID of the logical partition.
         profile: Optional configured HMC profile name; uses the default when omitted.
+        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
+            partition name; when omitted the name is searched fleet-wide.
     """
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+            lpar_uuid = await resolve_lpar_uuid(
+                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            )
             return await hmc.get_quick_property(
                 "LogicalPartition", lpar_uuid, "PartitionState"
             )
@@ -304,7 +316,7 @@ def hmc_get_lpar_state(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vios.list", target_kind="managed_system")
 def hmc_list_vios(
     system_name_or_uuid: str | None = None,
     state: PartitionState | None = None,
@@ -344,7 +356,7 @@ def hmc_list_vios(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="vios.get", target_kind="vios")
 def hmc_get_vios(
     vios_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -363,7 +375,7 @@ def hmc_get_vios(
     return _run(_go)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="console.list_resources", target_kind="console")
 def hmc_list_resources(
     resource_type: str,
     profile: str | None = None,
@@ -390,7 +402,7 @@ def hmc_list_resources(
     return _run_limited_collection(_go, limit)
 
 
-@tool(annotations=_READ_ONLY)
+@tool(effect="read", operation="system.get", target_kind="managed_system")
 def hmc_get_system(
     system_name_or_uuid: str, profile: str | None = None
 ) -> dict[str, Any] | None:
@@ -413,7 +425,7 @@ def hmc_get_system(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="system.modify", target_kind="managed_system")
 def hmc_modify_system(
     system_name_or_uuid: str,
     new_name: str | None = None,
@@ -453,7 +465,7 @@ def hmc_modify_system(
     return _run(_go)
 
 
-@tool
+@tool(effect="mutate", operation="system.power_on", target_kind="managed_system")
 def hmc_power_on_system(
     system_name_or_uuid: str,
     wait: bool = False,
@@ -491,7 +503,7 @@ def hmc_power_on_system(
     return _run(_go)
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="system.power_off", target_kind="managed_system")
 def hmc_power_off_system(
     system_name_or_uuid: str,
     immediate: bool = False,

@@ -163,6 +163,118 @@ jobs:
           }]
           PY
 
+  library-range-floors:
+    needs: ci
+    name: amd64 / Python 3.13 / library range floors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          version: "0.12.3"
+      - name: Download validated wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-wheel-amd64-py3.13
+          path: dist
+      - name: Derive every declared range's floor from pyproject.toml
+        run: |
+          uv run --no-project python - <<'PY'
+          import re
+          import tomllib
+
+          with open("pyproject.toml", "rb") as file:
+              dependencies = tomllib.load(file)["project"]["dependencies"]
+
+          requirement = re.compile(
+              r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)"
+              r">=(?P<floor>[A-Za-z0-9][A-Za-z0-9.!+_-]*),"
+              r"<(?P<cap>[A-Za-z0-9][A-Za-z0-9.!+_-]*)$"
+          )
+          with open(".range-floors.txt", "w") as out:
+              for spec in dependencies:
+                  match = requirement.fullmatch(spec)
+                  if match is None:
+                      raise SystemExit(
+                          f"runtime dependency has no testable floor: {spec}"
+                      )
+                  out.write(f"{match['name']}=={match['floor']}\n")
+          PY
+          cat .range-floors.txt
+      - name: Install the wheel with every runtime dependency at its floor
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )) || [[ ! -f "${wheels[0]:-}" ]]; then
+            printf 'expected exactly one Python 3.13 wheel\n' >&2
+            exit 1
+          fi
+          uv venv --python "3.13" .floor-venv
+          uv pip install --python .floor-venv/bin/python \
+            --requirements .range-floors.txt \
+            "${wheels[0]}"
+      - name: Exercise the installed public API on the floors
+        run: |
+          .floor-venv/bin/python - <<'PY'
+          import asyncio
+          from importlib.util import find_spec
+          from pathlib import Path
+          import sys
+
+          from hmc_mcp.api import capacity_report
+
+          package_path = Path(sys.modules["hmc_mcp"].__file__).resolve()
+          environment = Path(".floor-venv").resolve()
+          assert package_path.is_relative_to(environment), package_path
+          assert find_spec("fastmcp") is None
+          assert find_spec("mcp") is None
+          assert find_spec("rich") is None
+          assert find_spec("typer") is None
+
+          class FakeHMC:
+              async def list_managed_systems(self):
+                  return [{
+                      "UUID": "system-1",
+                      "Resource": {
+                          "SystemName": "p10",
+                          "AssignableSystemMemory": 32768,
+                          "ConfigurableSystemProcessorUnits": 8.0,
+                      },
+                  }]
+
+              async def list_logical_partitions(self, system_uuid):
+                  assert system_uuid == "system-1"
+                  return [{
+                      "UUID": "lpar-1",
+                      "Resource": {
+                          "DesiredMemory": 8192,
+                          "DesiredProcessingUnits": 2.0,
+                          "PartitionState": "running",
+                      },
+                  }]
+
+          report = asyncio.run(capacity_report(FakeHMC()))
+          assert report == [{
+              "system_uuid": "system-1",
+              "system_name": "p10",
+              "total_memory_mb": 32768,
+              "assigned_memory_mb": 8192,
+              "free_memory_mb": 24576,
+              "total_proc_units": 8.0,
+              "assigned_proc_units": 2.0,
+              "free_proc_units": 6.0,
+              "total_lpars": 1,
+              "running_lpars": 1,
+          }]
+          PY
+
   wheel-smoke:
     needs: ci
     name: ${{ matrix.architecture }} / Python ${{ matrix.python-version }} / wheel smoke

@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import asyncio
 
-from hmc_mcp.server import mcp
+from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
+from hmc_mcp.legacy_policy import compile_legacy_policy
+from hmc_mcp.server import TOOL_SECURITY, create_mcp
+
+# Composed here rather than imported: ADR 0041 removed the module-level application, so
+# every consumer builds its own. The legacy-equivalent policy registers exactly the
+# surface the unpolicied composition used to (pinned by G2 in
+# tests/app/test_fail_closed_startup.py), and the dispatch wrapper is schema-transparent,
+# so every assertion below reads the same registry it always did.
+mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,)))
 
 
 SCOPED_TOOLS = {
@@ -114,9 +123,10 @@ def test_high_risk_lifecycle_guidance_is_rendered():
 
     decommission = tools["hmc_decommission_lpar"]
     assert "dry_run=True" in decommission.description
-    assert "explicit operator approval" in decommission.parameters["properties"][
-        "ownership_override"
-    ]["description"]
+    assert (
+        "explicit operator approval"
+        in decommission.parameters["properties"]["ownership_override"]["description"]
+    )
     for field in (
         "resource_deleted",
         "workflow_completed",
@@ -139,3 +149,47 @@ def test_high_risk_lifecycle_guidance_is_rendered():
         "warnings",
     ):
         assert provision[field]["description"].strip()
+
+
+def test_vios_backup_lifecycle_guidance_names_supported_commands():
+    """Rendered guidance describes the replacement CLI contracts and version floor."""
+    tools = _tools_by_name()
+
+    listing = tools["hmc_list_vios_backups"]
+    assert "lsviosbk" in listing.description
+    assert "name,type" in listing.description
+    assert "HMC V10 or newer" in listing.description
+
+    backup = tools["hmc_backup_vios"]
+    assert "mkviosbk" in backup.description
+    assert "HMC V10 or newer" in backup.description
+    assert "system_name_or_uuid" in backup.parameters["properties"]
+    assert "backup_name" in backup.parameters["properties"]
+    assert set(backup.parameters["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+    }
+
+    restore = tools["hmc_restore_vios"]
+    assert "rstviosbk" in restore.description
+    assert "HMC V10 or newer" in restore.description
+    assert "viosioconfig" in restore.description
+    assert "ssp" in restore.description
+    assert "restart_if_required" in restore.parameters["properties"]
+    assert set(restore.parameters["required"]) == {
+        "system_name_or_uuid",
+        "vios_name_or_uuid",
+        "backup_name",
+        "backup_type",
+    }
+
+
+def test_caller_token_parameter_documents_grammar():
+    tools = _tools_by_name()
+    for name in ("hmc_create_lpar", "hmc_provision_lpar"):
+        description = tools[name].parameters["properties"]["caller_token"][
+            "description"
+        ]
+        assert "[caller " in description
+        assert "64" in description

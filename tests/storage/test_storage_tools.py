@@ -32,6 +32,7 @@ from hmc_mcp.server import (
     hmc_map_storage_to_lpar,
     hmc_list_shared_storage_pools,
 )
+from hmc_mcp.server_storage import hmc_detach_storage_mapping
 
 from conftest import JOB_ENTRY
 
@@ -41,6 +42,7 @@ VG_UUID = "vg-uuid-0001"
 ADAPTER_UUID = "adapter-uuid-0001"
 CLUSTER_UUID = "cluster-uuid-0001"
 SSP_UUID = "ssp-uuid-0001"
+SYSTEM_UUID = "00000000-0000-0000-0000-000000000004"
 
 
 def _hmc_env(monkeypatch) -> None:
@@ -124,6 +126,30 @@ def test_invalid_adapter_type_fails_before_transport(monkeypatch, mock_hmc):
     with pytest.raises(ValueError, match="adapter_type"):
         hmc_list_adapters(LPAR_UUID, adapter_type="UnknownAdapter")
     assert not mock_hmc.calls
+
+
+def test_detach_storage_mapping_posts_parent_vios(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    parent = f"""<VirtualIOServer
+      xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+      <UUID>{VIOS_UUID}</UUID>
+      <AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"/>
+      <VirtualSCSIMappings>
+        <VirtualSCSIMapping><UUID>map-1</UUID></VirtualSCSIMapping>
+        <VirtualSCSIMapping><UUID>map-2</UUID></VirtualSCSIMapping>
+      </VirtualSCSIMappings>
+    </VirtualIOServer>"""
+    mock_hmc.get(f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}").mock(
+        return_value=httpx.Response(200, text=parent)
+    )
+    posted = mock_hmc.post(
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer/{VIOS_UUID}"
+    ).mock(return_value=httpx.Response(200, text=""))
+
+    assert hmc_detach_storage_mapping(VIOS_UUID, "map-1") == "map-1"
+    assert posted.called
+    assert "map-1" not in posted.calls.last.request.content.decode()
+    assert "map-2" in posted.calls.last.request.content.decode()
 
 
 def test_add_network_adapter_builds_xml(monkeypatch, mock_hmc):
@@ -301,59 +327,91 @@ def test_map_storage_invalid_kind_raises(monkeypatch, mock_hmc):
 # Virtual media repository
 # ---------------------------------------------------------------------- #
 
-
-def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
-    """hmc_create_media_repository POSTs a VMLibrary repository doc."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
-    hmc_create_media_repository(VIOS_UUID, VG_UUID, 40960)
-    body = route.calls.last.request.content.decode()
-    assert "<VirtualMediaRepository" in body
-    assert '<RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>' in body
-    assert '<RepositorySize kb="CUD" kxe="false">40960</RepositorySize>' in body
-
-
-def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
-    """hmc_create_optical_media POSTs a blank-media doc into the repository."""
-    _hmc_env(monkeypatch)
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
-    hmc_create_optical_media(VIOS_UUID, VG_UUID, "aix.iso", 4096)
-    body = route.calls.last.request.content.decode()
-    assert "<VirtualOpticalMedia" in body
-    assert '<MediaName kb="CUD" kxe="false">aix.iso</MediaName>' in body
-    assert '<MediaSize kb="CUD" kxe="false">4096</MediaSize>' in body
-    assert "<MediaType kb=" in body
-
-
-def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
-    """hmc_delete_media_repository POSTs the delete doc and confirms."""
-    _hmc_env(monkeypatch)
-    # list_optical_media GET must return empty repository (no images, safe to delete)
-    empty_repo_feed = """<?xml version="1.0" encoding="UTF-8"?>
+_BARE_VG_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <content>
       <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-        <VirtualMediaRepository>
-          <RepositoryName>VMLibrary</RepositoryName>
-        </VirtualMediaRepository>
+        <GroupName>clientvg1</GroupName>
+        <VirtualDisks/>
       </VolumeGroup>
     </content>
   </entry>
 </feed>"""
-    mock_hmc.get(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(200, text=empty_repo_feed))
-    route = mock_hmc.post(
-        f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
-    ).mock(return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup")))
-    result = hmc_delete_media_repository(VIOS_UUID, VG_UUID)
+
+_VMLIB_VG_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <content>
+      <VolumeGroup xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+        <GroupName>clientvg1</GroupName>
+        <MediaRepositories>
+          <VirtualMediaRepository>
+            <RepositoryName>VMLibrary</RepositoryName>
+            <RepositorySize>7000</RepositorySize>
+          </VirtualMediaRepository>
+        </MediaRepositories>
+      </VolumeGroup>
+    </content>
+  </entry>
+</feed>"""
+
+
+def test_create_media_repository_builds_xml(monkeypatch, mock_hmc):
+    """hmc_create_media_repository GETs the VG then POSTs a VMLibrary repository doc.
+
+    The read-modify-write pattern is used on V10R3 firmware; no kb= attributes
+    are emitted by ET.tostring() — assertions check for element/text presence only.
+    """
+    _hmc_env(monkeypatch)
+    vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_BARE_VG_FEED))
+    route = mock_hmc.post(vg_path).mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
+    hmc_create_media_repository(VIOS_UUID, VG_UUID, 40960)
     body = route.calls.last.request.content.decode()
-    assert '<VirtualMediaRepository schemaVersion="V1_0" kb="CUD">' in body
+    assert "VirtualMediaRepository" in body
+    assert "VMLibrary" in body
+    assert "40960" in body
+
+
+def test_create_optical_media_builds_xml(monkeypatch, mock_hmc):
+    """hmc_create_optical_media GETs the VG then POSTs a blank-media doc.
+
+    No kb= attributes are emitted; assertions are element/text only.
+    """
+    _hmc_env(monkeypatch)
+    vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    route = mock_hmc.post(vg_path).mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
+    hmc_create_optical_media(VIOS_UUID, VG_UUID, "aix.iso", 4096)
+    body = route.calls.last.request.content.decode()
+    assert "VirtualOpticalMedia" in body
+    assert "aix.iso" in body
+    assert "4096" in body
+    assert "MountType" in body
+
+
+def test_delete_media_repository_returns_confirmation(monkeypatch, mock_hmc):
+    """hmc_delete_media_repository GETs the VG, removes VMLibrary, POSTs, and confirms.
+
+    The GET is used twice: once by list_optical_media (safety check) and once by
+    delete_media_repository (read-modify-write). Both calls hit the same mock.
+    """
+    _hmc_env(monkeypatch)
+    vg_path = f"/rest/api/uom/VirtualIOServer/{VIOS_UUID}/VolumeGroup/{VG_UUID}"
+    # Both list_optical_media and delete_media_repository GET the same path.
+    mock_hmc.get(vg_path).mock(return_value=httpx.Response(200, text=_VMLIB_VG_FEED))
+    route = mock_hmc.post(vg_path).mock(
+        return_value=httpx.Response(201, text=_feed(VG_UUID, "VolumeGroup"))
+    )
+    result = hmc_delete_media_repository(VIOS_UUID, VG_UUID)
+    # POST body must not contain MediaRepositories (it was removed by the mutation).
+    body = route.calls.last.request.content.decode()
+    assert "MediaRepositories" not in body
     assert result == f"Deleted media repository from VolumeGroup {VG_UUID}"
 
 
@@ -489,7 +547,7 @@ def test_create_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/CreateLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_create_logical_unit(
@@ -506,7 +564,7 @@ def test_delete_logical_unit_wait_true_polls_to_completion(monkeypatch, mock_hmc
     submit_route = mock_hmc.put(
         f"/rest/api/uom/Cluster/{CLUSTER_UUID}/do/DeleteLogicalUnit"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
-    poll_route = mock_hmc.get("/rest/api/uom/Job/job-uuid-999").mock(
+    poll_route = mock_hmc.get("/rest/api/uom/jobs/job-uuid-999").mock(
         return_value=httpx.Response(200, text=JOB_ENTRY_COMPLETED)
     )
     result = hmc_delete_logical_unit(

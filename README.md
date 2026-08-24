@@ -84,6 +84,7 @@ default_profile = "prod"
 
 [profiles.prod]
 host = "hmc.example.com"
+port = 443                         # optional; omit to allow legacy fallback
 user = "admin"
 password_env = "HMC_PROD_PASSWORD"   # resolved from the environment at runtime  # pragma: allowlist secret
 
@@ -139,7 +140,7 @@ and no target is itself a nickname.
 |-------------------|----------------------|-------------------|-----------|
 | Profile           | `HMC_PROFILE`        | `--profile`       | —         |
 | HMC host / IP     | `HMC_HOST`           | `--host`          | —         |
-| REST port         | `HMC_PORT`           | —                 | `12443`   |
+| REST port         | `HMC_PORT`           | —                 | `443`     |
 | User              | `HMC_USER`           | `--user, -u`      | —         |
 | Password          | `HMC_PASSWORD`       | `--password, -p`  | —         |
 | Verify TLS        | `HMC_VERIFY_SSL`     | `--verify-ssl`    | `false`   |
@@ -148,6 +149,15 @@ and no target is itself a nickname.
 | SSH key file      | `HMC_SSH_KEY_FILE`   | —                 | —         |
 | Audit memento     | `HMC_AUDIT_MEMENTO`  | —                 | `hmc-mcp` |
 | Schema version    | `HMC_SCHEMA_VERSION` | —                 | _(unset)_ |
+
+When the REST port is omitted, hmc-mcp tries port 443 and retries logon once on
+legacy port 12443 only if the first attempt fails at the transport layer. Setting
+`port` in TOML or `HMC_PORT` selects that port explicitly: a connection failure
+is returned immediately and never falls back. On an older HMC, leaving the port
+unset can therefore add the duration of the failed 443 attempt. `HMC_TIMEOUT`
+applies to each HTTP timeout phase rather than to the combined two-attempt wall
+clock time. If a 443 logon response is lost, that unreachable attempt may leave
+a server-side session until the HMC expires it.
 
 See [`docs/environment-variables.md`](docs/environment-variables.md) for the
 full reference, including descriptions and usage notes.
@@ -171,6 +181,13 @@ regardless of firmware age.
 | HMC V9      | POWER7, POWER8, POWER9   | V1_0             |
 | HMC V10     | POWER8, POWER9, POWER10  | V1_0             |
 | HMC V11     | POWER9, POWER10, POWER11 | V1_0             |
+
+Three VIOS backup catalog tools have a narrower floor:
+`hmc_list_vios_backups`, `hmc_backup_vios`, and `hmc_restore_vios` require
+**HMC V10 or newer**. Their supported HMC commands do not exist in the V9.1.940
+command inventory, so these tools have no runtime version probe or V8/V9
+fallback. Other tools retain the general HMC V8 through V11 support stated
+above.
 
 **`HMC_SCHEMA_VERSION` — leave this unset for normal operation.**
 `hmc-mcp` omits the `X-HMC-Schema-Version` request header from all write
@@ -244,12 +261,295 @@ XML (namespace-stripped, HMC bookkeeping attributes removed).
 
 ## MCP server
 
+**`--access-policy NAME` is required.** The server refuses to start without one
+rather than serving unbounded. If you are upgrading, generate a policy matching what
+your server exposed before, read it, then select it — see
+[Migrating to a required access policy](#migrating-to-a-required-access-policy).
+
 ```bash
-hmc-mcp serve            # stdio — what MCP clients/agents expect
-hmc-mcp serve --http --listen-host 127.0.0.1 --port 8000
-# Explicitly enable the arbitrary-command MCP escape hatch when required:
-hmc-mcp serve --enable-arbitrary-command
+# Once: write a policy for review. It activates nothing and never overwrites.
+hmc-mcp config init-access-policy
+
+hmc-mcp serve --access-policy lab            # stdio — what MCP clients/agents expect
+hmc-mcp serve --access-policy lab --http --listen-host 127.0.0.1 --port 8000
+# Explicitly enable the arbitrary-command MCP escape hatch when required. The policy
+# must also grant hmc_run_command by name; the flag alone is not enough:
+hmc-mcp serve --access-policy lab --enable-arbitrary-command
+hmc-mcp serve --access-policy lab --audit-level WARNING   # authorization denials only on stderr
 ```
+
+`--access-policy NAME` enforces the named policy from the platform-native
+`access-policy.toml`: the server registers only the tools that policy permits, so
+a withheld tool never appears in `tools/list` and cannot be called by name. Omitting
+it is a usage error (exit 2) that starts nothing; a policy that is selected but
+cannot be read, parsed, or compiled — or whose file does not exist — exits 1 and
+starts nothing. Both refusals name the generator and the file they looked for.
+
+All three dimensions — tools, connections, and targets — are enforced, and a
+call is permitted only when a **single** grant covers all three together. A
+grant that names your connection and a *different* grant that names your target
+do not combine. Every refusal happens before the server opens any connection to
+an HMC. Call `hmc_effective_permissions` on a running server to see what the
+selected policy actually applies.
+
+Connection scope is decided on the connection the call will *actually* select,
+not on the `profile` string the caller passes, so a nickname is resolved to the
+profile it targets before the check. Three consequences are worth knowing
+before you author a policy:
+
+- **`connections` entries must be profile keys**, not nicknames. A nickname is
+  resolved away before the comparison, so granting one never matches.
+- **When `HMC_HOST` is set, the server can reach exactly one HMC and the
+  `profile` argument is ignored** — that is how `build_config` has always
+  resolved. Every call is therefore evaluated as `<default>`, so grant
+  `connections = ["<default>"]`; a policy naming profile keys denies everything
+  in that deployment, and says so in the denial.
+- **`<default>` binds late, and it binds to whatever the deployment resolves.**
+  It is not a fixed HMC: absent `HMC_HOST` it follows `HMC_PROFILE`, then
+  `default_profile` — which may itself be a nickname, so the granted connection
+  can be two hops from anything written in the policy. Granting `<default>`
+  beside a narrow profile list therefore also grants the current default, even
+  when that is a profile the policy deliberately withholds. Do not grant it
+  unless the deployment's default is a connection you mean to allow.
+
+Omitting `profile` means `<default>`, which is *not* covered by a grant naming
+the profile that happens to be the deployment default — grant both if callers
+may omit the argument.
+
+### What the policy does not bound
+
+The access policy bounds **this MCP server**. It does not bound `hmc-mcp`
+commands run at a shell, and it does not bound a Python program importing the
+supported reusable API — both reach the HMC directly under the operator's own
+credentials, and
+[ADR 0029](docs/adr/0029-supported-reusable-python-api-contract.md) places MCP
+tools, CLI commands, and the server composition modules outside that API's
+contract for the same reason. If you need a constraint that binds a human at a
+shell, use HMC-side user roles.
+
+Every MCP tool is dispatch-wrapped.
+For a connectionless tool, the connection dimension is vacuous because the call
+selects no profile to authorize. A grant must still reach the tool by tool or
+effect class, and target authorization still applies. `hmc_list_configured_hosts`
+returns every configured profile's name, host, user, and default flag, while
+`hmc_effective_permissions` returns the policy's own grants. Both are
+non-exhaustive connectionless tools, so a targets table cannot authorize either
+one; they require `targets = "all-targets"`. A `connections = ["lab"]` read grant
+with `all-targets` can therefore still disclose the `prod` inventory. When the
+configuration or policy is sensitive, withhold these tools by name: enumerate
+the permitted `tools` without granting the `read` effect class.
+
+### Migrating to a required access policy
+
+An access policy used to be optional; a server started without one exposed every tool on
+every configured connection. It is now required, so an existing deployment that upgrades
+without one stops serving. Two commands and a read:
+
+```bash
+# 1. Write it. This activates nothing, and prints the path it wrote to stdout.
+hmc-mcp config init-access-policy
+
+# 2. Read it. It is one grant, and the tools array is the whole of your exposure.
+$EDITOR ~/.config/hmc-mcp/access-policy.toml   # macOS: ~/Library/Application Support/hmc-mcp/
+
+# 3. Select it, in whatever launches your server.
+hmc-mcp serve --access-policy legacy-equivalent
+```
+
+The generated `legacy-equivalent` policy grants exactly what the unpolicied server granted:
+every ordinary tool, every configured connection plus `<default>`, and
+`targets = "all-targets"`. **It is a migration aid, not a recommended posture.** A new
+deployment should start from the read-only example below and add what it needs — the
+generated policy is the widest one this system can express.
+
+Six things are worth knowing before you run it.
+
+- **`hmc_run_command` is not in it.** The escape hatch stays a separate decision:
+  `--enable-arbitrary-command` alone never exposed it, and a generated grant that named it
+  would undo that. If you ran with the flag, add `hmc_run_command` to the grant's `tools`
+  by hand — and note it will show as a deletion in every future regeneration diff, because
+  the generator cannot emit it.
+- **Run it as the identity, and with the environment, that `serve` runs under.** Both
+  resolve `access-policy.toml` through the same config directory, and the connection list
+  is read from that identity's `config.toml`. Generating as your login user and serving as
+  a systemd `User=` or a container uid writes a policy the server never reads, naming
+  profiles it does not have.
+- **A container or unit needs a resolvable `HOME` or `XDG_CONFIG_HOME`.** Under a uid with
+  no passwd entry and neither variable set, the path cannot be resolved and the server
+  cannot start at any setting.
+- **It never overwrites.** To check a deployed policy after an upgrade, run:
+
+  ```bash
+  hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
+  ```
+
+  This renders what the current build plus your current `config.toml` would generate
+  and prints a unified diff against the deployed policy, exiting non-zero on any
+  difference — see [Detecting access-policy drift](#detecting-access-policy-drift)
+  below. Compare **both** the `tools` and the `connections` arrays in that diff. The
+  policy is a snapshot of each: a tool a later release adds, and a profile you add to
+  `config.toml`, are both ungranted until you add them to the deployed file by hand.
+  Nothing in a running server surfaces either gap — `hmc_effective_permissions`
+  reports what was registered, which is exactly what the policy produced — so this
+  diff is the detection path.
+- **If `serve` reports a policy that will not compile and the generator reports the file
+  already exists**, the file is truncated or corrupt. Delete it and re-run the generator.
+- **`config.toml` and `access-policy.toml` are different files with different jobs.**
+  `config.toml` holds **HMC connection profiles** — which consoles you can reach, and how.
+  `access-policy.toml` holds **server access policies** — what an MCP server may do with
+  them. They have separate lifecycles, and a grant's `connections` entries are profile
+  *keys* from `config.toml`, never profile contents.
+
+### Detecting access-policy drift
+
+A generated policy is a snapshot of two things that both move on: the tool surface of
+the build that ran the generator, and the profile keys in `config.toml`. After an
+upgrade adds a tool, or you add `[profiles.newsite]` and restart, the deployed policy
+grants neither — silently, because `hmc_effective_permissions` reports only the
+registered set, which is exactly what the policy produced.
+
+`config diff-access-policy` makes the comparison routine instead of something an
+operator has to remember to do:
+
+```bash
+hmc-mcp config diff-access-policy ~/.config/hmc-mcp/access-policy.toml
+```
+
+It renders the legacy-equivalent policy exactly as `config init-access-policy` would —
+same generator, same config-directory resolution, so run it as the identity and with
+the environment `serve` runs under — and prints a unified diff against the deployed
+document. Exit codes: `0` identical, `1` different (the diff goes to stdout, so a CI
+log captures it directly), `2` usage error, `3` the deployed file could not be read,
+`4` generation failed. A CI gate or health check asserts on exit status `1`.
+
+The command compares full documents, so a deliberately narrow authored policy always
+differs from the generated one — point it at deployments running the generated
+`legacy-equivalent` policy, or at a copy of it.
+
+Policies live in `access-policy.toml`, beside `config.toml` in the same
+platform-native directory. A minimal read-only policy:
+
+```toml
+[[policies.lab.grants]]
+effects = ["read"]           # "read", "mutate", "destructive"
+connections = ["<default>"]  # profile names, or "<default>" for the env HMC
+targets = "all-targets"      # or a table; see "Narrowing targets" below
+```
+
+A grant must name at least one tool through `effects`, `tools`, or both, and
+must name at least one connection. `targets` is either the string
+`"all-targets"` or a table of target kind to selector strings — a bare array is
+rejected. `hmc_run_command` cannot be reached by effect class: name it in a
+grant's `tools` to grant it, start the server with `--enable-arbitrary-command`
+as well, and grant it under `"all-targets"`, since it declares no target
+selector. All three are required, and they compose conjunctively.
+
+A limited-mutation policy — read anywhere the deployment reaches, but change only the
+lab, and never destroy anything:
+
+```toml
+[[policies.limited.grants]]
+effects = ["read"]
+connections = ["lab", "prod", "<default>"]
+targets = "all-targets"
+
+[[policies.limited.grants]]
+effects = ["mutate"]         # "destructive" is deliberately absent
+connections = ["lab"]
+targets = "all-targets"
+```
+
+And the legacy-equivalent policy, which `hmc-mcp config init-access-policy` writes in full
+— every ordinary tool named explicitly, which is why it is generated rather than typed:
+
+```toml
+[[policies.legacy-equivalent.grants]]
+tools = [
+    "hmc_add_network_adapter",
+    "hmc_add_vfc_adapter",
+    # ... every ordinary tool is named. hmc_run_command is not among them.
+]
+connections = ["<default>", "lab", "prod"]   # every profile key in config.toml
+targets = "all-targets"
+```
+
+It names tools rather than granting `effects` deliberately: an effect-class grant would
+silently confer every tool a later release adds, which is the silent privilege retention
+the generator exists to replace.
+
+### Narrowing `targets`
+
+Substituting a table for `"all-targets"` is a much stronger statement than it
+looks, so a narrowed policy is normally **two** grants:
+
+```toml
+# Exactly one partition, on exactly one system.
+[[policies.lab.grants]]
+tools = ["hmc_delete_lpar", "hmc_power_off_lpar"]
+connections = ["lab"]
+targets = { managed_system = ["Server-9080-HEX-SN123456"], lpar = ["scratch-01"] }
+
+# Everything console-wide, which no table can express.
+[[policies.lab.grants]]
+effects = ["read"]
+connections = ["lab"]
+targets = "all-targets"
+```
+
+Four rules explain why:
+
+- **Every selector a tool declares must be supplied and must match** — not only
+  the required ones. `hmc_power_off_lpar` takes an optional
+  `system_name_or_uuid`; omitting it means "whichever system has a partition by
+  that name", which a `managed_system` allowlist did not grant, so the call is
+  refused. Likewise `hmc_list_lpars` without a system means *every* system.
+- **Matching is exact string equality.** No globs, no case folding, and no
+  name-to-UUID resolution — resolving would mean asking the HMC inside the
+  check that is supposed to run before any HMC request. A policy written in
+  names does not cover a call written in UUIDs, or the reverse.
+- **A table never grants a tool it cannot bound.** Some tools declare no target
+  selector at all (`hmc_list_systems`, `hmc_remove_ldap_config`,
+  `hmc_run_command` — they act on the console, whose identity *is* the
+  connection). Others act on something the selectors do not name:
+  `hmc_provision_lpar` mutates a VIOS chosen inside its `storage` argument, the
+  LPAR-profile backup and restore pair write an arbitrary path on the HMC's own
+  filesystem, three adapter tools take a VIOS *partition ID* (a slot number
+  reused on every system in the fleet), and the two job tools accept a
+  `job_href` whose path replaces the job UUID outright. Each of those needs a
+  grant whose targets are `"all-targets"`. So do `hmc_effective_permissions` and
+  `hmc_list_configured_hosts`, which read local state rather than an HMC and so
+  have nothing a table could bind either. `hmc_effective_permissions` reports
+  `exhaustive_targets: false` for every one of them. Naming any such tool in a
+  grant's `tools` beside a table is refused at startup, with no exceptions.
+
+  **A table-only policy therefore denies `hmc_effective_permissions` itself**, so
+  a client has no way to ask the server what it may do. Give it the second grant
+  above — that is what the `effects = ["read"]` / `"all-targets"` grant in the
+  example is for — or expect the startup warning naming it.
+- **An LPAR name is unique within a system, not across the fleet.** Every tool
+  that takes an `lpar_name_or_uuid` also takes an optional
+  `system_name_or_uuid`, and every LPM tool names its source system the same
+  way ([ADR 0063](docs/adr/0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md)),
+  so the rule above pins the system on all of them: under a table, a call that
+  omits the selector is refused, and one allowlist entry must match both
+  migration endpoints. Where you grant a tool under `"all-targets"`, or call it
+  outside a table-constrained policy and omit the selector, a partition name is
+  still matched on whichever system has one — list partition **UUIDs** there,
+  which are unique across the fleet.
+
+### Startup warnings
+
+`serve` writes these to stderr, never stdout, which carries JSON-RPC on stdio — with
+one caveat that applies to the audit records below as well: a launcher merging the
+descriptors (`serve 2>&1`, or a unit file doing the same) makes stderr *become* the
+JSON-RPC channel, and nothing inside the process can detect that.
+
+| Condition | What it means |
+|-----------|---------------|
+| The served surface has no tools | The policy withholds everything reachable; nothing the server is asked to do will succeed. Suppresses the next line. |
+| The policy withholds `hmc_effective_permissions` | The server cannot report its own permissions to a client. Any policy that neither grants the `read` effect class nor names the tool in a grant's `tools` causes this. |
+| `--enable-arbitrary-command` was passed but the policy does not grant `hmc_run_command` | The flag and the ceiling compose conjunctively, so the escape hatch is not exposed. Name it in a grant's `tools` to allow it. |
+| A grant's `targets` table cannot bind some of the tools it reaches | One line per such grant, naming them. Those tools are registered and advertised, and every call to them is denied — a table cannot bound them, so only an `"all-targets"` grant reaches them. Watch for `hmc_effective_permissions` in the list: when it is there, the server cannot report its own permissions even though the policy grants the tool. |
 
 > **Security:** the streamable-HTTP transport is **unauthenticated**. It
 > exposes enabled tools — including user administration — to anyone who can reach the
@@ -292,6 +592,21 @@ unbounded when `limit` is omitted.
 | `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
 | `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
 | `hmc_wait_for_job`            | Poll until a terminal HMC state and return a normalized outcome (`status`, `timed_out`, nullable `error`, and last `job`); terminal states include completed, failed, exception, and canceled variants |
+| `hmc_effective_permissions`   | Report the tools this server exposes, their effect classes, and the selected access policy's declared connections and targets |
+
+`hmc_effective_permissions` discloses the selected policy's name, its absolute
+path, every connection token, and every target selector to any MCP client that
+can call it. It carries no credential. One caveat since the generator exists: a
+generated `legacy-equivalent` policy has `config.toml`'s profile **keys** as its
+`connections`, so those names reach the client through this tool — names only, and
+strictly less than `hmc_list_configured_hosts` discloses to the same caller. If your
+profile keys are themselves sensitive, withhold both tools by name. The policy
+path is the exception it is not — it is built from `XDG_CONFIG_HOME` (Linux),
+`%APPDATA%` (Windows), or your home directory, so it names the account, and it
+is disclosed deliberately so an operator can tell which file is in effect. Any
+policy that neither grants the `read` effect class nor names the tool in a
+grant's `tools` withholds it; a policy granting `read` reaches it and cannot
+exclude it.
 
 `hmc_fleet_health` and `systems health` return only exceptions across the whole
 estate: non-operating systems, non-running VIOS partitions, LPARs with inactive
@@ -302,13 +617,39 @@ do not support global Job listing, the stable response keeps `failed_jobs` empty
 and includes a warning that recent-job health is unavailable; that warning must
 not be interpreted as a healthy job feed.
 
+### Authorization audit records
+
+With a policy selected, every authorization decision writes one line of JSON to stderr
+on the `hmc_mcp.audit` logger — policy, tool, effect class, decision, a stable reason
+code, the connection selector, and the declared target selectors. Denials are `WARNING`
+and permits are `INFO`. Credentials, whole argument sets, command text, and response
+bodies are absent by construction.
+
+`--audit-level LEVEL` on `hmc-mcp serve` tunes that stream: `DEBUG` and `INFO` keep both
+records (the default), `WARNING` keeps denials only, and `ERROR` or `CRITICAL` silences it.
+An unknown level name is a usage error that starts nothing.
+
+Every deployment writes these, because every deployment now selects a policy. Delivery is
+**asynchronous and droppable**: records go onto a bounded in-memory queue drained by one
+background thread, so a destination nobody is reading can cost you records but cannot stop
+the server answering. A dropped line is never silent — the next line that lands is preceded
+by `{"event": "records-dropped", "count": N}`. See
+[ADR 0043](docs/adr/0043-non-blocking-stderr-diagnostics.md); a full trail still wants
+something reading the server's stderr (under stdio that is the MCP client, not you; under
+`--http` it is whatever supervisor or journal collects the unit's stderr). ADR 0011
+ownership-override records are not policy-gated and are emitted on the CLI and Python API
+paths too.
+
+See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
+reason codes, and how to route or silence them.
+
 ### Public parameter units and selectors
 
 Storage quantities use binary-unit suffixes: `capacity_mib` for virtual disks,
 `size_mib` for media repositories and optical media, and `lu_size_gib` for
 Shared Storage Pool logical units. Numeric virtual-switch selectors are named
-`virtual_switch_id`; the SSH vNIC tool uses `virtual_switch_name` because it
-requires a name instead.
+`virtual_switch_id`. Verified vNIC mutations instead select the backing VIOS,
+SR-IOV adapter, and physical port; they do not accept a virtual-switch selector.
 
 The NIM install tools distinguish `hmc_timeout_minutes` from the client-side
 `wait_timeout_seconds`. With `wait=True` and no explicit client budget, the
@@ -316,13 +657,19 @@ client waits for the HMC timeout converted to seconds plus one polling interval,
 so it can observe the terminal state at the HMC deadline. LPM's separate
 `wait_time` value is an HMC migration/validation field measured in seconds.
 
+Every partition tool accepts an optional `system_name_or_uuid`
+(SystemName or UUID) that disambiguates its `lpar_name_or_uuid`; omitted, the
+name is searched fleet-wide. The LPM tools take it as the *source*-system
+selector beside their required `target_system_name_or_uuid`, so a policy table
+must match both endpoints against its `managed_system` allowlist.
+
 **Mutating / lifecycle**
 
 | Tool                  | Description |
 |-----------------------|-------------|
-| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + power on in one call; validates name/VLAN/VG preconditions; `dry_run=True` checks preconditions only; per-step results with partial-failure reporting. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials). |
+| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + declarative PCIe assignments + power on in one call; validates name/VLAN/VG and all assignment preconditions before create; `dry_run=True` checks preconditions only; per-step results retain recoverable partial state without automatic rollback. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials); optional `caller_token` embeds `[caller <token>]` in the partition description (ADR 0064). |
 | `hmc_decommission_lpar` | **End-to-end LPAR decommission workflow**: inventory the selected system-scoped target, enforce ADR 0011 ownership, report adapters and observed storage mappings, power off, detach adapters, and delete the LPAR; `dry_run=True` previews only. It does not delete storage mappings, backing storage, or perform rollback. |
-| `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists |
+| `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists; optional `caller_token` embeds `[caller <token>]` in the partition description (ADR 0064) |
 | `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |
 | `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ADR 0011 description ownership (`ownership_override` only with explicit approval) |
 | `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
@@ -376,8 +723,13 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
 > lookup over SSH when the REST API is unreachable. Resolution happens before
 > the command runs, so a UUID that cannot be resolved surfaces as an error
-> rather than being passed through to the CLI. The opt-in `hmc_run_command`
-> tool is the exception — it runs whatever command you give it verbatim.
+> rather than being passed through to the CLI. VIOS backup and restore are an
+> exception: a direct system name plus VIOS UUID is SSH-ready, but a system UUID
+> requires REST to resolve its unique MTMS identity and has no `lssyscfg`
+> fallback. Separately, the opt-in `hmc_run_command` tool runs whatever command
+> you give it verbatim without selector resolution.
+> See [docs/hmc-cli-cheatsheet.md](docs/hmc-cli-cheatsheet.md) for a concise
+> reference to all HMC CLI commands used by this project.
 
 **VIOS administration**
 
@@ -390,16 +742,47 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
 | `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
 
+`hmc_backup_vios` and `hmc_restore_vios` retain required managed-system and VIOS
+selector metadata for authorization diagnostics and audit. Because their `ssp`
+mode can affect the wider cluster, both tools are non-exhaustive and require
+`targets = "all-targets"`. Prefer a grant that explicitly names only the needed
+tool. An effect-class grant with `all-targets` can reach either tool; a targets
+table cannot authorize either one even when it contains both selector kinds.
+
 **SR-IOV / vNIC & physical I/O (SSH/CLI)**
 
 | Tool                       | Description |
 |----------------------------|-------------|
-| `hmc_list_vnics`           | List vNICs (SR-IOV-backed Virtual NICs) on an LPAR |
-| `hmc_add_vnic`             | Add a vNIC to an LPAR using `virtual_switch_name` |
-| `hmc_remove_vnic`          | Remove a vNIC from an LPAR |
+| `hmc_list_vnics`           | List vNIC slots and HMC backing-device readback for an LPAR |
+| `hmc_add_vnic`             | Ensure one vNIC with a verified SR-IOV backing selector |
+| `hmc_remove_vnic`          | Remove the verified vNIC identified by its partition-local `slot_num` |
 | `hmc_list_fc_ports`        | List Virtual Fibre Channel (NPIV) adapters for a system |
 | `hmc_list_sea_adapters`    | List Shared Ethernet Adapters for a system |
 | `hmc_set_sriov_adapter_mode` | Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode |
+
+The verified vNIC mutation contract is admitted only for POWER9 8375-42A managed by HMC V10R3
+M1060. `hmc_add_vnic` selects one backing with `vios_name`, `vios_lpar_id`, `adapter_id`,
+`physical_port_id`, and `capacity_percent`, plus the vNIC `port_vlan_id`. The HMC assigns the
+logical-port ID; callers do not supply one. A successful or unchanged result reports the assigned
+ID in `backing_after[].logical_port_id` after correlated HMC readback. `hmc_remove_vnic` accepts
+the `slot_num` reported by `hmc_list_vnics`, verifies its single active Operational backing, and
+removes that slot.
+
+Add and remove return the stable fields `operation`, `mutation_dispatched`, `changed`, `selector`,
+`slot_num`, `vnic_before`, `backing_before`, `vnic_after`, `backing_after`,
+`vnic_after_read_succeeded`, `backing_after_read_succeeded`, `output`, and `errors`. Once a
+mutation has been dispatched, a command or reconciliation failure raises a structured partial
+error carrying the same result evidence; there is no rollback promise. An empty inventory with
+its matching read-succeeded flag set means verified absence.
+
+| vNIC capability | Admitted | Notes |
+|-----------------|----------|-------|
+| One SR-IOV backing on POWER9 8375-42A / HMC V10R3 M1060 | Yes | Exact family and HMC level only |
+| Caller-selected logical-port ID | No | The HMC allocates and readback reports it |
+| Multiple backings or failover topology | No | Ambiguous or degraded topology fails before mutation |
+| Priority or maximum-capacity inputs | No | HMC defaults remain in effect |
+| Other server families or HMC levels | No | Capability checks fail before mutation |
+| Rollback after a dispatched mutation | No | Partial errors retain observed before/after evidence |
 
 **Template library**
 
@@ -443,8 +826,8 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 
 | Tool                        | Description |
 |-----------------------------|-------------|
-| `hmc_get_pcm_preferences`   | Read monitoring flags (LTM/aggregation/STM/energy) |
-| `hmc_set_pcm_preferences`   | Enable/disable PCM collection for a resource |
+| `hmc_get_pcm_preferences`   | Read managed-system monitoring flags |
+| `hmc_set_pcm_preferences`   | Enable/disable managed-system PCM collection |
 | `hmc_processed_metric_links`    | List processed metric documents (30s, ~2h retention) |
 | `hmc_processed_metrics`         | Download the newest processed metric document |
 | `hmc_aggregated_metric_links`   | List aggregated metric documents (trend rollup) |
@@ -453,11 +836,14 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
 > links. The `*_metric_links` tools return the link list, while the `*_metrics`
 > tools download the most recent document (or `{}` when none are in range). The CLI
-> `metrics show` accepts `--fetch` to do both in one step. Long-term
+> `metrics show` accepts `--fetch` to do both in one step. Logical-partition
+> processed and aggregated metrics require the owning managed system through
+> `system_name_or_uuid` (MCP) or `--system` (CLI); their endpoint is nested
+> below that system. Long-term
 > monitoring + aggregation must be enabled via `hmc_set_pcm_preferences`
-> before processed/aggregated metrics accumulate. Categories include
-> `ManagementConsole`, `ManagedSystem`, `LogicalPartition`,
-> `VirtualIOServer`, `SharedStoragePool`, `Cluster`.
+> before processed/aggregated metrics accumulate. Preferences and raw Long
+> Term Monitor feeds are documented only for `ManagedSystem`, not
+> `LogicalPartition`.
 
 **Users & access (HMC user administration)**
 
@@ -481,10 +867,65 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 
 | Tool                         | Description |
 |------------------------------|-------------|
-| `hmc_update_console_software` | Submit an HMC software update (kind=update, PTF install) or upgrade (kind=upgrade, full version) job |
+| `hmc_update_console_software` | Submit the documented `UpdateManagementConsole` PTF update job; `kind=upgrade` is refused because upgrades require IBM's multi-job workflow |
 | `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
 | `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
-| `hmc_update_firmware`        | Submit a managed-system firmware update job |
+| `hmc_update_firmware`        | Submit the Power11 `PlatformUpdate` job (HMC 11.1.1111 or later) |
+
+`hmc_update_firmware` accepts IBM's nested `PlatformUpdateParameter` JSON.
+It rejects older HMC releases before submitting the destructive operation.
+For example, a system-firmware update is:
+
+```json
+{
+  "system_name_or_uuid": "system1",
+  "platform_update": {
+    "SystemFirmwareUpdate": {
+      "UpdateType": "Update",
+      "UpdateOrder": 1
+    }
+  }
+}
+```
+
+`hmc_vios_update` uses IBM's operation-specific parameter names. Every source
+requires `ResourceType`. Updates accept `HMC`, `NFS`, `SFTP`, `USB`, or
+`IBMWebsite` and may include `RestartVIOS`; upgrades accept `HMC`, `NFS`,
+`SFTP`, or `USB` and require `Disks`. For example:
+
+HMC sources require `Name`, NFS/SFTP sources require `ServerHostOrIP` and
+`RemoteDirectory`, USB sources require `USBDevice`, and every upgrade requires
+`Disks`. Setting `SaveFile` to `true` also requires `Name`.
+
+```json
+{
+  "vios_name_or_uuid": "vios1",
+  "kind": "update",
+  "repository": {
+    "ResourceType": "NFS",
+    "ServerHostOrIP": "repo.example.com",
+    "RemoteDirectory": "/images/vios",
+    "Name": "update.iso",
+    "RestartVIOS": "false"
+  }
+}
+```
+
+```json
+{
+  "vios_name_or_uuid": "vios1",
+  "kind": "upgrade",
+  "repository": {
+    "ResourceType": "HMC",
+    "Name": "install.iso",
+    "Disks": "hdisk1"
+  }
+}
+```
+
+With `wait=true`, a terminal job's documented `stdOut` result is also exposed
+at the top level when present. Invalid or cross-operation parameters are
+rejected before connecting to the HMC.
 
 **LPAR profiles (backup / restore)**
 
@@ -509,8 +950,38 @@ so it can observe the terminal state at the HMC deadline. LPM's separate
 | `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
 | `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |
 | `hmc_list_io_slots`         | List physical I/O slots on a system |
+| `hmc_list_dedicated_pcie_slots` | List normalized dedicated PCIe slots with stable DRC identities |
+| `hmc_list_sriov_adapters` | Report normalized SR-IOV adapter inventory capability and selectors |
+| `hmc_list_sriov_physical_ports` | Report normalized SR-IOV physical-port inventory capability and selectors |
+| `hmc_list_sriov_logical_ports` | Report normalized SR-IOV logical-port inventory capability and selectors |
 | `hmc_list_memory_pools`     | List shared memory pools on a system |
 | `hmc_remove_memory_pool`    | Remove a shared memory pool from a system |
+
+Normalized PCIe inventories share this envelope:
+
+- `resource_kind`: `dedicated_slot`, `sriov_adapter`, `sriov_physical_port`, or
+  `sriov_logical_port`;
+- `capability`: `available` or `capability-unavailable`;
+- `system`: the resolved managed-system name;
+- `selector`: nullable `adapter_id`, `physical_port_id`, and `logical_port_id` values copied from
+  the request;
+- `items`: stable records for the selected resource kind; and
+- `unavailable_reason`: `null` when available, otherwise a stable evidence-bound explanation.
+
+Dedicated-slot identity is `(system, drc_index)`. Its `description` and `owner_lpar` come from the
+exact ADR 0053 projection; `availability` remains `null` because an empty owner does not prove that
+a slot is assignable. SR-IOV identities are `(system, adapter_id)`, adapter identity plus
+`physical_port_id`, and adapter identity plus `logical_port_id`. Their mode, availability,
+ownership/use, location, capacity, and compatibility category fields are explicit nullable values.
+ADR 0053 admits selectors and percentage capacity semantics but no SR-IOV read projection, so these
+three collections currently return `capability-unavailable` with no items and perform no inventory
+command. Percentage fields use decimal percentages, never bytes, bandwidth, or integer weights.
+
+The CLI equivalents are `hmc-mcp network list-dedicated-pcie-slots`, `list-sriov-adapters`,
+`list-sriov-physical-ports`, and `list-sriov-logical-ports`. All accept `--json`; the SR-IOV
+commands accept the applicable `--adapter-id`, `--physical-port-id`, and `--logical-port-id`
+selectors. The older `hmc_list_io_slots` / `network list-io-slots` surface remains raw and is not
+the normalized contract.
 
 **Escape hatch**
 
@@ -552,7 +1023,8 @@ hmc-mcp lpars power-on web01
 ### Use with Hermes Agent
 
 ```bash
-hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve
+hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve \
+  --access-policy legacy-equivalent
 ```
 
 ## Testing
@@ -560,26 +1032,27 @@ hermes mcp add hmc -- uv run --directory ~/src/hmc-mcp hmc-mcp serve
 ### 1. Unit tests (no HMC needed)
 
 The client and XML parser are tested against an HMC mocked with
-[respx](https://lundberg.github.io/respx/) — no real hardware required:
+[respx](https://lundberg.github.io/respx/) — no real hardware required. The
+default command reports only the configured test and coverage result:
 
 ```bash
-uv run pytest -q
-# ...............                    [100%]
-# 15 passed in 0.10s
+just test
+# test: passed; configured coverage gate passed
 ```
+
+Use `just test-verbose` for native pytest diagnostics and missing-lines coverage.
 
 ### 2. MCP protocol smoke test (no HMC needed)
 
-Verifies the server actually speaks MCP over stdio and lists every tool. It
-connects with a real FastMCP client and prints the tools:
+Verifies the server actually speaks MCP over stdio. It connects with a real
+FastMCP client and reports the exposed tool count:
 
 ```bash
-uv run python scripts/smoke_mcp.py
-# Connected. <N> tools exposed:
-#   - hmc_console_info
-#   - hmc_list_systems
-#   ...
+just smoke
+# Connected. <N> tools exposed.
 ```
+
+Use `just smoke-verbose` to list every exposed tool when diagnosing the registry.
 
 ### 3. Live check against a real HMC
 
@@ -611,7 +1084,7 @@ src/hmc_mcp/
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
-  _app.py        # shared FastMCP instance, READ_ONLY/DESTRUCTIVE_TOOLS sets, entry points
+  _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # thin aggregator importing every server_*.py tool module
   server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
   server_lpar_config.py      # SSH-only LPAR configuration handlers

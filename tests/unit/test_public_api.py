@@ -41,8 +41,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
         "resolve_lpar_ownership_names",
+        "list_lpar_ownership",
         "stamp_created_lpar_ownership",
         "create_and_stamp_lpar",
+        "set_lpar_ownership_description",
         "delete_lpar",
         "power_lpar",
         "rename_lpar",
@@ -70,6 +72,26 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "metric_data",
         "PcmCategory",
         "MetricKind",
+        "DedicatedSlot",
+        "InventoryResult",
+        "InventorySelector",
+        "PcieAssignmentUnavailableError",
+        "SriovAdapter",
+        "SriovLogicalPort",
+        "SriovPhysicalPort",
+        "assign_dedicated_pcie_slot",
+        "list_dedicated_slots",
+        "list_sriov_adapters",
+        "list_sriov_logical_ports",
+        "list_sriov_physical_ports",
+        "unassign_dedicated_pcie_slot",
+        "SriovLogicalPortCapabilityError",
+        "SriovLogicalPortChangeResult",
+        "SriovLogicalPortPartialError",
+        "SriovLogicalPortSnapshot",
+        "assign_sriov_logical_port",
+        "set_sriov_adapter_mode",
+        "unassign_sriov_logical_port",
         "attach_disk_to_lpar",
         "provision_lpar",
         "ProvisionNetwork",
@@ -79,12 +101,29 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "LparResources",
         "PartitionType",
         "list_fc_ports",
+        "get_lpar_memopt_score",
+        "list_lpar_memopt_scores",
         "list_sea_adapters",
         "set_sriov_adapter_mode",
         "list_vnics",
+        "VnicBackingSelector",
+        "VnicBackingSnapshot",
+        "VnicSnapshot",
+        "VnicChangeResult",
+        "VnicCapabilityError",
+        "VnicPartialError",
         "add_vnic",
         "remove_vnic",
         "SriovMode",
+        "AssignmentResult",
+        "AssignmentStep",
+        "DedicatedPcieAssignment",
+        "LparPcieAssignments",
+        "LparPcieWorkflowResult",
+        "SriovLogicalPortAssignment",
+        "VnicAssignment",
+        "apply_lpar_pcie_assignments",
+        "prevalidate_lpar_pcie_assignments",
         "list_volume_groups",
         "create_volume_group",
         "create_virtual_disk",
@@ -109,6 +148,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "get_partition_template",
         "deploy_partition_template",
         "power_vios",
+        "capture_lpar_console",
+        "ConsoleCapture",
+        "ConsoleHeldError",
     ]
 
 
@@ -117,7 +159,12 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
         "hmc_mcp.client": {"HMCClient"},
         "hmc_mcp.client_adapters": {"AdapterType"},
         "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
-        "hmc_mcp.documents": {"BootDeviceSelector", "LparResources", "PartitionType", "StorageKind"},
+        "hmc_mcp.documents": {
+            "BootDeviceSelector",
+            "LparResources",
+            "PartitionType",
+            "StorageKind",
+        },
         "hmc_mcp.errors": {"HMCError", "HMCTransportError"},
         "hmc_mcp.jobs": {"DeviceType", "LuType"},
         "hmc_mcp.operations_adapters": {
@@ -128,6 +175,17 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_adapters",
         },
         "hmc_mcp.operations_capacity": {"capacity_report", "find_placement"},
+        "hmc_mcp.operations_assignments": {
+            "AssignmentResult",
+            "AssignmentStep",
+            "DedicatedPcieAssignment",
+            "LparPcieAssignments",
+            "LparPcieWorkflowResult",
+            "SriovLogicalPortAssignment",
+            "VnicAssignment",
+            "apply_lpar_pcie_assignments",
+            "prevalidate_lpar_pcie_assignments",
+        },
         "hmc_mcp.operations_composite": {"lpar_summary", "system_summary"},
         "hmc_mcp.operations_decommission": {
             "DecommissionResult",
@@ -147,8 +205,10 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "read_lpar_boot_order",
             "rename_lpar",
             "resolve_lpar_ownership_names",
+            "list_lpar_ownership",
             "set_lpar_boot_order",
             "stamp_created_lpar_ownership",
+            "set_lpar_ownership_description",
         },
         "hmc_mcp.operations_lpm": {
             "LpmResult",
@@ -173,6 +233,28 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "resolve_pcm_resource",
             "set_pcm_preferences",
         },
+        "hmc_mcp.operations_pcie": {
+            "DedicatedSlot",
+            "InventoryResult",
+            "InventorySelector",
+            "PcieAssignmentUnavailableError",
+            "SriovAdapter",
+            "SriovLogicalPort",
+            "SriovPhysicalPort",
+            "assign_dedicated_pcie_slot",
+            "list_dedicated_slots",
+            "list_sriov_adapters",
+            "list_sriov_logical_ports",
+            "list_sriov_physical_ports",
+            "unassign_dedicated_pcie_slot",
+            "SriovLogicalPortCapabilityError",
+            "SriovLogicalPortChangeResult",
+            "SriovLogicalPortPartialError",
+            "SriovLogicalPortSnapshot",
+            "assign_sriov_logical_port",
+            "set_sriov_adapter_mode",
+            "unassign_sriov_logical_port",
+        },
         "hmc_mcp.operations_provision": {
             "AttachDiskResult",
             "ProvisionNetwork",
@@ -182,12 +264,19 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "provision_lpar",
         },
         "hmc_mcp.operations_ssh_network": {
+            "VnicBackingSelector",
+            "VnicBackingSnapshot",
+            "VnicSnapshot",
+            "VnicChangeResult",
+            "VnicCapabilityError",
+            "VnicPartialError",
             "add_vnic",
+            "get_lpar_memopt_score",
             "list_fc_ports",
+            "list_lpar_memopt_scores",
             "list_sea_adapters",
             "list_vnics",
             "remove_vnic",
-            "set_sriov_adapter_mode",
         },
         "hmc_mcp.operations_storage": {
             "create_logical_unit",
@@ -214,6 +303,11 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "list_partition_templates",
         },
         "hmc_mcp.operations_vios": {"power_vios"},
+        "hmc_mcp.console_capture": {
+            "capture_lpar_console",
+            "ConsoleCapture",
+            "ConsoleHeldError",
+        },
         "hmc_mcp.ssh": {"HMCCLIError"},
         "hmc_mcp.ssh_commands": {"SriovMode"},
     }
@@ -233,6 +327,30 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 
 
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
+    """ADR 0029: the supported signatures move only with a recorded decision.
+
+        Last moved by issue #310, which added the LPAR memory-optimization
+        score operations. Before that, issue #400 added the owning-system selector to
+        logical-partition PCM metric operations (ADR 0077). Before that, issue
+        #401 made the destructive RemoteRestart
+        operation and source-system selector explicit (ADR 0078). Before that,
+        issue #385 added the ``capture_lpar_console``
+    operation, the ``ConsoleCapture`` result model, and the
+    ``ConsoleHeldError`` contention error (ADR 0072). Before that, #375
+    added the ``list_lpar_ownership`` operation (bulk per-system LPAR
+    ownership read; ADR 0071). Before that, ADR 0067 added the
+    ``stamp_policy`` field to ``LparCreation`` (issue #377), and before that
+    ADR 0066 added ``set_lpar_ownership_description`` (issue #376), and
+    before it ADR 0064 added the optional ``caller_token`` parameter to
+    ``provision_lpar``. Before that, ADR 0059 changed ``HMCConfig.port``'s
+    default from 12443 to 443. ADR 0058 added declarative LPAR PCIe
+    assignments, and ADR 0054 added the normalized PCIe inventory models and
+    operations. Before that, ADR 0050 added
+    ``HMCConfig.iso_url_allowlist`` — a pydantic model's ``__init__``
+    signature is derived from its fields, so a new setting moves the digest
+    even though no operation's parameters changed. Before that, ADR 0049
+    narrowed ``upload_iso``'s ``iso_source`` from ``str | Path`` to ``str``.
+    """
     operations = {
         name: getattr(api, name)
         for name in api.__all__
@@ -249,10 +367,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected_digest = (
-        "313d5baf99edc0a3075141c093954f08"  # pragma: allowlist secret
-        "4e5aa1b5e5e58469170e628a981e7370"  # pragma: allowlist secret
-    )
+    # Moved by #310: current LPAR memory-optimization scores are reusable API
+    # operations under ADR 0029.
+    expected_digest = "41344e8e8218937deef3428971c44c1d39c3c7c937843dd6dab56ab4a6682fca"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

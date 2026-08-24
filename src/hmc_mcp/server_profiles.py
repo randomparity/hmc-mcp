@@ -5,12 +5,13 @@ from __future__ import annotations
 from .tool_registry import tool_module
 
 from ._app import (
-    _DESTRUCTIVE,
+    _run,
     _ssh_with_client,
 )
+from .common import client_from_env
+from .operations_pcie import assign_dedicated_pcie_slot, unassign_dedicated_pcie_slot
 
 from .ssh_commands import (
-    assign_profile_io_slot,
     backup_lpar_profiles,
     restore_lpar_profiles,
     sync_lpar_profile,
@@ -18,10 +19,19 @@ from .ssh_commands import (
 
 
 # destructive because force=True silently overwrites an existing backup file on the HMC
-tool, register_tools = tool_module()
+tool, register_tools, tool_security = tool_module()
 
 
-@tool(annotations=_DESTRUCTIVE)
+# Not exhaustive: `file_path` names a file on the HMC's own filesystem, which no
+# TargetKind can express, and `force=True` overwrites whatever is already there.
+# ADR 0036 placed `file_path` outside every grant; ADR 0039 makes that
+# enforceable by granting this tool only under `targets = "all-targets"`.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.backup",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_backup_lpar_profiles(
     system_name_or_uuid: str,
     file_path: str,
@@ -64,7 +74,15 @@ def hmc_backup_lpar_profiles(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+# Not exhaustive, for the same reason as its backup sibling: `file_path` is an
+# HMC-side path no TargetKind names, and the restore rewrites the profiles of
+# every partition on the system from whatever that file contains.
+@tool(
+    effect="destructive",
+    operation="lpar_profile.restore",
+    target_kind="managed_system",
+    exhaustive_targets=False,
+)
 def hmc_restore_lpar_profiles(
     system_name_or_uuid: str, file_path: str, profile: str | None = None
 ) -> str:
@@ -99,7 +117,7 @@ def hmc_restore_lpar_profiles(
     )
 
 
-@tool(annotations=_DESTRUCTIVE)
+@tool(effect="destructive", operation="lpar_profile.sync", target_kind="lpar")
 def hmc_sync_lpar_profile(
     system_name_or_uuid: str, lpar_name_or_uuid: str, profile: str | None = None
 ) -> str:
@@ -136,41 +154,69 @@ def hmc_sync_lpar_profile(
     )
 
 
-@tool
-def hmc_assign_profile_io_slot(
+@tool(effect="mutate", operation="pcie.assign_dedicated_slot", target_kind="lpar")
+def hmc_assign_dedicated_pcie_slot(
     system_name_or_uuid: str,
     lpar_name_or_uuid: str,
     profile_name: str,
     drc_index: str,
+    ownership_override: bool = False,
     profile: str | None = None,
-) -> str:
-    """Add a physical I/O slot DRC index to an LPAR's profile.
-
-    Runs ``chsyscfg -r prof -m <system_name> -i "name=<profile_name>,io_slots+=<drc_index>//0,lpar_name=<lpar_name>" --force``
-    on the HMC via SSH and returns the raw command output.
-
-    This operation appends the specified physical I/O slot to the profile's
-    I/O slot list. Use --force to override any conflicts.
-
-    The system and partition may be given by CLI name or by UUID; UUIDs
-    are resolved to their CLI names via REST (falling back to an lssyscfg
-    lookup over SSH when the REST API is unreachable) before the command
-    runs.
+) -> None:
+    """Assign a dedicated PCIe slot when safe profile readback is available.
 
     Args:
         system_name_or_uuid: The name or UUID of the managed system (Power server).
         lpar_name_or_uuid: The name or UUID of the logical partition to assign the slot to.
         profile_name: The name of the profile to modify.
         drc_index: The DRC (Dynamic Reconfiguration Connector) index of the physical I/O slot.
-        profile: optional TOML profile name; when omitted the env-default HMC is used.
+        ownership_override: Bypass ownership rejection only after operator approval.
+        profile: Optional configured HMC profile name.
+    """
 
-    Returns:
-        The raw HMC CLI output."""
-    return _ssh_with_client(
-        lambda config, system_name, lpar_name: assign_profile_io_slot(
-            config, system_name, lpar_name, profile_name, drc_index
-        ),
-        system_name_or_uuid=system_name_or_uuid,
-        lpar_name_or_uuid=lpar_name_or_uuid,
-        profile=profile,
-    )
+    async def _go() -> None:
+        async with client_from_env(profile) as hmc:
+            await assign_dedicated_pcie_slot(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                profile_name,
+                drc_index,
+                ownership_override=ownership_override,
+            )
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="pcie.unassign_dedicated_slot", target_kind="lpar")
+def hmc_unassign_dedicated_pcie_slot(
+    system_name_or_uuid: str,
+    lpar_name_or_uuid: str,
+    profile_name: str,
+    drc_index: str,
+    ownership_override: bool = False,
+    profile: str | None = None,
+) -> None:
+    """Unassign a dedicated PCIe slot when safe profile readback is available.
+
+    Args:
+        system_name_or_uuid: Managed-system name or UUID.
+        lpar_name_or_uuid: Logical-partition name or UUID.
+        profile_name: LPAR profile containing the dedicated slot.
+        drc_index: Normalized dedicated-slot DRC index.
+        ownership_override: Bypass ownership rejection only after operator approval.
+        profile: Optional configured HMC profile name.
+    """
+
+    async def _go() -> None:
+        async with client_from_env(profile) as hmc:
+            await unassign_dedicated_pcie_slot(
+                hmc,
+                system_name_or_uuid,
+                lpar_name_or_uuid,
+                profile_name,
+                drc_index,
+                ownership_override=ownership_override,
+            )
+
+    return _run(_go)

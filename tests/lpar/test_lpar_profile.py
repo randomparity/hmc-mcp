@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 from hmc_mcp.server import (
-    hmc_assign_profile_io_slot,
     hmc_backup_lpar_profiles,
     hmc_restore_lpar_profiles,
     hmc_sync_lpar_profile,
@@ -188,42 +187,3 @@ def test_sync_lpar_profile_returns_cli_output(monkeypatch, mock_hmc):
 
     assert result == RAW_OUTPUT
 
-
-# ---------------------------------------------------------------------- #
-# hmc_assign_profile_io_slot
-# ---------------------------------------------------------------------- #
-
-
-def test_assign_profile_io_slot_runs_correct_command(monkeypatch, mock_hmc):
-    """hmc_assign_profile_io_slot issues chsyscfg with correct I/O slot parameters."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    ASSIGN_OUTPUT = "I/O slot assignment completed successfully.\n"
-    conn_mock = _make_ssh_mock(ASSIGN_OUTPUT)
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_assign_profile_io_slot(
-            SYSTEM_UUID, LPAR_UUID, PROFILE_NAME, DRC_INDEX
-        )
-
-    expected_cmd = (
-        f"chsyscfg -r prof -m {SYSTEM_NAME} "
-        f"-i name={PROFILE_NAME},io_slots+={DRC_INDEX}//0,lpar_name={LPAR_NAME} --force"
-    )
-    conn_mock.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
-    assert "successfully" in result
-
-
-def test_assign_profile_io_slot_returns_cli_output(monkeypatch, mock_hmc):
-    """hmc_assign_profile_io_slot returns the raw SSH stdout verbatim."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME, LPAR_UUID, LPAR_NAME)
-    RAW_OUTPUT = "Operation: assign\nStatus: OK\nDRC: 10000000\n"
-    conn_mock = _make_ssh_mock(RAW_OUTPUT)
-
-    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn_mock):
-        result = hmc_assign_profile_io_slot(
-            SYSTEM_UUID, LPAR_UUID, PROFILE_NAME, DRC_INDEX
-        )
-
-    assert result == RAW_OUTPUT

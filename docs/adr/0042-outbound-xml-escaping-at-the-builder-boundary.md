@@ -1,0 +1,238 @@
+# 0042 — Outbound XML escaping at the builder boundary
+
+## Status
+
+Accepted (2026-08-19)
+
+## Context
+
+Every request document this package sends to an HMC is rendered by string interpolation.
+`documents.py` uses f-strings; `jobs.py` uses module-level `.format()` templates. Until this
+record, nothing between a caller's argument and the wire escaped anything: `rg -n
+"saxutils|quoteattr|xml.sax" src/hmc_mcp/` returned no hit against 23 `build_*_document`
+builders and one `build_job_request`.
+
+The visible consequence needs no attacker. Probing each public builder in `documents.py` with
+`R&D` in each string parameter produced `ParseError: not well-formed` from **15 of the 16
+string-taking builders**. The exception is `build_boot_order_document`, whose input is a closed
+vocabulary. Two of those failures are ordinary use rather than edge cases:
+
+- `build_ldap_config_document(search_filter="(&(objectClass=person)(uid=*))")` — `&` is the
+  conjunction operator in LDAP filter syntax, so `hmc_configure_ldap` fails for essentially any
+  filter an operator would write.
+- `build_hmc_user_document(password=...)` — neither `&` nor `<` is unusual in a generated
+  password.
+
+`jobs.py` fails the same way and an f-string scan misses it, because `_PARAM_TEMPLATE`
+interpolates `{name}` and `{value}` through `.format()`. `_migrate_job` places
+`target_profile_name` in that `value` position on a path whose first parameter is
+`TargetManagedSystemName` — the identity `hmc_migrate_lpar` exists to authorize.
+
+The second consequence is that an unescaped value can close its own element and open siblings,
+producing a document that is *well-formed*, so nothing downstream rejects it. Two instances were
+confirmed at the document level: `build_hmc_user_document(description=...)` emitting a second
+`UserID` into a POST to `/rest/api/web/HmcUser`, which carries no identity in its URL; and
+`build_vscsi_mapping_document(target_device=...)` emitting a second `AssociatedLogicalPartition`
+href, crossing the LPAR dimension.
+
+**Which duplicate a real HMC's unmarshaller honours is unverified in both directions.** No live
+HMC was reachable from this work. Last-wins is typical of JAXB, but that is a guess, not a
+result. The encoding defect is demonstrated; the escalation is its unbounded consequence, and
+this record does not depend on the answer — the fix removes the ability to emit the duplicate at
+all.
+
+This boundary is not the one ADR 0035 through ADR 0041 built. The authorizer inspects declared
+tool arguments and the request URI; it never reads the rendered body. ADR 0039 names this
+boundary at lines 561-599 and explicitly declines to close it: "a second boundary this record
+does not close … It is owned separately." This is that record.
+
+Issue #143 closed an instance of this class for one field, `sharing_mode`, on the assessment that
+it was "the one free-string parameter that reaches generated XML unvalidated". The sweep above
+falsifies that closing claim. The `Literal` remedy was right for a closed vocabulary and cannot
+generalize: `search_filter`, `description`, `password`, `media_name`, `storage_name`, and
+`target_device` have no vocabulary to constrain them to.
+
+## Decision
+
+**One escaping primitive, applied at each builder's parameter boundary, with the existing
+`Literal` validations left in place.**
+
+`xmlutil.escape_xml` escapes all five XML metacharacters — `&`, `<`, `>`, `"`, `'` — through
+`xml.sax.saxutils.escape` with the two attribute entities added. Escaping all five, rather than
+splitting `escape` for text and `quoteattr` for attributes, means one escaped form is safe as
+character data *and* inside a single- or double-quoted attribute value. A builder therefore never
+chooses an encoding per interpolation site, and moving a value from an element to an `href`
+cannot introduce a defect. The cost is that `>` and the quote characters are escaped in text
+positions where XML does not require it; that is invisible after parsing.
+
+`escape_xml` **rejects** rather than escapes a value carrying a character outside the XML 1.0
+`Char` production — a control character other than tab, newline, or carriage return, or a lone
+surrogate. No encoding of those parses, so escaping one only moves the failure downstream: a NUL
+in a user name yields a document the HMC refuses with an opaque error, and a lone surrogate raises
+`UnicodeEncodeError` out of the transport layer with nothing naming the cause. Refusing at the
+boundary keeps the contract every parameter meets down to *escape or reject*, and the message
+names the codepoint and its offset.
+
+`xmlutil.escapes_string_arguments` is a decorator that applies `escape_xml` to every string a
+caller passes, and to strings one level inside a `list` (`physical_volumes`), a `dict` (the
+job-parameter mapping), or a dataclass (`LparResources`, `PasswordPolicySettings`), before the
+wrapped builder runs. Every other argument type passes through untouched.
+
+**Escaping at the boundary rather than per interpolation site is the whole point.** After the
+decorator runs, the function body holds no unescaped caller value, so the number of times it
+interpolates one, and whether it interpolates into an element or an attribute, stop being facts
+anyone has to check. Per-site escaping would leave 40-plus sites where a single miss is silent.
+
+`escape_xml` is idempotent, and it carries that fact in the type rather than by inspection: it
+returns a private `str` subclass and returns an instance of that subclass unchanged. Without
+this, `build_vios_document` — which delegates to `build_lpar_document`, both decorated — would
+escape `name` twice and send `R&amp;amp;D`.
+
+**`documents.py` decorates all 26 builders; `jobs.py` decorates one function.** They differ
+because `jobs.py` renders XML in exactly one place: every `*_job` builder returns
+`build_job_request(...)`, so one decorator is the module's whole encoding boundary. `documents.py`
+has no such choke point — each builder renders its own template — so the invariant there is
+"every public builder carries the decorator", and a test asserts exactly that by reflection.
+
+The figure was 23 when this record was accepted. `build_logon_request_document`,
+`build_brokered_file_document`, and `build_linked_optical_media_document` arrived with #284, which
+moved `client.py`'s three request bodies here rather than escaping them where they stood (see
+Consequences). It is pinned by
+`tests/unit/test_xml_escaping.py::test_the_recorded_builder_count_matches_the_module`, which
+recomputes it from the module and reddens on this sentence when a builder is added.
+
+**Closed-vocabulary parameters keep their `ValueError`.** Escaping and validation are not
+alternatives: validation gives a better message and rejects a value the HMC would refuse anyway,
+while escaping covers the free-text parameters no vocabulary can constrain. One site needs the
+validation for correctness rather than for its message — `build_vscsi_mapping_document`
+interpolates `storage_kind` as an element *name*, and no encoding makes a name safe. The
+`STORAGE_KINDS` check is what protects it, and it still fires because escaping is the identity on
+the two legal values. No other caller value reaches an element name, a namespace URI, a comment,
+a CDATA section, a processing instruction, or a DTD. The contract each
+string-carrying parameter now meets is *escape or reject*, and the harness asserts that disjunction
+rather than assuming which arm applies.
+
+**The harness discovers builders by reflection, not from a list.** `tests/unit/test_xml_escaping.py`
+enumerates the public string-returning `build_*` and `*_job` functions of both modules, reads each
+parameter's annotation, and synthesizes a call. For each string-carrying parameter it asserts
+either a `ValueError`, or all three of: the document parses, the payload parses back exactly, and
+the document's element-and-attribute structure is identical to one built from a benign value. That
+third assertion is what makes element injection impossible rather than merely unlikely — a value
+that added a sibling element or an attribute would change the structure even when the result is
+well-formed.
+
+**Both halves fail closed on a shape they do not model, and that is the load-bearing part.** A
+guard that quietly declines to cover a new builder is worse than no guard, because it reports
+green. So `_escape_argument` refuses an argument shape it has no branch for with a `TypeError`
+rather than passing it through, and the harness raises while it builds its cases rather than
+answering "carries no string" for an annotation it cannot classify. Without both, a builder
+taking `tuple[str, ...]`, `set[str]`, or `Any` would interpolate unescaped *and* generate no
+case — vulnerable, and passing CI. The two together are what let this record claim the criterion
+holds for builders nobody has written yet.
+
+`jobs.py`'s single-decorator argument needs its own guard, since one decorated function proves
+nothing about the twenty around it. The harness walks each `*_job` builder's call graph and
+requires that it reaches `build_job_request`; a job builder that rendered its own template would
+fail that test rather than quietly bypass the boundary.
+
+## Consequences
+
+**A document built from input free of all five metacharacters is byte-for-byte what it was**, and
+every builder is asserted to emit no entity at all for such input. That is the exact property, and
+it is narrower than "valid input is unchanged": a value containing only `>`, `"`, or `'` was
+already well-formed in an element-text position and now goes out as `&gt;`, `&quot;`, `&apos;`.
+Only the two `AssociatedLogicalPartition` / `AssociatedSwitch` `href` attributes strictly need the
+quote escaping. Uniform five-character escaping is chosen anyway, because "escape once, safe
+everywhere" is what removes the per-site judgement this record exists to remove — but the trade is
+real and belongs beside the `ElementTree` rejection below rather than hidden behind it. An HMC's
+entity handling for `<Password>a&gt;b</Password>` is unverified in the same way its tolerance for
+re-serialized whitespace is; the difference is that entity expansion is required of any conforming
+XML parser, while indentation and namespace placement are not.
+
+A rejection message for a closed-vocabulary parameter now quotes the *escaped* form of an illegal
+value, because the decorator runs before the builder validates. `build_lpar_document(os_type="a<b")`
+reports `'a&lt;b'`. The value stays recognizable, and the existing test that an illegal
+`sharing_mode` never appears in its own rejection message still holds, because
+`_validate_sharing_mode` does not quote the value at all.
+
+The decorator recurses: list members, dict keys and values, and dataclass fields all go back
+through it, so nesting is covered rather than assumed away. `RepositorySource` is a `TypedDict`
+and therefore arrives as a plain `dict`. The dataclass branch is defence in depth rather than a
+live fix — the only string field on either dataclass is `LparResources.sharing_mode`, a closed
+vocabulary, and every reachable path coerces the numeric fields through pydantic or typer before
+they arrive. It is kept because a boundary that covers "every string in the argument" is easier
+to reason about than one with an exception, and it is tested through the decorator's own contract.
+
+The round trip a caller gets back from a parser is exact for every value the boundary accepts,
+with one exception that belongs to XML rather than to this change: a carriage return in element
+text reads back as a newline, and a tab or newline inside an attribute value reads back as a
+space. That is XML's own attribute-value and line-end normalization. The harness payload excludes
+those characters for that reason.
+
+`build_vscsi_mapping_document` and `build_virtual_optical_mapping_document` lose `vios_lpar_link`.
+Both accepted it and neither rendered it, and no caller in the tree passed it; the harness surfaced
+it as a parameter that cannot round-trip because it never reaches the document. ADR 0029 places
+document builders outside the supported reusable API, so removing it is not a contract break. ADR
+0039's prose at line 578 names that parameter as a free string the body carries; that detail is
+superseded here.
+
+**The three sibling interpolation sites in `client.py` were closed by #284, under this record
+rather than beside it.** `LOGON_REQUEST_TEMPLATE` (`{user}`, `{password}`), `_broker_file_create`
+(`{filename}`), and `_broker_iso_import` (`{media_name}`, `{broker_uri}`) were the same defect. Two
+consequences were reproduced before the fix: a logon password containing `&` could not
+authenticate, and a user name containing `</UserID><UserID>` produced a *well-formed* body carrying
+two identities into the PUT to `/rest/api/web/Logon`. They were deferred out of #263 because that
+issue's scope was the document and job builders.
+
+`escapes_string_arguments` could not be placed on the client methods as they stood, and the reason
+is where the values come from rather than an accident of shape: `logon()` reads its user and
+password from `self.config`, so no argument-boundary decorator on that method can see them at all.
+Each body therefore became a module-level builder here — `build_logon_request_document`,
+`build_brokered_file_document`, and `build_linked_optical_media_document` — carrying the decorator
+like every other builder, with `client.py` calling it. Escaping inline at the five interpolation
+sites is the alternative this record rejects in principle, and it would also have left the sites
+outside the reflective harness: that harness discovers sync public `build_*` / `*_job` functions
+returning `str`, which is exactly why it never reached a coroutine on `HMCClient`. All three
+documents render byte-for-byte what they rendered before for input free of the five
+metacharacters, so nothing about the wire format changes.
+
+`pcm.py` was checked and is not affected: it interpolates only a validated field name and a
+literal `true`/`false`.
+
+## Considered & rejected
+
+**Escape at each interpolation site.** This is what issue #263 proposes first, and it is what #143
+did for one field. It is 40-plus sites across two modules and two interpolation mechanisms, every
+one of which is a place to forget, and forgetting is silent. Rejected on the same evidence that
+reopened this class: the last fix of this shape covered one field and the class stayed open for
+120 issues.
+
+**Rebuild the documents with `ElementTree`.** This is the textbook correct-by-construction answer
+and it was rejected on one fact: **no live HMC is reachable from this work.** Re-serializing 23
+documents through `ElementTree` changes indentation, self-closing-tag rendering, namespace
+declaration placement, and the XML declaration, and the HMC's tolerance for each of those is
+unverified — the documents' field names and shapes came from IBM's `HmcRestClient` reference
+implementation, not from a schema this repo can validate against. That trades a defect that is
+demonstrated and fixable for a wire-format risk that cannot be tested until someone has hardware.
+The boundary decorator's exposure is one order of magnitude smaller and one kind narrower: it
+changes bytes only for input carrying `>`, `"`, or `'` (see Consequences), and only into entity
+references every conforming parser must expand, where an `ElementTree` rewrite would change the
+serialization of every document including those built from input the HMC accepts today. If a live
+HMC becomes available (issues #121, #217), the `ElementTree` path becomes testable and this
+decision is worth revisiting; nothing here blocks it.
+
+**A `Literal` or regex for every free-text parameter.** #143's remedy, generalized. There is no
+vocabulary for a description, a password, an LDAP filter, or a media name, and a regex that
+excluded XML metacharacters from them would reject `(&(objectClass=person)(uid=*))` — the exact
+input this record exists to make work.
+
+**A hand-maintained list of builders in the test.** The acceptance criterion is that a *newly
+added* builder that forgets to escape fails CI. A list satisfies today's builders and fails the
+criterion, because the same commit that adds a builder is the one that would have to remember the
+list. Reflection over the module is what makes the guard hold for code nobody has written yet.
+
+**An AST lint asserting every f-string interpolation is escaped.** It would catch a missing
+decorator at the mechanism level, but it has to distinguish caller values from module constants,
+integers, and internally-derived element names, which makes it a second rule set to maintain
+alongside the one it guards. The behavioral harness plus the "every builder is decorated"
+reflection test cover the same ground by observing what the builders actually emit.

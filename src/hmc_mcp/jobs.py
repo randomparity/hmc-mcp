@@ -9,18 +9,21 @@ fallback for responses that omit that link.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, NotRequired, Protocol, get_args
+from collections.abc import Mapping
+from typing import Annotated, Any, Literal, NotRequired, Protocol, Required, get_args
 from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import HMCError
-from .xmlutil import WEB_NS
+from .xmlutil import WEB_NS, escapes_string_arguments
 
 LuType = Literal["THIN", "THICK"]
 DeviceType = Literal["VirtualIO_Disk", "VirtualIO_Image"]
+RemoteRestartOperation = Literal["validate", "recover", "restart", "cleanup", "cancel"]
+REMOTE_RESTART_OPERATIONS = frozenset(get_args(RemoteRestartOperation))
 LU_TYPES = frozenset(get_args(LuType))
 DEVICE_TYPES = frozenset(get_args(DeviceType))
 
@@ -39,19 +42,8 @@ TERMINAL_JOB_STATUSES = frozenset(
         "FAILED_TO_START",
     }
 )
-FAILED_JOB_STATUSES = frozenset(
-    {
-        "COMPLETED_WITH_ERROR",
-        "EXCEPTION",
-        "FAILED",
-        "FAILED_BEFORE_COMPLETION",
-        "FAILED_BEFORE_COMPLETION_RETRY",
-        "FAILED_TO_START",
-    }
-)
-SUCCESSFUL_JOB_STATUSES = frozenset(
-    {"COMPLETED", "COMPLETED_OK", "COMPLETED_WITH_WARNINGS"}
-)
+SUCCESSFUL_JOB_STATUSES = frozenset({"COMPLETED", "COMPLETED_OK"})
+FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
 
 
 @dataclass(frozen=True)
@@ -88,23 +80,6 @@ def validate_wait_timing(wait: bool, timeout_seconds: int, poll_interval: int) -
         raise ValueError("poll_interval must be greater than 0")
 
 
-def install_wait_timeout_seconds(
-    hmc_timeout_minutes: int,
-    wait_timeout_seconds: int | None,
-    poll_interval: int,
-) -> int:
-    """Validate install timing and return the client polling budget."""
-    if hmc_timeout_minutes <= 0:
-        raise ValueError("hmc_timeout_minutes must be greater than 0")
-    if wait_timeout_seconds is not None and wait_timeout_seconds < 0:
-        raise ValueError("wait_timeout_seconds must be greater than or equal to 0")
-    if poll_interval <= 0:
-        raise ValueError("poll_interval must be greater than 0")
-    if wait_timeout_seconds is not None:
-        return wait_timeout_seconds
-    return hmc_timeout_minutes * 60 + poll_interval
-
-
 def job_identifier(job: dict[str, Any]) -> str | None:
     """Return a polling identifier from a UUID, JobID, or SELF link."""
     resource = job.get("Resource")
@@ -125,11 +100,9 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
     resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
     status = status_value.strip() if isinstance(status_value, str) else None
-    error = (
-        _job_error(resource, status)
-        if isinstance(status, str) and status in FAILED_JOB_STATUSES
-        else None
-    )
+    error = None
+    if isinstance(status, str) and status in FAILED_JOB_STATUSES:
+        error = _job_error(resource, status) or f"Job ended with status {status}"
     return JobOutcome(
         job_id=(job_identifier(job) if job is not None else None)
         or requested_id.strip(),
@@ -166,18 +139,42 @@ def _job_error(resource: dict[str, Any], status: str) -> str | None:
                 name = parameter.get("ParameterName")
                 value = parameter.get("ParameterValue")
                 if (
-                    name in {"result", "ErrorData"}
+                    name in {"result", "detailedStatus", "ErrorData"}
                     and name not in messages
                     and isinstance(value, str)
                     and value.strip()
                 ):
                     messages[name] = value.strip()
-            for name in ("ErrorData", "result"):
+            for name in ("ErrorData", "detailedStatus", "result"):
                 if name in messages:
                     return messages[name]
 
     if isinstance(exception_message, str) and exception_message.strip():
         return exception_message.strip()
+    return None
+
+
+def vios_stdout(job: dict[str, Any] | None) -> str | None:
+    """Return the first usable ``stdOut`` value from a VIOS job result."""
+    resource = (job or {}).get("Resource")
+    if not isinstance(resource, dict):
+        return None
+    results = resource.get("Results")
+    if not isinstance(results, dict):
+        return None
+    parameters = results.get("JobParameter", [])
+    if isinstance(parameters, dict):
+        parameters = [parameters]
+    if not isinstance(parameters, list):
+        return None
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        value = parameter.get("ParameterValue")
+        if parameter.get("ParameterName") == "stdOut" and isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
     return None
 
 
@@ -254,12 +251,17 @@ _PARAM_TEMPLATE = """    <JobParameter schemaVersion="V1_0">
     </JobParameter>"""
 
 
+@escapes_string_arguments
 def build_job_request(
     operation: str,
     group: str,
     parameters: dict[str, str] | None = None,
 ) -> str:
-    """Build the JobRequest XML for a do/* operation."""
+    """Build the JobRequest XML for a do/* operation.
+
+    Every ``*_job`` builder in this module renders through here, so this one
+    decorator is the module's whole encoding boundary (ADR 0042).
+    """
     params_xml = ""
     if parameters:
         params_xml = "\n".join(
@@ -429,11 +431,46 @@ def migrate_recover_lpar_job() -> str:
     return build_job_request("MigrateRecover", "LogicalPartition")
 
 
-def remote_restart_lpar_job(target_system: str) -> str:
-    """RemoteRestart job: restart a failed LPAR on another managed system."""
-    return build_job_request(
-        "RemoteRestart", "LogicalPartition", _lpm_params(target_system, {})
-    )
+def remote_restart_lpar_job(
+    operation: RemoteRestartOperation,
+    managed_system: str,
+    logical_partition_uuid: str,
+    *,
+    target_managed_system: str | None = None,
+    target_managed_system_uuid: str | None = None,
+    use_current_data: bool = False,
+    retain_devices: bool = False,
+) -> str:
+    """Build a RemoteRestart request using its dedicated parameter vocabulary."""
+    if operation not in REMOTE_RESTART_OPERATIONS:
+        allowed = ", ".join(sorted(REMOTE_RESTART_OPERATIONS))
+        raise ValueError(f"RemoteRestart operation must be one of: {allowed}")
+    if operation != "cleanup" and not (
+        target_managed_system or target_managed_system_uuid
+    ):
+        raise ValueError(
+            f"RemoteRestart {operation!r} requires a target managed system"
+        )
+    if target_managed_system and target_managed_system_uuid:
+        raise ValueError("Specify a target managed-system name or UUID, not both")
+    if use_current_data and operation != "restart":
+        raise ValueError("use_current_data is valid only for RemoteRestart 'restart'")
+    if retain_devices and operation != "cleanup":
+        raise ValueError("retain_devices is valid only for RemoteRestart 'cleanup'")
+    params = {
+        "Operation": operation,
+        "managedSystem": managed_system,
+        "logicalPartitionUuid": logical_partition_uuid,
+    }
+    if target_managed_system:
+        params["targetManagedSystem"] = target_managed_system
+    if target_managed_system_uuid:
+        params["targetManagedSystemUUID"] = target_managed_system_uuid
+    if use_current_data:
+        params["usecurrdata"] = "true"
+    if retain_devices:
+        params["retaindev"] = "true"
+    return build_job_request("RemoteRestart", "LogicalPartition", params)
 
 
 # ---------------------------------------------------------------------- #
@@ -441,12 +478,14 @@ def remote_restart_lpar_job(target_system: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
+def deploy_partition_template_job(
+    draft_template_uuid: str, target_system_uuid: str, memento: str
+) -> str:
     """PartitionTemplate Deploy job.
 
-    target_system_uuid is the managed system to create the partition on;
-    memento is the X-API session ID of the logged-in user.
-    The draft template UUID is encoded in the URL, not as a parameter.
+    draft_template_uuid is the transformed template replica to deploy;
+    target_system_uuid is the managed system to create the partition on; memento
+    is the X-API session ID of the logged-in user.
     """
     return build_job_request(
         "Deploy",
@@ -454,6 +493,7 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
         {
             "K_X_API_SESSION_MEMENTO": memento,
             "TargetUuid": target_system_uuid,
+            "TemplateUuid": draft_template_uuid,
         },
     )
 
@@ -463,207 +503,422 @@ def deploy_partition_template_job(target_system_uuid: str, memento: str) -> str:
 # ---------------------------------------------------------------------- #
 
 
-RepositoryType = Literal["nfs", "sftp", "disk", "ibmfixcentral"]
+ConsoleUpdateMediaType = Literal[
+    "USB", "NFS", "SFTP", "FTP", "IBMWebsite", "Disk", "VirtualMedia", "CDDVD"
+]
+_CONSOLE_UPDATE_MEDIA_TYPES = frozenset(get_args(ConsoleUpdateMediaType))
+VIOSUpdateResourceType = Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"]
+VIOSUpgradeResourceType = Literal["HMC", "NFS", "SFTP", "USB"]
+_VIOS_UPDATE_RESOURCE_TYPES = frozenset(get_args(VIOSUpdateResourceType))
+_VIOS_UPGRADE_RESOURCE_TYPES = frozenset(get_args(VIOSUpgradeResourceType))
 
 
-class RepositorySource(TypedDict, total=False):
-    """Software source for an update/upgrade job.
+class ConsoleUpdateSource(TypedDict, total=False):
+    """Documented parameters for ``UpdateManagementConsole``."""
 
-    Recognised keys:
-        type        – repository type: nfs | sftp | disk | ibmfixcentral
-        host        – NFS/SFTP server hostname or IP
-        path        – NFS export path or SFTP remote path
-        user        – SFTP username
-        sftp_pw     – SFTP login credential
-        mount_loc   – local mount point for NFS
-        insecure    – 'true'/'false'; skip SSL/cert checks (IBM FixCentral)
-        ibm_id      – IBM FixCentral account ID
-        ibm_token   – IBM FixCentral account token
-    """
-
-    type: NotRequired[
-        Annotated[RepositoryType, Field(description="Repository transport type.")]
+    MediaType: Required[
+        Annotated[
+            ConsoleUpdateMediaType, Field(description="Location of the update image.")
+        ]
     ]
-    host: Annotated[
-        str, Field(description="NFS or SFTP server hostname or IP address.")
+    ServerHostOrIP: Annotated[str, Field(description="Remote server hostname or IP.")]
+    UserName: Annotated[str, Field(description="Remote server username.")]
+    Password: Annotated[str, Field(description="Remote server password.")]
+    SFTPKey: Annotated[str, Field(description="SSH private key for SFTP.")]
+    PassPhrase: Annotated[str, Field(description="SFTP private-key passphrase.")]
+    Directory: Annotated[str, Field(description="HMC-local update-image directory.")]
+    UpdateFile: Annotated[str, Field(description="Update image filename.")]
+    MountLocation: Annotated[str, Field(description="NFS mount location.")]
+    MountOptions: Annotated[str, Field(description="Additional NFS mount options.")]
+    PTFNumber: Annotated[str, Field(description="PTF number for IBMWebsite.")]
+    Device: Annotated[str, Field(description="USB, optical, or virtual-media device.")]
+    RestartConsole: Annotated[
+        Literal["True", "False"],
+        Field(description="Restart the console after the update."),
     ]
-    path: Annotated[str, Field(description="NFS export path or SFTP remote path.")]
-    user: Annotated[str, Field(description="SFTP login username.")]
-    sftp_pw: Annotated[str, Field(description="SFTP login password.")]
-    mount_loc: Annotated[
-        str, Field(description="HMC-local mount point for an NFS source.")
+
+
+_CONSOLE_UPDATE_KEYS = frozenset(ConsoleUpdateSource.__annotations__)
+
+_VIOS_NAME = Annotated[str, Field(description="Name of the VIOS image.")]
+_VIOS_SERVER = Annotated[str, Field(description="Remote server host or IP.")]
+_VIOS_REMOTE_DIRECTORY = Annotated[str, Field(description="Remote image directory.")]
+_VIOS_FILE_NAMES = Annotated[str, Field(description="Comma-separated image files.")]
+_VIOS_MOUNT_LOCATION = Annotated[str, Field(description="NFS mount location.")]
+_VIOS_MOUNT_OPTIONS = Annotated[str, Field(description="Additional NFS mount options.")]
+_VIOS_USER = Annotated[str, Field(description="Remote SFTP user name.")]
+_VIOS_PASSWORD = Annotated[str, Field(description="Remote SFTP password.")]
+_VIOS_SSH_KEY = Annotated[str, Field(description="SSH private key for SFTP.")]
+_VIOS_PASSPHRASE = Annotated[str, Field(description="SSH-key passphrase.")]
+_VIOS_USB_DEVICE = Annotated[str, Field(description="USB device name.")]
+_VIOS_DISKS = Annotated[
+    str, Field(description="Comma-separated free physical volumes.")
+]
+
+
+class _VIOSOptionalSource(TypedDict, total=False):
+    Name: _VIOS_NAME
+    SaveFile: Annotated[str, Field(description="Save the remote image on the HMC.")]
+
+
+class _VIOSUpdateOptional(_VIOSOptionalSource, total=False):
+    RestartVIOS: Annotated[str, Field(description="Restart the VIOS after the update.")]
+
+
+class VIOSUpdateHMCSource(TypedDict):
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    RestartVIOS: NotRequired[
+        Annotated[str, Field(description="Restart the VIOS after the update.")]
     ]
-    insecure: Annotated[
-        str,
-        Field(description="IBM Fix Central certificate-check setting: true or false."),
+
+
+class VIOSUpdateNFSSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
+
+
+class VIOSUpdateSFTPSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+
+
+class VIOSUpdateUSBSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
+
+
+class VIOSUpdateIBMWebsiteSource(_VIOSUpdateOptional):
+    ResourceType: Annotated[
+        Literal["IBMWebsite"], Field(description="IBM website image source.")
     ]
-    ibm_id: Annotated[str, Field(description="IBM Fix Central account identifier.")]
-    ibm_token: Annotated[str, Field(description="IBM Fix Central access token.")]
 
 
-_REPOSITORY_KEYS = frozenset(RepositorySource.__annotations__)
+VIOSUpdateSource = (
+    VIOSUpdateHMCSource
+    | VIOSUpdateNFSSource
+    | VIOSUpdateSFTPSource
+    | VIOSUpdateUSBSource
+    | VIOSUpdateIBMWebsiteSource
+)
 
-# The accepted repository types, derived from the RepositoryType Literal so the
-# annotation and the runtime enforcement cannot drift.
-_REPOSITORY_TYPES = frozenset(get_args(RepositoryType))
 
-# Required keys per repository type; a missing one fails fast with a clear
-# message instead of producing a job the HMC rejects at runtime.
-_REQUIRED_KEYS: dict[RepositoryType, frozenset[str]] = {
-    "nfs": frozenset({"host", "path"}),
-    "sftp": frozenset({"host", "path"}),
-    "disk": frozenset(),
-    "ibmfixcentral": frozenset({"ibm_id", "ibm_token"}),
+class VIOSUpgradeHMCSource(TypedDict):
+    ResourceType: Annotated[Literal["HMC"], Field(description="HMC image source.")]
+    Name: _VIOS_NAME
+    Disks: _VIOS_DISKS
+
+
+class VIOSUpgradeNFSSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["NFS"], Field(description="NFS image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+    MountLocation: NotRequired[_VIOS_MOUNT_LOCATION]
+    MountOptions: NotRequired[_VIOS_MOUNT_OPTIONS]
+
+
+class VIOSUpgradeSFTPSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["SFTP"], Field(description="SFTP image source.")]
+    ServerHostOrIP: _VIOS_SERVER
+    RemoteDirectory: _VIOS_REMOTE_DIRECTORY
+    Disks: _VIOS_DISKS
+    UserName: NotRequired[_VIOS_USER]
+    Password: NotRequired[_VIOS_PASSWORD]
+    SSHKey: NotRequired[_VIOS_SSH_KEY]
+    PassPhrase: NotRequired[_VIOS_PASSPHRASE]
+    FileNames: NotRequired[_VIOS_FILE_NAMES]
+
+
+class VIOSUpgradeUSBSource(_VIOSOptionalSource):
+    ResourceType: Annotated[Literal["USB"], Field(description="USB image source.")]
+    USBDevice: _VIOS_USB_DEVICE
+    Disks: _VIOS_DISKS
+
+
+VIOSUpgradeSource = (
+    VIOSUpgradeHMCSource
+    | VIOSUpgradeNFSSource
+    | VIOSUpgradeSFTPSource
+    | VIOSUpgradeUSBSource
+)
+
+
+VIOSSource = VIOSUpdateSource | VIOSUpgradeSource
+_VIOS_COMMON_KEYS = frozenset(
+    {
+        "Name",
+        "ServerHostOrIP",
+        "UserName",
+        "Password",
+        "SSHKey",
+        "PassPhrase",
+        "RemoteDirectory",
+        "FileNames",
+        "MountLocation",
+        "MountOptions",
+        "USBDevice",
+        "SaveFile",
+        "ResourceType",
+    }
+)
+_VIOS_UPDATE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "RestartVIOS"}
+_VIOS_UPGRADE_KEYS = _VIOS_COMMON_KEYS | {"ResourceType", "Disks"}
+_VIOS_UPDATE_REQUIRED = {
+    "HMC": frozenset({"Name"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory"}),
+    "USB": frozenset({"USBDevice"}),
+    "IBMWebsite": frozenset(),
+}
+_VIOS_UPGRADE_REQUIRED = {
+    "HMC": frozenset({"Name", "Disks"}),
+    "NFS": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "SFTP": frozenset({"ServerHostOrIP", "RemoteDirectory", "Disks"}),
+    "USB": frozenset({"USBDevice", "Disks"}),
 }
 
 
-def _repository_params(repository: RepositorySource) -> dict[str, str]:
-    """Convert a repository dict to JobParameter key/value pairs.
+_PLATFORM_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    Unknown keys are rejected, the repository type must be present, and
-    required keys are checked per repository type, so a typo like
-    ``{'type': 'nfs', 'hst': '...'}`` fails here with an actionable message
-    instead of producing a job the HMC rejects at runtime.
-    """
-    unknown = set(repository) - _REPOSITORY_KEYS
+
+class SRIOVAdapterUpdateModel(BaseModel):
+    """One documented SR-IOV adapter update selection."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    AdapterID: Annotated[
+        str,
+        Field(min_length=1, pattern=r"\S", description="SR-IOV adapter identifier."),
+    ]
+    SubType: Annotated[
+        Literal["adapterdriver", "Adapter", "adapterdriver,adapter"],
+        Field(description="Documented SR-IOV firmware update subtype."),
+    ]
+
+
+class SystemFirmwareUpdateModel(BaseModel):
+    """System firmware and nested SR-IOV work for PlatformUpdate."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "Upgrade", "NoUpdate"],
+        Field(description="System firmware action."),
+    ]
+    UpdateOrder: Annotated[int, Field(description="Platform update execution order.")]
+    SRIOVAdapterUpdate: Annotated[
+        list[SRIOVAdapterUpdateModel] | None,
+        Field(description="SR-IOV adapters updated with the system firmware step."),
+    ] = None
+
+    @model_validator(mode="after")
+    def reject_empty_sriov(self) -> "SystemFirmwareUpdateModel":
+        """Reject an explicitly empty adapter selection."""
+        if self.SRIOVAdapterUpdate == []:
+            raise ValueError("SRIOVAdapterUpdate must contain at least one adapter")
+        return self
+
+
+class IOAdapterUpdateModel(BaseModel):
+    """One documented VIOS-owned IO-adapter firmware update."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    Id: Annotated[
+        str,
+        Field(min_length=1, pattern=r"\S", description="VIOS partition identifier."),
+    ]
+    Device: Annotated[
+        str, Field(min_length=1, pattern=r"\S", description="IO-adapter device name.")
+    ]
+    Repository: Annotated[
+        Literal["MOUNTPOINT", "SFTP", "USB", "IBMWebsite", "DISK", "disk"],
+        Field(description="Documented IO-adapter image repository."),
+    ]
+
+
+class VIOSPlatformUpdate(BaseModel):
+    """One VIOS update and its optional nested IO-adapter work."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    UpdateType: Annotated[
+        Literal["Update", "update", "Upgrade", "NoUpdate"],
+        Field(description="VIOS update action."),
+    ]
+    VIOSName: Annotated[
+        str, Field(min_length=1, pattern=r"\S", description="VIOS name.")
+    ]
+    UpdateOrder: Annotated[
+        int | None, Field(description="Platform update execution order.")
+    ] = None
+    Name: Annotated[
+        str | None,
+        Field(min_length=1, pattern=r"\S", description="VIOS image name."),
+    ] = None
+    ResourceType: Annotated[
+        Literal["HMC", "NFS", "SFTP", "USB", "IBMWebsite"] | None,
+        Field(description="VIOS image source."),
+    ] = None
+    IOAdapterUpdate: Annotated[
+        list[IOAdapterUpdateModel] | None,
+        Field(description="IO adapters owned by this VIOS."),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_update_shape(self) -> "VIOSPlatformUpdate":
+        """Enforce conditional resource and non-empty adapter requirements."""
+        if self.UpdateType != "NoUpdate" and self.ResourceType is None:
+            raise ValueError(f"ResourceType is required for {self.UpdateType}")
+        if self.IOAdapterUpdate == []:
+            raise ValueError("IOAdapterUpdate must contain at least one adapter")
+        return self
+
+
+class PlatformUpdateParameter(BaseModel):
+    """Strict documented parameter object for the PlatformUpdate operation."""
+
+    model_config = _PLATFORM_MODEL_CONFIG
+    SystemFirmwareUpdate: Annotated[
+        SystemFirmwareUpdateModel | None,
+        Field(description="System firmware and SR-IOV update selection."),
+    ] = None
+    VIOSUpdate: Annotated[
+        list[VIOSPlatformUpdate] | None,
+        Field(description="VIOS and IO-adapter update selections."),
+    ] = None
+
+    @model_validator(mode="after")
+    def require_update_action(self) -> "PlatformUpdateParameter":
+        """Reject requests that contain no firmware or adapter action."""
+        if self.VIOSUpdate == []:
+            raise ValueError("VIOSUpdate must contain at least one VIOS")
+        system_action = self.SystemFirmwareUpdate is not None and (
+            self.SystemFirmwareUpdate.UpdateType != "NoUpdate"
+            or self.SystemFirmwareUpdate.SRIOVAdapterUpdate is not None
+        )
+        vios_action = any(
+            update.UpdateType != "NoUpdate" or update.IOAdapterUpdate is not None
+            for update in self.VIOSUpdate or []
+        )
+        if not system_action and not vios_action:
+            raise ValueError("PlatformUpdate requires at least one update action")
+        return self
+
+
+SRIOVAdapterUpdate = SRIOVAdapterUpdateModel
+SystemFirmwareUpdate = SystemFirmwareUpdateModel
+IOAdapterUpdate = IOAdapterUpdateModel
+
+
+def platform_update_job(parameters: PlatformUpdateParameter) -> dict[str, Any]:
+    """Build the documented native JSON PlatformUpdate JobRequest."""
+    return {
+        "JobRequest": {
+            "RequestedOperation": {
+                "OperationName": "PlatformUpdate",
+                "GroupName": "ManagedSystem",
+            },
+            "JobParameters": {
+                "JobParameter": [
+                    {
+                        "ParameterName": "PlatformUpdateParameter",
+                        "ParameterValue": parameters.model_dump(exclude_none=True),
+                    }
+                ]
+            },
+        }
+    }
+
+
+def update_hmc_job(source: ConsoleUpdateSource) -> str:
+    """Build a documented ``UpdateManagementConsole`` request."""
+    unknown = set(source) - _CONSOLE_UPDATE_KEYS
     if unknown:
         raise ValueError(
-            f"Unknown repository key(s): {', '.join(sorted(unknown))}. "
-            f"Recognised keys: {', '.join(sorted(_REPOSITORY_KEYS))}."
+            f"Unknown console update parameter(s): {', '.join(sorted(unknown))}. "
+            f"Recognised parameters: {', '.join(sorted(_CONSOLE_UPDATE_KEYS))}."
         )
-    repo_type = repository.get("type")
-    expected = ", ".join(sorted(_REPOSITORY_TYPES))
-    if repo_type is None:
+    if "MediaType" not in source:
+        raise ValueError("Console update source is missing required 'MediaType'.")
+    return build_job_request(
+        "UpdateManagementConsole",
+        "ManagementConsole",
+        {key: str(value) for key, value in source.items() if value is not None},
+    )
+
+
+def list_management_console_updates_job() -> str:
+    """Build the parameterless ``ListManagementConsoleUpdates`` request."""
+    return build_job_request("ListManagementConsoleUpdates", "ManagementConsole")
+
+
+def _vios_params(
+    source: Mapping[str, Any],
+    operation: str,
+    allowed_keys: frozenset[str],
+    resource_types: frozenset[str],
+    required_keys: Mapping[str, frozenset[str]],
+) -> dict[str, str]:
+    """Validate and stringify one documented VIOS job request."""
+    unknown = set(source) - allowed_keys
+    if unknown:
         raise ValueError(
-            f"Repository dict is missing 'type'. Expected one of: {expected}."
+            f"Unknown {operation} parameter(s): {', '.join(sorted(unknown))}. "
+            f"Recognised parameters: {', '.join(sorted(allowed_keys))}."
         )
-    required = _REQUIRED_KEYS.get(repo_type)
-    if required is None:
+    resource_type = source.get("ResourceType")
+    if resource_type is None:
+        raise ValueError(f"{operation} source is missing required 'ResourceType'.")
+    if resource_type not in resource_types:
+        expected = ", ".join(sorted(resource_types))
         raise ValueError(
-            f"Unknown repository type {repo_type!r}. Expected one of: {expected}."
+            f"Invalid {operation} ResourceType {resource_type!r}. "
+            f"Expected one of: {expected}."
         )
-    missing = required - set(repository)
+    missing = {key for key in required_keys[resource_type] if source.get(key) is None}
     if missing:
         raise ValueError(
-            f"Repository type {repo_type!r} requires key(s): "
+            f"{operation} ResourceType {resource_type!r} requires parameter(s): "
             f"{', '.join(sorted(missing))}."
         )
-    return {str(k): str(v) for k, v in repository.items() if v is not None}
+    save_file = source.get("SaveFile")
+    if (
+        isinstance(save_file, str)
+        and save_file.lower() == "true"
+        and source.get("Name") is None
+    ):
+        raise ValueError(f"{operation} SaveFile='true' requires parameter: Name.")
+    return {key: str(value) for key, value in source.items() if value is not None}
 
 
-def update_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software update (Install PTFs).
-
-    target: ManagementConsole/{uuid}/do/Update
-    """
-    return build_job_request(
-        "Update", "ManagementConsole", _repository_params(repository)
+def update_vios_job(source: VIOSUpdateSource) -> str:
+    """Build a documented ``UpdateVIOS`` request."""
+    params = _vios_params(
+        source,
+        "UpdateVIOS",
+        _VIOS_UPDATE_KEYS,
+        _VIOS_UPDATE_RESOURCE_TYPES,
+        _VIOS_UPDATE_REQUIRED,
     )
+    return build_job_request("UpdateVIOS", "VirtualIOServer", params)
 
 
-def upgrade_hmc_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for an HMC software upgrade (full version upgrade).
-
-    target: ManagementConsole/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "ManagementConsole", _repository_params(repository)
+def upgrade_vios_job(source: VIOSUpgradeSource) -> str:
+    """Build a documented ``UpgradeVIOS`` request."""
+    params = _vios_params(
+        source,
+        "UpgradeVIOS",
+        _VIOS_UPGRADE_KEYS,
+        _VIOS_UPGRADE_RESOURCE_TYPES,
+        _VIOS_UPGRADE_REQUIRED,
     )
-
-
-def update_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS update.
-
-    target: VirtualIOServer/{uuid}/do/Update
-    """
-    return build_job_request(
-        "Update", "VirtualIOServer", _repository_params(repository)
-    )
-
-
-def upgrade_vios_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a VIOS upgrade.
-
-    target: VirtualIOServer/{uuid}/do/Upgrade
-    """
-    return build_job_request(
-        "Upgrade", "VirtualIOServer", _repository_params(repository)
-    )
-
-
-def update_firmware_job(repository: RepositorySource) -> str:
-    """Build a JobRequest XML for a managed system firmware update.
-
-    target: ManagedSystem/{uuid}/do/UpdateFirmware
-    """
-    return build_job_request(
-        "UpdateFirmware", "ManagedSystem", _repository_params(repository)
-    )
-
-
-# ---------------------------------------------------------------------- #
-# VIOS install (NIM-based)
-# ---------------------------------------------------------------------- #
-
-
-def install_vios_job(
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
-    vios_ip: str,
-    vlan_id: str,
-    hmc_timeout_minutes: int = 60,
-) -> str:
-    """InstallVIOS job: NIM-based VIOS installation.
-
-    nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
-    the network for the VIOS during install; vios_ip is the IP the VIOS uses
-    during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
-    """
-    return build_job_request(
-        "InstallVIOS",
-        "VirtualIOServer",
-        {
-            "nim_IP": nim_ip,
-            "nim_gateway": nim_gateway,
-            "nim_subnetmask": nim_subnetmask,
-            "vios_IP": vios_ip,
-            "vlanid": vlan_id,
-            "timeout": str(hmc_timeout_minutes),
-        },
-    )
-
-
-# ---------------------------------------------------------------------- #
-# LPAR install (NIM-based)
-# ---------------------------------------------------------------------- #
-
-
-def install_lpar_job(
-    nim_ip: str,
-    nim_gateway: str,
-    nim_subnetmask: str,
-    lpar_ip: str,
-    vlan_id: str,
-    hmc_timeout_minutes: int = 60,
-) -> str:
-    """InstallLPAR job: NIM-based LPAR OS installation.
-
-    nim_ip is the NIM server IP address; nim_gateway and nim_subnetmask define
-    the network for the LPAR during install; lpar_ip is the IP the LPAR uses
-    during the NIM install; vlan_id is the VLAN tag for the install network
-    (pass "0" for untagged); hmc_timeout_minutes is the job timeout in minutes.
-    """
-    return build_job_request(
-        "InstallLPAR",
-        "LogicalPartition",
-        {
-            "nim_IP": nim_ip,
-            "nim_gateway": nim_gateway,
-            "nim_subnetmask": nim_subnetmask,
-            "lpar_IP": lpar_ip,
-            "vlanid": vlan_id,
-            "timeout": str(hmc_timeout_minutes),
-        },
-    )
+    return build_job_request("UpgradeVIOS", "VirtualIOServer", params)

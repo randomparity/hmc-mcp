@@ -5,8 +5,8 @@ VIOS / managed-system create and modify (LogicalPartition and ManagedSystem
 documents), DLPAR processor/memory change documents, virtual adapters
 (vSCSI / vFC / network), storage (volume groups, virtual disks, vSCSI
 mappings), networking (virtual networks), virtual media (media repository,
-optical media), and web resources (HMC users, password policies, LDAP
-configuration).
+optical media, brokered file upload and ISO import), and web resources
+(session logon, HMC users, password policies, LDAP configuration).
 
 The HMC creates an LPAR from a PUT of a LogicalPartition document to
 /rest/api/uom/ManagedSystem/{uuid}/LogicalPartition, and modifies one with a
@@ -26,8 +26,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, get_args
+from xml.etree import ElementTree as ET  # nosec B405
 
-from .xmlutil import ATOM_NS, WEB_NS
+from defusedxml import ElementTree as DET
+
+from .xmlutil import ATOM_NS, WEB_NS, escapes_string_arguments
 
 UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
 
@@ -56,7 +59,7 @@ PowerOffPolicy = Literal[0, 1]
 PowerOnLparStartPolicy = Literal["autostart", "userinit", "autorecovery"]
 MemoryMirroringMode = Literal["none", "sys_firmware_only"]
 StorageKind = Literal["PhysicalVolume", "VirtualDisk"]
-TaskRole = Literal["hmcoperator", "hmcviewer", "hmcsuperadmin"]
+AuthenticationType = Literal["Local", "LDAP", "Kerberos"]
 SharingMode = Literal[
     "capped",
     "uncapped",
@@ -67,7 +70,7 @@ SharingMode = Literal[
 ]
 
 STORAGE_KINDS = frozenset(get_args(StorageKind))
-TASK_ROLES = frozenset(get_args(TaskRole))
+AUTHENTICATION_TYPES = frozenset(get_args(AuthenticationType))
 SHARING_MODES = frozenset(get_args(SharingMode))
 
 
@@ -75,9 +78,9 @@ SHARING_MODES = frozenset(get_args(SharingMode))
 # These match IBM HMC boot device types and are used to construct
 # PendingBootString values for boot order operations.
 BOOT_DEVICE_SELECTORS: tuple[BootDeviceSelector, ...] = (
-    "cd",      # Optical/CD-ROM device
-    "disk",    # Disk device (SCSI, direct-attached, SAN)
-    "network", # Network boot (PXE, NIM, etc.)
+    "cd",  # Optical/CD-ROM device
+    "disk",  # Disk device (SCSI, direct-attached, SAN)
+    "network",  # Network boot (PXE, NIM, etc.)
 )
 
 # Type alias for boot device selectors used in PendingBootString construction.
@@ -160,58 +163,6 @@ class LparResources:
             "description": "Whether a shared partition may consume spare processing capacity."
         },
     )
-
-
-@dataclass(frozen=True)
-class PasswordPolicySettings:
-    """Password-policy fields shared by create and partial-update requests."""
-
-    pwage: int | None = field(
-        default=None,
-        metadata={"description": "Maximum password age in days; 0 disables expiry."},
-    )
-    min_length: int | None = field(
-        default=None, metadata={"description": "Minimum password length in characters."}
-    )
-    min_digits: int | None = field(
-        default=None, metadata={"description": "Minimum number of numeric characters."}
-    )
-    min_uppercase: int | None = field(
-        default=None,
-        metadata={"description": "Minimum number of uppercase characters."},
-    )
-    min_lowercase: int | None = field(
-        default=None,
-        metadata={"description": "Minimum number of lowercase characters."},
-    )
-    min_special: int | None = field(
-        default=None, metadata={"description": "Minimum number of special characters."}
-    )
-    hist_size: int | None = field(
-        default=None,
-        metadata={"description": "Number of prior passwords that cannot be reused."},
-    )
-    warn_pwage: int | None = field(
-        default=None,
-        metadata={"description": "Days before expiry when warnings begin."},
-    )
-    min_pwage: int | None = field(
-        default=None,
-        metadata={"description": "Minimum days before a password may be changed."},
-    )
-
-
-PASSWORD_POLICY_CREATION_DEFAULTS = PasswordPolicySettings(
-    pwage=0,
-    min_length=8,
-    min_digits=0,
-    min_uppercase=0,
-    min_lowercase=0,
-    min_special=0,
-    hist_size=0,
-    warn_pwage=0,
-    min_pwage=0,
-)
 
 
 def _memory_config(resources: LparResources) -> str:
@@ -373,6 +324,7 @@ def _lpar_envelope(body: str) -> str:
     return _document_envelope("LogicalPartition", body)
 
 
+@escapes_string_arguments
 def build_lpar_document(
     name: str | None,
     partition_type: PartitionType = "AIX/Linux",
@@ -460,6 +412,7 @@ VIOS_DEFAULT_RESOURCES = LparResources(
 )
 
 
+@escapes_string_arguments
 def build_vios_document(
     name: str,
     resources: LparResources = VIOS_DEFAULT_RESOURCES,
@@ -476,6 +429,7 @@ def build_vios_document(
     )
 
 
+@escapes_string_arguments
 def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionProcessorConfiguration.
 
@@ -495,6 +449,7 @@ def build_dlpar_proc_document(resources: LparResources | None = None) -> str:
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     """Minimal LogicalPartition document containing only PartitionMemoryConfiguration.
 
@@ -513,6 +468,7 @@ def build_dlpar_mem_document(resources: LparResources | None = None) -> str:
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_managed_system_document(
     new_name: str | None = None,
     power_off_policy: PowerOffPolicy | None = None,
@@ -636,6 +592,7 @@ def _adapter_document(
     return _document_envelope(root_element, body)
 
 
+@escapes_string_arguments
 def build_vscsi_adapter_document(
     vios_partition_id: int,
     vios_slot: int,
@@ -657,6 +614,7 @@ def build_vscsi_adapter_document(
     )
 
 
+@escapes_string_arguments
 def build_vfc_adapter_document(
     vios_partition_id: int,
     vios_slot: int,
@@ -677,6 +635,7 @@ def build_vfc_adapter_document(
     )
 
 
+@escapes_string_arguments
 def build_client_network_adapter_document(
     port_vlan_id: int,
     slot_number: int | None = None,
@@ -724,6 +683,7 @@ def build_client_network_adapter_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     """Document to create a Volume Group from a set of physical volumes."""
     pvs = "\n".join(
@@ -742,6 +702,7 @@ def build_volume_group_document(name: str, physical_volumes: list[str]) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     """A VolumeGroup document carrying a new VirtualDisk (for create POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
@@ -756,11 +717,11 @@ def build_virtual_disk_document(disk_name: str, capacity_mib: int) -> str:
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
 def build_vscsi_mapping_document(
     storage_kind: StorageKind,
     storage_name: str,
     lpar_link: str,
-    vios_lpar_link: str | None = None,
     target_device: str | None = None,
 ) -> str:
     """A VirtualIOServer document carrying a VirtualSCSIMapping (for POST).
@@ -770,6 +731,10 @@ def build_vscsi_mapping_document(
     the DiskName). lpar_link is the Atom SELF href of the client LPAR the
     storage is mapped to. target_device optionally pins the vtscsi name.
     """
+    # storage_kind is the one caller value that becomes an element *name*
+    # below, and escaping cannot make a name safe. This check, not the
+    # escaping decorator, is what protects that site; it still fires because
+    # escaping is the identity on the two legal values.
     if storage_kind not in STORAGE_KINDS:
         raise ValueError(
             f"storage_kind must be PhysicalVolume or VirtualDisk, got {storage_kind!r}"
@@ -801,10 +766,10 @@ def build_vscsi_mapping_document(
 """
 
 
+@escapes_string_arguments
 def build_virtual_optical_mapping_document(
     media_name: str,
     lpar_link: str,
-    vios_lpar_link: str | None = None,
     target_device: str | None = None,
 ) -> str:
     """A VirtualIOServer document carrying a VirtualSCSIMapping for optical media (for POST).
@@ -838,6 +803,7 @@ def build_virtual_optical_mapping_document(
 </VirtualIOServer>
 """
 
+
 # ====================================================================== #
 # Virtual Network (child of ManagedSystem)
 #
@@ -847,6 +813,7 @@ def build_virtual_optical_mapping_document(
 # ====================================================================== #
 
 
+@escapes_string_arguments
 def build_virtual_network_document(
     name: str,
     vlan_id: int,
@@ -887,61 +854,99 @@ def build_virtual_network_document(
 # ====================================================================== #
 
 
-def build_media_repository_document(size_mib: int) -> str:
+@escapes_string_arguments
+def build_media_repository_document(size_mib: int, vg_name: str = "") -> str:
     """VolumeGroup document carrying a VirtualMediaRepository (create POST).
 
     The repository is always named VMLibrary; size_mib is RepositorySize.
+    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
+    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
     """
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_0">
+    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
+    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
+  <MediaRepositories schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
-    <RepositorySize kb="CUD" kxe="false">{size_mib}</RepositorySize>
-  </VirtualMediaRepository>"""
+    <VirtualMediaRepository schemaVersion="V1_0">
+      <Metadata><Atom/></Metadata>
+      <RepositoryName>VMLibrary</RepositoryName>
+      <RepositorySize>{size_mib}</RepositorySize>
+    </VirtualMediaRepository>
+  </MediaRepositories>"""
     return _document_envelope("VolumeGroup", body)
 
 
-def build_virtual_optical_media_document(media_name: str, size_mib: int) -> str:
+@escapes_string_arguments
+def build_virtual_optical_media_document(
+    media_name: str, size_mib: int, vg_name: str = ""
+) -> str:
     """VolumeGroup document carrying a blank VirtualOpticalMedia (create POST).
 
     Only blank optical media can be created via the API; media_name is the
     file name (e.g. 'aix.iso'), size_mib is MediaSize.
+    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
+    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
     """
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_0">
+    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
+    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
+  <MediaRepositories schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualOpticalMedia schemaVersion="V1_0">
+    <VirtualMediaRepository schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
-      <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
-      <MediaSize kb="CUD" kxe="false">{size_mib}</MediaSize>
-      <MediaType kb="CUD" kxe="false">BLANK</MediaType>
-    </VirtualOpticalMedia>
-  </VirtualMediaRepository>"""
+      <VirtualOpticalMedia schemaVersion="V1_0">
+        <Metadata><Atom/></Metadata>
+        <MediaName>{media_name}</MediaName>
+        <MediaSize>{size_mib}</MediaSize>
+        <MediaType>BLANK</MediaType>
+      </VirtualOpticalMedia>
+    </VirtualMediaRepository>
+  </MediaRepositories>"""
     return _document_envelope("VolumeGroup", body)
 
 
-def build_media_repository_delete_document() -> str:
-    """VolumeGroup document marking the VirtualMediaRepository for deletion (POST)."""
-    body = """  <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_0" kb="CUD">
-    <Metadata><Atom/></Metadata>
-    <RepositoryName kb="CUD" kxe="false">VMLibrary</RepositoryName>
-  </VirtualMediaRepository>"""
-    return _document_envelope("VolumeGroup", body)
+@escapes_string_arguments
+def build_media_repository_delete_document(vg_name: str = "") -> str:
+    """VolumeGroup document marking the VirtualMediaRepository for deletion (POST).
 
-def build_virtual_optical_media_delete_document(media_name: str) -> str:
-    """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST)."""
-    body = f"""  <Metadata><Atom/></Metadata>
-  <VirtualMediaRepository schemaVersion="V1_0" kb="CUD">
+    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
+    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
+    """
+    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
+    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
+  <MediaRepositories schemaVersion="V1_0">
     <Metadata><Atom/></Metadata>
-    <VirtualOpticalMedia schemaVersion="V1_0" kb="CUD">
+    <VirtualMediaRepository schemaVersion="V1_0">
       <Metadata><Atom/></Metadata>
-      <MediaName kb="CUD" kxe="false">{media_name}</MediaName>
-    </VirtualOpticalMedia>
-  </VirtualMediaRepository>"""
+      <RepositoryName>VMLibrary</RepositoryName>
+    </VirtualMediaRepository>
+  </MediaRepositories>"""
     return _document_envelope("VolumeGroup", body)
 
 
+@escapes_string_arguments
+def build_virtual_optical_media_delete_document(
+    media_name: str, vg_name: str = ""
+) -> str:
+    """VolumeGroup document marking a VirtualOpticalMedia for deletion (POST).
+
+    vg_name is the GroupName of the target VolumeGroup (required by HMC V10R3+).
+    VirtualMediaRepository must be wrapped in MediaRepositories per the HMC schema.
+    """
+    group_name_element = f"\n  <GroupName>{vg_name}</GroupName>" if vg_name else ""
+    body = f"""  <Metadata><Atom/></Metadata>{group_name_element}
+  <MediaRepositories schemaVersion="V1_0">
+    <Metadata><Atom/></Metadata>
+    <VirtualMediaRepository schemaVersion="V1_0">
+      <Metadata><Atom/></Metadata>
+      <VirtualOpticalMedia schemaVersion="V1_0">
+        <Metadata><Atom/></Metadata>
+        <MediaName>{media_name}</MediaName>
+      </VirtualOpticalMedia>
+    </VirtualMediaRepository>
+  </MediaRepositories>"""
+    return _document_envelope("VolumeGroup", body)
+
+
+@escapes_string_arguments
 def build_virtual_disk_delete_document(disk_name: str) -> str:
     """VolumeGroup document marking a VirtualDisk for deletion (POST)."""
     body = f"""  <Metadata><Atom/></Metadata>
@@ -956,166 +961,242 @@ def build_virtual_disk_delete_document(disk_name: str) -> str:
 
 
 # ====================================================================== #
-# HMC User management (/rest/api/web/HmcUser)
+# Brokered file upload / ISO import (ADR 0031)
 #
-# Create: POST /rest/api/web/HmcUser
-# Modify: POST /rest/api/web/HmcUser/{name}
-# Fields documented in ansible-power-hmc plugins/modules/hmc_user.py
+# Create:  POST /rest/api/uom/VirtualIOServer/{uuid}/VolumeGroup/{uuid}
+#          with a BrokeredFile document; the broker URI comes back in the
+#          Location header.
+# Import:  POST to the same path with a LinkedVirtualOpticalMedia document
+#          naming that broker URI.
+#
+# Neither document carries schemaVersion, so they render their own envelope
+# rather than going through _document_envelope. Both are transport
+# primitives for #203's future public API and are not exposed today.
 # ====================================================================== #
 
 
+@escapes_string_arguments
+def build_brokered_file_document(filename: str) -> str:
+    """BrokeredFile document creating an upload handle (create POST).
+
+    ADR 0031 derived this shape from IBM's REST API documentation and the
+    existing uom patterns rather than from a live HMC, so the exact structure
+    is version-dependent and still unverified against hardware.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<BrokeredFile xmlns="{UOM_NS}">
+  <Filename>{filename}</Filename>
+</BrokeredFile>
+"""
+
+
+@escapes_string_arguments
+def build_linked_optical_media_document(media_name: str, broker_uri: str) -> str:
+    """LinkedVirtualOpticalMedia document importing an uploaded file (POST).
+
+    ``broker_uri`` is the Location header the HMC returned from the brokered
+    file create. It is escaped like any other value: escaping is the identity
+    for a URI free of the five metacharacters, and an HMC that ever returned
+    one carrying them would otherwise break the document.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<LinkedVirtualOpticalMedia xmlns="{UOM_NS}">
+  <MediaName>{media_name}</MediaName>
+  <LinkedFileURI>{broker_uri}</LinkedFileURI>
+</LinkedVirtualOpticalMedia>
+"""
+
+
+# ====================================================================== #
+# Session logon (/rest/api/web/Logon)
+#
+# Authenticate: PUT /rest/api/web/Logon with a LogonRequest document; the
+# response carries the X-API-Session token.
+# ====================================================================== #
+
+
+@escapes_string_arguments
+def build_logon_request_document(user: str, password: str) -> str:
+    """LogonRequest document carrying the configured HMC credentials (PUT).
+
+    The credentials arrive from ``HMCConfig`` rather than from a tool
+    argument, which is why they reach this boundary as an explicit builder
+    call instead of through a decorator on the client method: an
+    argument-boundary decorator on ``HMCClient.logon`` would never see them.
+    """
+    body = f"""  <Metadata>
+    <Atom/>
+  </Metadata>
+  <UserID kb="CUR" kxe="false">{user}</UserID>
+  <Password kb="CUR" kxe="false">{password}</Password>"""
+    return _document_envelope("LogonRequest", body, WEB_NS)
+
+
+# ====================================================================== #
+# UOM UserProfile and ManagementConsole RemoteAccess documents
+# ====================================================================== #
+
+
+@escapes_string_arguments
 def build_hmc_user_document(
-    username: str | None = None,
-    taskrole: TaskRole | None = None,
+    user_id: str | None = None,
+    authentication_type: AuthenticationType | None = None,
     password: str | None = None,
     description: str | None = None,
-    pwage: int | None = None,
-    enable: bool | None = None,
+    associated_task_role: str | None = None,
+    associated_resource_roles: list[str] | None = None,
+    password_expiry: int | None = None,
+    session_timeout: int | None = None,
+    verify_session_timeout: bool | None = None,
+    idle_session_timeout: int | None = None,
+    user_inactivity: int | None = None,
+    minimum_password_age: int | None = None,
+    allow_web_remote_access: bool | None = None,
+    allow_ssh_remote_access: bool | None = None,
+    remote_user_id: str | None = None,
 ) -> str:
-    """Build an HmcUser XML document for create (POST) or modify (POST).
-
-    For create, username is required.  For modify, pass only the fields
-    to change.  pwage is the password expiration in days (0 = never expires).
-    enable controls whether the account is enabled (True) or disabled (False).
-    """
+    """Build a documented UOM ``UserProfile`` create or update document."""
     parts = ["  <Metadata><Atom/></Metadata>"]
-    if username is not None:
-        parts.append(f'  <UserID kb="CUR" kxe="false">{username}</UserID>')
-    if taskrole is not None:
-        if taskrole not in TASK_ROLES:
+    if user_id is not None:
+        parts.append(f'  <UserID kb="CUR" kxe="false">{user_id}</UserID>')
+    if authentication_type is not None:
+        if authentication_type not in AUTHENTICATION_TYPES:
             raise ValueError(
-                f"Invalid taskrole {taskrole!r}. "
-                f"Must be one of: {', '.join(sorted(TASK_ROLES))}"
+                f"Invalid authentication_type {authentication_type!r}. Must be one of: "
+                f"{', '.join(sorted(AUTHENTICATION_TYPES))}"
             )
-        parts.append(f'  <TaskRole kb="CUR" kxe="false">{taskrole}</TaskRole>')
+        parts.append(
+            f'  <AuthenticationType kb="CUR" kxe="false">'
+            f"{authentication_type}</AuthenticationType>"
+        )
     if password is not None:
-        parts.append(f'  <Password kb="CUR" kxe="false">{password}</Password>')
+        parts.append(
+            f'  <UserProfilePassword kb="CUR" kxe="false">'
+            f"{password}</UserProfilePassword>"
+        )
     if description is not None:
-        parts.append(f'  <Description kb="CUR" kxe="false">{description}</Description>')
-    if pwage is not None:
         parts.append(
-            f'  <PasswordAgePolicy kb="CUR" kxe="false">{pwage}</PasswordAgePolicy>'
+            f'  <UserDescription kb="CUR" kxe="false">{description}</UserDescription>'
         )
-    if enable is not None:
-        val = "true" if enable else "false"
-        parts.append(f'  <IsEnabled kb="CUR" kxe="false">{val}</IsEnabled>')
-    body = "\n".join(parts)
-    return _document_envelope("HmcUser", body, WEB_NS)
+    if associated_task_role is not None:
+        if associated_task_role:
+            parts.append(f'  <AssociatedTaskRole href="{associated_task_role}"/>')
+        else:
+            parts.append('  <AssociatedTaskRole kb="CUR" kxe="false"/>')
+    if associated_resource_roles is not None:
+        if associated_resource_roles:
+            parts.append("  <AssociatedResourceRoles>")
+            parts.extend(
+                f'    <ResourceRole href="{role}"/>'
+                for role in associated_resource_roles
+            )
+            parts.append("  </AssociatedResourceRoles>")
+        else:
+            parts.append('  <AssociatedResourceRoles kb="CUR" kxe="false"/>')
+    for name, value in (
+        ("PasswordExpiry", password_expiry),
+        ("SessionTimeout", session_timeout),
+        ("VerifySessionTimeout", verify_session_timeout),
+        ("IdleSessionTimeout", idle_session_timeout),
+        ("UserInactivity", user_inactivity),
+        ("MinimumPasswordAge", minimum_password_age),
+        ("AllowWebRemoteAccess", allow_web_remote_access),
+        ("AllowSSHRemoteAccess", allow_ssh_remote_access),
+        ("RemoteUserID", remote_user_id),
+    ):
+        if value is not None:
+            rendered = str(value).lower() if isinstance(value, bool) else value
+            parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
+    return _document_envelope("UserProfile", "\n".join(parts), UOM_NS)
 
 
-# ====================================================================== #
-# HMC Password Policy management (/rest/api/web/HmcPasswordPolicy)
-#
-# Create: POST /rest/api/web/HmcPasswordPolicy
-# Modify: POST /rest/api/web/HmcPasswordPolicy/{name}
-# ====================================================================== #
+REMOTE_ACCESS_FIELDS = frozenset(
+    {
+        "LdapEnabled",
+        "PrimaryLdapUri",
+        "SecondaryLdapUri",
+        "TLSEncryptionEnabled",
+        "UseNonAnonymousBinding",
+        "BindDistinguishedName",
+        "BindPassword",
+        "LoginAttribute",
+        "BaseDistinguishedName",
+        "SearchScope",
+        "AutoManageEnabled",
+        "UserPolicyAtrribute",
+        "SearchFilter",
+        "LdapGroupLogin",
+        "LdapGroupMemberAttribute",
+        "KerberosAuthenticationEnabled",
+        "kerberosRemoteUserId",
+        "KerberosEnabled",
+        "DefaultRealm",
+        "ClockSkew",
+        "TicketLifeTime",
+        "AuthenticationTimeOut",
+        "RealmConfig",
+        "KerberosRealm",
+        "Hostname",
+        "Realm",
+    }
+)
 
 
-def build_password_policy_document(
-    policy_name: str | None = None,
-    settings: PasswordPolicySettings = PasswordPolicySettings(),
+@escapes_string_arguments
+def build_remote_access_document(
+    values: dict[str, str | int | bool] | None = None,
+    clear_fields: list[str] | None = None,
 ) -> str:
-    """Build an HmcPasswordPolicy XML document for create (POST) or modify (POST).
-
-    For create, policy_name is required.  For modify, pass only the fields
-    to change.  pwage is the maximum password age in days (0 = never expires).
-    warn_pwage is the number of days before expiry to warn the user.
-    min_pwage is the minimum number of days before a password may be changed.
-    hist_size is the number of previous passwords that cannot be reused.
-    """
+    """Build a partial documented ``ManagementConsole`` RemoteAccess document."""
+    supplied = values or {}
+    cleared = clear_fields or []
+    unknown = (set(supplied) | set(cleared)) - REMOTE_ACCESS_FIELDS
+    if unknown:
+        raise ValueError(f"Unknown RemoteAccess fields: {', '.join(sorted(unknown))}")
+    conflicts = set(supplied) & set(cleared)
+    if conflicts:
+        raise ValueError(
+            f"RemoteAccess fields both set and cleared: {', '.join(sorted(conflicts))}"
+        )
+    if not supplied and not cleared:
+        raise ValueError("RemoteAccess update must set or clear at least one field")
     parts = ["  <Metadata><Atom/></Metadata>"]
-    if policy_name is not None:
-        parts.append(f'  <PolicyName kb="CUR" kxe="false">{policy_name}</PolicyName>')
-    if settings.pwage is not None:
-        parts.append(
-            f'  <MaxPasswordAge kb="CUR" kxe="false">{settings.pwage}</MaxPasswordAge>'
-        )
-    if settings.min_length is not None:
-        parts.append(
-            f'  <MinPasswordLength kb="CUR" kxe="false">{settings.min_length}</MinPasswordLength>'
-        )
-    if settings.min_digits is not None:
-        parts.append(
-            f'  <MinNumericChars kb="CUR" kxe="false">{settings.min_digits}</MinNumericChars>'
-        )
-    if settings.min_uppercase is not None:
-        parts.append(
-            f'  <MinUpperCaseChars kb="CUR" kxe="false">{settings.min_uppercase}</MinUpperCaseChars>'
-        )
-    if settings.min_lowercase is not None:
-        parts.append(
-            f'  <MinLowerCaseChars kb="CUR" kxe="false">{settings.min_lowercase}</MinLowerCaseChars>'
-        )
-    if settings.min_special is not None:
-        parts.append(
-            f'  <MinSpecialChars kb="CUR" kxe="false">{settings.min_special}</MinSpecialChars>'
-        )
-    if settings.hist_size is not None:
-        parts.append(
-            f'  <PasswordHistorySize kb="CUR" kxe="false">{settings.hist_size}</PasswordHistorySize>'
-        )
-    if settings.warn_pwage is not None:
-        parts.append(
-            f'  <PasswordExpirationWarning kb="CUR" kxe="false">{settings.warn_pwage}</PasswordExpirationWarning>'
-        )
-    if settings.min_pwage is not None:
-        parts.append(
-            f'  <MinPasswordAge kb="CUR" kxe="false">{settings.min_pwage}</MinPasswordAge>'
-        )
-    body = "\n".join(parts)
-    return _document_envelope("HmcPasswordPolicy", body, WEB_NS)
+    for name, value in supplied.items():
+        rendered = str(value).lower() if isinstance(value, bool) else value
+        parts.append(f'  <{name} kb="CUR" kxe="false">{rendered}</{name}>')
+    parts.extend(f'  <{name} kb="CUR" kxe="false"/>' for name in cleared)
+    return _document_envelope("ManagementConsole", "\n".join(parts), UOM_NS)
 
 
-# ====================================================================== #
-# HMC LDAP server configuration (/rest/api/web/HmcLdapServer)
-#
-# List:      GET  /rest/api/web/HmcLdapServer
-# Configure: POST /rest/api/web/HmcLdapServer
-# Remove:    POST /rest/api/web/HmcLdapServer?Remove={resource}
-# ====================================================================== #
-
-
-def build_ldap_config_document(
-    server_url: str | None = None,
-    base_dn: str | None = None,
-    bind_dn: str | None = None,
-    bind_pw: str | None = None,
-    search_filter: str | None = None,
-    hmc_groups: str | None = None,
-    group_member_attributes: str | None = None,
+def merge_remote_access_document(
+    current_xml: str,
+    values: dict[str, str | int | bool] | None = None,
+    clear_fields: list[str] | None = None,
 ) -> str:
-    """Build an HmcLdapServer XML document for configure (POST).
+    """Merge explicit RemoteAccess changes into the current console document."""
+    # Validate the requested mutation before parsing or changing the current document.
+    build_remote_access_document(values, clear_fields)
+    root = DET.fromstring(current_xml.encode("utf-8"))
+    console = root if root.tag.rsplit("}", 1)[-1] == "ManagementConsole" else None
+    if console is None:
+        console = root.find(".//{*}ManagementConsole")
+    if console is None:
+        raise ValueError("RemoteAccess response does not contain ManagementConsole")
 
-    server_url is the LDAP/LDAPS URL (e.g. 'ldap://ldap.example.com').
-    base_dn is the LDAP search base (e.g. 'dc=example,dc=com').
-    bind_dn and bind_pw are the bind credentials for authenticated searches.
-    search_filter is the LDAP search filter (e.g. '(objectClass=person)').
-    hmc_groups is a comma-separated list of LDAP groups mapped to HMC access.
-    group_member_attributes is the LDAP attribute used for group membership.
-    """
-    parts = ["  <Metadata><Atom/></Metadata>"]
-    if server_url is not None:
-        parts.append(
-            f'  <LdapServerUrl kb="CUR" kxe="false">{server_url}</LdapServerUrl>'
-        )
-    if base_dn is not None:
-        parts.append(f'  <BaseDN kb="CUR" kxe="false">{base_dn}</BaseDN>')
-    if bind_dn is not None:
-        parts.append(f'  <BindDN kb="CUR" kxe="false">{bind_dn}</BindDN>')
-    if bind_pw is not None:
-        parts.append(f'  <BindPw kb="CUR" kxe="false">{bind_pw}</BindPw>')
-    if search_filter is not None:
-        parts.append(
-            f'  <SearchFilter kb="CUR" kxe="false">{search_filter}</SearchFilter>'
-        )
-    if hmc_groups is not None:
-        parts.append(f'  <HmcGroups kb="CUR" kxe="false">{hmc_groups}</HmcGroups>')
-    if group_member_attributes is not None:
-        parts.append(
-            f'  <GroupMemberAttributes kb="CUR" kxe="false">{group_member_attributes}</GroupMemberAttributes>'
-        )
-    body = "\n".join(parts)
-    return _document_envelope("HmcLdapServer", body, WEB_NS)
+    children = {child.tag.rsplit("}", 1)[-1]: child for child in console}
+    for name, value in (values or {}).items():
+        child = children.get(name)
+        if child is None:
+            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
+        child.text = str(value).lower() if isinstance(value, bool) else str(value)
+    for name in clear_fields or []:
+        child = children.get(name)
+        if child is None:
+            child = ET.SubElement(console, f"{{{UOM_NS}}}{name}")
+        child.clear()
+        child.set("kb", "CUR")
+        child.set("kxe", "false")
+    return ET.tostring(console, encoding="unicode")
 
 
 # ====================================================================== #
@@ -1134,16 +1215,16 @@ def build_ldap_config_document(
 
 def _build_pending_boot_string(devices: list[str]) -> str:
     """Build a PendingBootString from validated boot device selectors.
-    
+
     Args:
         devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
-        
+
     Returns:
         Space-separated string of device selectors.
     """
     if not devices:
         raise ValueError("Boot order must contain at least one device")
-    
+
     # Validate all selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
@@ -1151,45 +1232,47 @@ def _build_pending_boot_string(devices: list[str]) -> str:
                 f"Invalid boot device selector: {device!r}. "
                 f"Must be one of: {BOOT_DEVICE_SELECTORS}"
             )
-    
+
     return " ".join(devices)
 
 
+@escapes_string_arguments
 def build_boot_order_document(devices: list[str]) -> str:
     """Build a LogicalPartition document to set LPAR boot order.
-    
+
     This document sets the PendingBootString which controls the boot device
     priority for the next LPAR boot. Changes take effect on the next activation
     (no reboot is required - this is a profile-only change).
-    
+
     Args:
         devices: Ordered list of boot device selectors (cd, disk, network). Validated against BOOT_DEVICE_SELECTORS.
                  The first device is tried first, then the second, etc.
-                 
+
     Returns:
         XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
-        
+
     Example:
         >>> xml = build_boot_order_document(["network", "cd", "disk"])
         >>> "PendingBootString" in xml
         True
     """
     pending_boot_string = _build_pending_boot_string(devices)
-    
+
     body = f"""  <PendingBootString kb="CUR" kxe="false">{pending_boot_string}</PendingBootString>"""
-    
+
     return _lpar_envelope(body)
 
 
+@escapes_string_arguments
 def build_clear_boot_order_document() -> str:
     """Build a LogicalPartition document to clear LPAR boot order.
-    
+
     This document clears the PendingBootString, restoring the HMC default
     boot behavior. Changes take effect on the next activation.
-    
+
     Returns:
         XML document for POST to /rest/api/uom/LogicalPartition/{uuid}.
     """
     body = """  <PendingBootString kb="CUR" kxe="false"></PendingBootString>"""
-    
+
     return _lpar_envelope(body)
