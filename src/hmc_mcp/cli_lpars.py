@@ -75,6 +75,7 @@ from .ssh_commands import (
     set_lpar_msp,
     set_lpar_proc_compat,
     validate_caller_token,
+    validate_memopt_scenario,
 )
 
 
@@ -100,13 +101,7 @@ def _memopt_selectors(
             if exclude_name or exclude_id
             else None
         )
-        if prioritized is not None and excluded is not None:
-            prioritized_uses_names = bool(prioritized.names)
-            excluded_uses_names = bool(excluded.names)
-            if prioritized_uses_names != excluded_uses_names:
-                raise ValueError(
-                    "prioritized and excluded selectors must use the same representation"
-                )
+        validate_memopt_scenario(prioritized, excluded)
         return prioritized, excluded
     except ValueError as error:
         _usage_error(str(error))

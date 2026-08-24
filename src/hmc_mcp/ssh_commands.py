@@ -67,6 +67,23 @@ class MemoptLparSelector:
                 raise ValueError("memopt LPAR selector ids must not contain duplicates")
 
 
+def validate_memopt_scenario(
+    prioritized: MemoptLparSelector | None,
+    excluded: MemoptLparSelector | None,
+) -> None:
+    """Validate relationships between affinity-planning selectors."""
+    if prioritized is None or excluded is None:
+        return
+    if bool(prioritized.names) != bool(excluded.names):
+        raise ValueError(
+            "prioritized and excluded selectors must use the same representation"
+        )
+    prioritized_values = prioritized.names or prioritized.ids
+    excluded_values = excluded.names or excluded.ids
+    if set(prioritized_values) & set(excluded_values):
+        raise ValueError("prioritized and excluded selectors must not overlap")
+
+
 # ---------------------------------------------------------------------- #
 # HMC CLI -i attribute record grammar (see ADR 0045)
 # ---------------------------------------------------------------------- #
@@ -1107,17 +1124,7 @@ def _memopt_selector_options(
     excluded: MemoptLparSelector | None,
 ) -> str:
     """Validate a planning scenario and render its fixed selector options."""
-    if prioritized is not None and excluded is not None:
-        prioritized_uses_names = bool(prioritized.names)
-        excluded_uses_names = bool(excluded.names)
-        if prioritized_uses_names != excluded_uses_names:
-            raise ValueError(
-                "prioritized and excluded selectors must use the same representation"
-            )
-        prioritized_values = prioritized.names or prioritized.ids
-        excluded_values = excluded.names or excluded.ids
-        if set(prioritized_values) & set(excluded_values):
-            raise ValueError("prioritized and excluded selectors must not overlap")
+    validate_memopt_scenario(prioritized, excluded)
 
     options: list[str] = []
     for selector, name_flag, id_flag in (

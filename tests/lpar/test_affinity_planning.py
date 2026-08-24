@@ -108,6 +108,37 @@ def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
 
 
 @pytest.mark.parametrize(
+    ("prioritized", "excluded", "diagnostic"),
+    [
+        (
+            MemoptLparSelector(names=("web",)),
+            MemoptLparSelector(ids=(1,)),
+            "must use the same representation",
+        ),
+        (
+            MemoptLparSelector(names=("web",)),
+            MemoptLparSelector(names=("web",)),
+            "must not overlap",
+        ),
+    ],
+)
+def test_shared_planning_rejects_invalid_scenarios_before_system_resolution(
+    prioritized, excluded, diagnostic
+):
+    resolve = AsyncMock()
+
+    with patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve):
+        with pytest.raises(ValueError, match=diagnostic):
+            asyncio.run(
+                plan_lpar_memopt_scores_operation(
+                    _config(), SYSTEM, prioritized, excluded
+                )
+            )
+
+    resolve.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
     ("adapter", "operation", "result"),
     [
         ("hmc_get_system_memopt_score", "get_system_memopt_score", {"score": "1"}),
@@ -137,6 +168,38 @@ def test_affinity_mcp_adapters_delegate_to_shared_operations(
     build.assert_called_once_with(profile="lab")
     expected = (config, SYSTEM, selector, None) if kwargs else (config, SYSTEM)
     delegated.assert_awaited_once_with(*expected)
+
+
+@pytest.mark.parametrize(
+    ("prioritized", "excluded", "diagnostic"),
+    [
+        (
+            MemoptLparSelector(names=("web",)),
+            MemoptLparSelector(ids=(1,)),
+            "must use the same representation",
+        ),
+        (
+            MemoptLparSelector(ids=(7,)),
+            MemoptLparSelector(ids=(7,)),
+            "must not overlap",
+        ),
+    ],
+)
+def test_affinity_mcp_rejects_invalid_scenarios_before_system_resolution(
+    prioritized, excluded, diagnostic
+):
+    resolve = AsyncMock()
+
+    with (
+        patch.object(server_lpar_config, "build_config", return_value=_config()),
+        patch("hmc_mcp.operations_ssh_network.resolve_ssh_names", resolve),
+    ):
+        with pytest.raises(ValueError, match=diagnostic):
+            server_lpar_config.hmc_plan_system_memopt_score(
+                SYSTEM, prioritized, excluded
+            )
+
+    resolve.assert_not_awaited()
 
 
 def test_selector_accepts_one_representation_and_is_frozen():

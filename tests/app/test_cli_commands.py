@@ -2362,6 +2362,32 @@ def test_affinity_planning_cli_rejects_mixed_selector_forms(monkeypatch):
     assert called is False
 
 
+def test_affinity_planning_cli_rejects_overlapping_selectors(monkeypatch):
+    called = False
+
+    async def fake_operation(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(cli_lpars, "plan_system_memopt_score", fake_operation)
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "plan-system-memopt-score",
+            "sys1",
+            "--prioritize-name",
+            "web",
+            "--exclude-name",
+            "web",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must not overlap" in result.output
+    assert called is False
+
+
 def test_affinity_cli_propagates_hmc_errors(monkeypatch):
     async def fail(*_args, **_kwargs):
         raise ssh_commands.HMCCLIError("calcscore unavailable")

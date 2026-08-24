@@ -30,6 +30,7 @@ from hmc_mcp.ssh_commands import (
     list_vnics as _list_vnics,
     plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
     plan_system_memopt_score as _plan_system_memopt_score,
+    validate_memopt_scenario,
     read_vios_identity,
     remove_vnic_slot,
 )
@@ -153,6 +154,7 @@ async def plan_lpar_memopt_scores(
     excluded: MemoptLparSelector | None = None,
 ) -> list[dict[str, object]]:
     """Return predicted LPAR scores for a read-only affinity scenario."""
+    validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _plan_lpar_memopt_scores(
         config, cast(str, system_name), prioritized, excluded
@@ -166,6 +168,7 @@ async def plan_system_memopt_score(
     excluded: MemoptLparSelector | None = None,
 ) -> dict[str, object]:
     """Return a predicted system score for a read-only affinity scenario."""
+    validate_memopt_scenario(prioritized, excluded)
     system_name, _ = await resolve_ssh_names(config, system, None)
     return await _plan_system_memopt_score(
         config, cast(str, system_name), prioritized, excluded
