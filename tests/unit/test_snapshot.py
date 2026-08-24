@@ -136,7 +136,10 @@ def test_numeric_strings_are_not_coerced() -> None:
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
 def test_nonstandard_json_constants_are_rejected(constant: str) -> None:
-    with pytest.raises(SnapshotValidationError, match="non-standard JSON constant"):
+    with pytest.raises(
+        SnapshotValidationError,
+        match="snapshot inspection failed.*non-standard JSON constant",
+    ):
         inspect_snapshot(
             '{"format":"hmc-mcp.lpar-snapshot","version":1,"value":' + constant + "}"
         )
@@ -190,7 +193,7 @@ def test_serializer_enforces_reader_size_limit() -> None:
             )
         }
     )
-    with pytest.raises(SnapshotValidationError, match="1 MiB"):
+    with pytest.raises(SnapshotValidationError, match="snapshot serialization.*1 MiB"):
         serialize_snapshot(oversized)
 
 

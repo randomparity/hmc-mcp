@@ -5,17 +5,24 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
 from hmc_mcp.cli_app import _client, _print_json, _run, _ssh_config, snapshot_app
 from hmc_mcp.operations_snapshot import capture_lpar_snapshot
 from hmc_mcp.snapshot import (
+    SnapshotValidationError,
     inspect_snapshot,
     read_snapshot,
     read_snapshot_text,
     serialize_snapshot,
 )
+
+
+def _fail(error: Exception) -> NoReturn:
+    typer.echo(f"Error: {error}", err=True)
+    raise typer.Exit(1) from error
 
 
 def _publish(path: Path, text: str) -> None:
@@ -54,19 +61,29 @@ def snapshot_capture(
                 profile_name,
             )
 
-    snapshot = _run(_go)
-    _publish(output, serialize_snapshot(snapshot))
+    try:
+        snapshot = _run(_go)
+        _publish(output, serialize_snapshot(snapshot))
+    except (SnapshotValidationError, OSError) as exc:
+        _fail(exc)
     _print_json({"path": str(output), "format": snapshot.format, "version": 1})
 
 
 @snapshot_app.command("validate")
 def snapshot_validate(path: Path) -> None:
     """Validate a local portable LPAR snapshot without HMC I/O."""
-    snapshot = read_snapshot(path)
+    try:
+        snapshot = read_snapshot(path)
+    except (SnapshotValidationError, OSError) as exc:
+        _fail(exc)
     _print_json({"valid": True, "format": snapshot.format, "version": snapshot.version})
 
 
 @snapshot_app.command("inspect")
 def snapshot_inspect(path: Path) -> None:
     """Inspect a local snapshot discriminator and version without HMC I/O."""
-    _print_json(inspect_snapshot(read_snapshot_text(path)).model_dump(mode="json"))
+    try:
+        result = inspect_snapshot(read_snapshot_text(path))
+    except (SnapshotValidationError, OSError) as exc:
+        _fail(exc)
+    _print_json(result.model_dump(mode="json"))

@@ -101,6 +101,18 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         ]
         == "capability-unavailable"
     )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_snapshot.read_lpar_profile_record",
+        AsyncMock(return_value=PROFILE + ",padding=" + ("x" * 1_048_576)),
+    )
+    with pytest.raises(ValueError, match="1 MiB"):
+        await capture_lpar_snapshot(
+            hmc,
+            HMCConfig(host="h", user="u", password="p", _env_file=None),
+            "sys",
+            "aix",
+            "default",
+        )
 
 
 @pytest.mark.asyncio
@@ -163,6 +175,19 @@ def test_placement_rejects_boolean_integer_fields() -> None:
                 "PartitionState": "running",
                 "HasDedicatedProcessors": "false",
                 "CurrentMemory": False,
+                "CurrentProcessingUnits": "1.0",
+            }
+        )
+
+
+@pytest.mark.parametrize("value", [7.9, "7.9"])
+def test_placement_rejects_fractional_integer_fields(value: object) -> None:
+    with pytest.raises(ValueError, match="integer current memory"):
+        _placement(
+            {
+                "PartitionState": "running",
+                "HasDedicatedProcessors": "false",
+                "CurrentMemory": value,
                 "CurrentProcessingUnits": "1.0",
             }
         )

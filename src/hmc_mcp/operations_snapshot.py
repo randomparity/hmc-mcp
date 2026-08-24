@@ -36,6 +36,7 @@ from hmc_mcp.snapshot import (
     SystemIdentity,
     inspect_snapshot,
     parse_snapshot,
+    serialize_snapshot,
     _normalized_from_profile,
     _parse_profile,
 )
@@ -72,7 +73,9 @@ def _text(value: Any, label: str, *, optional: bool = False) -> str | None:
 
 
 def _positive_int(value: Any, label: str) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ValueError(f"Snapshot capture requires integer {label}")
+    if isinstance(value, str) and not value.isdecimal():
         raise ValueError(f"Snapshot capture requires integer {label}")
     try:
         result = int(value)
@@ -256,4 +259,5 @@ async def capture_lpar_snapshot(
             ),
         ),
     )
+    serialize_snapshot(snapshot)
     return snapshot

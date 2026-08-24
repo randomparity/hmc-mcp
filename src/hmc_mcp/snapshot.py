@@ -39,6 +39,8 @@ class SnapshotValidationError(ValueError):
         )
         self.operation = operation
         self.pointer = pointer
+        self.rule = rule
+        self.correction = correction
 
 
 class _Value(BaseModel):
@@ -274,6 +276,12 @@ def _error(
     pointer: str, rule: str, correction: str = "correct the snapshot document"
 ) -> NoReturn:
     raise SnapshotValidationError("snapshot validation", pointer, rule, correction)
+
+
+def _relabel(error: SnapshotValidationError, operation: str) -> SnapshotValidationError:
+    return SnapshotValidationError(
+        operation, error.pointer, error.rule, error.correction
+    )
 
 
 def _bounded(text: str) -> None:
@@ -515,9 +523,17 @@ def serialize_snapshot(snapshot: LparSnapshot) -> str:
             sort_keys=False,
             allow_nan=False,
         )
-    except ValueError:
-        _error("/", "snapshot contains a non-finite JSON number")
-    _bounded(text)
+    except ValueError as exc:
+        raise SnapshotValidationError(
+            "snapshot serialization",
+            "/",
+            "snapshot contains a non-finite JSON number",
+            "correct the snapshot document",
+        ) from exc
+    try:
+        _bounded(text)
+    except SnapshotValidationError as exc:
+        raise _relabel(exc, "snapshot serialization") from exc
     return text
 
 
@@ -529,7 +545,10 @@ def _writer_timestamp(value: datetime) -> str:
 
 def read_snapshot(path: Path) -> LparSnapshot:
     """Read a bounded regular UTF-8 snapshot file and validate it."""
-    return parse_snapshot(read_snapshot_text(path))
+    try:
+        return parse_snapshot(read_snapshot_text(path))
+    except SnapshotValidationError as exc:
+        raise _relabel(exc, "snapshot read") from exc
 
 
 def read_snapshot_text(path: Path) -> str:
@@ -541,27 +560,35 @@ def read_snapshot_text(path: Path) -> str:
         if info.st_size > MAX_SNAPSHOT_BYTES:
             _error("/", "document exceeds 1 MiB")
         return path.read_text(encoding="utf-8")
-    except SnapshotValidationError:
-        raise
+    except SnapshotValidationError as exc:
+        raise _relabel(exc, "snapshot read") from exc
     except (OSError, UnicodeError) as exc:
-        _error("/", f"cannot read UTF-8 snapshot file: {exc}")
+        raise SnapshotValidationError(
+            "snapshot read",
+            "/",
+            f"cannot read UTF-8 snapshot file: {exc}",
+            "provide a readable UTF-8 snapshot file",
+        ) from exc
 
 
 def inspect_snapshot(text: str) -> SnapshotInspection:
     """Inspect only the discriminator and version without accepting the document."""
-    value = _load(text)
-    if not isinstance(value, dict):
-        _error("/", "snapshot root must be an object")
-    format_value = value.get("format")
-    version_value = value.get("version")
-    if format_value is not None and not isinstance(format_value, str):
-        _error("/format", "format must be a string")
-    if version_value is not None and (
-        not isinstance(version_value, int) or isinstance(version_value, bool)
-    ):
-        _error("/version", "version must be an integer")
-    return SnapshotInspection(
-        format=format_value,
-        version=version_value,
-        supported=format_value == FORMAT and version_value == VERSION,
-    )
+    try:
+        value = _load(text)
+        if not isinstance(value, dict):
+            _error("/", "snapshot root must be an object")
+        format_value = value.get("format")
+        version_value = value.get("version")
+        if format_value is not None and not isinstance(format_value, str):
+            _error("/format", "format must be a string")
+        if version_value is not None and (
+            not isinstance(version_value, int) or isinstance(version_value, bool)
+        ):
+            _error("/version", "version must be an integer")
+        return SnapshotInspection(
+            format=format_value,
+            version=version_value,
+            supported=format_value == FORMAT and version_value == VERSION,
+        )
+    except SnapshotValidationError as exc:
+        raise _relabel(exc, "snapshot inspection") from exc

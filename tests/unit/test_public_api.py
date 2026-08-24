@@ -6,6 +6,7 @@ import hashlib
 from importlib import import_module
 import inspect
 import json
+import re
 import subprocess
 import sys
 from typing import get_args, get_type_hints
@@ -159,6 +160,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "capture_lpar_console",
         "ConsoleCapture",
         "ConsoleHeldError",
+        "LparSnapshot",
         "SnapshotInspection",
         "SnapshotValidationError",
         "capture_lpar_snapshot",
@@ -335,6 +337,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "validate_lpar_snapshot",
         },
         "hmc_mcp.snapshot": {
+            "LparSnapshot",
             "SnapshotInspection",
             "SnapshotValidationError",
         },
@@ -400,7 +403,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #314: portable snapshot capture and local reads are reusable.
-    expected_digest = "5123cf7583a35c8daf7fd2336d05c45611991dc11f3ea02773a25e2c4c577ad9"  # pragma: allowlist secret
+    expected_digest = "6ebce01320972aa2a766d96af9fdea4162aea66fb65ede85ad69cda2159d203b"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -443,14 +446,15 @@ def test_exported_literal_value_sets_are_frozen() -> None:
 
 
 def test_public_signatures_exclude_presentation_types() -> None:
-    forbidden = ("typer", "rich", "fastmcp", "mcp.")
+    forbidden = ("typer", "rich", "fastmcp")
     for name in api.__all__:
         value = getattr(api, name)
         try:
-            signature = str(inspect.signature(value)).lower()
+            signature = str(inspect.signature(value)).lower().replace("hmc_mcp.", "")
         except (TypeError, ValueError):
             continue
         assert not any(package in signature for package in forbidden), name
+        assert re.search(r"(?<![\w-])mcp\.", signature) is None, name
 
 
 def test_importing_public_api_does_not_import_presentation_modules() -> None:

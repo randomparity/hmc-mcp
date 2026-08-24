@@ -165,6 +165,7 @@ from hmc_mcp.operations_snapshot import (
     validate_lpar_snapshot,
 )
 from hmc_mcp.snapshot import (
+    LparSnapshot,
     SnapshotInspection,
     SnapshotValidationError,
 )
@@ -312,6 +313,7 @@ __all__ = [
     "capture_lpar_console",
     "ConsoleCapture",
     "ConsoleHeldError",
+    "LparSnapshot",
     "SnapshotInspection",
     "SnapshotValidationError",
     "capture_lpar_snapshot",
