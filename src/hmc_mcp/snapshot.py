@@ -27,6 +27,9 @@ MAX_JSON_NESTING = 100
 PROFILE_MEDIA_TYPE = "text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"
 PLACEMENT_MEDIA_TYPE = "application/vnd.hmc-mcp.runtime-placement+json;version=1"
 SCORES_MEDIA_TYPE = "application/vnd.hmc-mcp.affinity-scores+json;version=1"
+MINIMUM_AFFINITY_POLICY_MEDIA_TYPE = (
+    "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+)
 _RFC3339 = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
 )
@@ -100,10 +103,21 @@ class SnapshotSource(_Value):
 
 
 class SnapshotCapability(_Value):
-    name: Literal["affinity-scores", "lpar-profile-record", "runtime-placement"]
+    name: Literal[
+        "affinity-scores",
+        "lpar-profile-record",
+        "minimum-affinity-policy",
+        "runtime-placement",
+    ]
     version: Literal[1]
     supported: bool
     collection: Literal["hmc-rest", "hmc-cli", "derived"]
+    unavailable_reason: str | None = None
+
+    @field_validator("unavailable_reason")
+    @classmethod
+    def nonblank_reason(cls, value: str | None) -> str | None:
+        return _nonblank(value) if value is not None else None
 
 
 class NativeProfile(_Value):
@@ -192,6 +206,7 @@ class SnapshotObservations(_Value):
     observed_at: datetime
     runtime_placement: ObservationEnvelope | None = None
     scores: ObservationEnvelope | None = None
+    minimum_affinity_policy: ObservationEnvelope | None = None
 
 
 class LparSnapshot(_Value):
@@ -230,6 +245,7 @@ class LparSnapshot(_Value):
         self._check_observation(
             "affinity-scores", self.observations.scores, SCORES_MEDIA_TYPE
         )
+        self._check_minimum_affinity_policy()
         native = _parse_profile(self.configuration.native.data)
         if native.get("name") != self.configuration.profile_name:
             raise ValueError(
@@ -241,6 +257,43 @@ class LparSnapshot(_Value):
         if expected != self.configuration.normalized:
             raise ValueError("native profile and normalized projection must agree")
         return self
+
+    def _check_minimum_affinity_policy(self) -> None:
+        name = "minimum-affinity-policy"
+        capability = next(
+            (item for item in self.capabilities if item.name == name), None
+        )
+        observation = self.observations.minimum_affinity_policy
+        if capability is None:
+            if observation is not None:
+                raise ValueError(f"{name} observation requires a capability")
+            return
+        if capability.collection != "hmc-cli":
+            raise ValueError(f"{name} capability must use hmc-cli collection")
+        if capability.supported:
+            if capability.unavailable_reason is not None or observation is None:
+                raise ValueError(
+                    f"supported {name} requires an observation and no unavailable reason"
+                )
+            if observation.media_type != MINIMUM_AFFINITY_POLICY_MEDIA_TYPE:
+                raise ValueError(f"{name} observation media_type is unsupported")
+            expected = {"min_affinity_score", "min_affinity_score_action"}
+            if set(observation.data) != expected:
+                raise ValueError(f"{name} observation fields are invalid")
+            score = observation.data["min_affinity_score"]
+            action = observation.data["min_affinity_score_action"]
+            if (
+                isinstance(score, bool)
+                or not isinstance(score, int)
+                or not 0 <= score <= 100
+            ):
+                raise ValueError(f"{name} score must be an integer from 0 through 100")
+            if action not in {"none", "warn", "fail"}:
+                raise ValueError(f"{name} action must be none, warn, or fail")
+        elif capability.unavailable_reason is None or observation is not None:
+            raise ValueError(
+                f"unsupported {name} requires a reason and no observation"
+            )
 
     def _check_observation(
         self, name: str, value: ObservationEnvelope | None, media_type: str

@@ -87,6 +87,61 @@ def test_complete_snapshot_round_trips_value_semantically() -> None:
     assert json.loads(serialize_snapshot(snapshot)) == _document()
 
 
+def test_minimum_affinity_policy_observation_round_trips() -> None:
+    document = _document()
+    document["capabilities"].insert(
+        2,
+        {
+            "name": "minimum-affinity-policy",
+            "version": 1,
+            "supported": True,
+            "collection": "hmc-cli",
+        },
+    )
+    document["observations"]["minimum_affinity_policy"] = {
+        "media_type": (
+            "application/vnd.hmc-mcp.minimum-affinity-policy+json;version=1"
+        ),
+        "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
+    }
+    assert json.loads(serialize_snapshot(parse_snapshot(json.dumps(document)))) == document
+
+
+def test_unsupported_minimum_affinity_policy_requires_reason_and_no_observation():
+    document = _document()
+    document["capabilities"].insert(
+        2,
+        {
+            "name": "minimum-affinity-policy",
+            "version": 1,
+            "supported": False,
+            "collection": "hmc-cli",
+            "unavailable_reason": "upgrade system firmware",
+        },
+    )
+    assert parse_snapshot(json.dumps(document)).capabilities[2].supported is False
+
+    document["capabilities"][2]["unavailable_reason"] = " "
+    with pytest.raises(SnapshotValidationError, match="unavailable_reason"):
+        parse_snapshot(json.dumps(document))
+
+
+def test_supported_minimum_affinity_policy_requires_observation_and_no_reason():
+    document = _document()
+    document["capabilities"].insert(
+        2,
+        {
+            "name": "minimum-affinity-policy",
+            "version": 1,
+            "supported": True,
+            "collection": "hmc-cli",
+            "unavailable_reason": "not allowed",
+        },
+    )
+    with pytest.raises(SnapshotValidationError, match="minimum-affinity-policy"):
+        parse_snapshot(json.dumps(document))
+
+
 @pytest.mark.parametrize(
     ("mutation", "pointer"),
     [
