@@ -1,7 +1,7 @@
 # Affinity planning design
 
-**Issue:** #311  
-**Branch:** `feat/affinity-planning-311` from `main`  
+**Issue:** #311
+**Branch:** `feat/affinity-planning-311` from `main`
 **Decision:** [ADR 0083](../../adr/0083-affinity-planning-contract.md)
 
 Authority comes from issue #311 and the campaign acceptance criteria. The implementation reuses
