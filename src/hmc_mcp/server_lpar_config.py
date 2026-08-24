@@ -11,10 +11,13 @@ from ._app import (
 from .common import build_config, client_from_env
 from .operations_ssh_network import (
     get_lpar_memopt_score,
+    get_system_memopt_score,
     list_lpar_memopt_scores,
+    plan_lpar_memopt_scores,
+    plan_system_memopt_score,
 )
-
 from .ssh_commands import (
+    MemoptLparSelector,
     get_lpar_description,
     get_lpar_msp,
     get_lpar_proc_compat,
@@ -90,6 +93,73 @@ def hmc_list_lpar_memopt_scores(
     return _run(
         lambda: list_lpar_memopt_scores(
             build_config(profile=profile), system_name_or_uuid, lpar_name_or_uuid
+        )
+    )
+
+
+@tool(effect="read", operation="system.get_memopt_score", target_kind="managed_system")
+def hmc_get_system_memopt_score(
+    system_name_or_uuid: str, profile: str | None = None
+) -> dict[str, object]:
+    """Return a managed system's current memory-optimization affinity score.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: get_system_memopt_score(
+            build_config(profile=profile), system_name_or_uuid
+        )
+    )
+
+
+@tool(effect="read", operation="lpar.plan_memopt_scores", target_kind="managed_system")
+def hmc_plan_lpar_memopt_scores(
+    system_name_or_uuid: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+    profile: str | None = None,
+) -> list[dict[str, object]]:
+    """Return predicted LPAR affinity scores without applying optimization.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        prioritized: Optional LPAR names or IDs to prioritize in the scenario.
+        excluded: Optional LPAR names or IDs to exclude from the scenario.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: plan_lpar_memopt_scores(
+            build_config(profile=profile),
+            system_name_or_uuid,
+            prioritized,
+            excluded,
+        )
+    )
+
+
+@tool(effect="read", operation="system.plan_memopt_score", target_kind="managed_system")
+def hmc_plan_system_memopt_score(
+    system_name_or_uuid: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+    profile: str | None = None,
+) -> dict[str, object]:
+    """Return a predicted system affinity score without applying optimization.
+
+    Args:
+        system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
+        prioritized: Optional LPAR names or IDs to prioritize in the scenario.
+        excluded: Optional LPAR names or IDs to exclude from the scenario.
+        profile: TOML profile name, or the environment-default HMC when omitted.
+    """
+    return _run(
+        lambda: plan_system_memopt_score(
+            build_config(profile=profile),
+            system_name_or_uuid,
+            prioritized,
+            excluded,
         )
     )
 

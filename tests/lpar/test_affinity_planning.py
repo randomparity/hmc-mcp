@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncssh
 import pytest
 
+from hmc_mcp import server_lpar_config
 from hmc_mcp.config import HMCConfig
+from hmc_mcp.operations_ssh_network import (
+    get_system_memopt_score as get_system_memopt_score_operation,
+    plan_lpar_memopt_scores as plan_lpar_memopt_scores_operation,
+    plan_system_memopt_score as plan_system_memopt_score_operation,
+)
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import (
     MemoptLparSelector,
@@ -56,6 +62,81 @@ def _process_error(stderr: str) -> asyncssh.ProcessError:
         stdout="",
         stderr=stderr,
     )
+
+
+@pytest.mark.parametrize(
+    ("operation", "primitive", "result"),
+    [
+        (get_system_memopt_score_operation, "get_system_memopt_score", {"score": "1"}),
+        (
+            plan_lpar_memopt_scores_operation,
+            "plan_lpar_memopt_scores",
+            [{"score": "2"}],
+        ),
+        (
+            plan_system_memopt_score_operation,
+            "plan_system_memopt_score",
+            {"score": "3"},
+        ),
+    ],
+)
+def test_shared_affinity_operations_resolve_system_uuid_before_delegating(
+    operation, primitive, result
+):
+    system_uuid = "11111111-1111-1111-1111-111111111111"
+    selector = MemoptLparSelector(names=("web",))
+    delegated = AsyncMock(return_value=result)
+
+    with (
+        patch(
+            "hmc_mcp.operations_ssh_network.resolve_ssh_names",
+            AsyncMock(return_value=(SYSTEM, None)),
+        ) as resolve,
+        patch(f"hmc_mcp.operations_ssh_network._{primitive}", delegated),
+    ):
+        kwargs = (
+            {"prioritized": selector, "excluded": None}
+            if primitive.startswith("plan_")
+            else {}
+        )
+        actual = asyncio.run(operation(_config(), system_uuid, **kwargs))
+
+    assert actual == result
+    resolve.assert_awaited_once_with(_config(), system_uuid, None)
+    expected = (_config(), SYSTEM, selector, None) if kwargs else (_config(), SYSTEM)
+    delegated.assert_awaited_once_with(*expected)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "operation", "result"),
+    [
+        ("hmc_get_system_memopt_score", "get_system_memopt_score", {"score": "1"}),
+        ("hmc_plan_lpar_memopt_scores", "plan_lpar_memopt_scores", [{"score": "2"}]),
+        ("hmc_plan_system_memopt_score", "plan_system_memopt_score", {"score": "3"}),
+    ],
+)
+def test_affinity_mcp_adapters_delegate_to_shared_operations(
+    adapter, operation, result
+):
+    config = _config()
+    selector = MemoptLparSelector(ids=(7,))
+    delegated = AsyncMock(return_value=result)
+
+    with (
+        patch.object(server_lpar_config, "build_config", return_value=config) as build,
+        patch.object(server_lpar_config, operation, delegated),
+    ):
+        kwargs = (
+            {"prioritized": selector, "excluded": None}
+            if operation.startswith("plan_")
+            else {}
+        )
+        actual = getattr(server_lpar_config, adapter)(SYSTEM, profile="lab", **kwargs)
+
+    assert actual == result
+    build.assert_called_once_with(profile="lab")
+    expected = (config, SYSTEM, selector, None) if kwargs else (config, SYSTEM)
+    delegated.assert_awaited_once_with(*expected)
 
 
 def test_selector_accepts_one_representation_and_is_frozen():

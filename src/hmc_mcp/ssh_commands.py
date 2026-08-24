@@ -11,7 +11,7 @@ import io
 import re
 import shlex
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
 from .config import HMCConfig
@@ -23,8 +23,12 @@ from .ssh import HMCCLIError, run_hmc_command
 class MemoptLparSelector:
     """Select LPARs by name or ID for an affinity-planning scenario."""
 
-    names: tuple[str, ...] = ()
-    ids: tuple[int, ...] = ()
+    names: tuple[str, ...] = field(
+        default=(), metadata={"description": "LPAR names in the planning scenario."}
+    )
+    ids: tuple[int, ...] = field(
+        default=(), metadata={"description": "LPAR IDs in the planning scenario."}
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "names", tuple(self.names))

@@ -102,7 +102,11 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "PartitionType",
         "list_fc_ports",
         "get_lpar_memopt_score",
+        "get_system_memopt_score",
         "list_lpar_memopt_scores",
+        "plan_lpar_memopt_scores",
+        "plan_system_memopt_score",
+        "MemoptLparSelector",
         "list_sea_adapters",
         "set_sriov_adapter_mode",
         "list_vnics",
@@ -272,8 +276,12 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "VnicPartialError",
             "add_vnic",
             "get_lpar_memopt_score",
+            "get_system_memopt_score",
             "list_fc_ports",
             "list_lpar_memopt_scores",
+            "plan_lpar_memopt_scores",
+            "plan_system_memopt_score",
+            "MemoptLparSelector",
             "list_sea_adapters",
             "list_vnics",
             "remove_vnic",
@@ -329,8 +337,9 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #310, which added the LPAR memory-optimization
-        score operations. Before that, issue #400 added the owning-system selector to
+        Last moved by issue #311, which added read-only affinity planning operations.
+        Before that, issue #310 added the LPAR memory-optimization score operations.
+        Before that, issue #400 added the owning-system selector to
         logical-partition PCM metric operations (ADR 0077). Before that, issue
         #401 made the destructive RemoteRestart
         operation and source-system selector explicit (ADR 0078). Before that,
@@ -367,9 +376,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #310: current LPAR memory-optimization scores are reusable API
-    # operations under ADR 0029.
-    expected_digest = "41344e8e8218937deef3428971c44c1d39c3c7c937843dd6dab56ab4a6682fca"  # pragma: allowlist secret
+    # Moved by #311: affinity-planning operations and their selector are reusable.
+    expected_digest = "79704a4a87213eb80728f8a92c074eaa77ba342042ba6e3e30299bff96d0be2f"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

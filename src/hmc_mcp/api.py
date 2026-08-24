@@ -105,6 +105,7 @@ from hmc_mcp.operations_provision import (
     provision_lpar,
 )
 from hmc_mcp.operations_ssh_network import (
+    MemoptLparSelector,
     VnicBackingSelector,
     VnicBackingSnapshot,
     VnicCapabilityError,
@@ -113,10 +114,13 @@ from hmc_mcp.operations_ssh_network import (
     VnicSnapshot,
     add_vnic,
     get_lpar_memopt_score,
+    get_system_memopt_score,
     list_fc_ports,
     list_lpar_memopt_scores,
     list_sea_adapters,
     list_vnics,
+    plan_lpar_memopt_scores,
+    plan_system_memopt_score,
     remove_vnic,
 )
 from .operations_storage import (
@@ -238,7 +242,11 @@ __all__ = [
     "PartitionType",
     "list_fc_ports",
     "get_lpar_memopt_score",
+    "get_system_memopt_score",
     "list_lpar_memopt_scores",
+    "plan_lpar_memopt_scores",
+    "plan_system_memopt_score",
+    "MemoptLparSelector",
     "list_sea_adapters",
     "set_sriov_adapter_mode",
     "list_vnics",

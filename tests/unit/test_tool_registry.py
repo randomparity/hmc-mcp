@@ -142,6 +142,22 @@ def test_extra_targets_supply_a_kind_the_table_cannot_name():
     assert [(t.kind, t.argument, t.required) for t in targets] == [("user", "name", True)]
 
 
+def test_affinity_operations_bind_only_the_managed_system_selector():
+    from hmc_mcp.server import TOOL_SECURITY
+
+    names = (
+        "hmc_get_system_memopt_score",
+        "hmc_plan_lpar_memopt_scores",
+        "hmc_plan_system_memopt_score",
+    )
+    for name in names:
+        security = TOOL_SECURITY[name]
+        assert security.effect == "read"
+        assert [(target.kind, target.argument) for target in security.targets] == [
+            ("managed_system", "system_name_or_uuid")
+        ]
+
+
 
 # ---------------------------------------------------------------------------
 # #260 — declared nested target selectors, one level below the signature

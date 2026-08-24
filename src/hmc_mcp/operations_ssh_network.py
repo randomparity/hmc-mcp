@@ -15,8 +15,10 @@ from hmc_mcp.operations_lpar import (
 )
 from hmc_mcp.operations_pcie import _require_admitted_environment
 from hmc_mcp.ssh_commands import (
+    MemoptLparSelector,
     add_vnic_backing,
     get_lpar_memopt_score as _get_lpar_memopt_score,
+    get_system_memopt_score as _get_system_memopt_score,
     list_fc_ports as _list_fc_ports,
     list_lpar_memopt_scores as _list_lpar_memopt_scores,
     list_sea_adapters as _list_sea_adapters,
@@ -26,6 +28,8 @@ from hmc_mcp.ssh_commands import (
     list_vnic_backing_rows,
     list_vnic_rows,
     list_vnics as _list_vnics,
+    plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
+    plan_system_memopt_score as _plan_system_memopt_score,
     read_vios_identity,
     remove_vnic_slot,
 )
@@ -134,6 +138,38 @@ async def list_lpar_memopt_scores(
     """Return current memory-optimization scores for selected system LPARs."""
     system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
     return await _list_lpar_memopt_scores(config, cast(str, system_name), lpar_name)
+
+
+async def get_system_memopt_score(config: HMCConfig, system: str) -> dict[str, object]:
+    """Return a managed system's current memory-optimization score."""
+    system_name, _ = await resolve_ssh_names(config, system, None)
+    return await _get_system_memopt_score(config, cast(str, system_name))
+
+
+async def plan_lpar_memopt_scores(
+    config: HMCConfig,
+    system: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+) -> list[dict[str, object]]:
+    """Return predicted LPAR scores for a read-only affinity scenario."""
+    system_name, _ = await resolve_ssh_names(config, system, None)
+    return await _plan_lpar_memopt_scores(
+        config, cast(str, system_name), prioritized, excluded
+    )
+
+
+async def plan_system_memopt_score(
+    config: HMCConfig,
+    system: str,
+    prioritized: MemoptLparSelector | None = None,
+    excluded: MemoptLparSelector | None = None,
+) -> dict[str, object]:
+    """Return a predicted system score for a read-only affinity scenario."""
+    system_name, _ = await resolve_ssh_names(config, system, None)
+    return await _plan_system_memopt_score(
+        config, cast(str, system_name), prioritized, excluded
+    )
 
 
 def _required(value: str, name: str) -> str:
