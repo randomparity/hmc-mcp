@@ -7,6 +7,7 @@ import math
 import re
 import stat
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, NoReturn, Self, cast
 
@@ -290,10 +291,25 @@ def _bounded(text: str) -> None:
         _error("/", "document exceeds 1 MiB", "provide a snapshot no larger than 1 MiB")
 
 
+def _json_float(token: str) -> float:
+    result = float(token)
+    try:
+        exact = Decimal(token)
+    except InvalidOperation:
+        _error("/", "invalid JSON number")
+    if not math.isfinite(result) or (result == 0 and exact != 0):
+        _error(
+            "/",
+            "JSON number is not finitely representable",
+            "use a finite representable snapshot number",
+        )
+    return result
+
+
 class _DuplicateScanner:
     def __init__(self, text: str):
         self.text = text
-        self.decoder = json.JSONDecoder()
+        self.decoder = json.JSONDecoder(parse_float=_json_float)
 
     def scan(self) -> None:
         end = self._value(0, ())
@@ -377,6 +393,7 @@ def _load(text: str) -> Any:
         _DuplicateScanner(text).scan()
         return json.loads(
             text,
+            parse_float=_json_float,
             parse_constant=lambda value: _error(
                 "/", f"non-standard JSON constant {value} is not permitted"
             ),

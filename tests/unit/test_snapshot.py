@@ -234,3 +234,17 @@ def test_oversized_integer_literal_has_bounded_diagnostic(operation) -> None:
         SnapshotValidationError, match="JSON number exceeds the supported size"
     ):
         operation(text)
+
+
+@pytest.mark.parametrize("number", ["1e999999", "-1e999999", "1e-999999", "-1e-999999"])
+@pytest.mark.parametrize("operation", [parse_snapshot, inspect_snapshot])
+def test_unrepresentable_float_has_bounded_diagnostic(number: str, operation) -> None:
+    if operation is parse_snapshot:
+        document = json.dumps(_document())
+        text = document.replace('"data": {}', f'"data": {{"value": {number}}}', 1)
+    else:
+        text = '{"value":' + number + "}"
+    with pytest.raises(
+        SnapshotValidationError, match="JSON number is not finitely representable"
+    ):
+        operation(text)
