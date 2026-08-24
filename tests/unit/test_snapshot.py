@@ -216,3 +216,21 @@ def test_inspection_identifies_unsupported_version_without_validation() -> None:
 def test_raw_text_limit_is_utf8_bytes() -> None:
     with pytest.raises(SnapshotValidationError, match="1 MiB"):
         inspect_snapshot('"' + ("é" * 524_288) + '"')
+
+
+@pytest.mark.parametrize("operation", [parse_snapshot, inspect_snapshot])
+def test_excessive_json_nesting_has_bounded_diagnostic(operation) -> None:
+    text = ("[" * 900) + "0" + ("]" * 900)
+    with pytest.raises(
+        SnapshotValidationError, match="JSON nesting exceeds 100 levels"
+    ):
+        operation(text)
+
+
+@pytest.mark.parametrize("operation", [parse_snapshot, inspect_snapshot])
+def test_oversized_integer_literal_has_bounded_diagnostic(operation) -> None:
+    text = '{"format":"hmc-mcp.lpar-snapshot","version":' + ("9" * 5_000) + "}"
+    with pytest.raises(
+        SnapshotValidationError, match="JSON number exceeds the supported size"
+    ):
+        operation(text)

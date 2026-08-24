@@ -22,6 +22,7 @@ from pydantic import (
 FORMAT = "hmc-mcp.lpar-snapshot"
 VERSION = 1
 MAX_SNAPSHOT_BYTES = 1024 * 1024
+MAX_JSON_NESTING = 100
 PROFILE_MEDIA_TYPE = "text/vnd.ibm.hmc.lssyscfg-profile;version=1;charset=utf-8"
 PLACEMENT_MEDIA_TYPE = "application/vnd.hmc-mcp.runtime-placement+json;version=1"
 SCORES_MEDIA_TYPE = "application/vnd.hmc-mcp.affinity-scores+json;version=1"
@@ -304,13 +305,23 @@ class _DuplicateScanner:
             index += 1
         return index
 
-    def _value(self, index: int, path: tuple[Any, ...]) -> int:
+    def _value(self, index: int, path: tuple[Any, ...], depth: int = 0) -> int:
         index = self._space(index)
         if index >= len(self.text):
             return index
         if self.text[index] == "{":
+            if depth >= MAX_JSON_NESTING:
+                _error(
+                    _pointer(path),
+                    f"JSON nesting exceeds {MAX_JSON_NESTING} levels",
+                )
             return self._object(index, path)
         if self.text[index] == "[":
+            if depth >= MAX_JSON_NESTING:
+                _error(
+                    _pointer(path),
+                    f"JSON nesting exceeds {MAX_JSON_NESTING} levels",
+                )
             return self._array(index, path)
         try:
             _, end = self.decoder.raw_decode(self.text, index)
@@ -336,7 +347,7 @@ class _DuplicateScanner:
             index = self._space(end)
             if index >= len(self.text) or self.text[index] != ":":
                 return len(self.text)
-            index = self._space(self._value(index + 1, (*path, key)))
+            index = self._space(self._value(index + 1, (*path, key), len(path) + 1))
             if index < len(self.text) and self.text[index] == "}":
                 return index + 1
             if index >= len(self.text) or self.text[index] != ",":
@@ -350,7 +361,7 @@ class _DuplicateScanner:
         if index < len(self.text) and self.text[index] == "]":
             return index + 1
         while index < len(self.text):
-            index = self._space(self._value(index, (*path, offset)))
+            index = self._space(self._value(index, (*path, offset), len(path) + 1))
             if index < len(self.text) and self.text[index] == "]":
                 return index + 1
             if index >= len(self.text) or self.text[index] != ",":
@@ -372,8 +383,22 @@ def _load(text: str) -> Any:
         )
     except SnapshotValidationError:
         raise
+    except RecursionError:
+        _error(
+            "/",
+            f"JSON nesting exceeds {MAX_JSON_NESTING} levels",
+            "reduce the snapshot document nesting",
+        )
     except json.JSONDecodeError as exc:
         _error("/", f"invalid JSON at line {exc.lineno} column {exc.colno}")
+    except ValueError as exc:
+        if "integer string conversion" in str(exc):
+            _error(
+                "/",
+                "JSON number exceeds the supported size",
+                "use a bounded snapshot integer",
+            )
+        _error("/", "invalid JSON value")
 
 
 def _parse_profile(record: str) -> dict[str, str]:
