@@ -143,6 +143,15 @@ class ResourceGroupMemoptQuery:
     unavailable_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class MinimumAffinityPolicyQuery:
+    """Raw minimum-affinity policy result from the SSH command boundary."""
+
+    min_affinity_score: int | None
+    min_affinity_score_action: Literal["none", "warn", "fail"] | None
+    unavailable_reason: str | None = None
+
+
 def _resource_group_selector_option(selector: MemoptResourceGroupSelector) -> str:
     if selector.all:
         return "--gid all"
@@ -222,6 +231,50 @@ async def query_resource_group_memopt_scores(
         for item in items:
             item["prediction_guaranteed"] = False
     return ResourceGroupMemoptQuery(items)
+
+
+async def query_minimum_affinity_policy(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+) -> MinimumAffinityPolicyQuery:
+    """Read a validated minimum-affinity policy when POWER11 mode is available."""
+    modes = await get_proc_compat_modes(config, system_name)
+    if "POWER11" not in modes:
+        return MinimumAffinityPolicyQuery(
+            None,
+            None,
+            "Minimum-affinity policy requires system firmware that advertises "
+            "POWER11 processor compatibility; update the system firmware and retry.",
+        )
+    fields = ("min_affinity_score", "min_affinity_score_action")
+    command = (
+        f"lssyscfg -r lpar -m {shlex.quote(system_name)} "
+        f"--filter {shlex.quote(build_filter([('lpar_names', lpar_name)]))} "
+        f"-F {','.join(fields)} --header"
+    )
+    try:
+        rows = parse_hmc_delimited_rows(await run_hmc_command(config, command), fields)
+        if len(rows) != 1:
+            raise ValueError(f"expected exactly one policy row; received {len(rows)}")
+        row = rows[0]
+        score_text = row["min_affinity_score"]
+        if not score_text.isdecimal():
+            raise ValueError("min_affinity_score must be an integer from 0 through 100")
+        score = int(score_text)
+        if score > 100:
+            raise ValueError("min_affinity_score must be an integer from 0 through 100")
+        action = row["min_affinity_score_action"]
+        if action not in {"none", "warn", "fail"}:
+            raise ValueError("min_affinity_score_action must be none, warn, or fail")
+    except ValueError as error:
+        raise HMCCLIError(
+            f"malformed lssyscfg minimum-affinity policy output: {error}"
+        ) from error
+    return MinimumAffinityPolicyQuery(
+        score,
+        action,
+    )
 
 
 def validate_memopt_scenario(
