@@ -69,6 +69,18 @@ def test_selector_accepts_one_representation_and_is_frozen():
 
 
 @pytest.mark.parametrize(
+    ("field", "values"),
+    [("names", ["web", "db"]), ("ids", [1, 2])],
+)
+def test_selector_detaches_from_mutable_caller_sequences(field, values):
+    selector = MemoptLparSelector(**{field: values})
+
+    values.append("changed" if field == "names" else 3)
+
+    assert getattr(selector, field) == tuple(values[:2])
+
+
+@pytest.mark.parametrize(
     ("kwargs", "diagnostic"),
     [
         ({}, "must not be empty"),
@@ -284,6 +296,54 @@ def test_score_operations_reject_missing_required_fields(operation, stdout, miss
             HMCCLIError, match=rf"row 1 is missing required fields: {missing}"
         ):
             asyncio.run(operation(_config(), SYSTEM))
+
+
+@pytest.mark.parametrize(
+    ("operation", "stdout", "field"),
+    [
+        (get_system_memopt_score, "curr_sys_score=", "curr_sys_score"),
+        (get_system_memopt_score, "curr_sys_score", "curr_sys_score"),
+        (
+            plan_system_memopt_score,
+            "curr_sys_score=84,predicted_sys_score=,firmware_extension=",
+            "predicted_sys_score",
+        ),
+        (
+            plan_system_memopt_score,
+            "predicted_sys_score,curr_sys_score=84,firmware_extension=",
+            "predicted_sys_score",
+        ),
+        (
+            plan_lpar_memopt_scores,
+            "lpar_name=web,lpar_id=1,curr_lpar_score=80,"
+            "predicted_lpar_score=,firmware_extension=",
+            "predicted_lpar_score",
+        ),
+        (
+            plan_lpar_memopt_scores,
+            "predicted_lpar_score,lpar_name=web,lpar_id=1,"
+            "curr_lpar_score=80,firmware_extension=",
+            "predicted_lpar_score",
+        ),
+    ],
+)
+def test_score_operations_reject_empty_required_fields(operation, stdout, field):
+    connection = _connection(stdout)
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+        with pytest.raises(
+            HMCCLIError, match=rf"row 1 has empty required fields: {field}"
+        ):
+            asyncio.run(operation(_config(), SYSTEM))
+
+
+def test_score_operations_preserve_empty_extension_fields():
+    connection = _connection("curr_sys_score=84,firmware_extension=")
+
+    with patch("hmc_mcp.ssh.asyncssh.connect", return_value=connection):
+        result = asyncio.run(get_system_memopt_score(_config(), SYSTEM))
+
+    assert result == {"curr_sys_score": "84", "firmware_extension": ""}
 
 
 @pytest.mark.parametrize(

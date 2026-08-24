@@ -27,6 +27,8 @@ class MemoptLparSelector:
     ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "names", tuple(self.names))
+        object.__setattr__(self, "ids", tuple(self.ids))
         if not self.names and not self.ids:
             raise ValueError("memopt LPAR selector must not be empty")
         if self.names and self.ids:
@@ -1138,6 +1140,11 @@ def _validated_memopt_rows(
         if missing:
             raise HMCCLIError(
                 f"lsmemopt row {index} is missing required fields: {', '.join(missing)}"
+            )
+        empty = sorted(field for field in required if row[field] == "")
+        if empty:
+            raise HMCCLIError(
+                f"lsmemopt row {index} has empty required fields: {', '.join(empty)}"
             )
     return rows
 
