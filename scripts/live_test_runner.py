@@ -740,6 +740,20 @@ async def inventory_lpar_profiles(client: Client, state: RunState) -> None:
     )
     record(state, 4, "hmc_plan_system_memopt_score", st, data)
 
+    st, data = await call(
+        client,
+        "hmc_list_resource_group_memopt_scores",
+        system_name_or_uuid=context.system_name,
+    )
+    record(state, 4, "hmc_list_resource_group_memopt_scores", st, data)
+
+    st, data = await call(
+        client,
+        "hmc_plan_resource_group_memopt_scores",
+        system_name_or_uuid=context.system_name,
+    )
+    record(state, 4, "hmc_plan_resource_group_memopt_scores", st, data)
+
 
 # ---------------------------------------------------------------------------
 # ST5 — Metrics & Templates

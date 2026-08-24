@@ -106,6 +106,8 @@ from hmc_mcp.operations_provision import (
 )
 from hmc_mcp.operations_ssh_network import (
     MemoptLparSelector,
+    MemoptResourceGroupSelector,
+    ResourceGroupAffinityResult,
     VnicBackingSelector,
     VnicBackingSnapshot,
     VnicCapabilityError,
@@ -121,6 +123,8 @@ from hmc_mcp.operations_ssh_network import (
     list_vnics,
     plan_lpar_memopt_scores,
     plan_system_memopt_score,
+    list_resource_group_memopt_scores,
+    plan_resource_group_memopt_scores,
     remove_vnic,
 )
 from .operations_storage import (
@@ -247,6 +251,10 @@ __all__ = [
     "plan_lpar_memopt_scores",
     "plan_system_memopt_score",
     "MemoptLparSelector",
+    "MemoptResourceGroupSelector",
+    "ResourceGroupAffinityResult",
+    "list_resource_group_memopt_scores",
+    "plan_resource_group_memopt_scores",
     "list_sea_adapters",
     "set_sriov_adapter_mode",
     "list_vnics",

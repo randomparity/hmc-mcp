@@ -19,6 +19,21 @@ from .documents import LparResources
 from .ssh import HMCCLIError, run_hmc_command
 
 _MEMOPT_SELECTOR_SAFETY_CEILING_BYTES = 4096
+_RESOURCE_GROUP_MEMOPT_MINIMUM_HMC = (11, 1, 1110)
+_RESOURCE_GROUP_CURRENT_FIELDS = (
+    "resource_group_name",
+    "resource_group_id",
+    "curr_score",
+)
+_RESOURCE_GROUP_CALCULATED_FIELDS = (
+    *_RESOURCE_GROUP_CURRENT_FIELDS,
+    "predicted_score",
+    "requested_lpar_names",
+    "requested_lpar_ids",
+    "protected_lpar_names",
+    "protected_lpar_ids",
+)
+_HMC_ERROR_CODE = re.compile(r"(?:^|[\r\n]|:\s)(HSCL[A-Z0-9]{4})\b")
 
 
 @dataclass(frozen=True)
@@ -67,6 +82,146 @@ class MemoptLparSelector:
                 raise ValueError("memopt LPAR selector ids must be positive integers")
             if len(set(self.ids)) != len(self.ids):
                 raise ValueError("memopt LPAR selector ids must not contain duplicates")
+
+
+@dataclass(frozen=True)
+class MemoptResourceGroupSelector:
+    """Select resource groups by name, ID, or the explicit all-groups mode."""
+
+    names: tuple[str, ...] = field(
+        default=(), metadata={"description": "Resource-group names."}
+    )
+    ids: tuple[int, ...] = field(
+        default=(), metadata={"description": "Resource-group IDs."}
+    )
+    all: bool = field(
+        default=False, metadata={"description": "Select all resource groups."}
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "names", tuple(self.names))
+        object.__setattr__(self, "ids", tuple(self.ids))
+        modes = sum((bool(self.names), bool(self.ids), self.all))
+        if modes != 1:
+            raise ValueError("resource-group selector must contain names, ids, or all")
+        if self.names:
+            invalid = any(
+                not isinstance(name, str)
+                or not name.strip()
+                or "," in name
+                or any(
+                    ord(character) < 32 or ord(character) == 127 for character in name
+                )
+                for name in self.names
+            )
+            if invalid:
+                raise ValueError(
+                    "resource-group names must be nonblank and contain no commas or control characters"
+                )
+            if len(set(self.names)) != len(self.names):
+                raise ValueError("resource-group names must not contain duplicates")
+        if self.ids:
+            invalid = any(
+                not isinstance(group_id, int)
+                or isinstance(group_id, bool)
+                or group_id < 0
+                for group_id in self.ids
+            )
+            if invalid:
+                raise ValueError("resource-group ids must be non-negative integers")
+            if len(set(self.ids)) != len(self.ids):
+                raise ValueError("resource-group ids must not contain duplicates")
+        if len(_resource_group_selector_option(self).encode("utf-8")) > 4096:
+            raise ValueError("resource-group selector option exceeds 4096 UTF-8 bytes")
+
+
+@dataclass(frozen=True)
+class ResourceGroupMemoptQuery:
+    """Raw SSH query result before presentation-neutral system resolution."""
+
+    items: list[dict[str, object]]
+    unavailable_reason: str | None = None
+
+
+def _resource_group_selector_option(selector: MemoptResourceGroupSelector) -> str:
+    if selector.all:
+        return "--gid all"
+    if selector.names:
+        return f"-g {shlex.quote(','.join(selector.names))}"
+    return f"--gid {shlex.quote(','.join(str(group_id) for group_id in selector.ids))}"
+
+
+def _parse_hmc_version(output: str) -> tuple[int, int, int] | None:
+    compact = re.search(r"V(\d+)R(\d+)M(\d+)", output, re.IGNORECASE)
+    if compact:
+        return (int(compact.group(1)), int(compact.group(2)), int(compact.group(3)))
+    labelled = re.search(
+        r"Version:\s*(\d+).*?Release:\s*(\d+).*?Service Pack:\s*(\d+)",
+        output,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if labelled is None:
+        return None
+    return (int(labelled.group(1)), int(labelled.group(2)), int(labelled.group(3)))
+
+
+async def query_resource_group_memopt_scores(
+    config: HMCConfig,
+    system_name: str,
+    selector: MemoptResourceGroupSelector,
+    *,
+    calculated: bool,
+) -> ResourceGroupMemoptQuery:
+    """Query resource-group scores or return an evidence-backed capability result."""
+    version = _parse_hmc_version(await run_hmc_command(config, "lshmc -V"))
+    if version is None or version < _RESOURCE_GROUP_MEMOPT_MINIMUM_HMC:
+        return ResourceGroupMemoptQuery(
+            [],
+            "Resource-group affinity requires HMC V11R1M1110 or later; "
+            "upgrade the HMC or verify its version output before retrying.",
+        )
+    fields = (
+        _RESOURCE_GROUP_CALCULATED_FIELDS
+        if calculated
+        else _RESOURCE_GROUP_CURRENT_FIELDS
+    )
+    mode = "calcscore" if calculated else "currscore"
+    command = (
+        f"lsmemopt -m {shlex.quote(system_name)} -r resgroup -o {mode} "
+        f"{_resource_group_selector_option(selector)} -F {','.join(fields)} --header"
+    )
+    try:
+        output = await run_hmc_command(config, command)
+    except HMCCLIError as error:
+        match = _HMC_ERROR_CODE.search(str(error))
+        if match is None or match.group(1) != "HSCLCA00":
+            raise
+        return ResourceGroupMemoptQuery(
+            [],
+            "The managed system does not support multiple resource groups; "
+            "use POWER11 resource-group affinity on a supported system.",
+        )
+    try:
+        rows = parse_hmc_delimited_rows(output, fields)
+    except ValueError as error:
+        raise HMCCLIError(
+            f"malformed lsmemopt resource-group output: {error}"
+        ) from error
+    required = {*_RESOURCE_GROUP_CURRENT_FIELDS}
+    if calculated:
+        required.add("predicted_score")
+    for index, row in enumerate(rows, start=1):
+        empty = sorted(field for field in required if not row[field])
+        if empty:
+            raise HMCCLIError(
+                f"lsmemopt resource-group row {index} has empty required fields: "
+                f"{', '.join(empty)}"
+            )
+    items: list[dict[str, object]] = [dict(row) for row in rows]
+    if calculated:
+        for item in items:
+            item["prediction_guaranteed"] = False
+    return ResourceGroupMemoptQuery(items)
 
 
 def validate_memopt_scenario(
@@ -378,9 +533,7 @@ def validate_caller_token(token: str) -> None:
     tool typing.
     """
     if not isinstance(token, str):
-        raise ValueError(
-            f"caller_token must be a string, got {type(token).__name__}"
-        )
+        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")
     if not token:
         raise ValueError("caller_token must not be empty")
     if len(token) > 64:
@@ -393,9 +546,7 @@ def validate_caller_token(token: str) -> None:
             "only printable ASCII is accepted"
         )
     if any(character.isspace() for character in token):
-        raise ValueError(
-            "caller_token contains whitespace; it must be a single word"
-        )
+        raise ValueError("caller_token contains whitespace; it must be a single word")
     forbidden = {
         ",": "commas corrupt the HMC CLI -i parser",
         "=": "equals signs corrupt the HMC CLI -i parser",
@@ -818,9 +969,7 @@ async def read_sriov_profile_ports(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> dict[str, str]:
     fields = ("name", "sriov_eth_logical_ports")
-    filters = build_filter(
-        [("lpar_names", lpar_name), ("profile_names", profile_name)]
-    )
+    filters = build_filter([("lpar_names", lpar_name), ("profile_names", profile_name)])
     command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
@@ -1820,14 +1969,22 @@ def build_installios_command(
     validate_vlan_id(vlan_id)
 
     flags = [
-        "-d", shlex.quote(install_source),
-        "-i", shlex.quote(client_ip),
-        "-S", shlex.quote(subnet_mask),
-        "-g", shlex.quote(gateway),
-        "-s", shlex.quote(system_name),
-        "-p", shlex.quote(partition_name),
-        "-r", shlex.quote(profile_name),
-        "-V", vlan_id,
+        "-d",
+        shlex.quote(install_source),
+        "-i",
+        shlex.quote(client_ip),
+        "-S",
+        shlex.quote(subnet_mask),
+        "-g",
+        shlex.quote(gateway),
+        "-s",
+        shlex.quote(system_name),
+        "-p",
+        shlex.quote(partition_name),
+        "-r",
+        shlex.quote(profile_name),
+        "-V",
+        vlan_id,
     ]
     if mac_address is not None:
         flags += ["-m", shlex.quote(validate_mac_address(mac_address))]

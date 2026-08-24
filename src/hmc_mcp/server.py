@@ -246,6 +246,8 @@ from .server_lpar_config import (
     hmc_list_lpar_memopt_scores as hmc_list_lpar_memopt_scores,
     hmc_plan_lpar_memopt_scores as hmc_plan_lpar_memopt_scores,
     hmc_plan_system_memopt_score as hmc_plan_system_memopt_score,
+    hmc_list_resource_group_memopt_scores as hmc_list_resource_group_memopt_scores,
+    hmc_plan_resource_group_memopt_scores as hmc_plan_resource_group_memopt_scores,
     hmc_set_lpar_description as hmc_set_lpar_description,
     hmc_set_lpar_msp as hmc_set_lpar_msp,
     hmc_set_lpar_proc_compat as hmc_set_lpar_proc_compat,
