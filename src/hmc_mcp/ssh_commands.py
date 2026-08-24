@@ -297,7 +297,9 @@ def validate_caller_token(token: str) -> None:
     tool typing.
     """
     if not isinstance(token, str):
-        raise ValueError(f"caller_token must be a string, got {type(token).__name__}")
+        raise ValueError(
+            f"caller_token must be a string, got {type(token).__name__}"
+        )
     if not token:
         raise ValueError("caller_token must not be empty")
     if len(token) > 64:
@@ -310,7 +312,9 @@ def validate_caller_token(token: str) -> None:
             "only printable ASCII is accepted"
         )
     if any(character.isspace() for character in token):
-        raise ValueError("caller_token contains whitespace; it must be a single word")
+        raise ValueError(
+            "caller_token contains whitespace; it must be a single word"
+        )
     forbidden = {
         ",": "commas corrupt the HMC CLI -i parser",
         "=": "equals signs corrupt the HMC CLI -i parser",
@@ -733,7 +737,9 @@ async def read_sriov_profile_ports(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> dict[str, str]:
     fields = ("name", "sriov_eth_logical_ports")
-    filters = build_filter([("lpar_names", lpar_name), ("profile_names", profile_name)])
+    filters = build_filter(
+        [("lpar_names", lpar_name), ("profile_names", profile_name)]
+    )
     command = f"lssyscfg -r prof -m {shlex.quote(system_name)} --filter {shlex.quote(filters)} -F {','.join(fields)} --header"
     rows = _parse_admitted_rows(await run_hmc_command(config, command), fields)
     if len(rows) != 1:
@@ -1631,22 +1637,14 @@ def build_installios_command(
     validate_vlan_id(vlan_id)
 
     flags = [
-        "-d",
-        shlex.quote(install_source),
-        "-i",
-        shlex.quote(client_ip),
-        "-S",
-        shlex.quote(subnet_mask),
-        "-g",
-        shlex.quote(gateway),
-        "-s",
-        shlex.quote(system_name),
-        "-p",
-        shlex.quote(partition_name),
-        "-r",
-        shlex.quote(profile_name),
-        "-V",
-        vlan_id,
+        "-d", shlex.quote(install_source),
+        "-i", shlex.quote(client_ip),
+        "-S", shlex.quote(subnet_mask),
+        "-g", shlex.quote(gateway),
+        "-s", shlex.quote(system_name),
+        "-p", shlex.quote(partition_name),
+        "-r", shlex.quote(profile_name),
+        "-V", vlan_id,
     ]
     if mac_address is not None:
         flags += ["-m", shlex.quote(validate_mac_address(mac_address))]

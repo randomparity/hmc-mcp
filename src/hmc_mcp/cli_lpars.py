@@ -579,7 +579,7 @@ def lpars_create(
         "--caller-token",
         help="Optional tracking reference embedded in the partition description "
         "as '\\[caller <token>]' (ADR 0064); 1–64 printable ASCII characters, "
-        'no whitespace or , = " [ ] \\',
+        "no whitespace or , = \" [ ] \\",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
