@@ -499,46 +499,45 @@ def _normalized_from_profile(values: dict[str, str]) -> NormalizedConfiguration:
         raise ValueError("native profile contains invalid normalized values") from exc
 
 
+def _parse_timestamp(value: Any, pointer: str) -> Any:
+    if not isinstance(value, str):
+        return value
+    if _RFC3339.fullmatch(value) is None:
+        _error(pointer, "timestamp must use RFC 3339 syntax")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        _error(pointer, "timestamp must be valid RFC 3339")
+
+
+def _prepare_snapshot(value: dict[str, Any]) -> dict[str, Any]:
+    prepared = dict(value)
+    if "captured_at" in prepared:
+        prepared["captured_at"] = _parse_timestamp(
+            prepared["captured_at"], "/captured_at"
+        )
+    capabilities = prepared.get("capabilities")
+    if isinstance(capabilities, list):
+        prepared["capabilities"] = tuple(capabilities)
+    observations = prepared.get("observations")
+    if isinstance(observations, dict):
+        prepared["observations"] = dict(observations)
+        if "observed_at" in observations:
+            prepared["observations"]["observed_at"] = _parse_timestamp(
+                observations["observed_at"], "/observations/observed_at"
+            )
+    return prepared
+
+
 def parse_snapshot(text: str) -> LparSnapshot:
     """Parse and strictly validate one version-1 snapshot JSON document."""
     value = _load(text)
     if not isinstance(value, dict):
         _error("/", "snapshot root must be an object")
     try:
-        prepared = dict(value)
-        captured = prepared.get("captured_at")
-        if isinstance(captured, str):
-            if _RFC3339.fullmatch(captured) is None:
-                _error("/captured_at", "timestamp must use RFC 3339 syntax")
-            try:
-                prepared["captured_at"] = datetime.fromisoformat(
-                    captured.replace("Z", "+00:00")
-                )
-            except ValueError:
-                _error("/captured_at", "timestamp must be valid RFC 3339")
-        capabilities = prepared.get("capabilities")
-        if isinstance(capabilities, list):
-            prepared["capabilities"] = tuple(capabilities)
-        observations = prepared.get("observations")
-        if isinstance(observations, dict):
-            prepared["observations"] = dict(observations)
-            observed = observations.get("observed_at")
-            if isinstance(observed, str):
-                if _RFC3339.fullmatch(observed) is None:
-                    _error(
-                        "/observations/observed_at",
-                        "timestamp must use RFC 3339 syntax",
-                    )
-                try:
-                    prepared["observations"]["observed_at"] = datetime.fromisoformat(
-                        observed.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    _error(
-                        "/observations/observed_at",
-                        "timestamp must be valid RFC 3339",
-                    )
-        return LparSnapshot.model_validate(prepared)
+        return LparSnapshot.model_validate(_prepare_snapshot(value))
+    except SnapshotValidationError:
+        raise
     except ValidationError as exc:
         item = exc.errors(include_input=False)[0]
         message = item["msg"]

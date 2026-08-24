@@ -165,8 +165,9 @@ def test_profile_name_rejects_whitespace() -> None:
 def test_timestamp_requires_rfc3339_separator_and_offset() -> None:
     document = _document()
     document["captured_at"] = "2026-08-24 20:00:01+00:00"
-    with pytest.raises(SnapshotValidationError, match="/captured_at"):
+    with pytest.raises(SnapshotValidationError) as raised:
         parse_snapshot(json.dumps(document))
+    assert raised.value.pointer == "/captured_at"
 
 
 def test_serializer_canonicalizes_timestamps_to_utc_seconds() -> None:
