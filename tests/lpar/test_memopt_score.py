@@ -149,7 +149,7 @@ def test_get_lpar_memopt_score_rejects_multiple_rows():
 
     with (
         patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
-        pytest.raises(HMCCLIError, match="returned 2 rows; expected exactly 1"),
+        pytest.raises(HMCCLIError, match="returned 2 rows; expected at most 1"),
     ):
         asyncio.run(get_lpar_memopt_score(cfg, SYSTEM_NAME, LPAR_NAME))
 
@@ -221,6 +221,32 @@ def test_list_lpar_memopt_scores_with_lpar_filter():
     conn.run.assert_called_once_with(expected_cmd, check=True, timeout=300.0)
     assert len(result) == 1
     assert result[0]["lpar_name"] == "p9da10v1t"
+
+
+def test_list_lpar_memopt_scores_filter_rejects_multiple_rows():
+    """A filtered list fails when the HMC reports more than one row."""
+    cfg = _config()
+    conn = _make_ssh_mock(MULTI_ROW)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        pytest.raises(HMCCLIError, match="returned 2 rows; expected at most 1"),
+    ):
+        asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, LPAR_NAME))
+
+
+def test_list_lpar_memopt_scores_filter_rejects_mismatched_row():
+    """A filtered list fails when the HMC reports a different partition."""
+    cfg = _config()
+    conn = _make_ssh_mock(SECOND_ROW)
+
+    with (
+        patch("hmc_mcp.ssh.asyncssh.connect", return_value=conn),
+        pytest.raises(
+            HMCCLIError, match="reported LPAR 'dapurea1t'; expected 'p9da10v1t'"
+        ),
+    ):
+        asyncio.run(list_lpar_memopt_scores(cfg, SYSTEM_NAME, LPAR_NAME))
 
 
 def test_list_lpar_memopt_scores_empty_output_returns_empty_list():

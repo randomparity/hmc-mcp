@@ -1010,6 +1010,17 @@ async def list_lpar_memopt_scores(
             raise HMCCLIError(
                 f"lsmemopt row {index} is missing required fields: {', '.join(missing)}"
             )
+    if lpar_name is not None:
+        if len(rows) > 1:
+            raise HMCCLIError(
+                f"lsmemopt filtered query for LPAR {lpar_name!r} returned "
+                f"{len(rows)} rows; expected at most 1"
+            )
+        if rows and rows[0]["lpar_name"] != lpar_name:
+            raise HMCCLIError(
+                f"lsmemopt reported LPAR {rows[0]['lpar_name']!r}; "
+                f"expected {lpar_name!r}"
+            )
     return rows
 
 
@@ -1027,17 +1038,12 @@ async def get_lpar_memopt_score(
     if not lpar_name.strip():
         raise ValueError("lpar_name must not be empty")
     rows = await list_lpar_memopt_scores(config, system_name, lpar_name)
-    if len(rows) != 1:
+    if not rows:
         raise HMCCLIError(
             f"lsmemopt query for LPAR {lpar_name!r} on system {system_name!r} "
-            f"returned {len(rows)} rows; expected exactly 1"
+            "returned 0 rows; expected exactly 1"
         )
-    row = rows[0]
-    if row["lpar_name"] != lpar_name:
-        raise HMCCLIError(
-            f"lsmemopt reported LPAR {row['lpar_name']!r}; expected {lpar_name!r}"
-        )
-    return row
+    return rows[0]
 
 
 async def list_memory_pools(
