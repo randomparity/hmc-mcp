@@ -65,8 +65,10 @@ such as `Any` and built-in containers are not facade exports. The initial invent
   underscore helpers and `_Inventory` are internal.
 - `operations_health`: operation `fleet_health`; type `FleetHealthResult`; underscore helpers are
   internal.
-- `operations_install`: operations `install_lpar_os` and `install_vios`; no owned types or
-  public-name exclusions. Both submit the detached `installios` CLI bridge ADR 0070 selected
+- `operations_install`: operations `install_lpar_os` and `install_vios`; no owned types;
+  synchronous request validator `validate_install_request` is excluded — the MCP tools call it
+  to reject a malformed argument before a client is opened, which the operations cannot do.
+  Both submit the detached `installios` CLI bridge ADR 0070 selected
   after ADR 0069 found no `InstallLPAR` or `InstallVIOS` REST job on any surveyed HMC, so each
   returns the bridge's detach handle — an opaque `dict[str, Any]` carrying the resolved system
   and partition names, the remote PID, the install log path, and a restating message — rather

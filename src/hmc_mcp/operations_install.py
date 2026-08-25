@@ -31,6 +31,36 @@ _logger = logging.getLogger(__name__)
 _TargetResolver = Callable[..., Awaitable[str]]
 
 
+def validate_install_request(
+    *,
+    install_source: str,
+    client_ip: str,
+    subnet_mask: str,
+    gateway: str,
+    profile_name: str,
+    vlan_id: str,
+    mac_address: str | None,
+) -> None:
+    """Reject an install request that cannot become an ``installios`` command.
+
+    One list, two call sites. :func:`_submit_install` calls it so a facade
+    caller — who reaches no tool body — is covered; the MCP tools call it
+    *before* opening a client, which the operation cannot do because its client
+    is already an argument. ``build_installios_command`` keeps its own
+    independent copy as the injection boundary, trusting neither.
+
+    Synchronous, so ADR 0029's selection rule leaves it outside the facade.
+    """
+    validate_install_source(install_source)
+    validate_ipv4_address(client_ip)
+    validate_ipv4_subnet_mask(subnet_mask)
+    validate_ipv4_address(gateway)
+    validate_vlan_id(vlan_id)
+    validate_hmc_name(profile_name, "profile_name")
+    if mac_address is not None:
+        validate_mac_address(mac_address)
+
+
 async def _submit_install(
     hmc: HMCClient,
     target_name_or_uuid: str,
@@ -45,22 +75,16 @@ async def _submit_install(
     vlan_id: str,
     mac_address: str | None,
 ) -> dict[str, Any]:
-    """Resolve one install target's CLI names and detach ``installios`` on it.
-
-    The validation below is the entry-path-independent copy: it protects a
-    facade caller, who reaches no tool body. The tool bodies keep their own copy
-    because theirs runs before a client is opened, which this one cannot — the
-    client is already an argument here. ``build_installios_command`` validates a
-    third time as the injection boundary, trusting neither.
-    """
-    validate_install_source(install_source)
-    validate_ipv4_address(client_ip)
-    validate_ipv4_subnet_mask(subnet_mask)
-    validate_ipv4_address(gateway)
-    validate_vlan_id(vlan_id)
-    validate_hmc_name(profile_name, "profile_name")
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    """Resolve one install target's CLI names and detach ``installios`` on it."""
+    validate_install_request(
+        install_source=install_source,
+        client_ip=client_ip,
+        subnet_mask=subnet_mask,
+        gateway=gateway,
+        profile_name=profile_name,
+        vlan_id=vlan_id,
+        mac_address=mac_address,
+    )
 
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     target_uuid = await resolve_target_uuid(
@@ -88,10 +112,19 @@ async def _submit_install(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
-    pid = await run_installios(hmc.config, command)
     # The only record this process leaves. There is no HMC job, no ownership
     # guard on this path (ADR 0092 §3.4a) and so no authorization audit event,
     # and the HMC-side log is shared across managed systems and truncated.
+    # Intent is recorded before the submit, because a submit that raises is the
+    # ambiguous case: the caller cannot tell whether anything was started, and
+    # without this line would not even know which partition to look at.
+    _logger.info(
+        "Submitting installios on %s/%s, log %s",
+        system_name,
+        partition_name,
+        log_path,
+    )
+    pid = await run_installios(hmc.config, command)
     _logger.info(
         "Detached installios on %s/%s: pid %s, log %s",
         system_name,

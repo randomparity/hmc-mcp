@@ -26,17 +26,13 @@ from .common import (
     resolve_vios_uuid,
 )
 from .jobs import validate_wait_timing
-from .operations_install import install_lpar_os, install_vios
+from .operations_install import (
+    install_lpar_os,
+    install_vios,
+    validate_install_request,
+)
 from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
-from .ssh_commands import (
-    validate_hmc_name,
-    validate_install_source,
-    validate_ipv4_address,
-    validate_ipv4_subnet_mask,
-    validate_mac_address,
-    validate_vlan_id,
-)
 
 
 tool, register_tools, tool_security = tool_module()
@@ -187,18 +183,17 @@ def hmc_install_vios(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    # Not redundant with install_vios's own validation: this copy runs before
-    # client_from_env opens an HMC session, so a malformed argument is rejected
-    # without logging on. The operation's copy cannot — its client is already
-    # constructed. Keep both in step.
-    validate_install_source(install_source)
-    validate_ipv4_address(vios_ip)
-    validate_ipv4_subnet_mask(nim_subnetmask)
-    validate_ipv4_address(nim_gateway)
-    validate_vlan_id(vlan_id)
-    validate_hmc_name(profile_name, "profile_name")
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    # install_vios validates too, but only once its client exists. Calling the
+    # same list here rejects a malformed argument before an HMC session opens.
+    validate_install_request(
+        install_source=install_source,
+        client_ip=vios_ip,
+        subnet_mask=nim_subnetmask,
+        gateway=nim_gateway,
+        profile_name=profile_name,
+        vlan_id=vlan_id,
+        mac_address=mac_address,
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -286,18 +281,17 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    # Not redundant with install_lpar_os's own validation: this copy runs before
-    # client_from_env opens an HMC session, so a malformed argument is rejected
-    # without logging on. The operation's copy cannot — its client is already
-    # constructed. Keep both in step.
-    validate_install_source(install_source)
-    validate_ipv4_address(lpar_ip)
-    validate_ipv4_subnet_mask(nim_subnetmask)
-    validate_ipv4_address(nim_gateway)
-    validate_vlan_id(vlan_id)
-    validate_hmc_name(profile_name, "profile_name")
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    # install_lpar_os validates too, but only once its client exists. Calling
+    # the same list here rejects a malformed argument before a session opens.
+    validate_install_request(
+        install_source=install_source,
+        client_ip=lpar_ip,
+        subnet_mask=nim_subnetmask,
+        gateway=nim_gateway,
+        profile_name=profile_name,
+        vlan_id=vlan_id,
+        mac_address=mac_address,
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
