@@ -11,8 +11,11 @@ from ._app import (
 from .common import client_from_env
 from .jobs import JobOutcome
 from .operations_lpm import (
+    LpmAffinityMigrationResult,
+    LpmAffinityPreflightRequest,
     abort_lpar_migration,
     migrate_lpar,
+    migrate_lpar_with_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
 )
@@ -79,6 +82,44 @@ def hmc_migrate_lpar(
                 system_name_or_uuid=system_name_or_uuid,
             )
             return cast(JobOutcome, result.job)
+
+    return _run(_go)
+
+
+@tool(effect="mutate", operation="lpar.migrate_affinity", target_kind="lpar")
+def hmc_migrate_lpar_with_affinity_preflight(
+    lpar_name_or_uuid: str,
+    target_system_name_or_uuid: str,
+    affinity_preflight: LpmAffinityPreflightRequest,
+    target_profile_name: str | None = None,
+    wait_time: int | None = None,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    profile: str | None = None,
+    system_name_or_uuid: str | None = None,
+) -> LpmAffinityMigrationResult:
+    """Run explicit affinity preflight before validation-first LPM.
+
+    The companion result always preserves the preflight evidence and decision.
+    Explicit fail-closed intent prevents both HMC validation and migration when
+    affinity evidence is adverse or unavailable.
+    """
+
+    async def _go():
+        async with client_from_env(profile) as hmc:
+            return await migrate_lpar_with_affinity_preflight(
+                hmc,
+                lpar_name_or_uuid,
+                target_system_name_or_uuid,
+                affinity_preflight,
+                target_profile_name,
+                wait_time,
+                wait=wait,
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+                system_name_or_uuid=system_name_or_uuid,
+            )
 
     return _run(_go)
 

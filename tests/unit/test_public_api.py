@@ -62,10 +62,14 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "clear_lpar_boot_order",
         "BootDeviceSelector",
         "migrate_lpar",
+        "migrate_lpar_with_affinity_preflight",
         "abort_lpar_migration",
         "recover_lpar_migration",
         "remote_restart_lpar",
         "LpmResult",
+        "LpmAffinityPreflightRequest",
+        "LpmAffinityPreflightOutcome",
+        "LpmAffinityMigrationResult",
         "list_virtual_switches",
         "list_virtual_networks",
         "create_virtual_network",
@@ -244,9 +248,16 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "set_lpar_ownership_description",
         },
         "hmc_mcp.operations_lpm": {
+            "LpmAffinityMigrationResult",
+            "LpmAffinityPreflightOutcome",
+            "LpmAffinityPreflightRequest",
             "LpmResult",
+            "LpmAffinityPreflightRequest",
+            "LpmAffinityPreflightOutcome",
+            "LpmAffinityMigrationResult",
             "abort_lpar_migration",
             "migrate_lpar",
+            "migrate_lpar_with_affinity_preflight",
             "recover_lpar_migration",
             "remote_restart_lpar",
         },
@@ -385,7 +396,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #318, which added post-activation affinity assessment.
+        Last moved by issue #320, which added affinity-aware LPM preflight.
+        Before that, issue #318 added post-activation affinity assessment.
         Before that, issue #316 added the Power11 minimum-affinity policy write.
         Before that, issue #315 added the Power11 minimum-affinity policy read.
         Before that, issue #312 added capability-aware resource-group affinity.
@@ -428,8 +440,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #318: provisioning accepts explicit post-activation assessment.
-    expected_digest = "77968d71389a103524940cedf1519dbf6d10fd53b726461d521ff1d3465bda12"  # pragma: allowlist secret
+    # Moved by #320: LPM gains a separate affinity-aware operation and result.
+    expected_digest = "83b992546c89522352bb5330a631187c4d6952074140dddb52a8bf5a29562386"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

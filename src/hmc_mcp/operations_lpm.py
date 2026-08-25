@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Literal
 
 from .client import HMCClient
 from .common import is_uuid, resolve_lpar_uuid, resolve_system_name
@@ -25,6 +25,156 @@ class LpmResult:
 
     lpar_uuid: str
     job: dict[str, Any] | JobOutcome | None
+
+
+@dataclass(frozen=True)
+class LpmAffinityPreflightRequest:
+    """Explicit affinity evidence and caller-owned migration response."""
+
+    source_current_score: int | None
+    destination_estimated_score: int | None
+    destination_check_basis: Literal["calculated", "migration-check"]
+    configured_minimum: int | None
+    capability: Literal["available", "unavailable"]
+    capability_limits: tuple[str, ...]
+    response: Literal["warn", "fail"]
+
+
+@dataclass(frozen=True)
+class LpmAffinityPreflightOutcome:
+    """Stable evidence-bearing decision made before HMC LPM validation."""
+
+    status: Literal["passed", "warned", "failed", "unavailable"]
+    reason: str
+    proceed: bool
+    source_current_score: int | None
+    destination_estimated_score: int | None
+    destination_check_basis: Literal["calculated", "migration-check"]
+    configured_minimum: int | None
+    capability: Literal["available", "unavailable"]
+    capability_limits: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LpmAffinityMigrationResult:
+    """Affinity preflight paired with an optional submitted migration job."""
+
+    lpar_uuid: str | None
+    preflight: LpmAffinityPreflightOutcome
+    job: dict[str, Any] | JobOutcome | None
+
+
+def _validate_affinity_score(value: int | None, name: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+        raise ValueError(f"{name} must be an integer from 0 through 100 or null")
+
+
+def _preflight_outcome(
+    request: LpmAffinityPreflightRequest,
+    status: Literal["passed", "warned", "failed", "unavailable"],
+    reason: str,
+    proceed: bool,
+) -> LpmAffinityPreflightOutcome:
+    return LpmAffinityPreflightOutcome(
+        status=status,
+        reason=reason,
+        proceed=proceed,
+        source_current_score=request.source_current_score,
+        destination_estimated_score=request.destination_estimated_score,
+        destination_check_basis=request.destination_check_basis,
+        configured_minimum=request.configured_minimum,
+        capability=request.capability,
+        capability_limits=request.capability_limits,
+    )
+
+
+def evaluate_lpm_affinity_preflight(
+    request: LpmAffinityPreflightRequest,
+) -> LpmAffinityPreflightOutcome:
+    """Evaluate explicit affinity evidence without HMC traffic."""
+    _validate_affinity_score(request.source_current_score, "source_current_score")
+    _validate_affinity_score(
+        request.destination_estimated_score, "destination_estimated_score"
+    )
+    _validate_affinity_score(request.configured_minimum, "configured_minimum")
+    if request.destination_check_basis not in {"calculated", "migration-check"}:
+        raise ValueError(
+            "destination_check_basis must be calculated or migration-check"
+        )
+    if request.capability not in {"available", "unavailable"}:
+        raise ValueError("capability must be available or unavailable")
+    if request.response not in {"warn", "fail"}:
+        raise ValueError("affinity preflight response must be warn or fail")
+    if not request.capability_limits or any(
+        not isinstance(limit, str) or not limit.strip()
+        for limit in request.capability_limits
+    ):
+        raise ValueError("capability_limits must contain non-empty descriptions")
+
+    unavailable = request.capability == "unavailable" or any(
+        value is None
+        for value in (
+            request.source_current_score,
+            request.destination_estimated_score,
+            request.configured_minimum,
+        )
+    )
+    if unavailable:
+        reason = "Affinity preflight evidence or platform capability is unavailable."
+        if request.response == "fail":
+            return _preflight_outcome(request, "failed", reason, False)
+        return _preflight_outcome(request, "unavailable", reason, True)
+
+    assert request.destination_estimated_score is not None
+    assert request.configured_minimum is not None
+    if request.destination_estimated_score < request.configured_minimum:
+        reason = (
+            f"Destination estimate {request.destination_estimated_score} is below "
+            f"configured minimum {request.configured_minimum}."
+        )
+        if request.response == "fail":
+            return _preflight_outcome(request, "failed", reason, False)
+        return _preflight_outcome(request, "warned", reason, True)
+    return _preflight_outcome(
+        request,
+        "passed",
+        "Destination estimate meets the configured minimum.",
+        True,
+    )
+
+
+async def migrate_lpar_with_affinity_preflight(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    target_system_name_or_uuid: str,
+    affinity_preflight: LpmAffinityPreflightRequest,
+    target_profile_name: str | None = None,
+    wait_time: int | None = None,
+    *,
+    wait: bool = False,
+    timeout_seconds: int = 300,
+    poll_interval: int = 5,
+    system_name_or_uuid: str | None = None,
+) -> LpmAffinityMigrationResult:
+    """Run affinity preflight before canonical validation-first migration."""
+    preflight = evaluate_lpm_affinity_preflight(affinity_preflight)
+    if not preflight.proceed:
+        return LpmAffinityMigrationResult(None, preflight, None)
+    result = await migrate_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        target_system_name_or_uuid,
+        target_profile_name,
+        wait_time,
+        wait=wait,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        validate_first=True,
+        system_name_or_uuid=system_name_or_uuid,
+    )
+    return LpmAffinityMigrationResult(result.lpar_uuid, preflight, result.job)
 
 
 async def _finish_job(
