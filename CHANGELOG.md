@@ -208,11 +208,14 @@ carry a `### Facade manifest` section.
   (`tests/unit/test_install_operations.py`). Changing one is a consumer-visible break even though
   it moves neither the manifest nor the signature digest, so it needs the same minor release.
   Typing the shape so the digest can see it is tracked by #468.
-- Added: `PcmResource` (#446); this moves the frozen public signature digest. The frozen
-  dataclass `resolve_pcm_resource` returns was already selected by ADR 0029's type clause and
-  was absent from the manifest by omission, so a consumer received it from a supported call
-  with no supported import path to name it — visible to a downstream type-checker since the
-  PEP 561 marker shipped (#367). This records the manifest catching up, not a new capability.
+- Added: `PcmResource` and `RemoteRestartOperation` (#446); this moves the frozen public
+  signature digest. `PcmResource` is the frozen dataclass `resolve_pcm_resource` returns;
+  `RemoteRestartOperation` is the literal alias `remote_restart_lpar` takes, whose alternatives
+  are `validate`, `recover`, `restart`, `cleanup`, and `cancel`. Both were already selected by
+  ADR 0029's type clause and absent from the manifest by omission, so a consumer met them
+  through a supported call with no supported import path to name them — visible to a downstream
+  type-checker since the PEP 561 marker shipped (#367). This records the manifest catching up,
+  not a new capability.
 - Fixed: `set_sriov_adapter_mode` appeared twice in `hmc_mcp.api.__all__` (#446). The name is
   imported once, so the duplicate was inert at runtime, but ADR 0029 calls `__all__` an
   exhaustive manifest and a repeated entry makes it malformed. The export set is unchanged.

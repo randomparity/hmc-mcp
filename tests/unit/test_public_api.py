@@ -14,8 +14,9 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from types import ModuleType
-from typing import get_args, get_origin, get_type_hints
+from typing import Literal, TypeVar, get_args, get_origin, get_type_hints
 
 import hmc_mcp
 from hmc_mcp import api
@@ -114,6 +115,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "abort_lpar_migration",
         "recover_lpar_migration",
         "remote_restart_lpar",
+        "RemoteRestartOperation",
         "LpmResult",
         "LpmAffinityPreflightRequest",
         "LpmAffinityPreflightOutcome",
@@ -311,38 +313,93 @@ def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
 
 
 def _collect_owned_types(hint: object, owned: dict[tuple[str, str], object]) -> None:
-    """Record every ``hmc_mcp``-owned type reachable from one resolved annotation."""
+    """Record every ``hmc_mcp``-owned type reachable from one resolved annotation.
+
+    ``Callable[[X], Y]`` puts its parameter list in a plain ``list``, so the
+    arguments of a subscripted hint are walked through sequences as well.
+    A ``TypeVar`` names no type; its bound and constraints are walked instead.
+    """
+    if isinstance(hint, TypeVar):
+        for constraint in (hint.__bound__, *hint.__constraints__):
+            _collect_owned_types(constraint, owned)
+        return
+    if isinstance(hint, (list, tuple)):
+        for element in hint:
+            _collect_owned_types(element, owned)
+        return
     origin = get_origin(hint)
     if origin is not None:
         _collect_owned_types(origin, owned)
-        for argument in get_args(hint):
-            _collect_owned_types(argument, owned)
+        _collect_owned_types(get_args(hint), owned)
         return
     module_name = getattr(hint, "__module__", None)
     type_name = getattr(hint, "__name__", None)
     if not isinstance(module_name, str) or not isinstance(type_name, str):
         return
+    if type_name.startswith("_"):
+        return  # ADR 0029: every underscore name is internal.
     if module_name == "hmc_mcp" or module_name.startswith("hmc_mcp."):
         owned[(module_name, type_name)] = hint
 
 
-def _owned_types_in_signatures(
+def _annotation_names(annotation: str) -> set[str]:
+    """Every non-underscore bare identifier an annotation's source text refers to."""
+    return {
+        node.id
+        for node in ast.walk(ast.parse(annotation, mode="eval"))
+        if isinstance(node, ast.Name) and not node.id.startswith("_")
+    }
+
+
+def _owned_literal_aliases(
     selected: set[tuple[str, str]], modules: dict[str, ModuleType]
 ) -> dict[tuple[str, str], object]:
-    """The second half of ADR 0029's rule, applied to resolved signatures.
+    """The literal-alias clause, read from annotation source rather than resolved hints.
 
-    ``get_type_hints`` erases a literal alias to its value set — ``Literal["a", "b"]``
-    carries no ``hmc_mcp`` module — so the literal-alias clause is covered by
-    ``test_exported_literal_value_sets_are_frozen`` rather than here. Opaque HMC
-    payloads (``dict[str, Any]`` and friends) are excluded by owning no ``hmc_mcp``
-    type, which is exactly the distinction ADR 0029's Consequences section draws.
+    ``get_type_hints`` evaluates ``PcmCategory`` down to ``Literal["ManagedSystem",
+    ...]`` and the alias's name is gone with it, so the walk above cannot see one.
+    Every ``operations_*`` module uses ``from __future__ import annotations``, which
+    leaves the raw annotation as source text: parse it, resolve each bare name in the
+    module that carries the operation, and keep whatever is a literal alias.
+    """
+    aliases: dict[tuple[str, str], object] = {}
+    for module_name, name in selected:
+        namespace = vars(modules[module_name])
+        annotations = inspect.get_annotations(getattr(modules[module_name], name))
+        for annotation in annotations.values():
+            if not isinstance(annotation, str):
+                continue
+            for referenced in _annotation_names(annotation):
+                value = namespace.get(referenced)
+                if get_origin(value) is Literal:
+                    aliases[(module_name, referenced)] = value
+    return aliases
+
+
+def _unexported_owned_types(
+    selected: set[tuple[str, str]], modules: dict[str, ModuleType]
+) -> dict[str, list[str]]:
+    """Apply ADR 0029's type clause to every selected operation's signature.
+
+    Opaque HMC payloads (``dict[str, Any]`` and friends) own no ``hmc_mcp`` type and
+    so fall out by construction, which is exactly the distinction ADR 0029's
+    Consequences section draws. The walk reaches the types an operation *names*; it
+    does not descend into an owned model's own fields, so a type reachable only
+    through a field of an exported model is out of this clause's scope (#482).
     """
     owned: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
-        operation = getattr(modules[module_name], name)
-        for hint in get_type_hints(operation).values():
+        for hint in get_type_hints(getattr(modules[module_name], name)).values():
             _collect_owned_types(hint, owned)
-    return owned
+    owned.update(_owned_literal_aliases(selected, modules))
+
+    manifest = set(api.__all__)
+    exported = {
+        key
+        for key, value in owned.items()
+        if key[1] in manifest and getattr(api, key[1], None) is value
+    }
+    return _selection_faults(set(owned), exported, ADR_0029_TYPE_EXCLUSIONS)
 
 
 def test_facade_type_set_matches_adr_0029_selection_rule() -> None:
@@ -352,12 +409,7 @@ def test_facade_type_set_matches_adr_0029_selection_rule() -> None:
     type-checker resolves the real annotation and finds no way to name it.
     """
     modules = _operations_modules()
-    owned = _owned_types_in_signatures(_selected_operations(modules), modules)
-    exported = {
-        key for key, value in owned.items() if getattr(api, key[1], None) is value
-    }
-
-    faults = _selection_faults(set(owned), exported, ADR_0029_TYPE_EXCLUSIONS)
+    faults = _unexported_owned_types(_selected_operations(modules), modules)
     assert faults == {key: [] for key in faults}, faults
 
 
@@ -442,35 +494,69 @@ def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
     ] == ["hmc_mcp.operations_second:collide"]
 
 
-def test_adr_0029_type_rule_walks_and_reddens() -> None:
-    """Prove the types guard reddens, and that the walk reaches nested annotations.
+@dataclass(frozen=True)
+class SyntheticResult:
+    """An owned result type no facade exports. Module-level so ``get_type_hints``
+    can resolve it the way it resolves a real operation's annotation."""
 
-    Once the facade is correct the real check exercises the clean path only, so the
-    fault shapes are driven here against a synthetic owned type.
+    value: str
+
+
+SyntheticResult.__module__ = "hmc_mcp.operations_typed"
+SyntheticFlavour = Literal["thin", "thick"]
+
+
+def test_adr_0029_type_rule_reddens_end_to_end() -> None:
+    """Drive signature -> hints -> walk -> comparison against an unexported type.
+
+    Once the facade is correct the real check exercises the clean path only, so
+    without this the whole walk could return nothing and stay green. This module
+    carries ``from __future__ import annotations``, matching every ``operations_*``
+    module, so the literal-alias half reads real source text here too.
     """
-    owned_key = ("hmc_mcp.operations_synthetic", "SyntheticResult")
-    assert _selection_faults({owned_key}, set(), {})[
-        "selected but not exported or excluded"
-    ] == [":".join(owned_key)]
-    assert _selection_faults({owned_key}, {owned_key}, {}) == _CLEAN_FAULTS
+    module = ModuleType("hmc_mcp.operations_typed")
 
-    # A type buried in a container and a union is still owned, and an opaque HMC
-    # payload mapping contributes nothing.
+    async def synthetic_operation(
+        hmc: object, flavour: SyntheticFlavour
+    ) -> list[SyntheticResult | None]: ...
+
+    synthetic_operation.__module__ = module.__name__
+    module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
+    module.synthetic_operation = synthetic_operation  # type: ignore[attr-defined]
+
+    faults = _unexported_owned_types(
+        {(module.__name__, "synthetic_operation")}, {module.__name__: module}
+    )
+    assert faults["selected but not exported or excluded"] == [
+        "hmc_mcp.operations_typed:SyntheticFlavour",
+        "hmc_mcp.operations_typed:SyntheticResult",
+    ]
+
+
+def test_owned_type_walk_reaches_nested_and_callable_annotations() -> None:
     pcm_resource = import_module("hmc_mcp.operations_pcm").PcmResource
     collected: dict[tuple[str, str], object] = {}
     _collect_owned_types(list[pcm_resource | None], collected)
+    # A ``Callable`` parameter list is a plain list, not a subscripted generic.
+    _collect_owned_types(Callable[[pcm_resource], None], collected)
+    # An opaque HMC payload mapping and an underscore-private type contribute nothing.
     _collect_owned_types(dict[str, object], collected)
     assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
 
 
 def _unselectable_shape(module_name: str, name: str, value: object) -> str | None:
-    """Classify a public module attribute ADR 0029's coroutine rule cannot select."""
-    if isinstance(value, functools.partial):
-        return "functools.partial"
+    """Classify a public module attribute ADR 0029's coroutine rule cannot select.
+
+    A *synchronous* ``functools.partial`` is an ordinary transformation helper, which
+    ADR 0029's synchronous-exclusion clause already covers, so only an asynchronous
+    one is a shape the operation rule would have wanted and missed.
+    """
     if inspect.isasyncgenfunction(value):
         return "asynchronous generator"
     if not inspect.iscoroutinefunction(value):
         return None
+    if isinstance(value, functools.partial):
+        return "functools.partial"
     owner = getattr(value, "__module__", None)
     if owner == module_name:
         return None
@@ -570,38 +656,60 @@ def _facade_import_bindings() -> dict[str, str]:
 def test_public_api_manifest_has_no_repeated_entry() -> None:
     """ADR 0029 calls ``__all__`` "an exhaustive compatibility manifest"; a repeated
     entry makes it malformed. Every other contract test reads ``set(api.__all__)`` or
-    iterates it, so a duplicate stays inert at runtime and invisible to all of them —
-    ``test_public_api_exports_the_adr_inventory`` froze one in rather than catching it.
+    iterates it, so a duplicate stays inert at runtime and invisible to all of them.
+    The one test that compares the whole list would have caught a *new* duplicate, but
+    the list it compares against had the existing one written into it.
     """
     repeated = sorted({name for name in api.__all__ if api.__all__.count(name) > 1})
     assert repeated == [], f"api.__all__ repeats {repeated}"
-    assert len(api.__all__) == len(set(api.__all__))
+
+
+def _inventory_region() -> list[str]:
+    """The lines between ADR 0029's inventory fence markers."""
+    text = _ADR_0029_PATH.read_text(encoding="utf-8")
+    for marker in (_INVENTORY_BEGIN, _INVENTORY_END):
+        assert text.count(marker) == 1, f"ADR 0029 must carry one {marker} exactly"
+    begin = text.index(_INVENTORY_BEGIN) + len(_INVENTORY_BEGIN)
+    end = text.index(_INVENTORY_END)
+    assert begin < end, "ADR 0029's inventory fence markers are inverted"
+    return text[begin:end].splitlines()
 
 
 def _inventory_entries() -> dict[str, str]:
     """The clause text of each ADR 0029 inventory bullet, keyed by module.
 
-    Only the fenced region is read. An entry is one bullet whose text is a
-    semicolon-separated list of labelled clauses; narrative belongs in an indented
-    ``- Note:`` sub-bullet, which closes the entry and is skipped. That shape is what
-    lets the document be asserted against the code rather than maintained beside it.
-    """
-    text = _ADR_0029_PATH.read_text(encoding="utf-8")
-    begin, end = text.find(_INVENTORY_BEGIN), text.find(_INVENTORY_END)
-    assert 0 <= begin < end, "ADR 0029 has lost its inventory fence markers"
+    Only the fenced region is read, and every line in it must be accounted for:
+    an entry bullet, its wrapped continuation, a ``- Note:`` sub-bullet, that note's
+    continuation, or a blank. Unrecognised text inside the fence is rejected rather
+    than skipped, so no normative claim can hide there unchecked.
 
+    An entry is one bullet whose text is a semicolon-separated list of labelled
+    clauses; narrative belongs in the note, which the parser skips. That shape is
+    what lets the document be asserted against the code rather than maintained
+    beside it.
+    """
     entries: dict[str, str] = {}
     current: str | None = None
-    for line in text[begin:end].splitlines():
+    in_note = False
+    for line in _inventory_region():
         entry = _INVENTORY_ENTRY.match(line)
         if entry is not None:
-            current = entry.group(1)
+            current, in_note = entry.group(1), False
             assert current not in entries, f"ADR 0029 inventories {current} twice"
             entries[current] = entry.group(2)
-        elif current is not None and line.startswith("  ") and line[2] != "-":
-            entries[current] += " " + line.strip()
+        elif line.startswith("  ") and line.strip():
+            assert current is not None, f"ADR 0029 has stray inventory text: {line!r}"
+            in_note = in_note or line.strip().startswith("- Note:")
+            assert in_note or not line.strip().startswith("- "), (
+                f"ADR 0029's only inventory sub-bullet is a note: {line!r}"
+            )
+            if not in_note:
+                entries[current] += " " + line.strip()
         else:
-            current = None
+            assert not line.strip(), f"ADR 0029 has stray inventory text: {line!r}"
+            current, in_note = None, False
+
+    assert list(entries) == sorted(entries), "ADR 0029's inventory is not in order"
     return entries
 
 
@@ -680,7 +788,13 @@ def test_adr_0029_inventory_matches_the_facade() -> None:
     imports it from, so the manifest and the document cannot disagree.
     """
     expected = _expected_inventory()
-    assert _adr_0029_inventory() == expected
+    inventory = _adr_0029_inventory()
+    assert set(inventory) == set(expected), (
+        f"inventoried but not a facade source: {sorted(set(inventory) - set(expected))}; "
+        f"a facade source with no entry: {sorted(set(expected) - set(inventory))}"
+    )
+    for module, clauses in sorted(expected.items()):
+        assert inventory[module] == clauses, f"ADR 0029's {module} entry has drifted"
 
     inventoried = [
         name
@@ -718,11 +832,12 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #446, which exported `PcmResource` — the frozen
-        dataclass `resolve_pcm_resource` returns, and the one type ADR 0029's
-        newly mechanised type clause found missing from the manifest. A
-        dataclass has a constructor signature, so adding it to `__all__` adds a
-        digest entry even though no operation's parameters changed.
+        Last moved by issue #446, which exported the two types ADR 0029's
+        newly mechanised type clause found missing from the manifest:
+        `PcmResource`, the frozen dataclass `resolve_pcm_resource` returns, and
+        `RemoteRestartOperation`, the literal alias `remote_restart_lpar` takes.
+        Both report a signature, so adding them to `__all__` adds digest entries
+        even though no operation's parameters changed.
         Before that, issue #371 (ADR 0092 §4) moved it twice over: it
         added ``ownership_override`` to ``power_lpar``, and it added the
         ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
@@ -795,9 +910,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #446: `PcmResource` enters the manifest and contributes its
-    # dataclass constructor. Recomputed over #371's baseline 44e83b7a.
-    expected_digest = "6bf67fc584f753f8805f000639221c5eec54954c9939154e7ad83de8293de184"  # pragma: allowlist secret
+    # Moved by #446: `PcmResource` enters the manifest with its dataclass
+    # constructor, and `RemoteRestartOperation` with the `(*args, **kwargs)` every
+    # literal alias reports. Recomputed over #371's baseline 44e83b7a.
+    expected_digest = "960b037616127748f8e89bd517892d499571711ee2c2f9958ddc659f23a1bf9e"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -927,6 +1043,13 @@ def test_exported_literal_value_sets_are_frozen() -> None:
     assert get_args(api.MetricKind) == ("processed", "aggregated")
     assert get_args(api.PcmCategory) == ("ManagedSystem", "LogicalPartition")
     assert get_args(api.SriovMode) == ("sriov", "dedicated")
+    assert get_args(api.RemoteRestartOperation) == (
+        "validate",
+        "recover",
+        "restart",
+        "cleanup",
+        "cancel",
+    )
 
 
 def test_public_signatures_exclude_presentation_types() -> None:

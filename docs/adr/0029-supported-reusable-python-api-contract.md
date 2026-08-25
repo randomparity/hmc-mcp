@@ -51,20 +51,24 @@ An asynchronous helper that a module imports from elsewhere is a top-level name 
 namespace but is owned by the module that defines it, so ownership decides selection and no name
 is selected twice; a module's `excluded synchronous` clause below names only what it defines.
 Selection is keyed by `(module, name)`, not by bare name: two modules defining the same public
-name are two separate obligations, and exporting one does not discharge the other. A synchronous
-function is a transformation, parser, or validator rather than an asynchronous domain operation
-and is excluded for that concrete contract-readiness reason. Imported transport types such as
-`Any` and built-in containers are not facade exports.
+name are two separate obligations, and exporting one does not discharge the other. Because
+`hmc_mcp.api` can bind only one object per name, a real collision cannot be satisfied by
+exporting both — rename one of the operations, or record an exclusion citing this ADR. A
+synchronous function is a transformation, parser, or validator rather than an asynchronous domain
+operation and is excluded for that concrete contract-readiness reason. Imported transport types
+such as `Any` and built-in containers are not facade exports.
 
 The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
 ownership report it, so three operation shapes fall outside it by decision rather than by
 oversight: an asynchronous generator, which satisfies `inspect.isasyncgenfunction` and not
 `iscoroutinefunction`; an operation built by a factory that lives in another module, whose
-`__module__` names the factory's module; and a `functools.partial`, whose `__module__` is
-`functools`. None exists in the package today, none may be introduced without a superseding
-decision that widens this rule, and a contract test fails when one appears, so the choice is a
-conscious one rather than an invisible omission. `functools.wraps` is unaffected — it copies
-`__module__`, so an ordinary decorator preserves ownership.
+`__module__` names the factory's module; and an asynchronous `functools.partial`, whose
+`__module__` is `functools`. None exists in the package today, none may be introduced without a
+superseding decision that widens this rule, and a contract test fails when one of those three
+appears, so the choice is a conscious one rather than an invisible omission. A *synchronous*
+partial is an ordinary transformation helper and is covered by the synchronous exclusion above.
+`functools.wraps` is unaffected — it copies `__module__`, so an ordinary decorator preserves
+ownership.
 
 The inventory below is the complete manifest: one entry per module `hmc_mcp/api.py` imports a
 supported name from, keyed by that import source. Each `operations_*` entry names the operations
@@ -72,8 +76,11 @@ the rule selects from that module, the other supported names the facade takes fr
 public synchronous functions the module defines and this contract keeps internal. Every other
 entry names what the facade takes from a module that owns no operations. Contract tests assert
 every clause against the facade's own import statements and the modules' contents, so the
-document cannot drift from the package; narrative belongs in an indented `Note:` sub-bullet,
-which the parser skips. Underscore names are internal everywhere and are never inventoried.
+document cannot drift from the package. Entries and the names within each clause are in
+alphabetical order, because the tests compare them against sorted derivations. Narrative belongs
+in an indented `Note:` sub-bullet, which the parser skips; nothing else may appear between the
+fence markers, and a stray line there fails the suite rather than passing unchecked. Underscore
+names are internal everywhere and are never inventoried.
 
 <!-- ADR-0029-INVENTORY:BEGIN -->
 
@@ -90,7 +97,7 @@ which the parser skips. Underscore names are internal everywhere and are never i
     the selection rule does not reach it; it is exported by this entry alone.
 - `documents` — exports: `BootDeviceSelector`, `LparResources`, `PartitionType`, `StorageKind`.
 - `errors` — exports: `HMCError`, `HMCTransportError`.
-- `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`.
+- `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`, `RemoteRestartOperation`.
   - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
     mapping (ADR 0093). The synchronous helpers `job_identifier`, `job_outcome`, and
     `validate_wait_timing` stay in `jobs.py` as transformations and validators.
@@ -137,9 +144,12 @@ which the parser skips. Underscore names are internal everywhere and are never i
   `activation_allows_assessment`, `affinity_not_measured`, `classify_affinity_outcome`,
   `lpar_ownership_entry`, `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`,
   `power_on_outcome`, `validate_affinity_request`.
-  - Note: `ProvisionAffinityAssessment` is defined here and used by `provision_lpar` as well;
-    the facade imports it from this module so its inventoried owner is the module that defines
-    it.
+  - Note: `ProvisionAffinityAssessment` is defined here and used by `provision_lpar` as well.
+    The inventory keys on the module `api.py` imports a name from, not on the module that
+    defines it; those two agree here because the facade was changed to import it from this
+    module. They do not always agree — `MemoptLparSelector` and `MemoptResourceGroupSelector`
+    are defined in `ssh_commands` and inventoried under `operations_ssh_network`, which is where
+    the facade takes them from.
 - `operations_lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
   `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
   `run_lpm_affinity_preflight`; types: `LpmAffinityMigrationResult`,
@@ -221,15 +231,25 @@ operations went through cannot recur silently.
 
 The type half is mechanised the same way: a second test resolves each selected operation's
 annotations with `typing.get_type_hints`, collects every `hmc_mcp`-owned type they name — through
-containers and unions — and fails when one is not the object `hmc_mcp.api` exports under that
-name, again unless an exclusion cites this ADR. `PcmResource` was the one omission it found.
-`get_type_hints` erases a literal alias to its value set, so the literal-alias clause of the rule
-is carried by the frozen literal-value test rather than by that walk, and an opaque HMC payload
-mapping owns no `hmc_mcp` type and so is excluded by construction. A third test parses the
-inventory above and asserts each clause against the facade's own import statements and the
-modules' contents; a fourth rejects a repeated entry in `__all__`, which every set-based contract
-test had been blind to; and a fifth fails when an `operations_*` module gains an operation shape
-the rule cannot select. No part of this section is hand-maintained against the code any more.
+containers, unions, and `Callable` parameter lists — and fails when one is not in `__all__` and
+bound on `hmc_mcp.api` under that name, unless an exclusion cites this ADR. `get_type_hints`
+evaluates a literal alias down to its value set and loses the alias's name, so that clause is
+read from the annotation source text instead: each `operations_*` module carries `from __future__
+import annotations`, so a bare name in a raw annotation can be resolved in its module and kept
+when it turns out to be a literal alias. `PcmResource` and `RemoteRestartOperation` were the two
+omissions the two halves found. An opaque HMC payload mapping owns no `hmc_mcp` type and so is
+excluded by construction. Two limits are deliberate: the walk covers the types an operation
+*names*, not those reachable only through an exported model's own fields (#482), and an
+underscore name is internal here as everywhere.
+
+A third test parses the inventory above and asserts each clause against the facade's own import
+statements and the modules' contents, rejecting any other text inside the fence rather than
+skipping it; a fourth rejects a repeated entry in `__all__`, which the set-based contract tests
+were blind to and the frozen list had written into it; and a fifth fails when an `operations_*`
+module gains an asynchronous generator, a factory-built operation, or an asynchronous
+`functools.partial`. What remains hand-maintained is the narrative in each `Note:` sub-bullet,
+the two exclusion mappings, the frozen `__all__` list, and the frozen signature digest; every
+clause of the inventory itself is now compared against the code.
 
 The initial surface is broad because the deterministic rule includes every asynchronous domain
 operation, including policy-enforcement workflows. That breadth is preferable to an undocumented

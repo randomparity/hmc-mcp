@@ -17,7 +17,7 @@ from hmc_mcp.documents import (
     StorageKind,
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
-from hmc_mcp.jobs import DeviceType, JobOutcome, LuType
+from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
 from hmc_mcp.operations_jobs import get_job, wait_for_job
 from hmc_mcp.operations_adapters import (
     AdapterResult,
@@ -252,6 +252,7 @@ __all__ = [
     "abort_lpar_migration",
     "recover_lpar_migration",
     "remote_restart_lpar",
+    "RemoteRestartOperation",
     "LpmResult",
     "LpmAffinityPreflightRequest",
     "LpmAffinityPreflightOutcome",
