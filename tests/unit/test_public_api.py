@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 from importlib import import_module
 import inspect
 import json
+from pathlib import Path
 import pkgutil
 import re
 import subprocess
@@ -18,12 +20,15 @@ from hmc_mcp import api
 from hmc_mcp.client_contracts import PcmClient
 from hmc_mcp.client_templates import TemplatesMixin
 
-# ADR 0029 selects "every non-underscore top-level asynchronous function" from each
-# ``operations_*`` module (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
-# A selected name may stay out of ``api.__all__`` only with a recorded justification that
-# names the ADR text excluding it. The test below also rejects entries that no longer
-# describe a real omission, so this mapping cannot silently accumulate dead excuses.
+# ADR 0029's Decision section selects "every non-underscore top-level coroutine function the
+# module itself defines" from each ``operations_*`` module. A selected name may stay out of
+# ``api.__all__`` only with a recorded justification that cites the ADR text excluding it —
+# ``_ADR_CITATION`` enforces the citation, so "internal" is not an acceptable excuse. The test
+# below also rejects entries that no longer describe a real omission, so this mapping cannot
+# silently accumulate dead excuses.
 ADR_0029_OPERATION_EXCLUSIONS: dict[str, str] = {}
+
+_ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
 
 
 def test_public_api_exports_the_adr_inventory() -> None:
@@ -209,10 +214,10 @@ def _operations_modules() -> dict[str, ModuleType]:
 
 
 def _selected_operations(modules: dict[str, ModuleType]) -> set[str]:
-    """Apply ADR 0029's rule mechanically: non-underscore, top-level, coroutine.
+    """Apply ADR 0029's rule mechanically: non-underscore, coroutine, module-owned.
 
     A coroutine an operation module merely imported is owned by the module that
-    defined it, so ``__module__`` decides ownership and no name is attributed twice.
+    defined it, so ``__module__`` decides ownership and no name is selected twice.
     """
     selected: set[str] = set()
     for module_name, module in modules.items():
@@ -224,22 +229,29 @@ def _selected_operations(modules: dict[str, ModuleType]) -> set[str]:
     return selected
 
 
+def _selection_faults(
+    selected: set[str], exported: set[str], exclusions: dict[str, str]
+) -> dict[str, list[str]]:
+    """Every way the facade can disagree with ADR 0029's operation-selection rule."""
+    unexported = selected - exported
+    return {
+        "selected but not exported or excluded": sorted(unexported - set(exclusions)),
+        "excluded but actually exported": sorted(set(exclusions) - unexported),
+        "excluded without citing the ADR": sorted(
+            name
+            for name, reason in exclusions.items()
+            if not _ADR_CITATION.search(reason)
+        ),
+    }
+
+
 def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
     modules = _operations_modules()
     selected = _selected_operations(modules)
     exported = set(api.__all__)
 
-    unexported = selected - exported
-    assert unexported == set(ADR_0029_OPERATION_EXCLUSIONS), (
-        "operations the ADR 0029 rule selects but the facade omits: "
-        f"{sorted(unexported - set(ADR_0029_OPERATION_EXCLUSIONS))}; "
-        "exclusions naming operations that are no longer omitted: "
-        f"{sorted(set(ADR_0029_OPERATION_EXCLUSIONS) - unexported)}"
-    )
-    unexplained = [
-        name for name, reason in ADR_0029_OPERATION_EXCLUSIONS.items() if not reason
-    ]
-    assert unexplained == [], unexplained
+    faults = _selection_faults(selected, exported, ADR_0029_OPERATION_EXCLUSIONS)
+    assert faults == {key: [] for key in faults}, faults
 
     facade_operations = {
         name
@@ -250,17 +262,86 @@ def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
     assert facade_operations == selected - set(ADR_0029_OPERATION_EXCLUSIONS)
 
 
+def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
+    """The guard above is only worth its place if it reddens; prove that it does.
+
+    ``ADR_0029_OPERATION_EXCLUSIONS`` is empty, so the real check exercises the
+    clean path only. Drive the same helpers with a synthetic operations module.
+    """
+    module = ModuleType("hmc_mcp.operations_synthetic")
+
+    async def stray_operation(hmc: object) -> None: ...
+
+    async def borrowed_operation(hmc: object) -> None: ...
+
+    async def _private_operation(hmc: object) -> None: ...
+
+    def sync_helper(hmc: object) -> None: ...
+
+    borrowed_operation.__module__ = "hmc_mcp.operations_storage"
+    for value in (stray_operation, _private_operation, sync_helper):
+        value.__module__ = module.__name__
+    for value in (stray_operation, borrowed_operation, _private_operation, sync_helper):
+        setattr(module, value.__name__, value)
+
+    # Only the public coroutine the module itself defines is selected.
+    selected = _selected_operations({module.__name__: module})
+    assert selected == {"stray_operation"}
+
+    clean = {
+        "selected but not exported or excluded": [],
+        "excluded but actually exported": [],
+        "excluded without citing the ADR": [],
+    }
+    assert _selection_faults(selected, set(), {})[
+        "selected but not exported or excluded"
+    ] == ["stray_operation"]
+    assert _selection_faults(selected, set(), {"stray_operation": "internal"})[
+        "excluded without citing the ADR"
+    ] == ["stray_operation"]
+    assert _selection_faults(selected, selected, {"stray_operation": "ADR 0029"})[
+        "excluded but actually exported"
+    ] == ["stray_operation"]
+    assert _selection_faults(selected, selected, {}) == clean
+    assert (
+        _selection_faults(
+            selected, set(), {"stray_operation": "ADR 0029 §x excludes it"}
+        )
+        == clean
+    )
+
+
+def _facade_import_bindings() -> dict[str, str]:
+    """Every ``name -> module`` pair ``hmc_mcp/api.py``'s import statements create.
+
+    Reading the facade's own imports keeps source attribution mechanical: unlike the
+    hand-written map this replaced, nothing here is maintained alongside ``__all__``
+    by the same edit, so it cannot drift silently out of step with it.
+    """
+    tree = ast.parse(Path(api.__file__).read_text(encoding="utf-8"))
+    bindings: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module is None:
+            continue
+        module = f"hmc_mcp.{node.module}" if node.level else node.module
+        for alias in node.names:
+            assert alias.asname is None, f"the facade renames {alias.name} on import"
+            assert alias.name not in bindings, f"the facade imports {alias.name} twice"
+            bindings[alias.name] = module
+    return bindings
+
+
 def test_public_api_reexports_implementation_objects_directly() -> None:
-    implementation = [
-        module
-        for name, module in list(sys.modules.items())
-        if name.startswith("hmc_mcp.") and name != "hmc_mcp.api" and module is not None
-    ]
-    for name in api.__all__:
-        value = getattr(api, name)
-        assert any(
-            getattr(module, name, None) is value for module in implementation
-        ), name
+    bindings = _facade_import_bindings()
+    assert set(bindings) == set(api.__all__), (
+        f"imported but not in __all__: {sorted(set(bindings) - set(api.__all__))}; "
+        f"in __all__ but not imported: {sorted(set(api.__all__) - set(bindings))}"
+    )
+    for name, module_name in bindings.items():
+        assert getattr(api, name) is getattr(import_module(module_name), name), (
+            f"api.{name} is not the object {module_name} publishes under that name"
+        )
+
 
 def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient)["_http"].__module__ == "httpx"
@@ -271,10 +352,13 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #363, which exported the drifted operations the
-        ADR 0029 selection rule already covered: the optical-media operations
-        ``list_optical_mappings``, ``mount_optical_media``, and
-        ``unmount_optical_media``, plus ``assess_post_activation_affinity``.
+        Last moved by issue #363, which exported four operations ADR 0029's
+        selection rule already covered but the manifest omitted: the
+        optical-media operations ``list_optical_mappings``,
+        ``mount_optical_media``, and ``unmount_optical_media``, which #205
+        shipped unexported, and ``assess_post_activation_affinity``, which
+        #318 shipped unexported. None of the four ever left ``__all__``; none
+        of them entered it.
         Before that, issue #320 added affinity-aware LPM preflight.
         Before that, issue #318 added post-activation affinity assessment.
         Before that, issue #316 added the Power11 minimum-affinity policy write.
