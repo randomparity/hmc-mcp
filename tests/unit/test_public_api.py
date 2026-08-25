@@ -1395,6 +1395,20 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
 
+def _signature_text(exported: object) -> str:
+    """One exported name's signature, rendered the same on every supported interpreter.
+
+    `inspect` writes an `Annotated` annotation as `typing.Annotated[...]` on 3.11 and
+    as `Annotated[...]` from 3.12 on. The digest below is a single frozen constant
+    checked against 3.11 through 3.14, so an interpreter-dependent rendering makes it
+    unfreezable — invisible until #482 put the first `Annotated` field in the manifest,
+    and then a failure on whichever versions did not recompute it. Dropping the
+    qualifier everywhere it appears leaves the annotation's content intact and the
+    text identical across all four.
+    """
+    return re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+
+
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
@@ -1472,14 +1486,18 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     signatures = {}
     for name in api.__all__:
         try:
-            signatures[name] = str(inspect.signature(getattr(api, name)))
+            signatures[name] = _signature_text(getattr(api, name))
         except (TypeError, ValueError):
             continue
+    # At least one manifest entry must carry an `Annotated` field, or the CI matrix
+    # stops exercising the interpreter divergence `_signature_text` normalises away.
+    assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #482: the transitive type clause adds twelve `snapshot` models with
     # their Pydantic constructors and seven literal aliases with the
-    # `(*args, **kwargs)` every alias reports. Recomputed over #446's 960b0376.
-    expected_digest = "f5a37c2e219509917700517053497623d4c806f6c71764d6c8a02e05c0ad7ec0"  # pragma: allowlist secret
+    # `(*args, **kwargs)` every alias reports. Recomputed over #446's 960b0376
+    # under the normalisation `_signature_text` now applies.
+    expected_digest = "717825fbc7db94ee250515d56ab86a768d9d241f789def7a70bb2a1ad6a0cb39"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
