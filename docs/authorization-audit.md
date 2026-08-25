@@ -1,9 +1,10 @@
 # Authorization audit records
 
-The server writes one structured record for every authorization decision it makes at
-the MCP dispatch boundary, one for every approved LPAR ownership override, and one for
-every client it builds with TLS verification off. This document is the contract those
-records keep. The decision behind it is
+The server writes one structured record for every authorization decision it makes at the
+MCP dispatch boundary, and further records for the other things an operator has to be
+able to audit — an approved LPAR ownership override, a client built with TLS verification
+off. The sections under [The records](#the-records) are the full set; this document is
+the contract they keep. The decision behind it is
 [ADR 0040](adr/0040-authorization-audit-events.md).
 
 ## What you get, and when you get nothing
@@ -63,8 +64,9 @@ truncated value is exactly that long, so you can measure it.
 
 `connection.state` is `present` when the caller supplied a connection string, `absent`
 when it supplied nothing or an empty string, and `unreadable` when it supplied a value
-of another type — whose `repr()` is never rendered. `connection.selector` is the
-caller's own string, or `null` in the other two states.
+of another type. That value's `repr()` is never rendered. `connection.selector` is the
+caller's own string, or `null` in the other two states. A `targets` entry's `state` is
+the same vocabulary, describing one selector instead of the connection.
 
 `connection.resolved` is which HMC the call would actually have used: a profile key,
 `"<default>"` for the environment/default connection, `"<unresolved>"` when the token
@@ -198,11 +200,10 @@ template on purpose. To find malformed calls, filter
 
 ## Attribution is never identity
 
-`attribution` appears on the `authorization` and `ownership-override` records and
-nowhere else — the sink's own marker and the TLS record carry none. `verified` is always
-`false` on it, and neither value influences an authorization decision at the dispatch
-boundary. Where they come from differs, and the `source` field is what tells you which
-you are reading.
+Not every record carries `attribution`; each section above says whether its own does.
+Where it appears, `verified` is always `false`, and neither value influences an
+authorization decision at the dispatch boundary. Where the claim comes from differs, and
+the `source` field is what tells you which you are reading.
 
 **`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
 from the server process's environment at emission.
@@ -232,8 +233,8 @@ than the value's authority everywhere.
 
 ## Routing, levels, and silencing
 
-Records go to the `hmc_mcp.audit` logger. Denials, ownership overrides and
-TLS-verification records are `WARNING`; permits are `INFO`.
+Records go to the `hmc_mcp.audit` logger. A permit is `INFO`; everything else the
+logger emits is `WARNING`.
 
 Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
 audit records — including on the in-process path, where an embedder composes an
@@ -250,8 +251,8 @@ defers to a handler that is already there and will not add a second.
 
 > To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
 > `DEBUG` and `INFO` keep everything the logger emits, `WARNING` drops permits and keeps
-> the rest — denials, ownership overrides and TLS-verification records — and `ERROR` or
-> `CRITICAL` silences the stream. Read `WARNING` as a volume floor rather than a quiet
+> the rest, and `ERROR` or `CRITICAL` silences the stream. Read `WARNING` as a volume floor
+> rather than a quiet
 > setting: on a server left at the insecure `HMC_VERIFY_SSL` default it still carries one
 > TLS record per tool call, which the deduplication advice above applies to. The
 > `records-dropped` marker survives every setting, since it comes from the sink rather
