@@ -82,14 +82,29 @@ and shipping over it is not acceptable.
 
 Common causes worth checking first:
 
-- **Local `.env` file supplying credentials** — `pydantic_settings` reads
-  `env_file=".env"` at construction time, independent of `os.environ` patches.
-  Tests that need a credential-free `HMCConfig` must pass `_env_file=None` to
-  suppress `.env` loading: `HMCConfig(_env_file=None)` or
-  `HMCConfig(host="h", user="u", _env_file=None)`. Do not use
-  `monkeypatch.delenv` for this — it clears env vars but cannot prevent
-  `pydantic_settings` from reading the `.env` file. When `_env_file=None` is
-  applied, the `monkeypatch.delenv` calls are redundant and should be removed.
+- **Ambient `HMC_*` variables supplying credentials** — `HMCConfig` is a
+  pydantic-settings `BaseSettings` with `env_prefix="HMC_"`, so **every field a
+  test leaves unset resolves from the developer's own environment**. A test that
+  passes `host=` and asserts on `agent_id` or `ssh_key_file` passes in CI and
+  fails on a workstation with those exported.
+
+  Tests that need a credential-free `HMCConfig` should construct it with
+  `HMCConfig.from_mapping({...})`, which reads no environment variable and no
+  dotenv file and gives every omitted field its declared default (ADR 0096):
+
+  ```python
+  HMCConfig.from_mapping({})                      # every field at its default
+  HMCConfig.from_mapping({"host": "h", "user": "u"})
+  ```
+
+  **`_env_file=None` is not this.** It is a private pydantic-settings parameter
+  that suppresses a dotenv source and never touches `os.environ`; and
+  `HMCConfig` declares no `env_file` at all, so it currently does nothing
+  whatsoever. Existing call sites that pass it are inert. Do not add new ones,
+  and do not delete a `monkeypatch.delenv` on the strength of one — the
+  `delenv` is what is actually isolating that test. Where a test needs to
+  exercise the environment-reading constructor on purpose (`load_profile`'s
+  precedence, the CLI path), keep using `monkeypatch.setenv`/`delenv`.
 - **Import name drift** — a tool or function renamed in source but still
   referenced by the old name in a test or fixture.
 

@@ -37,6 +37,33 @@ def guard_module() -> ModuleType:
     return module
 
 
+#: The one Reference row that is not an HMCConfig field. HMC_PROFILE selects a
+#: profile inside load_profile(); it never reaches the settings model. The
+#: "Library Consumers" section of the doc states this, so it is pinned here.
+NON_FIELD_ENV_VARS = {"HMC_PROFILE"}
+
+
+def _reference_table_text() -> str:
+    """Return the Markdown table rows inside the doc's ## Reference section.
+
+    Same slicing the production guard uses, so this module and the guard agree
+    on what "documented" means: a table row, not prose.
+    """
+    import re as _re
+
+    doc_text = DOC.read_text()
+    ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
+    assert ref_match, "docs/environment-variables.md must have a ## Reference section"
+    next_section = _re.search(r"^## ", doc_text[ref_match.end() :], _re.MULTILINE)
+    section_end = (
+        ref_match.end() + next_section.start() if next_section else len(doc_text)
+    )
+    ref_section = doc_text[ref_match.start() : section_end]
+    return "\n".join(
+        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
+    )
+
+
 def test_guard_script_exists() -> None:
     assert GUARD.exists(), f"Guard script not found: {GUARD}"
 
@@ -53,23 +80,30 @@ def test_env_var_doc_lists_all_expected_vars() -> None:
     """
     import re as _re
 
-    doc_text = DOC.read_text()
-    ref_match = _re.search(r"^## Reference\b", doc_text, _re.MULTILINE)
-    assert ref_match, "docs/environment-variables.md must have a ## Reference section"
-    next_section = _re.search(r"^## ", doc_text[ref_match.end() :], _re.MULTILINE)
-    section_end = (
-        ref_match.end() + next_section.start() if next_section else len(doc_text)
-    )
-    ref_section = doc_text[ref_match.start() : section_end]
-    table_text = "\n".join(
-        ln for ln in ref_section.splitlines() if ln.strip().startswith("|")
-    )
+    table_text = _reference_table_text()
     missing = [
         var
         for var in EXPECTED_ENV_VARS
         if not _re.search(rf"\b{_re.escape(var)}\b", table_text)
     ]
     assert not missing, f"Doc Reference table is missing env vars: {missing}"
+
+
+def test_env_var_doc_lists_no_var_that_is_not_a_field() -> None:
+    """The opposite direction: a row that no longer names a field must fail.
+
+    The production guard only checks that every field has a row, so a var
+    removed from HMCConfig leaves a documented row that lies about what the
+    package reads. docs/environment-variables.md's "Library Consumers" section
+    points at this table as the *exhaustive* field list, and a partial or
+    over-broad list is the same trap issue #368 is about, so the claim is
+    enforced here in both directions.
+    """
+    import re as _re
+
+    documented = set(_re.findall(r"\bHMC_[A-Z0-9_]+\b", _reference_table_text()))
+
+    assert documented == EXPECTED_ENV_VARS | NON_FIELD_ENV_VARS
 
 
 def _make_doc(vars_to_include: set[str]) -> str:

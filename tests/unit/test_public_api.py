@@ -414,6 +414,27 @@ def test_public_error_hierarchy_is_frozen() -> None:
     assert issubclass(api.ConfigError, ValueError)
 
 
+def test_hmc_config_isolated_construction_member_is_supported() -> None:
+    """ADR 0096 extends HMCConfig's supported surface by one named member.
+
+    ADR 0029 declares "the fields and constructor of an exported package-owned
+    model" supported; ``from_mapping`` is neither, so its presence, its
+    signature, and its isolation guarantee are pinned here rather than resting
+    on the frozen ``__init__`` digest above — which a classmethod does not move.
+    """
+    assert "HMCConfig" in api.__all__
+    assert str(inspect.signature(api.HMCConfig.from_mapping)) == (
+        "(values: 'Mapping[str, Any]') -> 'Self'"
+    )
+
+    isolated = api.HMCConfig.from_mapping({"host": "row-host.example.com"})
+    assert type(isolated) is api.HMCConfig
+    # The guarantee, not the mechanism: no field may be left to a lower-priority
+    # settings source. Asserted here because a consumer reads this contract, not
+    # the implementation.
+    assert set(isolated.model_dump()) == set(api.HMCConfig.model_fields)
+
+
 def test_hmc_client_supported_lifecycle_members_are_present() -> None:
     supported = {
         "__init__",

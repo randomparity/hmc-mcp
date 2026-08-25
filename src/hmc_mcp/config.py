@@ -5,10 +5,16 @@ Settings are resolved in priority order:
   2. Environment variables (HMC_*)
   3. TOML profile (~/.config/hmc-mcp/config.toml or platform equivalent)
 
-Checkout-local .env files are NOT loaded.
+Checkout-local .env files are NOT loaded: HMCConfig declares no ``env_file``, so
+no dotenv source is configured. Passing ``_env_file=None`` is therefore inert
+here, and it never suppressed environment variables in any case.
 
 Use load_profile() to load a named profile from the platform-native config file.
-Use HMCConfig(...) directly for explicit construction (tests, programmatic use).
+Use HMCConfig(...) directly for explicit construction that should still honour
+HMC_* — the CLI and MCP server paths.
+Use HMCConfig.from_mapping(...) when a value must come from the mapping or the
+field default and never from the ambient environment (ADR 0096); a library
+consumer building one config per HMC wants this one.
 """
 
 from __future__ import annotations
@@ -18,8 +24,9 @@ import os
 import sys
 import tomllib
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
@@ -173,6 +180,55 @@ class HMCConfig(BaseSettings):
             "there is no safe default destination. (HMC_ISO_URL_ALLOWLIST)"
         ),
     )
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any]) -> Self:
+        """Build a config from *values* alone, reading no environment and no dotenv.
+
+        The ordinary constructor resolves every field left unset from the ambient
+        ``HMC_*`` environment. That is what an operator running the CLI or the MCP
+        server wants. It is not what a process building one config per HMC from
+        database rows wants: a stray ``HMC_HOST`` in the deployment environment
+        points a backend at a different HMC than its row names, a stray
+        ``HMC_SSH_KEY_FILE`` offers the wrong private key, and a stray
+        ``HMC_AGENT_ID`` corrupts ownership attribution on every LPAR the process
+        stamps — none of which raises.
+
+        Here, a key in *values* naming a field is applied and every field *values*
+        omits takes its declared field default. Nothing else can supply a value:
+        every field is passed as an explicit constructor argument, and constructor
+        arguments are pydantic-settings' highest-priority source. Note that
+        ``_env_file=None`` would *not* achieve this — it suppresses a dotenv
+        source and never touches the environment (see
+        ``docs/environment-variables.md``).
+
+        Validation is unchanged: field validators and the model validator run
+        exactly as they do for ``HMCConfig(...)``. Keys naming no field are
+        ignored, matching the ``extra="ignore"`` in ``model_config``.
+
+        Raises:
+            ValueError: When *values* omits a field that has no default, which
+                would otherwise fall through to the environment.
+        """
+        missing = sorted(
+            name
+            for name, field in cls.model_fields.items()
+            if field.is_required() and name not in values
+        )
+        if missing:
+            raise ValueError(
+                f"{cls.__name__}.from_mapping is missing required settings: "
+                + ", ".join(missing)
+                + " — supply them in the mapping; from_mapping reads no "
+                "environment variables"
+            )
+        explicit = {
+            name: values[name] if name in values else field.get_default(
+                call_default_factory=True
+            )
+            for name, field in cls.model_fields.items()
+        }
+        return cls(**explicit)
 
     @field_validator("iso_url_allowlist")
     @classmethod
@@ -548,6 +604,13 @@ def _load_profile_from_document(
     # pydantic-settings gives init-kwargs the highest priority, so we must NOT
     # pass TOML values as init-kwargs when a matching HMC_* env var is set —
     # otherwise the TOML value would win over the env var.
+    #
+    # Env-over-TOML is deliberate on this path: an operator overriding a
+    # committed profile with HMC_HOST for one invocation is the documented CLI
+    # behaviour. A field this profile omits therefore still resolves from HMC_*,
+    # and _env_file=None below does not change that — it suppresses a dotenv
+    # source (which HMCConfig does not configure at all) and never the
+    # environment. HMCConfig.from_mapping is the isolated path; see ADR 0096.
     env_prefix = "HMC_"
     filtered_entry = {
         k: v

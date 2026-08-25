@@ -6,7 +6,9 @@ All tests use tmp_path and monkeypatch — no test touches the real user home.
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import patch
 
 import pytest
@@ -844,3 +846,215 @@ def test_load_profile_rejects_a_non_table_profile_entry(tmp_path, monkeypatch):
     cfg = _write_toml(tmp_path / "config.toml", "[profiles]\nprod = 'not-a-table'\n")
     with pytest.raises(ConfigError, match="profile 'prod' must be a table"):
         load_profile("prod", config_path=cfg)
+
+
+# ---------------------------------------------------------------------------
+# Environment-isolated construction: HMCConfig.from_mapping (issue #368, ADR 0096)
+# ---------------------------------------------------------------------------
+
+#: The three vars that silently redirect a backend: a stray HMC_HOST points it at
+#: the wrong HMC, a stray HMC_SSH_KEY_FILE offers the wrong private key, and a
+#: stray HMC_AGENT_ID corrupts ADR 0011 ownership attribution on every LPAR the
+#: process stamps.
+LEAKY_ENVIRONMENT = {
+    "HMC_HOST": "leaked-host.example.com",
+    "HMC_AGENT_ID": "leaked-agent",
+    "HMC_SSH_KEY_FILE": "/leaked/id_rsa",
+}
+
+
+def _non_default_env_value(field_name: str, field_info) -> str:
+    """A valid, non-default environment string for *field_name*.
+
+    Derived from the declared annotation rather than listed per field, so a new
+    setting is polluted by the tests below without editing them.
+    """
+    annotation = field_info.annotation
+    if annotation is bool:
+        return "true"
+    if annotation is int:
+        return "9999"
+    if annotation is float:
+        return "9.5"
+    return f"leak-{field_name}"
+
+
+def test_from_mapping_ignores_ambient_environment(monkeypatch):
+    """Issue #368's shape: one config per HMC built from a row, in a polluted process."""
+    for name, value in LEAKY_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+
+    cfg = HMCConfig.from_mapping({"host": "row-host.example.com", "user": "rowuser"})
+
+    assert cfg.host == "row-host.example.com"
+    assert cfg.agent_id is None
+    assert cfg.ssh_key_file is None
+
+
+def test_plain_constructor_still_reads_the_environment(monkeypatch):
+    """The operator path is deliberately unchanged — from_mapping is additive.
+
+    Pinned so that a future attempt to make ``HMCConfig()`` itself isolated
+    cannot land silently; that would break the CLI and the MCP server.
+    """
+    for name, value in LEAKY_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+
+    cfg = HMCConfig(host="row-host.example.com")
+
+    assert cfg.host == "row-host.example.com"
+    assert cfg.agent_id == "leaked-agent"
+    assert cfg.ssh_key_file == "/leaked/id_rsa"
+
+
+def test_from_mapping_leaves_no_field_to_the_environment(monkeypatch):
+    """Every field, not just the three above, takes its declared default.
+
+    Enumerated from ``model_fields``, so a new setting that ``from_mapping``
+    fails to pass explicitly is caught here rather than leaking in production.
+    """
+    prefix = HMCConfig.model_config["env_prefix"]
+    env_names = {
+        name: f"{prefix}{name.upper()}" for name in HMCConfig.model_fields
+    }
+    for env_name in env_names.values():
+        monkeypatch.delenv(env_name, raising=False)
+    pristine = HMCConfig().model_dump()
+
+    for field_name, env_name in env_names.items():
+        monkeypatch.setenv(
+            env_name,
+            _non_default_env_value(field_name, HMCConfig.model_fields[field_name]),
+        )
+
+    with warnings.catch_warnings():
+        # A polluted env sets agent_id and audit_memento together, which the
+        # model validator warns about; that warning is this test's setup, not
+        # its subject.
+        warnings.simplefilter("ignore", UserWarning)
+        polluted = HMCConfig().model_dump()
+
+    # The pollution has to be visible somewhere, or the assertion below is vacuous.
+    assert polluted != pristine
+    assert HMCConfig.from_mapping({}).model_dump() == pristine
+
+
+def test_from_mapping_ignores_a_dotenv_file(monkeypatch, tmp_path):
+    """A .env in the working directory cannot reach an isolated construction."""
+    (tmp_path / ".env").write_text(
+        "HMC_HOST=dotenv-host.example.com\nHMC_USER=dotenvuser\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("HMC_HOST", raising=False)
+    monkeypatch.delenv("HMC_USER", raising=False)
+
+    cfg = HMCConfig.from_mapping({"host": "row-host.example.com"})
+
+    assert cfg.host == "row-host.example.com"
+    assert cfg.user == ""
+
+
+def test_from_mapping_applies_every_supplied_key():
+    values = {
+        "host": "row-host.example.com",
+        "port": 12443,
+        "user": "rowuser",
+        "password": "rowpass",  # pragma: allowlist secret
+        "ssh_key_file": "/keys/row",
+        "verify_ssl": True,
+        "timeout": 15.0,
+        "ssh_timeout": 30.0,
+        "audit_memento": "hmc-mcp",
+        "schema_version": "V1_0",
+        "agent_id": "row-agent",
+        "iso_url_allowlist": "iso.example.internal",
+    }
+    assert set(values) == set(HMCConfig.model_fields)
+
+    cfg = HMCConfig.from_mapping(values)
+
+    assert {name: getattr(cfg, name) for name in values} == values
+
+
+def test_from_mapping_ignores_keys_that_name_no_field():
+    """Matches the ``extra="ignore"`` HMCConfig already declares.
+
+    A database row carries columns that are not settings; ``from_mapping``
+    differs from ``HMCConfig(...)`` in environment isolation only.
+    """
+    cfg = HMCConfig.from_mapping(
+        {"host": "row-host.example.com", "id": 7, "nickname": "prod"}
+    )
+
+    assert cfg.host == "row-host.example.com"
+
+
+def test_from_mapping_runs_field_validators():
+    """Isolation does not buy an escape from validation."""
+    with pytest.raises(ValueError, match="comma"):
+        HMCConfig.from_mapping({"agent_id": "bad,id"})
+
+
+def test_from_mapping_runs_model_validators_once(monkeypatch):
+    """The audit-memento override warning still fires, and exactly once.
+
+    Once matters: an implementation that built an isolated instance and then
+    re-validated it into an HMCConfig would emit two warnings per construction.
+    """
+    monkeypatch.delenv("HMC_AGENT_ID", raising=False)
+    with pytest.warns(UserWarning, match="HMC_AGENT_ID is set") as caught:
+        cfg = HMCConfig.from_mapping({"agent_id": "row-agent", "audit_memento": "mine"})
+
+    assert len(caught) == 1
+    assert cfg.effective_audit_memento == "hmc-mcp:row-agent"
+
+
+def test_from_mapping_returns_a_plain_hmcconfig():
+    """Not a private subclass: ``type()`` and pydantic equality both have to hold."""
+    cfg = HMCConfig.from_mapping({"host": "row-host.example.com"})
+
+    assert type(cfg) is HMCConfig
+    assert cfg == HMCConfig.from_mapping({"host": "row-host.example.com"})
+
+
+def test_from_mapping_accepts_any_mapping():
+    """The parameter is a Mapping, so a read-only row proxy works."""
+    cfg = HMCConfig.from_mapping(MappingProxyType({"host": "row-host.example.com"}))
+
+    assert cfg.host == "row-host.example.com"
+
+
+def test_from_mapping_rejects_a_required_field_the_mapping_omits(monkeypatch):
+    """A required field must fail loudly rather than fall through to the env.
+
+    HMCConfig has no required field today. If one is ever added and
+    ``from_mapping`` silently omitted it, pydantic-settings would resolve it
+    from ``HMC_*`` — the exact leak this method exists to close — so the guard
+    is exercised against a subclass that has one.
+    """
+
+    class RequiredFieldConfig(HMCConfig):
+        tenant: str
+
+    monkeypatch.setenv("HMC_TENANT", "leaked-tenant")
+
+    with pytest.raises(ValueError, match="tenant"):
+        RequiredFieldConfig.from_mapping({"host": "row-host.example.com"})
+
+    supplied = RequiredFieldConfig.from_mapping(
+        {"host": "row-host.example.com", "tenant": "row-tenant"}
+    )
+    assert supplied.tenant == "row-tenant"
+
+
+def test_env_file_none_does_not_suppress_environment_variables(monkeypatch):
+    """The trap #368 names: ``_env_file=None`` is not isolation.
+
+    Pinned so docs/environment-variables.md and AGENTS.md cannot drift back to
+    presenting it as one. HMCConfig declares no ``env_file`` at all, so the
+    argument is inert here — it suppresses a dotenv source that was never
+    configured, and never touched the environment in the first place.
+    """
+    monkeypatch.setenv("HMC_HOST", "leaked-host.example.com")
+
+    assert HMCConfig(_env_file=None).host == "leaked-host.example.com"
