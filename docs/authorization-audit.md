@@ -136,6 +136,9 @@ It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
 
+<!-- The `source` values below are read by tests/test_authorization_audit_doc.py and held
+     to `client.VERIFY_SSL_SOURCES`. Keep them a comma-and-`or` run introduced by the
+     words "where the effective setting came from"; that clause is the anchor. -->
 ### `event: "tls-verification-disabled"`
 
 Emitted when an `HMCClient` is constructed with `verify_ssl` off, so the audit stream
