@@ -1,8 +1,9 @@
 # Authorization audit records
 
 The server writes one structured record for every authorization decision it makes at
-the MCP dispatch boundary, and one for every approved LPAR ownership override. This
-document is the contract those records keep. The decision behind it is
+the MCP dispatch boundary, one for every approved LPAR ownership override, and one for
+every client it builds with TLS verification off. This document is the contract those
+records keep. The decision behind it is
 [ADR 0040](adr/0040-authorization-audit-events.md).
 
 ## What you get, and when you get nothing
@@ -35,10 +36,10 @@ to `"<default>"`.
 
 **An empty audit stream is therefore not evidence that nothing was attempted.**
 
-## The two records
+## The records
 
-Both are one physical line of ASCII JSON. `time` and `event` come first on both, and
-every caller-supplied value is truncated to **128 characters** with no marker — a
+Each is one physical line of ASCII JSON. `time` and `event` come first on every one,
+and every caller-supplied value is truncated to **128 characters** with no marker — a
 truncated value is exactly that long, so you can measure it.
 
 ### `event: "authorization"`
@@ -51,7 +52,7 @@ truncated value is exactly that long, so you can measure it.
 | `tool` | the MCP tool name |
 | `effect` | `read`, `mutate`, `destructive`, or `arbitrary-command` |
 | `decision` | `"allow"` or `"deny"` |
-| `reason` | one of the seven codes below |
+| `reason` | one of the codes below |
 | `connection` | `{"state", "selector", "resolved"}` |
 | `targets` | a list of `{"kind", "argument", "state", "value"}`, or `null` |
 | `attribution` | `{"claim", "source", "verified"}` |
@@ -133,6 +134,34 @@ empty string.
 It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
+
+### `event: "tls-verification-disabled"`
+
+Emitted when an `HMCClient` is constructed with `verify_ssl` off, so the audit stream
+can answer "were credentials ever sent over an unverified channel, and to which HMC".
+Always `WARNING`. The logon-time `warnings.warn` stays and is the CLI user's channel;
+under the default warning filter it renders once per process per location, which is
+why this record exists alongside it.
+
+```json
+{"time":"2026-08-22T18:00:00+00:00","event":"tls-verification-disabled","host":"hmc-a.example","source":"environment:HMC_VERIFY_SSL"}
+```
+
+`host` is `HMCConfig.host`, the HMC the unverified session would reach; an unset
+`HMC_HOST` renders as an empty string. `source` names where the effective setting came
+from — `explicit-argument`, `environment:HMC_VERIFY_SSL`, or `field-default` — because
+that is which knob an operator has to turn.
+
+**One record per client construction**, not per request — which would flood the sink —
+and not per process, which would miss a later client built with different settings.
+Read the rate accordingly: an MCP tool invocation builds a fresh client, so on a server
+left at the insecure default (`HMC_VERIFY_SSL` is `false` until 1.0, per
+`docs/environment-variables.md`) this stream carries roughly one record per tool call
+rather than one at startup. Deduplicate on `host` and `source` if you are alerting.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `attribution`. Building a
+client is not an access-policy decision, and it happens on the CLI and Python API paths
+too, where there is no policy to name.
 
 ### `event: "records-dropped"`
 
