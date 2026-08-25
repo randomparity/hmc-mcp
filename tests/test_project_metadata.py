@@ -65,8 +65,8 @@ def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
 
     assert "PEP 561" in library
     assert "py.typed" in library
-    # ADR 0029's own terms for the supported surface, so the note cannot drift
-    # into claiming a narrower or wider contract than the ADR defines.
+    # Pins the note's covered-surface wording so an edit cannot quietly narrow
+    # or widen what the marker is documented to cover.
     for covered in (
         "call signature",
         "package-owned model",

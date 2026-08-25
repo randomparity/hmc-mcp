@@ -408,6 +408,28 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
+def test_every_exported_callable_is_fully_annotated() -> None:
+    """The PEP 561 marker asserts the facade is typed. A bare parameter or
+    return would make that assertion false for a downstream checker, which is
+    worse than shipping no marker at all — the consumer gets silent ``Any``
+    where it was promised a type."""
+    bare: list[str] = []
+    for name in sorted(api.__all__):
+        exported = getattr(api, name)
+        if not inspect.isfunction(exported):
+            continue
+        signature = inspect.signature(exported)
+        if signature.return_annotation is inspect.Signature.empty:
+            bare.append(f"{name} -> (bare return)")
+        bare.extend(
+            f"{name}({parameter.name})"
+            for parameter in signature.parameters.values()
+            if parameter.annotation is inspect.Parameter.empty
+        )
+
+    assert not bare, f"unannotated facade exports: {bare}"
+
+
 def test_public_error_hierarchy_is_frozen() -> None:
     assert issubclass(api.HMCTransportError, api.HMCError)
     assert issubclass(api.HMCCLIError, api.HMCError)
