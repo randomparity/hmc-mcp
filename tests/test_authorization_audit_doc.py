@@ -11,9 +11,9 @@ sides could drift apart silently. They had.
 `docs/environment-variables.md`'s `HMC_VERIFY_SSL` note describes the same TLS record, so
 its restatement of the `source` values is held to the same set and neither document can
 drift alone (#497). Two further restatements were in code — `audit`'s record builder and
-its test — and are gone: each names `client.VerifySSLSource` instead, and the last check
-below holds the pointer rather than a vocabulary, since there is no longer one there to
-compare (#504).
+its test — and are gone: each names `client.VerifySSLSource` instead, so the last check
+below holds a pointer rather than comparing a vocabulary, there being none left in them
+to compare (#504). Its residuals are in the ledger.
 
 Every equality check below is a set comparison, so it fails on an orphan (documented,
 not defined) and on a dangling entry (defined, not documented) alike — with one bounded
@@ -73,9 +73,16 @@ What this does not reach, so a green run is not read as more coverage than it is
 - the module half of the two code pointers. `_alias_name` finds the alias wherever in
   `client` it is bound, so a rename reddens — but both docstrings write the dotted path
   `hmc_mcp.client.VerifySSLSource` in prose, and moving the alias to another module would
-  leave that prefix wrong behind a green run. A third pointer, `_verify_ssl_source`'s own
-  `:data:` reference, is not read here at all: it sits beside the alias, so a rename that
-  misses it is a name error in the same file rather than silent prose.
+  leave that prefix wrong behind a green run;
+- a third pointer, the `:data:` reference in `client._verify_ssl_source`'s own docstring,
+  which nothing here reads. A rename forces an edit to that function's return annotation
+  two lines away, so the rename is not silent — but the docstring is prose beside it and
+  can be left behind, exactly as the two above could before #504;
+- a *paraphrase* of the vocabulary in either code docstring. The check below compares
+  against the members themselves, so "the explicit argument, the environment variable or
+  the field default" passes it. What it closes is the restatement that goes stale on a
+  rename; a description of the same shape in ordinary words is not reached, for the same
+  reason the first bullet gives about the documents.
 
 The environment-variable restatement is kept rather than replaced by a cross-reference,
 which would have deleted half this machinery. It is where an operator deciding whether to
@@ -641,8 +648,8 @@ def test_the_code_restatements_name_the_alias_instead_of_the_values(
     """Neither docstring may spell the vocabulary out, and both must name where it lives.
 
     These are the two restatements the ledger above used to record as out of reach. They
-    are reachable now because there is nothing left in them to drift: re-adding a value
-    reddens the second assertion, and renaming the alias reddens the first.
+    are reachable now because there is no vocabulary left in them to drift: re-adding a
+    value reddens the second assertion, and renaming the alias reddens the first.
     """
     documentation = _docstring(path, function)
 
