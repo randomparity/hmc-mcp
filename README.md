@@ -607,39 +607,20 @@ JSON-RPC channel, and nothing inside the process can detect that.
 > `hmc_run_command` escape hatch is disabled unless the server starts with
 > `--enable-arbitrary-command`.
 
-Exposed tools are listed below. MCP clients also receive a rendered description for every tool
-parameter, including fields nested inside structured inputs such as LPAR resources, password
-policies, and update repositories.
+Every tool is documented in the
+[MCP tool reference](https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md):
+one page per operation domain, each row carrying the tool's effect class, operation, target
+kind, and summary. Those pages are generated from the server's own registry by
+`scripts/gen_tool_reference.py`, and `just tool-docs-check` fails CI when they fall behind the
+code — which the hand-maintained table this replaced had no way to do. MCP clients also receive
+a rendered description for every tool parameter, including fields nested inside structured
+inputs such as LPAR resources, password policies, and update repositories.
 
 Feed-backed collection tools accept an optional client-side `limit`. The complete HMC feed is
 still transferred and parsed before the result is truncated: the limit bounds only the number of
 entries returned to the agent, not HMC work, network bytes, parsing cost, or the size of each
 entry. `hmc_list_recent_jobs` defaults to 20 entries; the other affected collection tools are
 unbounded when `limit` is omitted.
-
-**Read-only / inventory**
-
-| Tool                          | Description |
-|-------------------------------|-------------|
-| `hmc_console_info`            | HMC version/network info; cheap connectivity check |
-| `hmc_list_configured_hosts`   | List configured HMC profiles from the platform-native TOML config; returns name, host, user, port, TLS setting, default flag, and credential-presence booleans. No network calls. |
-| `hmc_list_systems`            | All managed systems, optionally filtered by state |
-| `hmc_get_system`              | One managed system by exact SystemName or UUID |
-| `hmc_list_lpars`              | All LPARs, optionally filtered by system or state |
-| `hmc_get_lpar`                | One LPAR by name or UUID |
-| `hmc_get_lpar_state`          | Quick state lookup for one LPAR by name or UUID |
-| `hmc_lpar_summary`            | One-call summary: state, RMC, memory/CPU, OS, adapter count, description |
-| `hmc_system_summary`          | One-call system summary: state, MTMS, firmware, LPAR counts by state, free memory/CPU, VIOS count |
-| `hmc_list_vios`               | Virtual I/O Servers, optionally filtered by system or state |
-| `hmc_get_vios`                | Storage-detail mappings for one VIOS by name or UUID |
-| `hmc_list_resources`          | Any uom resource type (VirtualSwitch, SharedMemoryPool, ...) |
-| `hmc_get_job`                 | Job status/result |
-| `hmc_list_recent_jobs`        | Recent HMC jobs list (limit=20) |
-| `hmc_fleet_health`            | Exception-only estate health: systems, VIOS, LPAR RMC, and recent failed jobs |
-| `hmc_capacity_report`         | Per-system: total/assigned/free memory (MiB) and CPU, LPAR counts |
-| `hmc_find_placement`          | Systems with enough free memory + CPU to host a new LPAR |
-| `hmc_wait_for_job`            | Poll until a terminal HMC state and return a normalized outcome (`status`, `timed_out`, nullable `error`, and last `job`); terminal states include completed, failed, exception, and canceled variants |
-| `hmc_effective_permissions`   | Report the tools this server exposes, their effect classes, and the selected access policy's declared connections and targets |
 
 `hmc_effective_permissions` discloses the selected policy's name, its absolute
 path, every connection token, and every target selector to any MCP client that
@@ -710,61 +691,8 @@ name is searched fleet-wide. The LPM tools take it as the *source*-system
 selector beside their required `target_system_name_or_uuid`, so a policy table
 must match both endpoints against its `managed_system` allowlist.
 
-**Mutating / lifecycle**
-
-| Tool                  | Description |
-|-----------------------|-------------|
-| `hmc_provision_lpar`  | **End-to-end LPAR provisioning workflow**: create + network adapter + vSCSI adapter + storage mapping + declarative PCIe assignments + power on in one call; validates name/VLAN/VG and all assignment preconditions before create; `dry_run=True` checks preconditions only; per-step results retain recoverable partial state without automatic rollback. LPAR creation falls back to `mksyscfg` over SSH if REST returns 406 (requires SSH credentials); optional `caller_token` embeds `[caller <token>]` in the partition description (ADR 0064). |
-| `hmc_decommission_lpar` | **End-to-end LPAR decommission workflow**: inventory the selected system-scoped target, enforce ADR 0011 ownership, report adapters and observed storage mappings, power off, detach adapters, and delete the LPAR; `dry_run=True` previews only. It does not delete storage mappings, backing storage, or perform rollback. |
-| `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists; optional `caller_token` embeds `[caller <token>]` in the partition description (ADR 0064) |
-| `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |
-| `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ADR 0011 description ownership (`ownership_override` only with explicit approval) |
-| `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR; enforces ADR 0011 description ownership (`ownership_override` only with explicit approval), so a guarded call needs SSH reachability to the HMC as well as REST. Omitting the system selector searches fleet-wide and discovers the owning system for the ownership check |
-| `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR; enforces ADR 0011 description ownership (`ownership_override` only with explicit approval), so a guarded call needs SSH reachability to the HMC as well as REST. Omitting the system selector searches fleet-wide and discovers the owning system for the ownership check |
-| `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
-| `hmc_power_on_lpar`   | Submit PowerOn job; returns stable `already_running`, nullable `job`, and nullable `message` fields (`force=True` overrides the running-state guard) |
-| `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag); optionally wait for a normalized outcome |
-| `hmc_install_lpar_os` | Submit a NIM-based LPAR OS installation job (`hmc_timeout_minutes`); optionally wait for a normalized outcome |
-
-**Virtual adapters (network / storage)**
-
-| Tool                     | Description |
-|--------------------------|-------------|
-| `hmc_list_adapters`      | List an LPAR's adapters by type (network / vSCSI / vFC / vNIC) |
-| `hmc_add_network_adapter`| Add a Virtual Ethernet NIC (VLAN PVID, vswitch, tagged, MAC) |
-| `hmc_add_vscsi_adapter`  | Add a Virtual SCSI client adapter paired to a VIOS |
-| `hmc_add_vfc_adapter`    | Add a Virtual Fibre Channel (NPIV) adapter paired to a VIOS |
-| `hmc_delete_adapter`     | Remove an adapter from an LPAR by UUID |
-
-**Virtual storage (Volume Groups / Virtual Disks / mappings)**
-
-| Tool                      | Description |
-|---------------------------|-------------|
-| `hmc_list_volume_groups`  | List VIOS Volume Groups (free space, PVs, virtual disks) |
-| `hmc_create_volume_group` | Create a Volume Group from physical volumes |
-| `hmc_create_virtual_disk` | Carve a `capacity_mib` Virtual Disk (logical volume) out of a VG |
-| `hmc_attach_disk_to_lpar` | Create a `capacity_mib` Virtual Disk, add its vSCSI adapter, and map it to an existing LPAR; supports `dry_run=True` and per-step failure reporting |
-| `hmc_map_storage_to_lpar` | Map a VirtualDisk/PhysicalVolume to an LPAR (vSCSI mapping) |
-
-**Virtual media (ISO library)**
-
-| Tool                          | Description |
-|-------------------------------|-------------|
-| `hmc_create_media_repository` | Create a `size_mib` Virtual Media Repository (VMLibrary) on a VG |
-| `hmc_create_optical_media`    | Create a blank `size_mib` optical media (ISO container) |
-| `hmc_delete_media_repository` | Delete the Virtual Media Repository from a VG |
-
-**Virtual networking (switches / networks / bridges)**
-
-| Tool                           | Description |
-|--------------------------------|-------------|
-| `hmc_list_virtual_switches`    | List VirtualSwitches (names, SwitchIDs, mode) |
-| `hmc_list_virtual_networks`    | List Virtual Networks (VLANs) on a system |
-| `hmc_create_virtual_network`   | Create a Virtual Network (VLAN) using `virtual_switch_id` |
-| `hmc_delete_virtual_network`   | Delete a Virtual Network |
-| `hmc_list_network_bridges`     | List NetworkBridges (Shared Ethernet Adapters) |
-
-> **SSH/CLI tools** — the `(SSH/CLI)` tools run HMC CLI commands over SSH.
+> **SSH/CLI tools** — some tools reach the HMC by running CLI commands over SSH
+> rather than through the REST API.
 > Their system/LPAR arguments (`system_name_or_uuid` / `lpar_name_or_uuid`)
 > accept either a CLI name or a UUID. Names are used as-is; UUIDs are resolved
 > to their CLI names via the REST API first, falling back to an `lssyscfg` name
@@ -778,34 +706,12 @@ must match both endpoints against its `managed_system` allowlist.
 > See [docs/hmc-cli-cheatsheet.md](docs/hmc-cli-cheatsheet.md) for a concise
 > reference to all HMC CLI commands used by this project.
 
-**VIOS administration**
-
-| Tool                  | Description |
-|-----------------------|-------------|
-| `hmc_create_vios`     | Create a VIOS partition on a managed system |
-| `hmc_delete_vios`     | Delete (destroy) a VIOS partition (must be powered off) |
-| `hmc_install_vios`    | Submit a NIM-based VIOS installation job (`hmc_timeout_minutes`); optionally wait for a normalized outcome |
-| `hmc_list_vios_backups` | List existing VIOS backups (SSH/CLI) |
-| `hmc_backup_vios`     | Create a VIOS backup (SSH/CLI) |
-| `hmc_restore_vios`    | Restore a VIOS from a named backup (SSH/CLI) |
-
 `hmc_backup_vios` and `hmc_restore_vios` retain required managed-system and VIOS
 selector metadata for authorization diagnostics and audit. Because their `ssp`
 mode can affect the wider cluster, both tools are non-exhaustive and require
 `targets = "all-targets"`. Prefer a grant that explicitly names only the needed
 tool. An effect-class grant with `all-targets` can reach either tool; a targets
 table cannot authorize either one even when it contains both selector kinds.
-
-**SR-IOV / vNIC & physical I/O (SSH/CLI)**
-
-| Tool                       | Description |
-|----------------------------|-------------|
-| `hmc_list_vnics`           | List vNIC slots and HMC backing-device readback for an LPAR |
-| `hmc_add_vnic`             | Ensure one vNIC with a verified SR-IOV backing selector |
-| `hmc_remove_vnic`          | Remove the verified vNIC identified by its partition-local `slot_num` |
-| `hmc_list_fc_ports`        | List Virtual Fibre Channel (NPIV) adapters for a system |
-| `hmc_list_sea_adapters`    | List Shared Ethernet Adapters for a system |
-| `hmc_set_sriov_adapter_mode` | Toggle a physical SR-IOV adapter between SR-IOV and dedicated mode |
 
 The verified vNIC mutation contract is admitted only for POWER9 8375-42A managed by HMC V10R3
 M1060. `hmc_add_vnic` selects one backing with `vios_name`, `vios_lpar_id`, `adapter_id`,
@@ -831,55 +737,6 @@ its matching read-succeeded flag set means verified absence.
 | Other server families or HMC levels | No | Capability checks fail before mutation |
 | Rollback after a dispatched mutation | No | Partial errors retain observed before/after evidence |
 
-**Template library**
-
-| Tool                              | Description |
-|-----------------------------------|-------------|
-| `hmc_list_partition_templates`    | All partition templates |
-| `hmc_get_partition_template`      | One partition template by UUID |
-| `hmc_deploy_partition_template`   | Deploy a partition from a draft template — job |
-
-**Live Partition Mobility (LPM)**
-
-| Tool                            | Description |
-|---------------------------------|-------------|
-| `hmc_migrate_lpar`              | Validate to a successful terminal result, then migrate an LPAR; `validate_first=False` opts into direct submission |
-| `hmc_migrate_validate_lpar`     | Pre-check a migration — job |
-| `hmc_migrate_abort_lpar`        | Abort an in-progress migration — job |
-| `hmc_migrate_recover_lpar`      | Recover after a failed migration — job |
-| `hmc_remote_restart_lpar`       | Remote-restart a failed LPAR — job |
-
-**System / VIOS power**
-
-| Tool                    | Description |
-|-------------------------|-------------|
-| `hmc_modify_system`     | Change a managed system's configuration (only passed fields) |
-| `hmc_power_on_system`   | Power on a managed system — job |
-| `hmc_power_off_system`  | Power off a managed system — job |
-| `hmc_power_on_vios`     | Power on a VIOS — job |
-| `hmc_power_off_vios`    | Power off a VIOS — job |
-
-**Cluster / Shared Storage Pool (SSP)**
-
-| Tool                            | Description |
-|---------------------------------|-------------|
-| `hmc_list_clusters`             | List Clusters (VIOS node sets sharing a pool) |
-| `hmc_list_shared_storage_pools` | All SSPs (capacity, free space, logical units) |
-| `hmc_get_shared_storage_pool`   | One SSP by UUID |
-| `hmc_create_logical_unit`       | Create a Logical Unit (file-backed disk) — job |
-| `hmc_delete_logical_unit`       | Delete a Logical Unit by UDID — job |
-
-**Performance & Capacity Monitoring (PCM)**
-
-| Tool                        | Description |
-|-----------------------------|-------------|
-| `hmc_get_pcm_preferences`   | Read managed-system monitoring flags |
-| `hmc_set_pcm_preferences`   | Enable/disable managed-system PCM collection |
-| `hmc_processed_metric_links`    | List processed metric documents (30s, ~2h retention) |
-| `hmc_processed_metrics`         | Download the newest processed metric document |
-| `hmc_aggregated_metric_links`   | List aggregated metric documents (trend rollup) |
-| `hmc_aggregated_metrics`        | Download the newest aggregated metric document |
-
 > **PCM notes**: metrics are stored as *JSON*, reached via an Atom feed of
 > links. The `*_metric_links` tools return the link list, while the `*_metrics`
 > tools download the most recent document (or `{}` when none are in range). The CLI
@@ -891,33 +748,6 @@ its matching read-succeeded flag set means verified absence.
 > before processed/aggregated metrics accumulate. Preferences and raw Long
 > Term Monitor feeds are documented only for `ManagedSystem`, not
 > `LogicalPartition`.
-
-**Users & access (HMC user administration)**
-
-| Tool                          | Description |
-|-------------------------------|-------------|
-| `hmc_list_users`              | List HMC user accounts |
-| `hmc_get_user`                | Get one HMC user account by username |
-| `hmc_create_user`             | Create a new HMC local user account |
-| `hmc_modify_user`             | Modify an HMC user account (only supplied fields) |
-| `hmc_delete_user`             | Delete an HMC user account (irreversible) |
-| `hmc_list_password_policies`  | List HMC password policies |
-| `hmc_list_password_policy_status` | Get password-policy activation status |
-| `hmc_create_password_policy`  | Create a password policy (max age, rules) |
-| `hmc_modify_password_policy`  | Modify a password policy (only supplied fields) |
-| `hmc_delete_password_policy`  | Delete a password policy (irreversible) |
-| `hmc_get_ldap_config`          | Get the current HMC LDAP server configuration |
-| `hmc_configure_ldap`          | Configure the HMC LDAP server integration |
-| `hmc_remove_ldap_config`      | Remove a component of the LDAP configuration |
-
-**Software updates (HMC / VIOS / firmware)**
-
-| Tool                         | Description |
-|------------------------------|-------------|
-| `hmc_update_console_software` | Submit the documented `UpdateManagementConsole` PTF update job; `kind=upgrade` is refused because upgrades require IBM's multi-job workflow |
-| `hmc_get_available_hmc_ptfs` | Get available PTFs for the HMC software |
-| `hmc_vios_update`            | Submit a VIOS software update (kind=update) or upgrade (kind=upgrade) job |
-| `hmc_update_firmware`        | Submit the Power11 `PlatformUpdate` job (HMC 11.1.1111 or later) |
 
 `hmc_update_firmware` accepts IBM's nested `PlatformUpdateParameter` JSON.
 It rejects older HMC releases before submitting the destructive operation.
@@ -974,40 +804,6 @@ With `wait=true`, a terminal job's documented `stdOut` result is also exposed
 at the top level when present. Invalid or cross-operation parameters are
 rejected before connecting to the HMC.
 
-**LPAR profiles (backup / restore)**
-
-| Tool                         | Description |
-|------------------------------|-------------|
-| `hmc_backup_lpar_profiles`   | Backup all LPAR profiles on a system (`bkprofdata`) |
-| `hmc_restore_lpar_profiles`  | Restore LPAR profiles from a backup file (`rstprofdata`) |
-| `hmc_sync_lpar_profile`      | Sync an LPAR's running config back to its current profile |
-| `hmc_assign_profile_io_slot` | Add a physical I/O slot DRC index to an LPAR's profile |
-
-**LPAR / system properties (SSH/CLI)**
-
-| Tool                        | Description |
-|-----------------------------|-------------|
-| `hmc_get_lpar_description`  | Get an LPAR's description field |
-| `hmc_set_lpar_description`  | Set an LPAR's description field |
-| `hmc_get_lpar_msp`          | Get the Migratable Service Partition flag |
-| `hmc_set_lpar_msp`          | Set the MSP flag |
-| `hmc_get_lpar_memopt_score` | Get an LPAR's current memory-optimization score (`lsmemopt -o currscore`) |
-| `hmc_get_minimum_affinity_policy` | Get a validated Power11 minimum-affinity policy, or an actionable capability-absence reason |
-| `hmc_list_lpar_memopt_scores` | List memory-optimization scores for a system's LPARs |
-| `hmc_get_system_memopt_score` | Get a system's current memory-optimization score (`lsmemopt -o currscore`) |
-| `hmc_plan_lpar_memopt_scores` | Predict LPAR scores for a read-only scenario (`lsmemopt -o calcscore`) |
-| `hmc_plan_system_memopt_score` | Predict a system score for a read-only scenario (`lsmemopt -o calcscore`) |
-| `hmc_get_proc_compat_modes` | List processor compatibility modes a system supports |
-| `hmc_get_lpar_proc_compat`  | Get an LPAR's current/pending proc-compat mode |
-| `hmc_set_lpar_proc_compat`  | Set an LPAR's processor compatibility mode |
-| `hmc_list_io_slots`         | List physical I/O slots on a system |
-| `hmc_list_dedicated_pcie_slots` | List normalized dedicated PCIe slots with stable DRC identities |
-| `hmc_list_sriov_adapters` | Report normalized SR-IOV adapter inventory capability and selectors |
-| `hmc_list_sriov_physical_ports` | Report normalized SR-IOV physical-port inventory capability and selectors |
-| `hmc_list_sriov_logical_ports` | Report normalized SR-IOV logical-port inventory capability and selectors |
-| `hmc_list_memory_pools`     | List shared memory pools on a system |
-| `hmc_remove_memory_pool`    | Remove a shared memory pool from a system |
-
 Normalized PCIe inventories share this envelope:
 
 - `resource_kind`: `dedicated_slot`, `sriov_adapter`, `sriov_physical_port`, or
@@ -1033,12 +829,6 @@ The CLI equivalents are `hmc-mcp network list-dedicated-pcie-slots`, `list-sriov
 commands accept the applicable `--adapter-id`, `--physical-port-id`, and `--logical-port-id`
 selectors. The older `hmc_list_io_slots` / `network list-io-slots` surface remains raw and is not
 the normalized contract.
-
-**Escape hatch**
-
-| Tool                | Description |
-|---------------------|-------------|
-| `hmc_run_command`   | Run any HMC CLI command; available only with `serve --enable-arbitrary-command` |
 
 ### End-to-end: give an LPAR a bootable disk
 
