@@ -519,6 +519,12 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     assert "from hmc_mcp.api import capacity_report" in body
     assert "[app]" not in body
     assert "scripts/smoke_mcp.py" not in body
+    # Held here since narrowing the library-wheel-smoke match stopped its body
+    # from spilling into this job and covering these incidentally.
+    assert "uv export" not in body
+    assert "--no-deps" not in body
+    assert "pip install -e" not in body
+    assert "import hmc_mcp.api" not in body
 
 
 def test_the_floor_derivation_covers_every_declared_range(tmp_path: Path) -> None:

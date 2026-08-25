@@ -12,6 +12,7 @@ import pkgutil
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from types import ModuleType
 from typing import get_args, get_type_hints
 
@@ -408,24 +409,53 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
+def _bare_annotations(label: str, member: Callable[..., object]) -> list[str]:
+    """An omitted ``__init__`` return is not a gap: PEP 484 infers ``None`` for
+    a constructor with any annotated argument, and the argument check below is
+    what establishes that."""
+    try:
+        signature = inspect.signature(member)
+    except (TypeError, ValueError):
+        return []
+    bare = [
+        f"{label}({parameter.name})"
+        for parameter in signature.parameters.values()
+        if parameter.name not in {"self", "cls"}
+        and parameter.annotation is inspect.Parameter.empty
+    ]
+    if not label.endswith(".__init__") and (
+        signature.return_annotation is inspect.Signature.empty
+    ):
+        bare.append(f"{label} -> (bare return)")
+    return bare
+
+
+def _package_owned_callables(exported: type) -> list[tuple[str, object]]:
+    """A member inherited from ``BaseException`` or ``BaseModel`` is not this
+    package's to annotate, and its bare ``*args`` is not a facade defect."""
+    return [
+        (name, member)
+        for name, member in inspect.getmembers(exported, inspect.isfunction)
+        if (name == "__init__" or not name.startswith("_"))
+        and getattr(member, "__module__", "").startswith("hmc_mcp")
+    ]
+
+
 def test_every_exported_callable_is_fully_annotated() -> None:
     """The PEP 561 marker asserts the facade is typed. A bare parameter or
     return would make that assertion false for a downstream checker, which is
     worse than shipping no marker at all — the consumer gets silent ``Any``
-    where it was promised a type."""
+    where it was promised a type. Covers both halves of the README's claim:
+    each export's call signature, and the constructor and public methods of
+    each exported package-owned model."""
     bare: list[str] = []
     for name in sorted(api.__all__):
         exported = getattr(api, name)
-        if not inspect.isfunction(exported):
-            continue
-        signature = inspect.signature(exported)
-        if signature.return_annotation is inspect.Signature.empty:
-            bare.append(f"{name} -> (bare return)")
-        bare.extend(
-            f"{name}({parameter.name})"
-            for parameter in signature.parameters.values()
-            if parameter.annotation is inspect.Parameter.empty
-        )
+        if inspect.isfunction(exported):
+            bare.extend(_bare_annotations(name, exported))
+        elif inspect.isclass(exported):
+            for member_name, member in _package_owned_callables(exported):
+                bare.extend(_bare_annotations(f"{name}.{member_name}", member))
 
     assert not bare, f"unannotated facade exports: {bare}"
 
