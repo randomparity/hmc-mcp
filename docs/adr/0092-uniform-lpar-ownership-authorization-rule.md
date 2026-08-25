@@ -277,7 +277,11 @@ invocation. `run_hmc_command` opens and closes its connection inside the call; t
 only long-lived SSH connection in the package is the console path (`ssh.py:80`),
 which commands do not share. There is no pool and no reuse. (With
 `ownership_override=True` the guard returns at `operations_lpar.py:505` after
-auditing, before the read — that path pays nothing.)
+auditing, before the read — so **`authorize_lpar_mutation` itself** pays nothing.
+The *call* still pays the two REST GETs below: every caller resolves the ownership
+names before invoking the guard, because the audit record for an approved override
+names the system and the partition. #371 corrected an earlier reading of this
+parenthetical that took the override path to be free end to end.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
 (`operations_lpar.py:510`), which the guard needs to turn UUIDs into the CLI names

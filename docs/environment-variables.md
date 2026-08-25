@@ -55,23 +55,37 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 
 - **Power ownership guard** (`HMC_AUTHORIZE_POWER_OPERATIONS`): ADR 0011 ownership
   is advisory by default on the power path, and ADR 0092 §4 records why. The guard
-  costs **one SSH login plus two REST GETs** on every call that does not carry
-  `ownership_override=True` — `authorize_lpar_mutation` reads the token over SSH,
-  and `resolve_lpar_ownership_names` performs both REST reads unconditionally to
-  turn UUIDs into the CLI names the SSH command takes. A power-cycling
-  orchestrator is the highest-frequency caller of this operation, and power is the
-  one mutation class whose inverse is a single call with no prior state to
-  reconstruct, so the cost is opt-in rather than default. Turn it on when the HMC
-  is shared with other agents or human operators and that cost is acceptable.
+  costs **one SSH login plus two REST GETs** per guarded call —
+  `authorize_lpar_mutation` reads the token over SSH, and
+  `resolve_lpar_ownership_names` performs both REST reads unconditionally to turn
+  UUIDs into the CLI names the SSH command takes. `ownership_override=True` skips
+  the SSH read, **not** the two REST reads: they run first, because the audit
+  record for an approved override names the system and the partition. A
+  power-cycling orchestrator is the highest-frequency caller of this operation, and
+  power is the one mutation class whose inverse is a single call with no prior
+  state to reconstruct, so the cost is opt-in rather than default. Turn it on when
+  the HMC is shared with other agents or human operators and that cost is
+  acceptable.
 
-  Turning it on changes two things beyond the ownership check. A managed-system
+  Turning it on changes three things beyond the ownership check. A managed-system
   selector becomes required — the token is read per managed system, so without one
   the guard cannot tell which system's token applies, and the call is refused
-  before any HMC traffic. And a partition another agent owns is refused with a
+  before any HMC traffic. A partition another agent owns is refused with a
   `PermissionError`; retry it as a deliberate, audited exception with
   `ownership_override` (`--ownership-override` on the CLI). `provision_lpar`
   passes that override on its own activation leg, because the partition it powers
   is the one the same workflow just created and stamped.
+
+  And **power operations gain a dependency on the HMC's SSH interface.** The
+  ownership read runs the HMC CLI over SSH, so with the guard on a power operation
+  fails with `HMCCLIError` when SSH is unreachable, refuses the credentials, or
+  hangs — bounded only by `HMC_SSH_TIMEOUT`, which defaults to 300 seconds, so a
+  hung HMC turns a fast REST call into a five-minute wait before the failure. That
+  includes `power-off --immediate`, the call an operator most wants during an
+  incident. It is fail-closed by design — an ownership token that cannot be read
+  has not been checked — and `ownership_override` is the escape, because it skips
+  the read. A deployment whose HMC credentials work for REST but not for SSH should
+  leave this setting off.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.

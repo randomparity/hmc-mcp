@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from hmc_mcp import audit, cli_lpars, operations_provision, server_lpars
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_lpar import power_lpar
+from hmc_mcp.ssh import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_UUID = "22222222-2222-2222-2222-222222222222"
@@ -215,6 +216,53 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"
     assert (records[0]["system"], records[0]["lpar"]) == ("sys1", "aix1")
+
+
+@pytest.mark.asyncio
+async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> None:
+    """SSH is a hard dependency once the guard is on — and it fails closed."""
+    hmc = _hmc(authorize=True)
+
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(side_effect=HMCCLIError("SSH command timed out after 300s")),
+    ):
+        with pytest.raises(HMCCLIError, match="timed out"):
+            await power_lpar(
+                hmc,
+                LPAR_UUID,
+                power_on=False,
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+
+    hmc.submit_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enabled_guard_resolves_the_managed_system_once() -> None:
+    """The named selector is resolved once and scopes the partition lookup.
+
+    Resolving it again inside the guard would buy a second REST GET, and it
+    would let a partition named by name resolve outside the system whose
+    ownership token is then read.
+    """
+    hmc = _hmc(authorize=True, agent_id="alice")
+    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
+
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=OWNED_BY_ALICE),
+    ):
+        await power_lpar(
+            hmc,
+            "aix1",
+            power_on=False,
+            system_name_or_uuid="sys1",
+        )
+
+    hmc.find_system_by_name.assert_awaited_once_with("sys1")
+    hmc.find_partition_by_name.assert_awaited_once_with("aix1", system_uuid=SYSTEM_UUID)
 
 
 @pytest.mark.asyncio

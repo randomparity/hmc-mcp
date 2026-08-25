@@ -277,9 +277,9 @@ async def _power_on(
     against is the one the same call stamped moments earlier (ADR 0092
     Consequences). The override keeps the resolution inside ADR 0092 §5's two
     mechanisms — it is audited — rather than adding a call-site-conditional
-    guard. It also spares the SSH login when an operator has
-    ``authorize_power_operations`` on; with the setting off nothing here runs
-    at all.
+    guard. With ``authorize_power_operations`` on it spares the SSH ownership
+    read, though not the two REST name lookups that precede it; with the
+    setting off nothing here runs at all.
     """
     result = await power_lpar(
         hmc,
@@ -640,7 +640,13 @@ async def provision_lpar(
             power_result = await _power_on(
                 hmc, system_name_or_uuid, created_uuid, affinity_assessment
             )
-        except HMCError as exc:
+        except (HMCError, ValueError) as exc:
+            # ValueError too: with authorize_power_operations on, the leg reaches
+            # the ADR 0011 guard, whose name resolution raises ValueError when the
+            # managed system or the just-created partition cannot be read back.
+            # Losing that to an uncaught exception would discard the result naming
+            # the LPAR this workflow created — the identity the caller needs, since
+            # nothing here rolls back.
             steps.append(_step("power_on", "error", str(exc)))
             if affinity_assessment is not None:
                 steps.append(_step("affinity_assessment", "skipped"))

@@ -505,6 +505,32 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
     assess.assert_not_awaited()
 
 
+def test_provision_keeps_its_result_when_the_power_guard_fails(monkeypatch, mock_hmc):
+    """A guard resolution failure must not discard the created LPAR's identity.
+
+    With ``authorize_power_operations`` on, the activation leg reaches the
+    ADR 0011 guard, whose name resolution raises ``ValueError`` rather than
+    ``HMCError``. Nothing rolls back the partition this workflow created, so
+    losing the result that names it would leave the caller with nothing to
+    clean up by (#371).
+    """
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    with patch(
+        "hmc_mcp.operations_provision._power_on",
+        new=AsyncMock(side_effect=ValueError("LPAR 'x' has no partition name")),
+    ):
+        result = hmc_provision_lpar(**_provision_args())
+
+    assert result.workflow_completed is False
+    assert result.resource_created is True
+    assert result.lpar_uuid == LPAR_UUID
+    steps = {s["step"]: s for s in result.steps}
+    assert steps["power_on"]["status"] == "error"
+    assert "no partition name" in steps["power_on"]["result"]
+
+
 # ---------------------------------------------------------------------- #
 # Full happy-path workflow
 # ---------------------------------------------------------------------- #

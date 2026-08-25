@@ -762,18 +762,22 @@ async def delete_lpar(
 
 async def _authorize_power_lpar(
     hmc: HMCClient,
-    system_name_or_uuid: str,
+    system_uuid: str,
+    system_fallback: str,
     lpar_uuid: str,
     *,
     ownership_override: bool,
 ) -> None:
     """Run the ADR 0011 ownership guard for one opted-in power operation.
 
-    Reached only when ``authorize_power_operations`` is set (ADR 0092 §4).
+    Reached only when ``authorize_power_operations`` is set (ADR 0092 §4). The
+    two name lookups run before the override check, as they do in every guarded
+    sibling: the audit record for an approved override names the system and the
+    partition, so skipping them would buy two REST reads at the cost of an
+    unattributable record.
     """
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
-        hmc, system_uuid, system_name_or_uuid, lpar_uuid
+        hmc, system_uuid, system_fallback, lpar_uuid
     )
     await authorize_lpar_mutation(
         hmc,
@@ -808,7 +812,9 @@ async def power_lpar(
 
     With the setting on, ``system_name_or_uuid`` becomes required and
     ``ownership_override=True`` bypasses the rejection for this one call and
-    records an audited override.
+    records an audited override. The override skips the SSH ownership read, not
+    the two REST name lookups that precede it; when the ownership read fails or
+    times out, the call fails with :class:`HMCCLIError` and submits no job.
     """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
     guard_system: str | None = None
@@ -827,12 +833,22 @@ async def power_lpar(
                 "UUID that hosts the partition."
             )
         guard_system = system_name_or_uuid
+        # Resolve the system once and scope the partition lookup to it, the
+        # ordering every guarded sibling uses. It saves a REST GET over
+        # resolving the same selector again inside the guard, and it means a
+        # partition named by name is resolved within the system whose ownership
+        # token is about to be read.
+        guard_system_uuid = await resolve_system_uuid(hmc, guard_system)
+        selector: str | None = guard_system_uuid
+    else:
+        selector = system_name_or_uuid
     lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        hmc, lpar_name_or_uuid, system_name_or_uuid=selector
     )
     if guard_system is not None:
         await _authorize_power_lpar(
             hmc,
+            guard_system_uuid,
             guard_system,
             lpar_uuid,
             ownership_override=ownership_override,
