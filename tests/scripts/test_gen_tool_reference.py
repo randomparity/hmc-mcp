@@ -1,0 +1,231 @@
+"""Tests for the tool-reference generator (scripts/gen_tool_reference.py).
+
+The diff gate proves the committed copy is *current*, never that it is *right* --
+both sides of that comparison come from this generator. So the raise paths and the
+rendering contract are tested here, against synthetic registries, and the gate is
+left to prove only what it can.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+from hmc_mcp.server import TOOL_SECURITY
+from hmc_mcp.tool_registry import ToolSecurity
+
+ROOT = Path(__file__).parents[2]
+MODULE_PATH = ROOT / "scripts" / "gen_tool_reference.py"
+MODULE_SPEC = importlib.util.spec_from_file_location("gen_tool_reference", MODULE_PATH)
+assert MODULE_SPEC is not None
+assert MODULE_SPEC.loader is not None
+gen_tool_reference = importlib.util.module_from_spec(MODULE_SPEC)
+# Registered before execution because @dataclass resolves its own module out of
+# sys.modules while the class body runs; without this the import raises.
+sys.modules[MODULE_SPEC.name] = gen_tool_reference
+MODULE_SPEC.loader.exec_module(gen_tool_reference)
+
+COMMITTED = ROOT / "docs" / "tools"
+# Absolute, not relative: the sdist ships README.md as the PyPI long description and
+# does not ship docs/, so a relative link dangles for every reader who arrives from
+# the package page rather than from GitHub.
+README_POINTER = "https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md"
+
+SECURITY = {
+    "hmc_alpha": ToolSecurity(effect="read", operation="alpha.list", target_kind="lpar"),
+    "hmc_beta": ToolSecurity(
+        effect="destructive", operation="beta.delete", target_kind="console"
+    ),
+}
+DESCRIPTIONS = {
+    "hmc_alpha": "List alphas.\n\nArgs:\n    profile: TOML profile name.\n",
+    "hmc_beta": "Delete one beta.\n",
+}
+
+
+def _records(**overrides):
+    """Records built from the synthetic registry, with *overrides* applied."""
+    descriptions = {**DESCRIPTIONS, **overrides.pop("descriptions", {})}
+    security = {**SECURITY, **overrides.pop("security", {})}
+    exposed = overrides.pop("exposed", lambda name: True)
+    assert not overrides
+    return gen_tool_reference.build_records(descriptions, security, exposed)
+
+
+def test_records_carry_registry_metadata_and_the_docstring_summary() -> None:
+    alpha, beta = _records()
+
+    assert (alpha.name, alpha.effect, alpha.operation, alpha.target_kind) == (
+        "hmc_alpha",
+        "read",
+        "alpha.list",
+        "lpar",
+    )
+    # First line only: every handler in this package has a multiline docstring, so
+    # the Args block must not reach the table cell.
+    assert alpha.summary == "List alphas."
+    assert beta.domain == "beta"
+
+
+def test_a_missing_registered_tool_raises_rather_than_being_omitted() -> None:
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        gen_tool_reference.build_records(
+            {"hmc_alpha": DESCRIPTIONS["hmc_alpha"]}, SECURITY, lambda _: True
+        )
+
+    assert "hmc_beta" in str(error.value)
+    assert "omitted" in str(error.value)
+
+
+def test_an_exposed_tool_with_no_security_record_raises() -> None:
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        _records(descriptions={"hmc_gamma": "Do gamma things."})
+
+    assert "hmc_gamma" in str(error.value)
+    assert "ToolSecurity" in str(error.value)
+
+
+def test_a_blank_description_raises_rather_than_emitting_an_empty_cell() -> None:
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        _records(descriptions={"hmc_beta": "   \n\n"})
+
+    assert "hmc_beta" in str(error.value)
+    assert "empty" in str(error.value)
+
+
+def test_an_operation_without_a_domain_split_raises() -> None:
+    with pytest.raises(gen_tool_reference.ToolReferenceError) as error:
+        _records(
+            security={
+                "hmc_beta": ToolSecurity(
+                    effect="read", operation="beta", target_kind="console"
+                )
+            }
+        )
+
+    assert "hmc_beta" in str(error.value)
+    assert "domain.verb" in str(error.value)
+
+
+def test_a_pipe_in_a_summary_is_escaped_so_the_row_keeps_its_columns() -> None:
+    (alpha, _) = _records(descriptions={"hmc_alpha": "List alphas | betas."})
+
+    page = gen_tool_reference.render_pages([alpha])["alpha.md"]
+    row = next(line for line in page.splitlines() if line.startswith("| `hmc_alpha`"))
+    assert r"\|" in row
+    assert row.replace(r"\|", "").count("|") == 6
+
+
+def test_rendering_is_deterministic_over_an_unordered_registry() -> None:
+    # Two tools share the `alpha` domain, so row order inside a page -- not only
+    # the set of pages -- is what this pins.
+    records = _records(
+        security={
+            "hmc_aardvark": ToolSecurity(
+                effect="read", operation="alpha.get", target_kind="lpar"
+            )
+        },
+        descriptions={"hmc_aardvark": "Get one aardvark.\n"},
+    )
+    assert [record.name for record in records][:2] == ["hmc_aardvark", "hmc_alpha"]
+
+    forward = gen_tool_reference.render_pages(records)
+
+    assert gen_tool_reference.render_pages(reversed(records)) == forward
+    assert gen_tool_reference.render_pages(records) == forward
+
+
+def test_grouping_is_a_parameter_not_a_hardcoded_domain() -> None:
+    pages = gen_tool_reference.render_pages(
+        _records(), group_key=lambda record: record.effect
+    )
+
+    assert set(pages) == {"read.md", "destructive.md", "index.md"}
+
+
+def test_every_page_carries_the_banner_and_the_registered_set_decision() -> None:
+    pages = gen_tool_reference.render_pages(_records())
+
+    assert set(pages) == {"alpha.md", "beta.md", "index.md"}
+    for name, text in pages.items():
+        assert text.startswith(gen_tool_reference.BANNER), name
+        assert "just tool-docs" in text, name
+        assert gen_tool_reference.SCOPE_NOTE in text, name
+        assert text.endswith("\n"), name
+
+
+def test_a_tool_a_default_deployment_withholds_is_named_on_its_page() -> None:
+    pages = gen_tool_reference.render_pages(
+        _records(exposed=lambda name: name != "hmc_beta")
+    )
+
+    assert "Registered but not exposed by a default deployment: `hmc_beta`" in (
+        pages["beta.md"]
+    )
+    assert "## Not exposed by default" in pages["index.md"]
+    assert "- **2** tools are registered." in pages["index.md"]
+    assert "- **1** are exposed by a default deployment." in pages["index.md"]
+
+
+def test_check_reports_a_stale_page_a_missing_page_and_an_orphan(tmp_path) -> None:
+    pages = gen_tool_reference.render_pages(_records())
+    gen_tool_reference.write_pages(pages, tmp_path)
+    assert gen_tool_reference.check_pages(pages, tmp_path) == []
+
+    (tmp_path / "alpha.md").write_text("hand-edited\n", encoding="utf-8")
+    (tmp_path / "beta.md").unlink()
+    (tmp_path / "orphan.md").write_text("left behind\n", encoding="utf-8")
+    problems = "\n".join(gen_tool_reference.check_pages(pages, tmp_path))
+
+    assert "stale: " in problems
+    assert "hand-edited" in problems
+    assert f"missing: {tmp_path / 'beta.md'}" in problems
+    assert f"not generated by this script: {tmp_path / 'orphan.md'}" in problems
+
+
+def test_writing_removes_a_page_the_generator_no_longer_emits(tmp_path) -> None:
+    gen_tool_reference.write_pages(gen_tool_reference.render_pages(_records()), tmp_path)
+    (alpha,) = [record for record in _records() if record.name == "hmc_alpha"]
+
+    gen_tool_reference.write_pages(gen_tool_reference.render_pages([alpha]), tmp_path)
+
+    assert not (tmp_path / "beta.md").exists()
+    assert (tmp_path / "alpha.md").exists()
+
+
+def test_check_mode_exits_one_on_a_stale_tree_and_names_the_fix(tmp_path, capsys) -> None:
+    assert gen_tool_reference.main(["--output", str(tmp_path)]) == 0
+    (tmp_path / "index.md").write_text("stale\n", encoding="utf-8")
+
+    assert gen_tool_reference.main(["--check", "--output", str(tmp_path)]) == 1
+
+    captured = capsys.readouterr()
+    assert "just tool-docs" in captured.err
+    assert "does not match the tool registry" in captured.err
+
+
+def test_the_committed_reference_matches_the_live_registry() -> None:
+    """The same comparison `just tool-docs-check` makes, inside the suite."""
+    records = gen_tool_reference.build_records(
+        asyncio.run(gen_tool_reference.load_descriptions()),
+        TOOL_SECURITY,
+        gen_tool_reference.default_exposure(),
+    )
+
+    assert len(records) == len(TOOL_SECURITY)
+    assert gen_tool_reference.check_pages(
+        gen_tool_reference.render_pages(records), COMMITTED
+    ) == []
+
+
+def test_the_readme_points_at_the_generated_reference_and_keeps_no_tool_table() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert README_POINTER in readme
+    # A hand-maintained copy is the drift this generator exists to remove, so the
+    # README must not grow tool rows back.
+    assert "| `hmc_" not in readme
