@@ -614,7 +614,7 @@ kind, and summary. Those pages are generated from the server's own registry by
 `scripts/gen_tool_reference.py`, and `just tool-docs-check` fails CI when they fall behind the
 code — which the hand-maintained table this replaced had no way to do. MCP clients also receive
 a rendered description for every tool parameter, including fields nested inside structured
-inputs such as LPAR resources, HMC user accounts, and update repositories.
+inputs such as LPAR resources, firmware update parameters, and VIOS update repositories.
 
 Feed-backed collection tools accept an optional client-side `limit`. The complete HMC feed is
 still transferred and parsed before the result is truncated: the limit bounds only the number of
