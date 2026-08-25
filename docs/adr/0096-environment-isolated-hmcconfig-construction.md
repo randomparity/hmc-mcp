@@ -73,10 +73,14 @@ already declared in `model_config`. `from_mapping` differs from `HMCConfig(...)`
 in exactly one dimension — environment isolation — and in no other.
 
 A field that is required and absent from *values* raises `ValueError` naming it.
-Every field is optional today, so this cannot fire; it exists because the
-alternative failure is the bug this ADR removes. A future required field, silently
-omitted from the explicit kwargs, would fall back to `EnvSettingsSource` and
-reopen the leak on the one path that promises it is closed.
+Every field is optional today, so this cannot fire. It does **not** close a leak:
+the field is passed explicitly either way, carrying `PydanticUndefined` as its
+value, so the init source still wins and the environment is still shut out. What
+it buys is the message. Without it, a future required field the caller forgot
+produces a pydantic type error about `PydanticUndefined` — a value the caller
+never wrote and cannot search for — instead of the field's name and where to put
+it. On a method whose entire contract is "the mapping is the only input", an
+error that does not name the missing key is the wrong error.
 
 ### 2. `load_profile` is unchanged
 
@@ -128,12 +132,21 @@ field also fails.
 teaches `from_mapping` instead, and stops instructing maintainers to delete the
 `monkeypatch.delenv` calls that are doing the actual isolating.
 
+That guidance left real damage: with `HMC_*` exported, twenty-one tests fail on a
+workstation and pass in CI, because they assert on fields the ambient environment
+was silently supplying. The seven in `tests/unit/test_config.py` are fixed here —
+the model-only ones by `from_mapping`, and the `load_profile` ones by restoring
+the `monkeypatch.delenv` calls, because environment-over-TOML on that path is the
+behaviour under test rather than a leak. The remaining fourteen are in files this
+change does not otherwise touch and are issue #461, together with a suite-wide
+recurrence guard.
+
 `_load_profile_from_document` keeps its `_env_file=None` argument — removing an
 inert argument on the operator path buys nothing and would change behaviour if a
 future `model_config` did declare `env_file`. Its comment is corrected to say what
 the argument does rather than what it looks like it does. The same inert argument
-at `common.py:63`, `common.py:76`, and `tests/conftest.py:285` is out of this
-change's scope and tracked separately.
+at `common.py:63`, `common.py:76`, and `tests/conftest.py:285` is #461's to
+remove.
 
 ## Consequences
 

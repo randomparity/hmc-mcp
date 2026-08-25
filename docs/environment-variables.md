@@ -144,6 +144,13 @@ Two properties worth knowing when the mapping is a database row:
 - **`model_fields_set` reports the keys the mapping supplied**, so
   `config.model_dump(exclude_unset=True)` round-trips back to the settings the
   row actually named.
+- **A key that names no field is dropped silently**, so a column-name drift
+  (`hostname` for `host`) surfaces later as a missing setting rather than at the
+  call. `HMCConfig.validate_credentials()` reports that as
+  `host (HMC_HOST / --host)` — its hints name the operator's knobs, and on this
+  path neither the variable nor the flag applies. Read the parenthesised name as
+  the field, and check your keys against `HMCConfig.model_fields` if a value you
+  supplied did not arrive.
 
 The **exhaustive** list of fields the environment can supply is the
 [Reference](#reference) table above: every row except `HMC_PROFILE` names an

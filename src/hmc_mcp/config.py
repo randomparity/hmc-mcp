@@ -214,9 +214,17 @@ class HMCConfig(BaseSettings):
         field set, so ``model_dump(exclude_unset=True)`` round-trips and the
         ``verify_ssl`` provenance in the TLS audit record stays accurate.
 
+        A field whose default comes from a factory that takes ``validated_data``
+        is not supported here and raises pydantic's own error; ``HMCConfig``
+        declares no such field, and a subclass that does should not inherit this
+        method.
+
         Raises:
-            ValueError: When *values* omits a field that has no default, which
-                would otherwise fall through to the environment.
+            ValueError: When *values* omits a field that has no default. The
+                omission does not leak — the field is still passed explicitly,
+                so the environment is still shut out — but pydantic would report
+                it as a type error about ``PydanticUndefined``. This names the
+                field and says where to supply it instead.
         """
         missing = sorted(
             name

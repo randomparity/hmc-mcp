@@ -104,7 +104,20 @@ Common causes worth checking first:
   and do not delete a `monkeypatch.delenv` on the strength of one — the
   `delenv` is what is actually isolating that test. Where a test needs to
   exercise the environment-reading constructor on purpose (`load_profile`'s
-  precedence, the CLI path), keep using `monkeypatch.setenv`/`delenv`.
+  env-over-TOML precedence, the CLI path), keep using
+  `monkeypatch.setenv`/`delenv`; `from_mapping` is the wrong tool there,
+  because the environment is the behaviour under test.
+
+  The earlier version of this note produced real breakage. Verify a fix with
+  the environment a workstation actually has, not an empty one:
+
+  ```sh
+  HMC_AGENT_ID=a HMC_HOST=h HMC_AUDIT_MEMENTO=m HMC_SSH_KEY_FILE=/k HMC_USER=u \
+    uv run pytest tests/ -q
+  ```
+
+  #461 tracks the tests outside `tests/unit/test_config.py` that still fail
+  this way, and the suite-wide fixture that should stop it recurring.
 - **Import name drift** — a tool or function renamed in source but still
   referenced by the old name in a test or fixture.
 

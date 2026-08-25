@@ -141,16 +141,19 @@ def _verify_ssl_source(config: HMCConfig) -> str:
     source priority, and when they agree they are indistinguishable and the
     environment is named — telling the operator which knob matches the effective
     value is what lets them change it.
+
+    Because that folding is what puts an environment value into
+    ``model_fields_set``, its *absence* is decisive the other way: nothing
+    supplied the field, so the value is the field default and
+    ``HMC_VERIFY_SSL`` is not the knob — even when it is set. That is the case
+    ``HMCConfig.from_mapping`` produces (ADR 0096), where the environment cannot
+    reach the config at all and naming it would send the operator to a variable
+    that has no effect on this connection.
     """
-    raw = os.environ.get("HMC_VERIFY_SSL")
-    if raw is None:
-        if "verify_ssl" in config.model_fields_set:
-            return "explicit-argument"
+    if "verify_ssl" not in config.model_fields_set:
         return "field-default"
-    if (
-        "verify_ssl" in config.model_fields_set
-        and _env_flag(raw) != config.verify_ssl
-    ):
+    raw = os.environ.get("HMC_VERIFY_SSL")
+    if raw is None or _env_flag(raw) != config.verify_ssl:
         return "explicit-argument"
     return "environment:HMC_VERIFY_SSL"
 

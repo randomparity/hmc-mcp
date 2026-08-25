@@ -101,7 +101,14 @@ def test_env_var_doc_lists_no_var_that_is_not_a_field() -> None:
     """
     import re as _re
 
-    documented = set(_re.findall(r"\bHMC_[A-Z0-9_]+\b", _reference_table_text()))
+    # First cell only. Scanning the whole row would let a `HMC_X` mentioned in
+    # another row's Description satisfy the equality — HMC_AGENT_ID's
+    # description names HMC_AUDIT_MEMENTO, so deleting the latter's row would
+    # otherwise leave this green.
+    documented = set()
+    for line in _reference_table_text().splitlines():
+        cells = line.strip().strip("|").split("|")
+        documented.update(_re.findall(r"\bHMC_[A-Z0-9_]+\b", cells[0]))
 
     assert documented == EXPECTED_ENV_VARS | NON_FIELD_ENV_VARS
 

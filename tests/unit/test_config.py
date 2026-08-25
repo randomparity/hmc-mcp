@@ -123,7 +123,7 @@ def test_resolve_returns_none_when_absent(tmp_path, monkeypatch):
 def test_omitted_port_defaults_to_443_without_explicit_provenance(monkeypatch):
     monkeypatch.delenv("HMC_PORT", raising=False)
 
-    config = HMCConfig(_env_file=None)
+    config = HMCConfig()
 
     assert config.port == 443
     assert "port" not in config.model_fields_set
@@ -132,7 +132,7 @@ def test_omitted_port_defaults_to_443_without_explicit_provenance(monkeypatch):
 def test_constructor_port_is_explicit_even_when_it_matches_default(monkeypatch):
     monkeypatch.delenv("HMC_PORT", raising=False)
 
-    config = HMCConfig(port=443, _env_file=None)
+    config = HMCConfig(port=443)
 
     assert config.port == 443
     assert "port" in config.model_fields_set
@@ -141,7 +141,7 @@ def test_constructor_port_is_explicit_even_when_it_matches_default(monkeypatch):
 def test_environment_port_is_explicit(monkeypatch):
     monkeypatch.setenv("HMC_PORT", "12443")
 
-    config = HMCConfig(_env_file=None)
+    config = HMCConfig()
 
     assert config.port == 12443
     assert "port" in config.model_fields_set
@@ -326,7 +326,7 @@ def test_direct_construction_still_works(monkeypatch):
     monkeypatch.delenv("HMC_HOST", raising=False)
     monkeypatch.delenv("HMC_USER", raising=False)
     monkeypatch.delenv("HMC_PASSWORD", raising=False)
-    cfg = HMCConfig(host="myhost", user="myuser", password="mypass", _env_file=None)  # pragma: allowlist secret
+    cfg = HMCConfig(host="myhost", user="myuser", password="mypass")  # pragma: allowlist secret
     assert cfg.host == "myhost"
     assert cfg.user == "myuser"
     assert cfg.password == "mypass"  # pragma: allowlist secret
@@ -398,13 +398,13 @@ def test_list_profiles_with_default_absent(tmp_path):
 
 
 def test_agent_id_unset_uses_audit_memento_default():
-    cfg = HMCConfig(_env_file=None)
+    cfg = HMCConfig.from_mapping({})
     assert cfg.agent_id is None
     assert cfg.effective_audit_memento == "hmc-mcp"
 
 
 def test_agent_id_set_prefixes_audit_memento():
-    cfg = HMCConfig(agent_id="alice", _env_file=None)
+    cfg = HMCConfig.from_mapping({"agent_id": "alice"})
     assert cfg.effective_audit_memento == "hmc-mcp:alice"
 
 
@@ -413,7 +413,7 @@ def test_agent_id_overrides_audit_memento_field():
     # regardless of the audit_memento field.
     # Setting both also emits a UserWarning at construction time.
     with pytest.warns(UserWarning, match="HMC_AGENT_ID is set"):
-        cfg = HMCConfig(agent_id="bob", audit_memento="custom", _env_file=None)
+        cfg = HMCConfig.from_mapping({"agent_id": "bob", "audit_memento": "custom"})
     assert cfg.effective_audit_memento == "hmc-mcp:bob"
 
 
@@ -423,23 +423,23 @@ def test_agent_id_no_warning_when_audit_memento_is_default():
     import warnings as _warnings
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
-        cfg = HMCConfig(agent_id="alice", _env_file=None)
+        cfg = HMCConfig.from_mapping({"agent_id": "alice"})
     assert cfg.effective_audit_memento == "hmc-mcp:alice"
 
 
 def test_audit_memento_without_agent_id():
-    cfg = HMCConfig(audit_memento="my-tool", _env_file=None)
+    cfg = HMCConfig.from_mapping({"audit_memento": "my-tool"})
     assert cfg.effective_audit_memento == "my-tool"
 
 
 def test_agent_id_invalid_raises_at_construction():
     with pytest.raises(ValueError, match="comma"):
-        HMCConfig(agent_id="bad,id", _env_file=None)
+        HMCConfig(agent_id="bad,id")
 
 
 def test_agent_id_from_env(monkeypatch):
     monkeypatch.setenv("HMC_AGENT_ID", "env-agent")
-    cfg = HMCConfig(_env_file=None)
+    cfg = HMCConfig()
     assert cfg.agent_id == "env-agent"
     assert cfg.effective_audit_memento == "hmc-mcp:env-agent"
 
@@ -471,6 +471,7 @@ def test_nickname_resolves_via_explicit_profile_arg(tmp_path, monkeypatch):
     """A --profile-style explicit arg that is a nickname resolves to its target."""
     cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
     result = load_profile(profile="big-iron", config_path=cfg)
     assert result.host == "prod-hmc.example.com"
 
@@ -479,6 +480,7 @@ def test_nickname_resolves_via_hmc_profile_env(tmp_path, monkeypatch):
     """HMC_PROFILE carrying a nickname resolves to its target profile."""
     cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
     monkeypatch.setenv("HMC_PROFILE", "staging")
     result = load_profile(profile=None, config_path=cfg)
     assert result.host == "stg-hmc.example.com"
@@ -491,6 +493,7 @@ def test_nickname_resolves_via_default_profile(tmp_path, monkeypatch):
     )
     cfg = _write_toml(tmp_path / "config.toml", toml)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
     result = load_profile(profile=None, config_path=cfg)
     assert result.host == "prod-hmc.example.com"
 
@@ -515,6 +518,7 @@ prod = "dev"
 """
     cfg = _write_toml(tmp_path / "config.toml", toml)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
     result = load_profile(profile="prod", config_path=cfg)
     assert result.host == "real-prod.example.com"
 
@@ -645,6 +649,7 @@ def test_well_formed_nicknames_do_not_block_plain_profile(tmp_path, monkeypatch)
     """A well-formed nicknames table does not block selecting a plain profile."""
     cfg = _write_toml(tmp_path / "config.toml", NICKNAME_TOML)
     monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_HOST", raising=False)
     result = load_profile(profile="prod", config_path=cfg)
     assert result.host == "prod-hmc.example.com"
 
@@ -1069,13 +1074,17 @@ def test_from_mapping_accepts_any_mapping():
     assert cfg.host == "row-host.example.com"
 
 
-def test_from_mapping_rejects_a_required_field_the_mapping_omits(monkeypatch):
-    """A required field must fail loudly rather than fall through to the env.
+def test_from_mapping_names_a_required_field_the_mapping_omits(monkeypatch):
+    """A required field must produce an error that names it.
 
-    HMCConfig has no required field today. If one is ever added and
-    ``from_mapping`` silently omitted it, pydantic-settings would resolve it
-    from ``HMC_*`` — the exact leak this method exists to close — so the guard
-    is exercised against a subclass that has one.
+    HMCConfig has no required field today. Without the guard the omission
+    still does not leak — the field is passed explicitly carrying
+    PydanticUndefined, so the init source still wins — but pydantic reports a
+    type error about a value the caller never wrote. On a method whose contract
+    is "the mapping is the only input", that is the wrong error, so the match
+    below is deliberately the guard's own wording: pydantic's ValidationError
+    is a ValueError whose text also contains "tenant", and a looser match would
+    pass with the guard deleted.
     """
 
     class RequiredFieldConfig(HMCConfig):
@@ -1083,7 +1092,7 @@ def test_from_mapping_rejects_a_required_field_the_mapping_omits(monkeypatch):
 
     monkeypatch.setenv("HMC_TENANT", "leaked-tenant")
 
-    with pytest.raises(ValueError, match="tenant"):
+    with pytest.raises(ValueError, match=r"missing required settings: tenant"):
         RequiredFieldConfig.from_mapping({"host": "row-host.example.com"})
 
     supplied = RequiredFieldConfig.from_mapping(
