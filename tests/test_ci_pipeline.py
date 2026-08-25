@@ -157,6 +157,8 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "workflow-security",
         "env-vars",
         "nicknames",
+        "tool-docs",
+        "tool-docs-check",
         "static",
         "test",
         "test-verbose",
@@ -164,7 +166,20 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "smoke-verbose",
     ):
         assert f"\n{recipe}:" in justfile
-    assert "\nstatic: lint typecheck secrets workflow-security env-vars nicknames\n" in justfile
+    assert (
+        "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
+        "tool-docs-check\n" in justfile
+    )
+    assert (
+        "\ntool-docs:\n"
+        "    uv run --no-sync python scripts/gen_tool_reference.py\n"
+        in justfile
+    )
+    assert (
+        "\ntool-docs-check:\n"
+        "    uv run --no-sync python scripts/gen_tool_reference.py --check\n"
+        in justfile
+    )
     assert "\nbuild:\n    uv build --clear --wheel --sdist --out-dir dist .\n" in justfile
     assert (
         "\nverify-artifacts:\n"
@@ -289,6 +304,9 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
+        # Named as its own step as well as reached through `static` -> `verify`,
+        # so generated-docs drift is its own failed check (ADR 0097).
+        "just tool-docs-check",
         "just verify",
         "UV_NO_SYNC=1 uv run prek run --all-files",
     ):

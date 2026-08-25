@@ -6,6 +6,8 @@
 #   just test-verbose     # pytest diagnostics and missing-lines coverage
 #   just smoke             # MCP handshake / tool count
 #   just smoke-verbose     # MCP handshake / exposed tool names
+#   just tool-docs         # regenerate docs/tools/ from the registry
+#   just tool-docs-check   # fail when docs/tools/ has fallen behind the registry
 
 # synchronize locked dependencies and install repository hooks
 setup:
@@ -37,8 +39,16 @@ env-vars:
 nicknames:
     uv run --no-sync python scripts/check_nicknames.py
 
+# regenerate docs/tools/ from the MCP tool registry
+tool-docs:
+    uv run --no-sync python scripts/gen_tool_reference.py
+
+# verify the committed docs/tools/ still matches the registry
+tool-docs-check:
+    uv run --no-sync python scripts/gen_tool_reference.py --check
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames
+static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check
 
 # run the full pytest suite with one semantic summary
 test:

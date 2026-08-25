@@ -64,6 +64,11 @@ jobs:
           just-version: "1.58.0"
       - name: Set up development environment
         run: just setup
+      # Named individually as well as reached through `static` -> `verify`, so a
+      # stale docs/tools/ is reported as its own failed check rather than as one
+      # line inside the umbrella recipe. See ADR 0097.
+      - name: Check the generated tool reference
+        run: just tool-docs-check
       - name: Run verification suite
         run: just verify
       - name: Retain validated wheel
