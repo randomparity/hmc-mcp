@@ -587,7 +587,7 @@ def hmc_power_on_lpar(
                 assessment = await assess_post_activation_affinity(
                     hmc, affinity_assessment
                 )
-            except (HMCError, HMCCLIError) as exc:
+            except (HMCError, HMCCLIError, ValueError) as exc:
                 status = (
                     "failed"
                     if affinity_assessment.response == "fail"
