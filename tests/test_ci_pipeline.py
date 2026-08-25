@@ -159,6 +159,7 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "nicknames",
         "tool-docs",
         "tool-docs-check",
+        "adr-numbering",
         "static",
         "test",
         "test-verbose",
@@ -168,7 +169,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         assert f"\n{recipe}:" in justfile
     assert (
         "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
-        "tool-docs-check\n" in justfile
+        "tool-docs-check adr-numbering\n" in justfile
+    )
+    assert (
+        "\nadr-numbering:\n"
+        "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
     )
     assert (
         "\ntool-docs:\n"
