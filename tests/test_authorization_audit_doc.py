@@ -31,7 +31,16 @@ What this does not reach, so a green run is not read as more coverage than it is
 - an enumeration written out in prose rather than as a table or a heading, unless it is
   one of the two `source` clauses below — the guard compares vocabularies, so a sentence
   listing the members by name goes stale silently. The documents avoid them where they
-  can and state the rule instead.
+  can and state the rule instead;
+- a pinned count of the `source` vocabulary, in either document. The count patterns below
+  anchor on a noun, and "source" is ordinary English this document already uses for
+  something else — "the two sources" of an ownership-override record names two code paths,
+  not two `source` values — so an alternation for it would fail on prose that is correct.
+  Both documents are held to the membership of that vocabulary and not to its size;
+- a pinned count anywhere in `docs/environment-variables.md`. The count patterns run over
+  the audit document, whose subject is these vocabularies; turning them loose on a
+  document about twenty settings would read its ordinary prose ("one SSH login plus two
+  REST GETs") the same wrong way. Only the `HMC_VERIFY_SSL` note's membership is guarded.
 """
 
 import re
@@ -59,9 +68,25 @@ STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 STATE_ARM = re.compile(r"`([a-z-]+)`\s+when\b")
 BACKTICKED = re.compile(r"`([^`]+)`")
 
-#: The clause both documents introduce the TLS record's `source` values with. Anchored on
-#: the wording rather than the punctuation, which differs between them: em dashes in the
-#: audit document, parentheses in the environment-variable note.
+#: The passage describing the TLS record in each document that restates its `source`
+#: values: the event's own section in the audit document, the `HMC_VERIFY_SSL` note in the
+#: environment-variable one. Anchored on the record's own name, as every sibling extractor
+#: anchors on something structurally unique to its vocabulary — the clause below is
+#: ordinary English about settings, and `docs/environment-variables.md` documents nothing
+#: but settings, so scanning that document whole would let an unrelated note collide.
+TLS_PASSAGE = {
+    "authorization-audit.md": re.compile(
+        r'^### `event: "tls-verification-disabled"`$.*?(?=^#{2,6} )',
+        re.MULTILINE | re.DOTALL,
+    ),
+    "environment-variables.md": re.compile(
+        r"^- \*\*TLS verification\*\* \(`HMC_VERIFY_SSL`\):.*?(?=^- \*\*)",
+        re.MULTILINE | re.DOTALL,
+    ),
+}
+#: The clause both passages introduce the `source` values with. Anchored on the wording
+#: rather than the punctuation, which differs between them: em dashes in the audit
+#: document, parentheses in the environment-variable note.
 SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came\s+from\b")
 #: One `source` value: a lowercase hyphenated name, optionally suffixed with the
 #: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
@@ -137,30 +162,37 @@ def _records_lead(document: str) -> str:
     return _section(document, "## The records").split("\n### ", 1)[0]
 
 
-def _source_sentence(document: str) -> str:
+def _tls_passage(path: Path) -> str:
+    """The passage in *path* that describes the TLS record, where the `source` clause lives."""
+    match = TLS_PASSAGE[path.name].search(path.read_text())
+    assert match is not None, f"no TLS record passage in {path.name}"
+    return match.group(0)
+
+
+def _source_sentence(passage: str) -> str:
     """The sentence naming the TLS record's `source` values.
 
-    Bounded to that one sentence, so a document carrying the clause but no list fails
+    Bounded to that one sentence, so a passage carrying the clause but no list fails
     rather than reaching forward to unrelated backticks. No `source` value contains a
     period, which is what makes the sentence end a safe bound.
     """
-    clauses = SOURCE_CLAUSE.findall(document)
+    clauses = SOURCE_CLAUSE.findall(passage)
     assert len(clauses) == 1, f"expected one `source` clause, found {len(clauses)}"
-    clause = SOURCE_CLAUSE.search(document)
+    clause = SOURCE_CLAUSE.search(passage)
     assert clause is not None
-    return document[clause.end() :].split(".", 1)[0]
+    return passage[clause.end() :].split(".", 1)[0]
 
 
-def _source_list(document: str) -> str:
+def _source_list(passage: str) -> str:
     """The comma-and-`or` run within that sentence."""
-    sentence = _source_sentence(document)
+    sentence = _source_sentence(passage)
     listing = SOURCE_LIST.search(sentence)
     assert listing is not None, f"no source list in clause: {sentence!r}"
     return listing.group(0)
 
 
-def _documented_sources(document: str) -> frozenset[str]:
-    return frozenset(BACKTICKED.findall(_source_list(document)))
+def _documented_sources(passage: str) -> frozenset[str]:
+    return frozenset(BACKTICKED.findall(_source_list(passage)))
 
 
 def _documented_states(document: str) -> frozenset[str]:
@@ -328,28 +360,23 @@ SOURCE_DOCUMENTS = (DOCUMENT, ENVIRONMENT_DOCUMENT)
 
 @pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
 def test_documented_tls_sources_are_exactly_the_client_vocabulary(path: Path) -> None:
-    assert _documented_sources(path.read_text()) == client.VERIFY_SSL_SOURCES
+    assert _documented_sources(_tls_passage(path)) == client.VERIFY_SSL_SOURCES
 
 
 @pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
 def test_tls_source_drift_is_caught_in_both_directions(path: Path) -> None:
-    document = path.read_text()
-    sentence = _source_sentence(document)
+    passage = _tls_passage(path)
+    listing = _source_list(passage)
     #: The first value listed, which is never the last one — so dropping it and the
     #: separator that follows leaves a run the extractor still reads.
-    dangling = BACKTICKED.findall(_source_list(document))[0]
+    dangling = BACKTICKED.findall(listing)[0]
 
-    undocumented = document.replace(
-        sentence, re.sub(rf"`{re.escape(dangling)}`,\s*", "", sentence, count=1), 1
-    )
-    assert undocumented != document
+    undocumented = re.sub(rf"`{re.escape(dangling)}`,\s*", "", passage, count=1)
+    assert undocumented != passage
     assert client.VERIFY_SSL_SOURCES - _documented_sources(undocumented) == {dangling}
 
-    listing = _source_list(document)
-    orphaned = document.replace(
-        sentence, sentence.replace(listing, f"{listing}, or `retired-source`", 1), 1
-    )
-    assert orphaned != document
+    orphaned = passage.replace(listing, f"{listing}, or `retired-source`", 1)
+    assert orphaned != passage
     expected = {"retired-source"}
     assert _documented_sources(orphaned) - client.VERIFY_SSL_SOURCES == expected
 
@@ -361,13 +388,13 @@ def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
     The added term is itself list-shaped, so what excludes it is the run's own
     comma-and-`or` anchoring rather than the value pattern.
     """
-    document = path.read_text()
-    sentence = _source_sentence(document)
+    passage = _tls_passage(path)
+    sentence = _source_sentence(passage)
 
-    reworded = document.replace(
+    reworded = passage.replace(
         sentence, f"{sentence}, and `verify-ssl` is the field it names", 1
     )
-    assert reworded != document
+    assert reworded != passage
     assert _documented_sources(reworded) == client.VERIFY_SSL_SOURCES
 
 
