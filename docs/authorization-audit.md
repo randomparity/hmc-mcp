@@ -105,6 +105,15 @@ on, expect one record per `provision_lpar(power_on=True)`. The record carries no
 field distinguishing the two sources; an alert on this event should account for that
 before the guard is enabled.
 
+**Denials emit nothing.** This event records ownership checks that were *bypassed*,
+never ones that *refused*: the denial path raises `PermissionError` with no audit
+call, on every guarded operation. The `authorization` event above does not fill the
+gap — it is #218's dispatch-time policy, which covers MCP tool calls only, so for a
+CLI or `hmc_mcp.api` caller a refused mutation leaves no trace anywhere. An alert
+built on this stream therefore measures approved exceptions, not attempts, and
+cannot tell "nobody tried" from "many were refused". #467 tracks a denial record
+across all guarded operations.
+
 ```json
 {"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}
 ```

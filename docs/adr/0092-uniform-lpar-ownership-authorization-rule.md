@@ -13,9 +13,9 @@ to reject a mutation of a partition another agent owns. ADR 0011 named the tools
 that *stamp* and *read* the token. It never said which mutations must *check* it.
 
 The result is coverage set by whoever wrote the operation. Inside one module,
-`delete_lpar` (`operations_lpar.py:728`, guard at `:743`), `rename_lpar` (`:808`,
-guard at `:824`) and the boot-order operations (guards at `:928`, `:982`) call the
-guard; `power_lpar` (`:763`) — exported from the same facade — does not. Across
+`delete_lpar` (`operations_lpar.py:728`, guard at `:743`), `rename_lpar` (`:886`,
+guard at `:902`) and the boot-order operations (guards at `:1006`, `:1060`) call the
+guard; `power_lpar` (`:790`) — exported from the same facade — does not. Across
 modules the split is wider still: the PCIe, SR-IOV, vNIC and minimum-affinity
 operations guard; the adapter, storage, provisioning, DLPAR and LPM operations do
 not. Nothing records why, so a maintainer adding a new mutating operation has no
@@ -109,7 +109,7 @@ while one does.
 |---|---|---|---|
 | `delete_lpar` | `operations_lpar.py:728` | guarded (`:743`) | — |
 | `decommission_lpar` | `operations_decommission.py:610` | guarded (`:287`, `:641`, `:660`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations_lpar.py:808` | guarded (`:824`) | — |
+| `rename_lpar` | `operations_lpar.py:886` | guarded (`:902`) | — |
 | `set_lpar_ownership_description` | `operations_lpar.py:693` | guarded (`:719`) | — |
 | `hmc_sync_lpar_profile` | `server_profiles.py:121` | **unguarded** | #441 |
 
@@ -129,8 +129,8 @@ first, exactly as for the tool rows in §3.2.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations_lpar.py:883` | guarded (`:928`) | — |
-| `clear_lpar_boot_order` | `operations_lpar.py:950` | guarded (`:982`) | — |
+| `set_lpar_boot_order` | `operations_lpar.py:961` | guarded (`:1006`) | — |
+| `clear_lpar_boot_order` | `operations_lpar.py:1028` | guarded (`:1060`) | — |
 | `assign_dedicated_pcie_slot` | `operations_pcie.py:160` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations_pcie.py:180` | guarded (`:220`) | — |
 | `assign_sriov_logical_port` | `operations_pcie.py:315` | guarded (`:311`, via `_resolve_lpar`) | — |
@@ -190,10 +190,10 @@ either wrapper.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations_lpar.py:763` | **unguarded**; decision in §4 | #371 |
+| `power_lpar` | `operations_lpar.py:790` | guarded when opted in (`:851`, via `_authorize_power_lpar` at `:763`); §4 | #371 |
 
 `power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_lpars.py:500`)
-and `hmc_power_off_lpar` (`server_lpars.py:611`) delegate to it, and so does the
+and `hmc_power_off_lpar` (`server_lpars.py:616`) delegate to it, and so does the
 CLI, so one decision covers every entry path.
 
 #### 3.4 Standing exemptions
@@ -256,16 +256,33 @@ read the description first.
 **The selector becomes required when the flag is on.** `power_lpar` is the only
 guarded LPAR operation whose `system_name_or_uuid` is optional; every sibling in
 §3.1 and §3.2 takes it positionally and required. The token is read per managed
-system — `resolve_lpar_ownership_names` needs a system UUID to reach
-`get_managed_system`, and nothing this package already reads names a partition's
-parent system — so with the flag on and no selector the guard cannot identify
-which system's token applies. #371 refuses that call with a `ValueError`, before
-any HMC traffic, rather than powering a partition whose ownership was never read.
-The refusal is unconditional on `ownership_override`: the override waives the
+system, and `resolve_lpar_ownership_names` needs a system UUID to reach
+`get_managed_system`, so with the flag on and no selector the guard cannot
+identify which system's token applies. #371 refuses that call with a `ValueError`,
+before any HMC traffic, rather than powering a partition whose ownership was never
+read. The refusal is unconditional on `ownership_override`: the override waives the
 ownership *decision*, not the guard's need to name the partition it is auditing.
 The two entry paths that could omit the selector gained one — `hmc-mcp lpars
 power-on` and `power-off` take `--system` — and `hmc_power_on_lpar` /
-`hmc_power_off_lpar` already accepted it.
+`hmc_power_off_lpar` already accepted it. A caller holding only an LPAR UUID
+recovers the selector by listing partitions per managed system
+(`hmc_list_lpars(system_name_or_uuid=…)`); the fleet-wide ownership feed does not
+help, as `list_lpar_ownership` records that its entries do not name their parent
+system.
+
+**Deriving the system instead was not ruled out — it was not evidenced.** The
+obvious alternative is to read the parent system off the partition, which would
+keep the selector optional and remove the caller's unreconciled assertion
+altogether. `client_storage.py:68` already does exactly that for a
+`VirtualIOServer`, pulling an exact `ManagedSystem` UUID out of an
+`AssociatedManagedSystem` href, and `xmlutil.element_to_dict` preserves `href`, so
+the machinery exists. What is missing is evidence that a `LogicalPartition`
+document carries the same link: no fixture, no captured payload and no survey in
+this repo shows one, and #371 declined to put an unverified payload assumption on
+an authorization path. #466 tracks the live-REST check — the kind #374 ran for the
+description field — that would settle it. If the link is there, the selector goes
+back to optional and this paragraph, the `ValueError` and the two CLI flags are
+withdrawn.
 
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
@@ -287,11 +304,11 @@ The two REST GETs come from `resolve_lpar_ownership_names`
 (`operations_lpar.py:510`), which the guard needs to turn UUIDs into the CLI names
 the SSH command takes. It calls `_system_name` (`:517`) → `hmc.get_managed_system`
 (`:527`) and `hmc.get_logical_partition` (`:518`) **unconditionally** — supplying
-`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:821`) and
+`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:899`) and
 `_authorize_pcie_profile_request` (`operations_pcie.py:217`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
-(`resolve_lpar_uuid` at `:777`, and a `get_quick_property` state check on power-on).
+(`resolve_lpar_uuid` at `:847`, and a `get_quick_property` state check on power-on).
 **The SSH login is the outlier**, and it is the part of the cost this decision turns
 on.
 
