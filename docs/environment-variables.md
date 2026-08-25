@@ -159,6 +159,102 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   a specific read path; it has no effect on LPAR creation, adapter
   configuration, storage operations, or any other mutating call.
 
+## Library Consumers
+
+The variables above configure the `hmc-mcp` CLI and MCP server, which are
+single-connection processes an operator owns end to end. A library consumer of
+`hmc_mcp.api` is usually not that: a server that builds one connection per HMC in
+a single process inherits the ambient environment on every field it does not set.
+
+### Precedence
+
+`HMCConfig` resolves each field independently, from the first source that has a
+value for it:
+
+1. **Constructor arguments** — `HMCConfig(host="a.example")`
+2. **Environment variables** — `HMC_HOST`, and one per field in the
+   [Reference](#reference) table
+3. **A dotenv file** — not configured; see the warning below
+4. **The declared field default** — `port` is `443`, `agent_id` is unset, and so on
+
+Per field, not per source: `HMCConfig(host="a.example")` in a process where
+`HMC_AGENT_ID` is exported gets the constructor's `host` **and** the
+environment's `agent_id`.
+
+`load_profile()` inserts TOML profile values below the environment
+(constructor args > `HMC_*` > TOML profile > field default). That ordering is
+deliberate — it is how an operator overrides a committed profile for one
+invocation — and it applies to every field the profile omits as well.
+
+### Isolated construction
+
+Use `HMCConfig.from_mapping(values)` when a setting must come from `values` or
+from the declared field default, and never from the process environment:
+
+```python
+from hmc_mcp.api import HMCConfig
+
+# row is e.g. a database row: {"host": ..., "user": ..., "password": ...}
+config = HMCConfig.from_mapping(row)
+```
+
+`from_mapping` reads no environment variable and no dotenv file. Every field the
+mapping omits takes its declared default. Keys that name no field are ignored
+(the same `extra="ignore"` the ordinary constructor uses), so a row carrying
+`id`, `name`, or other columns can be passed as-is. Validation is unchanged —
+field validators and the `HMC_AGENT_ID` grammar check still run.
+
+Two properties worth knowing when the mapping is a database row:
+
+- **A key present with a `None` value is applied, not treated as absent.** A
+  nullable column arriving as SQL `NULL` is a validation error for every field
+  except `ssh_key_file` and `agent_id`. Drop the key when the intent is "use the
+  default": `{k: v for k, v in row.items() if v is not None}`.
+- **`model_fields_set` reports the keys the mapping supplied**, so
+  `config.model_dump(exclude_unset=True)` round-trips back to the settings the
+  row actually named.
+- **A key that names no field is dropped silently**, so a column-name drift
+  (`hostname` for `host`) surfaces later as a missing setting rather than at the
+  call. `HMCConfig.validate_credentials()` reports that as
+  `host (HMC_HOST / --host)` — its hints name the operator's knobs, and on this
+  path neither the variable nor the flag applies. Read the parenthesised name as
+  the field, and check your keys against `HMCConfig.model_fields` if a value you
+  supplied did not arrive.
+
+The **exhaustive** list of fields the environment can supply is the
+[Reference](#reference) table above: every row except `HMC_PROFILE` names an
+`HMCConfig` field, and every `HMCConfig` field has a row. `HMC_PROFILE` is read
+by `load_profile()` to pick a profile, not by `HMCConfig`. Both halves of that
+claim are enforced against `HMCConfig.model_fields` by
+`tests/test_env_var_guard.py`, and the "every field has a row" half is enforced
+again by `scripts/check_env_vars.py` (`just env-vars`) in the pre-commit hooks
+and in CI. Neither can go stale.
+
+### `_env_file=None` is not isolation
+
+> **`_env_file=None` suppresses dotenv loading only.** It does not suppress
+> environment variables. `HMCConfig(_env_file=None)` in a process where
+> `HMC_HOST` is exported still returns that host.
+
+It is worth being blunter still: `HMCConfig` declares no `env_file` in its
+`model_config`, so no dotenv source is configured in the first place and
+`_env_file=None` currently changes nothing whatsoever. It is a private
+pydantic-settings parameter, it looks like isolation, and it is not. Use
+`from_mapping`.
+
+### What leaks, and what it costs
+
+Three variables are worth naming because the failure is silent and the blast
+radius is wide:
+
+| Stray variable | Effect on a config that omitted the field |
+|----------------|-------------------------------------------|
+| `HMC_HOST` | The connection targets a different HMC than the caller named |
+| `HMC_SSH_KEY_FILE` | SSH commands offer a private key the caller did not choose |
+| `HMC_AGENT_ID` | Every LPAR the process stamps is attributed to the wrong agent, corrupting the ADR 0011 ownership token other agents authorize against |
+
+None of these raise. See ADR 0096 for the full reasoning.
+
 ## Adding a New Variable
 
 Every new `HMC_*` env var added to

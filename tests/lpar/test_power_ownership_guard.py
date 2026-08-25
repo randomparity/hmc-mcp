@@ -31,17 +31,19 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
 
     The config must be real: ``AsyncMock().config.authorize_power_operations``
     is a truthy child mock, which would silently enable the guard everywhere.
-    Every field the tests read is passed explicitly, which is what isolates
-    them from the ambient environment — ``_env_file=None`` would not, since
-    the model configures no dotenv source for it to suppress.
+    ``from_mapping`` rather than the ordinary constructor (ADR 0096), so an
+    exported ``HMC_AGENT_ID`` on a developer's workstation cannot decide which
+    agent these tests believe they are.
     """
     hmc = AsyncMock()
-    hmc.config = HMCConfig(
-        host="hmc.test",
-        user="u",
-        password="p",
-        agent_id=agent_id,
-        authorize_power_operations=authorize,
+    hmc.config = HMCConfig.from_mapping(
+        {
+            "host": "hmc.test",
+            "user": "u",
+            "password": "p",
+            "agent_id": agent_id,
+            "authorize_power_operations": authorize,
+        }
     )
     hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "aix1"}}
@@ -66,14 +68,15 @@ def _client_factory(hmc):
 # ---------------------------------------------------------------------------
 
 
-def test_authorize_power_operations_defaults_off(monkeypatch) -> None:
-    # delenv, not _env_file=None: the model configures no dotenv source, so
-    # _env_file suppresses nothing and the ambient variable would decide this.
-    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
-    assert HMCConfig().authorize_power_operations is False
+def test_authorize_power_operations_defaults_off() -> None:
+    # from_mapping, so this asserts the declared default rather than whatever
+    # HMC_AUTHORIZE_POWER_OPERATIONS happens to be on the running host.
+    assert HMCConfig.from_mapping({}).authorize_power_operations is False
 
 
 def test_authorize_power_operations_reads_its_environment_variable(monkeypatch) -> None:
+    # The ordinary constructor here on purpose: reading the environment is the
+    # behaviour under test, which is exactly where from_mapping is wrong.
     monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
     assert HMCConfig().authorize_power_operations is True
 

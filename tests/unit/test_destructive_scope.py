@@ -67,7 +67,9 @@ async def test_power_lpar_forwards_optional_system_scope():
     hmc = AsyncMock()
     # A real config: power_lpar reads authorize_power_operations off it, and a
     # child mock would be truthy — silently enabling the ADR 0092 §4 guard.
-    hmc.config = HMCConfig(host="hmc.test", user="u", password="p", _env_file=None)
+    # from_mapping so an exported HMC_AUTHORIZE_POWER_OPERATIONS cannot enable
+    # it either (ADR 0096).
+    hmc.config = HMCConfig.from_mapping({"host": "hmc.test", "user": "u", "password": "p"})
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
