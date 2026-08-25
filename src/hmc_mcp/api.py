@@ -3,6 +3,11 @@
 from hmc_mcp.client import HMCClient
 from hmc_mcp.client_adapters import AdapterType
 from hmc_mcp.config import ConfigError, HMCConfig, load_profile
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    AffinityAssessmentResult,
+    assess_affinity,
+)
 from hmc_mcp.documents import (
     BootDeviceSelector,
     LparResources,
@@ -164,6 +169,7 @@ from hmc_mcp.console_capture import (
     capture_lpar_console,
 )
 from hmc_mcp.operations_snapshot import (
+    assess_snapshot_affinity,
     capture_lpar_snapshot,
     inspect_lpar_snapshot,
     validate_lpar_snapshot,
@@ -176,6 +182,9 @@ from hmc_mcp.snapshot import (
 
 __all__ = [
     "HMCClient",
+    "AffinityAssessmentInput",
+    "AffinityAssessmentResult",
+    "assess_affinity",
     "HMCConfig",
     "ConfigError",
     "load_profile",
@@ -325,6 +334,7 @@ __all__ = [
     "SnapshotInspection",
     "SnapshotValidationError",
     "capture_lpar_snapshot",
+    "assess_snapshot_affinity",
     "inspect_lpar_snapshot",
     "validate_lpar_snapshot",
 ]

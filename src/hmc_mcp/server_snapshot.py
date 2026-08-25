@@ -4,11 +4,46 @@ from __future__ import annotations
 
 from hmc_mcp._app import _run
 from hmc_mcp.common import build_config, client_from_env
-from hmc_mcp.operations_snapshot import capture_lpar_snapshot
+from dataclasses import asdict
+
+from hmc_mcp.affinity_assessment import PolicyState
+from hmc_mcp.operations_snapshot import assess_snapshot_affinity, capture_lpar_snapshot
 from hmc_mcp.snapshot import inspect_snapshot, parse_snapshot
 from hmc_mcp.tool_registry import tool_module
 
 tool, register_tools, tool_security = tool_module()
+
+
+@tool(
+    effect="read",
+    operation="snapshot.assess_affinity",
+    target_kind="none",
+    connection_argument=None,
+)
+def hmc_snapshot_assess_affinity(
+    document: str,
+    current_score: int,
+    predicted_score: int,
+    policy_state: PolicyState = "absent",
+    configured_minimum: int | None = None,
+    regression_threshold: int | None = None,
+    optimization_threshold: int | None = None,
+    stale_after_seconds: int = 86400,
+) -> dict[str, object]:
+    """Assess snapshot affinity evidence locally without HMC I/O or mutation."""
+    result = _run(
+        lambda: assess_snapshot_affinity(
+            document,
+            current_score=current_score,
+            predicted_score=predicted_score,
+            policy_state=policy_state,
+            configured_minimum=configured_minimum,
+            regression_threshold=regression_threshold,
+            optimization_threshold=optimization_threshold,
+            stale_after_seconds=stale_after_seconds,
+        )
+    )
+    return asdict(result)
 
 
 @tool(effect="read", operation="snapshot.capture", target_kind="lpar")

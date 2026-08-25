@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -10,6 +11,7 @@ from hmc_mcp.snapshot import (
     parse_snapshot,
     serialize_snapshot,
 )
+from hmc_mcp.operations_snapshot import assess_snapshot_affinity
 
 
 def _document() -> dict:
@@ -87,6 +89,28 @@ def test_complete_snapshot_round_trips_value_semantically() -> None:
     assert json.loads(serialize_snapshot(snapshot)) == _document()
 
 
+@pytest.mark.asyncio
+async def test_snapshot_affinity_assessment_composes_captured_evidence() -> None:
+    document = _document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": "90"},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "regression"
+    assert result.evidence["captured_score"] == 90
+    assert result.evidence["assessed_at"] == "2026-08-24T21:00:00+00:00"
+
+
 def test_minimum_affinity_policy_observation_round_trips() -> None:
     document = _document()
     document["capabilities"].insert(
@@ -104,7 +128,9 @@ def test_minimum_affinity_policy_observation_round_trips() -> None:
         ),
         "data": {"min_affinity_score": 80, "min_affinity_score_action": "warn"},
     }
-    assert json.loads(serialize_snapshot(parse_snapshot(json.dumps(document)))) == document
+    assert (
+        json.loads(serialize_snapshot(parse_snapshot(json.dumps(document)))) == document
+    )
 
 
 def test_unsupported_minimum_affinity_policy_requires_reason_and_no_observation():

@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import NoReturn
 
 import typer
 
 from hmc_mcp.cli_app import _client, _print_json, _run, _ssh_config, snapshot_app
-from hmc_mcp.operations_snapshot import capture_lpar_snapshot
+from hmc_mcp.operations_snapshot import assess_snapshot_affinity, capture_lpar_snapshot
+from hmc_mcp.affinity_assessment import PolicyState
 from hmc_mcp.snapshot import (
     SnapshotValidationError,
     inspect_snapshot,
@@ -87,3 +89,33 @@ def snapshot_inspect(path: Path) -> None:
     except (SnapshotValidationError, OSError) as exc:
         _fail(exc)
     _print_json(result.model_dump(mode="json"))
+
+
+@snapshot_app.command("assess-affinity")
+def snapshot_assess_affinity(
+    path: Path,
+    current_score: int = typer.Option(..., "--current-score"),
+    predicted_score: int = typer.Option(..., "--predicted-score"),
+    policy_state: PolicyState = typer.Option("absent", "--policy-state"),
+    configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
+    regression_threshold: int | None = typer.Option(None, "--regression-threshold"),
+    optimization_threshold: int | None = typer.Option(None, "--optimization-threshold"),
+    stale_after_seconds: int = typer.Option(86400, "--stale-after-seconds"),
+) -> None:
+    """Assess captured and explicit current affinity evidence without mutation."""
+    try:
+        result = _run(
+            lambda: assess_snapshot_affinity(
+                read_snapshot_text(path),
+                current_score=current_score,
+                predicted_score=predicted_score,
+                policy_state=policy_state,
+                configured_minimum=configured_minimum,
+                regression_threshold=regression_threshold,
+                optimization_threshold=optimization_threshold,
+                stale_after_seconds=stale_after_seconds,
+            )
+        )
+    except (SnapshotValidationError, OSError, ValueError) as exc:
+        _fail(exc)
+    _print_json(asdict(result))
