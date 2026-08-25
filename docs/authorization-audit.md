@@ -105,6 +105,12 @@ on, expect one record per `provision_lpar(power_on=True)`. The record carries no
 field distinguishing the two sources; an alert on this event should account for that
 before the guard is enabled.
 
+The converse holds too, and it is the more surprising half: while the guard is off,
+the power path emits **no** record even when a caller passes `ownership_override`.
+The parameter is read only inside the guarded branch, so with the setting off it is
+inert — nothing was bypassed, because nothing was checked. Silence in this stream on
+the power path is therefore not evidence that no override was requested.
+
 **Denials emit nothing.** This event records ownership checks that were *bypassed*,
 never ones that *refused*: the denial path raises `PermissionError` with no audit
 call, on every guarded operation. The `authorization` event above does not fill the

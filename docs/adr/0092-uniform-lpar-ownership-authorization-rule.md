@@ -208,7 +208,7 @@ exempt anyway.
 | Operation | Reason |
 |---|---|
 | `create_and_stamp_lpar` (`operations_lpar.py:584`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
-| `provision_lpar` (`operations_provision.py:416`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
+| `provision_lpar` (`operations_provision.py:432`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations_templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
 | `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_lpm.py:140`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
@@ -524,7 +524,7 @@ That asymmetry is why §4 exists at all.
   `resources` leg gains a guard, which changes its cost profile — it is the one
   Reconfiguring operation a caller might invoke in a loop.
 - `provision_lpar` calls `power_lpar` for its activation leg
-  (`operations_provision.py:273`). With the setting on, that leg would authorize a
+  (`operations_provision.py:287`). With the setting on, that leg would authorize a
   partition the same workflow just created and stamped — the check passes but costs
   an SSH login for nothing. #371 owns the case, and the resolution stays inside §5's
   two mechanisms: the internal call passes `ownership_override=True`, which is

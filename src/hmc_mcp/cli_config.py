@@ -219,8 +219,16 @@ def config_show(
         # Reported because this setting fails open: a mistyped profile key or
         # environment variable is dropped silently (the model ignores extras),
         # and the result is indistinguishable from a correct `false` — an
-        # authorization check absent without saying so. This is the only way to
-        # read its effective, post-precedence value.
+        # authorization check absent without saying so.
+        #
+        # This is the profile's resolved value, which is not always the value a
+        # tool run resolves. `build_config` skips the profile loader entirely
+        # when HMC_HOST or an explicit host override is set, so a TOML-only
+        # `authorize_power_operations = true` shows as enabled here while the
+        # runtime resolves it to the field default. That is the fail-open
+        # direction, so it is documented beside the setting rather than left to
+        # be discovered; #470 covers reporting the value a running server
+        # actually resolved.
         "authorize_power_operations": cfg.authorize_power_operations,
         "password_configured": password_configured,
         "ssh_key_configured": ssh_key_configured,

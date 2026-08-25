@@ -104,11 +104,16 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 
   **Check that it actually took.** This setting fails **open**, and a mistyped
   profile key or environment variable is dropped silently — indistinguishable from
-  a correct `false`. `hmc-mcp config show` reports the effective, post-precedence
-  value, with two limits worth knowing before you trust it: it requires a
-  `config.toml` and exits 1 without one, so it cannot answer for an env-var-only
-  setup; and it reads the environment of the shell that invoked it, not of the
-  `hmc-mcp serve` process an MCP host launched with its own environment block.
+  a correct `false`. `hmc-mcp config show` reports the profile's resolved value,
+  with three limits worth knowing before you trust it. It requires a `config.toml`
+  and exits 1 without one, so it cannot answer for an env-var-only setup. It reads
+  the environment of the shell that invoked it, not of the `hmc-mcp serve` process
+  an MCP host launched with its own environment block. And when `HMC_HOST` (or an
+  explicit `--host`) is set, a tool run skips the profile entirely and builds its
+  config from environment variables alone — so a TOML-only
+  `authorize_power_operations = true` is shown as enabled while the runtime
+  resolves it to `false`. That last one is the fail-open direction, and it is
+  another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the TOML key.
   #470 tracks reporting the value from the running server itself.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH

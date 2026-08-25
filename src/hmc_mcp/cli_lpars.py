@@ -521,7 +521,7 @@ def lpars_power_on(
     ownership_override: bool = typer.Option(
         False,
         "--ownership-override",
-        help="Bypass ownership protection after operator approval",
+        help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
     ),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
@@ -561,7 +561,7 @@ def lpars_power_off(
     ownership_override: bool = typer.Option(
         False,
         "--ownership-override",
-        help="Bypass ownership protection after operator approval",
+        help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
     ),
 ) -> None:
     """Power off an LPAR (submits a PowerOff job)."""
