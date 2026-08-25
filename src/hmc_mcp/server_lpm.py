@@ -104,6 +104,18 @@ def hmc_migrate_lpar_with_affinity_preflight(
     The companion result always preserves the preflight evidence and decision.
     Explicit fail-closed intent prevents both HMC validation and migration when
     affinity evidence is adverse or unavailable.
+
+    Args:
+        lpar_name_or_uuid: Source partition name or UUID.
+        target_system_name_or_uuid: Destination managed-system name or UUID.
+        affinity_preflight: Explicit affinity evidence, limits, and response policy.
+        target_profile_name: Optional destination partition profile name.
+        wait_time: HMC migration wait time in seconds, or its default when omitted.
+        wait: Wait for the submitted migration job when true.
+        timeout_seconds: Maximum seconds to wait for HMC validation and migration.
+        poll_interval: Seconds between HMC job-status requests.
+        profile: Optional TOML connection profile.
+        system_name_or_uuid: Optional source managed-system name or UUID.
     """
 
     async def _go():

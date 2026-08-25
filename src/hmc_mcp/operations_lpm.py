@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import math
 from typing import Any, Literal
 
@@ -36,14 +36,31 @@ class LpmResult:
 class LpmAffinityPreflightRequest:
     """Explicit affinity evidence and caller-owned migration response."""
 
-    source_current_score: int | None
-    destination_estimated_score: int | None
-    destination_check_basis: Literal["calculated", "migration-check"]
-    configured_minimum: int | None
-    capability: Literal["available", "unavailable"]
-    capability_limits: tuple[str, ...]
-    response: Literal["warn", "fail"]
-    preflight_timeout_seconds: float = 5.0
+    source_current_score: int | None = field(
+        metadata={"description": "Current affinity score on the source system."}
+    )
+    destination_estimated_score: int | None = field(
+        metadata={"description": "Estimated affinity score on the destination."}
+    )
+    destination_check_basis: Literal["calculated", "migration-check"] = field(
+        metadata={"description": "Basis used for the destination estimate."}
+    )
+    configured_minimum: int | None = field(
+        metadata={"description": "Configured minimum acceptable affinity score."}
+    )
+    capability: Literal["available", "unavailable"] = field(
+        metadata={"description": "Whether the platform supports the affinity check."}
+    )
+    capability_limits: tuple[str, ...] = field(
+        metadata={"description": "Bounded limitations on the affinity evidence."}
+    )
+    response: Literal["warn", "fail"] = field(
+        metadata={"description": "Explicit response to adverse or unavailable evidence."}
+    )
+    preflight_timeout_seconds: float = field(
+        default=5.0,
+        metadata={"description": "Maximum seconds allowed for affinity preflight."},
+    )
 
 
 @dataclass(frozen=True)
