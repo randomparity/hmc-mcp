@@ -59,9 +59,10 @@ def test_readme_links_canonical_governance_files() -> None:
 
 def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
     readme = (ROOT / "README.md").read_text()
-    # Fail loudly on a renamed heading: without this the second split silently
-    # returns the rest of the file, and the section gate stops being a section.
-    assert "## Configure" in readme
+    # Fail loudly on a renamed *or reordered* heading: without this the second
+    # split silently returns the rest of the file and the section gate stops
+    # being a section. Ordering subsumes mere presence.
+    assert readme.index("## Reusable Python API") < readme.index("## Configure")
     library = " ".join(
         readme.split("## Reusable Python API", 1)[1].split("## Configure", 1)[0].split()
     )
