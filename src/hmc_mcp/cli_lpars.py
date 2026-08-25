@@ -9,7 +9,7 @@ import json
 import typer
 from pydantic import TypeAdapter, ValidationError
 from rich.table import Table
-from typing import cast
+from typing import Literal, cast
 
 from .common import is_uuid
 from .jobs import REMOTE_RESTART_OPERATIONS, RemoteRestartOperation
@@ -47,8 +47,11 @@ from .operations_assignments import (
 )
 from .operations_decommission import decommission_lpar
 from .operations_lpm import (
+    LpmAffinityMigrationResult,
+    LpmAffinityPreflightRequest,
     abort_lpar_migration,
     migrate_lpar,
+    migrate_lpar_with_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
 )
@@ -563,6 +566,11 @@ def _lpm_run(name_or_uuid: str, fn, action: str, target: str | None, yes: bool) 
             return await fn(hmc)
 
     result = _run(_go)
+    if isinstance(result, LpmAffinityMigrationResult):
+        status = "Submitted" if result.job is not None else "Stopped"
+        console.print(f"[green]{status} {action}[/green]")
+        _print_json(asdict(result))
+        return
     console.print(f"[green]Submitted {action} for {result.lpar_uuid}[/green]")
     job = asdict(result.job) if isinstance(result.job, JobOutcome) else result.job
     _print_json(job)
@@ -604,6 +612,55 @@ def lpars_migrate(
         )
 
     _lpm_run(name_or_uuid, _fn, "Migrate", target, yes)
+
+
+@lpars_app.command("migrate-affinity")
+def lpars_migrate_affinity(
+    name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    target: str = typer.Option(..., "--target", help="Target managed system name"),
+    source_score: int | None = typer.Option(None, "--source-score"),
+    destination_estimate: int | None = typer.Option(None, "--destination-estimate"),
+    check_basis: Literal["calculated", "migration-check"] = typer.Option(
+        "calculated", "--check-basis"
+    ),
+    configured_minimum: int | None = typer.Option(None, "--configured-minimum"),
+    capability: Literal["available", "unavailable"] = typer.Option(
+        "available", "--capability"
+    ),
+    response: Literal["warn", "fail"] = typer.Option("warn", "--response"),
+    preflight_timeout: float = typer.Option(
+        5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"
+    ),
+    wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for migration"),
+    timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
+    interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Run explicit affinity preflight before validation-first LPM."""
+    validate_wait_timing(True, timeout, interval)
+    request = LpmAffinityPreflightRequest(
+        source_current_score=source_score,
+        destination_estimated_score=destination_estimate,
+        destination_check_basis=check_basis,
+        configured_minimum=configured_minimum,
+        capability=capability,
+        capability_limits=("Destination affinity is estimated, not guaranteed.",),
+        response=response,
+        preflight_timeout_seconds=preflight_timeout,
+    )
+
+    async def _fn(hmc):
+        return await migrate_lpar_with_affinity_preflight(
+            hmc,
+            name_or_uuid,
+            target,
+            request,
+            wait=wait,
+            timeout_seconds=timeout,
+            poll_interval=interval,
+        )
+
+    _lpm_run(name_or_uuid, _fn, "affinity-aware Migrate", target, yes)
 
 
 @lpars_app.command("migrate-validate")
