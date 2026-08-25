@@ -1,10 +1,11 @@
 """`docs/authorization-audit.md` must agree with the audit vocabulary it mirrors.
 
-#486. `audit.REASONS`, `audit.EVENTS` and `tool_registry.EFFECTS` are the closed
-vocabularies, derived from their `Literal`s so "a checker and a test can consult"
-them. The document restates all three — as a reason-code table, as one `### event:`
-section apiece, and as the `effect` row of the authorization field table — and
-nothing read it, so the two could drift apart silently.
+#486. `audit.REASONS`, `audit.EVENTS`, `audit.State` and `tool_registry.EFFECTS` are
+closed vocabularies, each derived from a `Literal` so "a checker and a test can
+consult" it. The document restates all four — as a reason-code table, as one
+`### event:` section apiece, as the `effect` row of the authorization field table, and
+as the sentence enumerating the `connection.state` arms — and nothing read it, so the
+two sides could drift apart silently. They had.
 
 Every equality check below is a set comparison, so it fails on an orphan (documented,
 not defined) and on a dangling entry (defined, not documented) alike. Each is paired
@@ -190,9 +191,7 @@ def test_event_names_are_read_from_headings_only() -> None:
 
     assert len(headings) == len(set(headings)), f"duplicate headings: {headings}"
 
-    in_json = document.replace(
-        '"event":"authorization"', '"event":"not-a-heading"', 1
-    )
+    in_json = document.replace('"event":"authorization"', '"event":"not-a-heading"', 1)
     assert in_json != document
     assert "not-a-heading" not in _documented_events(in_json)
 
@@ -213,9 +212,9 @@ def test_effect_drift_is_caught_in_both_directions() -> None:
     row = EFFECT_ROW.search(document)
     assert row is not None
 
-    undocumented = document.replace(row.group(1), row.group(1).replace(
-        f"`{dangling}`", dangling, 1
-    ), 1)
+    undocumented = document.replace(
+        row.group(1), row.group(1).replace(f"`{dangling}`", dangling, 1), 1
+    )
     assert undocumented != document
     assert tool_registry.EFFECTS - _documented_effects(undocumented) == {dangling}
 
@@ -313,10 +312,12 @@ def test_a_pinned_record_count_would_be_caught() -> None:
 
 
 def test_a_pinned_count_in_pronoun_form_would_be_caught() -> None:
-    """The document's other stale sentence named no noun: "Both are one physical line"."""
+    """The other stale sentence named no noun: `Both are one physical line`."""
     document = _document()
 
-    stale = document.replace("Each is one physical line", "Both are one physical line", 1)
+    stale = document.replace(
+        "Each is one physical line", "Both are one physical line", 1
+    )
     assert stale != document
     assert not FIXED_KIND_COUNT.search(stale)
     assert PRONOUN_COUNT.search(_records_lead(stale))
