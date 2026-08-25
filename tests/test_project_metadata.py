@@ -74,6 +74,8 @@ def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
         "enum and literal alias",
     ):
         assert covered in library
+    # The fake-client remedy has to be a mechanism that actually type-checks.
+    assert "typing.cast(HMCClient, fake)" in library
 
 
 def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:

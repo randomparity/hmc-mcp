@@ -74,8 +74,9 @@ their types are not part of the contract.
 
 One consequence is worth planning for: the operations annotate the concrete `HMCClient`, so a
 type-checker now rejects a duck-typed fake passed in a consumer's own tests even though the call
-still runs. ADR 0029 deliberately promises no alternate-client protocol, so annotate such a fake as
-`HMCClient` at the call site or narrow the check there.
+still runs. ADR 0029 deliberately promises no alternate-client protocol, so pass such a fake through
+`typing.cast(HMCClient, fake)` at the call site, or silence that call with
+`# type: ignore[arg-type]`.
 
 While hmc-mcp is in `0.x`, strict SemVer applies to this supported surface: removing or renaming an
 export, invalidating a compatible call, changing an owned model incompatibly, changing an exported
