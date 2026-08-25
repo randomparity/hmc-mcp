@@ -322,9 +322,11 @@ written.
 **Enumeration domain.** Two domains, checked separately because they are reachable by
 different means.
 
-- *Domain A — the facade.* Every callable exported from `hmc_mcp.api.__all__` whose
-  definition lives in `src/hmc_mcp/operations_*.py`. This is the domain #369's
-  acceptance criterion names, and it is the one that matters most, because a
+- *Domain A — the facade.* Every **function** exported from `hmc_mcp.api.__all__`
+  whose definition lives in `src/hmc_mcp/operations_*.py` — the `inspect.isfunction`
+  filter `tests/unit/test_public_api.py:429` already applies, not "every callable",
+  which would drag in every exported dataclass and error type. This is the domain
+  #369's acceptance criterion names, and the one that matters most, because a
   `hmc_mcp.api` consumer crosses no other authorization boundary (§7).
 - *Domain B — entry points with no operation.* Every function registered by `@tool`
   with effect `mutate` or `destructive` that meets §1 and whose mutation does not
@@ -367,7 +369,27 @@ function body fails all of them and would drive maintainers to inline the guard 
 the test's benefit. The check is reachability from the operation to a guard callable
 within `src/hmc_mcp/`.
 
-The failure message should name this section and the row that is missing.
+**Two assertions, not one.** The partition and the predicate answer different
+questions, and the test needs both:
+
+- **(a) The partition is total.** Every Domain A function is in exactly one of the
+  three sets. This catches a new or reclassified export, and it can be green today.
+- **(b) Every row whose Status reads *guarded* still reaches a guard.** This catches
+  regression on the coverage that exists. Rows whose Status reads **unguarded** are
+  expected-unguarded — they are the defects §3 records — so (b) skips them until
+  their Tracking issue closes and the row flips, at which point (b) starts holding
+  them.
+
+Asserting the predicate against every classified row instead would fail fourteen
+Domain A rows at this commit, because a classified-but-unguarded row satisfies (a)
+and not the predicate. That is not a contradiction: §3 already calls those rows
+defects and tracks each one. Asserting only (a) would let a guarded row silently
+lose its guard, since (a) cannot tell `delete_lpar` from `map_storage` — both are
+merely *classified*. Only the pair covers both failure modes, and the Status column
+is what makes (b) mechanical.
+
+The failure message should name this section and the row that is missing or that
+lost its guard.
 
 ### 6. Rule for future mutating operations
 
@@ -423,8 +445,9 @@ That asymmetry is why §4 exists at all.
 - Every row marked **unguarded** in §3.1–§3.3 is now a recorded defect against an
   accepted ADR rather than an undocumented inconsistency, and every one carries a
   Tracking issue: #371 implements §4, #372 and #373 are #369's existing sub-issues,
-  #365 covers DLPAR, and #440, #441 and #442 were filed for the rows no #369
-  sub-issue reached. #369 must not close while any Tracking cell reads `none yet`.
+  #365 covers DLPAR, and #440, #441, #442, #448 and #449 were filed for the rows —
+  §3.4b's included — that no #369 sub-issue reached. #369 must not close while any
+  Tracking cell reads `none yet`.
 - The #369 enforcement test has a concrete predicate (§5) — enumeration domains,
   guard set, reachability rule, and the three-set partition of the facade — so
   neither existing coverage nor the classification itself can silently regress: a
@@ -450,10 +473,10 @@ That asymmetry is why §4 exists at all.
   an SSH login for nothing. #371 owns the case, and the resolution stays inside §5's
   two mechanisms: the internal call passes `ownership_override=True`, which is
   audited, rather than a third call-site-conditional guard.
-- The §3.4b rows stay unguarded until someone changes the operation signatures. They
-  are visible in the exemption list with their reasons rather than absent from the
-  inventory, and the 3.4a/3.4b split keeps "not a mutation" from reading as "a
-  mutation we decided to allow".
+- The §3.4b rows stay unguarded until someone changes the operation signatures
+  (#448, #449). They are visible in the exemption list with their reasons and their
+  Tracking issues rather than absent from the inventory, and the 3.4a/3.4b split
+  keeps "not a mutation" from reading as "a mutation we decided to allow".
 - This ADR touches only `docs/adr/`. ADR 0011 gets no back-reference to 0092 here;
   adding one is a one-line edit that belongs to whichever PR next amends 0011.
 
