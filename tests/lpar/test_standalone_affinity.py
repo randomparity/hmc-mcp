@@ -15,6 +15,15 @@ from hmc_mcp.operations_lpar import (
     activation_allows_assessment,
     classify_affinity_outcome,
 )
+from hmc_mcp.server_lpars import hmc_power_on_lpar
+
+
+class _ClientContext:
+    async def __aenter__(self) -> object:
+        return object()
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
 
 
 def _request(response: Literal["warn", "fail"] = "warn") -> ProvisionAffinityAssessment:
@@ -131,3 +140,85 @@ async def test_malformed_measured_score_is_a_validation_failure() -> None:
         pytest.raises(ValueError, match="current_score"),
     ):
         await assess_post_activation_affinity(hmc, _request())
+
+
+def _power_result(status: str) -> LparPowerResult:
+    return LparPowerResult("lpar-1", {"Resource": {"JobID": "job-1", "Status": status}})
+
+
+def test_completed_activation_runs_and_returns_assessment() -> None:
+    assessment = AsyncMock(return_value=_assessment("none", "passed reason"))
+    with (
+        patch("hmc_mcp.server_lpars.client_from_env", return_value=_ClientContext()),
+        patch(
+            "hmc_mcp.server_lpars.power_lpar",
+            new=AsyncMock(return_value=_power_result("COMPLETED")),
+        ),
+        patch("hmc_mcp.server_lpars.assess_post_activation_affinity", new=assessment),
+    ):
+        result = hmc_power_on_lpar(
+            "lpar-1",
+            wait=True,
+            system_name_or_uuid="system-1",
+            affinity_assessment=_request(),
+        )
+
+    assessment.assert_awaited_once()
+    assert result.job == _power_result("COMPLETED").job
+    assert result.affinity_assessment.status == "passed"
+    assert result.affinity_assessment.reason == "passed reason"
+
+
+@pytest.mark.parametrize("status", ["RUNNING", "FAILED"])
+def test_unconfirmed_activation_never_runs_assessment(status: str) -> None:
+    assessment = AsyncMock()
+    with (
+        patch("hmc_mcp.server_lpars.client_from_env", return_value=_ClientContext()),
+        patch(
+            "hmc_mcp.server_lpars.power_lpar",
+            new=AsyncMock(return_value=_power_result(status)),
+        ),
+        patch("hmc_mcp.server_lpars.assess_post_activation_affinity", new=assessment),
+    ):
+        result = hmc_power_on_lpar(
+            "lpar-1",
+            wait=True,
+            system_name_or_uuid="system-1",
+            affinity_assessment=_request(),
+        )
+
+    assessment.assert_not_awaited()
+    assert result.job == _power_result(status).job
+    assert result.affinity_assessment.status == "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"), [("warn", "unavailable"), ("fail", "failed")]
+)
+def test_malformed_measurement_preserves_job_and_applies_intent(
+    response: Literal["warn", "fail"], expected: str
+) -> None:
+    with (
+        patch("hmc_mcp.server_lpars.client_from_env", return_value=_ClientContext()),
+        patch(
+            "hmc_mcp.server_lpars.power_lpar",
+            new=AsyncMock(return_value=_power_result("COMPLETED_OK")),
+        ),
+        patch(
+            "hmc_mcp.server_lpars.assess_post_activation_affinity",
+            new=AsyncMock(
+                side_effect=ValueError("current_score must be 0 through 100")
+            ),
+        ),
+    ):
+        result = hmc_power_on_lpar(
+            "lpar-1",
+            wait=True,
+            system_name_or_uuid="system-1",
+            affinity_assessment=_request(response),
+        )
+
+    assert result.job == _power_result("COMPLETED_OK").job
+    assert result.affinity_assessment.status == expected
+    assert result.affinity_assessment.measured is False
+    assert "current_score" in result.affinity_assessment.reason
