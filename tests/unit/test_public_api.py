@@ -6,14 +6,24 @@ import hashlib
 from importlib import import_module
 import inspect
 import json
+import pkgutil
 import re
 import subprocess
 import sys
+from types import ModuleType
 from typing import get_args, get_type_hints
 
+import hmc_mcp
 from hmc_mcp import api
 from hmc_mcp.client_contracts import PcmClient
 from hmc_mcp.client_templates import TemplatesMixin
+
+# ADR 0029 selects "every non-underscore top-level asynchronous function" from each
+# ``operations_*`` module (`docs/adr/0029-supported-reusable-python-api-contract.md:47-49`).
+# A selected name may stay out of ``api.__all__`` only with a recorded justification that
+# names the ADR text excluding it. The test below also rejects entries that no longer
+# describe a real omission, so this mapping cannot silently accumulate dead excuses.
+ADR_0029_OPERATION_EXCLUSIONS: dict[str, str] = {}
 
 
 def test_public_api_exports_the_adr_inventory() -> None:
@@ -44,6 +54,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
+        "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
         "resolve_lpar_ownership_names",
@@ -160,6 +171,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_optical_media",
         "get_media_repository",
         "list_optical_media",
+        "list_optical_mappings",
+        "mount_optical_media",
+        "unmount_optical_media",
         "list_storage_mappings",
         "detach_storage_mapping",
         "create_logical_unit",
@@ -185,209 +199,68 @@ def test_public_api_exports_the_adr_inventory() -> None:
     ]
 
 
-def test_public_api_reexports_implementation_objects_directly() -> None:
-    sources = {
-        "hmc_mcp.client": {"HMCClient"},
-        "hmc_mcp.affinity_assessment": {
-            "AffinityAssessmentInput",
-            "AffinityAssessmentResult",
-            "AffinityEvidence",
-            "CapturedPolicyState",
-            "PolicyState",
-        },
-        "hmc_mcp.client_adapters": {"AdapterType"},
-        "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
-        "hmc_mcp.documents": {
-            "BootDeviceSelector",
-            "LparResources",
-            "PartitionType",
-            "StorageKind",
-        },
-        "hmc_mcp.errors": {"HMCError", "HMCTransportError"},
-        "hmc_mcp.jobs": {"DeviceType", "LuType"},
-        "hmc_mcp.operations_adapters": {
-            "AdapterResult",
-            "add_network_adapter",
-            "add_vios_adapter",
-            "delete_adapter",
-            "list_adapters",
-        },
-        "hmc_mcp.operations_capacity": {"capacity_report", "find_placement"},
-        "hmc_mcp.operations_assignments": {
-            "AssignmentResult",
-            "AssignmentStep",
-            "DedicatedPcieAssignment",
-            "LparPcieAssignments",
-            "LparPcieWorkflowResult",
-            "SriovLogicalPortAssignment",
-            "VnicAssignment",
-            "apply_lpar_pcie_assignments",
-            "prevalidate_lpar_pcie_assignments",
-        },
-        "hmc_mcp.operations_composite": {"lpar_summary", "system_summary"},
-        "hmc_mcp.operations_decommission": {
-            "DecommissionResult",
-            "decommission_lpar",
-        },
-        "hmc_mcp.operations_health": {"FleetHealthResult", "fleet_health"},
-        "hmc_mcp.operations_lpar": {
-            "LparCreation",
-            "LparCreationResult",
-            "LparPowerResult",
-            "authorize_decommission_lpar_ownership_snapshot",
-            "authorize_lpar_mutation",
-            "create_and_stamp_lpar",
-            "clear_lpar_boot_order",
-            "delete_lpar",
-            "power_lpar",
-            "read_lpar_boot_order",
-            "rename_lpar",
-            "resolve_lpar_ownership_names",
-            "list_lpar_ownership",
-            "set_lpar_boot_order",
-            "stamp_created_lpar_ownership",
-            "set_lpar_ownership_description",
-        },
-        "hmc_mcp.operations_lpm": {
-            "LpmAffinityMigrationResult",
-            "LpmAffinityPreflightOutcome",
-            "LpmAffinityPreflightRequest",
-            "LpmResult",
-            "LpmAffinityPreflightRequest",
-            "LpmAffinityPreflightOutcome",
-            "LpmAffinityMigrationResult",
-            "abort_lpar_migration",
-            "migrate_lpar",
-            "migrate_lpar_with_affinity_preflight",
-            "run_lpm_affinity_preflight",
-            "recover_lpar_migration",
-            "remote_restart_lpar",
-        },
-        "hmc_mcp.operations_network": {
-            "create_virtual_network",
-            "delete_virtual_network",
-            "list_network_bridges",
-            "list_virtual_networks",
-            "list_virtual_switches",
-        },
-        "hmc_mcp.operations_pcm": {
-            "MetricKind",
-            "PcmCategory",
-            "get_pcm_preferences",
-            "metric_data",
-            "metric_links",
-            "resolve_pcm_resource",
-            "set_pcm_preferences",
-        },
-        "hmc_mcp.operations_pcie": {
-            "DedicatedSlot",
-            "InventoryResult",
-            "InventorySelector",
-            "PcieAssignmentUnavailableError",
-            "SriovAdapter",
-            "SriovLogicalPort",
-            "SriovPhysicalPort",
-            "assign_dedicated_pcie_slot",
-            "list_dedicated_slots",
-            "list_sriov_adapters",
-            "list_sriov_logical_ports",
-            "list_sriov_physical_ports",
-            "unassign_dedicated_pcie_slot",
-            "SriovLogicalPortCapabilityError",
-            "SriovLogicalPortChangeResult",
-            "SriovLogicalPortPartialError",
-            "SriovLogicalPortSnapshot",
-            "assign_sriov_logical_port",
-            "set_sriov_adapter_mode",
-            "unassign_sriov_logical_port",
-        },
-        "hmc_mcp.operations_provision": {
-            "AttachDiskResult",
-            "ProvisionNetwork",
-            "ProvisionAffinityAssessment",
-            "ProvisionResult",
-            "ProvisionStorage",
-            "attach_disk_to_lpar",
-            "provision_lpar",
-        },
-        "hmc_mcp.operations_ssh_network": {
-            "VnicBackingSelector",
-            "VnicBackingSnapshot",
-            "VnicSnapshot",
-            "VnicChangeResult",
-            "VnicCapabilityError",
-            "VnicPartialError",
-            "add_vnic",
-            "get_lpar_memopt_score",
-            "get_minimum_affinity_policy",
-            "set_minimum_affinity_policy",
-            "get_system_memopt_score",
-            "list_fc_ports",
-            "list_lpar_memopt_scores",
-            "plan_lpar_memopt_scores",
-            "plan_system_memopt_score",
-            "MemoptLparSelector",
-            "MemoptResourceGroupSelector",
-            "ResourceGroupAffinityResult",
-            "MinimumAffinityPolicyResult",
-            "list_resource_group_memopt_scores",
-            "plan_resource_group_memopt_scores",
-            "list_sea_adapters",
-            "list_vnics",
-            "remove_vnic",
-        },
-        "hmc_mcp.operations_storage": {
-            "create_logical_unit",
-            "create_media_repository",
-            "create_optical_media",
-            "create_virtual_disk",
-            "create_volume_group",
-            "delete_logical_unit",
-            "delete_media_repository",
-            "delete_optical_media",
-            "delete_virtual_disk",
-            "detach_storage_mapping",
-            "get_media_repository",
-            "list_optical_media",
-            "list_storage_mappings",
-            "list_volume_groups",
-            "map_storage",
-            "upload_iso",
-        },
-        "hmc_mcp.operations_systems": {"power_system"},
-        "hmc_mcp.operations_templates": {
-            "deploy_partition_template",
-            "get_partition_template",
-            "list_partition_templates",
-        },
-        "hmc_mcp.operations_vios": {"power_vios"},
-        "hmc_mcp.console_capture": {
-            "capture_lpar_console",
-            "ConsoleCapture",
-            "ConsoleHeldError",
-        },
-        "hmc_mcp.operations_snapshot": {
-            "assess_snapshot_affinity",
-            "capture_lpar_snapshot",
-            "inspect_lpar_snapshot",
-            "validate_lpar_snapshot",
-        },
-        "hmc_mcp.snapshot": {
-            "LparSnapshot",
-            "SnapshotInspection",
-            "SnapshotValidationError",
-        },
-        "hmc_mcp.ssh": {"HMCCLIError"},
-        "hmc_mcp.ssh_commands": {"MinimumAffinityPolicy", "SriovMode"},
+def _operations_modules() -> dict[str, ModuleType]:
+    """Every ``hmc_mcp.operations_*`` module ADR 0029's selection rule governs."""
+    return {
+        f"hmc_mcp.{found.name}": import_module(f"hmc_mcp.{found.name}")
+        for found in pkgutil.iter_modules(hmc_mcp.__path__)
+        if found.name.startswith("operations_")
     }
-    tested = set()
-    for module_name, names in sources.items():
-        module = import_module(module_name)
-        for name in names:
-            assert getattr(api, name) is getattr(module, name)
-        tested.update(names)
-    assert tested == set(api.__all__)
 
+
+def _selected_operations(modules: dict[str, ModuleType]) -> set[str]:
+    """Apply ADR 0029's rule mechanically: non-underscore, top-level, coroutine.
+
+    A coroutine an operation module merely imported is owned by the module that
+    defined it, so ``__module__`` decides ownership and no name is attributed twice.
+    """
+    selected: set[str] = set()
+    for module_name, module in modules.items():
+        for name, value in vars(module).items():
+            if name.startswith("_") or not inspect.iscoroutinefunction(value):
+                continue
+            if getattr(value, "__module__", None) == module_name:
+                selected.add(name)
+    return selected
+
+
+def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
+    modules = _operations_modules()
+    selected = _selected_operations(modules)
+    exported = set(api.__all__)
+
+    unexported = selected - exported
+    assert unexported == set(ADR_0029_OPERATION_EXCLUSIONS), (
+        "operations the ADR 0029 rule selects but the facade omits: "
+        f"{sorted(unexported - set(ADR_0029_OPERATION_EXCLUSIONS))}; "
+        "exclusions naming operations that are no longer omitted: "
+        f"{sorted(set(ADR_0029_OPERATION_EXCLUSIONS) - unexported)}"
+    )
+    unexplained = [
+        name for name, reason in ADR_0029_OPERATION_EXCLUSIONS.items() if not reason
+    ]
+    assert unexplained == [], unexplained
+
+    facade_operations = {
+        name
+        for name in exported
+        if inspect.iscoroutinefunction(getattr(api, name))
+        and getattr(getattr(api, name), "__module__", None) in modules
+    }
+    assert facade_operations == selected - set(ADR_0029_OPERATION_EXCLUSIONS)
+
+
+def test_public_api_reexports_implementation_objects_directly() -> None:
+    implementation = [
+        module
+        for name, module in list(sys.modules.items())
+        if name.startswith("hmc_mcp.") and name != "hmc_mcp.api" and module is not None
+    ]
+    for name in api.__all__:
+        value = getattr(api, name)
+        assert any(
+            getattr(module, name, None) is value for module in implementation
+        ), name
 
 def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(PcmClient)["_http"].__module__ == "httpx"
@@ -398,7 +271,11 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #320, which added affinity-aware LPM preflight.
+        Last moved by issue #363, which exported the drifted operations the
+        ADR 0029 selection rule already covered: the optical-media operations
+        ``list_optical_mappings``, ``mount_optical_media``, and
+        ``unmount_optical_media``, plus ``assess_post_activation_affinity``.
+        Before that, issue #320 added affinity-aware LPM preflight.
         Before that, issue #318 added post-activation affinity assessment.
         Before that, issue #316 added the Power11 minimum-affinity policy write.
         Before that, issue #315 added the Power11 minimum-affinity policy read.
@@ -442,8 +319,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #320: LPM gains a separate affinity-aware operation and result.
-    expected_digest = "f0fa2679e37479573da70314fcfa067359a1cafed96a947ecc6a506fe3fad8e1"  # pragma: allowlist secret
+    # Moved by #363: four already-selected operations join the facade manifest.
+    expected_digest = "2aaae04d6a8b2f85f39ed9762fa650ef9c108076caff1f68497fca1c12e5f2e7"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

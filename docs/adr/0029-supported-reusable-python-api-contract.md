@@ -62,7 +62,8 @@ built-in containers are not facade exports. The initial inventory is:
   underscore helpers and `_Inventory` are internal.
 - `operations_health`: operation `fleet_health`; type `FleetHealthResult`; underscore helpers are
   internal.
-- `operations_lpar`: operations `authorize_decommission_lpar_ownership_snapshot`,
+- `operations_lpar`: operations `assess_post_activation_affinity`,
+  `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
   `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`, and
   `set_lpar_ownership_description`; types `LparCreation`,
@@ -86,8 +87,11 @@ built-in containers are not facade exports. The initial inventory is:
   `list_vnics`, `add_vnic`, and `remove_vnic`; types `MemoptLparSelector` and `SriovMode`; no public-name
   exclusions.
 - `operations_storage`: operations `list_volume_groups`, `create_volume_group`,
-  `create_virtual_disk`, `map_storage`, `create_media_repository`, `create_optical_media`,
-  `delete_media_repository`, `create_logical_unit`, and `delete_logical_unit`; types `StorageKind`,
+  `create_virtual_disk`, `delete_virtual_disk`, `map_storage`, `list_storage_mappings`,
+  `detach_storage_mapping`, `upload_iso`, `create_media_repository`, `get_media_repository`,
+  `delete_media_repository`, `create_optical_media`, `list_optical_media`,
+  `delete_optical_media`, `list_optical_mappings`, `mount_optical_media`,
+  `unmount_optical_media`, `create_logical_unit`, and `delete_logical_unit`; types `StorageKind`,
   `LuType`, and `DeviceType`; synchronous validators `validate_logical_unit_create` and
   `validate_logical_unit_wait` are excluded.
 - `operations_systems`: operation `power_system`; no owned types or public-name exclusions.
@@ -117,7 +121,11 @@ Consumers receive one explicit, testable import surface instead of depending on 
 layout. Contract tests must freeze the exact `__all__`, lifecycle allowlist, asynchronous
 signatures, enum and literal value sets, presentation-import isolation, and absence of presentation
 types. Future operation modules and public top-level functions do not enter the facade
-automatically: maintainers must consciously update the facade, inventory, and tests.
+automatically: maintainers must consciously update the facade, inventory, and tests. A contract
+test applies the selection rule above to every `operations_*` module by introspection and fails
+when a selected operation is missing from `__all__` without a recorded justification naming the
+ADR text that excludes it, so the manifest cannot drift silently the way the optical-media
+operations did.
 
 The initial surface is broad because the deterministic rule includes every asynchronous domain
 operation, including policy-enforcement workflows. That breadth is preferable to an undocumented
