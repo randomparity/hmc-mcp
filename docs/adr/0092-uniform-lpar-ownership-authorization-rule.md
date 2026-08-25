@@ -146,12 +146,17 @@ first, exactly as for the tool rows in §3.2.
 | `attach_disk_to_lpar` | `operations_provision.py:323` | **unguarded** | #372 |
 | `mount_optical_media` | `operations_storage.py:641` | **unguarded** | #440 |
 | `unmount_optical_media` | `operations_storage.py:661` | **unguarded** | #440 |
-| `detach_optical_mapping` | `operations_storage.py:678` | **unguarded** | #440 |
 | `migrate_lpar` | `operations_lpm.py:268` | **unguarded**; the guard belongs on the `validate=False` branch (see below) | #373 |
 | `migrate_lpar_with_affinity_preflight` | `operations_lpm.py:219` | **unguarded**; delegates to `migrate_lpar` unconditionally (`:236`), so #373's guard covers it | #373 |
 | `abort_lpar_migration` | `operations_lpm.py:320` | **unguarded** | #373 |
 | `recover_lpar_migration` | `operations_lpm.py:341` | **unguarded** | #373 |
 | `remote_restart_lpar` | `operations_lpm.py:362` | **unguarded** | #373 |
+
+`mount_optical_media` and `unmount_optical_media` became facade exports in #363,
+so they are Domain A callables (§5) as well as MCP tools — the guard is the only
+authorization a `hmc_mcp.api` caller of either would cross. `detach_optical_mapping`
+is absent from this table because #362 removed it: it was a duplicate alias of
+`unmount_optical_media`, and one operation is now one row.
 
 `migrate_lpar` is one function with a `validate: bool = False` keyword. Only the
 `validate=False` branch migrates; `validate=True` submits an LPM validation job that
@@ -324,7 +329,7 @@ different means.
 
 - *Domain A — the facade.* Every **function** exported from `hmc_mcp.api.__all__`
   whose definition lives in `src/hmc_mcp/operations_*.py` — the `inspect.isfunction`
-  filter `tests/unit/test_public_api.py:429` already applies, not "every callable",
+  filter `tests/unit/test_public_api.py:309` already applies, not "every callable",
   which would drag in every exported dataclass and error type. This is the domain
   #369's acceptance criterion names, and the one that matters most, because a
   `hmc_mcp.api` consumer crosses no other authorization boundary (§7).
