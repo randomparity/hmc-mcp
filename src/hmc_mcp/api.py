@@ -105,6 +105,7 @@ from hmc_mcp.operations_assignments import (
 )
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
+    ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionResult,
     ProvisionStorage,
@@ -265,6 +266,7 @@ __all__ = [
     "unassign_sriov_logical_port",
     "attach_disk_to_lpar",
     "provision_lpar",
+    "ProvisionAffinityAssessment",
     "ProvisionNetwork",
     "ProvisionStorage",
     "ProvisionResult",

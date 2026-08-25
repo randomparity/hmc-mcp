@@ -8,13 +8,21 @@ result and an optional dry-run that validates preconditions only.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Literal
+
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    CapturedPolicyState,
+    assess_affinity,
+)
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import LparResources, PartitionType, StorageKind
 from .errors import HMCError
+from .jobs import JobOutcome, job_outcome
 from .operations_adapters import add_network_adapter, add_vios_adapter
 from .operations_lpar import (
     LparCreation,
@@ -23,6 +31,12 @@ from .operations_lpar import (
     power_lpar,
 )
 from .operations_ssh_network import set_minimum_affinity_policy
+from .operations_ssh_network import (
+    get_lpar_memopt_score,
+    get_minimum_affinity_policy,
+    plan_lpar_memopt_scores,
+)
+from .ssh import HMCCLIError
 from .ssh_selectors import resolve_ssh_names
 from .operations_storage import create_virtual_disk, map_storage
 from .ssh_commands import (
@@ -73,6 +87,52 @@ class ProvisionStorage:
         metadata={
             "description": "Volume-group UUID used when creating a virtual disk."
         },
+    )
+
+
+@dataclass(frozen=True)
+class ProvisionAffinityAssessment:
+    """Caller-owned captured evidence and post-activation response policy."""
+
+    system_name_or_uuid: str = field(
+        metadata={"description": "Captured managed-system identity; must match target."}
+    )
+    lpar_name: str = field(
+        metadata={"description": "Captured LPAR name; must match requested name."}
+    )
+    captured_score: int | None = field(
+        metadata={"description": "Previously observed LPAR affinity score."}
+    )
+    captured_policy_state: CapturedPolicyState = field(
+        metadata={"description": "Capability and policy state at capture time."}
+    )
+    captured_minimum: int | None = field(
+        metadata={"description": "Minimum affinity score observed at capture time."}
+    )
+    captured_at: datetime = field(
+        metadata={"description": "Timezone-aware timestamp for captured evidence."}
+    )
+    stale_after_seconds: int = field(
+        metadata={"description": "Maximum accepted age of captured evidence."}
+    )
+    response: Literal["warn", "fail"] = field(
+        metadata={"description": "Explicit response to an adverse assessment."}
+    )
+    regression_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned maximum acceptable score regression."},
+    )
+    optimization_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned minimum worthwhile predicted gain."},
+    )
+    timeout_seconds: int = field(
+        default=300,
+        metadata={"description": "Maximum seconds to wait for PowerOn completion."},
+    )
+    poll_interval: int = field(
+        default=5,
+        metadata={"description": "Seconds between PowerOn job status reads."},
     )
 
 
@@ -260,9 +320,23 @@ async def _create_disk(
     return {"disk_name": storage.storage_name, "capacity_mb": capacity_mib}
 
 
-async def _power_on(hmc: HMCClient, lpar_uuid: str) -> dict[str, Any] | None:
-    result = await power_lpar(hmc, lpar_uuid, power_on=True, force=True)
-    return result.job
+async def _power_on(
+    hmc: HMCClient,
+    lpar_uuid: str,
+    assessment: ProvisionAffinityAssessment | None,
+) -> dict[str, Any] | JobOutcome | None:
+    result = await power_lpar(
+        hmc,
+        lpar_uuid,
+        power_on=True,
+        force=True,
+        wait=assessment is not None,
+        timeout_seconds=assessment.timeout_seconds if assessment else 300,
+        poll_interval=assessment.poll_interval if assessment else 5,
+    )
+    if assessment is None:
+        return result.job
+    return job_outcome("PowerOn", result.job)
 
 
 def _skip_steps(steps: list[dict[str, Any]], names: list[str]) -> None:
@@ -348,6 +422,7 @@ def _provision_result(
     created_uuid: str | None,
     steps: list[dict[str, Any]],
     workflow_completed: bool,
+    warnings: tuple[str, ...] = (),
 ) -> ProvisionResult:
     return ProvisionResult(
         resource_created=creation.resource_created if creation else False,
@@ -356,8 +431,70 @@ def _provision_result(
         dry_run=False,
         ownership_stamped=creation.ownership_stamped if creation else None,
         steps=tuple(steps),
-        warnings=creation.warnings if creation else (),
+        warnings=(*(creation.warnings if creation else ()), *warnings),
     )
+
+
+def _score(row: dict[str, object], field_name: str) -> int | None:
+    value = row.get(field_name)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+async def _assess_post_activation_affinity(
+    hmc: HMCClient,
+    system: str,
+    lpar: str,
+    request: ProvisionAffinityAssessment,
+    applied_policy: MinimumAffinityPolicy | None,
+) -> dict[str, Any]:
+    current_row = await get_lpar_memopt_score(hmc.config, system, lpar)
+    predicted_rows = await plan_lpar_memopt_scores(hmc.config, system)
+    predicted_row = next(
+        (row for row in predicted_rows if row.get("lpar_name") == lpar), None
+    )
+    predicted_score = (
+        _score(predicted_row, "predicted_lpar_score") if predicted_row else None
+    )
+    if applied_policy is None:
+        policy = await get_minimum_affinity_policy(hmc.config, system, lpar)
+        policy_state: Literal["configured", "absent", "unsupported"] = (
+            "unsupported"
+            if policy.capability == "capability-unavailable"
+            else "configured"
+            if policy.min_affinity_score is not None
+            else "absent"
+        )
+        configured_minimum = policy.min_affinity_score
+    else:
+        policy_state = "configured"
+        configured_minimum = applied_policy.min_affinity_score
+    assessment = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=_score(current_row, "curr_lpar_score"),
+            predicted_score=predicted_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=datetime.now(UTC),
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+    return {
+        "assessment": asdict(assessment),
+        "achieved_score": assessment.evidence.current_score,
+        "predicted_score": assessment.evidence.predicted_score,
+        "prediction_guaranteed": False,
+    }
 
 
 # ---------------------------------------------------------------------- #
@@ -378,6 +515,7 @@ async def provision_lpar(
     assignments: LparPcieAssignments = LparPcieAssignments(),
     caller_token: str | None = None,
     minimum_affinity_policy: MinimumAffinityPolicy | None = None,
+    affinity_assessment: ProvisionAffinityAssessment | None = None,
 ) -> ProvisionResult:
     """Provision a new LPAR end-to-end: create, add network adapter, add vSCSI
     adapter, map disk storage, and power on — in a single call.
@@ -436,6 +574,20 @@ async def provision_lpar(
       landed (one combined write); ``False`` means both were lost.
     """
 
+    if affinity_assessment is not None:
+        if (
+            affinity_assessment.system_name_or_uuid != system_name_or_uuid
+            or affinity_assessment.lpar_name != name
+        ):
+            raise ValueError(
+                "affinity assessment identities must match the provisioned system and LPAR"
+            )
+        if affinity_assessment.response not in {"warn", "fail"}:
+            raise ValueError("affinity assessment response must be warn or fail")
+        if affinity_assessment.timeout_seconds < 0:
+            raise ValueError("affinity assessment timeout_seconds must be non-negative")
+        if affinity_assessment.poll_interval <= 0:
+            raise ValueError("affinity assessment poll_interval must be positive")
     if minimum_affinity_policy is not None:
         validate_minimum_affinity_policy(minimum_affinity_policy)
     if caller_token is not None:
@@ -477,6 +629,8 @@ async def provision_lpar(
     step_names.extend(["network", "vscsi", "storage", *assignment_names])
     if power_on:
         step_names.append("power_on")
+    if affinity_assessment is not None:
+        step_names.append("affinity_assessment")
 
     if dry_run:
         return ProvisionResult(
@@ -556,11 +710,50 @@ async def provision_lpar(
         return _provision_result(creation, created_uuid, steps, False)
 
     if power_on:
-        if not await _record_hmc_step(
-            steps,
-            "power_on",
-            _power_on(hmc, created_uuid),
-        ):
+        try:
+            power_result = await _power_on(hmc, created_uuid, affinity_assessment)
+        except HMCError as exc:
+            steps.append(_step("power_on", "error", str(exc)))
+            if affinity_assessment is not None:
+                steps.append(_step("affinity_assessment", "skipped"))
             return _provision_result(creation, created_uuid, steps, False)
+        if isinstance(power_result, JobOutcome):
+            if power_result.timed_out or power_result.error is not None:
+                message = power_result.error or (
+                    "PowerOn did not reach a successful terminal status before timeout"
+                )
+                steps.append(_step("power_on", "error", message))
+                steps.append(_step("affinity_assessment", "skipped"))
+                return _provision_result(creation, created_uuid, steps, False)
+            steps.append(_step("power_on", "ok", asdict(power_result)))
+        else:
+            steps.append(_step("power_on", "ok", power_result))
+
+    if affinity_assessment is not None:
+        if not power_on:
+            steps.append(_step("affinity_assessment", "skipped"))
+            return _provision_result(creation, created_uuid, steps, False)
+        try:
+            result = await _assess_post_activation_affinity(
+                hmc,
+                system_name_or_uuid,
+                name,
+                affinity_assessment,
+                minimum_affinity_policy,
+            )
+        except (HMCError, HMCCLIError) as exc:
+            steps.append(_step("affinity_assessment", "error", str(exc)))
+            return _provision_result(creation, created_uuid, steps, False)
+        classification = result["assessment"]["classification"]
+        if classification != "none":
+            warning = f"Post-activation affinity assessment: {classification}"
+            if affinity_assessment.response == "fail":
+                steps.append(_step("affinity_assessment", "error", result))
+                return _provision_result(
+                    creation, created_uuid, steps, False, (warning,)
+                )
+            steps.append(_step("affinity_assessment", "ok", result))
+            return _provision_result(creation, created_uuid, steps, True, (warning,))
+        steps.append(_step("affinity_assessment", "ok", result))
 
     return _provision_result(creation, created_uuid, steps, True)

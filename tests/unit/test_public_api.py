@@ -100,6 +100,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "unassign_sriov_logical_port",
         "attach_disk_to_lpar",
         "provision_lpar",
+        "ProvisionAffinityAssessment",
         "ProvisionNetwork",
         "ProvisionStorage",
         "ProvisionResult",
@@ -290,6 +291,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
         "hmc_mcp.operations_provision": {
             "AttachDiskResult",
             "ProvisionNetwork",
+            "ProvisionAffinityAssessment",
             "ProvisionResult",
             "ProvisionStorage",
             "attach_disk_to_lpar",
@@ -383,7 +385,8 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #316, which added the Power11 minimum-affinity policy write.
+        Last moved by issue #318, which added post-activation affinity assessment.
+        Before that, issue #316 added the Power11 minimum-affinity policy write.
         Before that, issue #315 added the Power11 minimum-affinity policy read.
         Before that, issue #312 added capability-aware resource-group affinity.
         Before that, issue #311 added read-only affinity planning operations.
@@ -425,8 +428,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #317: affinity assessment is reusable under ADR 0088.
-    expected_digest = "e2e2b0f95f113bb2631e8f664574acf79e9c751b8232642597ac3649fec67466"  # pragma: allowlist secret
+    # Moved by #318: provisioning accepts explicit post-activation assessment.
+    expected_digest = "77968d71389a103524940cedf1519dbf6d10fd53b726461d521ff1d3465bda12"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

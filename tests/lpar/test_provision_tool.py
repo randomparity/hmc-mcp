@@ -9,13 +9,21 @@ interactions are mocked with the respx ``mock_hmc`` fixture from conftest.py.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
 
 from hmc_mcp.documents import LparResources
-from hmc_mcp.operations_provision import ProvisionNetwork, ProvisionStorage
+from hmc_mcp.jobs import JobOutcome
+from hmc_mcp.operations_lpar import LparPowerResult
+from hmc_mcp.operations_provision import (
+    ProvisionAffinityAssessment,
+    ProvisionNetwork,
+    ProvisionStorage,
+    _power_on,
+)
 from hmc_mcp.server import hmc_provision_lpar
 from hmc_mcp.ssh import HMCCLIError
 from hmc_mcp.ssh_commands import MinimumAffinityPolicy
@@ -279,6 +287,168 @@ def _provision_args(**overrides):
         )
     args.update(overrides)
     return args
+
+
+def _affinity_request(**overrides):
+    values = dict(
+        system_name_or_uuid=SYSTEM_UUID,
+        lpar_name="web01",
+        captured_score=80,
+        captured_policy_state="configured",
+        captured_minimum=70,
+        captured_at=datetime(2026, 8, 24, tzinfo=UTC),
+        stale_after_seconds=86400,
+        response="warn",
+        timeout_seconds=30,
+        poll_interval=1,
+    )
+    values.update(overrides)
+    return ProvisionAffinityAssessment(**values)
+
+
+def test_provision_affinity_rejects_foreign_evidence_before_hmc(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+
+    with pytest.raises(ValueError, match="assessment identities"):
+        hmc_provision_lpar(
+            **_provision_args(
+                affinity_assessment=_affinity_request(lpar_name="another-lpar")
+            )
+        )
+
+    assert_no_mutating_requests(mock_hmc)
+
+
+def _assessment_result(classification="none"):
+    return {
+        "assessment": {
+            "classification": classification,
+            "evidence": {"current_score": 82, "predicted_score": 90},
+            "explanation": "assessment",
+            "recommended_actions": (),
+        },
+        "achieved_score": 82,
+        "predicted_score": 90,
+        "prediction_guaranteed": False,
+    }
+
+
+def _successful_power_outcome():
+    return JobOutcome("job-1", "COMPLETED_OK", False, None, {"Resource": {}})
+
+
+def test_provision_affinity_power_on_waits_for_terminal_result():
+    terminal_job = {"Resource": {"Status": "COMPLETED_OK"}}
+    hmc = object()
+    with patch(
+        "hmc_mcp.operations_provision.power_lpar",
+        new=AsyncMock(return_value=LparPowerResult(LPAR_UUID, terminal_job)),
+    ) as power:
+        result = asyncio.run(_power_on(hmc, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
+    assert isinstance(result, JobOutcome)
+    assert result.status == "COMPLETED_OK"
+    assert result.timed_out is False
+    power.assert_awaited_once_with(
+        hmc,
+        LPAR_UUID,
+        power_on=True,
+        force=True,
+        wait=True,
+        timeout_seconds=30,
+        poll_interval=1,
+    )
+
+
+def test_provision_affinity_dry_run_never_powers_on_or_assesses(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    with patch(
+        "hmc_mcp.operations_provision._assess_post_activation_affinity",
+        new=AsyncMock(),
+    ) as assess:
+        result = hmc_provision_lpar(
+            **_provision_args(dry_run=True, affinity_assessment=_affinity_request())
+        )
+    assert result.steps[-1] == {"step": "affinity_assessment", "status": "dry_run"}
+    assess.assert_not_awaited()
+    assert_no_mutating_requests(mock_hmc)
+
+
+def test_provision_affinity_power_off_is_skipped(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    with patch(
+        "hmc_mcp.operations_provision._assess_post_activation_affinity",
+        new=AsyncMock(),
+    ) as assess:
+        result = hmc_provision_lpar(
+            **_provision_args(power_on=False, affinity_assessment=_affinity_request())
+        )
+    assert result.workflow_completed is False
+    assert result.steps[-1] == {"step": "affinity_assessment", "status": "skipped"}
+    assess.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("classification", "response", "completed", "status", "warning"),
+    [
+        ("none", "warn", True, "ok", False),
+        ("policy-violation", "warn", True, "ok", True),
+        ("unsupported-data", "warn", True, "ok", True),
+        ("policy-violation", "fail", False, "error", True),
+    ],
+)
+def test_provision_affinity_response_is_explicit(
+    monkeypatch, mock_hmc, classification, response, completed, status, warning
+):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    with (
+        patch(
+            "hmc_mcp.operations_provision._power_on",
+            new=AsyncMock(return_value=_successful_power_outcome()),
+        ),
+        patch(
+            "hmc_mcp.operations_provision._assess_post_activation_affinity",
+            new=AsyncMock(return_value=_assessment_result(classification)),
+        ) as assess,
+    ):
+        result = hmc_provision_lpar(
+            **_provision_args(affinity_assessment=_affinity_request(response=response))
+        )
+    assert result.workflow_completed is completed
+    assert result.steps[-1]["status"] == status
+    assert result.steps[-1]["result"]["achieved_score"] == 82
+    assert result.steps[-1]["result"]["predicted_score"] == 90
+    assert result.steps[-1]["result"]["prediction_guaranteed"] is False
+    assert bool(result.warnings) is warning
+    assess.assert_awaited_once()
+
+
+def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    timed_out = JobOutcome("job-1", "RUNNING", True, None, {"Resource": {}})
+    with (
+        patch(
+            "hmc_mcp.operations_provision._power_on",
+            new=AsyncMock(return_value=timed_out),
+        ),
+        patch(
+            "hmc_mcp.operations_provision._assess_post_activation_affinity",
+            new=AsyncMock(),
+        ) as assess,
+    ):
+        result = hmc_provision_lpar(
+            **_provision_args(affinity_assessment=_affinity_request())
+        )
+    assert result.workflow_completed is False
+    assert result.steps[-2]["status"] == "error"
+    assert result.steps[-1] == {"step": "affinity_assessment", "status": "skipped"}
+    assess.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------- #
