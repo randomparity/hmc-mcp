@@ -180,12 +180,16 @@ def _posted_document(post_route) -> str:
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_removes_only_the_addressed_mapping(mock_hmc):
-    """Unmount drops the LPAR's optical mapping and leaves every sibling intact.
+async def test_unmount_optical_media_removes_the_named_mapping_for_that_lpar(mock_hmc):
+    """Unmount drops the addressed mapping and rewrites nothing else.
 
     The HMC has no UUID-addressable VirtualSCSIMapping sub-resource, so the
     operation is a read-modify-write of the whole VirtualIOServer document.
     This asserts what that document says afterwards, not that a call happened.
+
+    Containment holds here because the fixture's names do not overlap; it is
+    not a property the selector enforces. See #439 and the prefix-collision
+    characterization test below.
     """
     mock_hmc.get(_VIOS_GET_PATH).mock(
         return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
@@ -232,8 +236,15 @@ async def test_unmount_optical_media_preserves_the_backing_iso(mock_hmc):
 
 
 @pytest.mark.asyncio
-async def test_unmount_optical_media_is_idempotent_when_no_mapping_matches(mock_hmc):
-    """An already-unmounted image is a no-op: the document is not rewritten."""
+async def test_unmount_optical_media_currently_no_ops_when_no_mapping_matches(mock_hmc):
+    """Characterization: an unmatched media name writes nothing and succeeds.
+
+    This pins today's behavior, it does not endorse it. ADR 0079 decides that a
+    destructive VirtualSCSIMapping removal fails closed when the mapping cannot
+    be proven to exist, and lists "silently succeed when no mapping matches"
+    among its rejected alternatives. The optical path predates that decision and
+    still diverges; #439 owns the reconciliation and flips this assertion.
+    """
     mock_hmc.get(_VIOS_GET_PATH).mock(
         return_value=httpx.Response(200, text=VIOS_DOC_WITH_OPTICAL_MAPPINGS)
     )
@@ -243,6 +254,39 @@ async def test_unmount_optical_media_is_idempotent_when_no_mapping_matches(mock_
         await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "aix73.iso")
 
     assert not post.called
+
+
+@pytest.mark.asyncio
+async def test_unmount_optical_media_substring_selector_matches_a_sibling_prefix(
+    mock_hmc,
+):
+    """Characterization: the selector is a substring test, so prefixes collide.
+
+    ``delete_optical_mapping`` chooses its victim with ``media_name in
+    ET.tostring(mapping)``, so unmounting ``rhel9.iso`` can remove a mapping
+    backed by ``rhel9.iso.bak`` when that mapping comes first in document order.
+    This is a defect, not a contract: #439 replaces the substring test with
+    element-wise MediaName equality, at which point this test asserts the
+    opposite.
+    """
+    doc = VIOS_DOC_WITH_OPTICAL_MAPPINGS.replace(
+        "<UUID>mapping-disk-001</UUID>", "<UUID>mapping-optical-backup</UUID>"
+    ).replace(
+        "<Storage><VirtualDisk><DiskName>lv_boot</DiskName></VirtualDisk></Storage>",
+        "<Storage><VirtualOpticalMedia><MediaName>rhel9.iso.bak</MediaName>"
+        "</VirtualOpticalMedia></Storage>",
+    )
+    mock_hmc.get(_VIOS_GET_PATH).mock(return_value=httpx.Response(200, text=doc))
+    post = mock_hmc.post(_VIOS_POST_PATH).mock(return_value=httpx.Response(200, text=""))
+
+    async with HMCClient(make_config()) as hmc:
+        await unmount_optical_media(hmc, VIOS_UUID, LPAR_UUID, "rhel9.iso")
+
+    body = _posted_document(post)
+    assert "mapping-optical-backup" not in body, (
+        "known defect (#439): the substring selector removed the .bak sibling"
+    )
+    assert "mapping-optical-target" in body
 
 
 @pytest.mark.asyncio

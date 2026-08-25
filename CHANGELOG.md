@@ -66,6 +66,17 @@ carry a `### Facade manifest` section.
   `hmc_timeout_minutes` are removed because there is no job to poll (#410,
   ADR 0070).
 
+### Removed
+
+- `hmc_detach_optical_mapping` MCP tool and its `media.detach_mapping` operation name, plus the
+  `detach_optical_mapping` operation behind them (#362). Both duplicated
+  `hmc_unmount_optical_media` / `media.unmount` byte for byte; on the HMC UOM REST contract
+  detaching an optical mapping and unmounting the image are one operation, so #200 requirement 6
+  was amended to describe the one behavior that is buildable. **Upgrade note:** the server is
+  fail-closed on unknown tool grants (ADR 0041), so an `access-policy.toml` that grants
+  `hmc_detach_optical_mapping` now refuses to start — drop that entry or rename it to
+  `hmc_unmount_optical_media`. The exposed tool count drops from 148 to 147.
+
 ### Documentation
 
 - ADR 0069 records the live-HMC survey finding that the HMC REST API does not advertise the
@@ -97,7 +108,10 @@ carry a `### Facade manifest` section.
 - Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen
-  manifest or its signature digest.
+  manifest or its signature digest. #362 likewise removed the
+  `hmc_detach_optical_mapping` MCP tool and the `detach_optical_mapping`
+  operation; neither was exported from `hmc_mcp.api`, so the manifest and the
+  frozen signature digest are unmoved and no minor release is gated on it.
 
 ## [0.1.0] - 2026-08-22
 
