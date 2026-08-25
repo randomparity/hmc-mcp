@@ -19,6 +19,8 @@ from hmc_mcp.client_templates import TemplatesMixin
 def test_public_api_exports_the_adr_inventory() -> None:
     assert api.__all__ == [
         "HMCClient",
+        "AffinityAssessmentInput",
+        "AffinityAssessmentResult",
         "HMCConfig",
         "ConfigError",
         "load_profile",
@@ -168,6 +170,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "SnapshotInspection",
         "SnapshotValidationError",
         "capture_lpar_snapshot",
+        "assess_snapshot_affinity",
         "inspect_lpar_snapshot",
         "validate_lpar_snapshot",
     ]
@@ -176,6 +179,10 @@ def test_public_api_exports_the_adr_inventory() -> None:
 def test_public_api_reexports_implementation_objects_directly() -> None:
     sources = {
         "hmc_mcp.client": {"HMCClient"},
+        "hmc_mcp.affinity_assessment": {
+            "AffinityAssessmentInput",
+            "AffinityAssessmentResult",
+        },
         "hmc_mcp.client_adapters": {"AdapterType"},
         "hmc_mcp.config": {"ConfigError", "HMCConfig", "load_profile"},
         "hmc_mcp.documents": {
@@ -339,6 +346,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "ConsoleHeldError",
         },
         "hmc_mcp.operations_snapshot": {
+            "assess_snapshot_affinity",
             "capture_lpar_snapshot",
             "inspect_lpar_snapshot",
             "validate_lpar_snapshot",
@@ -411,8 +419,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #316: minimum-affinity policy writes are reusable under ADR 0087.
-    expected_digest = "2e1772410182af117821678eb8567221aa62c545fffc224bce28c34d6d7f945b"  # pragma: allowlist secret
+    # Moved by #317: affinity assessment is reusable under ADR 0088.
+    expected_digest = "d7a53107cffa42f662b4649f8cb9ac76e69974cb3fd8a4bf8e5d9ca4d9944179"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

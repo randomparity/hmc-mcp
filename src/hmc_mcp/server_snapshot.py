@@ -30,7 +30,18 @@ def hmc_snapshot_assess_affinity(
     optimization_threshold: int | None = None,
     stale_after_seconds: int = 86400,
 ) -> dict[str, object]:
-    """Assess snapshot affinity evidence locally without HMC I/O or mutation."""
+    """Assess snapshot affinity evidence locally without HMC I/O or mutation.
+
+    Args:
+        document: Valid portable LPAR snapshot JSON text.
+        current_score: Current LPAR affinity score from 0 through 100.
+        predicted_score: Potential LPAR affinity score from 0 through 100.
+        policy_state: Whether current configured policy is present, absent, or unsupported.
+        configured_minimum: Current configured minimum score when present.
+        regression_threshold: Caller-owned maximum acceptable score decrease.
+        optimization_threshold: Caller-owned minimum worthwhile potential gain.
+        stale_after_seconds: Maximum permitted snapshot age in seconds.
+    """
     result = _run(
         lambda: assess_snapshot_affinity(
             document,

@@ -6,7 +6,6 @@ from hmc_mcp.config import ConfigError, HMCConfig, load_profile
 from hmc_mcp.affinity_assessment import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
-    assess_affinity,
 )
 from hmc_mcp.documents import (
     BootDeviceSelector,
@@ -184,7 +183,6 @@ __all__ = [
     "HMCClient",
     "AffinityAssessmentInput",
     "AffinityAssessmentResult",
-    "assess_affinity",
     "HMCConfig",
     "ConfigError",
     "load_profile",
