@@ -27,6 +27,14 @@ from hmc_mcp.client_templates import TemplatesMixin
 ADR_0029_OPERATION_EXCLUSIONS: dict[str, str] = {}
 
 
+# ADR 0029: HMCClient's supported surface is exactly this allowlist. Inherited
+# mixin methods stay callable but are unsupported, so no contract gate covers
+# them.
+SUPPORTED_CLIENT_LIFECYCLE = frozenset(
+    {"__init__", "__aenter__", "__aexit__", "is_logged_on", "logon", "logoff"}
+)
+
+
 def test_public_api_exports_the_adr_inventory() -> None:
     assert api.__all__ == [
         "HMCClient",
@@ -346,14 +354,27 @@ def _bare_annotations(label: str, member: Callable[..., object]) -> list[str]:
     return bare
 
 
-def _package_owned_callables(exported: type) -> list[tuple[str, object]]:
-    """A member inherited from ``BaseException`` or ``BaseModel`` is not this
-    package's to annotate, and its bare ``*args`` is not a facade defect."""
-    return [
-        (name, member)
-        for name, member in inspect.getmembers(exported, inspect.isfunction)
-        if (name == "__init__" or not name.startswith("_"))
+def _contract_callables(name: str, exported: type) -> list[tuple[str, object]]:
+    """The members ADR 0029 actually promises for an exported class.
+
+    ``HMCClient`` is the exception: its supported surface is exactly the
+    lifecycle allowlist, so the 94 inherited mixin methods the same contract
+    calls unsupported are not gated here. For every other exported class a
+    member inherited from ``BaseException`` or ``BaseModel`` is not this
+    package's to annotate, and its bare ``*args`` is not a facade defect.
+    """
+    members = [
+        (member_name, member)
+        for member_name, member in inspect.getmembers(exported, inspect.isfunction)
+        if (member_name == "__init__" or not member_name.startswith("_"))
         and getattr(member, "__module__", "").startswith("hmc_mcp")
+    ]
+    if name != "HMCClient":
+        return members
+    return [
+        (member_name, member)
+        for member_name, member in members
+        if member_name in SUPPORTED_CLIENT_LIFECYCLE
     ]
 
 
@@ -370,10 +391,10 @@ def test_every_exported_callable_is_fully_annotated() -> None:
         if inspect.isfunction(exported):
             bare.extend(_bare_annotations(name, exported))
         elif inspect.isclass(exported):
-            for member_name, member in _package_owned_callables(exported):
+            for member_name, member in _contract_callables(name, exported):
                 bare.extend(_bare_annotations(f"{name}.{member_name}", member))
 
-    assert not bare, f"unannotated facade exports: {bare}"
+    assert not bare, f"supported facade members missing an annotation: {bare}"
 
 
 def test_public_error_hierarchy_is_frozen() -> None:
@@ -383,15 +404,9 @@ def test_public_error_hierarchy_is_frozen() -> None:
 
 
 def test_hmc_client_supported_lifecycle_members_are_present() -> None:
-    supported = {
-        "__init__",
-        "__aenter__",
-        "__aexit__",
-        "is_logged_on",
-        "logon",
-        "logoff",
-    }
-    assert {name for name in supported if hasattr(api.HMCClient, name)} == supported
+    assert {
+        name for name in SUPPORTED_CLIENT_LIFECYCLE if hasattr(api.HMCClient, name)
+    } == SUPPORTED_CLIENT_LIFECYCLE
 
 
 def test_exported_literal_value_sets_are_frozen() -> None:

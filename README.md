@@ -72,6 +72,11 @@ model, each exported exception type, and the members and values of each exported
 alias. Modules outside `hmc_mcp.api` carry annotations too, but they are implementation details and
 their types are not part of the contract.
 
+What the marker does not do is make the open-ended HMC payloads specific. Operations that return a
+raw resource mapping are annotated `dict[str, Any]`, and ADR 0029 keeps them that way deliberately
+so an IBM-side field addition is not a breaking change — the call is typed, the payload contents
+stay opaque. Operations that return a package-owned result model are typed all the way down.
+
 One consequence is worth planning for: the operations annotate the concrete `HMCClient`, so a
 type-checker now rejects a duck-typed fake passed in a consumer's own tests even though the call
 still runs. ADR 0029 deliberately promises no alternate-client protocol, so pass such a fake through
