@@ -112,20 +112,15 @@ async def _submit_install(
         vlan_id=vlan_id,
         mac_address=mac_address,
     )
-    # The only record this process can leave. There is no HMC job, no ownership
-    # guard on this path (ADR 0092 §3.4a) and so no authorization audit event,
-    # and the HMC-side log is shared across managed systems and truncated.
-    # Intent is recorded before the submit, because a submit that raises is the
-    # ambiguous case: the caller cannot tell whether anything was started, and
-    # without this line would not even know which partition to look at.
-    #
-    # "Can" is doing work: these go to an unbound module logger, so they survive
-    # only where the embedding process configures the hmc_mcp namespace at INFO.
-    # The served MCP path does not — server.py binds the reserved audit logger
-    # and the third-party loggers, and nothing else — so on that path an
-    # unguarded detached install leaves no local trace at all. Routing this to
-    # the ADR 0043 audit sink would widen the audit event vocabulary, which is
-    # its own decision; #469 holds it.
+    # The only record this process can leave: no HMC job, no ownership guard and
+    # so no authorization audit event (ADR 0092 §3.4a), and an HMC-side log that
+    # is shared across managed systems and truncated. Intent goes first because
+    # a submit that raises is the ambiguous case — the caller cannot tell
+    # whether anything started, and without this would not know where to look.
+    # Both land on an unbound module logger, so they survive only where the
+    # embedding process configures the hmc_mcp namespace at INFO; the served MCP
+    # path does not. Routing them to the ADR 0043 audit sink widens the audit
+    # vocabulary, which is its own decision — #469 holds it.
     _logger.info(
         "Submitting installios on %s/%s, log %s",
         system_name,
