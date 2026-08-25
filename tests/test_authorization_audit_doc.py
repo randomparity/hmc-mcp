@@ -14,7 +14,14 @@ document and asserts it notices, so the check cannot pass by extracting nothing.
 The counts stay out of the assertions on purpose: pinning one here would recreate the
 stale literal this guard exists to remove, the same anti-pattern
 `test_project_metadata.test_generated_policy_guidance_does_not_pin_a_stale_tool_count`
-already guards in the README.
+already guards in the README. Two patterns hold the document to the same rule — one for
+counts of reason codes, one for counts of records or events, which is the class that had
+actually gone stale ("The two records", written when there were two).
+
+Restated *constants* are checked where the constant is exported and nothing else. The
+`source` values on the TLS record are the notable gap: `client._verify_ssl_source`
+returns bare strings with no `Literal` behind them, so there is nothing to derive from.
+Issue #497 owns closing that.
 """
 
 import re
@@ -40,6 +47,18 @@ COUNT_WORD = (
 )
 FIXED_REASON_COUNT = re.compile(
     rf"\b{COUNT_WORD}\s+(?:[\w-]+\s+)?codes?\b", re.IGNORECASE
+)
+
+#: The same rule for the record and event vocabulary. Only plural counts, because
+#: "one record per client construction" is a rate and stays true however many kinds
+#: of record exist, while "the two records" and "both records" are the enumeration
+#: that goes stale the next time ``audit.Event`` grows — as it did.
+PLURAL_COUNT = (
+    r"(?:\*{2})?(?:both|[2-9]|\d\d[\d,]*|two|three|four|five|six|seven|eight|nine"
+    r"|ten|eleven|twelve)(?:\*{2})?"
+)
+FIXED_KIND_COUNT = re.compile(
+    rf"\b{PLURAL_COUNT}\s+(?:[\w-]+\s+)?(?:records?|events?)\b", re.IGNORECASE
 )
 
 
@@ -114,7 +133,28 @@ def test_event_drift_is_caught_in_both_directions() -> None:
     assert audit.EVENTS - _documented_events(undocumented) == {dangling}
 
     orphaned = document + '\n### `event: "retired-event"`\n'
+    assert orphaned != document
     assert _documented_events(orphaned) - audit.EVENTS == {"retired-event"}
+
+
+def test_event_names_are_read_from_headings_only() -> None:
+    """Every event name is also a table cell and a JSON value; only headings count."""
+    document = _document()
+    headings = EVENT_HEADING.findall(document)
+
+    assert len(headings) == len(set(headings)), f"duplicate headings: {headings}"
+
+    in_json = document.replace(
+        '"event":"authorization"', '"event":"not-a-heading"', 1
+    )
+    assert in_json != document
+    assert "not-a-heading" not in _documented_events(in_json)
+
+    in_table = document.replace(
+        '| `event` | `"authorization"` |', '| `event` | `"not-a-row"` |', 1
+    )
+    assert in_table != document
+    assert "not-a-row" not in _documented_events(in_table)
 
 
 def test_documented_effects_are_exactly_the_registry_vocabulary() -> None:
@@ -140,8 +180,11 @@ def test_effect_drift_is_caught_in_both_directions() -> None:
     assert _documented_effects(orphaned) - tool_registry.EFFECTS == {"retired-effect"}
 
 
-def test_reason_code_prose_pins_no_literal_count() -> None:
-    assert not FIXED_REASON_COUNT.search(_document())
+def test_the_prose_pins_no_literal_vocabulary_count() -> None:
+    document = _document()
+
+    assert not FIXED_REASON_COUNT.search(document)
+    assert not FIXED_KIND_COUNT.search(document)
 
 
 def test_a_pinned_reason_count_would_be_caught() -> None:
@@ -154,3 +197,26 @@ def test_a_pinned_reason_count_would_be_caught() -> None:
 
     assert not FIXED_REASON_COUNT.search("one of the codes below")
     assert not FIXED_REASON_COUNT.search("Treat null as not recorded for any code")
+
+
+def test_a_pinned_record_count_would_be_caught() -> None:
+    """The stale literal this document actually carried, and its near misses."""
+    document = _document()
+
+    for pinned in ("## The two records", "## The **4** records", "## Three events"):
+        stale = document.replace("## The records", pinned, 1)
+        assert stale != document
+        assert FIXED_KIND_COUNT.search(stale)
+
+    assert FIXED_KIND_COUNT.search("`DEBUG` and `INFO` keep both records")
+    assert not FIXED_KIND_COUNT.search("One record per client construction")
+    assert not FIXED_KIND_COUNT.search("Two other things produce no record, by design")
+
+
+def test_restated_constants_are_the_exported_ones() -> None:
+    """Only where a source of truth exists to restate — see the module docstring."""
+    document = _document()
+
+    assert f"**{audit.MAX_VALUE_LENGTH} characters**" in document
+    assert f"`{audit.DEFAULT_RENDERING}`" in document
+    assert f"`{audit.UNRESOLVED_RENDERING}`" in document
