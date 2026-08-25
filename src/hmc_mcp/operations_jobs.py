@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
+from typing import Any
 
 from .client import HMCClient
 from .errors import HMCError
@@ -45,14 +46,15 @@ def _require_job_id(job_id: str) -> str:
     identifier = job_id.strip() if isinstance(job_id, str) else ""
     if not identifier:
         raise ValueError("job_id must be a non-empty HMC job identifier")
-    if any(
+    illegal = any(
         character in _ILLEGAL_JOB_ID_CHARACTERS or character.isspace()
         for character in identifier
-    ):
+    )
+    if illegal or set(identifier) == {"."}:
         raise ValueError(
-            f"job_id {job_id!r} is not an HMC job identifier: it contains "
-            "a path, query, or whitespace character. Store the UUID or JobID "
-            "on its own; pass a submission link as job_href."
+            f"job_id {job_id!r} is not an HMC job identifier: it is a path "
+            "segment, or contains a path, query, or whitespace character. Store "
+            "the UUID or JobID on its own; pass a submission link as job_href."
         )
     return identifier
 
@@ -64,6 +66,92 @@ def _clean_job_href(job_href: str | None) -> str | None:
     href, so echoing one back as if it were a usable link would be a lie.
     """
     return job_href.strip() if job_href and job_href.strip() else None
+
+
+async def _confirm_missing(
+    hmc: HMCClient, identifier: str, link: str, missing: HMCError
+) -> dict[str, Any] | None:
+    """Second-source a 404 raised against a caller-supplied link.
+
+    A per-operation SELF link embeds the target resource, not just the job
+    (``.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}``), so it can stop
+    resolving while the job is fine — this package's own decommission operations
+    remove such parents. Confirm against the global jobs path, which is keyed on
+    the identifier the caller actually asked about, before reporting the job gone.
+
+    The confirmation is best-effort: on firmware that does not serve the global
+    path it fails, and a failure leaves the original 404 standing rather than
+    replacing a documented ``found=False`` with an exception.
+    """
+    try:
+        job = await hmc.get_job(identifier, job_href=None)
+    except HMCError:
+        job = None
+    if job is not None:
+        _logger.warning(
+            "job_href %s no longer resolves for HMC job %s, but the global jobs "
+            "path still has it. Re-store the handle without the stale link.",
+            link,
+            identifier,
+        )
+        return job
+    _logger.warning(
+        "HMC job %s not found via job_href %s, and the global jobs path did not "
+        "have it either: reporting found=False. A deployment whose job path this "
+        "HMC does not serve produces the same answer. Detail: %s",
+        identifier,
+        link,
+        missing,
+    )
+    return None
+
+
+async def _read_job(
+    hmc: HMCClient, identifier: str, link: str | None
+) -> JobOutcome:
+    """Perform one poll, translating a confirmed missing job into ``found=False``."""
+    try:
+        job = await hmc.get_job(identifier, job_href=link)
+    except HMCError as exc:
+        if exc.status_code != _JOB_MISSING_STATUS:
+            raise
+        if link is not None:
+            job = await _confirm_missing(hmc, identifier, link, exc)
+        else:
+            _logger.warning(
+                "HMC job %s not found via the global jobs path: reporting "
+                "found=False. A deployment whose job path this HMC does not "
+                "serve produces the same answer. Detail: %s",
+                identifier,
+                exc,
+            )
+            job = None
+    outcome = job_outcome(identifier, job)
+    if link is not None and outcome.job_href != link:
+        return replace(outcome, job_href=link)
+    return outcome
+
+
+def _warn_if_another_job_answered(
+    identifier: str, outcome: JobOutcome, link: str | None
+) -> None:
+    """Warn once when a caller-supplied link produced a differently named job.
+
+    Only a supplied link can substitute a job: without one the request path is
+    built from the identifier, so a differing ``job_id`` there only means the
+    response labelled the same job with its other identifier.
+    """
+    if link is None or not outcome.found or outcome.job_id == identifier:
+        return
+    _logger.warning(
+        "HMC job_href %s returned job %s for requested identifier %s. The "
+        "outcome describes the job that was read. This is expected when the "
+        "stored handle is a JobID and the response carries a UUID; it is a "
+        "mispaired handle otherwise.",
+        link,
+        outcome.job_id,
+        identifier,
+    )
 
 
 async def get_job(
@@ -82,8 +170,15 @@ async def get_job(
     A job the HMC no longer knows about — reaped, deleted, or never present —
     returns ``found=False`` rather than raising, so a restarted worker can tell it
     apart from a job that is still running. Every other HMC failure still raises
-    ``HMCError``. A ``job_id`` that could address something other than one job is
-    rejected with ``ValueError`` rather than reported as a missing job.
+    ``HMCError``. A ``job_id`` that is a path segment, or that could address
+    something other than one job, is rejected with ``ValueError`` rather than
+    reported as a missing job.
+
+    A 404 against a supplied ``job_href`` is confirmed against the global jobs
+    path before it becomes ``found=False``: a per-operation SELF link embeds the
+    target resource, so it can stop resolving while the job is fine. When that
+    second read finds the job, this returns it and warns that the stored link is
+    stale.
 
     The returned ``job_href`` is the link the caller passed, when it passed one:
     that link demonstrably resolved, and rotating a stored handle to a SELF link
@@ -95,38 +190,16 @@ async def get_job(
     client fetches that link's path directly and validates only that it addresses
     a job resource, so a mispaired handle — the two columns of one row written
     out of step — reads the *other* job. The returned ``job_id`` is
-    response-derived, so it names the job actually read; when it differs from the
-    requested identifier this logs a warning rather than raising, because
-    ``jobs.job_identifier`` prefers the response's UUID or JobID over the link's
-    last segment and the two can legitimately differ on some firmware. Compare
-    ``job_id`` against what you stored before acting on the outcome.
+    response-derived, so it names the job actually read, and a difference from
+    the requested identifier logs a warning rather than raising. Treat that
+    comparison as advisory: ``jobs.job_identifier`` prefers the response's UUID
+    over its JobID, so a handle stored as a JobID differs from the returned
+    ``job_id`` on firmware that reports both, with no substitution involved.
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
-    try:
-        job = await hmc.get_job(identifier, job_href=link)
-    except HMCError as exc:
-        if exc.status_code != _JOB_MISSING_STATUS:
-            raise
-        _logger.warning(
-            "HMC job %s not found %s: reporting found=False. A deployment whose "
-            "job path this HMC does not serve produces the same answer. Detail: %s",
-            identifier,
-            f"via job_href {link}" if link else "via the global jobs path",
-            exc,
-        )
-        job = None
-    outcome = job_outcome(identifier, job)
-    if job is not None and outcome.job_id != identifier:
-        _logger.warning(
-            "HMC returned job %s for requested identifier %s%s. The outcome "
-            "describes the job that was read, not the one that was asked for.",
-            outcome.job_id,
-            identifier,
-            f" (job_href {link})" if link else "",
-        )
-    if link is not None and outcome.job_href != link:
-        return replace(outcome, job_href=link)
+    outcome = await _read_job(hmc, identifier, link)
+    _warn_if_another_job_answered(identifier, outcome, link)
     return outcome
 
 
@@ -157,16 +230,39 @@ async def wait_for_job(
     it is a pure read, and re-calling it with the same ``job_id`` and ``job_href``
     resumes exactly where it stopped. So size ``timeout_seconds`` to how long one
     session can be expected to last, and drive a longer wait by calling again.
+
+    A job that disappears **during** the wait is returned as a bare
+    ``found=False``: the outcome does not carry the status observed on the poll
+    before, because ``found=False`` means the HMC produced no entry and inventing
+    a last-known status on it would contradict that. The evidence is not lost —
+    the transition is logged at warning, naming the last status seen — but a
+    consumer that needs it must read the log or poll in its own loop.
     """
     identifier = _require_job_id(job_id)
+    link = _clean_job_href(job_href)
     validate_wait_timing(True, timeout_seconds, poll_interval)
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
+    last_status: str | None = None
+    observed = False
     while True:
-        outcome = await get_job(hmc, identifier, job_href=job_href)
-        if not outcome.found or outcome.status in TERMINAL_JOB_STATUSES:
-            return outcome
+        outcome = await _read_job(hmc, identifier, link)
+        if not outcome.found:
+            if observed:
+                _logger.warning(
+                    "HMC job %s disappeared during the wait; the last status "
+                    "observed was %s. Reporting found=False.",
+                    identifier,
+                    last_status,
+                )
+            break
+        observed = True
+        last_status = outcome.status
+        if outcome.status in TERMINAL_JOB_STATUSES:
+            break
         remaining = deadline - loop.time()
         if remaining <= 0:
-            return outcome
+            break
         await asyncio.sleep(min(poll_interval, remaining))
+    _warn_if_another_job_answered(identifier, outcome, link)
+    return outcome

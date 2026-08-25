@@ -309,6 +309,43 @@ async def test_get_job_warns_with_the_discarded_detail_when_a_job_is_missing(
 
 
 @pytest.mark.asyncio
+async def test_get_job_confirms_a_stale_link_against_the_global_path(
+    mock_hmc, caplog
+) -> None:
+    """A SELF link can stop resolving while the job is fine; do not call that gone."""
+    stale = mock_hmc.get(_SELF_HREF).mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+    fallback = mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(200, text=_job_entry("RUNNING"))
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert stale.called and fallback.called
+    assert (outcome.found, outcome.status) == (True, "RUNNING")
+    assert any("no longer resolves" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_get_job_reports_not_found_when_neither_path_has_the_job(
+    mock_hmc,
+) -> None:
+    """The confirming read is best-effort: its failure leaves found=False standing."""
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert outcome.found is False
+
+
+@pytest.mark.asyncio
 async def test_get_job_warns_when_the_hmc_answers_about_a_different_job(
     mock_hmc, caplog
 ) -> None:
@@ -343,6 +380,79 @@ async def test_get_job_does_not_warn_when_the_identifier_matches(
             assert (await get_job(hmc, _JOB_ID)).job_id == _JOB_ID
 
     assert caplog.records == []
+
+
+@pytest.mark.asyncio
+async def test_get_job_does_not_warn_about_a_relabelled_job_without_a_link(
+    mock_hmc, caplog
+) -> None:
+    """Without a link the path is built from the identifier, so no job was substituted.
+
+    The HMC reporting its other identifier is a relabel, not a mispaired handle.
+    """
+    relabelled = _job_entry("RUNNING").replace(
+        f"<id>urn:uuid:{_JOB_ID}</id>", "<id>urn:uuid:the-uuid-form</id>"
+    )
+    mock_hmc.get(_GLOBAL_PATH).mock(return_value=httpx.Response(200, text=relabelled))
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            assert (await get_job(hmc, _JOB_ID)).job_id == "the-uuid-form"
+
+    assert caplog.records == []
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_warns_about_a_substituted_job_once_not_per_poll(
+    mock_hmc, caplog
+) -> None:
+    """An hour of five-second polls must not emit hundreds of identical warnings."""
+    other = _job_entry("RUNNING").replace(_JOB_ID, "some-other-job")
+    finished = _job_entry("COMPLETED_OK").replace(_JOB_ID, "some-other-job")
+    mock_hmc.get(_SELF_HREF).mock(
+        side_effect=[
+            httpx.Response(200, text=other),
+            httpx.Response(200, text=finished),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await wait_for_job(
+                hmc,
+                _JOB_ID,
+                job_href=_SELF_HREF,
+                timeout_seconds=3600,
+                poll_interval=1,
+            )
+
+    assert outcome.job_id == "some-other-job"
+    assert len([r for r in caplog.records if "returned job" in r.getMessage()]) == 1
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_logs_the_last_status_when_a_job_vanishes_mid_wait(
+    mock_hmc, caplog
+) -> None:
+    """'Ran, then disappeared' is different evidence from 'never resolved'."""
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        side_effect=[
+            httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(404, text="Unknown job"),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await wait_for_job(
+                hmc, _JOB_ID, timeout_seconds=3600, poll_interval=1
+            )
+
+    assert outcome.found is False
+    assert any(
+        "disappeared during the wait" in r.getMessage() and "RUNNING" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 @pytest.mark.asyncio

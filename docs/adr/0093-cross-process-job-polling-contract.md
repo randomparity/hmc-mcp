@@ -75,6 +75,24 @@ docstring and this clause tell a consumer to compare `job_id` against what it st
 Rejected as too strong: raising on the mismatch. Rejected as too weak: returning the requested
 identifier, which would hide the substitution entirely.
 
+The comparison is **advisory**, and the ADR says so rather than leaning on it as the whole
+mitigation. `jobs.job_identifier` prefers the response's `UUID` over its `JobID`, so a handle a
+consumer stored as a JobID — which is what `hmc_wait_for_job`'s own docstring tells it to store —
+differs from the returned `job_id` on firmware that reports both, with no substitution involved.
+The warning therefore fires only when a `job_href` was supplied (without one the request path is
+built from the identifier, so a differing label cannot mean a different job was read) and at most
+once per `wait_for_job` call rather than once per poll — an hour at the default five-second
+interval would otherwise emit some seven hundred identical lines and bury the signal.
+
+A supplied link also carries a failure mode of its own. A per-operation SELF link embeds the
+target resource, not just the job — `.../LogicalPartition/{uuid}/do/PowerOn/Job/{id}` — so it can
+stop resolving while the job is fine, and this package ships decommission operations that remove
+such parents. A 404 raised against a supplied link is therefore **confirmed against the global
+jobs path** before it becomes `found=False`; when the second read finds the job, that result is
+returned and the stale link is logged. The confirmation is best-effort: on firmware that does not
+serve the global path it fails, and a failure leaves the original 404 standing rather than
+replacing a documented `found=False` with an exception.
+
 ### 3. `JobOutcome` is a package-owned model contract
 
 `JobOutcome` is exported and its fields are supported under ADR 0029 — unlike the `job` field it
@@ -151,8 +169,19 @@ change, so a supported operation must not inherit its timing semantics from one.
 
 `timeout_seconds=0` performs exactly one poll, matching `validate_wait_timing` and the existing
 `hmc_wait_for_job` tool. Timing arguments are validated by the same `jobs.validate_wait_timing`
-every other operation uses; a `job_id` that is empty, or that carries a path, query, or whitespace
-character and so would address something other than one job, is rejected with `ValueError`.
+every other operation uses; a `job_id` that is empty, that is a bare dot segment, or that carries a
+path, query, or whitespace character and so would address something other than one job, is rejected
+with `ValueError`. The dot-segment case is listed explicitly because the client's own
+`_reject_dot_segments` would otherwise catch it one layer down and raise `HMCError`, breaking the
+`ValueError` contract for exactly the input class that contract names.
+
+A job that vanishes **during** a wait is returned as a bare `found=False`. The status observed on
+the poll before is not carried on the outcome: `found=False` means the HMC produced no entry, and
+attaching a last-known status to it would contradict that and put a fourth row in clause 4's table.
+The evidence is not discarded — the transition logs at warning with the last status seen — but a
+consumer that must distinguish "ran for twenty minutes, then disappeared" from "never resolved"
+polls in its own loop with `get_job`. Carrying it on the result would be better for that consumer
+and is a change to what `found=False` means, so it belongs in a later decision, not here.
 
 The loop has **no retry**. Any non-404 HMC failure — a 5xx, a network timeout, an expired session —
 propagates as `HMCError` and ends the wait. That matters at the ADR's own motivating scale:
