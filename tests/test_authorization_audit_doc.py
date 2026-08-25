@@ -64,12 +64,12 @@ What this does not reach, so a green run is not read as more coverage than it is
   the `SOURCE_CLAUSE` wording in order, with or without `effective` — the
   environment-variable note writes no `source` identifier to anchor on, so ordinary prose
   is the only anchor available — and that note must stay one `- **` bullet. The regex is
-  the authority; this bullet pins no count, for the reason the paragraph above gives.
-  Line breaks within the clause do not matter: `_tls_passage`
-  collapses whitespace, so re-wrapping either paragraph is safe. Every violation fails
-  loud, but it fails naming a regex, and an editor of a settings document has no reason to
-  open a test named for a different one. `docs/authorization-audit.md` carries a marker
-  saying so; #504 covers the same marker for the other document.
+  the authority; this bullet pins no count, for the reason the paragraph above gives. Line
+  breaks within the clause do not matter, because `_tls_passage` collapses whitespace, so
+  re-wrapping either paragraph is safe. Every violation fails loud, but it fails naming a
+  regex, and an editor of a settings document has no reason to open a test named for a
+  different one. `docs/authorization-audit.md` carries a marker saying so; #504 covers the
+  same marker for the other document.
 
 The environment-variable restatement is kept rather than replaced by a cross-reference,
 which would have deleted half this machinery. It is where an operator deciding whether to
