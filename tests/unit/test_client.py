@@ -461,6 +461,35 @@ def test_tls_audit_record_names_where_the_setting_came_from(
     assert "abc123" not in json.dumps(caught[0])
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "expected_source"),
+    [
+        # from_mapping restores model_fields_set to the keys the caller
+        # supplied, so an omitted verify_ssl is absent from it. Naming
+        # HMC_VERIFY_SSL here would point the operator at a variable that has
+        # no effect on this connection — and, set to "true" against an
+        # effective False, at one that contradicts the value in the same record.
+        ({}, "field-default"),
+        ({"verify_ssl": False}, "explicit-argument"),
+    ],
+)
+def test_tls_audit_record_ignores_the_environment_for_an_isolated_config(
+    monkeypatch, kwargs, expected_source
+):
+    """ADR 0096: a config the environment cannot reach must not cite it."""
+    monkeypatch.setenv("HMC_VERIFY_SSL", "true")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig.from_mapping(
+            {"host": "hmc.test", "user": "hscroot", "password": "abc123", **kwargs}
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == expected_source
+
+
 @pytest.mark.asyncio
 async def test_logon_body_carries_escaped_credentials_to_the_transport(mock_hmc):
     """The reported defect, proved at the wire rather than at the builder (#284).
