@@ -269,13 +269,7 @@ def test_install_lpar_os_tool_submits_detached_installios(monkeypatch, mock_hmc)
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with (
-        patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command),
-        patch(
-            "hmc_mcp.server_vios.build_config",
-            new=lambda profile=None: make_config(),
-        ),
-    ):
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_lpar_os("aixprod", "sys1", **_INSTALL_KWARGS)
 
     assert result["pid"] == 4242
@@ -329,12 +323,8 @@ def test_install_lpar_os_unknown_name_fails_before_submission(monkeypatch, mock_
 
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
-    with (
-        patch(
-            "hmc_mcp.server_vios.build_config",
-            new=lambda profile=None: make_config(),
-        ),
-    ):
+
+    with patch("hmc_mcp.operations_install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No LPAR named"):
             hmc_install_lpar_os("nosuchlpar", "sys1", **_INSTALL_KWARGS)
 

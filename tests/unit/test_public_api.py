@@ -68,6 +68,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
+        "install_lpar_os",
+        "install_vios",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
@@ -373,6 +375,13 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         event loop, which the ``asyncio.run`` tool bodies were not. ADR 0094
         records how each derives the managed system its ownership guard needs
         when the caller omits the optional selector.
+        Before that, issue #366 extracted the ``installios`` install
+        orchestration out of the MCP tool bodies into ``operations_install``
+        and exported ``install_lpar_os`` and ``install_vios``. Both return the
+        CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
+        no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
+        ADR 0070 replaced them with the detached CLI submission, so that
+        addition composes with #364's ``wait_for_job`` nowhere.
         Before that, issue #364 added the cross-process job-polling
         operations ``get_job`` and ``wait_for_job`` and exported the
         ``JobOutcome`` result model (ADR 0093).
@@ -428,7 +437,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #365: the two extracted async DLPAR operations join the facade.
-    expected_digest = "31101f5456e1754fb07539c63e92955ac495c6375608dbc8af50a87221d98715"  # pragma: allowlist secret
+    expected_digest = "0e10de9b9d4e6f704078c55b38f25173b66abf9c51c9cf0fbcb41c3b132eae97"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -461,10 +470,21 @@ def _contract_callables(name: str, exported: type) -> list[tuple[str, object]]:
     calls unsupported are not gated here. For every other exported class a
     member inherited from ``BaseException`` or ``BaseModel`` is not this
     package's to annotate, and its bare ``*args`` is not a facade defect.
+
+    Classmethods are collected as well as plain functions. ``getattr`` on a
+    class returns a *bound* method for a classmethod, so ``inspect.isfunction``
+    is False for one and an ``isfunction``-only walk would silently skip it —
+    which is what happened to ``HMCConfig.from_mapping`` (ADR 0096), a supported
+    member this gate is meant to cover. The ``hmc_mcp`` module filter below is
+    what keeps the widening tight: pydantic and pydantic-settings contribute
+    two dozen inherited classmethods (``model_validate``, ``construct``,
+    ``settings_customise_sources``, ...) and every one of them is excluded by it.
     """
     members = [
         (member_name, member)
-        for member_name, member in inspect.getmembers(exported, inspect.isfunction)
+        for member_name, member in inspect.getmembers(
+            exported, lambda m: inspect.isfunction(m) or inspect.ismethod(m)
+        )
         if (member_name == "__init__" or not member_name.startswith("_"))
         and getattr(member, "__module__", "").startswith("hmc_mcp")
     ]
@@ -500,6 +520,27 @@ def test_public_error_hierarchy_is_frozen() -> None:
     assert issubclass(api.HMCTransportError, api.HMCError)
     assert issubclass(api.HMCCLIError, api.HMCError)
     assert issubclass(api.ConfigError, ValueError)
+
+
+def test_hmc_config_isolated_construction_member_is_supported() -> None:
+    """ADR 0096 extends HMCConfig's supported surface by one named member.
+
+    ADR 0029 declares "the fields and constructor of an exported package-owned
+    model" supported; ``from_mapping`` is neither, so its presence, its
+    signature, and its isolation guarantee are pinned here rather than resting
+    on the frozen ``__init__`` digest above — which a classmethod does not move.
+    """
+    assert "HMCConfig" in api.__all__
+    assert str(inspect.signature(api.HMCConfig.from_mapping)) == (
+        "(values: 'Mapping[str, Any]') -> 'Self'"
+    )
+
+    isolated = api.HMCConfig.from_mapping({"host": "row-host.example.com"})
+    assert type(isolated) is api.HMCConfig
+    # The guarantee, not the mechanism: no field may be left to a lower-priority
+    # settings source. Asserted here because a consumer reads this contract, not
+    # the implementation.
+    assert set(isolated.model_dump()) == set(api.HMCConfig.model_fields)
 
 
 def test_hmc_client_supported_lifecycle_members_are_present() -> None:

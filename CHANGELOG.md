@@ -24,6 +24,20 @@ carry a `### Facade manifest` section.
 
 ### Added
 
+- `HMCConfig.from_mapping(values)`: environment-isolated construction for library
+  consumers (#368, ADR 0096). `HMCConfig` is a pydantic-settings model with
+  `env_prefix="HMC_"`, so the ordinary constructor resolves every field a caller leaves
+  unset from the ambient process environment — right for the CLI and the MCP server,
+  wrong for a process building one config per HMC from database rows, where a stray
+  `HMC_HOST` silently retargets a backend, a stray `HMC_SSH_KEY_FILE` offers the wrong
+  key, and a stray `HMC_AGENT_ID` corrupts ADR 0011 ownership attribution.
+  `from_mapping` reads no environment variable and no dotenv file; every field the
+  mapping omits takes its declared default. `load_profile` is unchanged —
+  environment-over-TOML precedence on the operator path is deliberate. **Note:**
+  `_env_file=None` is *not* an isolation mechanism — it suppresses a dotenv source, never
+  the environment, and `HMCConfig` configures no dotenv source at all, so it does nothing.
+  `docs/environment-variables.md` gains a "Library Consumers" section covering precedence
+  and the isolation pattern.
 - Cross-process job polling: the `get_job` and `wait_for_job` operations in the new
   `hmc_mcp.operations_jobs` module, plus the `JobOutcome` facade export (#364, ADR 0093). The
   supported handle for a job is two persistable strings — `job_id` and an optional `job_href` —
@@ -72,6 +86,39 @@ carry a `### Facade manifest` section.
   `mount_optical_media` and `unmount_optical_media` as ownership-unguarded — they mutate a named
   client partition without an ADR 0011 ownership check. Exporting them does not change that; #440
   adds the guard, and doing so will add an `ownership_override` keyword to both signatures.
+- `set_lpar_processors` and `set_lpar_memory` operations and facade exports (#365, ADR
+  0013/0029/0092/0094): the DLPAR processor and memory workflows move out of the
+  `hmc_dlpar_proc` / `hmc_dlpar_mem` tool bodies into `operations_lpar`, so a consumer already
+  running an event loop can call them — the tool path reached them only through `asyncio.run`,
+  which raises inside a running loop. Tool names and existing parameters are unchanged.
+  **Both are now guarded.** ADR 0092 §3.2 classifies DLPAR resource changes as Reconfiguring,
+  which must be guarded unconditionally, so each calls `authorize_lpar_mutation` before the write
+  and each tool gains an appended `ownership_override: bool = False`. Two consumer-visible
+  consequences: a guarded call now needs SSH reachability to the HMC as well as REST, because the
+  ADR 0011 token is read over SSH (#459 makes that failure actionable); and a call that omits
+  `system_name_or_uuid` now discovers the owning managed system by a bounded fleet walk, because
+  the guard is keyed by CLI system name — supply the selector to skip it. ADR 0094 records the
+  derivation and its alternatives.
+- `install_lpar_os` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
+  the `installios` orchestration moves out of the `hmc_install_lpar_os` / `hmc_install_vios` tool
+  bodies into a new `operations_install` module, so a consumer already running an event loop can
+  call it — the tool path reached it only through `asyncio.run`. Both return the CLI bridge's
+  detach handle (resolved system and partition names, the remote PID, the install log path, and a
+  message restating them), not an HMC job identifier: there is no HMC job on this path (ADR 0069)
+  and nothing to poll. Tool names, parameter lists, and returned payloads are unchanged. Both are
+  classified in ADR 0092 §3.4a — outside §1's ownership rule by resource type, since `installios`
+  requires a Virtual I/O Server partition and ADR 0011 stamps no token on one.
+  **Consumer note:** submission is not idempotent and neither operation checks the target's
+  partition type. A second concurrent call submits a second detached `installios` against the same
+  partition, and the install log path is keyed on the partition *name* alone — the managed system
+  is not part of it, and the redirect truncates — so two same-named partitions on different
+  managed systems behind one HMC share one log and destroy each other's only diagnostic record.
+  The returned `log_path` is not unique per system; serializing per partition name across every
+  managed system on the HMC is the caller's responsibility. A returned handle means the process
+  was backgrounded, not that `installios`
+  accepted the target — a refused non-VIOS target surfaces only in the HMC-side log (#460). Adding
+  a target-type check raises a new `ValueError` but adds no parameter, so it will not move the
+  frozen signature digest.
 
 ### Changed
 
@@ -105,6 +152,12 @@ carry a `### Facade manifest` section.
 
 ### Documentation
 
+- ADR 0096 records the decision behind `HMCConfig.from_mapping` and why documentation alone was
+  not enough (#368). `AGENTS.md` no longer teaches `HMCConfig(_env_file=None)` as the
+  credential-free idiom: that private pydantic-settings parameter suppresses a dotenv source
+  rather than the environment, `HMCConfig` configures no dotenv source at all so it is entirely
+  inert, and the guidance additionally told maintainers to delete the `monkeypatch.delenv` calls
+  that were the only thing isolating those tests.
 - ADR 0069 records the live-HMC survey finding that the HMC REST API does not advertise the
   `InstallLPAR`/`InstallVIOS` jobs at any surveyed firmware level (#381); the disposition of the
   affected tools is tracked in #410. No code change.
@@ -129,8 +182,27 @@ carry a `### Facade manifest` section.
   `assess_post_activation_affinity` (#363); this moves the frozen public signature digest. All four
   were already selected by ADR 0029's rule and were absent from the manifest by omission, not by
   decision, so this records the manifest catching up rather than a new capability.
+- Added: `set_lpar_processors`, `set_lpar_memory` (#365, ADR 0094); this moves the frozen public
+  signature digest. Both take `system_name_or_uuid` and `ownership_override` as keyword-only
+  parameters; the managed-system selector stays optional per ADR 0063, so a `hmc_mcp.api` caller
+  may omit it and have the owning system derived.
+- Added: `install_lpar_os`, `install_vios` (#366); this moves the frozen public signature digest.
+  Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
+  package composes all five keys itself, and no firmware level can add or remove one. The keys
+  `system`, `partition`, `pid`, `log_path` and `message` are pinned by a contract test
+  (`tests/unit/test_install_operations.py`). Changing one is a consumer-visible break even though
+  it moves neither the manifest nor the signature digest, so it needs the same minor release.
+  Typing the shape so the digest can see it is tracked by #468.
 - Removed: none.
 - Renamed: none.
+- Exported model/literal changes: `HMCConfig` gained the `from_mapping(values)` classmethod
+  (#368, ADR 0096). ADR 0029 declares "the fields and constructor of an exported package-owned
+  model" supported, so a classmethod extends that model's supported surface and this is a minor
+  release under the `0.x` rule. On its own it does **not** move the frozen public signature
+  digest: that digest hashes each export's `inspect.signature`, which for a pydantic model is
+  the field-derived `__init__`, and a method changes no field. This change adds no
+  `api.__all__` entry — the digest move recorded above is `get_job` / `wait_for_job` /
+  `JobOutcome`'s (#364), not this one's.
 - Exported model/literal changes: `LparCreation` gained the
   `stamp_policy: Literal["best-effort", "required"]` field (defaults to `"best-effort"`), which
   moves the frozen public signature digest. The audit event vocabulary gained the
@@ -140,7 +212,8 @@ carry a `### Facade manifest` section.
 - Unchanged otherwise: #410 rebuilt `hmc_install_lpar_os` / `hmc_install_vios`
   on the HMC CLI `installios` bridge (ADR 0070). These are MCP tools, not
   `hmc_mcp.api` exports; their parameter changes do not move the frozen
-  manifest or its signature digest. #362 likewise removed the
+  manifest or its signature digest — the operations behind them that #366 later
+  exported are separate names with their own signatures. #362 likewise removed the
   `hmc_detach_optical_mapping` MCP tool and the `detach_optical_mapping`
   operation; neither was exported from `hmc_mcp.api`, so the manifest and the
   frozen signature digest are unmoved and no minor release is gated on it.

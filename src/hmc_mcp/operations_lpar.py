@@ -1112,7 +1112,19 @@ async def _resolve_and_authorize_lpar(
 
 
 async def _partition_name(hmc: HMCClient, lpar_uuid: str, lpar_label: str) -> str:
-    """Read one partition's CLI name, rejecting a UUID that names no partition."""
+    """Read one partition's CLI name, and fail if the UUID has no partition.
+
+    Two different failures, only one of which this function raises. A UUID that
+    names nothing is rejected by the GET itself — ``client._get`` raises
+    ``HMCError`` on the 404 and it propagates from here unchanged, naming the
+    partition the caller got wrong. The ``ValueError`` below covers the narrower
+    case of a resource that reads back but carries no ``PartitionName``.
+
+    Both stop the caller before the ADR 0094 fleet walk, which is the point:
+    ``is_uuid`` is a format check, so without this the walk would read up to
+    ``MAX_PARENT_DISCOVERY_SYSTEMS`` partition feeds before reporting a missing
+    partition as a missing *system*.
+    """
     lpar = await hmc.get_logical_partition(lpar_uuid)
     lpar_name = ((lpar or {}).get("Resource") or {}).get("PartitionName")
     if not lpar_name:

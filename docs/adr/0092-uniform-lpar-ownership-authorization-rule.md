@@ -61,7 +61,10 @@ them, so there is no token to authorize against. That excludes the VIOS mutation
 `power_vios`, `hmc_delete_vios`, `hmc_install_vios`, `hmc_restore_vios`,
 `hmc_backup_vios`, `hmc_vios_update` — and also `hmc_install_lpar_os`, despite its
 name, because `installios` requires its `-p` partition to be of type Virtual I/O
-Server (`server_vios.py:267`).
+Server. #366 moved that determination's subject out of the tool body into
+`operations_install.py`, where §3.4a now classifies both install operations; the
+premise is stated there at `:197` and still in the tool docstring at
+`server_vios.py:237`.
 
 Also out of scope: read operations; managed-system-, user- and cluster-scoped
 mutations that name no partition (`create_volume_group`, `create_media_repository`,
@@ -96,16 +99,20 @@ decision in this class.
 
 ### 3. Classification
 
-Exhaustive as of the current commit. Guard-call sites are `authorize_lpar_mutation` unless
+Exhaustive as of `b41e658`, and extended in place by §6 as later PRs add operations —
+each such row names the issue that added it. That extension is a **reviewer obligation, not yet
+mechanically enforced**: §5's partition test does not exist, and #369 owns it. Until it lands, the
+anchor commit is where the tables were last verified exhaustive, not a standing guarantee that a
+later export cannot arrive without a row. Guard-call sites are `authorize_lpar_mutation` unless
 noted. "Unguarded" is a defect against this ADR, not a standing exemption; standing
 exemptions are §3.4 only. The **Tracking** column names the issue that closes each
 defect; a row with no issue must read `none yet` rather than be left blank, so the
 gap is visible. No row reads `none yet`, and #369 must not close while one does.
 
-§3, §4 and §5 are maintained forward: a PR that moves a cited definition
-re-verifies the `file:line` citations in those sections, and a PR that adds or
-reclassifies an operation edits the tables (§6). §Context above is not — it is the
-survey as it stood at `b41e658` and its citations are read against that commit.
+The same obligation covers the citations: a PR that moves a definition cited in
+§3, §4 or §5 re-verifies that `file:line` in the same change. §Context above is
+exempt — it is the survey as it stood at `b41e658`, and its citations are read
+against that commit rather than maintained forward.
 
 #### 3.1 Destructive — guard unconditionally
 
@@ -133,8 +140,8 @@ first, exactly as for the tool rows in §3.2.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations_lpar.py:1249` | guarded (`:1294`) | — |
-| `clear_lpar_boot_order` | `operations_lpar.py:1316` | guarded (`:1348`) | — |
+| `set_lpar_boot_order` | `operations_lpar.py:1288` | guarded (`:1333`) | — |
+| `clear_lpar_boot_order` | `operations_lpar.py:1355` | guarded (`:1387`) | — |
 | `assign_dedicated_pcie_slot` | `operations_pcie.py:160` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations_pcie.py:180` | guarded (`:220`) | — |
 | `assign_sriov_logical_port` | `operations_pcie.py:315` | guarded (`:311`, via `_resolve_lpar`) | — |
@@ -142,8 +149,8 @@ first, exactly as for the tool rows in §3.2.
 | `add_vnic` | `operations_ssh_network.py:614` | guarded (`:409`, via `_preflight_add:496` → `_resolve:403`) | — |
 | `remove_vnic` | `operations_ssh_network.py:737` | guarded (`:409`, via `_resolve`) | — |
 | `set_minimum_affinity_policy` | `operations_ssh_network.py:280` | guarded (`:293`) | — |
-| `set_lpar_processors` | `operations_lpar.py:1134` | guarded (`:1092`, `:1107`, via `_apply_dlpar_document:1113` → `_resolve_and_authorize_lpar:1045`) | — |
-| `set_lpar_memory` | `operations_lpar.py:1170` | guarded (`:1092`, `:1107`, via `_apply_dlpar_document`) | — |
+| `set_lpar_processors` | `operations_lpar.py:1173` | guarded (`:1110`, and `:1146` on the override branch, via `_apply_dlpar_document:1152` → `_resolve_and_authorize_lpar:1060`) | — |
+| `set_lpar_memory` | `operations_lpar.py:1209` | guarded (`:1110`, and `:1146` on the override branch, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations_assignments.py:272` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations_adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations_adapters.py:51` | **unguarded** | #372 |
@@ -223,6 +230,8 @@ exempt anyway.
 | `deploy_partition_template` (`operations_templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
 | `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_lpm.py:140`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
+| `install_lpar_os` (`operations_install.py:152`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
+| `install_vios` (`operations_install.py:268`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 
 **3.4b — LPAR-mutating, exempt because the signature cannot express the check**
 
@@ -242,11 +251,31 @@ the gate most needs to see.
 They sit in the exemption register, rather than in §3.2 as ordinary defects, only
 because no amount of guard-call work fixes them — the signature has to change first.
 
-`hmc_install_lpar_os` is absent from every table above because §1 puts it out of
-scope: `installios` requires a Virtual I/O Server partition. #366 proposes extracting
-a NIM install operation covering LPARs as well as VIOS. If that operation can target a
-`LogicalPartition`, it is Destructive under §2 and §6 requires it to be classified and
-guarded in the PR that introduces it.
+`hmc_install_lpar_os` is absent from §3.1–§3.3 because §1 puts it out of scope:
+`installios` requires a Virtual I/O Server partition. #366 proposed extracting a NIM
+install operation covering LPARs as well as VIOS, and this paragraph made that
+extraction conditional: if the operation can target a `LogicalPartition`, it is
+Destructive under §2 and §6 requires it to be classified and guarded in the PR that
+introduces it.
+
+**Disposition of #366.** #366 shipped as a layering extraction only — it moved the
+tool bodies into `operations_install` unchanged and added no LPAR-capable install
+path. `install_lpar_os` can be *handed* a `LogicalPartition` selector, as the tool
+always could, but `installios` refuses a non-VIOS `-p`, so no mutation of a
+`LogicalPartition` is reachable through it. Both exports are therefore classified in
+§3.4a rather than §3.1, and §6's recording obligation is discharged there. The
+condition above is closed; it reopens only for an install path that can complete
+against a `LogicalPartition`.
+
+**What that closure rests on.** The refusal is ADR 0070's *assumption 5*, which
+that ADR lists under "Assumptions and unverified behaviors" — none of which had
+live-HMC verification. Confirming or refuting it in the next live-HMC window
+therefore reopens this classification, not merely ADR 0070's scope note: if any
+release has widened `installios` beyond VIOS-type targets, `install_lpar_os`
+becomes Destructive under §2 and moves to §3.1 with a guard. Nothing detects the
+widening on its own — submission is detached, so acceptance and refusal both
+reach only the HMC-side log — so the pointer in ADR 0070's item 5 is the
+detector, and it is deliberate.
 
 ### 4. The `power_lpar` decision
 
