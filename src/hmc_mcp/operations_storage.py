@@ -677,7 +677,10 @@ async def unmount_optical_media(
     an unload path would need its own live survey, on the ADR 0069 pattern.)
 
     Selection is currently a substring match over the serialized mapping and
-    does not reject an empty media_name or refuse an ambiguous match; see #439.
+    does not reject an empty media_name or refuse an ambiguous match.  In the
+    other direction, a media_name matching no mapping returns normally without a
+    POST, so returning is not evidence that a mapping was removed — ADR 0079
+    rejects that for VirtualSCSIMapping removal.  #439 owns both halves.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = await resolve_lpar_uuid(
