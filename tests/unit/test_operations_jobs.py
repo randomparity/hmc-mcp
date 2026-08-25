@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import httpx
 import pytest
@@ -264,6 +265,62 @@ async def test_get_job_echoes_the_handle_needed_to_poll_again(mock_hmc) -> None:
         outcome = await get_job(hmc, _JOB_ID)
 
     assert (outcome.job_id, outcome.job_href) == (_JOB_ID, _SELF_HREF)
+
+
+@pytest.mark.asyncio
+async def test_get_job_keeps_the_link_the_caller_polled_with(mock_hmc) -> None:
+    """A stored handle does not rotate to an untried link the response advertises."""
+    other_link = f"/rest/api/uom/LogicalPartition/other/do/PowerOn/Job/{_JOB_ID}"
+    mock_hmc.get(_SELF_HREF).mock(
+        return_value=httpx.Response(
+            200, text=_job_entry("RUNNING", self_href=other_link)
+        )
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert outcome.job_href == _SELF_HREF
+
+
+@pytest.mark.asyncio
+async def test_get_job_logs_the_discarded_detail_when_a_job_is_missing(
+    mock_hmc, caplog
+) -> None:
+    """The one place an error becomes an ordinary value leaves a record."""
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(404, text="<Message>Unknown job</Message>")
+    )
+
+    with caplog.at_level(logging.INFO, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            assert (await get_job(hmc, _JOB_ID)).found is False
+
+    assert any(
+        _JOB_ID in record.getMessage() and "Unknown job" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "corrupted", ["abc/def", "abc?x=1", "abc#frag", "abc%2e%2e", "abc def"]
+)
+async def test_job_operations_reject_a_corrupted_persisted_identifier(
+    mock_hmc, corrupted
+) -> None:
+    """A mangled stored handle fails loudly instead of reading as a reaped job."""
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="not an HMC job identifier"):
+            await get_job(hmc, corrupted)
+        with pytest.raises(ValueError, match="not an HMC job identifier"):
+            await wait_for_job(hmc, corrupted)
+
+    assert not [
+        call
+        for call in mock_hmc.calls
+        if call.request.url.path.startswith("/rest/api/uom/")
+    ]
 
 
 @pytest.mark.asyncio

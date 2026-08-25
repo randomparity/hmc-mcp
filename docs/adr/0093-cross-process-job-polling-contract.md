@@ -68,6 +68,22 @@ carries, which stays an opaque HMC resource mapping whose keys, nesting, and fir
 extensions are explicitly not a package contract (ADR 0029 `:102-106`). Consumers read `status`,
 `timed_out`, `error`, `found`, `job_id`, and `job_href`; they read `job` at their own risk.
 
+The type is shared, and the polling reading of its fields is scoped to this decision's two
+operations. `jobs.job_outcome` has six other callers, all of them *submitting* operations
+reporting a submission rather than a poll, and they do not satisfy the handle promise:
+`operations_provision.py:284` and `operations_lpar.py:332` pass the literal `"PowerOn"` as the
+identifier, and `operations_lpm.py:261` and `operations_decommission.py:466` fall back to `""`
+when a submission returned no identifier. Their `found=False` means "this submission returned no
+job entry", not "the HMC reaped it", and `operations_lpm._finish_job` pairs it with
+`timed_out=False` for a fire-and-forget submission — a combination clause 4's table does not
+cover, because that table describes a poll.
+
+Making all seven producers satisfy one reading would mean rewriting five call sites and their
+tests for no consumer that asked for it, so this ADR bounds the claim instead: the handle and
+`found` semantics below apply to outcomes returned by `operations_jobs`, and both `JobOutcome`'s
+docstring and the changelog say so. A consumer polls a `job_id` that came from a polling operation
+or from the HMC's own submission response — never one a submitting operation labelled.
+
 Two fields are new: `found` (clause 4) and `job_href` (clause 2). Neither carries a default. The
 repository already tests that this result's MCP output schema has `required` equal to its full
 property set — `hmc_wait_for_job` and the LPM recovery tools are asserted to share one stable wait
@@ -82,7 +98,8 @@ ways the HMC declines to produce the job: an HTTP 404, and a response carrying n
 translation lives in the operations layer, so `HMCClient.get_job` keeps raising and no other caller
 of it silently loses an error.
 
-The resulting distinction is the one a restarted worker needs:
+The resulting distinction is the one a restarted worker needs — for an outcome this decision's two
+operations returned (clause 3 bounds the claim):
 
 | observation | meaning |
 | --- | --- |

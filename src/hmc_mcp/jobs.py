@@ -54,15 +54,24 @@ class JobOutcome:
     ``job`` is the exception: it is an opaque HMC resource mapping whose keys and
     nesting are firmware-dependent and are not promised.
 
-    ``job_id`` and ``job_href`` are the two persistable strings that identify the
-    job. A consumer can store them, restart, and poll again with a freshly
-    constructed client.
+    The polling reading of the fields holds for outcomes returned by
+    ``operations_jobs.get_job`` and ``operations_jobs.wait_for_job``: ``job_id``
+    and ``job_href`` are the two persistable strings identifying the job, so a
+    consumer can store them, restart, and poll again with a freshly constructed
+    client; ``found`` says whether the HMC produced that job, and is the field to
+    read first; and ``timed_out`` reports only that no terminal status was
+    observed, so a job the HMC no longer knows about reports ``found=False``
+    *and* ``timed_out=True``, while ``found=True`` with ``timed_out=True`` means
+    the job is still running.
 
-    ``found`` says whether the HMC produced the job at all, and is the field to
-    read first. ``timed_out`` reports only that no terminal status was observed,
-    so a job the HMC no longer knows about reports ``found=False`` *and*
-    ``timed_out=True``; only ``found=True`` with ``timed_out=True`` means the job
-    is still running.
+    A *submitting* operation that returns this type reports its own submission,
+    not a poll, and the fields read differently there. ``job_id`` may be a
+    synthetic label rather than a pollable handle (``power_lpar`` and
+    ``provision_lpar`` pass ``"PowerOn"``; the LPM and decommission paths fall
+    back to ``""``), ``found=False`` means "this submission returned no job
+    entry" rather than "the HMC reaped it", and a fire-and-forget submission can
+    pair ``found=False`` with ``timed_out=False``. Poll a handle only when it
+    came from a polling operation or from the HMC's own submission response.
     """
 
     job_id: str

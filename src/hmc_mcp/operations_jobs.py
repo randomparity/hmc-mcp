@@ -10,6 +10,7 @@ them from inside its own running event loop.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 
 from .client import HMCClient
@@ -21,16 +22,38 @@ from .jobs import (
     validate_wait_timing,
 )
 
+_logger = logging.getLogger(__name__)
+
 #: The one HTTP status that means "this HMC does not have that job" rather than
 #: "this request failed". Every other status stays an ``HMCError``.
 _JOB_MISSING_STATUS = 404
 
+#: Characters that would make an identifier address something other than one job
+#: under ``/rest/api/uom/jobs/{id}``. No HMC-minted UUID or JobID contains one.
+_ILLEGAL_JOB_ID_CHARACTERS = frozenset("/?#%")
+
 
 def _require_job_id(job_id: str) -> str:
-    """Return the trimmed identifier, rejecting one that addresses no job."""
+    """Return the trimmed identifier, rejecting one that addresses no job.
+
+    A handle read back from storage can arrive truncated, mangled, or from the
+    wrong column. Left unchecked, a value carrying a path or query separator
+    builds a different request path, and the HMC's 404 would then be reported as
+    the load-bearing ``found=False`` — telling a worker its job is gone when the
+    request never addressed the job at all. Fail at the boundary instead.
+    """
     identifier = job_id.strip() if isinstance(job_id, str) else ""
     if not identifier:
         raise ValueError("job_id must be a non-empty HMC job identifier")
+    if any(
+        character in _ILLEGAL_JOB_ID_CHARACTERS or character.isspace()
+        for character in identifier
+    ):
+        raise ValueError(
+            f"job_id {job_id!r} is not an HMC job identifier: it contains "
+            "a path, query, or whitespace character. Store the UUID or JobID "
+            "on its own; pass a submission link as job_href."
+        )
     return identifier
 
 
@@ -59,7 +82,14 @@ async def get_job(
     A job the HMC no longer knows about — reaped, deleted, or never present —
     returns ``found=False`` rather than raising, so a restarted worker can tell it
     apart from a job that is still running. Every other HMC failure still raises
-    ``HMCError``.
+    ``HMCError``. A ``job_id`` that could address something other than one job is
+    rejected with ``ValueError`` rather than reported as a missing job.
+
+    The returned ``job_href`` is the link the caller passed, when it passed one:
+    that link demonstrably resolved, and rotating a stored handle to a SELF link
+    from the response would risk replacing a working link with an untried one on
+    exactly the firmware ``job_href`` exists to serve. Only when the caller
+    supplied none does the response's SELF link become the handle.
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
@@ -68,9 +98,16 @@ async def get_job(
     except HMCError as exc:
         if exc.status_code != _JOB_MISSING_STATUS:
             raise
+        _logger.info(
+            "HMC job %s not found (HTTP %s%s): reporting found=False. Detail: %s",
+            identifier,
+            _JOB_MISSING_STATUS,
+            " via job_href" if link else " via the global jobs path",
+            exc,
+        )
         job = None
     outcome = job_outcome(identifier, job)
-    if outcome.job_href is None and link is not None:
+    if link is not None and outcome.job_href != link:
         return replace(outcome, job_href=link)
     return outcome
 
