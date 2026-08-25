@@ -17,8 +17,6 @@ from .documents import (
     LparResources,
     OsType,
     PartitionType,
-    build_dlpar_mem_document,
-    build_dlpar_proc_document,
     build_lpar_document,
 )
 from .jobs import validate_wait_timing
@@ -38,6 +36,8 @@ from .operations_lpar import (
     power_lpar,
     power_on_outcome,
     rename_lpar,
+    set_lpar_memory,
+    set_lpar_processors,
     validate_affinity_request,
 )
 from .operations_assignments import (
@@ -309,6 +309,7 @@ def hmc_dlpar_proc(
     resources: LparResources = LparResources(),
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """DLPAR processor hot-plug: change CPU resources on a running LPAR.
 
@@ -327,20 +328,21 @@ def hmc_dlpar_proc(
         resources: Processor fields to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
-            partition name; when omitted the name is searched fleet-wide.
+            partition name; when omitted the name is searched fleet-wide and the
+            owning system is discovered for the ownership check.
+        ownership_override: Bypass ownership rejection only after explicit
+            operator approval.
     """
-    xml = build_dlpar_proc_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            return await set_lpar_processors(
+                hmc,
+                lpar_name_or_uuid,
+                resources,
+                system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
-            try:
-                return await hmc.modify_logical_partition(lpar_uuid, xml)
-            except HMCError as exc:
-                _check_lpar_write_error(exc)
-                raise
 
     return _run(_go)
 
@@ -351,6 +353,7 @@ def hmc_dlpar_mem(
     resources: LparResources = LparResources(),
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """DLPAR memory hot-plug: change memory resources on a running LPAR.
 
@@ -366,20 +369,21 @@ def hmc_dlpar_mem(
         resources: Memory fields in MiB to change; omitted fields stay unchanged.
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
-            partition name; when omitted the name is searched fleet-wide.
+            partition name; when omitted the name is searched fleet-wide and the
+            owning system is discovered for the ownership check.
+        ownership_override: Bypass ownership rejection only after explicit
+            operator approval.
     """
-    xml = build_dlpar_mem_document(resources)
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            lpar_uuid = await resolve_lpar_uuid(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+            return await set_lpar_memory(
+                hmc,
+                lpar_name_or_uuid,
+                resources,
+                system_name_or_uuid=system_name_or_uuid,
+                ownership_override=ownership_override,
             )
-            try:
-                return await hmc.modify_logical_partition(lpar_uuid, xml)
-            except HMCError as exc:
-                _check_lpar_write_error(exc)
-                raise
 
     return _run(_go)
 
@@ -531,8 +535,9 @@ def hmc_power_on_lpar(
         force: Submit PowerOn even when the partition already reports running.
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
-            partition name; when omitted the name is searched fleet-wide.
-            Required when the server runs with HMC_AUTHORIZE_POWER_OPERATIONS set.
+            partition name; when omitted the name is searched fleet-wide. With
+            HMC_AUTHORIZE_POWER_OPERATIONS set it also spares the ownership
+            guard a fleet-wide search for the partition's owning system.
         affinity_assessment: Optional target-bound captured affinity evidence and
             explicit warning or fail-closed response intent.
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
@@ -628,7 +633,8 @@ def hmc_power_off_lpar(
     lpar_name_or_uuid: accepts either a PartitionName or a UUID.
     system_name_or_uuid disambiguates duplicate partition names; it is otherwise
     unused when lpar_name_or_uuid is already a UUID, unless the server runs with
-    HMC_AUTHORIZE_POWER_OPERATIONS set, which requires it either way.
+    HMC_AUTHORIZE_POWER_OPERATIONS set, where it also spares the ownership guard
+    a fleet-wide search for the partition's owning system.
     immediate=True forces an immediate power off (no graceful OS shutdown).
     Returns the submitted job. This changes the state of a real partition.
 
@@ -642,7 +648,8 @@ def hmc_power_off_lpar(
         poll_interval: Seconds between job polls when waiting; must be positive.
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID used to disambiguate its name.
-            Required when the server runs with HMC_AUTHORIZE_POWER_OPERATIONS set.
+            With HMC_AUTHORIZE_POWER_OPERATIONS set it also spares the ownership
+            guard a fleet-wide search for the partition's owning system.
         ownership_override: Bypass ADR 0011 ownership rejection only after operator
             approval; has no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set.
     """

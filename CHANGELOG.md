@@ -30,10 +30,13 @@ carry a `### Facade manifest` section.
   unchanged and opening no SSH connection. When `true`, `power_lpar` reads the ownership
   token before submitting the job and refuses a partition another agent owns; it accepts a
   new `ownership_override` parameter with the same audited semantics as its guarded
-  siblings, and requires `system_name_or_uuid` because the token is read per managed
-  system. `hmc_power_on_lpar`, `hmc_power_off_lpar`, and `hmc-mcp lpars power-on` /
-  `power-off` gained the matching `ownership_override` argument, and the two CLI commands
-  gained `--system`. `provision_lpar` passes the override on its own activation leg, which
+  siblings. `system_name_or_uuid` stays optional (ADR 0063): the guard routes through
+  ADR 0094's shared resolve chain, which derives the owning managed system by bounded
+  parent discovery when the caller omits it and confirms the partition lives on the
+  named system when they supply it. `hmc_power_on_lpar`, `hmc_power_off_lpar`, and
+  `hmc-mcp lpars power-on` / `power-off` gained the matching `ownership_override`
+  argument, and the two CLI commands gained `--system`, which replaces the fleet walk
+  with one read. `provision_lpar` passes the override on its own activation leg, which
   targets the partition that workflow just created and stamped. Both new parameters move
   the frozen public signature digest.
 - `HMCConfig.from_mapping(values)`: environment-isolated construction for library
@@ -98,6 +101,19 @@ carry a `### Facade manifest` section.
   `mount_optical_media` and `unmount_optical_media` as ownership-unguarded — they mutate a named
   client partition without an ADR 0011 ownership check. Exporting them does not change that; #440
   adds the guard, and doing so will add an `ownership_override` keyword to both signatures.
+- `set_lpar_processors` and `set_lpar_memory` operations and facade exports (#365, ADR
+  0013/0029/0092/0094): the DLPAR processor and memory workflows move out of the
+  `hmc_dlpar_proc` / `hmc_dlpar_mem` tool bodies into `operations_lpar`, so a consumer already
+  running an event loop can call them — the tool path reached them only through `asyncio.run`,
+  which raises inside a running loop. Tool names and existing parameters are unchanged.
+  **Both are now guarded.** ADR 0092 §3.2 classifies DLPAR resource changes as Reconfiguring,
+  which must be guarded unconditionally, so each calls `authorize_lpar_mutation` before the write
+  and each tool gains an appended `ownership_override: bool = False`. Two consumer-visible
+  consequences: a guarded call now needs SSH reachability to the HMC as well as REST, because the
+  ADR 0011 token is read over SSH (#459 makes that failure actionable); and a call that omits
+  `system_name_or_uuid` now discovers the owning managed system by a bounded fleet walk, because
+  the guard is keyed by CLI system name — supply the selector to skip it. ADR 0094 records the
+  derivation and its alternatives.
 - `install_lpar_os` and `install_vios` operations and facade exports (#366, ADR 0013/0029/0070):
   the `installios` orchestration moves out of the `hmc_install_lpar_os` / `hmc_install_vios` tool
   bodies into a new `operations_install` module, so a consumer already running an event loop can
@@ -181,6 +197,10 @@ carry a `### Facade manifest` section.
   `assess_post_activation_affinity` (#363); this moves the frozen public signature digest. All four
   were already selected by ADR 0029's rule and were absent from the manifest by omission, not by
   decision, so this records the manifest catching up rather than a new capability.
+- Added: `set_lpar_processors`, `set_lpar_memory` (#365, ADR 0094); this moves the frozen public
+  signature digest. Both take `system_name_or_uuid` and `ownership_override` as keyword-only
+  parameters; the managed-system selector stays optional per ADR 0063, so a `hmc_mcp.api` caller
+  may omit it and have the owning system derived.
 - Added: `install_lpar_os`, `install_vios` (#366); this moves the frozen public signature digest.
   Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
   package composes all five keys itself, and no firmware level can add or remove one. The keys

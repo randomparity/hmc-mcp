@@ -516,7 +516,7 @@ def lpars_power_on(
         None,
         "--system",
         "-s",
-        help="Managed system name or UUID; required with HMC_AUTHORIZE_POWER_OPERATIONS",
+        help="Managed system name or UUID; with HMC_AUTHORIZE_POWER_OPERATIONS it also spares the ownership guard a fleet-wide search",
     ),
     ownership_override: bool = typer.Option(
         False,
@@ -556,7 +556,7 @@ def lpars_power_off(
         None,
         "--system",
         "-s",
-        help="Managed system name or UUID; required with HMC_AUTHORIZE_POWER_OPERATIONS",
+        help="Managed system name or UUID; with HMC_AUTHORIZE_POWER_OPERATIONS it also spares the ownership guard a fleet-wide search",
     ),
     ownership_override: bool = typer.Option(
         False,

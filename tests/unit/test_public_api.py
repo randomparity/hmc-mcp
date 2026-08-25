@@ -81,6 +81,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_lpar",
         "power_lpar",
         "rename_lpar",
+        "set_lpar_processors",
+        "set_lpar_memory",
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
@@ -370,12 +372,19 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         added ``ownership_override`` to ``power_lpar``, and it added the
         ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
         ``__init__`` signature is derived from its fields.
+        Before that, issue #365 extracted the DLPAR processor and
+        memory workflows out of the ``hmc_dlpar_proc`` / ``hmc_dlpar_mem``
+        tool bodies into ``set_lpar_processors`` and ``set_lpar_memory`` —
+        async, guarded per ADR 0092 §3.2, and callable from inside a running
+        event loop, which the ``asyncio.run`` tool bodies were not. ADR 0094
+        records how each derives the managed system its ownership guard needs
+        when the caller omits the optional selector.
         Before that, issue #366 extracted the ``installios`` install
         orchestration out of the MCP tool bodies into ``operations_install``
         and exported ``install_lpar_os`` and ``install_vios``. Both return the
         CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
         no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
-        ADR 0070 replaced them with the detached CLI submission, so this
+        ADR 0070 replaced them with the detached CLI submission, so that
         addition composes with #364's ``wait_for_job`` nowhere.
         Before that, issue #364 added the cross-process job-polling
         operations ``get_job`` and ``wait_for_job`` and exported the
@@ -432,9 +441,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #371: power_lpar gains ownership_override and HMCConfig gains
-    # authorize_power_operations (ADR 0092 §4). Recomputed over #366's
-    # baseline 5c7b317e, which this branch merged.
-    expected_digest = "32b6008fbd0ff5cf8936fde10459cbb45cada5040fd2d6d5abf8425dac10a54c"  # pragma: allowlist secret
+    # authorize_power_operations (ADR 0092 §4). Recomputed over #365's
+    # baseline 0e10de9b, which this branch merged.
+    expected_digest = "44e83b7a4ce2297db57e9dbe674f5908de7b2689b62bdcc73976b01807ac9ef8"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

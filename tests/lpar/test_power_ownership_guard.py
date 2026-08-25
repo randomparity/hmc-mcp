@@ -22,6 +22,7 @@ from hmc_mcp.ssh import HMCCLIError
 
 LPAR_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_UUID = "22222222-2222-2222-2222-222222222222"
+OTHER_LPAR_UUID = "33333333-3333-3333-3333-333333333333"
 OWNED_BY_ALICE = "[hmc-mcp owner:alice created:2026-08-14]"
 OWNED_BY_BOB = "[hmc-mcp owner:bob created:2026-08-14]"
 
@@ -48,6 +49,12 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
     hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "aix1"}}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
+    # ADR 0094's resolve chain confirms the partition lives on the selected
+    # system, and walks the fleet when no selector is given.
+    hmc.list_logical_partitions.return_value = [{"UUID": LPAR_UUID}]
+    hmc.list_managed_systems.return_value = [
+        {"UUID": SYSTEM_UUID, "Resource": {"SystemName": "sys1"}}
+    ]
     return hmc
 
 
@@ -223,7 +230,11 @@ async def test_ownership_override_submits_the_job_and_is_audited(caplog) -> None
     ]
     assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
     assert records[0]["event"] == "ownership-override"
-    assert (records[0]["system"], records[0]["lpar"]) == ("sys1", "aix1")
+    # The system is the caller's selector verbatim, not its resolved CLI name:
+    # ADR 0094's override path deliberately skips the managed-system read so a
+    # degraded fleet cannot block an approved exception. The partition name is
+    # resolved, so the record still identifies what was bypassed.
+    assert (records[0]["system"], records[0]["lpar"]) == (SYSTEM_UUID, "aix1")
 
 
 @pytest.mark.asyncio
@@ -274,30 +285,75 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enabled_guard_refuses_without_a_managed_system_selector() -> None:
-    hmc = _hmc(authorize=True)
+async def test_enabled_guard_discovers_the_owning_system_without_a_selector() -> None:
+    """ADR 0063 keeps the selector optional; ADR 0094 derives the system."""
+    hmc = _hmc(authorize=True, agent_id="alice")
 
-    with pytest.raises(ValueError, match="system_name_or_uuid is required"):
-        await power_lpar(hmc, LPAR_UUID, power_on=False)
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=OWNED_BY_ALICE),
+    ) as read:
+        result = await power_lpar(hmc, LPAR_UUID, power_on=False)
 
-    hmc.submit_job.assert_not_awaited()
-    hmc.get_logical_partition.assert_not_awaited()
-    hmc.get_managed_system.assert_not_awaited()
+    assert result.job == {"UUID": "job-uuid"}
+    hmc.list_managed_systems.assert_awaited_once()
+    read.assert_awaited_once_with(hmc.config, "sys1", "aix1")
 
 
 @pytest.mark.asyncio
-async def test_missing_selector_is_refused_even_with_an_override() -> None:
-    """The override waives ownership, not the guard's need to identify the token."""
+async def test_enabled_guard_refuses_a_partition_owned_by_a_discovered_system() -> None:
+    hmc = _hmc(authorize=True, agent_id="alice")
+
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=OWNED_BY_BOB),
+    ):
+        with pytest.raises(PermissionError, match="ownership_override=true"):
+            await power_lpar(hmc, LPAR_UUID, power_on=False)
+
+    hmc.submit_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_override_without_a_selector_skips_the_fleet_walk() -> None:
+    """A degraded fleet must not block the operator's approved exception."""
     hmc = _hmc(authorize=True)
 
-    with pytest.raises(ValueError, match="system_name_or_uuid is required"):
-        await power_lpar(
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=OWNED_BY_BOB),
+    ) as read:
+        result = await power_lpar(
             hmc,
             LPAR_UUID,
             power_on=False,
             ownership_override=True,
         )
 
+    assert result.job == {"UUID": "job-uuid"}
+    read.assert_not_awaited()
+    hmc.list_managed_systems.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enabled_guard_refuses_a_uuid_paired_with_a_foreign_system() -> None:
+    """The token must never be read off a system the partition does not live on."""
+    hmc = _hmc(authorize=True, agent_id="alice")
+    hmc.list_logical_partitions.return_value = [{"UUID": OTHER_LPAR_UUID}]
+
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=OWNED_BY_ALICE),
+    ) as read:
+        with pytest.raises(ValueError, match="does not belong to managed system"):
+            await power_lpar(
+                hmc,
+                LPAR_UUID,
+                power_on=False,
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+
+    read.assert_not_awaited()
     hmc.submit_job.assert_not_awaited()
 
 

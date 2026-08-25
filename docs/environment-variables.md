@@ -67,14 +67,17 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   the HMC is shared with other agents or human operators and that cost is
   acceptable.
 
-  Turning it on changes three things beyond the ownership check. A managed-system
-  selector becomes required — the token is read per managed system, so without one
-  the guard cannot tell which system's token applies, and the call is refused
-  before any HMC traffic. A partition another agent owns is refused with a
-  `PermissionError`; retry it as a deliberate, audited exception with
-  `ownership_override` (`--ownership-override` on the CLI). `provision_lpar`
-  passes that override on its own activation leg, because the partition it powers
-  is the one the same workflow just created and stamped.
+  Turning it on changes two things beyond the ownership check. A partition another
+  agent owns is refused with a `PermissionError`; retry it as a deliberate, audited
+  exception with `ownership_override` (`--ownership-override` on the CLI).
+  `provision_lpar` passes that override on its own activation leg, because the
+  partition it powers is the one the same workflow just created and stamped.
+
+  And a call that omits the managed-system selector pays a bounded fleet walk: the
+  ownership token is read per managed system, so the guard derives the owning one
+  by scanning partition feeds (ADR 0094, capped at 100 systems with a timeout).
+  Supplying `system_name_or_uuid` — `--system` on the CLI — replaces that walk with
+  one read, which is worth doing for a power-cycling orchestrator.
 
   And **power operations gain a dependency on the HMC's SSH interface.** The
   ownership read runs the HMC CLI over SSH, so with the guard on a power operation

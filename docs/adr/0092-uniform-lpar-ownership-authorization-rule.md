@@ -8,14 +8,15 @@ Accepted (2026-08-25)
 
 ADR 0011 established the advisory ownership protocol: a token
 (`[hmc-mcp owner:<agent_id> created:<date>]`) stamped into the partition
-description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations_lpar.py:495`)
+description, and `authorize_lpar_mutation` (`src/hmc_mcp/operations_lpar.py:502`)
 to reject a mutation of a partition another agent owns. ADR 0011 named the tools
 that *stamp* and *read* the token. It never said which mutations must *check* it.
 
 The result is coverage set by whoever wrote the operation. Inside one module,
-`delete_lpar` (`operations_lpar.py:728`, guard at `:743`), `rename_lpar` (`:886`,
-guard at `:902`) and the boot-order operations (guards at `:1006`, `:1060`) call the
-guard; `power_lpar` (`:790`) — exported from the same facade — does not. Across
+`delete_lpar` (`operations_lpar.py:735`, guard at `:750`), `rename_lpar` (`:847`,
+guard at `:863`) and the boot-order operations (guards at `:1365`, `:1419`) call the
+guard; `power_lpar` (`:770`) — exported from the same facade — guards only
+when the operator opts in (§4). Across
 modules the split is wider still: the PCIe, SR-IOV, vNIC and minimum-affinity
 operations guard; the adapter, storage, provisioning, DLPAR and LPM operations do
 not. Nothing records why, so a maintainer adding a new mutating operation has no
@@ -107,17 +108,21 @@ later export cannot arrive without a row. Guard-call sites are `authorize_lpar_m
 noted. "Unguarded" is a defect against this ADR, not a standing exemption; standing
 exemptions are §3.4 only. The **Tracking** column names the issue that closes each
 defect; a row with no issue must read `none yet` rather than be left blank, so the
-gap is visible. No row reads `none yet` at this commit, and #369 must not close
-while one does.
+gap is visible. No row reads `none yet`, and #369 must not close while one does.
+
+The same obligation covers the citations: a PR that moves a definition cited in
+§3, §4 or §5 re-verifies that `file:line` in the same change. §Context above is
+exempt — it is the survey as it stood at `b41e658`, and its citations are read
+against that commit rather than maintained forward.
 
 #### 3.1 Destructive — guard unconditionally
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `delete_lpar` | `operations_lpar.py:728` | guarded (`:743`) | — |
+| `delete_lpar` | `operations_lpar.py:735` | guarded (`:750`) | — |
 | `decommission_lpar` | `operations_decommission.py:610` | guarded (`:287`, `:641`, `:660`, via `authorize_decommission_lpar_ownership_snapshot`) | — |
-| `rename_lpar` | `operations_lpar.py:886` | guarded (`:902`) | — |
-| `set_lpar_ownership_description` | `operations_lpar.py:693` | guarded (`:719`) | — |
+| `rename_lpar` | `operations_lpar.py:847` | guarded (`:863`) | — |
+| `set_lpar_ownership_description` | `operations_lpar.py:700` | guarded (`:726`) | — |
 | `hmc_sync_lpar_profile` | `server_profiles.py:121` | **unguarded** | #441 |
 
 `rename_lpar` is Destructive rather than Reconfiguring because the partition name
@@ -136,8 +141,8 @@ first, exactly as for the tool rows in §3.2.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `set_lpar_boot_order` | `operations_lpar.py:961` | guarded (`:1006`) | — |
-| `clear_lpar_boot_order` | `operations_lpar.py:1028` | guarded (`:1060`) | — |
+| `set_lpar_boot_order` | `operations_lpar.py:1320` | guarded (`:1365`) | — |
+| `clear_lpar_boot_order` | `operations_lpar.py:1387` | guarded (`:1419`) | — |
 | `assign_dedicated_pcie_slot` | `operations_pcie.py:160` | guarded (`:220`, via `_authorize_pcie_profile_request`) | — |
 | `unassign_dedicated_pcie_slot` | `operations_pcie.py:180` | guarded (`:220`) | — |
 | `assign_sriov_logical_port` | `operations_pcie.py:315` | guarded (`:311`, via `_resolve_lpar`) | — |
@@ -145,6 +150,8 @@ first, exactly as for the tool rows in §3.2.
 | `add_vnic` | `operations_ssh_network.py:614` | guarded (`:409`, via `_preflight_add:496` → `_resolve:403`) | — |
 | `remove_vnic` | `operations_ssh_network.py:737` | guarded (`:409`, via `_resolve`) | — |
 | `set_minimum_affinity_policy` | `operations_ssh_network.py:280` | guarded (`:293`) | — |
+| `set_lpar_processors` | `operations_lpar.py:1205` | guarded (`:1142`, and `:1092` on the override branch, via `_apply_dlpar_document:1152` → `_resolve_and_authorize_lpar:1060`) | — |
+| `set_lpar_memory` | `operations_lpar.py:1241` | guarded (`:1142`, and `:1092` on the override branch, via `_apply_dlpar_document`) | — |
 | `apply_lpar_pcie_assignments` | `operations_assignments.py:272` | guarded by delegation to the PCIe/SR-IOV/vNIC operations above | — |
 | `add_network_adapter` | `operations_adapters.py:32` | **unguarded** | #372 |
 | `add_vios_adapter` | `operations_adapters.py:51` | **unguarded** | #372 |
@@ -181,12 +188,17 @@ they are classified here and must gain both an operation and its guard (§6):
 
 | Entry point | Location | Status | Tracking |
 |---|---|---|---|
-| `hmc_dlpar_proc` | `server_lpars.py:307` | **unguarded** | #365 |
-| `hmc_dlpar_mem` | `server_lpars.py:349` | **unguarded** | #365 |
 | `hmc_set_lpar_msp` | `server_lpar_config.py:368` | **unguarded** | #441 |
 | `hmc_set_lpar_proc_compat` | `server_lpar_config.py:417` | **unguarded** | #441 |
 | `hmc_modify_lpar` | `server_lpars.py:193` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` at `:241` with no ownership check | #442 |
 | `hmc lpar modify` (CLI) | `cli_lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_lpars.py:1067` | #442 |
+
+`hmc_dlpar_proc` and `hmc_dlpar_mem` were rows in this table at `b41e658`. #365
+extracted `set_lpar_processors` and `set_lpar_memory` from those tool bodies and
+guarded both, so the pair left Domain B for the Domain A table above — the §6
+transition this table exists to drive. The tools still exist and still carry the
+same names and behaviour; they delegate. ADR 0094 records how the guard obtains a
+managed-system name when the caller omits the optional selector.
 
 `hmc_modify_lpar` is the sharpest illustration of the gap this ADR closes: one tool,
 one `ownership_override` argument, and two legs on opposite sides of the line — and
@@ -197,10 +209,10 @@ either wrapper.
 
 | Operation | Location | Status | Tracking |
 |---|---|---|---|
-| `power_lpar` | `operations_lpar.py:790` | guarded when opted in (`:851`, via `_authorize_power_lpar` at `:763`); §4 | #371 |
+| `power_lpar` | `operations_lpar.py:770` | guarded when opted in (`:809`, via `_resolve_and_authorize_lpar`); §4 | #371 |
 
-`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_lpars.py:500`)
-and `hmc_power_off_lpar` (`server_lpars.py:616`) delegate to it, and so does the
+`power_lpar` is the whole class. Both `hmc_power_on_lpar` (`server_lpars.py:504`)
+and `hmc_power_off_lpar` (`server_lpars.py:615`) delegate to it, and so does the
 CLI, so one decision covers every entry path.
 
 #### 3.4 Standing exemptions
@@ -214,7 +226,7 @@ exempt anyway.
 
 | Operation | Reason |
 |---|---|
-| `create_and_stamp_lpar` (`operations_lpar.py:584`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
+| `create_and_stamp_lpar` (`operations_lpar.py:591`) | Creates the partition. No prior owner exists to authorize against; it stamps the token instead (ADR 0011). |
 | `provision_lpar` (`operations_provision.py:432`) | Composite create-and-stamp. Its post-create legs act on the partition it just created and owns, inside one workflow. |
 | `deploy_partition_template` (`operations_templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
 | `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
@@ -282,74 +294,51 @@ When true, `power_lpar` calls `authorize_lpar_mutation` with the same
 not, and its docstring carries the ADR 0011 advisory language telling the caller to
 read the description first.
 
-**The selector becomes required when the flag is on.** `power_lpar` is the only
-guarded LPAR operation whose `system_name_or_uuid` is optional; every sibling in
-§3.1 and §3.2 takes it positionally and required. The token is read per managed
-system, and `resolve_lpar_ownership_names` needs a system UUID to reach
-`get_managed_system`, so with the flag on and no selector the guard cannot
-identify which system's token applies. #371 refuses that call with a `ValueError`,
-before any HMC traffic, rather than powering a partition whose ownership was never
-read. The refusal is unconditional on `ownership_override`: the override waives the
-ownership *decision*, not the guard's need to name the partition it is auditing.
-The two entry paths that could omit the selector gained one — `hmc-mcp lpars
-power-on` and `power-off` take `--system` — and `hmc_power_on_lpar` /
-`hmc_power_off_lpar` already accepted it.
+**The selector stays optional.** `power_lpar` is one of the operations ADR 0063
+decided **"Optional, not required"** for, and this flag does not change that. An
+earlier revision of #371 made the selector required when the flag was on, because
+the ownership token is read per managed system and nothing then derived a
+partition's owning system. ADR 0094 (#365) removed that constraint: its
+`_resolve_and_authorize_lpar` derives the owning system by the same bounded parent
+discovery `find_partition_by_name` already applies to a fleet-ambiguous name — the
+100-system cap, the timeout, and the "supply managed-system scope" remedy. #371
+calls that shared chain rather than adding a second convention in the same module,
+so ADR 0063 is left intact and no caller that omits the selector breaks when the
+flag goes on.
 
-This narrows [ADR 0063](0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md),
-which decided **"Optional, not required"** for this very parameter, named
-`hmc_power_off_lpar` as its precedent, and rejected a required selector as
-something that "breaks positional Python-API callers for no authorization gain
-under a table". It does not reopen that decision. The parameter stays optional in
-the signature; the requirement is conditional on a setting that is off by default,
-so no existing caller breaks, and it is keyword-only, so no positional call site
-shifts. And the gain 0063 could not claim now exists: under this flag the selector
-is not a `targets`-table disambiguator but the key the ownership token is read
-under, so omitting it is not "today's fleet-wide search" — it is an ownership check
-that cannot run. The consequence 0063's reasoning implies is real and worth stating:
-an operator holding an `all-targets` grant, for whom 0063 preserved fleet-wide
-omission, will see power calls that omit the selector refused once this flag is on.
+Supplying the selector is still worth it: it replaces the fleet walk with one
+managed-system read. `hmc_power_on_lpar` / `hmc_power_off_lpar` already accepted
+it, and `hmc-mcp lpars power-on` / `power-off` gained `--system` so the remedy the
+discovery failure message names is reachable from the CLI too.
 
-A caller holding only an LPAR UUID
-recovers the selector by listing partitions per managed system
-(`hmc_list_lpars(system_name_or_uuid=…)`); the fleet-wide ownership feed does not
-help, as `list_lpar_ownership` records that its entries do not name their parent
-system.
-
-**Deriving the system instead was not ruled out — it was not evidenced.** The
-obvious alternative is to read the parent system off the partition, which would
-keep the selector optional and remove the caller's unreconciled assertion
-altogether. `client_storage.py:68` already does exactly that for a
-`VirtualIOServer`, pulling an exact `ManagedSystem` UUID out of an
-`AssociatedManagedSystem` href, and `xmlutil.element_to_dict` preserves `href`, so
-the machinery exists. What is missing is evidence that a `LogicalPartition`
-document carries the same link: no fixture, no captured payload and no survey in
-this repo shows one, and #371 declined to put an unverified payload assumption on
-an authorization path. #466 tracks the live-REST check — the kind #374 ran for the
-description field — that would settle it. If the link is there, the selector goes
-back to optional and this paragraph, the `ValueError` and the two CLI flags are
-withdrawn.
+That shared chain also closes the gap where a partition UUID paired with a
+mismatched selector would read the token off a system the partition does not live
+on: `_verify_partition_on_system` rejects the pairing, and the discovery branch
+matches by UUID. #462 still owns the same gap on the guarded operations that take a
+required selector and do not route through this chain.
 
 **The cost, stated.** Guarding `power_lpar` costs **one SSH login plus two REST
 GETs** on every call that does not carry `ownership_override=True`.
 
-The SSH login is the chain `authorize_lpar_mutation` (`operations_lpar.py:495`) →
+The SSH login is the chain `authorize_lpar_mutation` (`operations_lpar.py:502`) →
 `ssh_commands.get_lpar_description` (`ssh_commands.py:1577`) →
 `ssh.run_hmc_command` (`ssh.py:34`) → a fresh `asyncssh.connect` (`ssh.py:38`) per
 invocation. `run_hmc_command` opens and closes its connection inside the call; the
 only long-lived SSH connection in the package is the console path (`ssh.py:80`),
 which commands do not share. There is no pool and no reuse. (With
-`ownership_override=True` the guard returns at `operations_lpar.py:505` after
+`ownership_override=True` the guard returns at `operations_lpar.py:512` after
 auditing, before the read — so **`authorize_lpar_mutation` itself** pays nothing.
-The *call* still pays the two REST GETs below: every caller resolves the ownership
-names before invoking the guard, because the audit record for an approved override
-names the system and the partition. #371 corrected an earlier reading of this
-parenthetical that took the override path to be free end to end.)
+A caller that resolves the ownership names first still pays the two REST GETs
+below, because the audit record for an approved override names the system and the
+partition. #371 corrected an earlier reading of this parenthetical that took the
+override path to be free end to end; ADR 0094's `_resolve_and_authorize_lpar`
+narrows it further — it skips the fleet walk on an override and pays one name read.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
-(`operations_lpar.py:510`), which the guard needs to turn UUIDs into the CLI names
-the SSH command takes. It calls `_system_name` (`:517`) → `hmc.get_managed_system`
-(`:527`) and `hmc.get_logical_partition` (`:518`) **unconditionally** — supplying
-`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:899`) and
+(`operations_lpar.py:517`), which the guard needs to turn UUIDs into the CLI names
+the SSH command takes. It calls `_system_name` (`:524`) → `hmc.get_managed_system`
+(`:534`) and `hmc.get_logical_partition` (`:525`) **unconditionally** — supplying
+`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:860`) and
 `_authorize_pcie_profile_request` (`operations_pcie.py:217`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
@@ -389,7 +378,7 @@ Two distinct mechanisms, deliberately not interchangeable:
 - **Per-call operator override.** Every guarded operation takes
   `ownership_override: bool = False`. When true the guard is bypassed for that one
   call and the bypass is audited by `_audit_lpar_ownership_override`
-  (`operations_lpar.py:427`). This is an operator-approved exception to a *single*
+  (`operations_lpar.py:434`). This is an operator-approved exception to a *single*
   mutation. It is not an exemption from this ADR, and an operation that accepts it
   is still classified and still guarded.
 - **Standing exemption.** A row in §3.4b with a recorded reason. This is the only
@@ -442,8 +431,8 @@ machine-readable and exhaustively enforced by the existing registry test, so the
 domain enumerates itself.
 
 **What counts as a guard.** Exactly two callables:
-`authorize_lpar_mutation` (`operations_lpar.py:495`) and
-`authorize_decommission_lpar_ownership_snapshot` (`operations_lpar.py:477`). Nothing
+`authorize_lpar_mutation` (`operations_lpar.py:502`) and
+`authorize_decommission_lpar_ownership_snapshot` (`operations_lpar.py:484`). Nothing
 else, and no new one without amending this list.
 
 **"Reaches" means call-graph reachability, not a direct call.** Six operations in §3
