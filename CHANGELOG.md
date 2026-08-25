@@ -63,7 +63,16 @@ carry a `### Facade manifest` section.
   call it — the tool path reached it only through `asyncio.run`. Both return the CLI bridge's
   detach handle (resolved system and partition names, the remote PID, the install log path, and a
   message restating them), not an HMC job identifier: there is no HMC job on this path (ADR 0069)
-  and nothing to poll. Tool names, parameter lists, and returned payloads are unchanged.
+  and nothing to poll. Tool names, parameter lists, and returned payloads are unchanged. Both are
+  classified in ADR 0092 §3.4a — outside §1's ownership rule by resource type, since `installios`
+  requires a Virtual I/O Server partition and ADR 0011 stamps no token on one.
+  **Consumer note:** submission is not idempotent and neither operation checks the target's
+  partition type. A second concurrent call submits a second detached `installios` against the same
+  partition and truncates the first install's log; serializing per partition is the caller's
+  responsibility. A returned handle means the process was backgrounded, not that `installios`
+  accepted the target — a refused non-VIOS target surfaces only in the HMC-side log (#460). Adding
+  a target-type check raises a new `ValueError` but adds no parameter, so it will not move the
+  frozen signature digest.
 
 ### Changed
 

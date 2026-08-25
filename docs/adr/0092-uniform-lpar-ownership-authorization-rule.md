@@ -96,7 +96,8 @@ decision in this class.
 
 ### 3. Classification
 
-Exhaustive as of `b41e658`. Guard-call sites are `authorize_lpar_mutation` unless
+Exhaustive as of `b41e658`, and extended in place by §6 as later PRs add operations —
+each such row names the issue that added it. Guard-call sites are `authorize_lpar_mutation` unless
 noted. "Unguarded" is a defect against this ADR, not a standing exemption; standing
 exemptions are §3.4 only. The **Tracking** column names the issue that closes each
 defect; a row with no issue must read `none yet` rather than be left blank, so the
@@ -212,6 +213,8 @@ exempt anyway.
 | `deploy_partition_template` (`operations_templates.py:88`) | Creates the partition and stamps it per ADR 0014. |
 | `capture_lpar_console` (`server_console.py:25`) | Holds a console session and releases it. Changes no partition existence, configuration or run state. |
 | `hmc_migrate_validate_lpar` (`server_lpm.py:140`) | Calls `migrate_lpar(validate=True)`, which submits an LPM validation job and changes nothing. Once #373 guards the migrating branch, this tool reaches a guarded function on a branch that never mutates. |
+| `install_lpar_os` (`operations_install.py:90`) | Added by #366. `installios` requires its `-p` partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there is no ownership token to authorize against — the determination §1 already records for the `hmc_install_lpar_os` tool body this operation was extracted from. The operation *can be handed* a `LogicalPartition` selector and does not check the type locally; `installios` refuses a non-VIOS `-p` on the HMC, and because submission is detached that refusal reaches only the install log. That honesty gap is tracked by #460; it does not create an ownership decision, because a refused install mutates nothing. |
+| `install_vios` (`operations_install.py:169`) | Added by #366. Same reason. Resolves its target through the `VirtualIOServer` feed, so a name selector cannot name a `LogicalPartition` at all; a UUID selector is passed through unchecked, with the same #460 caveat. |
 
 **3.4b — LPAR-mutating, exempt because the signature cannot express the check**
 
@@ -231,11 +234,21 @@ the gate most needs to see.
 They sit in the exemption register, rather than in §3.2 as ordinary defects, only
 because no amount of guard-call work fixes them — the signature has to change first.
 
-`hmc_install_lpar_os` is absent from every table above because §1 puts it out of
-scope: `installios` requires a Virtual I/O Server partition. #366 proposes extracting
-a NIM install operation covering LPARs as well as VIOS. If that operation can target a
-`LogicalPartition`, it is Destructive under §2 and §6 requires it to be classified and
-guarded in the PR that introduces it.
+`hmc_install_lpar_os` is absent from §3.1–§3.3 because §1 puts it out of scope:
+`installios` requires a Virtual I/O Server partition. #366 proposed extracting a NIM
+install operation covering LPARs as well as VIOS, and this paragraph made that
+extraction conditional: if the operation can target a `LogicalPartition`, it is
+Destructive under §2 and §6 requires it to be classified and guarded in the PR that
+introduces it.
+
+**Disposition of #366.** #366 shipped as a layering extraction only — it moved the
+tool bodies into `operations_install` unchanged and added no LPAR-capable install
+path. `install_lpar_os` can be *handed* a `LogicalPartition` selector, as the tool
+always could, but `installios` refuses a non-VIOS `-p`, so no mutation of a
+`LogicalPartition` is reachable through it. Both exports are therefore classified in
+§3.4a rather than §3.1, and §6's recording obligation is discharged there. The
+condition above is closed; it reopens only for an install path that can complete
+against a `LogicalPartition`.
 
 ### 4. The `power_lpar` decision
 

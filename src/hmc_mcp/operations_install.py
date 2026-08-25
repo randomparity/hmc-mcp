@@ -41,7 +41,14 @@ async def _submit_install(
     vlan_id: str,
     mac_address: str | None,
 ) -> dict[str, Any]:
-    """Resolve one install target's CLI names and detach ``installios`` on it."""
+    """Resolve one install target's CLI names and detach ``installios`` on it.
+
+    The validation below is the entry-path-independent copy: it protects a
+    facade caller, who reaches no tool body. The tool bodies keep their own copy
+    because theirs runs before a client is opened, which this one cannot — the
+    client is already an argument here. ``build_installios_command`` validates a
+    third time as the injection boundary, trusting neither.
+    """
     validate_install_source(install_source)
     validate_ipv4_address(client_ip)
     validate_ipv4_subnet_mask(subnet_mask)
@@ -126,14 +133,23 @@ async def install_lpar_os(
     Requires hmcsuperadmin-level HMC authority (e.g. hscroot) and a powered-off
     target partition that already exists with a profile.
 
-    ADR 0092 §6 classification: Destructive under §2, and out of scope for §1's
-    ownership guard by resource type. ``installios`` requires its ``-p``
-    partition to be a Virtual I/O Server, which ADR 0011 never stamps, so there
-    is no ownership token to authorize against — the determination ADR 0092 §1
-    already recorded for the ``hmc_install_lpar_os`` tool body this operation
-    was extracted from. The extraction moves the code, not the classification;
-    the ADR 0092 §6 obligation attaches to a *new* install path that can
-    complete against a ``LogicalPartition``, which this one cannot.
+    Ownership authorization is classified in ADR 0092 §3.4a, which is the
+    authoritative record; that row, not this docstring, carries the reasoning.
+
+    No target-type check happens here. ``lpar_name_or_uuid`` resolves through
+    the ``LogicalPartition`` feed and a UUID selector is passed through with no
+    lookup at all, so an ordinary partition resolves successfully.
+    ``installios`` refuses a non-Virtual-I/O-Server ``-p`` on the HMC, and
+    because submission is detached that refusal reaches only the install log: a
+    returned handle means the process was backgrounded, not that ``installios``
+    accepted the target. Tracked by #460.
+
+    Submission is not idempotent. Nothing detects an install already running
+    against the partition, so a second call submits a second detached process.
+    Both then write the same target disk, and because the log path is derived
+    from the partition name the second submission truncates the first install's
+    log — destroying the only diagnostic record either one has. Serializing
+    calls per partition is the caller's responsibility.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH
@@ -196,9 +212,13 @@ async def install_vios(
 
     Identical mechanism, contract, and return value to
     :func:`install_lpar_os` — see it for the submit-and-detach semantics, the
-    detach handle's fields, and the ``installios`` argument grammar. This
-    operation differs only in resolving its target as a Virtual I/O Server
-    partition rather than a logical partition.
+    detach handle's fields, the ADR 0092 §3.4a ownership classification, and the
+    ``installios`` argument grammar. This operation differs only in resolving
+    its target through the ``VirtualIOServer`` feed rather than the
+    ``LogicalPartition`` one, so a *name* selector cannot name a logical
+    partition; a UUID selector is still passed through without a lookup, so the
+    unchecked-target caveat and #460 apply to it unchanged. Submission is not
+    idempotent here either.
 
     Args:
         hmc: Connected client; its configuration also carries the SSH

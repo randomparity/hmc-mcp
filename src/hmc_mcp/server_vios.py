@@ -186,6 +186,10 @@ def hmc_install_vios(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
+    # Not redundant with install_vios's own validation: this copy runs before
+    # client_from_env opens an HMC session, so a malformed argument is rejected
+    # without logging on. The operation's copy cannot — its client is already
+    # constructed. Keep both in step.
     validate_install_source(install_source)
     validate_ipv4_address(vios_ip)
     validate_ipv4_subnet_mask(nim_subnetmask)
@@ -280,6 +284,10 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
+    # Not redundant with install_lpar_os's own validation: this copy runs before
+    # client_from_env opens an HMC session, so a malformed argument is rejected
+    # without logging on. The operation's copy cannot — its client is already
+    # constructed. Keep both in step.
     validate_install_source(install_source)
     validate_ipv4_address(lpar_ip)
     validate_ipv4_subnet_mask(nim_subnetmask)
