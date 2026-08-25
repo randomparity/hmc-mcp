@@ -7,6 +7,7 @@ from hmc_mcp.affinity_assessment import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
     AffinityEvidence,
+    CapturedPolicyState,
     PolicyState,
 )
 from hmc_mcp.documents import (
@@ -186,6 +187,7 @@ __all__ = [
     "AffinityAssessmentInput",
     "AffinityAssessmentResult",
     "AffinityEvidence",
+    "CapturedPolicyState",
     "PolicyState",
     "HMCConfig",
     "ConfigError",

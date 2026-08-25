@@ -17,6 +17,7 @@ def _input(**changes: object) -> AffinityAssessmentInput:
         "current_score": 90,
         "predicted_score": 94,
         "policy_state": "absent",
+        "captured_policy_state": "absent",
         "configured_minimum": None,
         "captured_minimum": None,
         "captured_at": NOW - timedelta(hours=1),
@@ -36,6 +37,7 @@ def _input(**changes: object) -> AffinityAssessmentInput:
             {
                 "current_score": 79,
                 "policy_state": "configured",
+                "captured_policy_state": "configured",
                 "configured_minimum": 80,
                 "captured_minimum": 80,
             },
@@ -60,6 +62,10 @@ def test_classifies_supported_evidence(changes, classification) -> None:
     [
         ({"current_score": None}, "current score is missing"),
         ({"policy_state": "unsupported"}, "configured policy is unsupported"),
+        (
+            {"captured_policy_state": "unsupported"},
+            "captured policy is unsupported",
+        ),
         ({"captured_at": NOW - timedelta(hours=3)}, "captured evidence is stale"),
         (
             {"captured_at": NOW + timedelta(seconds=1)},
@@ -68,6 +74,7 @@ def test_classifies_supported_evidence(changes, classification) -> None:
         (
             {
                 "policy_state": "configured",
+                "captured_policy_state": "configured",
                 "configured_minimum": 80,
                 "captured_minimum": 75,
             },
@@ -80,6 +87,7 @@ def test_classifies_supported_evidence(changes, classification) -> None:
         (
             {
                 "policy_state": "configured",
+                "captured_policy_state": "absent",
                 "configured_minimum": 80,
                 "captured_minimum": None,
             },

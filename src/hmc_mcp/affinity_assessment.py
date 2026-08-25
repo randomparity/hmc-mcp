@@ -14,6 +14,7 @@ AffinityClassification = Literal[
     "none",
 ]
 PolicyState = Literal["configured", "absent", "unsupported"]
+CapturedPolicyState = Literal["configured", "absent", "unsupported", "missing"]
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class AffinityAssessmentInput:
     current_score: int | None
     predicted_score: int | None
     policy_state: PolicyState
+    captured_policy_state: CapturedPolicyState
     configured_minimum: int | None
     captured_minimum: int | None
     captured_at: datetime
@@ -41,6 +43,7 @@ class AffinityEvidence:
     current_score: int | None
     predicted_score: int | None
     policy_state: PolicyState
+    captured_policy_state: CapturedPolicyState
     configured_minimum: int | None
     captured_minimum: int | None
     captured_at: str
@@ -84,6 +87,7 @@ def _evidence(value: AffinityAssessmentInput) -> AffinityEvidence:
         current_score=value.current_score,
         predicted_score=value.predicted_score,
         policy_state=value.policy_state,
+        captured_policy_state=value.captured_policy_state,
         configured_minimum=value.configured_minimum,
         captured_minimum=value.captured_minimum,
         captured_at=value.captured_at.isoformat(),
@@ -119,6 +123,15 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
     _validate_threshold(value.optimization_threshold, "optimization_threshold")
     if value.policy_state not in {"configured", "absent", "unsupported"}:
         raise ValueError("policy_state must be configured, absent, or unsupported")
+    if value.captured_policy_state not in {
+        "configured",
+        "absent",
+        "unsupported",
+        "missing",
+    }:
+        raise ValueError(
+            "captured_policy_state must be configured, absent, unsupported, or missing"
+        )
     if (
         isinstance(value.stale_after_seconds, bool)
         or not isinstance(value.stale_after_seconds, int)
@@ -140,8 +153,16 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "configured policy is unsupported",
             "Verify platform support, then provide caller thresholds if no policy exists.",
         )
+    if value.captured_policy_state in {"unsupported", "missing"}:
+        return _unsupported(
+            value,
+            f"captured policy is {value.captured_policy_state}",
+            "Capture supported policy evidence before making an operator decision.",
+        )
     if value.policy_state == "absent" and (
-        value.configured_minimum is not None or value.captured_minimum is not None
+        value.configured_minimum is not None
+        or value.captured_policy_state != "absent"
+        or value.captured_minimum is not None
     ):
         return _unsupported(
             value,
@@ -154,7 +175,9 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "the configured minimum is missing",
             "Read the configured minimum again before making an operator decision.",
         )
-    if value.policy_state == "configured" and value.captured_minimum is None:
+    if value.policy_state == "configured" and (
+        value.captured_policy_state != "configured" or value.captured_minimum is None
+    ):
         return _unsupported(
             value,
             "policy state contradicts captured policy",

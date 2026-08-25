@@ -79,16 +79,17 @@ def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
         has_id = "lpar_id" in row
         name_matches = not has_name or row.get("lpar_name") == identity.name
         id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
-        if name_matches and id_matches and (has_name or has_id or len(rows) == 1):
+        if name_matches and id_matches and (has_name or has_id):
             matches.append(row)
     if len(matches) != 1:
         return None
     raw = matches[0].get("curr_lpar_score")
     if isinstance(raw, bool) or not isinstance(raw, (int, str)):
         return None
-    if isinstance(raw, str) and re.fullmatch(r"[0-9]{1,3}", raw) is None:
+    if isinstance(raw, str) and re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", raw) is None:
         return None
-    return int(raw)
+    score = int(raw)
+    return score if 0 <= score <= 100 else None
 
 
 async def assess_snapshot_affinity(
@@ -106,6 +107,22 @@ async def assess_snapshot_affinity(
     """Assess explicit current evidence against one validated captured snapshot."""
     snapshot = parse_snapshot(document)
     captured_policy = snapshot.observations.minimum_affinity_policy
+    policy_capability = next(
+        (
+            capability
+            for capability in snapshot.capabilities
+            if capability.name == "minimum-affinity-policy"
+        ),
+        None,
+    )
+    if policy_capability is None:
+        captured_policy_state = "missing"
+    elif not policy_capability.supported:
+        captured_policy_state = "unsupported"
+    elif captured_policy is None:
+        captured_policy_state = "absent"
+    else:
+        captured_policy_state = "configured"
     captured_minimum = (
         captured_policy.data.get("min_affinity_score")
         if captured_policy is not None
@@ -117,6 +134,7 @@ async def assess_snapshot_affinity(
             current_score=current_score,
             predicted_score=predicted_score,
             policy_state=policy_state,
+            captured_policy_state=captured_policy_state,
             configured_minimum=configured_minimum,
             captured_minimum=captured_minimum,
             captured_at=snapshot.captured_at,

@@ -22,6 +22,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "AffinityAssessmentInput",
         "AffinityAssessmentResult",
         "AffinityEvidence",
+        "CapturedPolicyState",
         "PolicyState",
         "HMCConfig",
         "ConfigError",
@@ -185,6 +186,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "AffinityAssessmentInput",
             "AffinityAssessmentResult",
             "AffinityEvidence",
+            "CapturedPolicyState",
             "PolicyState",
         },
         "hmc_mcp.client_adapters": {"AdapterType"},
@@ -424,7 +426,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #317: affinity assessment is reusable under ADR 0088.
-    expected_digest = "a4fc58c2b6f73a70b87c6509d03369abb35c85754a638ebe8155fe2325f10058"  # pragma: allowlist secret
+    expected_digest = "e2e2b0f95f113bb2631e8f664574acf79e9c751b8232642597ac3649fec67466"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

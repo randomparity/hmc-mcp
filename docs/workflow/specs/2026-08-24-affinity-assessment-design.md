@@ -12,8 +12,9 @@ actions without applying changes.
 ## Contract
 
 `AffinityAssessmentInput` is a frozen value with `captured_score`, `current_score`,
-`predicted_score`, current `configured_minimum`, `captured_minimum`, `captured_at`, `assessed_at`,
-`stale_after_seconds`, `regression_threshold`, and `optimization_threshold`. Scores are integer
+`predicted_score`, current `policy_state`, `captured_policy_state`, current
+`configured_minimum`, `captured_minimum`, `captured_at`, `assessed_at`, `stale_after_seconds`,
+`regression_threshold`, and `optimization_threshold`. Scores are integer
 percentages from 0 through 100. Thresholds are non-negative integers. Timestamps are timezone-aware
 and the stale window is a positive integer.
 
@@ -26,7 +27,8 @@ When configured policy is absent, both caller thresholds are required. Missing s
 future timestamps, evidence older than `stale_after_seconds`, or contradictory evidence return
 `unsupported-data` with the precise reason and corrective action. Contradiction is representable
 as a currently configured minimum that differs from the minimum captured in the snapshot; the
-assessment refuses to choose which policy is authoritative.
+assessment refuses to choose which policy is authoritative. Missing or unsupported captured-policy
+capability remains explicit unsupported evidence rather than collapsing into policy absence.
 
 With supported evidence, precedence is policy violation (`current < configured_minimum`),
 regression (`captured - current >= regression_threshold` and positive), optimization opportunity
