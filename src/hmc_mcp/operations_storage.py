@@ -662,28 +662,16 @@ async def unmount_optical_media(
     hmc: HMCClient, vios: str, lpar: str, media_name: str,
     system_name_or_uuid: str | None = None,
 ) -> None:
-    """Remove the VirtualSCSIMapping for an optical device (unmount and detach).
+    """Remove the VirtualSCSIMapping for an optical device (unmount).
 
     Identifies the mapping by lpar + media_name using a read-modify-write pattern
     against the full VirtualIOServer document.  The backing VirtualOpticalMedia
     (ISO container) is preserved and can be remounted later.
-    """
-    vios_uuid = await resolve_vios_uuid(hmc, vios)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar, system_name_or_uuid=system_name_or_uuid
-    )
-    await hmc.delete_optical_mapping(vios_uuid, lpar_uuid, media_name)
 
-
-async def detach_optical_mapping(
-    hmc: HMCClient, vios: str, lpar: str, media_name: str,
-    system_name_or_uuid: str | None = None,
-) -> None:
-    """Remove a VirtualSCSIMapping for an optical device (detach mapping).
-
-    Identifies the mapping by lpar + media_name using a read-modify-write pattern
-    against the full VirtualIOServer document.  The backing VirtualOpticalMedia
-    (ISO container) is preserved and can be remounted later.
+    Removing the mapping is the whole unmount on this firmware: the media is
+    referenced from inside the VirtualSCSIMapping, and the HMC exposes no way to
+    unload it while leaving the mapping in place.  Detaching the mapping and
+    unmounting the image are therefore one operation, not two.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = await resolve_lpar_uuid(

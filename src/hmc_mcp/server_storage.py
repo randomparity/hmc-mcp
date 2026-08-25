@@ -28,7 +28,6 @@ from .operations_storage import (
     delete_optical_media,
     delete_virtual_disk,
     detach_storage_mapping,
-    detach_optical_mapping,
     list_optical_mappings,
     mount_optical_media,
     unmount_optical_media,
@@ -752,12 +751,14 @@ def hmc_unmount_optical_media(
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
 ) -> str:
-    """Remove a VirtualSCSIMapping for optical media (unmount and detach).
+    """Remove a VirtualSCSIMapping for optical media (unmount).
 
     Identifies the mapping by the LPAR and media name rather than a UUID.
     Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
-    container) is preserved and can be remounted later.
+    container) is preserved and can be remounted later. Detaching the mapping
+    and unmounting the image are the same operation on this firmware, so this
+    is also how you detach an optical mapping.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
@@ -773,36 +774,4 @@ def hmc_unmount_optical_media(
                 hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name, system_name_or_uuid
             )
             return f"Unmounted {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
-    return _run(_go)
-
-
-@tool(effect="destructive", operation="media.detach_mapping", target_kind="vios")
-def hmc_detach_optical_mapping(
-    vios_name_or_uuid: str,
-    lpar_name_or_uuid: str,
-    media_name: str,
-    profile: str | None = None,
-    system_name_or_uuid: str | None = None,
-) -> str:
-    """Remove a VirtualSCSIMapping for optical media (detach mapping).
-
-    Identifies the mapping by the LPAR and media name rather than a UUID.
-    Uses a read-modify-write pattern against the full VirtualIOServer document.
-    Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
-    container) is preserved and can be remounted later.
-
-    Args:
-        vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
-        lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
-        media_name: Name of the VirtualOpticalMedia (ISO) to detach.
-        profile: TOML profile name, or the environment-default HMC when omitted.
-        system_name_or_uuid: Optional SystemName or UUID that disambiguates the
-            partition name; when omitted the name is searched fleet-wide.
-    """
-    async def _go():
-        async with client_from_env(profile) as hmc:
-            await detach_optical_mapping(
-                hmc, vios_name_or_uuid, lpar_name_or_uuid, media_name, system_name_or_uuid
-            )
-            return f"Detached {media_name!r} from LPAR {lpar_name_or_uuid} on VIOS {vios_name_or_uuid}"
     return _run(_go)
