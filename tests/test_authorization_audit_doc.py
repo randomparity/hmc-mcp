@@ -42,6 +42,9 @@ DOCUMENT = ROOT / "docs" / "authorization-audit.md"
 TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
 EFFECT_ROW = re.compile(r"^\|\s*`effect`\s*\|([^|]*)\|", re.MULTILINE)
+#: The comma-and-`or` run at the head of that cell, so a clarification appended after
+#: it is prose rather than a fifth effect. Same reason as STATE_ARM below.
+EFFECT_LIST = re.compile(r"`[a-z-]+`(?:,\s*(?:or\s+)?`[a-z-]+`)*")
 STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 #: One arm of that sentence. Anchored on the `x` when … shape rather than taking every
 #: backticked token, so an unrelated term added to the sentence is not read as a state.
@@ -97,14 +100,17 @@ def _documented_reasons(document: str) -> frozenset[str]:
 
 
 def _documented_events(document: str) -> frozenset[str]:
-    return frozenset(EVENT_HEADING.findall(document))
+    """Scoped to the section the document's own intro calls the full set."""
+    return frozenset(EVENT_HEADING.findall(_section(document, "## The records")))
 
 
 def _documented_effects(document: str) -> frozenset[str]:
     """The `effect` row's value cell, whose members are backticked individually."""
     rows = EFFECT_ROW.findall(document)
     assert len(rows) == 1, f"expected one `effect` field row, found {len(rows)}"
-    return frozenset(BACKTICKED.findall(rows[0]))
+    listing = EFFECT_LIST.search(rows[0])
+    assert listing is not None, f"no effect list in cell: {rows[0]!r}"
+    return frozenset(BACKTICKED.findall(listing.group(0)))
 
 
 def _records_lead(document: str) -> str:
@@ -161,9 +167,20 @@ def test_event_drift_is_caught_in_both_directions() -> None:
     assert undocumented != document
     assert audit.EVENTS - _documented_events(undocumented) == {dangling}
 
-    orphaned = document + '\n### `event: "retired-event"`\n'
+    orphaned = document.replace(
+        "## The records\n", '## The records\n\n### `event: "retired-event"`\n', 1
+    )
     assert orphaned != document
     assert _documented_events(orphaned) - audit.EVENTS == {"retired-event"}
+
+
+def test_an_event_section_outside_the_records_section_is_not_counted() -> None:
+    """The intro calls that section the full set; the guard holds it to that."""
+    document = _document()
+    stray = document + '\n### `event: "elsewhere"`\n'
+
+    assert stray != document
+    assert "elsewhere" not in _documented_events(stray)
 
 
 def test_event_names_are_read_from_headings_only() -> None:
@@ -207,6 +224,19 @@ def test_effect_drift_is_caught_in_both_directions() -> None:
     )
     assert orphaned != document
     assert _documented_effects(orphaned) - tool_registry.EFFECTS == {"retired-effect"}
+
+
+def test_effects_survive_an_unrelated_backticked_term() -> None:
+    """As for the state arms: a clarification in the cell is prose, not an effect."""
+    document = _document()
+    row = EFFECT_ROW.search(document)
+    assert row is not None
+
+    reworded = document.replace(
+        row.group(1), f"{row.group(1).rstrip()} (see `effect` in the registry) ", 1
+    )
+    assert reworded != document
+    assert _documented_effects(reworded) == tool_registry.EFFECTS
 
 
 def test_documented_connection_states_are_exactly_the_audit_vocabulary() -> None:
