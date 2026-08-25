@@ -22,24 +22,17 @@ from .common import (
     build_config,
     client_from_env,
     is_uuid,
-    resolve_lpar_uuid,
-    resolve_system_name,
     resolve_system_uuid,
     resolve_vios_uuid,
 )
 from .jobs import validate_wait_timing
+from .operations_install import (
+    install_lpar_os,
+    install_vios,
+    validate_install_request,
+)
 from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
-from .ssh_commands import (
-    _ssh_lpar_name,
-    build_installios_command,
-    run_installios,
-    validate_install_source,
-    validate_ipv4_address,
-    validate_ipv4_subnet_mask,
-    validate_mac_address,
-    validate_vlan_id,
-)
 
 
 tool, register_tools, tool_security = tool_module()
@@ -190,55 +183,32 @@ def hmc_install_vios(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    validate_install_source(install_source)
-    validate_ipv4_address(vios_ip)
-    validate_ipv4_subnet_mask(nim_subnetmask)
-    validate_ipv4_address(nim_gateway)
-    validate_vlan_id(vlan_id)
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    # install_vios validates too, but only once its client exists. Calling the
+    # same list here rejects a malformed argument before an HMC session opens.
+    validate_install_request(
+        install_source=install_source,
+        client_ip=vios_ip,
+        subnet_mask=nim_subnetmask,
+        gateway=nim_gateway,
+        profile_name=profile_name,
+        vlan_id=vlan_id,
+        mac_address=mac_address,
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            vios_uuid = await resolve_vios_uuid(
-                hmc, vios_name_or_uuid, system_name_or_uuid=system_uuid
+            return await install_vios(
+                hmc,
+                vios_name_or_uuid,
+                system_name_or_uuid,
+                install_source=install_source,
+                client_ip=vios_ip,
+                subnet_mask=nim_subnetmask,
+                gateway=nim_gateway,
+                profile_name=profile_name,
+                vlan_id=vlan_id,
+                mac_address=mac_address,
             )
-            system_name = (
-                system_name_or_uuid
-                if not is_uuid(system_name_or_uuid)
-                else await resolve_system_name(hmc, system_uuid)
-            )
-        config = build_config(profile=profile)
-        vios_name = (
-            vios_name_or_uuid
-            if not is_uuid(vios_name_or_uuid)
-            else await _ssh_lpar_name(config, vios_uuid, system_name)
-        )
-        command, log_path = build_installios_command(
-            install_source=install_source,
-            client_ip=vios_ip,
-            subnet_mask=nim_subnetmask,
-            gateway=nim_gateway,
-            system_name=system_name,
-            partition_name=vios_name,
-            profile_name=profile_name,
-            vlan_id=vlan_id,
-            mac_address=mac_address,
-        )
-        pid = await run_installios(config, command)
-        return {
-            "system": system_name,
-            "partition": vios_name,
-            "pid": pid,
-            "log_path": log_path,
-            "message": (
-                "installios submitted and detached; no HMC job exists on this "
-                f"path. Monitor PID {pid} via {log_path} or the partition "
-                "console; run 'installios -u' on the HMC to clean up a failed "
-                "install."
-            ),
-        }
 
     return _run(_go)
 
@@ -311,55 +281,32 @@ def hmc_install_lpar_os(
         profile: Optional TOML profile name; uses environment defaults when
             omitted.
     """
-    validate_install_source(install_source)
-    validate_ipv4_address(lpar_ip)
-    validate_ipv4_subnet_mask(nim_subnetmask)
-    validate_ipv4_address(nim_gateway)
-    validate_vlan_id(vlan_id)
-    if mac_address is not None:
-        validate_mac_address(mac_address)
+    # install_lpar_os validates too, but only once its client exists. Calling
+    # the same list here rejects a malformed argument before a session opens.
+    validate_install_request(
+        install_source=install_source,
+        client_ip=lpar_ip,
+        subnet_mask=nim_subnetmask,
+        gateway=nim_gateway,
+        profile_name=profile_name,
+        vlan_id=vlan_id,
+        mac_address=mac_address,
+    )
 
     async def _go():
         async with client_from_env(profile) as hmc:
-            system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
-            lpar_uuid = await resolve_lpar_uuid(
-                hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+            return await install_lpar_os(
+                hmc,
+                lpar_name_or_uuid,
+                system_name_or_uuid,
+                install_source=install_source,
+                client_ip=lpar_ip,
+                subnet_mask=nim_subnetmask,
+                gateway=nim_gateway,
+                profile_name=profile_name,
+                vlan_id=vlan_id,
+                mac_address=mac_address,
             )
-            system_name = (
-                system_name_or_uuid
-                if not is_uuid(system_name_or_uuid)
-                else await resolve_system_name(hmc, system_uuid)
-            )
-        config = build_config(profile=profile)
-        lpar_name = (
-            lpar_name_or_uuid
-            if not is_uuid(lpar_name_or_uuid)
-            else await _ssh_lpar_name(config, lpar_uuid, system_name)
-        )
-        command, log_path = build_installios_command(
-            install_source=install_source,
-            client_ip=lpar_ip,
-            subnet_mask=nim_subnetmask,
-            gateway=nim_gateway,
-            system_name=system_name,
-            partition_name=lpar_name,
-            profile_name=profile_name,
-            vlan_id=vlan_id,
-            mac_address=mac_address,
-        )
-        pid = await run_installios(config, command)
-        return {
-            "system": system_name,
-            "partition": lpar_name,
-            "pid": pid,
-            "log_path": log_path,
-            "message": (
-                "installios submitted and detached; no HMC job exists on this "
-                f"path. Monitor PID {pid} via {log_path} or the partition "
-                "console; run 'installios -u' on the HMC to clean up a failed "
-                "install."
-            ),
-        }
 
     return _run(_go)
 

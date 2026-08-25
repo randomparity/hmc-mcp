@@ -4,8 +4,6 @@ import httpx
 import pytest
 from unittest.mock import patch
 
-from conftest import make_config
-
 from hmc_mcp.errors import HMCError
 from hmc_mcp.ssh_commands import (
     INSTALLIOS_PID_PREFIX,
@@ -150,13 +148,7 @@ def test_install_vios_accepts_partition_name(monkeypatch, mock_hmc):
         submitted["cmd"] = cmd
         return f"{INSTALLIOS_PID_PREFIX}4242\n"
 
-    with (
-        patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command),
-        patch(
-            "hmc_mcp.server_vios.build_config",
-            new=lambda profile=None: make_config(),
-        ),
-    ):
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fake_run_hmc_command):
         result = hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
 
     assert result["partition"] == "vios1"
@@ -211,13 +203,7 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")
 
-    with (
-        patch("hmc_mcp.server_vios.run_installios", new=fail),
-        patch(
-            "hmc_mcp.server_vios.build_config",
-            new=lambda profile=None: make_config(),
-        ),
-    ):
+    with patch("hmc_mcp.operations_install.run_installios", new=fail):
         with pytest.raises(ValueError, match="No VIOS named"):
             hmc_install_vios("nosuchvios", "sys1", **_INSTALL_KWARGS)
 
@@ -234,12 +220,6 @@ def test_install_vios_ssh_failure_surfaces_as_cli_error(monkeypatch, mock_hmc):
     async def fail(config, cmd):
         raise HMCError("SSH command timed out after 30s")
 
-    with (
-        patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail),
-        patch(
-            "hmc_mcp.server_vios.build_config",
-            new=lambda profile=None: make_config(),
-        ),
-    ):
+    with patch("hmc_mcp.ssh_commands.run_hmc_command", new=fail):
         with pytest.raises(HMCError, match="timed out"):
             hmc_install_vios("vios1", "sys1", **_INSTALL_KWARGS)
