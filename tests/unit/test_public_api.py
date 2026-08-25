@@ -443,7 +443,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #320: LPM gains a separate affinity-aware operation and result.
-    expected_digest = "8f3a76a46da81c7cf3fc499482446a516c19a1b513648519279127b5065624e9"  # pragma: allowlist secret
+    expected_digest = "f0fa2679e37479573da70314fcfa067359a1cafed96a947ecc6a506fe3fad8e1"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

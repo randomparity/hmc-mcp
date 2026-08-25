@@ -49,6 +49,7 @@ def test_preflight_passes_complete_supported_evidence() -> None:
     assert asdict(result)["destination_estimated_score"] == 82
     assert asdict(result)["configured_minimum"] == 80
     assert asdict(result)["capability_limits"]
+    assert asdict(result)["preflight_timeout_seconds"] == 5.0
 
 
 @pytest.mark.parametrize(
@@ -203,8 +204,6 @@ async def test_passing_preflight_composes_before_canonical_validation(
 ) -> None:
     order: list[str] = []
     hmc = AsyncMock()
-    migrated = AsyncMock()
-
     async def fake_migrate(*args: object, **kwargs: object):
         order.append("validation-and-migration")
         return type("Result", (), {"lpar_uuid": "uuid-1", "job": "job"})()
@@ -217,7 +216,6 @@ async def test_passing_preflight_composes_before_canonical_validation(
     assert order == ["validation-and-migration"]
     assert result.preflight.status == "passed"
     assert result.job == "job"
-    del migrated
 
 
 @pytest.mark.asyncio

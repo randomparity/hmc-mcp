@@ -55,6 +55,7 @@ class LpmAffinityPreflightOutcome:
     configured_minimum: int | None
     capability: str
     capability_limits: tuple[str, ...]
+    preflight_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,7 @@ def _preflight_outcome(
         configured_minimum=request.configured_minimum,
         capability=request.capability,
         capability_limits=request.capability_limits,
+        preflight_timeout_seconds=request.preflight_timeout_seconds,
     )
 
 
