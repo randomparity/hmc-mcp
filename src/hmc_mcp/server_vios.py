@@ -30,6 +30,7 @@ from .operations_install import install_lpar_os, install_vios
 from .ssh import run_hmc_cli
 from .documents import LparResources, VIOS_DEFAULT_RESOURCES, build_vios_document
 from .ssh_commands import (
+    validate_hmc_name,
     validate_install_source,
     validate_ipv4_address,
     validate_ipv4_subnet_mask,
@@ -195,6 +196,7 @@ def hmc_install_vios(
     validate_ipv4_subnet_mask(nim_subnetmask)
     validate_ipv4_address(nim_gateway)
     validate_vlan_id(vlan_id)
+    validate_hmc_name(profile_name, "profile_name")
     if mac_address is not None:
         validate_mac_address(mac_address)
 
@@ -293,6 +295,7 @@ def hmc_install_lpar_os(
     validate_ipv4_subnet_mask(nim_subnetmask)
     validate_ipv4_address(nim_gateway)
     validate_vlan_id(vlan_id)
+    validate_hmc_name(profile_name, "profile_name")
     if mac_address is not None:
         validate_mac_address(mac_address)
 

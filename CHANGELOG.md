@@ -133,8 +133,11 @@ carry a `### Facade manifest` section.
   were already selected by ADR 0029's rule and were absent from the manifest by omission, not by
   decision, so this records the manifest catching up rather than a new capability.
 - Added: `install_lpar_os`, `install_vios` (#366); this moves the frozen public signature digest.
-  Both are `dict[str, Any]`-returning, which ADR 0029 classes as an opaque HMC resource payload
-  rather than a package-owned model, so the detach handle's keys are not themselves frozen.
+  Their `dict[str, Any]` return is **not** one of ADR 0029's opaque HMC resource payloads — the
+  package composes all five keys itself, and no firmware level can add or remove one. The keys
+  `system`, `partition`, `pid`, `log_path` and `message` are pinned by a contract test
+  (`tests/unit/test_install_operations.py`). Changing one is a consumer-visible break even though
+  it moves neither the manifest nor the signature digest, so it needs the same minor release.
 - Removed: none.
 - Renamed: none.
 - Exported model/literal changes: `LparCreation` gained the

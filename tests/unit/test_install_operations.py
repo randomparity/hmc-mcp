@@ -135,6 +135,8 @@ async def test_operation_resolves_uuid_targets_to_cli_names(operation):
         ("gateway", "not-an-ip", "IPv4"),
         ("vlan_id", "4095", "VLAN"),
         ("mac_address", "zz:zz:zz:zz:zz:zz", "MAC"),
+        ("profile_name", "", "profile_name"),
+        ("profile_name", "bad\nname", "profile_name"),
     ],
 )
 @pytest.mark.asyncio

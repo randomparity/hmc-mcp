@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -17,12 +18,15 @@ from .ssh_commands import (
     _ssh_lpar_name,
     build_installios_command,
     run_installios,
+    validate_hmc_name,
     validate_install_source,
     validate_ipv4_address,
     validate_ipv4_subnet_mask,
     validate_mac_address,
     validate_vlan_id,
 )
+
+_logger = logging.getLogger(__name__)
 
 _TargetResolver = Callable[..., Awaitable[str]]
 
@@ -54,6 +58,7 @@ async def _submit_install(
     validate_ipv4_subnet_mask(subnet_mask)
     validate_ipv4_address(gateway)
     validate_vlan_id(vlan_id)
+    validate_hmc_name(profile_name, "profile_name")
     if mac_address is not None:
         validate_mac_address(mac_address)
 
@@ -84,6 +89,16 @@ async def _submit_install(
         mac_address=mac_address,
     )
     pid = await run_installios(hmc.config, command)
+    # The only record this process leaves. There is no HMC job, no ownership
+    # guard on this path (ADR 0092 §3.4a) and so no authorization audit event,
+    # and the HMC-side log is shared across managed systems and truncated.
+    _logger.info(
+        "Detached installios on %s/%s: pid %s, log %s",
+        system_name,
+        partition_name,
+        pid,
+        log_path,
+    )
     return {
         "system": system_name,
         "partition": partition_name,
@@ -136,13 +151,21 @@ async def install_lpar_os(
     Ownership authorization is classified in ADR 0092 §3.4a, which is the
     authoritative record; that row, not this docstring, carries the reasoning.
 
-    No target-type check happens here. ``lpar_name_or_uuid`` resolves through
-    the ``LogicalPartition`` feed and a UUID selector is passed through with no
-    lookup at all, so an ordinary partition resolves successfully.
-    ``installios`` refuses a non-Virtual-I/O-Server ``-p`` on the HMC, and
-    because submission is detached that refusal reaches only the install log: a
-    returned handle means the process was backgrounded, not that ``installios``
-    accepted the target. Tracked by #460.
+    **Neither stated precondition is checked here**, and because submission is
+    detached the operation cannot observe whether ``installios`` accepted the
+    target: a returned handle means the process was backgrounded, nothing more.
+
+    - *Partition type.* ``lpar_name_or_uuid`` resolves through the
+      ``LogicalPartition`` feed and a UUID selector is passed through with no
+      lookup at all, so an ordinary partition resolves successfully.
+      ``installios`` refuses a non-Virtual-I/O-Server ``-p`` on the HMC, and
+      that refusal reaches only the install log.
+    - *Power state.* Nothing reads ``PartitionState``. What ``installios`` does
+      against an activated partition is not recorded anywhere in this
+      repository's sources, so an install submitted against a running partition
+      has no locally known outcome.
+
+    Both are tracked by #460, which adds one preflight read covering them.
 
     Submission is not idempotent, and the log path collides more widely than
     the partition. Nothing detects an install already running against the
@@ -228,7 +251,8 @@ async def install_vios(
     its target through the ``VirtualIOServer`` feed rather than the
     ``LogicalPartition`` one, so a *name* selector cannot name a logical
     partition; a UUID selector is still passed through without a lookup, so the
-    unchecked-target caveat and #460 apply to it unchanged. Submission is not
+    unchecked-precondition caveats and #460 apply to it unchanged — including
+    the power-state one, which no selector shape covers. Submission is not
     idempotent here either, and the same partition-name-only log-path collision
     applies across every managed system on the HMC.
 
