@@ -93,6 +93,12 @@ returned and the stale link is logged. The confirmation is best-effort: on firmw
 serve the global path it fails, and a failure leaves the original 404 standing rather than
 replacing a documented `found=False` with an exception.
 
+A link proved stale is then **dropped**, not echoed. The outcome carries the href from the read
+that worked, so a consumer re-persisting the handle from every outcome never stores a link known
+not to resolve; and a wait stops using the link for its remaining polls, so the confirming second
+request and its warning happen once per wait rather than on all several hundred polls of a
+multi-hour install — the same flooding this ADR designs against for the substitution warning.
+
 ### 3. `JobOutcome` is a package-owned model contract
 
 `JobOutcome` is exported and its fields are supported under ADR 0029 — unlike the `job` field it
@@ -175,7 +181,17 @@ with `ValueError`. The dot-segment case is listed explicitly because the client'
 `_reject_dot_segments` would otherwise catch it one layer down and raise `HMCError`, breaking the
 `ValueError` contract for exactly the input class that contract names.
 
-A job that vanishes **during** a wait is returned as a bare `found=False`. The status observed on
+A job that vanishes **during** a wait is not reported gone on one read. The 404 translation is the
+only failure on this path that returns successfully instead of raising, so a momentary 404 — a
+proxy reload, a failover pair whose standby has not surfaced the job — would otherwise be handed to
+a consumer as a vanished install, and the re-call recovery above does not help because the caller
+has already been told the job is gone. The wait re-reads once, one poll interval later, and accepts
+`found=False` only when the second read agrees. This is not the retry clause 5 declines: that
+paragraph is scoped to failures that propagate as `HMCError`, where the caller knows something went
+wrong. A job missing from the *first* read is still reported immediately — there is no earlier
+observation for it to contradict.
+
+Once accepted, the disappearance is returned as a bare `found=False`. The status observed on
 the poll before is not carried on the outcome: `found=False` means the HMC produced no entry, and
 attaching a last-known status to it would contradict that and put a fourth row in clause 4's table.
 The evidence is not discarded — the transition logs at warning with the last status seen — but a
@@ -234,11 +250,13 @@ vanished jobs.
 
 `found` and `job_href` also land in the MCP output schema that `hmc_wait_for_job` shares with every
 submit-and-wait tool, because `jobs.job_outcome` is the one normalizer behind all of them.
-`hmc_wait_for_job`'s tool docstring describes both fields and states that the submitting tools'
-outcomes read differently. The submitting tools' own docstrings do not: five presentation
-docstrings are outside this decision's surface, so issue #456 owns that pass. Until it lands, an
-agent reading `found` off a submission report has the tool docstring of `hmc_wait_for_job` and this
-ADR, and nothing on the tool it actually called.
+`hmc_wait_for_job`'s tool docstring describes both fields — including that on *that* tool a reaped
+job still surfaces as an `HMCError`, because it polls through `HMCClient.wait_for_job`, which
+raises on the 404 these operations translate. The MCP surface does not gain the reaped-versus-
+running distinction here; only `hmc_mcp.api` does. The submitting tools' own docstrings describe
+neither field: five presentation docstrings are outside this decision's surface, so issue #456 owns
+that pass. Until it lands, an agent reading `found` off a submission report has the tool docstring
+of `hmc_wait_for_job` and this ADR, and nothing on the tool it actually called.
 
 ## Considered & rejected
 

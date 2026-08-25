@@ -186,11 +186,12 @@ async def test_get_job_distinguishes_a_running_job_from_a_gone_one(mock_hmc) -> 
 
 
 @pytest.mark.asyncio
-async def test_wait_for_job_stops_as_soon_as_the_job_disappears(mock_hmc) -> None:
-    """Polling ends at the first missing read rather than running out the timeout."""
+async def test_wait_for_job_confirms_a_disappearance_then_stops(mock_hmc) -> None:
+    """A vanished job ends the wait after one confirming read, not at the deadline."""
     route = mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(404, text="Unknown job"),
             httpx.Response(404, text="Unknown job"),
         ]
     )
@@ -200,7 +201,50 @@ async def test_wait_for_job_stops_as_soon_as_the_job_disappears(mock_hmc) -> Non
             hmc, _JOB_ID, timeout_seconds=3600, poll_interval=1
         )
 
-    assert route.call_count == 2
+    assert route.call_count == 3
+    assert outcome.found is False
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_does_not_report_a_momentary_404_as_a_vanished_job(
+    mock_hmc,
+) -> None:
+    """One 404 is the only failure here that returns instead of raising.
+
+    A proxy reload or a failover must not be handed to a consumer as "your
+    90-minute install is gone", because the documented re-call recovery cannot
+    undo an answer the caller has already acted on.
+    """
+    route = mock_hmc.get(_GLOBAL_PATH).mock(
+        side_effect=[
+            httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(404, text="Unknown job"),
+            httpx.Response(200, text=_job_entry("COMPLETED_OK")),
+        ]
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(
+            hmc, _JOB_ID, timeout_seconds=3600, poll_interval=1
+        )
+
+    assert route.call_count == 3
+    assert (outcome.found, outcome.status) == (True, "COMPLETED_OK")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_reports_a_first_read_miss_immediately(mock_hmc) -> None:
+    """With no earlier observation to contradict, one missing read is the answer."""
+    route = mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await wait_for_job(
+            hmc, _JOB_ID, timeout_seconds=3600, poll_interval=1
+        )
+
+    assert route.call_count == 1
     assert outcome.found is False
 
 
@@ -326,7 +370,39 @@ async def test_get_job_confirms_a_stale_link_against_the_global_path(
 
     assert stale.called and fallback.called
     assert (outcome.found, outcome.status) == (True, "RUNNING")
+    assert outcome.job_href is None, "a link proved stale is not handed back"
     assert any("no longer resolves" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
+    mock_hmc, caplog
+) -> None:
+    """The confirming read and its warning happen once, not on every poll."""
+    stale = mock_hmc.get(_SELF_HREF).mock(
+        return_value=httpx.Response(404, text="Unknown job")
+    )
+    fallback = mock_hmc.get(_GLOBAL_PATH).mock(
+        side_effect=[
+            httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(200, text=_job_entry("COMPLETED_OK")),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await wait_for_job(
+                hmc,
+                _JOB_ID,
+                job_href=_SELF_HREF,
+                timeout_seconds=3600,
+                poll_interval=1,
+            )
+
+    assert stale.call_count == 1, "the stale link must not be retried every poll"
+    assert fallback.call_count == 2
+    assert outcome.status == "COMPLETED_OK"
+    assert len([r for r in caplog.records if "no longer resolves" in r.getMessage()]) == 1
 
 
 @pytest.mark.asyncio
@@ -438,6 +514,7 @@ async def test_wait_for_job_logs_the_last_status_when_a_job_vanishes_mid_wait(
     mock_hmc.get(_GLOBAL_PATH).mock(
         side_effect=[
             httpx.Response(200, text=_job_entry("RUNNING")),
+            httpx.Response(404, text="Unknown job"),
             httpx.Response(404, text="Unknown job"),
         ]
     )

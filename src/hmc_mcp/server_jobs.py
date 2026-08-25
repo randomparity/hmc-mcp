@@ -116,14 +116,20 @@ def hmc_wait_for_job(
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
-    ``found`` reports whether the HMC produced an entry for this identifier;
-    ``job_href`` is the polled job's SELF link. Read ``found`` before
-    ``timed_out``: a job the HMC produced no entry for has ``found`` false and
-    ``timed_out`` true, so ``timed_out`` alone does not mean "still running".
+    ``found`` reports whether the HMC produced an entry for this identifier and
+    ``job_href`` is the polled job's SELF link, but read both narrowly on this
+    tool. A job the HMC no longer has — reaped, deleted, or never present — comes
+    back here as an ``HMCError``, not as ``found`` false, because this tool polls
+    through the client's own wait method, which raises on the HMC's 404. ``found``
+    false is reachable only when the HMC answers with no job entry at all, and
+    only after the full ``timeout_seconds`` has elapsed. Use
+    ``hmc_mcp.api.get_job`` / ``hmc_mcp.api.wait_for_job`` for the
+    reaped-versus-running distinction (ADR 0093).
+
     The same two fields appear on the outcomes returned by the submit-and-wait
     tools (the migrate, remote-restart and power tools), where they describe a
     *submission* — there ``found`` false means "this submission returned no job
-    entry", not "the HMC no longer has this job" (ADR 0093).
+    entry", not "the HMC no longer has this job".
 
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.

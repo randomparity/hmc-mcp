@@ -108,16 +108,20 @@ async def _confirm_missing(
 
 async def _read_job(
     hmc: HMCClient, identifier: str, link: str | None
-) -> JobOutcome:
-    """Perform one poll, translating a confirmed missing job into ``found=False``."""
+) -> tuple[JobOutcome, bool]:
+    """Perform one poll; also report whether *link* proved stale on this read.
+
+    A stale link changes what the caller should keep: the outcome then carries the
+    href from the read that worked rather than the one that 404'd, and a wait stops
+    using the link for its remaining polls.
+    """
+    stale_link = False
     try:
         job = await hmc.get_job(identifier, job_href=link)
     except HMCError as exc:
         if exc.status_code != _JOB_MISSING_STATUS:
             raise
-        if link is not None:
-            job = await _confirm_missing(hmc, identifier, link, exc)
-        else:
+        if link is None:
             _logger.warning(
                 "HMC job %s not found via the global jobs path: reporting "
                 "found=False. A deployment whose job path this HMC does not "
@@ -126,10 +130,13 @@ async def _read_job(
                 exc,
             )
             job = None
+        else:
+            job = await _confirm_missing(hmc, identifier, link, exc)
+            stale_link = job is not None
     outcome = job_outcome(identifier, job)
-    if link is not None and outcome.job_href != link:
-        return replace(outcome, job_href=link)
-    return outcome
+    if link is not None and not stale_link and outcome.job_href != link:
+        outcome = replace(outcome, job_href=link)
+    return outcome, stale_link
 
 
 def _warn_if_another_job_answered(
@@ -180,11 +187,13 @@ async def get_job(
     second read finds the job, this returns it and warns that the stored link is
     stale.
 
-    The returned ``job_href`` is the link the caller passed, when it passed one:
-    that link demonstrably resolved, and rotating a stored handle to a SELF link
-    from the response would risk replacing a working link with an untried one on
-    exactly the firmware ``job_href`` exists to serve. Only when the caller
-    supplied none does the response's SELF link become the handle.
+    The returned ``job_href`` is the link the caller passed, when that link
+    resolved: it demonstrably works, and rotating a stored handle to a SELF link
+    from the response would risk replacing it with an untried one on exactly the
+    firmware ``job_href`` exists to serve. Where the caller supplied no link, or
+    supplied one the confirming read proved stale, the handle is the href the
+    successful read carried — so a consumer that re-persists ``job_id`` and
+    ``job_href`` from every outcome never stores a link known not to work.
 
     **A supplied ``job_href`` decides which job is read, not ``job_id``.** The
     client fetches that link's path directly and validates only that it addresses
@@ -198,8 +207,8 @@ async def get_job(
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
-    outcome = await _read_job(hmc, identifier, link)
-    _warn_if_another_job_answered(identifier, outcome, link)
+    outcome, stale_link = await _read_job(hmc, identifier, link)
+    _warn_if_another_job_answered(identifier, outcome, None if stale_link else link)
     return outcome
 
 
@@ -231,12 +240,21 @@ async def wait_for_job(
     resumes exactly where it stopped. So size ``timeout_seconds`` to how long one
     session can be expected to last, and drive a longer wait by calling again.
 
-    A job that disappears **during** the wait is returned as a bare
-    ``found=False``: the outcome does not carry the status observed on the poll
-    before, because ``found=False`` means the HMC produced no entry and inventing
-    a last-known status on it would contradict that. The evidence is not lost —
-    the transition is logged at warning, naming the last status seen — but a
-    consumer that needs it must read the log or poll in its own loop.
+    A job that disappears **after** the wait has seen it alive is not reported
+    gone on one read. A single 404 is the only failure on this path that returns
+    successfully instead of raising, so accepting it outright would let a
+    momentary one — a proxy reload, a failover — be reported as a vanished job to
+    a consumer the ADR expects to act on that destructively. The wait re-reads
+    once, one poll interval later, and reports ``found=False`` only if the second
+    read agrees. A job missing from the *first* read is reported immediately:
+    there is no earlier observation to contradict it.
+
+    The disappearance is returned as a bare ``found=False``: the outcome does not
+    carry the status observed on the poll before, because ``found=False`` means
+    the HMC produced no entry and inventing a last-known status on it would
+    contradict that. The evidence is not lost — the transition is logged at
+    warning, naming the last status seen — but a consumer that needs it must read
+    the log or poll in its own loop.
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
@@ -245,21 +263,25 @@ async def wait_for_job(
     deadline = loop.time() + timeout_seconds
     last_status: str | None = None
     observed = False
+    rereading = False
     while True:
-        outcome = await _read_job(hmc, identifier, link)
-        if not outcome.found:
-            if observed:
-                _logger.warning(
-                    "HMC job %s disappeared during the wait; the last status "
-                    "observed was %s. Reporting found=False.",
-                    identifier,
-                    last_status,
-                )
+        outcome, stale_link = await _read_job(hmc, identifier, link)
+        if stale_link:
+            link = None
+        if outcome.found:
+            observed, rereading, last_status = True, False, outcome.status
+            if outcome.status in TERMINAL_JOB_STATUSES:
+                break
+        elif not observed or rereading:
             break
-        observed = True
-        last_status = outcome.status
-        if outcome.status in TERMINAL_JOB_STATUSES:
-            break
+        else:
+            rereading = True
+            _logger.warning(
+                "HMC job %s disappeared during the wait; the last status observed "
+                "was %s. Re-reading once before reporting it gone.",
+                identifier,
+                last_status,
+            )
         remaining = deadline - loop.time()
         if remaining <= 0:
             break
