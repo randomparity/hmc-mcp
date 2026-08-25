@@ -330,3 +330,30 @@ def test_detach_optical_mapping_alias_is_gone():
     import hmc_mcp.operations_storage as ops
 
     assert not hasattr(ops, "detach_optical_mapping")
+
+
+def test_unmount_docstrings_carry_both_halves_of_the_selector_caveat():
+    """The #439 mitigation is prose; pin it so a tidy-up cannot silently drop it.
+
+    ``hmc_unmount_optical_media`` is destructive and its selector can both remove
+    the wrong mapping and silently remove nothing. Until #439 makes the client
+    fail closed, these docstrings are the only thing standing between an agent
+    and a wrongly detached boot disk, and nothing else in the suite asserts they
+    still say so. Same contract as tests/app/test_user_tool_contracts.py.
+    """
+    from hmc_mcp import operations_storage, server_storage
+
+    for handler in (
+        server_storage.hmc_unmount_optical_media,
+        operations_storage.unmount_optical_media,
+    ):
+        assert handler.__doc__ is not None
+        doc = " ".join(handler.__doc__.split())
+        assert "substring" in doc, f"{handler.__name__}: over-match half missing"
+        assert "boot disk" in doc, f"{handler.__name__}: over-match blast radius missing"
+        assert "no mapping" in doc, f"{handler.__name__}: silent-miss half missing"
+        assert "#439" in doc, f"{handler.__name__}: owning issue missing"
+        assert "list_storage_mappings" in doc, (
+            f"{handler.__name__}: must name the unfiltered inventory, since "
+            "list_optical_mappings cannot see a wrongly removed disk mapping"
+        )
