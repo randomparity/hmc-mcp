@@ -918,12 +918,32 @@ class _SkippedFrames:
 _MAX_REPORTED_SKIPS = 5
 
 
+async def _fleet_inventory(hmc: HMCClient, lpar_label: str) -> list[dict[str, Any]]:
+    """Read the fleet, translating an inventory failure into the same remedy.
+
+    The unfiltered ``ManagedSystem`` feed is the one some HMC firmware builds
+    answer with HTTP 500 (``client_systems.list_managed_systems``), and a
+    selector-less DLPAR call reads it where it previously read nothing. Every
+    other discovery failure names ``supply managed-system scope``; without this
+    the one degraded-dependency case that the selector *does* fix would be the
+    only one that never mentions it.
+    """
+    try:
+        return await hmc.list_managed_systems()
+    except HMCError as exc:
+        raise ValueError(
+            f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
+            f"managed-system inventory is unavailable ({exc}); "
+            "supply managed-system scope"
+        ) from exc
+
+
 async def _search_fleet_for_partition(
     hmc: HMCClient, lpar_uuid: str, lpar_label: str, skipped: _SkippedFrames
 ) -> tuple[str, str] | None:
     """Return the system containing *lpar_uuid*, recording frames it could not read."""
     for system in _fleet_within_discovery_bound(
-        await hmc.list_managed_systems(), lpar_label
+        await _fleet_inventory(hmc, lpar_label), lpar_label
     ):
         candidate = _discovery_candidate(system)
         if candidate is None:
@@ -964,9 +984,11 @@ async def _discover_owning_system(
     applies to a fleet-ambiguous partition name — the same 100-system fan-out
     cap, the same timeout, and the same "supply managed-system scope" remedy.
 
-    The name comes from the inventory entry that matched, so the guard never
-    falls back to running ``lssyscfg -m <uuid>``, which the HMC CLI cannot
-    satisfy.
+    The name comes from the inventory entry that matched, so *on this branch*
+    the guard cannot fall back to running ``lssyscfg -m <uuid>``, which the HMC
+    CLI cannot satisfy. The selector-supplied branch still hands ``_system_name``
+    the caller's raw selector, which that helper's pre-existing degraded path
+    can return verbatim.
 
     A frame whose partition feed errors, or whose inventory entry is unusable,
     is skipped rather than made fatal: the walk crosses frames the caller never

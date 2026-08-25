@@ -54,6 +54,13 @@ selector string it was handed, so passing a UUID there would end in
 see an opaque SSH failure instead of a diagnosis. The walk already read the name
 from the same feed, so it carries it forward rather than re-deriving it.
 
+That closes the shape on the discovery branch only. The selector-supplied branch
+hands `_system_name` the caller's raw selector, exactly as `rename_lpar` and
+every other guarded operation does, so a UUID selector can still reach
+`lssyscfg -m <uuid>` in the doubly-degraded window where the REST system read and
+the SSH name lookup both fail. That is `_system_name`'s pre-existing shape, is not
+changed here, and fails closed; it is scoped rather than claimed away.
+
 The walk applies the bounds `HMCClient.find_partition_by_name` applies to a
 fleet-ambiguous partition name — `MAX_PARENT_DISCOVERY_SYSTEMS` and
 `PARENT_DISCOVERY_TIMEOUT_SECONDS` — and names the same operator remedy, *supply
@@ -98,12 +105,22 @@ named partition would silently miss the DLPAR ones. One GET on a path that is
 about to POST is a proportionate price for a single vocabulary, and unlike
 discovery it cannot be blocked by an unrelated frame's health.
 
-The `system` field carries what the caller supplied, and is empty when the caller
-named no system. That is what the operator actually asserted; resolving a system
-the caller never chose would cost exactly the discovery this branch exists to
-skip. The consequence is that an override record from a selector-less call cannot
-say which frame it touched — recorded here rather than mitigated, because the
-alternative reintroduces the failure mode.
+The `system` field carries what the caller supplied, verbatim — empty when the
+caller named no system, and a **UUID** when the caller selected by UUID. The two
+fields are treated differently on purpose: `lpar` is the *subject* of the bypass,
+the partition that was mutated, and has to be unambiguous and comparable across
+operations; `system` is *context*, the scope the operator asserted, and recording
+it as given is the faithful thing to record. Resolving it would cost exactly the
+discovery this branch exists to skip.
+
+Two consequences follow, recorded rather than mitigated. An override record from a
+selector-less call cannot say which frame it touched. And an audit query keyed on
+a managed-system *name* will miss a DLPAR override whose caller used a UUID
+selector, where every other guarded operation's override record holds a CLI name —
+such a query has to match UUIDs too. If one vocabulary is wanted later, the cheap
+version is `resolve_system_name` on the override branch when the selector is a
+UUID: one read of a system the caller *did* name, which unlike discovery cannot be
+blocked by an unrelated frame's health.
 
 A blank selector (`""` or whitespace) is read as absent on both branches. MCP
 clients that serialise an unset optional string as `""` sent it to these tools
@@ -146,6 +163,16 @@ size before it writes. On a large fleet that is visible latency, and the remedy
 is the selector. A partition whose owning system is not in
 `list_managed_systems()` — an unreachable or unmanaged frame — fails with a named
 error rather than mutating unguarded.
+
+**The fleet read itself is a new dependency for the default call shape.** A
+selector-less DLPAR call previously resolved through a `LogicalPartition` search
+and, for a partition given by UUID, read no inventory at all; it now reads the
+unfiltered `ManagedSystem` feed — the one `list_managed_systems` already
+documents as answered with HTTP 500 by some firmware builds. That failure is
+translated to name `supply managed-system scope`, chaining the underlying
+diagnosis, because the selector is precisely what fixes it: an operator pointed
+at a firmware upgrade instead would be pointed away from a remedy they could
+apply immediately.
 
 **The walk crosses frames the caller never named, so it tolerates their
 failures.** A frame whose partition feed errors, or whose inventory entry carries

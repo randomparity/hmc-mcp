@@ -660,6 +660,31 @@ async def test_a_partition_uuid_off_the_selected_system_is_rejected(
 
 
 @pytest.mark.asyncio
+async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc):
+    """A firmware-fragile inventory read still points at the selector.
+
+    ``list_managed_systems`` documents HTTP 500 on this feed for some firmware
+    builds, and a selector-less DLPAR call reads it where it previously read
+    nothing — so the one degraded dependency the selector actually fixes must
+    not be the one failure that never mentions it.
+    """
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(503, text="<error>inventory offline</error>")
+    )
+    route = _mock_modify(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="supply managed-system scope") as info:
+            await set_lpar_processors(
+                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+            )
+
+    assert "managed-system inventory is unavailable" in str(info.value)
+    assert isinstance(info.value.__cause__, HMCError)
+    assert not route.called
+
+
+@pytest.mark.asyncio
 async def test_undiscoverable_system_names_the_operator_remedy(mock_hmc):
     """No owning system found: the error names the selector that fixes it."""
     mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
