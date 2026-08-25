@@ -87,6 +87,22 @@ def _copy_tracked_project(destination: Path) -> None:
         shutil.copy2(source, target)
 
 
+def _job_body(workflow: str, name: str) -> str:
+    """Slice one job at its structural boundary — the next top-level job header.
+
+    Anchoring on a named neighbour instead lets the body swallow every job
+    between the two, so an assertion meant for one job passes while sitting in
+    another, and inserting a job silently widens the window.
+    """
+    match = re.search(
+        rf"^  {re.escape(name)}:\n(?P<body>.*?)(?=^  \S+:$|\Z)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"job not found in workflow: {name}"
+    return match["body"]
+
+
 def _inactive_ppc64le_job(workflow: str) -> tuple[str, str]:
     template = re.search(
         r"^  # ppc64le-release-artifact-template: begin\n"
@@ -394,14 +410,8 @@ def test_github_ci_uses_a_bounded_native_architecture_matrix() -> None:
 def test_github_ci_smokes_each_retained_wheel_in_a_fresh_environment() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    consumer = re.search(
-        r"^  wheel-smoke:\n(?P<body>.*?)(?=^  python-support-drift:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "wheel-smoke")
 
-    assert consumer
-    body = consumer["body"]
     expected_matrix = "      matrix:\n        include:\n" + "".join(
         f"          - architecture: {architecture}\n"
         f"            runner: {runner}\n"
@@ -460,14 +470,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
 ):
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    consumer = re.search(
-        r"^  library-wheel-smoke:\n(?P<body>.*?)(?=^  library-range-floors:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "library-wheel-smoke")
 
-    assert consumer
-    body = consumer["body"]
     assert "    needs: ci\n" in body
     assert "    name: amd64 / Python 3.13 / library wheel smoke\n" in body
     assert "    runs-on: ubuntu-24.04\n" in body
@@ -499,14 +503,8 @@ def test_github_ci_exercises_each_declared_range_floor() -> None:
     """ADR 0068: a declared range is a claim only if its low end is exercised."""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     active_workflow, _ = _inactive_ppc64le_job(workflow)
-    floors_job = re.search(
-        r"^  library-range-floors:\n(?P<body>.*?)(?=^  wheel-smoke:)",
-        active_workflow,
-        re.MULTILINE | re.DOTALL,
-    )
+    body = _job_body(active_workflow, "library-range-floors")
 
-    assert floors_job
-    body = floors_job["body"]
     assert "    needs: ci\n" in body
     assert "    name: amd64 / Python 3.13 / library range floors\n" in body
     # The floors are derived from the declaration, never transcribed: a new or
