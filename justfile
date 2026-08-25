@@ -47,8 +47,12 @@ tool-docs:
 tool-docs-check:
     uv run --no-sync python scripts/gen_tool_reference.py --check
 
+# verify every decision record in docs/adr/ carries a unique number
+adr-numbering:
+    uv run --no-sync python scripts/check_adr_numbering.py
+
 # local and hosted static-analysis gate
-static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check
+static: lint typecheck secrets workflow-security env-vars nicknames tool-docs-check adr-numbering
 
 # run the full pytest suite with one semantic summary
 test:

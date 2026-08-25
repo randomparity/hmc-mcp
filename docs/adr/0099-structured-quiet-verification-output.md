@@ -1,8 +1,14 @@
-# ADR 0054: Capture successful verification output
+# ADR 0099: Capture successful verification output
 
 ## Status
 
 Accepted
+
+> **Renumbered from 0054 to 0099** (2026-08-25, issue #489). This record and
+> [ADR 0054](0054-normalized-pcie-inventory.md) were both written as 0054, so
+> every citation of "ADR 0054" was ambiguous. This record was the one moved
+> because it had the fewer inbound citations. The decision below is unchanged;
+> only the number is. `just adr-numbering` now fails on a repeated number.
 
 ## Context
 

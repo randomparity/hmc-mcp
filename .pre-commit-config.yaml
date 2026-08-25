@@ -36,3 +36,8 @@ repos:
         entry: just tool-docs-check
         language: system
         pass_filenames: false
+      - id: adr-numbering
+        name: ADR numbering guard
+        entry: just adr-numbering
+        language: system
+        pass_filenames: false

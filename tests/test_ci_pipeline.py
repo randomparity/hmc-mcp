@@ -159,6 +159,7 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         "nicknames",
         "tool-docs",
         "tool-docs-check",
+        "adr-numbering",
         "static",
         "test",
         "test-verbose",
@@ -168,7 +169,12 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
         assert f"\n{recipe}:" in justfile
     assert (
         "\nstatic: lint typecheck secrets workflow-security env-vars nicknames "
-        "tool-docs-check\n" in justfile
+        "tool-docs-check adr-numbering\n" in justfile
+    )
+    assert (
+        "\nadr-numbering:\n"
+        "    uv run --no-sync python scripts/check_adr_numbering.py\n"
+        in justfile
     )
     assert (
         "\ntool-docs:\n"
@@ -242,9 +248,10 @@ def test_prek_hooks_delegate_to_focused_just_recipes() -> None:
         "env-vars",
         "nicknames",
         "tool-docs-check",
+        "adr-numbering",
     ):
         assert f"entry: just {recipe}" in config
-    assert config.count("pass_filenames: false") == 7
+    assert config.count("pass_filenames: false") == 8
     assert "entry: uv run" not in config
 
 
