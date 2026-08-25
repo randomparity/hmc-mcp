@@ -29,6 +29,12 @@ mcp = create_mcp(compile_legacy_policy(TOOL_SECURITY, (DEFAULT_CONNECTION_TOKEN,
 
 
 
+README = Path(__file__).parents[2] / "README.md"
+COLLECTION_LIMIT_HEADING = "### Collection limits"
+COLLECTION_LIMIT_NEXT = "### Public parameter units and selectors"
+COLLECTION_LIMIT_CLAIMS = ("client-side", "complete HMC feed", "transferred and parsed")
+
+
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom"/>
 """
@@ -263,8 +269,48 @@ def test_arbitrary_resource_type_runs_before_results_are_capped():
     client.list_uom.assert_awaited_once_with("Cluster")
 
 
+def _collection_limit_section(readme: str) -> str:
+    """Return the body of README's '### Collection limits' section.
+
+    Heading *order* is asserted first: without it a renamed or reordered heading makes
+    the second split return the rest of the file, and the slice silently stops being a
+    section.
+    """
+    assert readme.index(COLLECTION_LIMIT_HEADING) < readme.index(COLLECTION_LIMIT_NEXT), (
+        f"README must keep '{COLLECTION_LIMIT_HEADING}' before "
+        f"'{COLLECTION_LIMIT_NEXT}'"
+    )
+    return readme.split(COLLECTION_LIMIT_HEADING, 1)[1].split(COLLECTION_LIMIT_NEXT, 1)[
+        0
+    ]
+
+
+def _relocated(readme: str) -> str:
+    """Move the collection-limit disclosure into an unrelated README section."""
+    body = _collection_limit_section(readme)
+    return readme.replace(body, "\n\n", 1).replace(
+        "## Install\n", f"## Install\n{body}", 1
+    )
+
+
 def test_readme_discloses_collection_limit_costs():
-    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
-    assert "client-side" in readme
-    assert "complete HMC feed" in readme
-    assert "transferred and parsed" in readme
+    section = _collection_limit_section(README.read_text(encoding="utf-8"))
+
+    for claim in COLLECTION_LIMIT_CLAIMS:
+        assert claim in section, (
+            f"'{COLLECTION_LIMIT_HEADING}' must state {claim!r}"
+        )
+
+
+def test_collection_limit_disclosure_relocated_out_of_its_section_is_caught():
+    """The negative variant a whole-file substring check cannot see.
+
+    'client-side' also appears under '### Public parameter units and selectors', so a
+    bare ``in readme`` check certifies presence, not placement. Relocation keeps every
+    phrase in the file and must still fail.
+    """
+    relocated = _relocated(README.read_text(encoding="utf-8"))
+
+    assert all(claim in relocated for claim in COLLECTION_LIMIT_CLAIMS)
+    moved = _collection_limit_section(relocated)
+    assert [claim for claim in COLLECTION_LIMIT_CLAIMS if claim in moved] == []

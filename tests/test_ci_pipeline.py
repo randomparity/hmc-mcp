@@ -697,6 +697,24 @@ def test_scheduled_job_checks_the_same_explicit_versions() -> None:
     assert "just verify" not in body
 
 
+README_STACK_HEADING = "## Stack"
+README_STACK_NEXT = "## Contributing, security, and license"
+PYTHON_FLOOR_CLAIMS = ("Python ≥3.11", "stable, non-EOL CPython release")
+
+
+def _readme_stack(readme: str) -> str:
+    """Return the body of README's '## Stack' section.
+
+    Heading *order* is asserted, not mere presence: without it a renamed or reordered
+    heading makes the second split return the rest of the file and the slice stops
+    being a section.
+    """
+    assert readme.index(README_STACK_HEADING) < readme.index(README_STACK_NEXT), (
+        f"README must keep '{README_STACK_HEADING}' before '{README_STACK_NEXT}'"
+    )
+    return readme.split(README_STACK_HEADING, 1)[1].split(README_STACK_NEXT, 1)[0]
+
+
 def test_python_policy_metadata_is_aligned() -> None:
     with (ROOT / "pyproject.toml").open("rb") as file:
         project = tomllib.load(file)
@@ -706,9 +724,22 @@ def test_python_policy_metadata_is_aligned() -> None:
     assert project["project"]["requires-python"] == ">=3.11"
     assert (ROOT / ".python-version").read_text().strip() == "3.11"
     assert lockfile["requires-python"] == ">=3.11"
+    stack = _readme_stack((ROOT / "README.md").read_text())
+    for claim in PYTHON_FLOOR_CLAIMS:
+        assert claim in stack, f"'{README_STACK_HEADING}' must state {claim!r}"
+
+
+def test_python_floor_relocated_out_of_the_stack_section_is_caught() -> None:
+    """The negative variant: the floor stays in the README but leaves '## Stack'."""
     readme = (ROOT / "README.md").read_text()
-    assert "Python ≥3.11" in readme
-    assert "stable, non-EOL CPython release" in readme
+    stack = _readme_stack(readme)
+    relocated = readme.replace(stack, "\n\n", 1).replace(
+        "## Install\n", f"## Install\n{stack}", 1
+    )
+
+    assert all(claim in relocated for claim in PYTHON_FLOOR_CLAIMS)
+    moved = _readme_stack(relocated)
+    assert [claim for claim in PYTHON_FLOOR_CLAIMS if claim in moved] == []
 
 
 def test_scorecard_workflow_is_bounded_and_uses_least_privilege() -> None:
