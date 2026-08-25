@@ -264,7 +264,23 @@ read. The refusal is unconditional on `ownership_override`: the override waives 
 ownership *decision*, not the guard's need to name the partition it is auditing.
 The two entry paths that could omit the selector gained one — `hmc-mcp lpars
 power-on` and `power-off` take `--system` — and `hmc_power_on_lpar` /
-`hmc_power_off_lpar` already accepted it. A caller holding only an LPAR UUID
+`hmc_power_off_lpar` already accepted it.
+
+This narrows [ADR 0063](0063-source-system-selectors-for-fleet-ambiguous-lpar-tools.md),
+which decided **"Optional, not required"** for this very parameter, named
+`hmc_power_off_lpar` as its precedent, and rejected a required selector as
+something that "breaks positional Python-API callers for no authorization gain
+under a table". It does not reopen that decision. The parameter stays optional in
+the signature; the requirement is conditional on a setting that is off by default,
+so no existing caller breaks, and it is keyword-only, so no positional call site
+shifts. And the gain 0063 could not claim now exists: under this flag the selector
+is not a `targets`-table disambiguator but the key the ownership token is read
+under, so omitting it is not "today's fleet-wide search" — it is an ownership check
+that cannot run. The consequence 0063's reasoning implies is real and worth stating:
+an operator holding an `all-targets` grant, for whom 0063 preserved fleet-wide
+omission, will see power calls that omit the selector refused once this flag is on.
+
+A caller holding only an LPAR UUID
 recovers the selector by listing partitions per managed system
 (`hmc_list_lpars(system_name_or_uuid=…)`); the fleet-wide ownership feed does not
 help, as `list_lpar_ownership` records that its entries do not name their parent

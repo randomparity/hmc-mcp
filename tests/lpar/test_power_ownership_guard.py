@@ -31,6 +31,9 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
 
     The config must be real: ``AsyncMock().config.authorize_power_operations``
     is a truthy child mock, which would silently enable the guard everywhere.
+    Every field the tests read is passed explicitly, which is what isolates
+    them from the ambient environment — ``_env_file=None`` would not, since
+    the model configures no dotenv source for it to suppress.
     """
     hmc = AsyncMock()
     hmc.config = HMCConfig(
@@ -39,7 +42,6 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
         password="p",
         agent_id=agent_id,
         authorize_power_operations=authorize,
-        _env_file=None,
     )
     hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "aix1"}}
@@ -64,13 +66,16 @@ def _client_factory(hmc):
 # ---------------------------------------------------------------------------
 
 
-def test_authorize_power_operations_defaults_off() -> None:
-    assert HMCConfig(_env_file=None).authorize_power_operations is False
+def test_authorize_power_operations_defaults_off(monkeypatch) -> None:
+    # delenv, not _env_file=None: the model configures no dotenv source, so
+    # _env_file suppresses nothing and the ambient variable would decide this.
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+    assert HMCConfig().authorize_power_operations is False
 
 
 def test_authorize_power_operations_reads_its_environment_variable(monkeypatch) -> None:
     monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
-    assert HMCConfig(_env_file=None).authorize_power_operations is True
+    assert HMCConfig().authorize_power_operations is True
 
 
 # ---------------------------------------------------------------------------

@@ -79,15 +79,19 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   And **power operations gain a dependency on the HMC's SSH interface.** The
   ownership read runs the HMC CLI over SSH, so with the guard on a power operation
   fails with `HMCCLIError` when SSH is unreachable, refuses the credentials, or
-  hangs — bounded only by `HMC_SSH_TIMEOUT`, which defaults to 300 seconds, so a
-  hung HMC turns a fast REST call into a five-minute wait before the failure. That
-  includes `power-off --immediate`, the call an operator most wants during an
-  incident. It is fail-closed by design — an ownership token that cannot be read
-  has not been checked — and `ownership_override` is the escape, because it skips
-  the read. It is not an unconditional SSH-free path, though: the name resolution
-  that runs before the override falls back to an SSH lookup when the REST read of
-  the managed system fails or returns no `SystemName`, so a degraded HMC can still
-  cost an `HMC_SSH_TIMEOUT` wait on the override path. A deployment whose HMC
+  hangs. That includes `power-off --immediate`, the call an operator most wants
+  during an incident. It is fail-closed by design — an ownership token that cannot
+  be read has not been checked — and `ownership_override` is the escape, because it
+  skips the read.
+
+  **Size the worst case at two SSH commands, not one.** `HMC_SSH_TIMEOUT` bounds
+  each command separately, not the operation, and a guarded call can run two: the
+  name resolution falls back to an SSH lookup when the REST read of the managed
+  system fails or returns no `SystemName`, and that fallback *swallows* its timeout
+  and carries on to the ownership read, which then burns a second one. At the
+  300-second default that is roughly ten minutes before the failure surfaces, not
+  five. The override path pays only the first, because it skips the ownership read
+  — so it is not an unconditional SSH-free path either. A deployment whose HMC
   credentials work for REST but not for SSH should leave this setting off.
 
   **Set the environment variable, not the TOML key, to make the guard hold
@@ -98,9 +102,14 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
   so it is the setting that cannot be selected around.
 
-  Read the effective, post-precedence value with `hmc-mcp config show`. It is worth
-  checking: this setting fails **open**, and a mistyped profile key or environment
-  variable is dropped silently — indistinguishable from a correct `false`.
+  **Check that it actually took.** This setting fails **open**, and a mistyped
+  profile key or environment variable is dropped silently — indistinguishable from
+  a correct `false`. `hmc-mcp config show` reports the effective, post-precedence
+  value, with two limits worth knowing before you trust it: it requires a
+  `config.toml` and exits 1 without one, so it cannot answer for an env-var-only
+  setup; and it reads the environment of the shell that invoked it, not of the
+  `hmc-mcp serve` process an MCP host launched with its own environment block.
+  #470 tracks reporting the value from the running server itself.
 
   When the setting is off, `power_lpar` reads no ownership token and opens no SSH
   connection — the call path is exactly what it was before this setting existed.
