@@ -79,6 +79,10 @@ def test_readme_documents_the_typed_facade_and_its_covered_surface() -> None:
         assert covered in library
     # The fake-client remedy has to be a mechanism that actually type-checks.
     assert "typing.cast(HMCClient, fake)" in library
+    # The limit is pinned next to the claim: 36 exported operations return raw
+    # HMC mappings, so a bare "everything is typed" note would oversell it.
+    assert "`dict[str, Any]`" in library
+    assert "payload contents stay opaque" in library
 
 
 def test_vios_backup_hmc_floor_is_published_without_narrowing_general_support() -> None:
