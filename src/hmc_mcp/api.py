@@ -17,7 +17,7 @@ from hmc_mcp.documents import (
     StorageKind,
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
-from hmc_mcp.jobs import DeviceType, JobOutcome, LuType
+from hmc_mcp.jobs import DeviceType, JobOutcome, LuType, RemoteRestartOperation
 from hmc_mcp.operations_jobs import get_job, wait_for_job
 from hmc_mcp.operations_adapters import (
     AdapterResult,
@@ -34,6 +34,7 @@ from hmc_mcp.operations_install import install_lpar_os, install_vios
 from hmc_mcp.operations_lpar import (
     LparCreation,
     LparCreationResult,
+    ProvisionAffinityAssessment,
     clear_lpar_boot_order,
     read_lpar_boot_order,
     set_lpar_boot_order,
@@ -74,6 +75,7 @@ from hmc_mcp.operations_network import (
 from hmc_mcp.operations_pcm import (
     MetricKind,
     PcmCategory,
+    PcmResource,
     get_pcm_preferences,
     metric_data,
     metric_links,
@@ -115,7 +117,6 @@ from hmc_mcp.operations_assignments import (
 )
 from hmc_mcp.operations_provision import (
     AttachDiskResult,
-    ProvisionAffinityAssessment,
     ProvisionNetwork,
     ProvisionResult,
     ProvisionStorage,
@@ -251,6 +252,7 @@ __all__ = [
     "abort_lpar_migration",
     "recover_lpar_migration",
     "remote_restart_lpar",
+    "RemoteRestartOperation",
     "LpmResult",
     "LpmAffinityPreflightRequest",
     "LpmAffinityPreflightOutcome",
@@ -267,6 +269,7 @@ __all__ = [
     "metric_data",
     "PcmCategory",
     "MetricKind",
+    "PcmResource",
     "DedicatedSlot",
     "InventoryResult",
     "InventorySelector",
@@ -312,7 +315,6 @@ __all__ = [
     "list_resource_group_memopt_scores",
     "plan_resource_group_memopt_scores",
     "list_sea_adapters",
-    "set_sriov_adapter_mode",
     "list_vnics",
     "VnicBackingSelector",
     "VnicBackingSnapshot",
