@@ -677,7 +677,19 @@ async def unmount_optical_media(
     an unload path would need its own live survey, on the ADR 0069 pattern.)
 
     Selection is currently a substring match over the serialized mapping and
-    does not reject an empty media_name or refuse an ambiguous match; see #439.
+    does not reject an empty media_name or refuse an ambiguous match, so a
+    partial name can remove a different mapping — including a non-optical one
+    such as a boot disk.  In the other direction, a media_name matching no
+    mapping returns normally without a POST, so returning is not evidence that a
+    mapping was removed.  ADR 0079 rejects both silent success and selection by
+    LPAR and backing-storage name for VirtualSCSIMapping removal; #439 owns the
+    reconciliation.  Until then, verify against list_storage_mappings — not
+    list_optical_mappings, which filters to VirtualOpticalMedia backing and
+    cannot see a wrongly removed disk mapping — captured before and after.
+
+    The read-modify-write rewrites the whole VirtualIOServer document from a GET
+    snapshot, so another writer's change in that window is lost; ADR 0079 puts
+    the duty to serialize concurrent VIOS mapping changes on the caller.
     """
     vios_uuid = await resolve_vios_uuid(hmc, vios)
     lpar_uuid = await resolve_lpar_uuid(
