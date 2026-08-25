@@ -43,31 +43,47 @@ def _throwaway(help_text: str = "Throwaway.") -> typer.Typer:
     return group
 
 
-def test_group_names_match_the_apps_own_registry() -> None:
-    names = smoke_cli_groups.group_names(app)
+def test_top_level_group_paths_match_the_apps_own_registry() -> None:
+    paths = smoke_cli_groups.group_paths(app)
 
     # Two independent derivations of the same set: the built command tree (what
-    # the script reads) and the registry `cli_app` writes to.
-    assert set(names) == {group.name for group in app.registered_groups}
-    assert set(FORMERLY_LISTED) < set(names)
+    # the script reads) and the registry `cli_app` writes to. Only the top level
+    # is compared -- the registry holds nothing about groups nested deeper.
+    assert {path[0] for path in paths if len(path) == 1} == {
+        group.name for group in app.registered_groups
+    }
+    assert {(name,) for name in FORMERLY_LISTED} < set(paths)
     # `serve` is a top-level command, not a group; `serve --help` is not a group
     # help page and rendering it here would misreport what is covered.
-    assert "serve" not in names
+    assert ("serve",) not in paths
 
 
 def test_a_newly_registered_group_is_picked_up_without_editing_the_script() -> None:
     """The bite: the derivation follows the app, not a list in the script."""
-    before = smoke_cli_groups.group_names(app)
-    assert "zzz-throwaway" not in before
+    before = smoke_cli_groups.group_paths(app)
+    assert ("zzz-throwaway",) not in before
 
     app.add_typer(_throwaway(), name="zzz-throwaway")
     try:
-        after = smoke_cli_groups.group_names(app)
+        after = smoke_cli_groups.group_paths(app)
     finally:
         app.registered_groups.pop()
 
-    assert set(after) - set(before) == {"zzz-throwaway"}
-    assert smoke_cli_groups.group_names(app) == before
+    assert set(after) - set(before) == {("zzz-throwaway",)}
+    assert smoke_cli_groups.group_paths(app) == before
+
+
+def test_a_group_nested_under_another_group_is_reached() -> None:
+    """A nested group is invisible in `registered_groups`; the tree still has it."""
+    outer = typer.Typer()
+    outer.add_typer(_throwaway(), name="inner")
+    root = typer.Typer()
+    root.add_typer(outer, name="outer")
+
+    paths, problems = smoke_cli_groups.smoke(root)
+
+    assert paths == [("outer",), ("outer", "inner")]
+    assert problems == []
 
 
 def test_the_live_cli_renders_every_group_help(
@@ -79,7 +95,7 @@ def test_the_live_cli_renders_every_group_help(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out.startswith(
-        f"Rendered --help for {len(smoke_cli_groups.group_names(app))} CLI groups."
+        f"Rendered --help for {len(smoke_cli_groups.group_paths(app))} CLI groups."
     )
 
 
@@ -90,9 +106,9 @@ def test_an_app_with_no_groups_is_reported_rather_than_passed_over() -> None:
     def _only() -> None:
         """Not a group."""
 
-    names, problems = smoke_cli_groups.smoke(bare)
+    paths, problems = smoke_cli_groups.smoke(bare)
 
-    assert names == []
+    assert paths == []
     assert problems == ["no CLI groups are registered; nothing was smoke-loaded"]
 
 
@@ -105,9 +121,9 @@ def test_a_group_whose_help_cannot_render_is_reported_with_its_traceback() -> No
     broken.add_typer(_throwaway(), name="fine")
     broken.add_typer(_throwaway("Broken [/bold] markup."), name="unrenderable")
 
-    names, problems = smoke_cli_groups.smoke(broken)
+    paths, problems = smoke_cli_groups.smoke(broken)
 
-    assert names == ["fine", "unrenderable"]
+    assert paths == [("fine",), ("unrenderable",)]
     assert len(problems) == 1
     assert problems[0].startswith("unrenderable --help exited 1")
     assert "MarkupError" in problems[0]
