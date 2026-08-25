@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Literal
+
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    CapturedPolicyState,
+    assess_affinity,
+)
 
 from . import audit
 from .client import HMCClient
@@ -19,6 +26,8 @@ from .documents import (
 )
 from .errors import HMCError
 from .jobs import (
+    SUCCESSFUL_JOB_STATUSES,
+    job_outcome,
     power_off_lpar_job,
     power_on_lpar_job,
     validate_wait_timing,
@@ -103,9 +112,107 @@ class LparPowerOnOutcome:
     already_running: bool
     job: dict[str, Any] | None
     message: str | None
+    affinity_assessment: LparAffinityAssessmentOutcome
 
 
-def power_on_outcome(result: LparPowerResult) -> LparPowerOnOutcome:
+@dataclass(frozen=True)
+class ProvisionAffinityAssessment:
+    """Caller-owned captured evidence and post-activation response policy."""
+
+    system_name_or_uuid: str = field(
+        metadata={"description": "Captured managed-system identity; must match target."}
+    )
+    lpar_name: str = field(
+        metadata={"description": "Captured LPAR name; must match requested name."}
+    )
+    captured_score: int | None = field(
+        metadata={"description": "Previously observed LPAR affinity score."}
+    )
+    captured_policy_state: CapturedPolicyState = field(
+        metadata={"description": "Capability and policy state at capture time."}
+    )
+    captured_minimum: int | None = field(
+        metadata={"description": "Minimum affinity score observed at capture time."}
+    )
+    captured_at: datetime = field(
+        metadata={"description": "Timezone-aware timestamp for captured evidence."}
+    )
+    stale_after_seconds: int = field(
+        metadata={"description": "Maximum accepted age of captured evidence."}
+    )
+    response: Literal["warn", "fail"] = field(
+        metadata={"description": "Explicit response to an adverse assessment."}
+    )
+    regression_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned maximum acceptable score regression."},
+    )
+    optimization_threshold: int | None = field(
+        default=None,
+        metadata={"description": "Caller-owned minimum worthwhile predicted gain."},
+    )
+    timeout_seconds: int = field(
+        default=300,
+        metadata={"description": "Maximum seconds to wait for PowerOn completion."},
+    )
+    poll_interval: int = field(
+        default=5,
+        metadata={"description": "Seconds between PowerOn job status reads."},
+    )
+
+
+@dataclass(frozen=True)
+class LparAffinityAssessmentOutcome:
+    """Whether and how post-activation affinity was assessed."""
+
+    measured: bool
+    status: Literal["skipped", "passed", "warned", "failed", "unavailable"]
+    reason: str
+    assessment: dict[str, Any] | None
+
+
+def affinity_not_measured(
+    status: Literal["skipped", "failed", "unavailable"], reason: str
+) -> LparAffinityAssessmentOutcome:
+    """Build an outcome for a measurement that did not run."""
+    return LparAffinityAssessmentOutcome(False, status, reason, None)
+
+
+def validate_affinity_request(
+    request: ProvisionAffinityAssessment, configured_minimum: int | None = None
+) -> None:
+    """Validate caller-controlled assessment values without HMC traffic."""
+    if request.response not in {"warn", "fail"}:
+        raise ValueError("affinity assessment response must be warn or fail")
+    if request.timeout_seconds < 0:
+        raise ValueError("affinity assessment timeout_seconds must be non-negative")
+    if request.poll_interval <= 0:
+        raise ValueError("affinity assessment poll_interval must be positive")
+    policy_state: Literal["configured", "absent"] = (
+        "configured" if configured_minimum is not None else "absent"
+    )
+    assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=request.captured_score,
+            predicted_score=request.captured_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=request.captured_at,
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+
+
+def power_on_outcome(
+    result: LparPowerResult,
+    affinity_assessment: LparAffinityAssessmentOutcome | None = None,
+) -> LparPowerOnOutcome:
     """Normalize submitted and already-running PowerOn results."""
     job = result.job
     if job is not None and job.get("already_running") is True:
@@ -114,8 +221,120 @@ def power_on_outcome(result: LparPowerResult) -> LparPowerOnOutcome:
             already_running=True,
             job=None,
             message=message if isinstance(message, str) else None,
+            affinity_assessment=affinity_assessment
+            or affinity_not_measured(
+                "skipped",
+                "No activation was observed because the LPAR was already running.",
+            ),
         )
-    return LparPowerOnOutcome(already_running=False, job=job, message=None)
+    return LparPowerOnOutcome(
+        already_running=False,
+        job=job,
+        message=None,
+        affinity_assessment=affinity_assessment
+        or affinity_not_measured(
+            "skipped", "Post-activation assessment was not requested."
+        ),
+    )
+
+
+def _score(row: dict[str, Any], key: str) -> int | None:
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+async def assess_post_activation_affinity(
+    hmc: HMCClient,
+    request: ProvisionAffinityAssessment,
+    *,
+    configured_minimum: int | None = None,
+) -> dict[str, Any]:
+    """Measure and classify affinity using the accepted assessment contract."""
+    from .operations_ssh_network import (
+        get_lpar_memopt_score,
+        get_minimum_affinity_policy,
+        plan_lpar_memopt_scores,
+    )
+
+    current_row = await get_lpar_memopt_score(
+        hmc.config, request.system_name_or_uuid, request.lpar_name
+    )
+    predicted_rows = await plan_lpar_memopt_scores(
+        hmc.config, request.system_name_or_uuid
+    )
+    predicted_row = next(
+        (row for row in predicted_rows if row.get("lpar_name") == request.lpar_name),
+        None,
+    )
+    predicted_score = (
+        _score(predicted_row, "predicted_lpar_score") if predicted_row else None
+    )
+    if configured_minimum is None:
+        policy = await get_minimum_affinity_policy(
+            hmc.config, request.system_name_or_uuid, request.lpar_name
+        )
+        if policy.capability == "capability-unavailable":
+            policy_state: Literal["configured", "absent", "unsupported"] = "unsupported"
+        elif policy.min_affinity_score is not None:
+            policy_state = "configured"
+        else:
+            policy_state = "absent"
+        configured_minimum = policy.min_affinity_score
+    else:
+        policy_state = "configured"
+    assessment = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=request.captured_score,
+            current_score=_score(current_row, "curr_lpar_score"),
+            predicted_score=predicted_score,
+            policy_state=policy_state,
+            captured_policy_state=request.captured_policy_state,
+            configured_minimum=configured_minimum,
+            captured_minimum=request.captured_minimum,
+            captured_at=request.captured_at,
+            assessed_at=datetime.now(UTC),
+            stale_after_seconds=request.stale_after_seconds,
+            regression_threshold=request.regression_threshold,
+            optimization_threshold=request.optimization_threshold,
+        )
+    )
+    return {
+        "assessment": asdict(assessment),
+        "achieved_score": assessment.evidence.current_score,
+        "predicted_score": assessment.evidence.predicted_score,
+        "prediction_guaranteed": False,
+    }
+
+
+def classify_affinity_outcome(
+    result: dict[str, Any], response: Literal["warn", "fail"]
+) -> LparAffinityAssessmentOutcome:
+    """Map normalized assessment evidence to the standalone response contract."""
+    assessment = result["assessment"]
+    classification = assessment["classification"]
+    explanation = assessment["explanation"]
+    if classification == "none":
+        return LparAffinityAssessmentOutcome(True, "passed", explanation, result)
+    if classification == "unsupported-data":
+        status = "failed" if response == "fail" else "unavailable"
+        return LparAffinityAssessmentOutcome(True, status, explanation, result)
+    status = "failed" if response == "fail" else "warned"
+    return LparAffinityAssessmentOutcome(True, status, explanation, result)
+
+
+def activation_allows_assessment(result: LparPowerResult) -> tuple[bool, str]:
+    """Return whether a waited PowerOn result proves successful activation."""
+    outcome = job_outcome("PowerOn", result.job)
+    if outcome.timed_out:
+        return False, "PowerOn did not reach a terminal status before timeout."
+    if outcome.status not in SUCCESSFUL_JOB_STATUSES:
+        return False, outcome.error or f"PowerOn ended with status {outcome.status}."
+    return True, "PowerOn reached a successful terminal status."
 
 
 def parse_lpar_ownership_owner(description: str) -> str | None:
@@ -625,15 +844,15 @@ async def read_lpar_boot_order(
     lpar_uuid: str,
 ) -> dict[str, Any]:
     """Read an LPAR's boot order state (pending and current).
-    
+
     Returns the boot device order for the LPAR, including both the pending
     boot string (next boot) and the current boot device list.
-    
+
     Args:
         hmc: HMC client instance.
         system_name_or_uuid: CLI name or UUID of the system.
         lpar_uuid: UUID of the LPAR.
-        
+
     Returns:
         Dictionary with boot order information containing:
         - lpar_uuid: UUID of the LPAR
@@ -641,17 +860,17 @@ async def read_lpar_boot_order(
         - pending_boot_string: The PendingBootString for the next boot
         - boot_device_list: The current BootDeviceList
         - last_booted_device_string: The device used on last boot
-        
+
     Raises:
         ValueError: If the LPAR cannot be resolved or found.
     """
     lpar = await hmc.get_logical_partition(lpar_uuid)
     if not lpar:
         raise ValueError(f"LPAR {lpar_uuid!r} not found")
-    
+
     resource = lpar.get("Resource") or {}
     boot_list_info = resource.get("BootListInformation") or {}
-    
+
     return {
         "lpar_uuid": lpar_uuid,
         "lpar_name": resource.get("PartitionName"),
@@ -670,26 +889,26 @@ async def set_lpar_boot_order(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Set an LPAR's boot order to a validated device selector list.
-    
+
     Sets the PendingBootString to an ordered list of boot device selectors.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Args:
         hmc: HMC client instance.
         system_name_or_uuid: CLI name or UUID of the system.
         lpar_uuid: UUID of the LPAR.
         devices: Ordered list of boot device selectors (cd, disk, network).
         ownership_override: If True, skip ownership token validation.
-        
+
     Returns:
         Updated LPAR resource if successful, None otherwise.
-        
+
     Raises:
         ValueError: If device selectors are invalid or LPAR cannot be resolved.
     """
     # Import here to avoid circular imports
     from .documents import BOOT_DEVICE_SELECTORS, build_boot_order_document
-    
+
     # Validate device selectors
     for device in devices:
         if device not in BOOT_DEVICE_SELECTORS:
@@ -697,10 +916,10 @@ async def set_lpar_boot_order(
                 f"Invalid boot device selector: {device!r}. "
                 f"Must be one of: {BOOT_DEVICE_SELECTORS}"
             )
-    
+
     if not devices:
         raise ValueError("Boot order must contain at least one device")
-    
+
     # Resolve system and LPAR names for ownership authorization
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
@@ -709,7 +928,7 @@ async def set_lpar_boot_order(
     await authorize_lpar_mutation(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
-    
+
     # Build and submit the boot order document
     xml = build_boot_order_document(devices)
     try:
@@ -717,14 +936,14 @@ async def set_lpar_boot_order(
     except HMCError as exc:
         _check_lpar_write_error(exc)
         raise
-    
+
     _logger.info(
         "Set boot order for LPAR %s (%s) to: %s",
         lpar_name,
         lpar_uuid,
         ", ".join(devices),
     )
-    
+
     return updated
 
 
@@ -736,25 +955,25 @@ async def clear_lpar_boot_order(
     ownership_override: bool = False,
 ) -> dict[str, Any] | None:
     """Clear an LPAR's boot order (restore HMC defaults).
-    
+
     Clears the PendingBootString, restoring the default boot behavior.
     Changes take effect on the next LPAR activation (no reboot required).
-    
+
     Args:
         hmc: HMC client instance.
         system_name_or_uuid: CLI name or UUID of the system.
         lpar_uuid: UUID of the LPAR.
         ownership_override: If True, skip ownership token validation.
-        
+
     Returns:
         Updated LPAR resource if successful, None otherwise.
-        
+
     Raises:
         ValueError: If LPAR cannot be resolved.
     """
     # Import here to avoid circular imports
     from .documents import build_clear_boot_order_document
-    
+
     # Resolve system and LPAR names for ownership authorization
     system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     system_name, lpar_name = await resolve_lpar_ownership_names(
@@ -763,7 +982,7 @@ async def clear_lpar_boot_order(
     await authorize_lpar_mutation(
         hmc, system_name, lpar_name, ownership_override=ownership_override
     )
-    
+
     # Build and submit the clear boot order document
     xml = build_clear_boot_order_document()
     try:
@@ -771,11 +990,11 @@ async def clear_lpar_boot_order(
     except HMCError as exc:
         _check_lpar_write_error(exc)
         raise
-    
+
     _logger.info(
         "Cleared boot order for LPAR %s (%s) (restored defaults)",
         lpar_name,
         lpar_uuid,
     )
-    
+
     return updated

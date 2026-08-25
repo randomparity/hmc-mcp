@@ -12,6 +12,7 @@ hmc_remove_memory_pool.
 
 import asyncio
 from dataclasses import asdict
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -21,6 +22,7 @@ from hmc_mcp.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmc_mcp.dispatch_scope import dispatch_authorizer
 from hmc_mcp.legacy_policy import compile_legacy_policy
 from hmc_mcp.client import HMCError
+from hmc_mcp.operations_lpar import ProvisionAffinityAssessment
 from hmc_mcp.server import (
     TOOL_SECURITY,
     create_mcp,
@@ -779,6 +781,21 @@ def _mock_power_on_guard(router, state: str):
     )
 
 
+def _affinity_request() -> ProvisionAffinityAssessment:
+    return ProvisionAffinityAssessment(
+        system_name_or_uuid=SYSTEM_UUID,
+        lpar_name=LPAR_UUID,
+        captured_score=80,
+        captured_policy_state="absent",
+        captured_minimum=None,
+        captured_at=datetime.now(UTC),
+        stale_after_seconds=300,
+        response="warn",
+        regression_threshold=5,
+        optimization_threshold=5,
+    )
+
+
 def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     """The already-running path returns the stable PowerOn outcome."""
     from hmc_mcp.server import hmc_power_on_lpar
@@ -789,11 +806,18 @@ def test_power_on_lpar_already_running_returns_message(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert not power_on_route.called
-    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert set(asdict(result)) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert result.already_running is True
     assert result.job is None
     assert isinstance(result.message, str)
     assert LPAR_UUID in result.message
+    assert result.affinity_assessment.status == "skipped"
+    assert result.affinity_assessment.measured is False
 
 
 def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
@@ -806,17 +830,28 @@ def test_power_on_lpar_not_activated_submits_job(monkeypatch, mock_hmc):
     result = hmc_power_on_lpar(LPAR_UUID)
 
     assert power_on_route.called
-    assert set(asdict(result)) == {"already_running", "job", "message"}
+    assert set(asdict(result)) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert result.already_running is False
     assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
     assert result.message is None
+    assert result.affinity_assessment.status == "skipped"
 
 
 def test_power_on_lpar_has_one_stable_output_schema():
     schema = _tools_by_name()["hmc_power_on_lpar"].output_schema
 
     assert schema["type"] == "object"
-    assert set(schema["properties"]) == {"already_running", "job", "message"}
+    assert set(schema["properties"]) == {
+        "already_running",
+        "job",
+        "message",
+        "affinity_assessment",
+    }
     assert set(schema["required"]) == set(schema["properties"])
     assert schema["properties"]["already_running"] == {"type": "boolean"}
     assert {variant["type"] for variant in schema["properties"]["job"]["anyOf"]} == {
@@ -844,6 +879,47 @@ def test_power_on_lpar_force_skips_guard(monkeypatch, mock_hmc):
     assert result.already_running is False
     assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
     assert result.message is None
+
+
+def test_power_on_lpar_non_waiting_assessment_does_not_measure(monkeypatch, mock_hmc):
+    """Opt-in assessment preserves non-waiting submission semantics."""
+    from hmc_mcp.server import hmc_power_on_lpar
+
+    _hmc_env(monkeypatch)
+    _mock_power_on_guard(mock_hmc, "not activated")
+
+    result = hmc_power_on_lpar(
+        LPAR_UUID,
+        system_name_or_uuid=SYSTEM_UUID,
+        affinity_assessment=_affinity_request(),
+    )
+
+    assert result.job["Resource"]["JobID"] == "job-uuid-power-on"
+    assert result.affinity_assessment.measured is False
+    assert result.affinity_assessment.status == "skipped"
+    assert "wait=true" in result.affinity_assessment.reason
+
+
+def test_power_on_lpar_already_running_assessment_does_not_measure(
+    monkeypatch, mock_hmc
+):
+    """Already running is not an activation observed by this call."""
+    from hmc_mcp.server import hmc_power_on_lpar
+
+    _hmc_env(monkeypatch)
+    _mock_power_on_guard(mock_hmc, "running")
+
+    result = hmc_power_on_lpar(
+        LPAR_UUID,
+        wait=True,
+        system_name_or_uuid=SYSTEM_UUID,
+        affinity_assessment=_affinity_request(),
+    )
+
+    assert result.already_running is True
+    assert result.affinity_assessment.measured is False
+    assert result.affinity_assessment.status == "skipped"
+    assert "already running" in result.affinity_assessment.reason
 
 
 # ------------------------------------------------------------------ #

@@ -9,14 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
-from typing import Any, Literal
-
-from hmc_mcp.affinity_assessment import (
-    AffinityAssessmentInput,
-    CapturedPolicyState,
-    assess_affinity,
-)
+from typing import Any
 
 from .client import HMCClient
 from .common import resolve_lpar_uuid, resolve_system_uuid
@@ -27,15 +20,13 @@ from .operations_adapters import add_network_adapter, add_vios_adapter
 from .operations_lpar import (
     LparCreation,
     LparCreationResult,
+    ProvisionAffinityAssessment,
+    assess_post_activation_affinity,
     create_and_stamp_lpar,
     power_lpar,
+    validate_affinity_request,
 )
 from .operations_ssh_network import set_minimum_affinity_policy
-from .operations_ssh_network import (
-    get_lpar_memopt_score,
-    get_minimum_affinity_policy,
-    plan_lpar_memopt_scores,
-)
 from .ssh import HMCCLIError
 from .ssh_selectors import resolve_ssh_names
 from .operations_storage import create_virtual_disk, map_storage
@@ -87,52 +78,6 @@ class ProvisionStorage:
         metadata={
             "description": "Volume-group UUID used when creating a virtual disk."
         },
-    )
-
-
-@dataclass(frozen=True)
-class ProvisionAffinityAssessment:
-    """Caller-owned captured evidence and post-activation response policy."""
-
-    system_name_or_uuid: str = field(
-        metadata={"description": "Captured managed-system identity; must match target."}
-    )
-    lpar_name: str = field(
-        metadata={"description": "Captured LPAR name; must match requested name."}
-    )
-    captured_score: int | None = field(
-        metadata={"description": "Previously observed LPAR affinity score."}
-    )
-    captured_policy_state: CapturedPolicyState = field(
-        metadata={"description": "Capability and policy state at capture time."}
-    )
-    captured_minimum: int | None = field(
-        metadata={"description": "Minimum affinity score observed at capture time."}
-    )
-    captured_at: datetime = field(
-        metadata={"description": "Timezone-aware timestamp for captured evidence."}
-    )
-    stale_after_seconds: int = field(
-        metadata={"description": "Maximum accepted age of captured evidence."}
-    )
-    response: Literal["warn", "fail"] = field(
-        metadata={"description": "Explicit response to an adverse assessment."}
-    )
-    regression_threshold: int | None = field(
-        default=None,
-        metadata={"description": "Caller-owned maximum acceptable score regression."},
-    )
-    optimization_threshold: int | None = field(
-        default=None,
-        metadata={"description": "Caller-owned minimum worthwhile predicted gain."},
-    )
-    timeout_seconds: int = field(
-        default=300,
-        metadata={"description": "Maximum seconds to wait for PowerOn completion."},
-    )
-    poll_interval: int = field(
-        default=5,
-        metadata={"description": "Seconds between PowerOn job status reads."},
     )
 
 
@@ -435,43 +380,15 @@ def _provision_result(
     )
 
 
-def _score(row: dict[str, object], field_name: str) -> int | None:
-    value = row.get(field_name)
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
 def _validate_affinity_request(
     request: ProvisionAffinityAssessment,
     applied_policy: MinimumAffinityPolicy | None,
 ) -> None:
     """Validate every caller-controlled assessment value without HMC traffic."""
-    policy_state: Literal["configured", "absent"] = (
-        "configured" if applied_policy is not None else "absent"
-    )
     configured_minimum = (
         applied_policy.min_affinity_score if applied_policy is not None else None
     )
-    assess_affinity(
-        AffinityAssessmentInput(
-            captured_score=request.captured_score,
-            current_score=request.captured_score,
-            predicted_score=request.captured_score,
-            policy_state=policy_state,
-            captured_policy_state=request.captured_policy_state,
-            configured_minimum=configured_minimum,
-            captured_minimum=request.captured_minimum,
-            captured_at=request.captured_at,
-            assessed_at=request.captured_at,
-            stale_after_seconds=request.stale_after_seconds,
-            regression_threshold=request.regression_threshold,
-            optimization_threshold=request.optimization_threshold,
-        )
-    )
+    validate_affinity_request(request, configured_minimum)
 
 
 async def _assess_post_activation_affinity(
@@ -481,48 +398,14 @@ async def _assess_post_activation_affinity(
     request: ProvisionAffinityAssessment,
     applied_policy: MinimumAffinityPolicy | None,
 ) -> dict[str, Any]:
-    current_row = await get_lpar_memopt_score(hmc.config, system, lpar)
-    predicted_rows = await plan_lpar_memopt_scores(hmc.config, system)
-    predicted_row = next(
-        (row for row in predicted_rows if row.get("lpar_name") == lpar), None
+    """Preserve the provisioning boundary while sharing measurement logic."""
+    del system, lpar
+    configured_minimum = (
+        applied_policy.min_affinity_score if applied_policy is not None else None
     )
-    predicted_score = (
-        _score(predicted_row, "predicted_lpar_score") if predicted_row else None
+    return await assess_post_activation_affinity(
+        hmc, request, configured_minimum=configured_minimum
     )
-    if applied_policy is None:
-        policy = await get_minimum_affinity_policy(hmc.config, system, lpar)
-        if policy.capability == "capability-unavailable":
-            policy_state: Literal["configured", "absent", "unsupported"] = "unsupported"
-        elif policy.min_affinity_score is not None:
-            policy_state = "configured"
-        else:
-            policy_state = "absent"
-        configured_minimum = policy.min_affinity_score
-    else:
-        policy_state = "configured"
-        configured_minimum = applied_policy.min_affinity_score
-    assessment = assess_affinity(
-        AffinityAssessmentInput(
-            captured_score=request.captured_score,
-            current_score=_score(current_row, "curr_lpar_score"),
-            predicted_score=predicted_score,
-            policy_state=policy_state,
-            captured_policy_state=request.captured_policy_state,
-            configured_minimum=configured_minimum,
-            captured_minimum=request.captured_minimum,
-            captured_at=request.captured_at,
-            assessed_at=datetime.now(UTC),
-            stale_after_seconds=request.stale_after_seconds,
-            regression_threshold=request.regression_threshold,
-            optimization_threshold=request.optimization_threshold,
-        )
-    )
-    return {
-        "assessment": asdict(assessment),
-        "achieved_score": assessment.evidence.current_score,
-        "predicted_score": assessment.evidence.predicted_score,
-        "prediction_guaranteed": False,
-    }
 
 
 # ---------------------------------------------------------------------- #

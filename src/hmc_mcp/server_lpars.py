@@ -10,6 +10,7 @@ from ._app import (
     _run,
 )
 from .errors import HMCError
+from .ssh import HMCCLIError
 from .common import client_from_env, resolve_lpar_uuid
 from .documents import (
     Keylock,
@@ -25,6 +26,11 @@ from .operations_decommission import DecommissionResult, decommission_lpar
 from .operations_lpar import (
     LparCreation,
     LparPowerOnOutcome,
+    ProvisionAffinityAssessment,
+    activation_allows_assessment,
+    affinity_not_measured,
+    assess_post_activation_affinity,
+    classify_affinity_outcome,
     _check_lpar_write_error,
     create_and_stamp_lpar,
     delete_lpar,
@@ -32,6 +38,7 @@ from .operations_lpar import (
     power_lpar,
     power_on_outcome,
     rename_lpar,
+    validate_affinity_request,
 )
 from .operations_assignments import (
     AssignmentStep,
@@ -498,6 +505,7 @@ def hmc_power_on_lpar(
     force: bool = False,
     profile: str | None = None,
     system_name_or_uuid: str | None = None,
+    affinity_assessment: ProvisionAffinityAssessment | None = None,
 ) -> LparPowerOnOutcome:
     """Submit a PowerOn job for a logical partition.
 
@@ -523,9 +531,23 @@ def hmc_power_on_lpar(
         profile: Optional configured HMC profile name; uses the default when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
+        affinity_assessment: Optional target-bound captured affinity evidence and
+            explicit warning or fail-closed response intent.
     """
 
     validate_wait_timing(wait, timeout_seconds, poll_interval)
+    if affinity_assessment is not None:
+        if system_name_or_uuid is None:
+            raise ValueError(
+                "system_name_or_uuid is required for post-activation affinity assessment"
+            )
+        if affinity_assessment.system_name_or_uuid != system_name_or_uuid:
+            raise ValueError(
+                "affinity assessment managed-system identity must match target"
+            )
+        if affinity_assessment.lpar_name != lpar_name_or_uuid:
+            raise ValueError("affinity assessment LPAR identity must match target")
+        validate_affinity_request(affinity_assessment)
 
     async def _go():
         async with client_from_env(profile) as hmc:
@@ -539,7 +561,48 @@ def hmc_power_on_lpar(
                 timeout_seconds=timeout_seconds,
                 poll_interval=poll_interval,
             )
-            return power_on_outcome(result)
+            if (
+                affinity_assessment is None
+                or result.job is None
+                or result.job.get("already_running") is True
+            ):
+                return power_on_outcome(result)
+            if not wait:
+                return power_on_outcome(
+                    result,
+                    affinity_not_measured(
+                        "skipped",
+                        "Assessment requires wait=true to observe successful activation.",
+                    ),
+                )
+            successful, reason = activation_allows_assessment(result)
+            if not successful:
+                status = (
+                    "failed"
+                    if affinity_assessment.response == "fail"
+                    else "unavailable"
+                )
+                return power_on_outcome(result, affinity_not_measured(status, reason))
+            try:
+                assessment = await assess_post_activation_affinity(
+                    hmc, affinity_assessment
+                )
+            except (HMCError, HMCCLIError, ValueError) as exc:
+                status = (
+                    "failed"
+                    if affinity_assessment.response == "fail"
+                    else "unavailable"
+                )
+                return power_on_outcome(
+                    result,
+                    affinity_not_measured(
+                        status, f"Affinity measurement unavailable: {exc}"
+                    ),
+                )
+            return power_on_outcome(
+                result,
+                classify_affinity_outcome(assessment, affinity_assessment.response),
+            )
 
     return _run(_go)
 
