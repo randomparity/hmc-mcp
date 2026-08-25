@@ -61,9 +61,11 @@ What this does not reach, so a green run is not read as more coverage than it is
   not specific to the TLS record; guarding it means a sample extractor across every event
   section, which is more machinery than the residual is worth here. Issue #506 owns it;
 - the editing constraint this guard puts on the two documents. Both TLS passages must keep
-  those eight words in that order — the environment-variable note writes no `source`
-  identifier to anchor on, so ordinary prose is the only anchor available — and that note
-  must stay one `- **` bullet. Line breaks within the clause do not matter: `_tls_passage`
+  the `SOURCE_CLAUSE` wording in order, with or without `effective` — the
+  environment-variable note writes no `source` identifier to anchor on, so ordinary prose
+  is the only anchor available — and that note must stay one `- **` bullet. The regex is
+  the authority; this bullet pins no count, for the reason the paragraph above gives.
+  Line breaks within the clause do not matter: `_tls_passage`
   collapses whitespace, so re-wrapping either paragraph is safe. Every violation fails
   loud, but it fails naming a regex, and an editor of a settings document has no reason to
   open a test named for a different one. `docs/authorization-audit.md` carries a marker
@@ -131,8 +133,8 @@ TLS_PASSAGE = {
 #: rather than the punctuation, which differs between them: em dashes in the audit
 #: document, parentheses in the environment-variable note. Single spaces are enough
 #: because `_tls_passage` has already collapsed the passage's line breaks; both documents
-#: are hard-wrapped prose, so where a break lands inside these eight words is an accident
-#: of the surrounding paragraph rather than anything an editor chose.
+#: are hard-wrapped prose, so where a break lands inside the clause is an accident of the
+#: surrounding paragraph rather than anything an editor chose.
 SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came from\b")
 #: One `source` value: a lowercase hyphenated name, optionally suffixed with the
 #: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
