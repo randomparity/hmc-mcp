@@ -27,8 +27,10 @@ When configured policy is absent, both caller thresholds are required. Missing s
 future timestamps, evidence older than `stale_after_seconds`, or contradictory evidence return
 `unsupported-data` with the precise reason and corrective action. Contradiction is representable
 as a currently configured minimum that differs from the minimum captured in the snapshot; the
-assessment refuses to choose which policy is authoritative. Missing or unsupported captured-policy
-capability remains explicit unsupported evidence rather than collapsing into policy absence.
+assessment refuses to choose which policy is authoritative. A missing captured-policy capability
+is unsupported evidence. An explicit unsupported policy capability proves configured policy is
+unavailable, so an absent current policy plus both caller thresholds remains assessable; returned
+evidence preserves `captured_policy_state="unsupported"`.
 
 With supported evidence, precedence is policy violation (`current < configured_minimum`),
 regression (`captured - current >= regression_threshold` and positive), optimization opportunity

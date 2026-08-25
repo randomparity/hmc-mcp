@@ -153,7 +153,7 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "configured policy is unsupported",
             "Verify platform support, then provide caller thresholds if no policy exists.",
         )
-    if value.captured_policy_state in {"unsupported", "missing"}:
+    if value.captured_policy_state == "missing":
         return _unsupported(
             value,
             f"captured policy is {value.captured_policy_state}",
@@ -161,7 +161,7 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
         )
     if value.policy_state == "absent" and (
         value.configured_minimum is not None
-        or value.captured_policy_state != "absent"
+        or value.captured_policy_state not in {"absent", "unsupported"}
         or value.captured_minimum is not None
     ):
         return _unsupported(

@@ -63,8 +63,8 @@ def test_classifies_supported_evidence(changes, classification) -> None:
         ({"current_score": None}, "current score is missing"),
         ({"policy_state": "unsupported"}, "configured policy is unsupported"),
         (
-            {"captured_policy_state": "unsupported"},
-            "captured policy is unsupported",
+            {"captured_policy_state": "missing"},
+            "captured policy is missing",
         ),
         ({"captured_at": NOW - timedelta(hours=3)}, "captured evidence is stale"),
         (
@@ -106,6 +106,14 @@ def test_returns_unsupported_data_with_evidence(changes, reason) -> None:
 def test_requires_caller_thresholds_without_configured_policy() -> None:
     with pytest.raises(ValueError, match="caller thresholds are required"):
         assess_affinity(_input(regression_threshold=None))
+
+
+def test_unsupported_policy_capability_uses_caller_thresholds() -> None:
+    result = assess_affinity(
+        _input(captured_policy_state="unsupported", current_score=84)
+    )
+
+    assert result.classification == "regression"
 
 
 @pytest.mark.parametrize(

@@ -234,7 +234,7 @@ async def test_snapshot_affinity_returns_unsupported_for_out_of_range_score(
 
 
 @pytest.mark.asyncio
-async def test_snapshot_affinity_preserves_unsupported_captured_policy() -> None:
+async def test_snapshot_affinity_uses_thresholds_when_policy_is_unsupported() -> None:
     document = _document()
     document["capabilities"].insert(
         2,
@@ -260,8 +260,8 @@ async def test_snapshot_affinity_preserves_unsupported_captured_policy() -> None
         assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
     )
 
-    assert result.classification == "unsupported-data"
-    assert "captured policy is unsupported" in result.explanation
+    assert result.classification == "regression"
+    assert result.evidence["captured_policy_state"] == "unsupported"
 
 
 def test_minimum_affinity_policy_observation_round_trips() -> None:

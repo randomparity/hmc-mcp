@@ -24,9 +24,11 @@ explanation, and non-mutating recommended actions.
 Classification precedence is `unsupported-data`, `policy-violation`, `regression`,
 `optimization-opportunity`, then `none`. Unsupported, missing, stale, or contradictory evidence is
 returned as `unsupported-data`, never silently ignored. A configured minimum governs policy
-violations. Without that policy, callers must provide both a maximum acceptable regression and a
-minimum worthwhile optimization gain; the package defines no universal values. Predictions remain
-potential outcomes and never become guarantees or policy.
+violations. Without that policy, including a platform whose policy capability is explicitly
+unsupported, callers must provide both a maximum acceptable regression and a minimum worthwhile
+optimization gain; the package defines no universal values. A missing captured capability remains
+unsupported data, while an explicit unsupported capability is evidence that caller thresholds
+govern. Predictions remain potential outcomes and never become guarantees or policy.
 
 Expose the same contract through the Python facade, MCP, and CLI. Snapshot assessment reads the
 captured score and capture time from the validated version-1 snapshot, while current and predicted
