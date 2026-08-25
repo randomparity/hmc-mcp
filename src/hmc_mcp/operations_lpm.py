@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
@@ -38,6 +39,7 @@ class LpmAffinityPreflightRequest:
     capability: Literal["available", "unavailable"]
     capability_limits: tuple[str, ...]
     response: Literal["warn", "fail"]
+    preflight_timeout_seconds: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -49,9 +51,9 @@ class LpmAffinityPreflightOutcome:
     proceed: bool
     source_current_score: int | None
     destination_estimated_score: int | None
-    destination_check_basis: Literal["calculated", "migration-check"]
+    destination_check_basis: str
     configured_minimum: int | None
-    capability: Literal["available", "unavailable"]
+    capability: str
     capability_limits: tuple[str, ...]
 
 
@@ -94,24 +96,33 @@ def evaluate_lpm_affinity_preflight(
     request: LpmAffinityPreflightRequest,
 ) -> LpmAffinityPreflightOutcome:
     """Evaluate explicit affinity evidence without HMC traffic."""
-    _validate_affinity_score(request.source_current_score, "source_current_score")
-    _validate_affinity_score(
-        request.destination_estimated_score, "destination_estimated_score"
-    )
-    _validate_affinity_score(request.configured_minimum, "configured_minimum")
-    if request.destination_check_basis not in {"calculated", "migration-check"}:
-        raise ValueError(
-            "destination_check_basis must be calculated or migration-check"
-        )
-    if request.capability not in {"available", "unavailable"}:
-        raise ValueError("capability must be available or unavailable")
     if request.response not in {"warn", "fail"}:
         raise ValueError("affinity preflight response must be warn or fail")
+    malformed: list[str] = []
+    for name in (
+        "source_current_score",
+        "destination_estimated_score",
+        "configured_minimum",
+    ):
+        try:
+            _validate_affinity_score(getattr(request, name), name)
+        except ValueError:
+            malformed.append(name)
+    if request.destination_check_basis not in {"calculated", "migration-check"}:
+        malformed.append("destination_check_basis")
+    if request.capability not in {"available", "unavailable"}:
+        malformed.append("capability")
     if not request.capability_limits or any(
         not isinstance(limit, str) or not limit.strip()
         for limit in request.capability_limits
     ):
         raise ValueError("capability_limits must contain non-empty descriptions")
+
+    if malformed:
+        reason = f"Affinity preflight input is malformed: {', '.join(malformed)}."
+        if request.response == "fail":
+            return _preflight_outcome(request, "failed", reason, False)
+        return _preflight_outcome(request, "unavailable", reason, True)
 
     unavailable = request.capability == "unavailable" or any(
         value is None
@@ -145,6 +156,29 @@ def evaluate_lpm_affinity_preflight(
     )
 
 
+async def run_lpm_affinity_preflight(
+    request: LpmAffinityPreflightRequest,
+) -> LpmAffinityPreflightOutcome:
+    """Evaluate preflight within the caller's explicit time bound."""
+    if request.response not in {"warn", "fail"}:
+        raise ValueError("affinity preflight response must be warn or fail")
+    timeout = request.preflight_timeout_seconds
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
+        raise ValueError("preflight_timeout_seconds must be non-negative")
+
+    async def _evaluate() -> LpmAffinityPreflightOutcome:
+        await asyncio.sleep(0)
+        return evaluate_lpm_affinity_preflight(request)
+
+    try:
+        return await asyncio.wait_for(_evaluate(), timeout=timeout)
+    except TimeoutError:
+        reason = f"Affinity preflight timed out after {timeout} seconds."
+        if request.response == "fail":
+            return _preflight_outcome(request, "failed", reason, False)
+        return _preflight_outcome(request, "unavailable", reason, True)
+
+
 async def migrate_lpar_with_affinity_preflight(
     hmc: HMCClient,
     lpar_name_or_uuid: str,
@@ -159,7 +193,7 @@ async def migrate_lpar_with_affinity_preflight(
     system_name_or_uuid: str | None = None,
 ) -> LpmAffinityMigrationResult:
     """Run affinity preflight before canonical validation-first migration."""
-    preflight = evaluate_lpm_affinity_preflight(affinity_preflight)
+    preflight = await run_lpm_affinity_preflight(affinity_preflight)
     if not preflight.proceed:
         return LpmAffinityMigrationResult(None, preflight, None)
     result = await migrate_lpar(

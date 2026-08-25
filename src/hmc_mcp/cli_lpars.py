@@ -628,6 +628,9 @@ def lpars_migrate_affinity(
         "available", "--capability"
     ),
     response: Literal["warn", "fail"] = typer.Option("warn", "--response"),
+    preflight_timeout: float = typer.Option(
+        5.0, "--preflight-timeout", help="Affinity preflight timeout seconds"
+    ),
     wait: bool = typer.Option(False, "--wait/--no-wait", help="Wait for migration"),
     timeout: int = typer.Option(300, "--timeout", help="Polling timeout seconds"),
     interval: int = typer.Option(5, "--interval", help="Polling interval seconds"),
@@ -643,6 +646,7 @@ def lpars_migrate_affinity(
         capability=capability,
         capability_limits=("Destination affinity is estimated, not guaranteed.",),
         response=response,
+        preflight_timeout_seconds=preflight_timeout,
     )
 
     async def _fn(hmc):

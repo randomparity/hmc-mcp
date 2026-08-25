@@ -10,6 +10,7 @@ from hmc_mcp.operations_lpm import (
     LpmAffinityPreflightRequest,
     evaluate_lpm_affinity_preflight,
     migrate_lpar_with_affinity_preflight,
+    run_lpm_affinity_preflight,
 )
 from hmc_mcp.server_lpm import hmc_migrate_lpar_with_affinity_preflight
 
@@ -98,6 +99,7 @@ def test_unsupported_capability_obeys_explicit_response(
     assert "unavailable" in result.reason
 
 
+@pytest.mark.parametrize("response", ["warn", "fail"])
 @pytest.mark.parametrize(
     "changes",
     [
@@ -105,12 +107,55 @@ def test_unsupported_capability_obeys_explicit_response(
         {"configured_minimum": -1},
         {"destination_check_basis": "guess"},
         {"capability": "maybe"},
-        {"response": "implicit"},
     ],
 )
-def test_malformed_preflight_is_rejected(changes: dict[str, object]) -> None:
-    with pytest.raises(ValueError):
-        evaluate_lpm_affinity_preflight(_request(**changes))
+def test_malformed_preflight_obeys_explicit_response(
+    response: str, changes: dict[str, object]
+) -> None:
+    result = evaluate_lpm_affinity_preflight(_request(**changes, response=response))
+
+    assert result.status == ("unavailable" if response == "warn" else "failed")
+    assert result.proceed is (response == "warn")
+    assert "malformed" in result.reason
+
+
+def test_invalid_response_is_rejected() -> None:
+    with pytest.raises(ValueError, match="response"):
+        evaluate_lpm_affinity_preflight(_request(response="implicit"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "status", "proceed"),
+    [("warn", "unavailable", True), ("fail", "failed", False)],
+)
+async def test_preflight_timeout_obeys_explicit_response(
+    response: str, status: str, proceed: bool
+) -> None:
+    result = await run_lpm_affinity_preflight(
+        _request(response=response, preflight_timeout_seconds=0)
+    )
+
+    assert result.status == status
+    assert result.proceed is proceed
+    assert "timed out" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_fail_closed_preflight_timeout_submits_no_hmc_work() -> None:
+    hmc = AsyncMock()
+
+    result = await migrate_lpar_with_affinity_preflight(
+        hmc,
+        "lpar-1",
+        "target-1",
+        _request(response="fail", preflight_timeout_seconds=0),
+    )
+
+    assert result.preflight.status == "failed"
+    assert result.job is None
+    hmc.lpar_migrate_validate.assert_not_awaited()
+    hmc.lpar_migrate.assert_not_awaited()
 
 
 @pytest.mark.asyncio

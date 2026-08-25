@@ -63,6 +63,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "BootDeviceSelector",
         "migrate_lpar",
         "migrate_lpar_with_affinity_preflight",
+        "run_lpm_affinity_preflight",
         "abort_lpar_migration",
         "recover_lpar_migration",
         "remote_restart_lpar",
@@ -258,6 +259,7 @@ def test_public_api_reexports_implementation_objects_directly() -> None:
             "abort_lpar_migration",
             "migrate_lpar",
             "migrate_lpar_with_affinity_preflight",
+            "run_lpm_affinity_preflight",
             "recover_lpar_migration",
             "remote_restart_lpar",
         },
@@ -441,7 +443,7 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #320: LPM gains a separate affinity-aware operation and result.
-    expected_digest = "83b992546c89522352bb5330a631187c4d6952074140dddb52a8bf5a29562386"  # pragma: allowlist secret
+    expected_digest = "8f3a76a46da81c7cf3fc499482446a516c19a1b513648519279127b5065624e9"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

@@ -55,6 +55,7 @@ from hmc_mcp.operations_lpm import (
     abort_lpar_migration,
     migrate_lpar,
     migrate_lpar_with_affinity_preflight,
+    run_lpm_affinity_preflight,
     recover_lpar_migration,
     remote_restart_lpar,
 )
@@ -233,6 +234,7 @@ __all__ = [
     "BootDeviceSelector",
     "migrate_lpar",
     "migrate_lpar_with_affinity_preflight",
+    "run_lpm_affinity_preflight",
     "abort_lpar_migration",
     "recover_lpar_migration",
     "remote_restart_lpar",
