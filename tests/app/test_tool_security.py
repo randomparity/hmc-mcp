@@ -174,6 +174,18 @@ def test_every_live_tool_has_security_metadata():
     assert "hmc_run_command" in TOOL_SECURITY
 
 
+def test_the_duplicate_optical_detach_tool_stays_removed():
+    """#362: `hmc_detach_optical_mapping` is gone by name, not by arithmetic.
+
+    It duplicated `hmc_unmount_optical_media` byte for byte and was removed with
+    no alias. The exposed-tool count in test_application_boundaries.py would let
+    a later change re-add it and net back to the same number, so pin the name.
+    """
+    assert "hmc_detach_optical_mapping" not in TOOL_SECURITY
+    assert "hmc_detach_optical_mapping" not in _tools_by_name(True)
+    assert "hmc_unmount_optical_media" in TOOL_SECURITY
+
+
 def test_annotations_are_derived_from_the_effect_class():
     """G4: the shipped hint is a function of the declared effect, nothing else."""
     for name, tool in _tools_by_name(True).items():

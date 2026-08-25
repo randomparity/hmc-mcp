@@ -70,9 +70,11 @@ carry a `### Facade manifest` section.
 
 - `hmc_detach_optical_mapping` MCP tool and its `media.detach_mapping` operation name, plus the
   `detach_optical_mapping` operation behind them (#362). Both duplicated
-  `hmc_unmount_optical_media` / `media.unmount` byte for byte; on the HMC UOM REST contract
-  detaching an optical mapping and unmounting the image are one operation, so #200 requirement 6
-  was amended to describe the one behavior that is buildable. **Upgrade note:** the server is
+  `hmc_unmount_optical_media` / `media.unmount` byte for byte. As this client implements optical
+  mount, the media is referenced from inside the `VirtualSCSIMapping` and no unload-without-detach
+  path has been identified on the surveyed firmware, so detaching the mapping and unmounting the
+  image are one operation; #200 requirement 6 was amended to describe the one behavior that is
+  currently buildable. **Upgrade note:** the server is
   fail-closed on unknown tool grants (ADR 0041), so an `access-policy.toml` that grants
   `hmc_detach_optical_mapping` now refuses to start — drop that entry or rename it to
   `hmc_unmount_optical_media`. The exposed tool count drops from 148 to 147.

@@ -668,11 +668,13 @@ async def unmount_optical_media(
     against the full VirtualIOServer document.  The backing VirtualOpticalMedia
     (ISO container) is preserved and can be remounted later.
 
-    Over the HMC UOM REST contract, removing the mapping is the whole unmount:
-    the media is referenced from inside the VirtualSCSIMapping, and a detailed
-    VirtualSCSIMapping supports no direct GET/PUT/POST/DELETE (#403, ADR 0079),
-    so there is no REST unload-without-detach.  Detaching the mapping and
-    unmounting the image are one operation here, not two.
+    Removing the mapping is the whole unmount as this client implements it:
+    mount_optical_media creates a VirtualSCSIMapping with the media referenced
+    inside it, and no unload-without-detach path has been identified on the
+    surveyed firmware, so detaching the mapping and unmounting the image are one
+    operation here.  (#403 and ADR 0079 record only that a detailed
+    VirtualSCSIMapping is not directly addressable; establishing the absence of
+    an unload path would need its own live survey, on the ADR 0069 pattern.)
 
     Selection is currently a substring match over the serialized mapping and
     does not reject an empty media_name or refuse an ambiguous match; see #439.

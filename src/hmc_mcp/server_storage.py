@@ -756,14 +756,19 @@ def hmc_unmount_optical_media(
     Identifies the mapping by the LPAR and media name rather than a UUID.
     Uses a read-modify-write pattern against the full VirtualIOServer document.
     Removes the optical mapping only; the backing VirtualOpticalMedia (ISO
-    container) is preserved and can be remounted later. Over the HMC UOM REST
-    contract there is no unload-without-detach for optical media, so this is
-    also how you detach an optical mapping.
+    container) is preserved and can be remounted later. No unload-without-detach
+    path has been identified on the surveyed firmware, so this is also how you
+    detach an optical mapping.
 
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
-        media_name: Name of the VirtualOpticalMedia (ISO) to unmount.
+        media_name: Exact ``MediaName`` of the VirtualOpticalMedia (ISO) to
+            unmount, as reported by ``hmc_list_optical_mappings``. Selection is
+            currently a substring match over the serialized mapping, so an empty
+            or partial name can remove the wrong mapping — including a
+            non-optical one such as a boot disk (#439). Do not construct this
+            value; copy it from the inventory.
         profile: TOML profile name, or the environment-default HMC when omitted.
         system_name_or_uuid: Optional SystemName or UUID that disambiguates the
             partition name; when omitted the name is searched fleet-wide.
