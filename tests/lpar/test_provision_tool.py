@@ -386,7 +386,7 @@ def _assessment_result(classification="none"):
 
 
 def _successful_power_outcome():
-    return JobOutcome("job-1", "COMPLETED_OK", False, None, {"Resource": {}})
+    return JobOutcome("job-1", "COMPLETED_OK", False, None, {"Resource": {}}, True, None)
 
 
 def test_provision_affinity_power_on_waits_for_terminal_result():
@@ -483,7 +483,7 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
-    timed_out = JobOutcome("job-1", "RUNNING", True, None, {"Resource": {}})
+    timed_out = JobOutcome("job-1", "RUNNING", True, None, {"Resource": {}}, True, None)
     with (
         patch(
             "hmc_mcp.operations_provision._power_on",

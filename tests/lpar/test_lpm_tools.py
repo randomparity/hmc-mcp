@@ -30,7 +30,15 @@ from conftest import JOB_ENTRY
 
 LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 TARGET_SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
-JOB_OUTCOME_KEYS = {"job_id", "status", "timed_out", "error", "job"}
+JOB_OUTCOME_KEYS = {
+    "job_id",
+    "status",
+    "timed_out",
+    "error",
+    "job",
+    "found",
+    "job_href",
+}
 LPM_RECOVERY_TOOL_CASES = [
     (hmc_migrate_abort_lpar, "MigrateAbort", (LPAR_UUID,)),
     (hmc_migrate_recover_lpar, "MigrateRecover", (LPAR_UUID,)),
