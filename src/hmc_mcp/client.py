@@ -140,7 +140,10 @@ def _verify_ssl_source(config: HMCConfig) -> str:
     both are present and disagree, the explicit argument won pydantic-settings'
     source priority, and when they agree they are indistinguishable and the
     environment is named — telling the operator which knob matches the effective
-    value is what lets them change it.
+    value is what lets them change it. For a config the environment could not
+    have reached, the two are distinguishable in principle but not from here, so
+    that arm names the environment for an isolated config that supplied a
+    matching ``verify_ssl`` itself; it self-corrects the moment the two disagree.
 
     Because that folding is what puts an environment value into
     ``model_fields_set``, its *absence* is decisive the other way: nothing
