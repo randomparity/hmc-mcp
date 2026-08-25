@@ -760,6 +760,15 @@ def hmc_unmount_optical_media(
     path has been identified on the surveyed firmware, so this is also how you
     detach an optical mapping.
 
+    The success message is not evidence that a mapping was removed. A media_name
+    matching no mapping for that LPAR is a silent no-op that still reports
+    success — ADR 0079 rejects that for VirtualSCSIMapping removal and #439 owns
+    the reconciliation. Confirm with ``hmc_list_optical_mappings`` afterwards
+    before acting on the result, especially before rebooting the partition. The
+    read-modify-write also rewrites the whole VirtualIOServer document from a
+    GET snapshot, so another writer's change in that window is lost; ADR 0079
+    requires callers to serialize concurrent VIOS mapping changes.
+
     Args:
         vios_name_or_uuid: VIOS partition name or UUID from ``hmc_list_vios``.
         lpar_name_or_uuid: LPAR name or UUID the media is mounted to.
