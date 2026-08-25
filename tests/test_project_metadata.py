@@ -29,6 +29,8 @@ LOCAL_PATH_EXPECTATIONS = (
     "test",
     "pull request",
     "[security policy](security.md)",
+    "keep dependencies pinned",
+    "agents.md",
 )
 SECURITY_TITLE = "# Security policy"
 SECURITY_HEADING = "## Reporting a vulnerability"
