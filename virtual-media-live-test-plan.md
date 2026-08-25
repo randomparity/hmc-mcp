@@ -277,7 +277,7 @@ at the end.
 - `hmc_read_lpar_boot_order` returns current boot order (saved as baseline)
 - `hmc_set_lpar_boot_order(devices=["cd", "network", "disk"])` succeeds
 - `hmc_power_on_lpar` job completes; LPAR state transitions to `Running`
-- `hmc_lpar_state` or `hmc_lpar_summary` confirms `Running` state
+- `hmc_lpar_summary` confirms `Running` state
 - `hmc_power_off_lpar --immediate` returns lp3 to `Not Activated`
 - `hmc_unmount_optical_media` removes the optical mapping
 - `hmc_clear_lpar_boot_order` or `hmc_set_lpar_boot_order` restores original boot order

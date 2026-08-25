@@ -141,7 +141,6 @@ class LiveTestContext:
     scratch_name: str = "ltczz386-lp3-test"
     nettest_name: str = "ltczz386-lp3-nettest"
     test_user: str = "hmc-mcp-testuser"
-    test_policy: str = "hmc-mcp-test-policy"
     system_uuid: str | None = None
     lp3_uuid: str | None = None
     scratch_uuid: str | None = None
@@ -837,12 +836,12 @@ async def inspect_metrics_templates(client: Client, state: RunState) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ST6 — User & Policy Inventory
+# ST6 — User Inventory
 # ---------------------------------------------------------------------------
 
 
-async def inventory_users_policies(client: Client, state: RunState) -> None:
-    print("\n=== ST6: User & Policy Inventory ===")
+async def inventory_users(client: Client, state: RunState) -> None:
+    print("\n=== ST6: User Inventory ===")
 
     st, data = await call(client, "hmc_list_users")
     _record_expected_or_real(
@@ -853,28 +852,6 @@ async def inventory_users_policies(client: Client, state: RunState) -> None:
         data,
         expected_fail_substrings=["REST000E", "400"],
         skip_reason="HmcUser REST endpoint not supported on this HMC (expected)",
-    )
-
-    st, data = await call(client, "hmc_list_password_policies")
-    _record_expected_or_real(
-        state,
-        6,
-        "hmc_list_password_policies",
-        st,
-        data,
-        expected_fail_substrings=["REST000E", "400"],
-        skip_reason="HmcPasswordPolicy REST endpoint not supported (expected)",
-    )
-
-    st, data = await call(client, "hmc_get_ldap_config")
-    _record_expected_or_real(
-        state,
-        6,
-        "hmc_get_ldap_config",
-        st,
-        data,
-        expected_fail_substrings=["REST000E", "400"],
-        skip_reason="HmcLdapServer REST endpoint not supported (expected)",
     )
 
 
@@ -1394,68 +1371,11 @@ async def administer_test_user(client: Client, state: RunState) -> None:
     else:
         skip(state, 11, "hmc_modify_user", "user not created (REST000E expected)")
 
-    st, data = await call(
-        client,
-        "hmc_create_password_policy",
-        policy_name=context.test_policy,
-        min_length=10,
-    )
-    _record_expected_or_real(
-        state,
-        11,
-        "hmc_create_password_policy",
-        st,
-        data,
-        expected_fail_substrings=_REST000E_SKIP,
-        skip_reason="HmcPasswordPolicy REST not supported (expected)",
-    )
-    policy_created = st == "PASS"
-
-    st, data = await call(client, "hmc_list_password_policies")
-    _record_expected_or_real(
-        state,
-        11,
-        "hmc_list_password_policies (confirm)",
-        st,
-        data,
-        expected_fail_substrings=_REST000E_SKIP,
-        skip_reason="HmcPasswordPolicy REST not supported (expected)",
-    )
-
-    if policy_created:
-        st, data = await call(
-            client,
-            "hmc_modify_password_policy",
-            policy_name=context.test_policy,
-            min_length=12,
-        )
-        record(state, 11, "hmc_modify_password_policy", st, data)
-    else:
-        skip(
-            state,
-            11,
-            "hmc_modify_password_policy",
-            "policy not created (REST not supported)",
-        )
-
     if user_created:
         st, data = await call(client, "hmc_delete_user", name=context.test_user)
         record(state, 11, "hmc_delete_user", st, data)
     else:
         skip(state, 11, "hmc_delete_user", "user not created (REST000E expected)")
-
-    if policy_created:
-        st, data = await call(
-            client, "hmc_delete_password_policy", policy_name=context.test_policy
-        )
-        record(state, 11, "hmc_delete_password_policy", st, data)
-    else:
-        skip(
-            state,
-            11,
-            "hmc_delete_password_policy",
-            "policy not created (REST not supported)",
-        )
 
     st, data = await call(client, "hmc_list_users")
     _record_expected_or_real(
@@ -1466,17 +1386,6 @@ async def administer_test_user(client: Client, state: RunState) -> None:
         data,
         expected_fail_substrings=_REST000E_SKIP,
         skip_reason="HmcUser REST not supported (expected)",
-    )
-
-    st, data = await call(client, "hmc_list_password_policies")
-    _record_expected_or_real(
-        state,
-        11,
-        "hmc_list_password_policies (confirm deleted)",
-        st,
-        data,
-        expected_fail_substrings=_REST000E_SKIP,
-        skip_reason="HmcPasswordPolicy REST not supported (expected)",
     )
 
 
@@ -2966,7 +2875,7 @@ SUBTASKS = {
     3: inventory_storage,
     4: inventory_lpar_profiles,
     5: inspect_metrics_templates,
-    6: inventory_users_policies,
+    6: inventory_users,
     7: exercise_cli_escape_hatch,
     8: exercise_lpar_lifecycle,
     9: mutate_virtual_networking,

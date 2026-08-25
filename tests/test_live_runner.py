@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import importlib.util
 import re
@@ -12,6 +13,7 @@ import pytest
 
 from hmc_mcp.config import HMCConfig
 from hmc_mcp import ssh_commands
+from hmc_mcp.server import TOOL_SECURITY
 
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
@@ -244,6 +246,57 @@ async def test_affinity_live_paths_use_only_current_and_calcscore_commands(monke
 def test_live_runner_contains_no_executable_optmem_command():
     source = _RUNNER_PATH.read_text(encoding="utf-8")
     assert re.search(r"(?<![\w-])optmem(?![\w-])", source) is None
+
+
+def _dispatched_tool_names(source: str) -> set[str]:
+    """Every tool name ``source`` hands to the runner's ``call`` dispatcher.
+
+    A dispatch whose tool argument is not a string literal cannot be read here,
+    and skipping it would silently shrink the guard's coverage, so it fails
+    instead.
+    """
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "call"):
+            continue
+        tool = node.args[1] if len(node.args) > 1 else None
+        if not (isinstance(tool, ast.Constant) and isinstance(tool.value, str)):
+            raise AssertionError(
+                f"line {node.lineno}: call() dispatches a tool name this guard "
+                "cannot read — pass a string literal"
+            )
+        names.add(tool.value)
+    return names
+
+
+def test_every_dispatched_tool_name_is_registered():
+    """The runner is a mirror of the tool registry; a removed tool must not linger."""
+    dispatched = _dispatched_tool_names(_RUNNER_PATH.read_text(encoding="utf-8"))
+
+    assert dispatched, "no dispatches found — the guard would pass vacuously"
+    assert sorted(dispatched - set(TOOL_SECURITY)) == []
+
+
+def test_dispatch_guard_reports_a_tool_missing_from_the_registry():
+    """The guard bites: a dispatch of an unregistered name is reported, not ignored."""
+    source = (
+        "async def workflow(client):\n"
+        '    await call(client, "hmc_list_lpars")\n'
+        '    await call(client, "hmc_list_password_policies")\n'
+    )
+
+    assert _dispatched_tool_names(source) - set(TOOL_SECURITY) == {
+        "hmc_list_password_policies"
+    }
+
+
+def test_dispatch_guard_refuses_a_tool_name_it_cannot_read():
+    source = "async def workflow(client, tool):\n    await call(client, tool)\n"
+
+    with pytest.raises(AssertionError, match="cannot read"):
+        _dispatched_tool_names(source)
 
 
 @pytest.mark.asyncio
