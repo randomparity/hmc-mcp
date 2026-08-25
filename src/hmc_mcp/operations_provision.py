@@ -487,13 +487,12 @@ async def _assess_post_activation_affinity(
     )
     if applied_policy is None:
         policy = await get_minimum_affinity_policy(hmc.config, system, lpar)
-        policy_state: Literal["configured", "absent", "unsupported"] = (
-            "unsupported"
-            if policy.capability == "capability-unavailable"
-            else "configured"
-            if policy.min_affinity_score is not None
-            else "absent"
-        )
+        if policy.capability == "capability-unavailable":
+            policy_state: Literal["configured", "absent", "unsupported"] = "unsupported"
+        elif policy.min_affinity_score is not None:
+            policy_state = "configured"
+        else:
+            policy_state = "absent"
         configured_minimum = policy.min_affinity_score
     else:
         policy_state = "configured"
