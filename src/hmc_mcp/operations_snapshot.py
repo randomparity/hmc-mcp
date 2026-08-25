@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import UTC, datetime
 import math
+import re
 from typing import Any
 
 from hmc_mcp.affinity_assessment import (
@@ -70,20 +71,24 @@ def _captured_lpar_score(snapshot: LparSnapshot) -> int | None:
     if not isinstance(rows, list):
         return None
     identity = snapshot.source.lpar
+    matches: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        same_name = row.get("lpar_name") == identity.name
-        same_id = str(row.get("lpar_id")) == str(identity.partition_id)
-        if same_name or same_id or len(rows) == 1:
-            raw = row.get("curr_lpar_score")
-            if isinstance(raw, bool):
-                return None
-            try:
-                return int(raw) if raw is not None else None
-            except (TypeError, ValueError):
-                return None
-    return None
+        has_name = "lpar_name" in row
+        has_id = "lpar_id" in row
+        name_matches = not has_name or row.get("lpar_name") == identity.name
+        id_matches = not has_id or str(row.get("lpar_id")) == str(identity.partition_id)
+        if name_matches and id_matches and (has_name or has_id or len(rows) == 1):
+            matches.append(row)
+    if len(matches) != 1:
+        return None
+    raw = matches[0].get("curr_lpar_score")
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        return None
+    if isinstance(raw, str) and re.fullmatch(r"[0-9]{1,3}", raw) is None:
+        return None
+    return int(raw)
 
 
 async def assess_snapshot_affinity(

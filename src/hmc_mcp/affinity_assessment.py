@@ -34,11 +34,32 @@ class AffinityAssessmentInput:
 
 
 @dataclass(frozen=True)
+class AffinityEvidence:
+    """Immutable normalized evidence returned with every assessment."""
+
+    captured_score: int | None
+    current_score: int | None
+    predicted_score: int | None
+    policy_state: PolicyState
+    configured_minimum: int | None
+    captured_minimum: int | None
+    captured_at: str
+    assessed_at: str
+    stale_after_seconds: int
+    regression_threshold: int | None
+    optimization_threshold: int | None
+
+    def __getitem__(self, name: str) -> object:
+        """Support read-only mapping-style access for existing consumers."""
+        return getattr(self, name)
+
+
+@dataclass(frozen=True)
 class AffinityAssessmentResult:
     """Stable assessment verdict with the evidence that explains it."""
 
     classification: AffinityClassification
-    evidence: dict[str, object]
+    evidence: AffinityEvidence
     explanation: str
     recommended_actions: tuple[str, ...]
 
@@ -57,20 +78,20 @@ def _validate_threshold(value: int | None, name: str) -> None:
         raise ValueError(f"{name} must be a non-negative integer or null")
 
 
-def _evidence(value: AffinityAssessmentInput) -> dict[str, object]:
-    return {
-        "captured_score": value.captured_score,
-        "current_score": value.current_score,
-        "predicted_score": value.predicted_score,
-        "policy_state": value.policy_state,
-        "configured_minimum": value.configured_minimum,
-        "captured_minimum": value.captured_minimum,
-        "captured_at": value.captured_at.isoformat(),
-        "assessed_at": value.assessed_at.isoformat(),
-        "stale_after_seconds": value.stale_after_seconds,
-        "regression_threshold": value.regression_threshold,
-        "optimization_threshold": value.optimization_threshold,
-    }
+def _evidence(value: AffinityAssessmentInput) -> AffinityEvidence:
+    return AffinityEvidence(
+        captured_score=value.captured_score,
+        current_score=value.current_score,
+        predicted_score=value.predicted_score,
+        policy_state=value.policy_state,
+        configured_minimum=value.configured_minimum,
+        captured_minimum=value.captured_minimum,
+        captured_at=value.captured_at.isoformat(),
+        assessed_at=value.assessed_at.isoformat(),
+        stale_after_seconds=value.stale_after_seconds,
+        regression_threshold=value.regression_threshold,
+        optimization_threshold=value.optimization_threshold,
+    )
 
 
 def _unsupported(
@@ -98,7 +119,11 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
     _validate_threshold(value.optimization_threshold, "optimization_threshold")
     if value.policy_state not in {"configured", "absent", "unsupported"}:
         raise ValueError("policy_state must be configured, absent, or unsupported")
-    if value.stale_after_seconds <= 0 or isinstance(value.stale_after_seconds, bool):
+    if (
+        isinstance(value.stale_after_seconds, bool)
+        or not isinstance(value.stale_after_seconds, int)
+        or value.stale_after_seconds <= 0
+    ):
         raise ValueError("stale_after_seconds must be a positive integer")
     if value.captured_at.tzinfo is None or value.assessed_at.tzinfo is None:
         raise ValueError("assessment timestamps must be timezone-aware")
@@ -115,11 +140,25 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             "configured policy is unsupported",
             "Verify platform support, then provide caller thresholds if no policy exists.",
         )
+    if value.policy_state == "absent" and (
+        value.configured_minimum is not None or value.captured_minimum is not None
+    ):
+        return _unsupported(
+            value,
+            "policy state contradicts captured policy",
+            "Confirm whether a minimum-affinity policy is currently configured.",
+        )
     if value.policy_state == "configured" and value.configured_minimum is None:
         return _unsupported(
             value,
             "the configured minimum is missing",
             "Read the configured minimum again before making an operator decision.",
+        )
+    if value.policy_state == "configured" and value.captured_minimum is None:
+        return _unsupported(
+            value,
+            "policy state contradicts captured policy",
+            "Capture a fresh policy observation before making an operator decision.",
         )
     if value.assessed_at < value.captured_at:
         return _unsupported(
@@ -157,11 +196,15 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
     predicted = value.predicted_score
     assert captured is not None and current is not None and predicted is not None
     evidence = _evidence(value)
+    prediction_caveat = (
+        " IBM guidance warns that 100 may be unattainable." if predicted == 100 else ""
+    )
     if value.configured_minimum is not None and current < value.configured_minimum:
         return AffinityAssessmentResult(
             "policy-violation",
             evidence,
-            f"Current score {current} is below configured minimum {value.configured_minimum}.",
+            f"Current score {current} is below configured minimum {value.configured_minimum}."
+            f"{prediction_caveat}",
             (
                 "Review the configured policy and investigate placement before changing the LPAR.",
             ),
@@ -174,7 +217,8 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
         return AffinityAssessmentResult(
             "regression",
             evidence,
-            f"Current score {current} regressed from captured score {captured} by {captured - current}.",
+            f"Current score {current} regressed from captured score {captured} by {captured - current}."
+            f"{prediction_caveat}",
             (
                 "Investigate placement changes since capture before choosing a remediation.",
             ),
@@ -190,13 +234,14 @@ def assess_affinity(value: AffinityAssessmentInput) -> AffinityAssessmentResult:
             f"Predicted score {predicted} offers a potential gain of {predicted - current}; "
             "it is not guaranteed, and 100 may be unattainable.",
             (
-                "Review the read-only prediction and schedule an operator-approved optimization if worthwhile.",
+                "Review the read-only prediction and document whether further operator analysis is worthwhile.",
             ),
         )
     return AffinityAssessmentResult(
         "none",
         evidence,
         "Current evidence crosses no configured or caller-supplied decision boundary; "
-        "the predicted score remains potential rather than guaranteed.",
+        "the predicted score remains potential rather than guaranteed."
+        f"{prediction_caveat}",
         ("Continue monitoring and reassess when newer evidence is available.",),
     )

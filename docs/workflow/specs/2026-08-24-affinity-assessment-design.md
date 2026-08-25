@@ -17,8 +17,9 @@ actions without applying changes.
 percentages from 0 through 100. Thresholds are non-negative integers. Timestamps are timezone-aware
 and the stale window is a positive integer.
 
-`assess_affinity(input) -> AffinityAssessmentResult` returns `classification`, a complete evidence
-mapping, `explanation`, and an ordered tuple of `recommended_actions`. Classification is one of
+`assess_affinity(input) -> AffinityAssessmentResult` returns `classification`, a frozen
+`AffinityEvidence` value, `explanation`, and an ordered tuple of `recommended_actions`.
+Classification is one of
 `regression`, `optimization-opportunity`, `policy-violation`, `unsupported-data`, or `none`.
 
 When configured policy is absent, both caller thresholds are required. Missing scores, invalid or
@@ -54,6 +55,8 @@ Behavior tests cover policy violation, regression, optimization opportunity, non
 stale data, unsupported policy data, contradictory policy evidence, threshold requirements, future
 capture time, snapshot composition, MCP delegation, CLI output, and Python exports. Tests assert
 that predictions are described as potential and recommendations never claim or perform mutation.
+Compatibility contract tests update the tool count, local routing/security sets, legacy policy
+inventory, and reusable API manifest that necessarily move with the public operation.
 
 ## Threat model
 
@@ -61,7 +64,9 @@ The added trust boundary is operator-supplied snapshot JSON and numeric policy i
 local Python, MCP, and CLI adapters. The untrusted actor is a caller already able to invoke those
 local surfaces; the operation grants no additional HMC authority and opens no network connection.
 Snapshot text is controlled by the existing 1 MiB, duplicate-aware, depth-bounded, strict
-version-1 parser before evidence extraction. Pydantic/MCP and Typer validate presentation types,
+version-1 parser before evidence extraction. Captured-score extraction accepts only an integer or
+canonical ASCII decimal string and requires unambiguous LPAR identity agreement. Pydantic/MCP and
+Typer validate presentation types,
 while the shared classifier independently bounds scores to 0 through 100, thresholds to
 non-negative integers, timestamps to timezone-aware values, and the freshness window to a positive
 integer. Errors return bounded validation context and do not echo the full document. No command,

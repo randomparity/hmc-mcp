@@ -37,6 +37,7 @@ def _input(**changes: object) -> AffinityAssessmentInput:
                 "current_score": 79,
                 "policy_state": "configured",
                 "configured_minimum": 80,
+                "captured_minimum": 80,
             },
             "policy-violation",
         ),
@@ -72,6 +73,18 @@ def test_classifies_supported_evidence(changes, classification) -> None:
             },
             "configured minimum contradicts captured policy",
         ),
+        (
+            {"policy_state": "absent", "captured_minimum": 80},
+            "policy state contradicts captured policy",
+        ),
+        (
+            {
+                "policy_state": "configured",
+                "configured_minimum": 80,
+                "captured_minimum": None,
+            },
+            "policy state contradicts captured policy",
+        ),
     ],
 )
 def test_returns_unsupported_data_with_evidence(changes, reason) -> None:
@@ -102,3 +115,25 @@ def test_prediction_is_described_as_potential_not_guaranteed() -> None:
     assert "potential" in result.explanation
     assert "not guaranteed" in result.explanation
     assert "100 may be unattainable" in result.explanation
+
+
+def test_none_still_warns_when_prediction_of_100_misses_caller_threshold() -> None:
+    result = assess_affinity(
+        _input(current_score=99, predicted_score=100, optimization_threshold=5)
+    )
+
+    assert result.classification == "none"
+    assert "100 may be unattainable" in result.explanation
+
+
+@pytest.mark.parametrize("value", [1.5, float("nan"), "3600"])
+def test_rejects_non_integer_freshness_windows(value) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        assess_affinity(_input(stale_after_seconds=value))
+
+
+def test_result_evidence_is_immutable() -> None:
+    result = assess_affinity(_input())
+
+    with pytest.raises((AttributeError, TypeError)):
+        result.evidence.captured_score = 0  # type: ignore[misc]

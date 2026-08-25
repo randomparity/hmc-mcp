@@ -111,6 +111,53 @@ async def test_snapshot_affinity_assessment_composes_captured_evidence() -> None
     assert result.evidence["assessed_at"] == "2026-08-24T21:00:00+00:00"
 
 
+@pytest.mark.asyncio
+async def test_snapshot_affinity_rejects_single_foreign_lpar_score() -> None:
+    document = _document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {
+            "lpar_name": "wrong-lpar",
+            "lpar_id": "999",
+            "curr_lpar_score": "90",
+        },
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
+@pytest.mark.parametrize("raw", [80.9, "80.0", " 80", True])
+@pytest.mark.asyncio
+async def test_snapshot_affinity_rejects_noncanonical_captured_scores(raw) -> None:
+    document = _document()
+    document["observations"]["scores"]["data"]["current"] = {
+        "lpar": {"lpar_name": "aix", "lpar_id": "7", "curr_lpar_score": raw},
+        "system": {"curr_sys_score": "91"},
+    }
+
+    result = await assess_snapshot_affinity(
+        json.dumps(document),
+        current_score=80,
+        predicted_score=95,
+        regression_threshold=5,
+        optimization_threshold=5,
+        assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+    )
+
+    assert result.classification == "unsupported-data"
+    assert "captured score is missing" in result.explanation
+
+
 def test_minimum_affinity_policy_observation_round_trips() -> None:
     document = _document()
     document["capabilities"].insert(

@@ -8,10 +8,15 @@ import pytest
 from typer.testing import CliRunner
 
 from hmc_mcp import cli
-from hmc_mcp.affinity_assessment import AffinityAssessmentResult
+from hmc_mcp.affinity_assessment import (
+    AffinityAssessmentInput,
+    assess_affinity,
+)
+from datetime import UTC, datetime
 from hmc_mcp.cli_snapshot import _publish
 from hmc_mcp.server import TOOL_SECURITY
 from hmc_mcp.server_snapshot import hmc_snapshot_inspect
+from hmc_mcp.server_snapshot import hmc_snapshot_assess_affinity
 
 RUNNER = CliRunner()
 
@@ -34,6 +39,37 @@ def test_mcp_inspect_accepts_newer_version_without_validation() -> None:
     }
 
 
+def test_mcp_affinity_assessment_delegates_and_serializes(monkeypatch) -> None:
+    expected = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=90,
+            current_score=90,
+            predicted_score=94,
+            policy_state="absent",
+            configured_minimum=None,
+            captured_minimum=None,
+            captured_at=datetime(2026, 8, 24, 20, tzinfo=UTC),
+            assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+            stale_after_seconds=7200,
+            regression_threshold=5,
+            optimization_threshold=5,
+        )
+    )
+
+    async def fake_assessment(*args, **kwargs):
+        return expected
+
+    monkeypatch.setattr(
+        "hmc_mcp.server_snapshot.assess_snapshot_affinity", fake_assessment
+    )
+    result = hmc_snapshot_assess_affinity(
+        "{}", 90, 94, regression_threshold=5, optimization_threshold=5
+    )
+
+    assert result["classification"] == "none"
+    assert result["evidence"]["captured_score"] == 90
+
+
 def test_cli_snapshot_group_has_no_replay_command() -> None:
     result = RUNNER.invoke(cli.app, ["snapshot", "--help"])
     assert result.exit_code == 0
@@ -49,11 +85,20 @@ def test_cli_affinity_assessment_prints_shared_result(
 ) -> None:
     path = tmp_path / "snapshot.json"
     path.write_text("{}", encoding="utf-8")
-    result_value = AffinityAssessmentResult(
-        classification="none",
-        evidence={"captured_score": 90},
-        explanation="No decision boundary crossed.",
-        recommended_actions=("Continue monitoring.",),
+    result_value = assess_affinity(
+        AffinityAssessmentInput(
+            captured_score=90,
+            current_score=90,
+            predicted_score=94,
+            policy_state="absent",
+            configured_minimum=None,
+            captured_minimum=None,
+            captured_at=datetime(2026, 8, 24, 20, tzinfo=UTC),
+            assessed_at=datetime(2026, 8, 24, 21, tzinfo=UTC),
+            stale_after_seconds=7200,
+            regression_threshold=5,
+            optimization_threshold=5,
+        )
     )
 
     async def fake_assessment(*args, **kwargs):
