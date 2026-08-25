@@ -8,6 +8,9 @@ Contributions should be focused, tested, and easy to review.
 4. Run `just verify` and `UV_NO_SYNC=1 uv run prek run --all-files`.
 5. Open a pull request that explains the current behavior of the change.
 
+Suspected vulnerabilities do not belong in a public issue or pull request. Follow the
+[security policy](SECURITY.md) to report them privately.
+
 ## Changelog
 
 Every user-facing change that ships in a release must be recorded in `CHANGELOG.md`, which
@@ -24,6 +27,3 @@ mandatory and enforced by `tests/unit/test_changelog.py`:
 
 Keep dependencies pinned and avoid adding one unless the change requires it. Follow the repository
 instructions in `AGENTS.md`, including its commit and verification conventions.
-
-Suspected vulnerabilities do not belong in a public issue or pull request. Follow the
-[security policy](SECURITY.md) to report them privately.

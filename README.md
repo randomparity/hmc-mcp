@@ -616,12 +616,6 @@ code — which the hand-maintained table this replaced had no way to do. MCP cli
 a rendered description for every tool parameter, including fields nested inside structured
 inputs such as LPAR resources, firmware update parameters, and VIOS update repositories.
 
-Feed-backed collection tools accept an optional client-side `limit`. The complete HMC feed is
-still transferred and parsed before the result is truncated: the limit bounds only the number of
-entries returned to the agent, not HMC work, network bytes, parsing cost, or the size of each
-entry. `hmc_list_recent_jobs` defaults to 20 entries; the other affected collection tools are
-unbounded when `limit` is omitted.
-
 `hmc_effective_permissions` discloses the selected policy's name, its absolute
 path, every connection token, and every target selector to any MCP client that
 can call it. It carries no credential. One caveat since the generator exists: a
@@ -670,6 +664,14 @@ paths too.
 
 See [docs/authorization-audit.md](docs/authorization-audit.md) for the field set, the
 reason codes, and how to route or silence them.
+
+### Collection limits
+
+Feed-backed collection tools accept an optional client-side `limit`. The complete HMC feed is
+still transferred and parsed before the result is truncated: the limit bounds only the number of
+entries returned to the agent, not HMC work, network bytes, parsing cost, or the size of each
+entry. `hmc_list_recent_jobs` defaults to 20 entries; the other affected collection tools are
+unbounded when `limit` is omitted.
 
 ### Public parameter units and selectors
 
