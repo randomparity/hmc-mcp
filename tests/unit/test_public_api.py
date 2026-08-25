@@ -754,10 +754,14 @@ def test_literal_alias_clause_reads_paths_the_resolved_hints_lose(
 def test_annotation_walk_does_not_read_literal_values_as_type_references() -> None:
     """A ``Literal``'s arguments are data, so neither crash nor phantom alias.
 
-    ``provision_lpar`` really carries ``Literal["Virtual IO Server", ...]``, so a walk
-    that descends into literal values re-parses ``Virtual IO Server`` as source and
-    raises. The spaceless case is the quieter half of the same bug: it parses, and
-    contributes an alias named after a value that is not a type at all.
+    A walk that descends into literal values treats the value as source. With a space
+    in it — ``Literal["Virtual IO Server"]``, the shape ``PartitionType`` holds — the
+    re-parse raises; without one, it quietly contributes an alias named after a value
+    that is not a type at all. Same bug, one loud half and one silent half.
+
+    No selected operation writes an inline ``Literal`` today: all 101 annotate through
+    an alias, so neither half is reachable from the package as it stands. This is a
+    guard against the first signature that does, not a repair of a live failure.
     """
     assert _annotation_paths('Literal["Virtual IO Server"]') == {("Literal",)}
     assert _annotation_paths('Literal["ok"]') == {("Literal",)}
@@ -954,34 +958,47 @@ def _inventory_region() -> list[str]:
 def _inventory_entries() -> dict[str, str]:
     """The clause text of each ADR 0029 inventory bullet, keyed by module.
 
-    Only the fenced region is read, and every line in it must be accounted for:
-    an entry bullet, its wrapped continuation, a ``- Note:`` sub-bullet, that note's
-    continuation, or a blank. Unrecognised text inside the fence is rejected rather
-    than skipped, so no normative claim can hide there unchecked.
+    Only the fenced region is read, and every line in it must be accounted for: an
+    entry bullet, its wrapped continuation, a ``- Note:`` sub-bullet, that note's
+    continuation, or a blank. Anything else is rejected rather than skipped.
+
+    A note runs until the indentation dedents back to its own bullet or past it, not
+    until the next blank line — so an entry may be followed by a blank line and then its
+    note, and a note may carry more than one paragraph. Only text indented deeper than a
+    ``- Note:`` bullet is narrative the parser passes over; a sub-bullet that is not a
+    note is rejected outright, so a clause cannot masquerade as one.
 
     An entry is one bullet whose text is a semicolon-separated list of labelled
-    clauses; narrative belongs in the note, which the parser skips. That shape is
-    what lets the document be asserted against the code rather than maintained
-    beside it.
+    clauses. That shape is what lets the document be asserted against the code rather
+    than maintained beside it.
     """
     entries: dict[str, str] = {}
     current: str | None = None
-    in_note = False
+    note_indent: int | None = None
     for line in _inventory_region():
         entry = _INVENTORY_ENTRY.match(line)
+        stripped = line.strip()
         if entry is not None:
-            current, in_note = entry.group(1), False
+            current, note_indent = entry.group(1), None
             assert current not in entries, f"ADR 0029 inventories {current} twice"
             entries[current] = entry.group(2)
-        elif line.startswith("  ") and line.strip():
+        elif not stripped:
+            continue  # a note ends where the indentation dedents, not at a blank line
+        elif line.startswith("  "):
             assert current is not None, f"ADR 0029 has stray inventory text: {line!r}"
-            in_note = in_note or line.strip().startswith("- Note:")
-            assert in_note or not line.strip().startswith("- "), (
-                f"ADR 0029's only inventory sub-bullet is a note: {line!r}"
-            )
-            if not in_note:
-                entries[current] += " " + line.strip()
-        elif line.strip():
+            indent = len(line) - len(line.lstrip())
+            if stripped.startswith("- "):
+                assert stripped.startswith("- Note:"), (
+                    f"ADR 0029's only inventory sub-bullet is a note: {line!r}"
+                )
+                note_indent = indent
+            elif note_indent is None:
+                entries[current] += " " + stripped
+            else:
+                assert indent > note_indent, (
+                    f"ADR 0029 has stray inventory text: {line!r}"
+                )
+        else:
             raise AssertionError(f"ADR 0029 has stray inventory text: {line!r}")
 
     assert list(entries) == sorted(entries), "ADR 0029's inventory is not in order"
@@ -1028,6 +1045,73 @@ def _excluded_synchronous(module_name: str, module: ModuleType) -> list[str]:
         and not inspect.iscoroutinefunction(value)
         and getattr(value, "__module__", None) == module_name
     )
+
+
+def _entries_from(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str
+) -> dict[str, dict[str, list[str]]]:
+    """Run the inventory parser over a synthetic fence.
+
+    Read through ``_adr_0029_inventory`` rather than ``_inventory_entries``: a stray
+    line is rejected by whichever layer reaches it first — the line walk refuses text
+    it cannot place, and clause parsing refuses an entry that swallowed a paragraph.
+    What matters to ADR 0029's claim is that the fence rejects it, not which layer did.
+    """
+    document = tmp_path / "adr_0029_probe.md"
+    document.write_text(
+        f"prose\n\n{_INVENTORY_BEGIN}\n{body}\n{_INVENTORY_END}\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_ADR_0029_PATH", document)
+    return _adr_0029_inventory()
+
+
+_PROBE_ENTRY = "- `operations_vios` — operations: `power_vios`."
+_PROBE_NOTE = "  - Note: narrative the parser passes over."
+
+_REJECTED_FENCE_BODIES = {
+    "a bare paragraph": f"{_PROBE_ENTRY}\n  Normative and unchecked.",
+    "a fake clause sub-bullet": f"{_PROBE_ENTRY}\n  - types: `TotallyReal`",
+    "a fake clause behind a note": f"{_PROBE_ENTRY}\n{_PROBE_NOTE}\n  - types: `X`",
+    "a fake clause behind a note and a blank": (
+        f"{_PROBE_ENTRY}\n{_PROBE_NOTE}\n\n  - types: `X`"
+    ),
+    "text dedented back out of a note": (
+        f"{_PROBE_ENTRY}\n    - Note: narrative.\n  Normative and unchecked."
+    ),
+    "an unindented stray line": f"{_PROBE_ENTRY}\nNormative and unchecked.",
+}
+
+
+def test_inventory_parser_rejects_text_that_is_not_a_note(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The fence's only unchecked text is narrative indented under a ``- Note:``.
+
+    ADR 0029 says a stray line between the fence markers fails the suite. That claim
+    is only true if every way of writing one is rejected, so each way is driven here:
+    a bare paragraph, a sub-bullet wearing a clause's clothes, and a line that dedents
+    back out of a note. Without these the parser drifted once already — a blank line
+    reopened the swallow, and a fake clause rode in behind a note.
+    """
+    assert _entries_from(monkeypatch, tmp_path, _PROBE_ENTRY) == {
+        "operations_vios": {"operations": ["power_vios"]}
+    }
+    # A blank line before a note, and a second paragraph inside one, are ordinary
+    # markdown and stay legal — a note ends by dedenting, not at the first blank line.
+    for legal in (
+        f"{_PROBE_ENTRY}\n\n{_PROBE_NOTE}\n    wrapped narrative.",
+        f"{_PROBE_ENTRY}\n{_PROBE_NOTE}\n\n    a second paragraph of narrative.",
+    ):
+        assert set(_entries_from(monkeypatch, tmp_path, legal)) == {"operations_vios"}
+
+    accepted = []
+    for label, body in _REJECTED_FENCE_BODIES.items():
+        try:
+            _entries_from(monkeypatch, tmp_path, body)
+        except AssertionError:
+            continue
+        accepted.append(label)
+    assert accepted == [], f"ADR 0029's fence accepted stray text: {accepted}"
 
 
 def _expected_inventory() -> dict[str, dict[str, list[str]]]:

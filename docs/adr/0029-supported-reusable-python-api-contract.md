@@ -78,8 +78,12 @@ entry names what the facade takes from a module that owns no operations. Contrac
 every clause against the facade's own import statements and the modules' contents, so the
 document cannot drift from the package. Entries and the names within each clause are in
 alphabetical order, because the tests compare them against sorted derivations. Narrative belongs
-in an indented `Note:` sub-bullet, which the parser skips; nothing else may appear between the
-fence markers, and a stray line there fails the suite rather than passing unchecked. Underscore
+in an indented `Note:` sub-bullet, and the text indented under such a bullet is the one thing
+between the fence markers the parser does not check — it is prose, and it is hand-maintained.
+Every other line must be an entry or an entry's wrapped continuation: a bare paragraph, a
+sub-bullet that is not a `Note:`, and a line that dedents back out of a note all fail the suite
+rather than passing unchecked. A normative claim therefore may not be written as note narrative,
+because nothing would hold it to the code. Underscore
 names are internal everywhere and are never inventoried.
 
 <!-- ADR-0029-INVENTORY:BEGIN -->
@@ -247,8 +251,9 @@ are deliberate: the walk covers the types an operation *names*, not those reacha
 an exported model's own fields (#482), and an underscore name is internal here as everywhere.
 
 A third test parses the inventory above and asserts each clause against the facade's own import
-statements and the modules' contents, rejecting any other text inside the fence rather than
-skipping it; a fourth rejects a repeated entry in `__all__`, which the set-based contract tests
+statements and the modules' contents, rejecting every line inside the fence that is neither an
+entry nor a `Note:`'s own narrative rather than skipping it; a fourth rejects a repeated entry in
+`__all__`, which the set-based contract tests
 were blind to and the frozen list had written into it; and a fifth fails when an `operations_*`
 module gains an asynchronous generator, a factory-built operation, or an asynchronous
 `functools.partial`. What remains hand-maintained is the narrative in each `Note:` sub-bullet,
