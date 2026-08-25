@@ -555,9 +555,9 @@ Four rules explain why:
   check that is supposed to run before any HMC request. A policy written in
   names does not cover a call written in UUIDs, or the reverse.
 - **A table never grants a tool it cannot bound.** Some tools declare no target
-  selector at all (`hmc_list_systems`, `hmc_remove_ldap_config`,
-  `hmc_run_command` — they act on the console, whose identity *is* the
-  connection). Others act on something the selectors do not name:
+  selector at all (`hmc_list_systems`, `hmc_run_command` — they act on the
+  console, whose identity *is* the connection). Others act on something the
+  selectors do not name:
   `hmc_provision_lpar` mutates a VIOS chosen inside its `storage` argument, the
   LPAR-profile backup and restore pair write an arbitrary path on the HMC's own
   filesystem, three adapter tools take a VIOS *partition ID* (a slot number
