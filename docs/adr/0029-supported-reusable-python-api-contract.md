@@ -49,79 +49,147 @@ non-underscore top-level coroutine function the module itself defines, and each 
 input, result, enum, or literal-alias type appearing in a selected function's public signature.
 An asynchronous helper that a module imports from elsewhere is a top-level name in that module's
 namespace but is owned by the module that defines it, so ownership decides selection and no name
-is selected twice; the per-module exclusion notes below concern only names a module defines. A
-synchronous function is a transformation, parser, or validator rather than an asynchronous domain
-operation and is excluded for that concrete contract-readiness reason. Imported transport types
-such as `Any` and built-in containers are not facade exports. The initial inventory is:
+is selected twice; a module's `excluded synchronous` clause below names only what it defines.
+Selection is keyed by `(module, name)`, not by bare name: two modules defining the same public
+name are two separate obligations, and exporting one does not discharge the other. A synchronous
+function is a transformation, parser, or validator rather than an asynchronous domain operation
+and is excluded for that concrete contract-readiness reason. Imported transport types such as
+`Any` and built-in containers are not facade exports.
 
-- `operations_adapters`: operations `list_adapters`, `add_network_adapter`,
-  `add_vios_adapter`, and `delete_adapter`; types `AdapterResult` and `AdapterType`; no
-  public-name exclusions.
-- `operations_capacity`: operations `capacity_report` and `find_placement`; no owned types;
-  synchronous calculation helpers `lpar_processing_units` and `system_capacity` are excluded.
-- `operations_composite`: operations `lpar_summary` and `system_summary`; no owned types;
-  underscore helpers are internal.
-- `operations_decommission`: operation `decommission_lpar`; type `DecommissionResult`;
-  underscore helpers and `_Inventory` are internal.
-- `operations_health`: operation `fleet_health`; type `FleetHealthResult`; underscore helpers are
-  internal.
-- `operations_install`: operations `install_lpar_os` and `install_vios`; no owned types;
-  synchronous request validator `validate_install_request` is excluded — the MCP tools call it
-  to reject a malformed argument before a client is opened, which the operations cannot do.
-  Both submit the detached `installios` CLI bridge ADR 0070 selected
-  after ADR 0069 found no `InstallLPAR` or `InstallVIOS` REST job on any surveyed HMC, so each
-  returns the bridge's detach handle — a `dict[str, Any]` carrying the resolved system
-  and partition names, the remote PID, the install log path, and a restating message — rather
-  than an HMC job identifier. That mapping is **not** one of the opaque HMC resource payloads
-  the Consequences section below describes: this package composes all five keys itself and no
-  firmware level can vary them, so `system`, `partition`, `pid`, `log_path` and `message` are a
-  package-owned contract, frozen by a test rather than by the signature digest, and changing one
-  needs the same minor release an `__all__` change does. Recording that shape in the annotation
-  so the digest can see it is tracked by #468. Nothing on this path is pollable, so no wait parameters are
-  offered and none may be added without a superseding decision. Both are classified for
-  ownership authorization in ADR 0092 §3.4a, which is the authoritative record; §6's
-  recording obligation for a new facade export is discharged there, not here.
-- `operations_jobs`: operations `get_job` and `wait_for_job`; type `JobOutcome`, whose fields are
-  a package-owned model contract except the opaque `job` mapping (ADR 0093); the synchronous
-  helpers `job_identifier`, `job_outcome`, and `validate_wait_timing` remain in `jobs.py` and are
-  excluded as transformations and validators; underscore helpers are internal.
-- `operations_lpar`: operations `assess_post_activation_affinity`,
-  `authorize_decommission_lpar_ownership_snapshot`,
-  `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
-  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`,
-  `set_lpar_processors`, `set_lpar_memory`, and
-  `set_lpar_ownership_description`; types `LparCreation`,
-  `LparCreationResult`, and `LparPowerResult`; synchronous result helper `power_on_outcome` and
-  ownership parser `parse_lpar_ownership_owner` are excluded; underscore helpers are internal.
-- `operations_lpm`: operations `migrate_lpar`, `abort_lpar_migration`,
-  `recover_lpar_migration`, and `remote_restart_lpar`; type `LpmResult`; underscore helpers are
-  internal.
-- `operations_network`: operations `list_virtual_switches`, `list_virtual_networks`,
-  `create_virtual_network`, `delete_virtual_network`, and `list_network_bridges`; no owned types
-  or public-name exclusions.
-- `operations_pcm`: operations `resolve_pcm_resource`, `get_pcm_preferences`,
-  `set_pcm_preferences`, `metric_links`, and `metric_data`; types `PcmCategory` and `MetricKind`;
-  synchronous flag builder `preference_flags` is excluded.
-- `operations_provision`: operations `attach_disk_to_lpar` and `provision_lpar`; types
-  `ProvisionNetwork`, `ProvisionStorage`, `ProvisionResult`, `AttachDiskResult`, `LparResources`,
-  and `PartitionType`; underscore helpers are internal.
-- `operations_ssh_network`: operations `list_fc_ports`, `list_sea_adapters`,
-  `get_lpar_memopt_score`, `list_lpar_memopt_scores`, `set_sriov_adapter_mode`,
-  `get_system_memopt_score`, `plan_lpar_memopt_scores`, `plan_system_memopt_score`,
-  `list_vnics`, `add_vnic`, and `remove_vnic`; types `MemoptLparSelector` and `SriovMode`; no public-name
-  exclusions.
-- `operations_storage`: operations `list_volume_groups`, `create_volume_group`,
-  `create_virtual_disk`, `delete_virtual_disk`, `map_storage`, `list_storage_mappings`,
-  `detach_storage_mapping`, `upload_iso`, `create_media_repository`, `get_media_repository`,
-  `delete_media_repository`, `create_optical_media`, `list_optical_media`,
-  `delete_optical_media`, `list_optical_mappings`, `mount_optical_media`,
-  `unmount_optical_media`, `create_logical_unit`, and `delete_logical_unit`; types `StorageKind`,
-  `LuType`, and `DeviceType`; synchronous validators `validate_logical_unit_create` and
-  `validate_logical_unit_wait` are excluded.
-- `operations_systems`: operation `power_system`; no owned types or public-name exclusions.
-- `operations_templates`: operations `list_partition_templates`, `get_partition_template`, and
-  `deploy_partition_template`; no owned types; underscore helpers are internal.
-- `operations_vios`: operation `power_vios`; no owned types or public-name exclusions.
+The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
+ownership report it, so three operation shapes fall outside it by decision rather than by
+oversight: an asynchronous generator, which satisfies `inspect.isasyncgenfunction` and not
+`iscoroutinefunction`; an operation built by a factory that lives in another module, whose
+`__module__` names the factory's module; and a `functools.partial`, whose `__module__` is
+`functools`. None exists in the package today, none may be introduced without a superseding
+decision that widens this rule, and a contract test fails when one appears, so the choice is a
+conscious one rather than an invisible omission. `functools.wraps` is unaffected — it copies
+`__module__`, so an ordinary decorator preserves ownership.
+
+The inventory below is the complete manifest: one entry per module `hmc_mcp/api.py` imports a
+supported name from, keyed by that import source. Each `operations_*` entry names the operations
+the rule selects from that module, the other supported names the facade takes from it, and the
+public synchronous functions the module defines and this contract keeps internal. Every other
+entry names what the facade takes from a module that owns no operations. Contract tests assert
+every clause against the facade's own import statements and the modules' contents, so the
+document cannot drift from the package; narrative belongs in an indented `Note:` sub-bullet,
+which the parser skips. Underscore names are internal everywhere and are never inventoried.
+
+<!-- ADR-0029-INVENTORY:BEGIN -->
+
+- `affinity_assessment` — exports: `AffinityAssessmentInput`, `AffinityAssessmentResult`,
+  `AffinityEvidence`, `CapturedPolicyState`, `PolicyState`.
+- `client` — exports: `HMCClient`.
+- `client_adapters` — exports: `AdapterType`.
+- `config` — exports: `ConfigError`, `HMCConfig`, `load_profile`.
+  - Note: `load_profile` is synchronous and exported all the same. It is a configuration
+    constructor, not a domain operation, and the synchronous-exclusion reason above does not
+    reach it.
+- `console_capture` — exports: `ConsoleCapture`, `ConsoleHeldError`, `capture_lpar_console`.
+  - Note: `capture_lpar_console` is an operation living outside `operations_*` (ADR 0072), so
+    the selection rule does not reach it; it is exported by this entry alone.
+- `documents` — exports: `BootDeviceSelector`, `LparResources`, `PartitionType`, `StorageKind`.
+- `errors` — exports: `HMCError`, `HMCTransportError`.
+- `jobs` — exports: `DeviceType`, `JobOutcome`, `LuType`.
+  - Note: `JobOutcome`'s fields are a package-owned model contract except the opaque `job`
+    mapping (ADR 0093). The synchronous helpers `job_identifier`, `job_outcome`, and
+    `validate_wait_timing` stay in `jobs.py` as transformations and validators.
+- `operations_adapters` — operations: `add_network_adapter`, `add_vios_adapter`, `delete_adapter`,
+  `list_adapters`; types: `AdapterResult`; excluded synchronous: none.
+- `operations_assignments` — operations: `apply_lpar_pcie_assignments`,
+  `prevalidate_lpar_pcie_assignments`; types: `AssignmentResult`, `AssignmentStep`,
+  `DedicatedPcieAssignment`, `LparPcieAssignments`, `LparPcieWorkflowResult`,
+  `SriovLogicalPortAssignment`, `VnicAssignment`; excluded synchronous: none.
+- `operations_capacity` — operations: `capacity_report`, `find_placement`; types: none; excluded
+  synchronous: `lpar_processing_units`, `system_capacity`.
+- `operations_composite` — operations: `lpar_summary`, `system_summary`; types: none; excluded
+  synchronous: none.
+- `operations_decommission` — operations: `decommission_lpar`; types: `DecommissionResult`;
+  excluded synchronous: none.
+- `operations_health` — operations: `fleet_health`; types: `FleetHealthResult`; excluded
+  synchronous: none.
+- `operations_install` — operations: `install_lpar_os`, `install_vios`; types: none; excluded
+  synchronous: `validate_install_request`.
+  - Note: the MCP tools call `validate_install_request` to reject a malformed argument before a
+    client is opened, which the operations cannot do. Both operations submit the detached
+    `installios` CLI bridge ADR 0070 selected after ADR 0069 found no `InstallLPAR` or
+    `InstallVIOS` REST job on any surveyed HMC, so each returns the bridge's detach handle — a
+    `dict[str, Any]` carrying the resolved system and partition names, the remote PID, the
+    install log path, and a restating message — rather than an HMC job identifier. That mapping
+    is **not** one of the opaque HMC resource payloads the Consequences section below describes:
+    this package composes all five keys itself and no firmware level can vary them, so `system`,
+    `partition`, `pid`, `log_path` and `message` are a package-owned contract, frozen by a test
+    rather than by the signature digest, and changing one needs the same minor release an
+    `__all__` change does. Recording that shape in the annotation so the digest can see it is
+    tracked by #468. Nothing on this path is pollable, so no wait parameters are offered and none
+    may be added without a superseding decision. Both are classified for ownership authorization
+    in ADR 0092 §3.4a, which is the authoritative record; §6's recording obligation for a new
+    facade export is discharged there, not here.
+- `operations_jobs` — operations: `get_job`, `wait_for_job`; types: none; excluded synchronous:
+  none.
+- `operations_lpar` — operations: `assess_post_activation_affinity`,
+  `authorize_decommission_lpar_ownership_snapshot`, `authorize_lpar_mutation`,
+  `clear_lpar_boot_order`, `create_and_stamp_lpar`, `delete_lpar`, `list_lpar_ownership`,
+  `power_lpar`, `read_lpar_boot_order`, `rename_lpar`, `resolve_lpar_ownership_names`,
+  `set_lpar_boot_order`, `set_lpar_memory`, `set_lpar_ownership_description`,
+  `set_lpar_processors`, `stamp_created_lpar_ownership`; types: `LparCreation`,
+  `LparCreationResult`, `LparPowerResult`, `ProvisionAffinityAssessment`; excluded synchronous:
+  `activation_allows_assessment`, `affinity_not_measured`, `classify_affinity_outcome`,
+  `lpar_ownership_entry`, `parse_lpar_ownership_caller_token`, `parse_lpar_ownership_owner`,
+  `power_on_outcome`, `validate_affinity_request`.
+  - Note: `ProvisionAffinityAssessment` is defined here and used by `provision_lpar` as well;
+    the facade imports it from this module so its inventoried owner is the module that defines
+    it.
+- `operations_lpm` — operations: `abort_lpar_migration`, `migrate_lpar`,
+  `migrate_lpar_with_affinity_preflight`, `recover_lpar_migration`, `remote_restart_lpar`,
+  `run_lpm_affinity_preflight`; types: `LpmAffinityMigrationResult`,
+  `LpmAffinityPreflightOutcome`, `LpmAffinityPreflightRequest`, `LpmResult`; excluded synchronous:
+  `evaluate_lpm_affinity_preflight`.
+- `operations_network` — operations: `create_virtual_network`, `delete_virtual_network`,
+  `list_network_bridges`, `list_virtual_networks`, `list_virtual_switches`; types: none; excluded
+  synchronous: none.
+- `operations_pcie` — operations: `assign_dedicated_pcie_slot`, `assign_sriov_logical_port`,
+  `list_dedicated_slots`, `list_sriov_adapters`, `list_sriov_logical_ports`,
+  `list_sriov_physical_ports`, `set_sriov_adapter_mode`, `unassign_dedicated_pcie_slot`,
+  `unassign_sriov_logical_port`; types: `DedicatedSlot`, `InventoryResult`, `InventorySelector`,
+  `PcieAssignmentUnavailableError`, `SriovAdapter`, `SriovLogicalPort`,
+  `SriovLogicalPortCapabilityError`, `SriovLogicalPortChangeResult`,
+  `SriovLogicalPortPartialError`, `SriovLogicalPortSnapshot`, `SriovPhysicalPort`; excluded
+  synchronous: none.
+- `operations_pcm` — operations: `get_pcm_preferences`, `metric_data`, `metric_links`,
+  `resolve_pcm_resource`, `set_pcm_preferences`; types: `MetricKind`, `PcmCategory`,
+  `PcmResource`; excluded synchronous: `preference_flags`, `validate_pcm_metric_target`,
+  `validate_pcm_preferences_category`.
+- `operations_provision` — operations: `attach_disk_to_lpar`, `provision_lpar`; types:
+  `AttachDiskResult`, `ProvisionNetwork`, `ProvisionResult`, `ProvisionStorage`; excluded
+  synchronous: none.
+- `operations_snapshot` — operations: `assess_snapshot_affinity`, `capture_lpar_snapshot`,
+  `inspect_lpar_snapshot`, `validate_lpar_snapshot`; types: none; excluded synchronous: none.
+- `operations_ssh_network` — operations: `add_vnic`, `get_lpar_memopt_score`,
+  `get_minimum_affinity_policy`, `get_system_memopt_score`, `list_fc_ports`,
+  `list_lpar_memopt_scores`, `list_resource_group_memopt_scores`, `list_sea_adapters`,
+  `list_vnics`, `plan_lpar_memopt_scores`, `plan_resource_group_memopt_scores`,
+  `plan_system_memopt_score`, `remove_vnic`, `set_minimum_affinity_policy`; types:
+  `MemoptLparSelector`, `MemoptResourceGroupSelector`, `MinimumAffinityPolicyResult`,
+  `ResourceGroupAffinityResult`, `VnicBackingSelector`, `VnicBackingSnapshot`,
+  `VnicCapabilityError`, `VnicChangeResult`, `VnicPartialError`, `VnicSnapshot`; excluded
+  synchronous: none.
+- `operations_storage` — operations: `create_logical_unit`, `create_media_repository`,
+  `create_optical_media`, `create_virtual_disk`, `create_volume_group`, `delete_logical_unit`,
+  `delete_media_repository`, `delete_optical_media`, `delete_virtual_disk`,
+  `detach_storage_mapping`, `get_media_repository`, `list_optical_mappings`, `list_optical_media`,
+  `list_storage_mappings`, `list_volume_groups`, `map_storage`, `mount_optical_media`,
+  `unmount_optical_media`, `upload_iso`; types: none; excluded synchronous:
+  `validate_logical_unit_create`, `validate_logical_unit_wait`.
+- `operations_systems` — operations: `power_system`; types: none; excluded synchronous: none.
+- `operations_templates` — operations: `deploy_partition_template`, `get_partition_template`,
+  `list_partition_templates`; types: none; excluded synchronous: none.
+- `operations_vios` — operations: `power_vios`; types: none; excluded synchronous: none.
+- `snapshot` — exports: `LparSnapshot`, `SnapshotInspection`, `SnapshotValidationError`.
+- `ssh` — exports: `HMCCLIError`.
+- `ssh_commands` — exports: `MinimumAffinityPolicy`, `SriovMode`.
+
+<!-- ADR-0029-INVENTORY:END -->
 
 Return annotations such as `dict[str, Any]`, `list[dict[str, Any]]`, and tuples containing those
 values describe opaque HMC resource payload mappings. Their keys, nesting, and firmware-dependent
@@ -149,9 +217,19 @@ automatically: maintainers must consciously update the facade, inventory, and te
 test applies the *operation* half of the selection rule above to every `operations_*` module by
 introspection and fails when a selected coroutine function is missing from `__all__` without a
 recorded justification citing this ADR, so operation-side drift of the kind the optical-media
-operations went through cannot recur silently. Two parts of this section remain hand-maintained
-and untested: the type half of the rule, and the per-module inventory prose above. Neither is
-compared against the code by any test, so both can be wrong while the suite is green.
+operations went through cannot recur silently.
+
+The type half is mechanised the same way: a second test resolves each selected operation's
+annotations with `typing.get_type_hints`, collects every `hmc_mcp`-owned type they name — through
+containers and unions — and fails when one is not the object `hmc_mcp.api` exports under that
+name, again unless an exclusion cites this ADR. `PcmResource` was the one omission it found.
+`get_type_hints` erases a literal alias to its value set, so the literal-alias clause of the rule
+is carried by the frozen literal-value test rather than by that walk, and an opaque HMC payload
+mapping owns no `hmc_mcp` type and so is excluded by construction. A third test parses the
+inventory above and asserts each clause against the facade's own import statements and the
+modules' contents; a fourth rejects a repeated entry in `__all__`, which every set-based contract
+test had been blind to; and a fifth fails when an `operations_*` module gains an operation shape
+the rule cannot select. No part of this section is hand-maintained against the code any more.
 
 The initial surface is broad because the deterministic rule includes every asynchronous domain
 operation, including policy-enforcement workflows. That breadth is preferable to an undocumented

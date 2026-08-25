@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 from importlib import import_module
 import inspect
@@ -14,22 +15,39 @@ import subprocess
 import sys
 from collections.abc import Callable
 from types import ModuleType
-from typing import get_args, get_type_hints
+from typing import get_args, get_origin, get_type_hints
 
 import hmc_mcp
 from hmc_mcp import api
 from hmc_mcp.client_contracts import PcmClient
 from hmc_mcp.client_templates import TemplatesMixin
 
-# ADR 0029's Decision section selects "every non-underscore top-level coroutine function the
-# module itself defines" from each ``operations_*`` module. A selected name may stay out of
-# ``api.__all__`` only with a recorded justification that cites the ADR text excluding it —
-# ``_ADR_CITATION`` enforces the citation, so "internal" is not an acceptable excuse. The test
-# below also rejects entries that no longer describe a real omission, so this mapping cannot
-# silently accumulate dead excuses.
-ADR_0029_OPERATION_EXCLUSIONS: dict[str, str] = {}
+# ADR 0029's Decision section selects, from each ``operations_*`` module, "every non-underscore
+# top-level coroutine function the module itself defines, and each package-owned input, result,
+# enum, or literal-alias type appearing in a selected function's public signature". Both halves
+# are keyed by ``(defining module, name)``: two ``operations_*`` modules may define the same
+# public name, and a bare-name key would let exporting either one satisfy both entries.
+#
+# A selected name may stay out of ``api.__all__`` only with a recorded justification that cites
+# the ADR text excluding it — ``_ADR_CITATION`` enforces the citation, so "internal" is not an
+# acceptable excuse. The tests below also reject entries that no longer describe a real omission,
+# so neither mapping can silently accumulate dead excuses.
+ADR_0029_OPERATION_EXCLUSIONS: dict[tuple[str, str], str] = {}
+ADR_0029_TYPE_EXCLUSIONS: dict[tuple[str, str], str] = {}
 
 _ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
+
+_ADR_0029_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "docs/adr/0029-supported-reusable-python-api-contract.md"
+)
+_INVENTORY_BEGIN = "<!-- ADR-0029-INVENTORY:BEGIN -->"
+_INVENTORY_END = "<!-- ADR-0029-INVENTORY:END -->"
+_INVENTORY_ENTRY = re.compile(r"^- `([a-z_][a-z0-9_]*)` — (.+)$")
+_INVENTORY_CLAUSE = re.compile(
+    r"^(operations|types|excluded synchronous|exports): (.+)$"
+)
+_INVENTORY_NAME = re.compile(r"^`([A-Za-z_][A-Za-z0-9_]*)`$")
 
 
 # ADR 0029: HMCClient's supported surface is exactly this allowlist. Inherited
@@ -112,6 +130,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "metric_data",
         "PcmCategory",
         "MetricKind",
+        "PcmResource",
         "DedicatedSlot",
         "InventoryResult",
         "InventorySelector",
@@ -157,7 +176,6 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "list_resource_group_memopt_scores",
         "plan_resource_group_memopt_scores",
         "list_sea_adapters",
-        "set_sriov_adapter_mode",
         "list_vnics",
         "VnicBackingSelector",
         "VnicBackingSnapshot",
@@ -229,33 +247,52 @@ def _operations_modules() -> dict[str, ModuleType]:
     }
 
 
-def _selected_operations(modules: dict[str, ModuleType]) -> set[str]:
+def _selected_operations(modules: dict[str, ModuleType]) -> set[tuple[str, str]]:
     """Apply ADR 0029's rule mechanically: non-underscore, coroutine, module-owned.
 
     A coroutine an operation module merely imported is owned by the module that
     defined it, so ``__module__`` decides ownership and no name is selected twice.
+    Selection is keyed by ``(module, name)`` rather than by bare name: two
+    ``operations_*`` modules defining the same public name are two distinct
+    obligations, and a bare-name key would let exporting either one discharge both.
     """
-    selected: set[str] = set()
+    selected: set[tuple[str, str]] = set()
     for module_name, module in modules.items():
         for name, value in vars(module).items():
             if name.startswith("_") or not inspect.iscoroutinefunction(value):
                 continue
             if getattr(value, "__module__", None) == module_name:
-                selected.add(name)
+                selected.add((module_name, name))
     return selected
 
 
+def _facade_operations(modules: dict[str, ModuleType]) -> set[tuple[str, str]]:
+    """The ``(module, name)`` pairs the facade actually publishes as operations."""
+    return {
+        (getattr(api, name).__module__, name)
+        for name in set(api.__all__)
+        if inspect.iscoroutinefunction(getattr(api, name))
+        and getattr(getattr(api, name), "__module__", None) in modules
+    }
+
+
 def _selection_faults(
-    selected: set[str], exported: set[str], exclusions: dict[str, str]
+    selected: set[tuple[str, str]],
+    exported: set[tuple[str, str]],
+    exclusions: dict[tuple[str, str], str],
 ) -> dict[str, list[str]]:
-    """Every way the facade can disagree with ADR 0029's operation-selection rule."""
+    """Every way the facade can disagree with one half of ADR 0029's selection rule."""
     unexported = selected - exported
     return {
-        "selected but not exported or excluded": sorted(unexported - set(exclusions)),
-        "excluded but actually exported": sorted(set(exclusions) - unexported),
+        "selected but not exported or excluded": sorted(
+            map(":".join, unexported - set(exclusions))
+        ),
+        "excluded but actually exported": sorted(
+            map(":".join, set(exclusions) - unexported)
+        ),
         "excluded without citing the ADR": sorted(
-            name
-            for name, reason in exclusions.items()
+            ":".join(key)
+            for key, reason in exclusions.items()
             if not _ADR_CITATION.search(reason)
         ),
     }
@@ -264,18 +301,71 @@ def _selection_faults(
 def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
     modules = _operations_modules()
     selected = _selected_operations(modules)
-    exported = set(api.__all__)
+    facade_operations = _facade_operations(modules)
 
-    faults = _selection_faults(selected, exported, ADR_0029_OPERATION_EXCLUSIONS)
+    faults = _selection_faults(
+        selected, facade_operations, ADR_0029_OPERATION_EXCLUSIONS
+    )
+    assert faults == {key: [] for key in faults}, faults
+    assert facade_operations == selected - set(ADR_0029_OPERATION_EXCLUSIONS)
+
+
+def _collect_owned_types(hint: object, owned: dict[tuple[str, str], object]) -> None:
+    """Record every ``hmc_mcp``-owned type reachable from one resolved annotation."""
+    origin = get_origin(hint)
+    if origin is not None:
+        _collect_owned_types(origin, owned)
+        for argument in get_args(hint):
+            _collect_owned_types(argument, owned)
+        return
+    module_name = getattr(hint, "__module__", None)
+    type_name = getattr(hint, "__name__", None)
+    if not isinstance(module_name, str) or not isinstance(type_name, str):
+        return
+    if module_name == "hmc_mcp" or module_name.startswith("hmc_mcp."):
+        owned[(module_name, type_name)] = hint
+
+
+def _owned_types_in_signatures(
+    selected: set[tuple[str, str]], modules: dict[str, ModuleType]
+) -> dict[tuple[str, str], object]:
+    """The second half of ADR 0029's rule, applied to resolved signatures.
+
+    ``get_type_hints`` erases a literal alias to its value set — ``Literal["a", "b"]``
+    carries no ``hmc_mcp`` module — so the literal-alias clause is covered by
+    ``test_exported_literal_value_sets_are_frozen`` rather than here. Opaque HMC
+    payloads (``dict[str, Any]`` and friends) are excluded by owning no ``hmc_mcp``
+    type, which is exactly the distinction ADR 0029's Consequences section draws.
+    """
+    owned: dict[tuple[str, str], object] = {}
+    for module_name, name in selected:
+        operation = getattr(modules[module_name], name)
+        for hint in get_type_hints(operation).values():
+            _collect_owned_types(hint, owned)
+    return owned
+
+
+def test_facade_type_set_matches_adr_0029_selection_rule() -> None:
+    """A supported call may not hand back a type with no supported import path.
+
+    The PEP 561 marker (#367) is what makes this consumer-visible: a downstream
+    type-checker resolves the real annotation and finds no way to name it.
+    """
+    modules = _operations_modules()
+    owned = _owned_types_in_signatures(_selected_operations(modules), modules)
+    exported = {
+        key for key, value in owned.items() if getattr(api, key[1], None) is value
+    }
+
+    faults = _selection_faults(set(owned), exported, ADR_0029_TYPE_EXCLUSIONS)
     assert faults == {key: [] for key in faults}, faults
 
-    facade_operations = {
-        name
-        for name in exported
-        if inspect.iscoroutinefunction(getattr(api, name))
-        and getattr(getattr(api, name), "__module__", None) in modules
-    }
-    assert facade_operations == selected - set(ADR_0029_OPERATION_EXCLUSIONS)
+
+_CLEAN_FAULTS = {
+    "selected but not exported or excluded": [],
+    "excluded but actually exported": [],
+    "excluded without citing the ADR": [],
+}
 
 
 def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
@@ -300,31 +390,161 @@ def test_adr_0029_selection_rule_rejects_undeclared_operations() -> None:
     for value in (stray_operation, borrowed_operation, _private_operation, sync_helper):
         setattr(module, value.__name__, value)
 
+    stray = ("hmc_mcp.operations_synthetic", "stray_operation")
+
     # Only the public coroutine the module itself defines is selected.
     selected = _selected_operations({module.__name__: module})
-    assert selected == {"stray_operation"}
+    assert selected == {stray}
 
-    clean = {
-        "selected but not exported or excluded": [],
-        "excluded but actually exported": [],
-        "excluded without citing the ADR": [],
-    }
+    label = ":".join(stray)
     assert _selection_faults(selected, set(), {})[
         "selected but not exported or excluded"
-    ] == ["stray_operation"]
-    assert _selection_faults(selected, set(), {"stray_operation": "internal"})[
+    ] == [label]
+    assert _selection_faults(selected, set(), {stray: "internal"})[
         "excluded without citing the ADR"
-    ] == ["stray_operation"]
-    assert _selection_faults(selected, selected, {"stray_operation": "ADR 0029"})[
+    ] == [label]
+    assert _selection_faults(selected, selected, {stray: "ADR 0029"})[
         "excluded but actually exported"
-    ] == ["stray_operation"]
-    assert _selection_faults(selected, selected, {}) == clean
+    ] == [label]
+    assert _selection_faults(selected, selected, {}) == _CLEAN_FAULTS
     assert (
-        _selection_faults(
-            selected, set(), {"stray_operation": "ADR 0029 §x excludes it"}
-        )
-        == clean
+        _selection_faults(selected, set(), {stray: "ADR 0029 §x excludes it"})
+        == _CLEAN_FAULTS
     )
+
+
+def test_adr_0029_selection_survives_a_name_two_modules_define() -> None:
+    """Keying by ``(module, name)`` is what stops one export discharging two obligations.
+
+    A bare-name key collapses a colliding pair into a single entry, so exporting
+    either definition satisfies both and the other leaves the facade silently.
+    There is no collision in the package today, which is why this is proven
+    synthetically rather than against the real modules.
+    """
+    first = ModuleType("hmc_mcp.operations_first")
+    second = ModuleType("hmc_mcp.operations_second")
+    for module in (first, second):
+
+        async def collide(hmc: object) -> None: ...
+
+        collide.__module__ = module.__name__
+        module.collide = collide  # type: ignore[attr-defined]
+
+    selected = _selected_operations({m.__name__: m for m in (first, second)})
+    assert selected == {
+        ("hmc_mcp.operations_first", "collide"),
+        ("hmc_mcp.operations_second", "collide"),
+    }
+
+    exported_one = {("hmc_mcp.operations_first", "collide")}
+    assert _selection_faults(selected, exported_one, {})[
+        "selected but not exported or excluded"
+    ] == ["hmc_mcp.operations_second:collide"]
+
+
+def test_adr_0029_type_rule_walks_and_reddens() -> None:
+    """Prove the types guard reddens, and that the walk reaches nested annotations.
+
+    Once the facade is correct the real check exercises the clean path only, so the
+    fault shapes are driven here against a synthetic owned type.
+    """
+    owned_key = ("hmc_mcp.operations_synthetic", "SyntheticResult")
+    assert _selection_faults({owned_key}, set(), {})[
+        "selected but not exported or excluded"
+    ] == [":".join(owned_key)]
+    assert _selection_faults({owned_key}, {owned_key}, {}) == _CLEAN_FAULTS
+
+    # A type buried in a container and a union is still owned, and an opaque HMC
+    # payload mapping contributes nothing.
+    pcm_resource = import_module("hmc_mcp.operations_pcm").PcmResource
+    collected: dict[tuple[str, str], object] = {}
+    _collect_owned_types(list[pcm_resource | None], collected)
+    _collect_owned_types(dict[str, object], collected)
+    assert collected == {("hmc_mcp.operations_pcm", "PcmResource"): pcm_resource}
+
+
+def _unselectable_shape(module_name: str, name: str, value: object) -> str | None:
+    """Classify a public module attribute ADR 0029's coroutine rule cannot select."""
+    if isinstance(value, functools.partial):
+        return "functools.partial"
+    if inspect.isasyncgenfunction(value):
+        return "asynchronous generator"
+    if not inspect.iscoroutinefunction(value):
+        return None
+    owner = getattr(value, "__module__", None)
+    if owner == module_name:
+        return None
+    published = getattr(sys.modules.get(owner or ""), name, None)
+    if published is value:
+        return None
+    return "coroutine its declared module does not publish"
+
+
+def _unselectable_operation_shapes(
+    modules: dict[str, ModuleType],
+) -> dict[str, list[str]]:
+    """Public operation shapes ADR 0029's mechanical rule cannot see.
+
+    The rule keys on ``inspect.iscoroutinefunction`` plus ``__module__`` ownership, so
+    an asynchronous generator, a ``functools.partial``, and an operation built by a
+    factory that lives in another module all fall out of the selection with nothing
+    noticing. ADR 0029 places all three out of scope, and this turns their arrival into
+    a red suite rather than an invisible omission. ``functools.wraps`` is unaffected: it
+    copies ``__module__``, so an ordinary decorator preserves ownership.
+    """
+    faults: dict[str, list[str]] = {
+        "functools.partial": [],
+        "asynchronous generator": [],
+        "coroutine its declared module does not publish": [],
+    }
+    for module_name, module in modules.items():
+        for name, value in vars(module).items():
+            if name.startswith("_"):
+                continue
+            shape = _unselectable_shape(module_name, name, value)
+            if shape is not None:
+                faults[shape].append(f"{module_name}:{name}")
+    return {shape: sorted(names) for shape, names in faults.items()}
+
+
+def test_operations_modules_define_no_unselectable_operation_shapes() -> None:
+    faults = _unselectable_operation_shapes(_operations_modules())
+    assert faults == {shape: [] for shape in faults}, (
+        "ADR 0029 places these shapes out of the selection rule's scope; adding one "
+        f"needs a superseding decision, not a silent omission: {faults}"
+    )
+
+
+def test_unselectable_shape_detector_recognises_each_shape() -> None:
+    module = ModuleType("hmc_mcp.operations_shapes")
+
+    async def owned(hmc: object) -> None: ...
+
+    async def elsewhere(hmc: object) -> None: ...
+
+    async def streamer(hmc: object):
+        yield hmc
+
+    owned.__module__ = module.__name__
+    streamer.__module__ = module.__name__
+    # A factory in another module stamps its own ``__module__`` on what it builds, and
+    # that module does not publish the result under this name.
+    elsewhere.__module__ = "hmc_mcp.operations_storage"
+    module.owned = owned  # type: ignore[attr-defined]
+    module.streamer = streamer  # type: ignore[attr-defined]
+    module.factory_built = elsewhere  # type: ignore[attr-defined]
+    module.partial_built = functools.partial(owned)  # type: ignore[attr-defined]
+    module._private_stream = streamer  # type: ignore[attr-defined]
+    # An ordinary re-export stays clean: the declaring module publishes it by that name.
+    module.map_storage = api.map_storage  # type: ignore[attr-defined]
+
+    assert _unselectable_operation_shapes({module.__name__: module}) == {
+        "functools.partial": ["hmc_mcp.operations_shapes:partial_built"],
+        "asynchronous generator": ["hmc_mcp.operations_shapes:streamer"],
+        "coroutine its declared module does not publish": [
+            "hmc_mcp.operations_shapes:factory_built"
+        ],
+    }
 
 
 def _facade_import_bindings() -> dict[str, str]:
@@ -345,6 +565,136 @@ def _facade_import_bindings() -> dict[str, str]:
             assert alias.name not in bindings, f"the facade imports {alias.name} twice"
             bindings[alias.name] = module
     return bindings
+
+
+def test_public_api_manifest_has_no_repeated_entry() -> None:
+    """ADR 0029 calls ``__all__`` "an exhaustive compatibility manifest"; a repeated
+    entry makes it malformed. Every other contract test reads ``set(api.__all__)`` or
+    iterates it, so a duplicate stays inert at runtime and invisible to all of them —
+    ``test_public_api_exports_the_adr_inventory`` froze one in rather than catching it.
+    """
+    repeated = sorted({name for name in api.__all__ if api.__all__.count(name) > 1})
+    assert repeated == [], f"api.__all__ repeats {repeated}"
+    assert len(api.__all__) == len(set(api.__all__))
+
+
+def _inventory_entries() -> dict[str, str]:
+    """The clause text of each ADR 0029 inventory bullet, keyed by module.
+
+    Only the fenced region is read. An entry is one bullet whose text is a
+    semicolon-separated list of labelled clauses; narrative belongs in an indented
+    ``- Note:`` sub-bullet, which closes the entry and is skipped. That shape is what
+    lets the document be asserted against the code rather than maintained beside it.
+    """
+    text = _ADR_0029_PATH.read_text(encoding="utf-8")
+    begin, end = text.find(_INVENTORY_BEGIN), text.find(_INVENTORY_END)
+    assert 0 <= begin < end, "ADR 0029 has lost its inventory fence markers"
+
+    entries: dict[str, str] = {}
+    current: str | None = None
+    for line in text[begin:end].splitlines():
+        entry = _INVENTORY_ENTRY.match(line)
+        if entry is not None:
+            current = entry.group(1)
+            assert current not in entries, f"ADR 0029 inventories {current} twice"
+            entries[current] = entry.group(2)
+        elif current is not None and line.startswith("  ") and line[2] != "-":
+            entries[current] += " " + line.strip()
+        else:
+            current = None
+    return entries
+
+
+def _parse_inventory_names(module: str, value: str) -> list[str]:
+    names = []
+    for token in value.split(", "):
+        match = _INVENTORY_NAME.match(token.strip())
+        assert match is not None, (
+            f"ADR 0029's {module} entry has a stray token {token!r}"
+        )
+        names.append(match.group(1))
+    return names
+
+
+def _adr_0029_inventory() -> dict[str, dict[str, list[str]]]:
+    """ADR 0029's per-module inventory as ``module -> clause -> names``."""
+    inventory: dict[str, dict[str, list[str]]] = {}
+    for module, text in _inventory_entries().items():
+        clauses: dict[str, list[str]] = {}
+        for chunk in text.rstrip(".").split("; "):
+            match = _INVENTORY_CLAUSE.match(chunk.strip())
+            assert match is not None, (
+                f"ADR 0029's {module} entry has an unlabelled clause {chunk!r}"
+            )
+            label, value = match.group(1), match.group(2).strip()
+            assert label not in clauses, f"ADR 0029's {module} entry repeats {label}"
+            clauses[label] = (
+                [] if value == "none" else _parse_inventory_names(module, value)
+            )
+        inventory[module] = clauses
+    return inventory
+
+
+def _excluded_synchronous(module_name: str, module: ModuleType) -> list[str]:
+    """Public synchronous functions a module defines, which ADR 0029 keeps internal."""
+    return sorted(
+        name
+        for name, value in vars(module).items()
+        if not name.startswith("_")
+        and inspect.isfunction(value)
+        and not inspect.iscoroutinefunction(value)
+        and getattr(value, "__module__", None) == module_name
+    )
+
+
+def _expected_inventory() -> dict[str, dict[str, list[str]]]:
+    """Derive the inventory ADR 0029 must carry from the facade and the modules."""
+    modules = _operations_modules()
+    selected = _selected_operations(modules)
+    bindings = _facade_import_bindings()
+
+    expected: dict[str, dict[str, list[str]]] = {}
+    for module_name in {*modules, *bindings.values()}:
+        imported = sorted(n for n, m in bindings.items() if m == module_name)
+        short = module_name.removeprefix("hmc_mcp.")
+        if module_name not in modules:
+            expected[short] = {"exports": imported}
+            continue
+        operations = sorted(n for m, n in selected if m == module_name)
+        expected[short] = {
+            "operations": operations,
+            "types": sorted(set(imported) - set(operations)),
+            "excluded synchronous": _excluded_synchronous(
+                module_name, modules[module_name]
+            ),
+        }
+    return expected
+
+
+def test_adr_0029_inventory_matches_the_facade() -> None:
+    """The inventory prose is asserted against the code, not maintained beside it.
+
+    Three whole modules were missing from it and several entries had drifted before
+    this check existed, because nothing compared the document to the package. Every
+    name in ``__all__`` appears in exactly one entry, keyed by the module ``api.py``
+    imports it from, so the manifest and the document cannot disagree.
+    """
+    expected = _expected_inventory()
+    assert _adr_0029_inventory() == expected
+
+    inventoried = [
+        name
+        for clauses in expected.values()
+        for clause, names in clauses.items()
+        if clause != "excluded synchronous"
+        for name in names
+    ]
+    assert sorted(inventoried) == sorted(api.__all__)
+    assert not set(api.__all__).intersection(
+        name
+        for clauses in expected.values()
+        for name in clauses.get("excluded synchronous", ())
+    )
 
 
 def test_public_api_reexports_implementation_objects_directly() -> None:
@@ -368,7 +718,12 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #371 (ADR 0092 §4), which moved it twice over: it
+        Last moved by issue #446, which exported `PcmResource` — the frozen
+        dataclass `resolve_pcm_resource` returns, and the one type ADR 0029's
+        newly mechanised type clause found missing from the manifest. A
+        dataclass has a constructor signature, so adding it to `__all__` adds a
+        digest entry even though no operation's parameters changed.
+        Before that, issue #371 (ADR 0092 §4) moved it twice over: it
         added ``ownership_override`` to ``power_lpar``, and it added the
         ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
         ``__init__`` signature is derived from its fields.
@@ -440,10 +795,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #371: power_lpar gains ownership_override and HMCConfig gains
-    # authorize_power_operations (ADR 0092 §4). Recomputed over #365's
-    # baseline 0e10de9b, which this branch merged.
-    expected_digest = "44e83b7a4ce2297db57e9dbe674f5908de7b2689b62bdcc73976b01807ac9ef8"  # pragma: allowlist secret
+    # Moved by #446: `PcmResource` enters the manifest and contributes its
+    # dataclass constructor. Recomputed over #371's baseline 44e83b7a.
+    expected_digest = "6bf67fc584f753f8805f000639221c5eec54954c9939154e7ad83de8293de184"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
