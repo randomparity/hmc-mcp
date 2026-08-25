@@ -73,6 +73,12 @@ The environment-variable restatement is kept rather than replaced by a cross-ref
 which would have deleted half this machinery. It is where an operator deciding whether to
 leave verification off actually reads, and #497's fourth criterion asked for it to be
 covered. Guarding it is the price of leaving it there, and that price is this ledger.
+
+Its check is filed here rather than in `tests/test_env_var_guard.py`, which is the module
+an editor of that document already opens. Weighed and chosen: this is one vocabulary with
+one extractor, and splitting the two arms across modules would put half a set comparison
+in each and leave the ledger describing coverage that lives somewhere else. The
+discoverability cost is what the marker in #504 pays down.
 """
 
 import re
@@ -103,6 +109,7 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 #: `docs/authorization-audit.md`'s editor marker is one of these and quotes the anchor
 #: phrase, so comments come out of a passage before the clause is read.
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+TLS_HEADING = '### `event: "tls-verification-disabled"`'
 
 #: The passage describing the TLS record in each document that restates its `source`
 #: values: the event's own section in the audit document, the `HMC_VERIFY_SSL` note in the
@@ -112,7 +119,7 @@ HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 #: but settings, so scanning that document whole would let an unrelated note collide.
 TLS_PASSAGE = {
     "authorization-audit.md": re.compile(
-        r'^### `event: "tls-verification-disabled"`$.*?(?=^#{2,6} )',
+        rf"^{re.escape(TLS_HEADING)}$.*?(?=^#{{2,6}} )",
         re.MULTILINE | re.DOTALL,
     ),
     "environment-variables.md": re.compile(
@@ -199,6 +206,21 @@ def _documented_effects(document: str) -> frozenset[str]:
 def _records_lead(document: str) -> str:
     """The paragraph introducing the record kinds, before the first one's section."""
     return _section(document, "## The records").split("\n### ", 1)[0]
+
+
+def _tls_marker(document: str) -> str:
+    """The editor marker: the HTML comment immediately above the TLS record's heading.
+
+    Identified by where it sits rather than by document order. Its adjacency to the
+    passage is the whole mechanism — a marker relocated to the top of the document warns
+    nobody — so an unrelated comment elsewhere neither stands in for it nor is mistaken
+    for it.
+    """
+    head, separator, _ = document.partition(f"\n{TLS_HEADING}")
+    assert separator, f"missing heading: {TLS_HEADING}"
+    preceding = head.rstrip()
+    assert preceding.endswith("-->"), f"no editor marker above {TLS_HEADING}"
+    return preceding[preceding.rindex("<!--") :]
 
 
 def _tls_passage(document: str, name: str) -> str:
@@ -449,29 +471,22 @@ def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
 def test_the_editor_marker_quotes_the_anchor_it_names() -> None:
     """The marker is the only warning an editor of the document gets, so it is derived.
 
-    Deleting it, or letting its quoted phrase drift from `SOURCE_CLAUSE`, reddens here
-    rather than leaving the guard's one piece of documentation silently wrong.
+    Deleting it, moving it away from the passage it warns about, or letting its quoted
+    phrase drift from `SOURCE_CLAUSE` reddens here, rather than leaving the guard's one
+    piece of documentation silently wrong or somewhere nobody meets it.
     """
-    quoted = [
-        phrase
-        for marker in HTML_COMMENT.findall(_document())
-        for phrase in re.findall(r'"([^"]+)"', marker)
-    ]
+    quoted = re.findall(r'"([^"]+)"', _tls_marker(_document()))
 
-    assert quoted, "the TLS section's editor marker is missing"
+    assert quoted, "the editor marker quotes no phrase"
     assert any(SOURCE_CLAUSE.fullmatch(phrase) for phrase in quoted), quoted
 
 
 def test_a_marker_moved_inside_the_section_is_not_read_as_a_clause() -> None:
     """Its own wording says "the values below", so inside the section is where it lands."""
     document = _document()
-    heading = '### `event: "tls-verification-disabled"`'
-    marker = HTML_COMMENT.search(document)
-    assert marker is not None
+    marker = _tls_marker(document)
 
-    moved = document.replace(
-        f"{marker.group(0)}\n{heading}", f"{heading}\n{marker.group(0)}", 1
-    )
+    moved = document.replace(f"{marker}\n{TLS_HEADING}", f"{TLS_HEADING}\n{marker}", 1)
     assert moved != document
     assert _documented_sources(_tls_passage(moved, DOCUMENT.name)) == (
         client.VERIFY_SSL_SOURCES
