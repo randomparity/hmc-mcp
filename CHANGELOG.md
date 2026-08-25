@@ -24,6 +24,16 @@ carry a `### Facade manifest` section.
 
 ### Added
 
+- Cross-process job polling: the `get_job` and `wait_for_job` operations in the new
+  `hmc_mcp.operations_jobs` module, plus the `JobOutcome` facade export (#364, ADR 0093). The
+  supported handle for a job is two persistable strings — `job_id` and an optional `job_href` —
+  so a consumer can store them, restart, construct a fresh `HMCClient`, and poll from a different
+  process than the one that submitted the work. A job the HMC no longer knows about (reaped,
+  deleted, or never present) now returns `found=False` instead of an opaque HTTP 404 `HMCError`,
+  which is what lets a restarted worker tell "still running" from "gone". `JobOutcome` gained the
+  `found: bool` and `job_href: str | None` fields, both with defaults, and its field set is now a
+  package-owned model contract under ADR 0029 — except `job`, which stays an opaque HMC resource
+  mapping.
 - `set_lpar_ownership_description` operation and facade export (#376, ADR 0066).
 - Strict LPAR ownership stamping (#377, ADR 0067): `provision_lpar` accepts a new
   `stamp_policy` field on `LparCreation` with literal alternatives `"best-effort"` (default) and
@@ -104,6 +114,8 @@ carry a `### Facade manifest` section.
 
 ### Facade manifest
 
+- Added: `get_job`, `wait_for_job`, `JobOutcome` (#364, ADR 0093); this moves the frozen public
+  signature digest.
 - Added: `set_lpar_ownership_description`.
 - Added: `capture_lpar_console`, `ConsoleCapture`, `ConsoleHeldError` (#385,
   ADR 0072); this moves the frozen public signature digest.

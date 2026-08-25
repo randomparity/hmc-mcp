@@ -48,13 +48,30 @@ FAILED_JOB_STATUSES = TERMINAL_JOB_STATUSES - SUCCESSFUL_JOB_STATUSES
 
 @dataclass(frozen=True)
 class JobOutcome:
-    """Stable public result for waiting on an HMC job."""
+    """Stable public result for waiting on an HMC job.
+
+    ADR 0093 makes this field set a package-owned model contract under ADR 0029.
+    ``job`` is the exception: it is an opaque HMC resource mapping whose keys and
+    nesting are firmware-dependent and are not promised.
+
+    ``job_id`` and ``job_href`` are the two persistable strings that identify the
+    job. A consumer can store them, restart, and poll again with a freshly
+    constructed client.
+
+    ``found`` says whether the HMC produced the job at all, and is the field to
+    read first. ``timed_out`` reports only that no terminal status was observed,
+    so a job the HMC no longer knows about reports ``found=False`` *and*
+    ``timed_out=True``; only ``found=True`` with ``timed_out=True`` means the job
+    is still running.
+    """
 
     job_id: str
     status: str | None
     timed_out: bool
     error: str | None
     job: dict[str, Any] | None
+    found: bool
+    job_href: str | None
 
 
 class JobWaitClient(Protocol):
@@ -94,8 +111,18 @@ def job_identifier(job: dict[str, Any]) -> str | None:
     return path.rsplit("/", 1)[-1] if path else None
 
 
+def _job_href(job: dict[str, Any] | None) -> str | None:
+    """Return the SELF link a caller can persist to poll this job again."""
+    link = (job or {}).get("link")
+    return link.strip() if isinstance(link, str) and link.strip() else None
+
+
 def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
-    """Normalize the last polled entry into the public wait result."""
+    """Normalize the last polled entry into the public wait result.
+
+    A ``job`` of ``None`` means the HMC produced no entry for the identifier, so
+    the outcome reports ``found=False``.
+    """
     resource_value = (job or {}).get("Resource")
     resource = resource_value if isinstance(resource_value, dict) else {}
     status_value = resource.get("Status")
@@ -110,6 +137,8 @@ def job_outcome(requested_id: str, job: dict[str, Any] | None) -> JobOutcome:
         timed_out=status not in TERMINAL_JOB_STATUSES,
         error=error,
         job=job,
+        found=job is not None,
+        job_href=_job_href(job),
     )
 
 
