@@ -209,7 +209,10 @@ def test_justfile_exposes_one_composed_verification_graph() -> None:
     # The group helps are derived, so a per-group line is the hand-maintained
     # mirror growing back. `hmc-mcp --help` above is not one: the pattern needs a
     # group token before the flag, which `--help` itself cannot supply.
-    assert re.search(r"hmc-mcp [a-z][a-z-]* --help", justfile) is None
+    assert re.search(r"hmc-mcp [a-z][a-z-]* --help", justfile) is None, (
+        "name a group's help here and it is a hand-maintained list again; "
+        "scripts/smoke_cli_groups.py derives them from the Typer app"
+    )
 
 
 def test_just_recipes_sync_only_in_setup_and_otherwise_run_without_sync() -> None:
