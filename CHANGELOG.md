@@ -218,7 +218,7 @@ carry a `### Facade manifest` section.
   not a new capability.
 - Added: nineteen types ADR 0029's type clause now reaches through the fields of an exported
   model (#482); this moves the frozen public signature digest. Twelve `hmc_mcp.snapshot` models
-  behind `LparSnapshot` and `SnapshotInspection` — `HmcIdentity`, `LparIdentity`,
+  behind `LparSnapshot` — `HmcIdentity`, `LparIdentity`,
   `MemoryProjection`, `NativeProfile`, `NormalizedConfiguration`, `ObservationEnvelope`,
   `ProcessorProjection`, `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotObservations`,
   `SnapshotSource`, `SystemIdentity` — and seven literal aliases: `AffinityClassification`

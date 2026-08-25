@@ -69,6 +69,12 @@ because an exported model need not appear in any selected operation's signature.
 as an opaque HMC payload mapping owns no `hmc_mcp` type and adds nothing, and an underscore name is
 internal here as everywhere.
 
+Only two exported class kinds are none of those three shapes and so expose no field this clause can
+read: `HMCClient`, whose supported surface is the lifecycle allowlist above, and the exported error
+types, whose supported surface is their constructor. A contract test holds the facade to exactly
+that pair, so a result type introduced in a fourth shape — a `NamedTuple`, an `attrs` class, a
+hand-written one — fails the suite instead of dropping out of this clause unnoticed.
+
 The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
 ownership report it, so three operation shapes fall outside it by decision rather than by
 oversight: an asynchronous generator, which satisfies `inspect.isasyncgenfunction` and not
@@ -217,8 +223,9 @@ names are internal everywhere and are never inventoried.
   `SnapshotCapability`, `SnapshotConfiguration`, `SnapshotInspection`, `SnapshotObservations`,
   `SnapshotSource`, `SnapshotValidationError`, `SystemIdentity`.
   - Note: every name here but the three that were already exported is a field type of
-    `LparSnapshot` or `SnapshotInspection`, selected by the Decision's transitive type clause
-    rather than by appearing in an operation's signature.
+    `LparSnapshot`, selected by the Decision's transitive type clause rather than by appearing
+    in an operation's signature. `SnapshotInspection` reaches none of them: its own fields are
+    strings, booleans, and opaque mappings.
 - `ssh` — exports: `HMCCLIError`.
 - `ssh_commands` — exports: `MinimumAffinityPolicy`, `SriovMode`.
 
@@ -272,8 +279,8 @@ transitive clause. The walk closes over the `dataclasses.fields`, `model_fields`
 keys of every owned model it has reached and of every model `__all__` exports, and the source-text
 alias clause is read off those same field annotations — through each model's MRO, because an
 inherited field carries its annotation on the base that declares it. That closure found nineteen
-further omissions (#482): twelve `snapshot` models behind `LparSnapshot` and `SnapshotInspection`,
-and seven literal aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
+further omissions (#482): twelve `snapshot` models behind `LparSnapshot`, and seven literal
+aliases — `AffinityClassification`, `CapabilityState`, `Keylock`, `OsType`,
 `ResourceKind`, `SharingMode`, and `StopReason` — that no selected signature named. One limit
 remains deliberate: an underscore name is internal here as everywhere.
 

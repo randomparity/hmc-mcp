@@ -557,12 +557,13 @@ def _aliases_in_annotations(
     return aliases
 
 
-def _model_field_hints(owner: type) -> dict[str, object]:
+def _model_field_hints(owner: type) -> dict[str, object] | None:
     """The resolved field annotations ADR 0029 calls an owned model's supported fields.
 
-    The three shapes this package builds models out of. Anything else an operation can
-    name or the facade can export — an error class, ``HMCClient``, a literal alias —
-    has no fields this clause descends through and contributes nothing.
+    The three shapes this package builds models out of. ``None`` — not an empty
+    mapping — when *owner* is none of them, so a shape this clause cannot read stays
+    distinguishable from a model that genuinely declares no field; the test below
+    rests on that difference.
     """
     model_fields = getattr(owner, "model_fields", None)
     if isinstance(model_fields, dict):
@@ -572,7 +573,34 @@ def _model_field_hints(owner: type) -> dict[str, object]:
         return {field.name: resolved[field.name] for field in fields(owner)}
     if hasattr(owner, "__required_keys__"):  # A ``TypedDict``'s keys are its fields.
         return dict(get_type_hints(owner))
-    return {}
+    return None
+
+
+def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> None:
+    """A model shape the field walk cannot read is a silent hole, not a pass.
+
+    ``_model_field_hints`` knows three constructions and returns ``None`` for a fourth,
+    so a result type built as a ``NamedTuple``, with ``attrs``, or by hand would drop
+    out of ADR 0029's transitive type clause exactly the way #482's nineteen dropped
+    out of the signature clause — and nothing else here would say so. The package
+    already reaches past dataclasses and Pydantic elsewhere (``jobs`` defines
+    ``TypedDict`` sources), so pin what may legitimately carry no readable fields:
+    ``HMCClient``, whose supported surface is a lifecycle allowlist, and the errors.
+    """
+    unreadable = sorted(
+        name
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and _model_field_hints(exported) is None
+        and name != "HMCClient"
+        and not issubclass(exported, BaseException)
+    )
+    assert unreadable == [], (
+        f"{unreadable} carry no fields ADR 0029's transitive type clause can read; "
+        "either they are models in a shape `_model_field_hints` does not know, or "
+        "the ADR must record why they expose no supported fields"
+    )
 
 
 def _supported_models(owned: dict[tuple[str, str], object]) -> list[type]:
@@ -621,7 +649,7 @@ def _field_literal_aliases(models: list[type]) -> dict[tuple[str, str], object]:
     """
     aliases: dict[tuple[str, str], object] = {}
     for model in models:
-        field_names = set(_model_field_hints(model))
+        field_names = set(_model_field_hints(model) or ())
         for owner in model.__mro__:
             if not _is_owned(getattr(owner, "__module__", "")):
                 continue
