@@ -24,6 +24,20 @@ carry a `### Facade manifest` section.
 
 ### Added
 
+- `HMCConfig.from_mapping(values)`: environment-isolated construction for library
+  consumers (#368, ADR 0096). `HMCConfig` is a pydantic-settings model with
+  `env_prefix="HMC_"`, so the ordinary constructor resolves every field a caller leaves
+  unset from the ambient process environment — right for the CLI and the MCP server,
+  wrong for a process building one config per HMC from database rows, where a stray
+  `HMC_HOST` silently retargets a backend, a stray `HMC_SSH_KEY_FILE` offers the wrong
+  key, and a stray `HMC_AGENT_ID` corrupts ADR 0011 ownership attribution.
+  `from_mapping` reads no environment variable and no dotenv file; every field the
+  mapping omits takes its declared default. `load_profile` is unchanged —
+  environment-over-TOML precedence on the operator path is deliberate. **Note:**
+  `_env_file=None` is *not* an isolation mechanism — it suppresses a dotenv source, never
+  the environment, and `HMCConfig` configures no dotenv source at all, so it does nothing.
+  `docs/environment-variables.md` gains a "Library Consumers" section covering precedence
+  and the isolation pattern.
 - Cross-process job polling: the `get_job` and `wait_for_job` operations in the new
   `hmc_mcp.operations_jobs` module, plus the `JobOutcome` facade export (#364, ADR 0093). The
   supported handle for a job is two persistable strings — `job_id` and an optional `job_href` —
@@ -105,6 +119,12 @@ carry a `### Facade manifest` section.
 
 ### Documentation
 
+- ADR 0096 records the decision behind `HMCConfig.from_mapping` and why documentation alone was
+  not enough (#368). `AGENTS.md` no longer teaches `HMCConfig(_env_file=None)` as the
+  credential-free idiom: that private pydantic-settings parameter suppresses a dotenv source
+  rather than the environment, `HMCConfig` configures no dotenv source at all so it is entirely
+  inert, and the guidance additionally told maintainers to delete the `monkeypatch.delenv` calls
+  that were the only thing isolating those tests.
 - ADR 0069 records the live-HMC survey finding that the HMC REST API does not advertise the
   `InstallLPAR`/`InstallVIOS` jobs at any surveyed firmware level (#381); the disposition of the
   affected tools is tracked in #410. No code change.
@@ -131,6 +151,14 @@ carry a `### Facade manifest` section.
   decision, so this records the manifest catching up rather than a new capability.
 - Removed: none.
 - Renamed: none.
+- Exported model/literal changes: `HMCConfig` gained the `from_mapping(values)` classmethod
+  (#368, ADR 0096). ADR 0029 declares "the fields and constructor of an exported package-owned
+  model" supported, so a classmethod extends that model's supported surface and this is a minor
+  release under the `0.x` rule. On its own it does **not** move the frozen public signature
+  digest: that digest hashes each export's `inspect.signature`, which for a pydantic model is
+  the field-derived `__init__`, and a method changes no field. This change adds no
+  `api.__all__` entry — the digest move recorded above is `get_job` / `wait_for_job` /
+  `JobOutcome`'s (#364), not this one's.
 - Exported model/literal changes: `LparCreation` gained the
   `stamp_policy: Literal["best-effort", "required"]` field (defaults to `"best-effort"`), which
   moves the frozen public signature digest. The audit event vocabulary gained the
