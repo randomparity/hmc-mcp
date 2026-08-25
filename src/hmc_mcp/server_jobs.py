@@ -116,6 +116,15 @@ def hmc_wait_for_job(
     FAILED_TO_START. If the timeout expires first, the last observed job is
     returned with ``timed_out`` set to true.
 
+    ``found`` reports whether the HMC produced an entry for this identifier;
+    ``job_href`` is the polled job's SELF link. Read ``found`` before
+    ``timed_out``: a job the HMC produced no entry for has ``found`` false and
+    ``timed_out`` true, so ``timed_out`` alone does not mean "still running".
+    The same two fields appear on the outcomes returned by the submit-and-wait
+    tools (the migrate, remote-restart and power tools), where they describe a
+    *submission* — there ``found`` false means "this submission returned no job
+    entry", not "the HMC no longer has this job" (ADR 0093).
+
     Args:
         job_uuid: UUID or JobID returned when the job was submitted.
         timeout_seconds: Maximum polling duration in seconds; zero performs one poll.

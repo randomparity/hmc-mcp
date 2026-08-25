@@ -284,22 +284,65 @@ async def test_get_job_keeps_the_link_the_caller_polled_with(mock_hmc) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_job_logs_the_discarded_detail_when_a_job_is_missing(
+async def test_get_job_warns_with_the_discarded_detail_when_a_job_is_missing(
     mock_hmc, caplog
 ) -> None:
-    """The one place an error becomes an ordinary value leaves a record."""
+    """The one place an error becomes an ordinary value leaves a loud record.
+
+    A deployment whose job path 404s answers ``found=False`` for every job, and a
+    consumer acts on that signal, so it is not an INFO-level event.
+    """
     mock_hmc.get(_GLOBAL_PATH).mock(
         return_value=httpx.Response(404, text="<Message>Unknown job</Message>")
     )
 
-    with caplog.at_level(logging.INFO, logger="hmc_mcp.operations_jobs"):
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
         async with HMCClient(make_config()) as hmc:
             assert (await get_job(hmc, _JOB_ID)).found is False
 
     assert any(
-        _JOB_ID in record.getMessage() and "Unknown job" in record.getMessage()
+        record.levelno == logging.WARNING
+        and _JOB_ID in record.getMessage()
+        and "Unknown job" in record.getMessage()
         for record in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_get_job_warns_when_the_hmc_answers_about_a_different_job(
+    mock_hmc, caplog
+) -> None:
+    """A mispaired handle reads another job; the outcome names the job read."""
+    other_entry = _job_entry("COMPLETED_OK").replace(_JOB_ID, "some-other-job")
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(200, text=other_entry))
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert outcome.job_id == "some-other-job"
+    assert any(
+        record.levelno == logging.WARNING
+        and "some-other-job" in record.getMessage()
+        and _JOB_ID in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_job_does_not_warn_when_the_identifier_matches(
+    mock_hmc, caplog
+) -> None:
+    """The mismatch warning must not fire on the ordinary path."""
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(200, text=_job_entry("RUNNING"))
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hmc_mcp.operations_jobs"):
+        async with HMCClient(make_config()) as hmc:
+            assert (await get_job(hmc, _JOB_ID)).job_id == _JOB_ID
+
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio

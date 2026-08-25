@@ -90,6 +90,16 @@ async def get_job(
     from the response would risk replacing a working link with an untried one on
     exactly the firmware ``job_href`` exists to serve. Only when the caller
     supplied none does the response's SELF link become the handle.
+
+    **A supplied ``job_href`` decides which job is read, not ``job_id``.** The
+    client fetches that link's path directly and validates only that it addresses
+    a job resource, so a mispaired handle — the two columns of one row written
+    out of step — reads the *other* job. The returned ``job_id`` is
+    response-derived, so it names the job actually read; when it differs from the
+    requested identifier this logs a warning rather than raising, because
+    ``jobs.job_identifier`` prefers the response's UUID or JobID over the link's
+    last segment and the two can legitimately differ on some firmware. Compare
+    ``job_id`` against what you stored before acting on the outcome.
     """
     identifier = _require_job_id(job_id)
     link = _clean_job_href(job_href)
@@ -98,15 +108,23 @@ async def get_job(
     except HMCError as exc:
         if exc.status_code != _JOB_MISSING_STATUS:
             raise
-        _logger.info(
-            "HMC job %s not found (HTTP %s%s): reporting found=False. Detail: %s",
+        _logger.warning(
+            "HMC job %s not found %s: reporting found=False. A deployment whose "
+            "job path this HMC does not serve produces the same answer. Detail: %s",
             identifier,
-            _JOB_MISSING_STATUS,
-            " via job_href" if link else " via the global jobs path",
+            f"via job_href {link}" if link else "via the global jobs path",
             exc,
         )
         job = None
     outcome = job_outcome(identifier, job)
+    if job is not None and outcome.job_id != identifier:
+        _logger.warning(
+            "HMC returned job %s for requested identifier %s%s. The outcome "
+            "describes the job that was read, not the one that was asked for.",
+            outcome.job_id,
+            identifier,
+            f" (job_href {link})" if link else "",
+        )
     if link is not None and outcome.job_href != link:
         return replace(outcome, job_href=link)
     return outcome
@@ -131,6 +149,14 @@ async def wait_for_job(
     coroutine is safe: it never logs the injected client on or off and issues no
     writes, so cancellation leaves no session state to unwind and does not disturb
     the HMC-side job.
+
+    **Any non-404 HMC failure aborts the wait as an ``HMCError``** — a 5xx, a
+    network timeout, or an expired session, which matters because ``HMCClient``
+    performs no re-logon and a wait sized to a multi-hour job can outlive the
+    HMC's session lifetime. There is no retry inside this operation, deliberately:
+    it is a pure read, and re-calling it with the same ``job_id`` and ``job_href``
+    resumes exactly where it stopped. So size ``timeout_seconds`` to how long one
+    session can be expected to last, and drive a longer wait by calling again.
     """
     identifier = _require_job_id(job_id)
     validate_wait_timing(True, timeout_seconds, poll_interval)
