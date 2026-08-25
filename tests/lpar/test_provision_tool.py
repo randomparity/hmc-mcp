@@ -520,6 +520,43 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     assert result.lpar_uuid == LPAR_UUID
 
 
+def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(201, text=CREATED_LPAR_FEED)
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(200, text=SYSTEM_ENTRY)
+    )
+    mock_hmc.put(
+        f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
+    ).mock(return_value=httpx.Response(500, text="<error>network failed</error>"))
+    with (
+        patch(
+            "hmc_mcp.operations_provision.resolve_ssh_names",
+            AsyncMock(return_value=("system", None)),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.require_minimum_affinity_policy_capability",
+            AsyncMock(),
+        ),
+        patch(
+            "hmc_mcp.operations_provision.set_minimum_affinity_policy",
+            AsyncMock(return_value="changed"),
+        ),
+    ):
+        result = hmc_provision_lpar(
+            **_provision_args(minimum_affinity_policy=MinimumAffinityPolicy(90, "fail"))
+        )
+    names = [step["step"] for step in result.steps]
+    assert names.count("network") == 1
+    assert (
+        next(step for step in result.steps if step["step"] == "network")["status"]
+        == "error"
+    )
+
+
 def test_provision_lpar_propagates_unexpected_step_failure(monkeypatch, mock_hmc):
     """Programming defects are not disguised as ordinary partial results."""
     _hmc_env(monkeypatch)

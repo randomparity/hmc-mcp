@@ -528,7 +528,8 @@ async def provision_lpar(
         "network",
         _add_network(hmc, created_uuid, network.port_vlan_id),
     ):
-        _skip_steps(steps, step_names[2:])
+        network_index = step_names.index("network")
+        _skip_steps(steps, step_names[network_index + 1 :])
         return _provision_result(creation, created_uuid, steps, False)
 
     storage_steps, storage_completed = await _run_storage_leg(
