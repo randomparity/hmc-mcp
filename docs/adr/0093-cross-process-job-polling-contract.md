@@ -9,14 +9,14 @@ Accepted (2026-08-25)
 Every long-running HMC operation returns a job, and the package has three ways to learn what
 happened to one. None is usable by a supported library consumer:
 
-- `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:181`) lives in `jobs.py`, which ADR 0029's
+- `jobs.wait_for_submitted_job` (`src/hmc_mcp/jobs.py:210`) lives in `jobs.py`, which ADR 0029's
   selection rule does not reach — the rule governs `operations_*.py` modules
   (`docs/adr/0029-supported-reusable-python-api-contract.md:47`).
 - `HMCClient.get_job` (`src/hmc_mcp/client.py:904`) and `HMCClient.wait_for_job` (`:931`) are
   inherited mixin methods outside the supported lifecycle allowlist, which ADR 0029 fixes at
   exactly `__init__`, `__aenter__`, `__aexit__`, `is_logged_on`, `logon`, and `logoff` (`:39-45`).
   They remain callable, but "may change without a compatibility release".
-- `JobOutcome` (`src/hmc_mcp/jobs.py:49`), the normalized result ADR 0081 classifies, is not
+- `JobOutcome` (`src/hmc_mcp/jobs.py:50`), the normalized result ADR 0081 classifies, is not
   exported.
 
 The `wait=True` parameter that the operations and MCP tools carry is not a substitute. It holds one
