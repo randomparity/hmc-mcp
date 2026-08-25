@@ -267,17 +267,33 @@ async def _create_disk(
 
 async def _power_on(
     hmc: HMCClient,
+    system_name_or_uuid: str,
     lpar_uuid: str,
     assessment: ProvisionAffinityAssessment | None,
 ) -> dict[str, Any] | JobOutcome | None:
+    """Activate the partition this workflow just created and stamped.
+
+    ``ownership_override=True`` because the token this leg would authorize
+    against is the one the same call stamped moments earlier (ADR 0092
+    Consequences). The override keeps the resolution inside ADR 0092 §5's two
+    mechanisms — it is audited — rather than adding a call-site-conditional
+    guard. With ``authorize_power_operations`` on it spares the SSH ownership
+    read, though not the two REST name lookups that precede it; with the
+    setting off nothing here runs at all. It also means every successful
+    provision emits an ``ownership-override`` audit record once the setting is
+    on — ``docs/authorization-audit.md`` records that the event is not
+    human-triggered only.
+    """
     result = await power_lpar(
         hmc,
         lpar_uuid,
         power_on=True,
+        system_name_or_uuid=system_name_or_uuid,
         force=True,
         wait=assessment is not None,
         timeout_seconds=assessment.timeout_seconds if assessment else 300,
         poll_interval=assessment.poll_interval if assessment else 5,
+        ownership_override=True,
     )
     if assessment is None:
         return result.job
@@ -624,8 +640,16 @@ async def provision_lpar(
 
     if power_on:
         try:
-            power_result = await _power_on(hmc, created_uuid, affinity_assessment)
-        except HMCError as exc:
+            power_result = await _power_on(
+                hmc, system_name_or_uuid, created_uuid, affinity_assessment
+            )
+        except (HMCError, ValueError) as exc:
+            # ValueError too: with authorize_power_operations on, the leg reaches
+            # the ADR 0011 guard, whose name resolution raises ValueError when the
+            # managed system or the just-created partition cannot be read back.
+            # Losing that to an uncaught exception would discard the result naming
+            # the LPAR this workflow created — the identity the caller needs, since
+            # nothing here rolls back.
             steps.append(_step("power_on", "error", str(exc)))
             if affinity_assessment is not None:
                 steps.append(_step("affinity_assessment", "skipped"))

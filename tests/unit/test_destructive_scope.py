@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_lpar import delete_lpar, power_lpar, rename_lpar
 from hmc_mcp.operations_vios import power_vios
 from hmc_mcp import operations_vios, server_lpars, server_vios
@@ -64,6 +65,11 @@ async def test_rename_lpar_uses_required_system_to_scope_name_resolution():
 @pytest.mark.asyncio
 async def test_power_lpar_forwards_optional_system_scope():
     hmc = AsyncMock()
+    # A real config: power_lpar reads authorize_power_operations off it, and a
+    # child mock would be truthy — silently enabling the ADR 0092 §4 guard.
+    # from_mapping so an exported HMC_AUTHORIZE_POWER_OPERATIONS cannot enable
+    # it either (ADR 0096).
+    hmc.config = HMCConfig.from_mapping({"host": "hmc.test", "user": "u", "password": "p"})
     hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}

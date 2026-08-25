@@ -396,7 +396,7 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
         "hmc_mcp.operations_provision.power_lpar",
         new=AsyncMock(return_value=LparPowerResult(LPAR_UUID, terminal_job)),
     ) as power:
-        result = asyncio.run(_power_on(hmc, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
+        result = asyncio.run(_power_on(hmc, SYSTEM_UUID, LPAR_UUID, _affinity_request()))  # type: ignore[arg-type]
     assert isinstance(result, JobOutcome)
     assert result.status == "COMPLETED_OK"
     assert result.timed_out is False
@@ -404,10 +404,12 @@ def test_provision_affinity_power_on_waits_for_terminal_result():
         hmc,
         LPAR_UUID,
         power_on=True,
+        system_name_or_uuid=SYSTEM_UUID,
         force=True,
         wait=True,
         timeout_seconds=30,
         poll_interval=1,
+        ownership_override=True,
     )
 
 
@@ -501,6 +503,32 @@ def test_provision_affinity_timeout_never_assesses(monkeypatch, mock_hmc):
     assert result.steps[-2]["status"] == "error"
     assert result.steps[-1] == {"step": "affinity_assessment", "status": "skipped"}
     assess.assert_not_awaited()
+
+
+def test_provision_keeps_its_result_when_the_power_guard_fails(monkeypatch, mock_hmc):
+    """A guard resolution failure must not discard the created LPAR's identity.
+
+    With ``authorize_power_operations`` on, the activation leg reaches the
+    ADR 0011 guard, whose name resolution raises ``ValueError`` rather than
+    ``HMCError``. Nothing rolls back the partition this workflow created, so
+    losing the result that names it would leave the caller with nothing to
+    clean up by (#371).
+    """
+    _hmc_env(monkeypatch)
+    _mock_preconditions(mock_hmc)
+    _mock_execution_steps(mock_hmc)
+    with patch(
+        "hmc_mcp.operations_provision._power_on",
+        new=AsyncMock(side_effect=ValueError("LPAR 'x' has no partition name")),
+    ):
+        result = hmc_provision_lpar(**_provision_args())
+
+    assert result.workflow_completed is False
+    assert result.resource_created is True
+    assert result.lpar_uuid == LPAR_UUID
+    steps = {s["step"]: s for s in result.steps}
+    assert steps["power_on"]["status"] == "error"
+    assert "no partition name" in steps["power_on"]["result"]
 
 
 # ---------------------------------------------------------------------- #

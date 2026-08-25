@@ -208,6 +208,34 @@ def test_show_json_flag(tmp_path, monkeypatch):
     assert data["host"] == "hmc.example.com"
 
 
+def test_show_reports_the_power_ownership_guard(tmp_path, monkeypatch):
+    """A fail-open authorization control must have an observable value (#371).
+
+    A mistyped profile key or environment variable is dropped silently, and the
+    result is indistinguishable from a correct ``false``, so ``config show`` is
+    the only way an operator can confirm the guard is actually on.
+    """
+    _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("HMC_PROFILE", raising=False)
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+
+    with patch.object(sys, "platform", "linux"):
+        default = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
+    assert default.exit_code == 0, default.output
+    assert json.loads(default.output)["authorize_power_operations"] is False
+
+    monkeypatch.setenv("HMC_AUTHORIZE_POWER_OPERATIONS", "true")
+    with patch.object(sys, "platform", "linux"):
+        enabled = RUNNER.invoke(
+            cli.app, ["--profile", "prod", "config", "show", "--json"]
+        )
+    assert enabled.exit_code == 0, enabled.output
+    assert json.loads(enabled.output)["authorize_power_operations"] is True
+
+
 def test_show_unknown_profile_error(tmp_path, monkeypatch):
     """show exits 1 with a message containing the unknown profile name."""
     _write_toml(tmp_path / "hmc-mcp" / "config.toml", TWO_PROFILE_TOML)

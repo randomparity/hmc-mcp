@@ -21,6 +21,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_SSH_TIMEOUT` | float | `300.0` | SSH command timeout in seconds. SSH-backed HMC CLI operations (e.g. `bkprofdata`/`rstprofdata`) are significantly slower than REST calls |
 | `HMC_AUDIT_MEMENTO` | string | `hmc-mcp` | Value sent in the `X-Audit-Memento` request header; appears in HMC audit logs |
 | `HMC_AGENT_ID` | string | _(none)_ | Per-agent identifier for multi-agent LPAR ownership. When set, the `X-Audit-Memento` header is sent as `hmc-mcp:<agent_id>` and new LPARs are stamped with `[hmc-mcp owner:<agent_id> created:<date>]` in their description field. Must be 1–64 printable ASCII characters; no commas, `=`, square brackets, forward slashes, colons, or spaces; must not be the reserved value `hmc-mcp` (the default fallback used when no agent_id is set). **Note:** when `HMC_AGENT_ID` is set, `HMC_AUDIT_MEMENTO` is ignored — the prefix `hmc-mcp` is always used. |
+| `HMC_AUTHORIZE_POWER_OPERATIONS` | bool | `false` | Enforce the ADR 0011 ownership guard on LPAR power operations. Off by default, so powering a partition another agent owns is permitted and ownership stays advisory on this path. When `true`, `power_lpar` (and everything that delegates to it: `hmc_power_on_lpar`, `hmc_power_off_lpar`, `hmc-mcp lpars power-on/power-off`) reads the ownership token before submitting the job, requires a managed-system selector, and refuses a foreign-owned partition unless the caller passes `ownership_override`. See the note below and ADR 0092 §4 |
 | `HMC_ISO_URL_ALLOWLIST` | string | _(empty — refuses every URL)_ | Comma-separated hosts that `hmc_upload_iso` / `hmc-mcp storage upload-iso` may download an ISO from, each written as `host` or `host:port` (no scheme, no path) — e.g. `iso.example.internal,localhost:18765`. An entry without a port permits any port on that host. **Empty is fail-closed: every URL is refused**, because the download runs from the MCP server's network position and there is no safe default destination. See the note below and ADR 0050 |
 | `HMC_SCHEMA_VERSION` | string | _(unset)_ | Pins the `X-HMC-Schema-Version` request header on `GET` requests only. **Leave unset for normal operation** — see note below. |
 
@@ -51,6 +52,77 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 - **SSH key file** (`HMC_SSH_KEY_FILE`): only used by SSH-passthrough commands
   (`hmc_run_command`, CLI subcommands backed by `ssh.py`). REST commands always
   use `HMC_PASSWORD`.
+
+- **Power ownership guard** (`HMC_AUTHORIZE_POWER_OPERATIONS`): ADR 0011 ownership
+  is advisory by default on the power path, and ADR 0092 §4 records why. The guard
+  costs **one SSH login plus two REST GETs** per guarded call —
+  `authorize_lpar_mutation` reads the token over SSH, and
+  `resolve_lpar_ownership_names` performs both REST reads unconditionally to turn
+  UUIDs into the CLI names the SSH command takes. `ownership_override=True` skips
+  the SSH read, **not** the two REST reads: they run first, because the audit
+  record for an approved override names the system and the partition. A
+  power-cycling orchestrator is the highest-frequency caller of this operation, and
+  power is the one mutation class whose inverse is a single call with no prior
+  state to reconstruct, so the cost is opt-in rather than default. Turn it on when
+  the HMC is shared with other agents or human operators and that cost is
+  acceptable.
+
+  Turning it on changes two things beyond the ownership check. A partition another
+  agent owns is refused with a `PermissionError`; retry it as a deliberate, audited
+  exception with `ownership_override` (`--ownership-override` on the CLI).
+  `provision_lpar` passes that override on its own activation leg, because the
+  partition it powers is the one the same workflow just created and stamped.
+
+  And a call that omits the managed-system selector pays a bounded fleet walk: the
+  ownership token is read per managed system, so the guard derives the owning one
+  by scanning partition feeds (ADR 0094, capped at 100 systems with a timeout).
+  Supplying `system_name_or_uuid` — `--system` on the CLI — replaces that walk with
+  one read, which is worth doing for a power-cycling orchestrator.
+
+  And **power operations gain a dependency on the HMC's SSH interface.** The
+  ownership read runs the HMC CLI over SSH, so with the guard on a power operation
+  fails with `HMCCLIError` when SSH is unreachable, refuses the credentials, or
+  hangs. That includes `power-off --immediate`, the call an operator most wants
+  during an incident. It is fail-closed by design — an ownership token that cannot
+  be read has not been checked — and `ownership_override` is the escape, because it
+  skips the read.
+
+  **Size the worst case at two SSH commands, not one.** `HMC_SSH_TIMEOUT` bounds
+  each command separately, not the operation, and a guarded call can run two: the
+  name resolution falls back to an SSH lookup when the REST read of the managed
+  system fails or returns no `SystemName`, and that fallback *swallows* its timeout
+  and carries on to the ownership read, which then burns a second one. At the
+  300-second default that is roughly ten minutes before the failure surfaces, not
+  five. The override path pays only the first, because it skips the ownership read
+  — so it is not an unconditional SSH-free path either. A deployment whose HMC
+  credentials work for REST but not for SSH should leave this setting off.
+
+  **Set the environment variable, not the TOML key, to make the guard hold
+  everywhere.** The value is read from the resolved config, so a TOML
+  `authorize_power_operations = true` applies only to the profile that carries it —
+  every other profile stays unguarded, including a second profile pointing at the
+  same HMC, and both the MCP tools and the CLI take a caller-supplied profile
+  selector. `HMC_AUTHORIZE_POWER_OPERATIONS` overrides every profile's TOML value,
+  so it is the setting that cannot be selected around.
+
+  **Check that it actually took.** This setting fails **open**, and a mistyped
+  profile key or environment variable is dropped silently — indistinguishable from
+  a correct `false`. `hmc-mcp config show` reports the profile's resolved value,
+  with three limits worth knowing before you trust it. It requires a `config.toml`
+  and exits 1 without one, so it cannot answer for an env-var-only setup. It reads
+  the environment of the shell that invoked it, not of the `hmc-mcp serve` process
+  an MCP host launched with its own environment block. And when `HMC_HOST` (or an
+  explicit `--host`) is set, a tool run skips the profile entirely and builds its
+  config from environment variables alone — so a TOML-only
+  `authorize_power_operations = true` is shown as enabled while the runtime
+  resolves it to `false`. That last one is the fail-open direction, and it is
+  another reason to set `HMC_AUTHORIZE_POWER_OPERATIONS` rather than the TOML key.
+  #470 tracks reporting the value from the running server itself.
+
+  When the setting is off, `power_lpar` reads no ownership token and opens no SSH
+  connection — the call path is exactly what it was before this setting existed.
+  A caller that wants ownership facts without the guard can read them in one REST
+  call with `list_lpar_ownership` / `hmc_list_lpar_ownership` (ADR 0071).
 
 - **ISO download allowlist** (`HMC_ISO_URL_ALLOWLIST`): `hmc_upload_iso` fetches
   the ISO from the MCP server's own network position, so the caller of the tool

@@ -90,8 +90,35 @@ rendering; a boolean records `unreadable`.
 
 ### `event: "ownership-override"`
 
-Emitted when an operator approves an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md)
-LPAR ownership override. Always `WARNING`.
+Emitted when an [ADR 0011](adr/0011-multi-agent-lpar-ownership.md) LPAR ownership
+override is exercised. Always `WARNING`.
+
+**Not every record is a human decision.** Most are: a caller passing
+`ownership_override` is an operator-approved exception to a single mutation. One
+internal caller also emits it — `provision_lpar`'s activation leg passes the
+override unconditionally, because the ownership token it would authorize against is
+the one the same workflow stamped moments earlier
+([ADR 0092](adr/0092-uniform-lpar-ownership-authorization-rule.md) Consequences).
+That leg is reached only when `HMC_AUTHORIZE_POWER_OPERATIONS` is on, so with the
+guard off — the default — every record in this stream is caller-supplied. With it
+on, expect one record per `provision_lpar(power_on=True)`. The record carries no
+field distinguishing the two sources; an alert on this event should account for that
+before the guard is enabled.
+
+The converse holds too, and it is the more surprising half: while the guard is off,
+the power path emits **no** record even when a caller passes `ownership_override`.
+The parameter is read only inside the guarded branch, so with the setting off it is
+inert — nothing was bypassed, because nothing was checked. Silence in this stream on
+the power path is therefore not evidence that no override was requested.
+
+**Denials emit nothing.** This event records ownership checks that were *bypassed*,
+never ones that *refused*: the denial path raises `PermissionError` with no audit
+call, on every guarded operation. The `authorization` event above does not fill the
+gap — it is #218's dispatch-time policy, which covers MCP tool calls only, so for a
+CLI or `hmc_mcp.api` caller a refused mutation leaves no trace anywhere. An alert
+built on this stream therefore measures approved exceptions, not attempts, and
+cannot tell "nobody tried" from "many were refused". #467 tracks a denial record
+across all guarded operations.
 
 ```json
 {"time":"2026-08-19T18:00:00+00:00","event":"ownership-override","system":"sys-a","lpar":"db-01","host":"hmc-a.example","attribution":{"claim":"agent-7","source":"config:agent_id","verified":false}}

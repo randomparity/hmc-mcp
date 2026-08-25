@@ -512,6 +512,17 @@ def lpars_power_on(
     ),
     force: bool = typer.Option(False, "--force", help="Submit even if already running"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    system: str | None = typer.Option(
+        None,
+        "--system",
+        "-s",
+        help="Managed system name or UUID; with HMC_AUTHORIZE_POWER_OPERATIONS it also spares the ownership guard a fleet-wide search",
+    ),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
+    ),
 ) -> None:
     """Power on an LPAR (submits a PowerOn job)."""
     _power_lpar(
@@ -522,6 +533,8 @@ def lpars_power_on(
         wait=wait,
         timeout=timeout,
         interval=interval,
+        system=system,
+        ownership_override=ownership_override,
     )
 
 
@@ -539,6 +552,17 @@ def lpars_power_off(
         5, "--interval", help="Poll interval seconds (with --wait)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    system: str | None = typer.Option(
+        None,
+        "--system",
+        "-s",
+        help="Managed system name or UUID; with HMC_AUTHORIZE_POWER_OPERATIONS it also spares the ownership guard a fleet-wide search",
+    ),
+    ownership_override: bool = typer.Option(
+        False,
+        "--ownership-override",
+        help="Bypass ownership protection after operator approval; no effect unless HMC_AUTHORIZE_POWER_OPERATIONS is set",
+    ),
 ) -> None:
     """Power off an LPAR (submits a PowerOff job)."""
     _power_lpar(
@@ -549,6 +573,8 @@ def lpars_power_off(
         wait=wait,
         timeout=timeout,
         interval=interval,
+        system=system,
+        ownership_override=ownership_override,
     )
 
 
@@ -789,6 +815,8 @@ def _power_lpar(
     wait: bool = False,
     timeout: int = 300,
     interval: int = 5,
+    system: str | None = None,
+    ownership_override: bool = False,
 ) -> None:
     validate_wait_timing(wait, timeout, interval)
     if not yes:
@@ -803,11 +831,13 @@ def _power_lpar(
                 hmc,
                 name_or_uuid,
                 power_on=on,
+                system_name_or_uuid=system,
                 immediate=immediate,
                 force=force,
                 wait=wait,
                 timeout_seconds=timeout,
                 poll_interval=interval,
+                ownership_override=ownership_override,
             )
 
     result = _run(_go)

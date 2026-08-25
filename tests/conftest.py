@@ -52,6 +52,25 @@ def enable_tls_verification_for_tests(monkeypatch):
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
 
 
+@pytest.fixture(autouse=True)
+def default_power_ownership_guard_off(monkeypatch):
+    """Give every test the shipped default of the ADR 0092 §4 power guard.
+
+    `HMCConfig` reads `HMC_AUTHORIZE_POWER_OPERATIONS` from the environment
+    like every other field, so a developer who exports it turns the ownership
+    guard on inside every test that builds its config from the environment —
+    the tool and CLI layers. Those tests then send the guard's ownership name
+    lookups at routes respx never registered, and fail for a reason that has
+    nothing to do with what they assert.
+
+    Cleared here rather than in each module: the default is what nearly every
+    test means to exercise. A test that wants the guard on sets the variable
+    in its own body, which runs after this fixture, or builds the config with
+    `HMCConfig.from_mapping` and bypasses the environment entirely (ADR 0096).
+    """
+    monkeypatch.delenv("HMC_AUTHORIZE_POWER_OPERATIONS", raising=False)
+
+
 def _restore_fastmcp_logger() -> None:
     handlers, level, propagate = _PRISTINE_FASTMCP
     _FASTMCP_LOGGER.handlers[:] = handlers

@@ -778,12 +778,44 @@ async def power_lpar(
     wait: bool = False,
     timeout_seconds: int = 300,
     poll_interval: int = 5,
+    ownership_override: bool = False,
 ) -> LparPowerResult:
-    """Apply shared LPAR power policy, submit the job, and optionally wait."""
+    """Apply shared LPAR power policy, submit the job, and optionally wait.
+
+    ADR 0011 ownership is advisory here by default. Powering a partition another
+    agent owns is only rejected when the operator sets
+    ``authorize_power_operations`` (``HMC_AUTHORIZE_POWER_OPERATIONS``), the
+    opt-in ADR 0092 §4 records; with the setting off this call reads no
+    ownership token and opens no SSH connection, so a caller that cares should
+    read the description itself — ``list_lpar_ownership`` reports it for a whole
+    managed system in one REST call.
+
+    With the setting on the resolve chain is ADR 0094's
+    :func:`_resolve_and_authorize_lpar`, shared with the DLPAR operations —
+    the same shape, because these are the operations whose managed-system
+    selector is optional (ADR 0063). It derives the owning system when the
+    caller omits the selector, and confirms the partition lives on the system
+    the caller named when they supply one, so the token read is never taken
+    from a system the partition does not belong to.
+
+    ``ownership_override=True`` bypasses the rejection for this one call and
+    records an audited override. It skips the SSH ownership read and the fleet
+    walk, not the partition-name read that names the audit record. When the
+    ownership read fails or times out, the call fails with
+    :class:`HMCCLIError` and submits no job.
+    """
     validate_wait_timing(wait, timeout_seconds, poll_interval)
-    lpar_uuid = await resolve_lpar_uuid(
-        hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
-    )
+    if hmc.config.authorize_power_operations:
+        lpar_uuid = await _resolve_and_authorize_lpar(
+            hmc,
+            lpar_name_or_uuid,
+            system_name_or_uuid,
+            ownership_override=ownership_override,
+        )
+    else:
+        lpar_uuid = await resolve_lpar_uuid(
+            hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        )
     if power_on and not force:
         state = await hmc.get_quick_property(
             "LogicalPartition", lpar_uuid, "PartitionState"

@@ -368,7 +368,11 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #365, which extracted the DLPAR processor and
+        Last moved by issue #371 (ADR 0092 §4), which moved it twice over: it
+        added ``ownership_override`` to ``power_lpar``, and it added the
+        ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
+        ``__init__`` signature is derived from its fields.
+        Before that, issue #365 extracted the DLPAR processor and
         memory workflows out of the ``hmc_dlpar_proc`` / ``hmc_dlpar_mem``
         tool bodies into ``set_lpar_processors`` and ``set_lpar_memory`` —
         async, guarded per ADR 0092 §3.2, and callable from inside a running
@@ -436,8 +440,10 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #365: the two extracted async DLPAR operations join the facade.
-    expected_digest = "0e10de9b9d4e6f704078c55b38f25173b66abf9c51c9cf0fbcb41c3b132eae97"  # pragma: allowlist secret
+    # Moved by #371: power_lpar gains ownership_override and HMCConfig gains
+    # authorize_power_operations (ADR 0092 §4). Recomputed over #365's
+    # baseline 0e10de9b, which this branch merged.
+    expected_digest = "44e83b7a4ce2297db57e9dbe674f5908de7b2689b62bdcc73976b01807ac9ef8"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

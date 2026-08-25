@@ -972,6 +972,7 @@ def test_from_mapping_applies_every_supplied_key():
         "audit_memento": "hmc-mcp",
         "schema_version": "V1_0",
         "agent_id": "row-agent",
+        "authorize_power_operations": True,
         "iso_url_allowlist": "iso.example.internal",
     }
     assert set(values) == set(HMCConfig.model_fields)
