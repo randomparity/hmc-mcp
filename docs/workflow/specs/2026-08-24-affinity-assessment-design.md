@@ -1,6 +1,6 @@
 # NUMA affinity assessment design
 
-**Branch:** `feat/assess-numa-affinity-317` from `main`  
+**Branch:** `feat/assess-numa-affinity-317` from `main`
 **Decision:** [ADR 0088](../../adr/0088-affinity-assessment-contract.md)
 
 ## Goal
