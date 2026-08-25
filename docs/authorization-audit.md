@@ -1,8 +1,9 @@
 # Authorization audit records
 
-The server writes one structured record for every authorization decision it makes at
-the MCP dispatch boundary, and one for every approved LPAR ownership override. This
-document is the contract those records keep. The decision behind it is
+The server writes one structured record for every authorization decision it makes at the
+MCP dispatch boundary, and further records for the other things an operator has to be
+able to audit. The sections under [The records](#the-records) are the full set; this
+document is the contract they keep. The decision behind it is
 [ADR 0040](adr/0040-authorization-audit-events.md).
 
 ## What you get, and when you get nothing
@@ -19,7 +20,7 @@ ownership check inside the handler, which runs whether or not a policy is select
 on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
 still produce those, and only those.
 
-Two other things produce no record, by design:
+Other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
   reaches the boundary;
@@ -35,10 +36,10 @@ to `"<default>"`.
 
 **An empty audit stream is therefore not evidence that nothing was attempted.**
 
-## The two records
+## The records
 
-Both are one physical line of ASCII JSON. `time` and `event` come first on both, and
-every caller-supplied value is truncated to **128 characters** with no marker — a
+Each is one physical line of ASCII JSON. `time` and `event` come first on every one,
+and every caller-supplied value is truncated to **128 characters** with no marker — a
 truncated value is exactly that long, so you can measure it.
 
 ### `event: "authorization"`
@@ -51,7 +52,7 @@ truncated value is exactly that long, so you can measure it.
 | `tool` | the MCP tool name |
 | `effect` | `read`, `mutate`, `destructive`, or `arbitrary-command` |
 | `decision` | `"allow"` or `"deny"` |
-| `reason` | one of the seven codes below |
+| `reason` | one of the codes below |
 | `connection` | `{"state", "selector", "resolved"}` |
 | `targets` | a list of `{"kind", "argument", "state", "value"}`, or `null` |
 | `attribution` | `{"claim", "source", "verified"}` |
@@ -62,8 +63,9 @@ truncated value is exactly that long, so you can measure it.
 
 `connection.state` is `present` when the caller supplied a connection string, `absent`
 when it supplied nothing or an empty string, and `unreadable` when it supplied a value
-of another type — whose `repr()` is never rendered. `connection.selector` is the
-caller's own string, or `null` in the other two states.
+of another type. That value's `repr()` is never rendered. `connection.selector` is the
+caller's own string, or `null` in the other two states. A `targets` entry's `state` is
+the same vocabulary, describing one selector instead of the connection.
 
 `connection.resolved` is which HMC the call would actually have used: a profile key,
 `"<default>"` for the environment/default connection, `"<unresolved>"` when the token
@@ -134,6 +136,34 @@ It carries no `policy`, `decision`, `reason`, or `targets`, and not as nulls —
 an ownership check on a token parsed from an LPAR description is not an
 access-policy decision, and empty fields would read as one.
 
+### `event: "tls-verification-disabled"`
+
+Emitted when an `HMCClient` is constructed with `verify_ssl` off, so the audit stream
+can answer "were credentials ever sent over an unverified channel, and to which HMC".
+Always `WARNING`. The logon-time `warnings.warn` stays and is the CLI user's channel;
+under the default warning filter it renders once per process per location, which is
+why this record exists alongside it.
+
+```json
+{"time":"2026-08-22T18:00:00+00:00","event":"tls-verification-disabled","host":"hmc-a.example","source":"environment:HMC_VERIFY_SSL"}
+```
+
+`host` is `HMCConfig.host`, the HMC the unverified session would reach; an unset
+`HMC_HOST` renders as an empty string. `source` names where the effective setting came
+from — `explicit-argument`, `environment:HMC_VERIFY_SSL`, or `field-default` — because
+that is which knob an operator has to turn.
+
+**One record per client construction**, not per request — which would flood the sink —
+and not per process, which would miss a later client built with different settings.
+Read the rate accordingly: an MCP tool invocation builds a fresh client, so on a server
+left at the insecure default (`HMC_VERIFY_SSL` is `false` until 1.0, per
+`docs/environment-variables.md`) this stream carries roughly one record per tool call
+rather than one at startup. Deduplicate on `host` and `source` if you are alerting.
+
+It carries no `policy`, `decision`, `reason`, `targets`, or `attribution`. Building a
+client is not an access-policy decision, and it happens on the CLI and Python API paths
+too, where there is no policy to name.
+
 ### `event: "records-dropped"`
 
 Emitted by the sink itself, not by a decision, when lines were lost since the previous
@@ -169,9 +199,10 @@ template on purpose. To find malformed calls, filter
 
 ## Attribution is never identity
 
-`verified` is always `false` on both records, and neither value influences an
-authorization decision at the dispatch boundary. Where they come from differs, and the
-`source` field is what tells you which you are reading.
+Not every record carries `attribution`; each section above says whether its own does.
+Where it appears, `verified` is always `false`, and neither value influences an
+authorization decision at the dispatch boundary. Where the claim comes from differs, and
+the `source` field is what tells you which you are reading.
 
 **`source: "environment:HMC_AGENT_ID"`** — on the `authorization` record. Read straight
 from the server process's environment at emission.
@@ -201,8 +232,8 @@ than the value's authority everywhere.
 
 ## Routing, levels, and silencing
 
-Records go to the `hmc_mcp.audit` logger. Denials and ownership overrides are
-`WARNING`; permits are `INFO`.
+Records go to the `hmc_mcp.audit` logger. A permit is `INFO`; everything else the
+logger emits is `WARNING`.
 
 Importing `hmc_mcp.audit` sets `propagate = False`, so no ancestor handler receives
 audit records — including on the in-process path, where an embedder composes an
@@ -218,8 +249,13 @@ defers to a handler that is already there and will not add a second.
 > for the same reason.
 
 > To set the level from the command line, pass `--audit-level LEVEL` to `hmc-mcp serve`:
-> `DEBUG` and `INFO` keep both records, `WARNING` keeps denials only, and `ERROR` or
-> `CRITICAL` silences the stream. The name is validated — a misspelling is a usage error
+> `DEBUG` and `INFO` keep everything the logger emits, `WARNING` drops permits and keeps
+> the rest, and `ERROR` or `CRITICAL` silences the stream. Read `WARNING` as a volume floor
+> rather than a quiet
+> setting: on a server left at the insecure `HMC_VERIFY_SSL` default it still carries one
+> TLS record per tool call, which the deduplication advice above applies to. The
+> `records-dropped` marker survives every setting, since it comes from the sink rather
+> than the logger. The name is validated — a misspelling is a usage error
 > that starts nothing. Omitted, the shipped sink's own `INFO` default stands. An in-process
 > caller keeps configuring the logger directly, before calling `main_stdio` / `main_http`.
 
@@ -284,7 +320,10 @@ rather than the operator deploying it — choose one that reads its child's stde
 made a policy mandatory this applies to every deployment, and an ungranted caller can drive
 the writes at call rate, because the record precedes the denial. Since ADR 0051 a denied call
 puts *two* items on the queue — this record, then FastMCP's one-line denial — so the queue
-fills in about half the calls it used to. That caller can therefore make records drop —
-bounded to the queue, visible as a `records-dropped` count, and never able to stall a call.
+fills in about half the calls it used to. Size the destination for the permitted path too:
+on the insecure `HMC_VERIFY_SSL` default a permitted call also puts a TLS record on the
+queue, per the rate noted with that record above. That caller can therefore make records
+drop — bounded to the queue, visible as a `records-dropped` count, and never able to stall
+a call.
 `hmc-mcp serve --audit-level WARNING` halves what that caller can produce — permits are gone —
 but the denials themselves stay, because an unrecorded probe is worse than a recorded one.
