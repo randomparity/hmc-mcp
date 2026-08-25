@@ -57,10 +57,11 @@ crosses the same check.
 
 The test in clause 1 is the **resource type**, not the mere presence of a
 selector. `VirtualIOServer` partitions are out of scope: ADR 0011 never stamps
-them, so there is no token to authorize against. That excludes `power_vios`,
-`hmc_delete_vios`, `hmc_install_vios`, `hmc_restore_vios`, `hmc_vios_update` and
-`hmc_install_lpar_os` — the last despite its name, because `installios` requires
-its `-p` partition to be of type Virtual I/O Server (`server_vios.py:265`).
+them, so there is no token to authorize against. That excludes the VIOS mutations —
+`power_vios`, `hmc_delete_vios`, `hmc_install_vios`, `hmc_restore_vios`,
+`hmc_backup_vios`, `hmc_vios_update` — and also `hmc_install_lpar_os`, despite its
+name, because `installios` requires its `-p` partition to be of type Virtual I/O
+Server (`server_vios.py:267`).
 
 Also out of scope: read operations; managed-system-, user- and cluster-scoped
 mutations that name no partition (`create_volume_group`, `create_media_repository`,
@@ -159,7 +160,7 @@ separately exempt — the function is classified here, once, as Reconfiguring.
 
 `assign_dedicated_pcie_slot` / `unassign_dedicated_pcie_slot` are guarded but
 currently inert: `_authorize_pcie_profile_request` raises
-`PcieAssignmentUnavailableError` unconditionally at `operations_pcie.py:222`, right
+`PcieAssignmentUnavailableError` unconditionally at `operations_pcie.py:226`, right
 after the guard, so neither can mutate anything at this commit. They count as
 correctly-shaped coverage, not as protection of a live mutation.
 
@@ -173,7 +174,7 @@ they are classified here and must gain both an operation and its guard (§6):
 | `hmc_set_lpar_msp` | `server_lpar_config.py:368` | **unguarded** | #441 |
 | `hmc_set_lpar_proc_compat` | `server_lpar_config.py:417` | **unguarded** | #441 |
 | `hmc_modify_lpar` | `server_lpars.py:193` | **partially guarded** — the `assignments` leg delegates to guarded operations, the `resources` leg calls `modify_logical_partition` at `:241` with no ownership check | #442 |
-| `hmc lpar modify` (CLI) | `cli_lpars.py:940` | **partially guarded** — same split, unguarded resource write at `cli_lpars.py:1067` | #442 |
+| `hmc lpar modify` (CLI) | `cli_lpars.py:941` | **partially guarded** — same split, unguarded resource write at `cli_lpars.py:1067` | #442 |
 
 `hmc_modify_lpar` is the sharpest illustration of the gap this ADR closes: one tool,
 one `ownership_override` argument, and two legs on opposite sides of the line — and
@@ -209,16 +210,21 @@ exempt anyway.
 
 **3.4b — LPAR-mutating, exempt because the signature cannot express the check**
 
-| Operation | Reason |
-|---|---|
-| `detach_storage_mapping` (`operations_storage.py:158`) | Keyed by VIOS plus mapping UUID; the owning partition is not a parameter. A guard would need an extra read to resolve the client partition. |
-| `hmc_backup_lpar_profiles` / `hmc_restore_lpar_profiles` (`server_profiles.py:35`, `:86`) | Managed-system-scoped; no partition named, so a per-partition decision is not expressible. Restore rewrites every profile on the system. |
+| Operation | Reason | Tracking |
+|---|---|---|
+| `detach_storage_mapping` (`operations_storage.py:158`) | Keyed by VIOS plus mapping UUID; the owning partition is not a parameter. A guard would need an extra read to resolve the client partition. | #448 |
+| `hmc_backup_lpar_profiles` / `hmc_restore_lpar_profiles` (`server_profiles.py:35`, `:86`) | Managed-system-scoped; no partition named, so a per-partition decision is not expressible. Restore rewrites every profile on the system. | #449 |
 
 **3.4b rows are recorded gaps, not safe exemptions.** The mutation is real and the
 partition is owned by someone; only the selector is missing. Closing them means
-changing the operation signatures, which is a separate decision and a separate PR.
-They sit in the exemption register so they stay visible in the inventory rather than
-disappearing from it.
+changing the operation signatures, which is a separate decision and a separate PR —
+hence the Tracking column here too. §3's `none yet` gate applies to this table
+exactly as it does to §3.1–§3.3: these are the widest-blast-radius unguarded
+mutations in the inventory, and exempting them from the gate would hide the two rows
+the gate most needs to see.
+
+They sit in the exemption register, rather than in §3.2 as ordinary defects, only
+because no amount of guard-call work fixes them — the signature has to change first.
 
 `hmc_install_lpar_os` is absent from every table above because §1 puts it out of
 scope: `installios` requires a Virtual I/O Server partition. #366 proposes extracting
@@ -251,15 +257,15 @@ The SSH login is the chain `authorize_lpar_mutation` (`operations_lpar.py:495`) 
 invocation. `run_hmc_command` opens and closes its connection inside the call; the
 only long-lived SSH connection in the package is the console path (`ssh.py:80`),
 which commands do not share. There is no pool and no reuse. (With
-`ownership_override=True` the guard returns at `operations_lpar.py:502` after
+`ownership_override=True` the guard returns at `operations_lpar.py:505` after
 auditing, before the read — that path pays nothing.)
 
 The two REST GETs come from `resolve_lpar_ownership_names`
 (`operations_lpar.py:510`), which the guard needs to turn UUIDs into the CLI names
-the SSH command takes. It calls `hmc.get_logical_partition` (`:518`) and
-`_system_name` → `hmc.get_managed_system` (`:525`) **unconditionally** — supplying
-`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:817`) and
-`_authorize_pcie_profile_request` (`operations_pcie.py:215`) already demonstrate.
+the SSH command takes. It calls `_system_name` (`:517`) → `hmc.get_managed_system`
+(`:527`) and `hmc.get_logical_partition` (`:518`) **unconditionally** — supplying
+`system_name_or_uuid` does not avoid either, as `rename_lpar` (`:821`) and
+`_authorize_pcie_profile_request` (`operations_pcie.py:217`) already demonstrate.
 
 The two REST reads are the same order of work `power_lpar` already does
 (`resolve_lpar_uuid` at `:777`, and a `get_quick_property` state check on power-on).
@@ -308,22 +314,45 @@ Two distinct mechanisms, deliberately not interchangeable:
 
 #### The predicate, stated so a test can implement it
 
-An operation satisfies this ADR if and only if it **reaches a guard** or **appears in
-§3.4**. Both halves need definition, or the test cannot be written.
+An LPAR-mutating operation satisfies this ADR if and only if it **reaches a guard**
+or **appears in §3.4**. Every part of that — which operations are in scope, what a
+guard is, and what "reaches" means — needs definition, or the test cannot be
+written.
 
 **Enumeration domain.** Two domains, checked separately because they are reachable by
 different means.
 
 - *Domain A — the facade.* Every callable exported from `hmc_mcp.api.__all__` whose
-  definition lives in `src/hmc_mcp/operations_*.py` and that meets §1. This is the
-  domain #369's acceptance criterion names, and it is the one that matters most,
-  because a `hmc_mcp.api` consumer crosses no other authorization boundary (§7).
+  definition lives in `src/hmc_mcp/operations_*.py`. This is the domain #369's
+  acceptance criterion names, and it is the one that matters most, because a
+  `hmc_mcp.api` consumer crosses no other authorization boundary (§7).
 - *Domain B — entry points with no operation.* Every function registered by `@tool`
   with effect `mutate` or `destructive` that meets §1 and whose mutation does not
   route through a Domain A callable. These are §3.1's and §3.2's tool rows plus the
   CLI row. They cannot be fixed by adding a guard call: §6 requires an operation
   first, at which point they become Domain A and leave Domain B. **Domain B being
   empty is the end state**; until then each row needs a Tracking issue.
+
+**Domain A is enumerated, then partitioned — not filtered by judgement.** "Meets §1"
+is a semantic call no test can compute, so the test must not try. Instead every
+Domain A callable must fall into exactly one of three sets, and their union must
+equal the enumeration:
+
+1. classified in §3.1, §3.2 or §3.3;
+2. exempt in §3.4;
+3. **not LPAR-mutating** — a set the test maintains explicitly, alongside the frozen
+   public-API digest this repo already keeps in `tests/unit/test_public_api.py`.
+
+Set 3 is where `capacity_report`, `list_adapters`, `read_lpar_boot_order` and every
+other non-mutating export live. Membership is a deliberate, reviewed act: a new
+facade export lands in none of the three sets, so the test fails until someone
+classifies it. That is what makes the check non-circular — a filter on "meets §1"
+could only ever re-check operations §3 already names, and by construction could never
+catch the new unclassified operation §6 exists to prevent.
+
+Domain B needs no such partition: `@tool(effect=…, target_kind="lpar")` is
+machine-readable and exhaustively enforced by the existing registry test, so the
+domain enumerates itself.
 
 **What counts as a guard.** Exactly two callables:
 `authorize_lpar_mutation` (`operations_lpar.py:495`) and
@@ -354,6 +383,11 @@ A change that adds an operation meeting §1's definition must, **in the same PR*
 A PR that adds an LPAR-mutating operation without a classification row is
 incomplete. "It is new, so nothing owns it yet" is not a reason: the operation acts
 on a partition that may already be owned.
+
+A change that adds any new **facade export** defined in `operations_*.py` — mutating
+or not — must also place it in one of §5's three sets. Doing nothing is not an
+option the test permits, which is the point: it forces the §1 judgement to be made
+once, in review, rather than silently deferred.
 
 ### 7. Relationship to #218's server access policy
 
@@ -391,10 +425,13 @@ That asymmetry is why §4 exists at all.
   Tracking issue: #371 implements §4, #372 and #373 are #369's existing sub-issues,
   #365 covers DLPAR, and #440, #441 and #442 were filed for the rows no #369
   sub-issue reached. #369 must not close while any Tracking cell reads `none yet`.
-- The #369 enforcement test has a concrete predicate (§5) — enumeration domain,
-  guard set, and reachability rule — and a concrete exemption list (§3.4), so
-  coverage cannot silently regress. The test also has to assert Domain B, which is
-  not a facade check; the two arms are separate.
+- The #369 enforcement test has a concrete predicate (§5) — enumeration domains,
+  guard set, reachability rule, and the three-set partition of the facade — so
+  neither existing coverage nor the classification itself can silently regress: a
+  new facade export belongs to no set and fails the test until someone classifies
+  it. The cost is a maintained not-LPAR-mutating set in the test, which is the
+  price of not making the check circular. The test also has to assert Domain B,
+  which is not a facade check; the two arms are separate.
 - `authorize_power_operations` adds a configuration field to the supported surface
   when #371 lands. That PR owns the CHANGELOG entry and the release-classification
   call under ADR 0029; this ADR changes no code and no signature.
