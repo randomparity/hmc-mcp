@@ -13,7 +13,7 @@ import os
 import warnings
 from collections.abc import AsyncIterator
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, get_args
 import re
 from urllib.parse import quote, unquote, urlparse
 
@@ -130,20 +130,35 @@ def _env_flag(value: str) -> bool | None:
     return None
 
 
-def _verify_ssl_source(config: HMCConfig) -> str:
+VerifySSLSource = Literal[
+    "explicit-argument",
+    "environment:HMC_VERIFY_SSL",
+    "field-default",
+]
+
+#: The closed vocabulary, derived rather than restated — as ``audit.REASONS`` is from
+#: ``audit.Reason``. ``audit`` imports nothing from ``hmc_mcp``, so its TLS record
+#: builder still takes a plain ``str``; the narrowing lives here, at the only place
+#: that produces a value. ``docs/authorization-audit.md`` and
+#: ``docs/environment-variables.md`` both restate it, and
+#: ``tests/test_authorization_audit_doc.py`` holds both to this set (#497).
+VERIFY_SSL_SOURCES: frozenset[str] = frozenset(get_args(VerifySSLSource))
+
+
+def _verify_ssl_source(config: HMCConfig) -> VerifySSLSource:
     """Name where the effective ``verify_ssl`` value came from, for #379's audit record.
 
-    One of ``explicit-argument``, ``environment:HMC_VERIFY_SSL`` or
-    ``field-default``. ``pydantic-settings`` folds environment values into the
-    constructor kwargs, so ``model_fields_set`` alone cannot separate an explicit
-    argument from an environment-sourced one once ``HMC_VERIFY_SSL`` is set; when
-    both are present and disagree, the explicit argument won pydantic-settings'
-    source priority, and when they agree they are indistinguishable and the
-    environment is named — telling the operator which knob matches the effective
-    value is what lets them change it. For a config the environment could not
-    have reached, the two are distinguishable in principle but not from here, so
-    that arm names the environment for an isolated config that supplied a
-    matching ``verify_ssl`` itself; it self-corrects the moment the two disagree.
+    The vocabulary is :data:`VerifySSLSource`, so a typo here is a type error.
+    ``pydantic-settings`` folds environment values into the constructor kwargs, so
+    ``model_fields_set`` alone cannot separate an explicit argument from an
+    environment-sourced one once ``HMC_VERIFY_SSL`` is set; when both are present
+    and disagree, the explicit argument won pydantic-settings' source priority, and
+    when they agree they are indistinguishable and the environment is named —
+    telling the operator which knob matches the effective value is what lets them
+    change it. For a config the environment could not have reached, the two are
+    distinguishable in principle but not from here, so that arm names the
+    environment for an isolated config that supplied a matching ``verify_ssl``
+    itself; it self-corrects the moment the two disagree.
 
     Because that folding is what puts an environment value into
     ``model_fields_set``, its *absence* is decisive the other way: nothing

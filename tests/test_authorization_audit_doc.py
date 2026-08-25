@@ -1,11 +1,16 @@
-"""`docs/authorization-audit.md` must agree with the audit vocabulary it mirrors.
+"""The audit documents must agree with the vocabularies they mirror.
 
-#486. `audit.REASONS`, `audit.EVENTS`, `audit.State` and `tool_registry.EFFECTS` are
-closed vocabularies, each derived from a `Literal` so "a checker and a test can
-consult" it. The document restates all four — as a reason-code table, as one
-`### event:` section apiece, as the `effect` row of the authorization field table, and
-as the sentence enumerating the `connection.state` arms — and nothing read it, so the
-two sides could drift apart silently. They had.
+#486. `audit.REASONS`, `audit.EVENTS`, `audit.State`, `tool_registry.EFFECTS` and
+`client.VERIFY_SSL_SOURCES` are closed vocabularies, each derived from a `Literal` so
+"a checker and a test can consult" it. `docs/authorization-audit.md` restates all five —
+as a reason-code table, as one `### event:` section apiece, as the `effect` row of the
+authorization field table, as the sentence enumerating the `connection.state` arms, and
+as the clause naming the TLS record's `source` values — and nothing read it, so the two
+sides could drift apart silently. They had.
+
+The `source` vocabulary is restated a second time, in `docs/environment-variables.md`'s
+`HMC_VERIFY_SSL` note, which describes the same audit record; both restatements are held
+to the same set, so neither can drift alone (#497).
 
 Every equality check below is a set comparison, so it fails on an orphan (documented,
 not defined) and on a dangling entry (defined, not documented) alike. Each is paired
@@ -23,22 +28,24 @@ Restated *constants* are checked where the constant is exported and nothing else
 
 What this does not reach, so a green run is not read as more coverage than it is:
 
-- an enumeration written out in prose rather than as a table or a heading — the guard
-  compares vocabularies, so a sentence listing the members by name goes stale silently.
-  The document avoids them where it can and states the rule instead;
-- the `source` values on the TLS record. `client._verify_ssl_source` returns bare strings
-  with no `Literal` behind them, so there is nothing to derive from. Issue #497 owns it.
+- an enumeration written out in prose rather than as a table or a heading, unless it is
+  one of the two `source` clauses below — the guard compares vocabularies, so a sentence
+  listing the members by name goes stale silently. The documents avoid them where they
+  can and state the rule instead.
 """
 
 import re
 from pathlib import Path
 from typing import get_args
 
-from hmc_mcp import audit, tool_registry
+import pytest
+
+from hmc_mcp import audit, client, tool_registry
 
 
 ROOT = Path(__file__).parents[1]
 DOCUMENT = ROOT / "docs" / "authorization-audit.md"
+ENVIRONMENT_DOCUMENT = ROOT / "docs" / "environment-variables.md"
 
 TABLE_ROW_CODE = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 EVENT_HEADING = re.compile(r'^### `event: "([^"]+)"`\s*$', re.MULTILINE)
@@ -51,6 +58,17 @@ STATE_SENTENCE = re.compile(r"`connection\.state` is ([^.]*)\.")
 #: backticked token, so an unrelated term added to the sentence is not read as a state.
 STATE_ARM = re.compile(r"`([a-z-]+)`\s+when\b")
 BACKTICKED = re.compile(r"`([^`]+)`")
+
+#: The clause both documents introduce the TLS record's `source` values with. Anchored on
+#: the wording rather than the punctuation, which differs between them: em dashes in the
+#: audit document, parentheses in the environment-variable note.
+SOURCE_CLAUSE = re.compile(r"where the (?:effective )?setting came\s+from\b")
+#: One `source` value: a lowercase hyphenated name, optionally suffixed with the
+#: environment variable it names, as `environment:HMC_VERIFY_SSL` is.
+SOURCE_VALUE = r"[a-z][a-z-]*(?::[A-Z][A-Z0-9_]*)?"
+#: The comma-and-`or` run of them, as EFFECT_LIST is for effects — so a clarification
+#: appended after the run is prose rather than a fourth source.
+SOURCE_LIST = re.compile(rf"`{SOURCE_VALUE}`(?:,\s*(?:or\s+)?`{SOURCE_VALUE}`)*")
 
 #: A count — spelled or numeric, bold or plain — pinned to the reason-code
 #: vocabulary. One filler word is allowed between ("seven reason codes"); two are
@@ -117,6 +135,32 @@ def _documented_effects(document: str) -> frozenset[str]:
 def _records_lead(document: str) -> str:
     """The paragraph introducing the record kinds, before the first one's section."""
     return _section(document, "## The records").split("\n### ", 1)[0]
+
+
+def _source_sentence(document: str) -> str:
+    """The sentence naming the TLS record's `source` values.
+
+    Bounded to that one sentence, so a document carrying the clause but no list fails
+    rather than reaching forward to unrelated backticks. No `source` value contains a
+    period, which is what makes the sentence end a safe bound.
+    """
+    clauses = SOURCE_CLAUSE.findall(document)
+    assert len(clauses) == 1, f"expected one `source` clause, found {len(clauses)}"
+    clause = SOURCE_CLAUSE.search(document)
+    assert clause is not None
+    return document[clause.end() :].split(".", 1)[0]
+
+
+def _source_list(document: str) -> str:
+    """The comma-and-`or` run within that sentence."""
+    sentence = _source_sentence(document)
+    listing = SOURCE_LIST.search(sentence)
+    assert listing is not None, f"no source list in clause: {sentence!r}"
+    return listing.group(0)
+
+
+def _documented_sources(document: str) -> frozenset[str]:
+    return frozenset(BACKTICKED.findall(_source_list(document)))
 
 
 def _documented_states(document: str) -> frozenset[str]:
@@ -275,6 +319,56 @@ def test_state_arms_survive_an_unrelated_backticked_term() -> None:
     )
     assert reworded != document
     assert _documented_states(reworded) == frozenset(get_args(audit.State))
+
+
+#: Both restatements of the TLS record's `source` field. The environment-variable note
+#: describes the same record, so it is held to the same set rather than left to drift.
+SOURCE_DOCUMENTS = (DOCUMENT, ENVIRONMENT_DOCUMENT)
+
+
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_documented_tls_sources_are_exactly_the_client_vocabulary(path: Path) -> None:
+    assert _documented_sources(path.read_text()) == client.VERIFY_SSL_SOURCES
+
+
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_tls_source_drift_is_caught_in_both_directions(path: Path) -> None:
+    document = path.read_text()
+    sentence = _source_sentence(document)
+    #: The first value listed, which is never the last one — so dropping it and the
+    #: separator that follows leaves a run the extractor still reads.
+    dangling = BACKTICKED.findall(_source_list(document))[0]
+
+    undocumented = document.replace(
+        sentence, re.sub(rf"`{re.escape(dangling)}`,\s*", "", sentence, count=1), 1
+    )
+    assert undocumented != document
+    assert client.VERIFY_SSL_SOURCES - _documented_sources(undocumented) == {dangling}
+
+    listing = _source_list(document)
+    orphaned = document.replace(
+        sentence, sentence.replace(listing, f"{listing}, or `retired-source`", 1), 1
+    )
+    assert orphaned != document
+    expected = {"retired-source"}
+    assert _documented_sources(orphaned) - client.VERIFY_SSL_SOURCES == expected
+
+
+@pytest.mark.parametrize("path", SOURCE_DOCUMENTS, ids=lambda path: path.name)
+def test_tls_sources_survive_an_unrelated_backticked_term(path: Path) -> None:
+    """As for the effects and the state arms: a term after the run is prose, not a source.
+
+    The added term is itself list-shaped, so what excludes it is the run's own
+    comma-and-`or` anchoring rather than the value pattern.
+    """
+    document = path.read_text()
+    sentence = _source_sentence(document)
+
+    reworded = document.replace(
+        sentence, f"{sentence}, and `verify-ssl` is the field it names", 1
+    )
+    assert reworded != document
+    assert _documented_sources(reworded) == client.VERIFY_SSL_SOURCES
 
 
 def test_the_prose_pins_no_literal_vocabulary_count() -> None:
