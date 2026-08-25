@@ -55,6 +55,24 @@ stale data, unsupported policy data, contradictory policy evidence, threshold re
 capture time, snapshot composition, MCP delegation, CLI output, and Python exports. Tests assert
 that predictions are described as potential and recommendations never claim or perform mutation.
 
+## Threat model
+
+The added trust boundary is operator-supplied snapshot JSON and numeric policy inputs entering the
+local Python, MCP, and CLI adapters. The untrusted actor is a caller already able to invoke those
+local surfaces; the operation grants no additional HMC authority and opens no network connection.
+Snapshot text is controlled by the existing 1 MiB, duplicate-aware, depth-bounded, strict
+version-1 parser before evidence extraction. Pydantic/MCP and Typer validate presentation types,
+while the shared classifier independently bounds scores to 0 through 100, thresholds to
+non-negative integers, timestamps to timezone-aware values, and the freshness window to a positive
+integer. Errors return bounded validation context and do not echo the full document. No command,
+query, URL, template, destination path, secret, persistence, permission grant, or deserialization
+mechanism beyond the existing JSON parser is added.
+
+Out of scope are authorization between local callers and protection of snapshot confidentiality;
+the operation is local and read-only, and those concerns remain owned by the existing MCP access
+policy and filesystem permissions. Malicious HMC responses are not newly reachable because the
+assessment performs no HMC I/O.
+
 ## Global constraints
 
 - Python 3.11+ with the repository's pinned `uv`, Ruff, ty, pytest, and prek toolchain.
