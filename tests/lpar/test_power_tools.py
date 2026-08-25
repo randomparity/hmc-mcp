@@ -9,6 +9,8 @@ LPAR create/modify and LPAR power-on/off are covered in
 covered in ``tests/app/test_capabilities.py``.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 
@@ -64,6 +66,26 @@ def _hmc_env(monkeypatch) -> None:
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
+def _mock_dlpar_authorization(router) -> None:
+    """The system/partition reads ADR 0092's guard makes before a DLPAR write."""
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name="sys1")
+        )
+    )
+    router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+
+
+def _unowned_partition():
+    """Patch the SSH ownership read to report a partition with no ADR 0011 stamp."""
+    return patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value=""),
+    )
+
+
 # ---------------------------------------------------------------------- #
 # DLPAR
 # ---------------------------------------------------------------------- #
@@ -72,12 +94,16 @@ def _hmc_env(monkeypatch) -> None:
 def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
     """hmc_dlpar_proc POSTs a PartitionProcessorConfiguration document."""
     _hmc_env(monkeypatch)
+    _mock_dlpar_authorization(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_proc(
-        LPAR_UUID, LparResources(desired_procs=1.5, desired_vcpus=3)
-    )
+    with _unowned_partition():
+        result = hmc_dlpar_proc(
+            LPAR_UUID,
+            LparResources(desired_procs=1.5, desired_vcpus=3),
+            system_name_or_uuid=SYSTEM_UUID,
+        )
     body = route.calls.last.request.content.decode()
     assert "PartitionProcessorConfiguration" in body
     assert "DesiredProcessingUnits" in body and ">1.5<" in body
@@ -89,13 +115,16 @@ def test_dlpar_proc_posts_proc_document(monkeypatch, mock_hmc):
 def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
     """hmc_dlpar_mem POSTs a PartitionMemoryConfiguration document."""
     _hmc_env(monkeypatch)
+    _mock_dlpar_authorization(mock_hmc)
     route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
-    result = hmc_dlpar_mem(
-        LPAR_UUID,
-        LparResources(desired_memory=8192, min_memory=1024, max_memory=16384),
-    )
+    with _unowned_partition():
+        result = hmc_dlpar_mem(
+            LPAR_UUID,
+            LparResources(desired_memory=8192, min_memory=1024, max_memory=16384),
+            system_name_or_uuid=SYSTEM_UUID,
+        )
     body = route.calls.last.request.content.decode()
     assert "PartitionMemoryConfiguration" in body
     assert "DesiredMemory" in body and ">8192<" in body
@@ -108,12 +137,58 @@ def test_dlpar_mem_posts_mem_document(monkeypatch, mock_hmc):
 def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
     """A non-2xx DLPAR POST surfaces as HMCError."""
     _hmc_env(monkeypatch)
+    _mock_dlpar_authorization(mock_hmc)
     mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(500, text="<error>boom</error>")
     )
-    with pytest.raises(HMCError) as exc_info:
-        hmc_dlpar_proc(LPAR_UUID, LparResources(desired_procs=1.0))
+    with _unowned_partition(), pytest.raises(HMCError) as exc_info:
+        hmc_dlpar_proc(
+            LPAR_UUID,
+            LparResources(desired_procs=1.0),
+            system_name_or_uuid=SYSTEM_UUID,
+        )
     assert exc_info.value.status_code == 500
+
+
+def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):
+    """ADR 0092 §3.2: the tool reaches the guard, not just the operation."""
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_AGENT_ID", "alice")
+    _mock_dlpar_authorization(mock_hmc)
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+    ):
+        with pytest.raises(PermissionError, match="ownership_override=true"):
+            hmc_dlpar_proc(
+                LPAR_UUID,
+                LparResources(desired_procs=1.0),
+                system_name_or_uuid=SYSTEM_UUID,
+            )
+    assert not route.called
+
+
+def test_dlpar_mem_ownership_override_reaches_the_write(monkeypatch, mock_hmc):
+    """The tool threads ADR 0092 §5's per-call override into the operation."""
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_AGENT_ID", "alice")
+    _mock_dlpar_authorization(mock_hmc)
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        hmc_dlpar_mem(
+            LPAR_UUID,
+            LparResources(desired_memory=4096),
+            system_name_or_uuid=SYSTEM_UUID,
+            ownership_override=True,
+        )
+    read.assert_not_awaited()
+    assert route.called
 
 
 # ---------------------------------------------------------------------- #

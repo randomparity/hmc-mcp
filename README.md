@@ -701,8 +701,8 @@ must match both endpoints against its `managed_system` allowlist.
 | `hmc_create_lpar`     | Create an LPAR on a system (memory, shared/dedicated CPU, type); refuses if a partition with the same name already exists; optional `caller_token` embeds `[caller <token>]` in the partition description (ADR 0064) |
 | `hmc_modify_lpar`     | Change an LPAR's memory / CPU resources; inspect ADR 0011 description ownership before mutation |
 | `hmc_rename_lpar`     | Rename an LPAR; requires system selector and enforces ADR 0011 description ownership (`ownership_override` only with explicit approval) |
-| `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR |
-| `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR |
+| `hmc_dlpar_proc`      | DLPAR processor hot-plug on a running LPAR; enforces ADR 0011 description ownership (`ownership_override` only with explicit approval). Omitting the system selector searches fleet-wide and discovers the owning system for the ownership check |
+| `hmc_dlpar_mem`       | DLPAR memory hot-plug on a running LPAR; enforces ADR 0011 description ownership (`ownership_override` only with explicit approval). Omitting the system selector searches fleet-wide and discovers the owning system for the ownership check |
 | `hmc_delete_lpar`     | Destroy an LPAR; requires system selector and enforces ownership |
 | `hmc_power_on_lpar`   | Submit PowerOn job; returns stable `already_running`, nullable `job`, and nullable `message` fields (`force=True` overrides the running-state guard) |
 | `hmc_power_off_lpar`  | Submit PowerOff job (`immediate` flag); optionally wait for a normalized outcome |

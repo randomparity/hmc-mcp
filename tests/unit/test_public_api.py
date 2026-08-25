@@ -70,6 +70,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "delete_lpar",
         "power_lpar",
         "rename_lpar",
+        "set_lpar_processors",
+        "set_lpar_memory",
         "LparCreation",
         "LparCreationResult",
         "LparPowerResult",
@@ -352,7 +354,14 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
-        Last moved by issue #363, which exported four operations ADR 0029's
+        Last moved by issue #365, which extracted the DLPAR processor and
+        memory workflows out of the ``hmc_dlpar_proc`` / ``hmc_dlpar_mem``
+        tool bodies into ``set_lpar_processors`` and ``set_lpar_memory`` —
+        async, guarded per ADR 0092 §3.2, and callable from inside a running
+        event loop, which the ``asyncio.run`` tool bodies were not. ADR 0094
+        records how each derives the managed system its ownership guard needs
+        when the caller omits the optional selector.
+        Before that, issue #363, which exported four operations ADR 0029's
         selection rule already covered but the manifest omitted: the
         optical-media operations ``list_optical_mappings``,
         ``mount_optical_media``, and ``unmount_optical_media``, which #205
@@ -403,8 +412,8 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         except (TypeError, ValueError):
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #363: four already-selected operations join the facade manifest.
-    expected_digest = "2aaae04d6a8b2f85f39ed9762fa650ef9c108076caff1f68497fca1c12e5f2e7"  # pragma: allowlist secret
+    # Moved by #365: the two extracted async DLPAR operations join the facade.
+    expected_digest = "2cf2628d73d3355827411330ee6be3e11694036db8382916ba44727b3684ae9a"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 

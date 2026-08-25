@@ -68,7 +68,8 @@ such as `Any` and built-in containers are not facade exports. The initial invent
 - `operations_lpar`: operations `assess_post_activation_affinity`,
   `authorize_decommission_lpar_ownership_snapshot`,
   `authorize_lpar_mutation`, `resolve_lpar_ownership_names`, `stamp_created_lpar_ownership`,
-  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`, and
+  `create_and_stamp_lpar`, `delete_lpar`, `power_lpar`, `rename_lpar`,
+  `set_lpar_processors`, `set_lpar_memory`, and
   `set_lpar_ownership_description`; types `LparCreation`,
   `LparCreationResult`, and `LparPowerResult`; synchronous result helper `power_on_outcome` and
   ownership parser `parse_lpar_ownership_owner` are excluded; underscore helpers are internal.

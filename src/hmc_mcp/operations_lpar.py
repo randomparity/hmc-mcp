@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import asdict, dataclass, field
@@ -16,12 +17,18 @@ from hmc_mcp.affinity_assessment import (
 
 from . import audit
 from .client import HMCClient
+from .client_resolution import (
+    PARENT_DISCOVERY_TIMEOUT_SECONDS,
+    bounded_parent_systems,
+)
 from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import (
     Keylock,
     LparResources,
     OsType,
     PartitionType,
+    build_dlpar_mem_document,
+    build_dlpar_proc_document,
     build_lpar_document,
 )
 from .errors import HMCError
@@ -831,6 +838,173 @@ async def rename_lpar(
         lpar_uuid, build_lpar_document(name=new_name)
     )
     return lpar_uuid, updated
+
+
+# ====================================================================== #
+# DLPAR Resource Operations
+# ====================================================================== #
+
+
+async def _discover_owning_system_uuid(
+    hmc: HMCClient, lpar_uuid: str, lpar_label: str
+) -> str:
+    """Return the UUID of the managed system that contains *lpar_uuid*.
+
+    ADR 0094. The ADR 0011 guard reads an ownership token by CLI system name
+    plus partition name, so an operation whose managed-system selector is
+    optional (ADR 0063) has to derive one when the caller omits it. This is the
+    bounded parent discovery :meth:`HMCClient.find_partition_by_name` already
+    applies to a fleet-ambiguous partition name — the same 100-system fan-out
+    cap, the same timeout, and the same "supply managed-system scope" remedy.
+    """
+    systems = bounded_parent_systems(
+        await hmc.list_managed_systems(), "LPAR", lpar_label
+    )
+    try:
+        async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
+            for system in systems:
+                system_uuid = system.get("UUID")
+                if not isinstance(system_uuid, str) or not system_uuid:
+                    continue
+                partitions = await hmc.list_logical_partitions(system_uuid)
+                if any(entry.get("UUID") == lpar_uuid for entry in partitions):
+                    return system_uuid
+    except TimeoutError as exc:
+        raise ValueError(
+            f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
+            "parent discovery timed out; supply managed-system scope"
+        ) from exc
+    raise ValueError(
+        f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
+        "no managed system reports it; supply managed-system scope"
+    )
+
+
+async def _resolve_and_authorize_lpar(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    system_name_or_uuid: str | None,
+    *,
+    ownership_override: bool,
+) -> str:
+    """Resolve one LPAR, authorize the mutation, and return its UUID.
+
+    The guarded counterpart of the resolve chain in :func:`rename_lpar`, for the
+    operations whose managed-system selector is optional. With a selector the
+    chain is identical; without one the owning system is discovered first
+    (:func:`_discover_owning_system_uuid`) so the guard still runs (ADR 0092).
+    """
+    if system_name_or_uuid is None:
+        lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
+        system_uuid = await _discover_owning_system_uuid(
+            hmc, lpar_uuid, lpar_name_or_uuid
+        )
+        system_selector = system_uuid
+    else:
+        system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+        lpar_uuid = await resolve_lpar_uuid(
+            hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
+        )
+        system_selector = system_name_or_uuid
+    system_name, lpar_name = await resolve_lpar_ownership_names(
+        hmc, system_uuid, system_selector, lpar_uuid
+    )
+    await authorize_lpar_mutation(
+        hmc,
+        system_name,
+        lpar_name,
+        ownership_override=ownership_override,
+    )
+    return lpar_uuid
+
+
+async def _apply_dlpar_document(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    document: str,
+    system_name_or_uuid: str | None,
+    ownership_override: bool,
+) -> dict[str, Any] | None:
+    """Authorize one partition, then POST a partial LogicalPartition document."""
+    lpar_uuid = await _resolve_and_authorize_lpar(
+        hmc,
+        lpar_name_or_uuid,
+        system_name_or_uuid,
+        ownership_override=ownership_override,
+    )
+    try:
+        return await hmc.modify_logical_partition(lpar_uuid, document)
+    except HMCError as exc:
+        _check_lpar_write_error(exc)
+        raise
+
+
+async def set_lpar_processors(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    resources: LparResources,
+    *,
+    system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
+) -> dict[str, Any] | None:
+    """Authorize and apply a DLPAR processor change to one partition.
+
+    Posts a minimal ``PartitionProcessorConfiguration`` document: only the
+    fields set on *resources* change, and the rest of the partition's processor
+    configuration is left alone. For a shared partition ``procs`` are
+    processing units (fractional values such as ``0.5`` are valid) and
+    ``vcpus`` are virtual processor counts; set ``dedicated=True`` for
+    whole-CPU assignment, ``False`` for shared, and leave it unset to keep the
+    current sharing mode.
+
+    If the partition has no active RMC connection the change is profile-only
+    and takes effect on its next activation; no reboot is triggered either way.
+
+    ADR 0092 §3.2 classifies this as Reconfiguring, so
+    :func:`authorize_lpar_mutation` runs unconditionally before the write.
+    *system_name_or_uuid* stays optional (ADR 0063): when it is omitted the
+    owning managed system is discovered so the guard can still read the token
+    (ADR 0094).
+    """
+    return await _apply_dlpar_document(
+        hmc,
+        lpar_name_or_uuid,
+        build_dlpar_proc_document(resources),
+        system_name_or_uuid,
+        ownership_override,
+    )
+
+
+async def set_lpar_memory(
+    hmc: HMCClient,
+    lpar_name_or_uuid: str,
+    resources: LparResources,
+    *,
+    system_name_or_uuid: str | None = None,
+    ownership_override: bool = False,
+) -> dict[str, Any] | None:
+    """Authorize and apply a DLPAR memory change to one partition.
+
+    Posts a minimal ``PartitionMemoryConfiguration`` document: memory values
+    are in MiB, only the fields set on *resources* change, and the processor
+    fields of *resources* are ignored.
+
+    If the partition has no active RMC connection the change is profile-only
+    and takes effect on its next activation; no reboot is triggered either way.
+
+    ADR 0092 §3.2 classifies this as Reconfiguring, so
+    :func:`authorize_lpar_mutation` runs unconditionally before the write.
+    *system_name_or_uuid* stays optional (ADR 0063): when it is omitted the
+    owning managed system is discovered so the guard can still read the token
+    (ADR 0094).
+    """
+    return await _apply_dlpar_document(
+        hmc,
+        lpar_name_or_uuid,
+        build_dlpar_mem_document(resources),
+        system_name_or_uuid,
+        ownership_override,
+    )
 
 
 # ====================================================================== #
