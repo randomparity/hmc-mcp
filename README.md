@@ -912,19 +912,33 @@ lifecycle all work; everything else uses the same path.
 
 ```
 src/hmc_mcp/
+  __init__.py    # package version and the `hmc-mcp` console-script entry point
+  api.py         # supported reusable-library facade (ADR 0029)
   config.py      # pydantic-settings config (TOML profile + env vars + CLI flags)
   xmlutil.py     # defusedxml Atom-feed -> dict parsing
   errors.py      # HMCError (shared by client and its mixins)
+  error_translation.py       # presentation-neutral wording for identified HMC failures
   client.py      # async HMCClient: session, transport, uom helpers, jobs
   client_*.py    # per-domain mixins (users, systems, lpars, storage, pcm, ...)
   client_parse.py# defusedxml wrappers tagging failures with the HMC call
   common.py      # shared HMCClient/config helpers for tool definitions
   operations_*.py# workflows and policies shared by MCP and CLI presentations
+  affinity_assessment.py     # evidence-first, read-only LPAR NUMA-affinity assessment
+  snapshot.py    # version-1 portable LPAR snapshot values and local I/O
   ssh.py         # transport-only asyncssh session and command execution
   ssh_commands.py# resource operations implemented with the HMC CLI
+  ssh_selectors.py           # public resource selectors for the HMC SSH commands
+  console_capture.py         # bounded, non-interactive LPAR console capture (mkvterm)
   documents.py   # XML request-document builders (LPAR, adapters, storage, users, ...)
   jobs.py        # JobRequest XML templates (PowerOn/PowerOff/...)
   pcm.py         # PCM metrics/preferences parsing + XML documents
+  access_policy.py           # server access policy: TOML loading, validation, compilation
+  legacy_policy.py           # the legacy-equivalent access policy, built and compiled
+  dispatch_scope.py          # the dispatch-boundary authorization decision
+  target_scope.py            # dispatch-time authorization of the targets a call names
+  connection_scope.py        # dispatch-time authorization of the connection a call selects
+  audit.py       # one audit record per authorization decision: vocabulary, rendering, sink
+  tool_registry.py           # local MCP tool collection, each tool carrying ToolSecurity
   _app.py        # shared FastMCP instance, sync-run and SSH helpers, entry points
   server.py      # thin aggregator importing every server_*.py tool module
   server_*.py    # resource-domain @mcp.tool definitions (systems, lpars, VIOS, ...)
