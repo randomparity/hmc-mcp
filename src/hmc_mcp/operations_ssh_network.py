@@ -18,6 +18,7 @@ from hmc_mcp.ssh_commands import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
     MinimumAffinityPolicyQuery,
+    MinimumAffinityPolicy,
     add_vnic_backing,
     get_lpar_memopt_score as _get_lpar_memopt_score,
     get_system_memopt_score as _get_system_memopt_score,
@@ -34,6 +35,8 @@ from hmc_mcp.ssh_commands import (
     plan_system_memopt_score as _plan_system_memopt_score,
     query_resource_group_memopt_scores,
     query_minimum_affinity_policy,
+    set_minimum_affinity_policy_cli,
+    validate_minimum_affinity_policy,
     validate_memopt_scenario,
     read_vios_identity,
     remove_vnic_slot,
@@ -272,6 +275,23 @@ async def get_minimum_affinity_policy(
         min_affinity_score_action=query.min_affinity_score_action,
         unavailable_reason=query.unavailable_reason,
     )
+
+
+async def set_minimum_affinity_policy(
+    hmc: HMCClient,
+    system: str,
+    lpar: str,
+    policy: MinimumAffinityPolicy,
+    *,
+    ownership_override: bool = False,
+) -> str:
+    """Authorize and apply an LPAR minimum-affinity policy."""
+    validate_minimum_affinity_policy(policy)
+    system_uuid = await resolve_system_uuid(hmc, system)
+    lpar_uuid = await resolve_lpar_uuid(hmc, lpar, system_name_or_uuid=system_uuid)
+    names = await resolve_lpar_ownership_names(hmc, system_uuid, system, lpar_uuid)
+    await authorize_lpar_mutation(hmc, *names, ownership_override=ownership_override)
+    return await set_minimum_affinity_policy_cli(hmc.config, *names, policy)
 
 
 def _required(value: str, name: str) -> str:

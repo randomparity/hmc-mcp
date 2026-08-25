@@ -14,7 +14,7 @@ from .operations_provision import (
     provision_lpar,
 )
 from .operations_assignments import LparPcieAssignments
-from .ssh_commands import validate_caller_token
+from .ssh_commands import MinimumAffinityPolicy, validate_caller_token
 
 tool, register_tools, tool_security = tool_module()
 
@@ -55,6 +55,7 @@ def hmc_provision_lpar(
     dry_run: bool = False,
     assignments: LparPcieAssignments = LparPcieAssignments(),
     caller_token: str | None = None,
+    minimum_affinity_policy: MinimumAffinityPolicy | None = None,
     profile: str | None = None,
 ) -> ProvisionResult:
     """Provision an LPAR with network, vSCSI storage, and optional power-on.
@@ -72,6 +73,8 @@ def hmc_provision_lpar(
         caller_token: Optional caller tracking reference embedded in the partition
             description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
             1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
+        minimum_affinity_policy: Optional POWER11 score and deliberately selected
+            action. Omission preserves HMC defaults; ``fail`` is never implicit.
         profile: Optional TOML profile name; uses environment defaults when omitted.
 
     Returns:
@@ -99,6 +102,7 @@ def hmc_provision_lpar(
                 dry_run=dry_run,
                 assignments=assignments,
                 caller_token=caller_token,
+                minimum_affinity_policy=minimum_affinity_policy,
             )
 
     return _run(_go)

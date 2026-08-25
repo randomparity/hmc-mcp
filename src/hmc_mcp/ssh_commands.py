@@ -152,6 +152,32 @@ class MinimumAffinityPolicyQuery:
     unavailable_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class MinimumAffinityPolicy:
+    """Validated values for the POWER11 minimum-affinity policy."""
+
+    min_affinity_score: int = field(
+        metadata={"description": "Required minimum affinity score from 0 through 100."}
+    )
+    min_affinity_score_action: Literal["none", "warn", "fail"] = field(
+        metadata={
+            "description": "Action when the minimum is missed: none, warn, or fail."
+        }
+    )
+
+
+def validate_minimum_affinity_policy(
+    policy: MinimumAffinityPolicy,
+) -> MinimumAffinityPolicy:
+    """Validate policy values before any HMC interaction."""
+    score = policy.min_affinity_score
+    if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
+        raise ValueError("min_affinity_score must be an integer from 0 through 100")
+    if policy.min_affinity_score_action not in {"none", "warn", "fail"}:
+        raise ValueError("min_affinity_score_action must be none, warn, or fail")
+    return policy
+
+
 def _resource_group_selector_option(selector: MemoptResourceGroupSelector) -> str:
     if selector.all:
         return "--gid all"
@@ -275,6 +301,40 @@ async def query_minimum_affinity_policy(
         score,
         action,
     )
+
+
+async def require_minimum_affinity_policy_capability(
+    config: HMCConfig,
+    system_name: str,
+) -> None:
+    """Fail unless the system advertises the documented policy capability."""
+    modes = await get_proc_compat_modes(config, system_name)
+    if "POWER11" not in modes:
+        raise HMCCLIError(
+            "Minimum-affinity policy mutation requires system firmware that "
+            "advertises POWER11 processor compatibility; update the system "
+            "firmware and retry."
+        )
+
+
+async def set_minimum_affinity_policy_cli(
+    config: HMCConfig,
+    system_name: str,
+    lpar_name: str,
+    policy: MinimumAffinityPolicy,
+) -> str:
+    """Set both documented POWER11 minimum-affinity policy attributes."""
+    validated = validate_minimum_affinity_policy(policy)
+    await require_minimum_affinity_policy_capability(config, system_name)
+    record = build_attribute_record(
+        [
+            ("name", lpar_name),
+            ("min_affinity_score", validated.min_affinity_score),
+            ("min_affinity_score_action", validated.min_affinity_score_action),
+        ]
+    )
+    command = f"chsyscfg -r lpar -m {shlex.quote(system_name)} -i {shlex.quote(record)}"
+    return await run_hmc_command(config, command)
 
 
 def validate_memopt_scenario(
@@ -1679,10 +1739,7 @@ async def get_proc_compat_modes(
             f"malformed processor compatibility mode output: {error}"
         ) from error
     return [
-        mode.strip()
-        for value in values
-        for mode in value.split(",")
-        if mode.strip()
+        mode.strip() for value in values for mode in value.split(",") if mode.strip()
     ]
 
 
@@ -1887,9 +1944,7 @@ async def read_lpar_profile_record(
     config: HMCConfig, system_name: str, lpar_name: str, profile_name: str
 ) -> str:
     """Read exactly one native LPAR profile attribute record."""
-    filters = build_filter(
-        [("lpar_names", lpar_name), ("profile_names", profile_name)]
-    )
+    filters = build_filter([("lpar_names", lpar_name), ("profile_names", profile_name)])
     command = (
         f"lssyscfg -r prof -m {shlex.quote(system_name)} "
         f"--filter {shlex.quote(filters)}"
