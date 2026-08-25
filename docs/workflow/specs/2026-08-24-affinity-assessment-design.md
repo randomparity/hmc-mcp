@@ -12,10 +12,10 @@ actions without applying changes.
 ## Contract
 
 `AffinityAssessmentInput` is a frozen value with `captured_score`, `current_score`,
-`predicted_score`, `configured_minimum`, `captured_at`, `assessed_at`, `stale_after_seconds`,
-`regression_threshold`, and `optimization_threshold`. Scores are integer percentages from 0 through
-100. Thresholds are non-negative integers. Timestamps are timezone-aware and the stale window is a
-positive integer.
+`predicted_score`, current `configured_minimum`, `captured_minimum`, `captured_at`, `assessed_at`,
+`stale_after_seconds`, `regression_threshold`, and `optimization_threshold`. Scores are integer
+percentages from 0 through 100. Thresholds are non-negative integers. Timestamps are timezone-aware
+and the stale window is a positive integer.
 
 `assess_affinity(input) -> AffinityAssessmentResult` returns `classification`, a complete evidence
 mapping, `explanation`, and an ordered tuple of `recommended_actions`. Classification is one of
@@ -51,7 +51,7 @@ duplicate-aware validation errors.
 ## Testing
 
 Behavior tests cover policy violation, regression, optimization opportunity, none, missing data,
-stale data, unsupported policy data, contradictory prediction, threshold requirements, future
+stale data, unsupported policy data, contradictory policy evidence, threshold requirements, future
 capture time, snapshot composition, MCP delegation, CLI output, and Python exports. Tests assert
 that predictions are described as potential and recommendations never claim or perform mutation.
 

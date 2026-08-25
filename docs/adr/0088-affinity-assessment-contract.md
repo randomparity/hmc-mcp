@@ -13,10 +13,12 @@ those facts without turning a generic score into an invented universal policy.
 
 ## Decision
 
-Add one pure assessment contract whose inputs are captured, current, predicted, and optional
-configured-minimum scores plus explicit caller thresholds and freshness evidence. The result is a
-frozen, presentation-neutral value containing exactly one classification, normalized evidence,
-an explanation, and non-mutating recommended actions.
+Add one pure assessment contract whose inputs are captured, current, predicted, current
+configured-minimum, and captured configured-minimum scores plus explicit caller thresholds and
+freshness evidence. The two policy values make a changed policy representable rather than forcing
+the classifier to guess which observation is authoritative. The result is a frozen,
+presentation-neutral value containing exactly one classification, normalized evidence, an
+explanation, and non-mutating recommended actions.
 
 Classification precedence is `unsupported-data`, `policy-violation`, `regression`,
 `optimization-opportunity`, then `none`. Unsupported, missing, stale, or contradictory evidence is
