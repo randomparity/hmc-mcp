@@ -12,6 +12,7 @@ import pkgutil
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from types import ModuleType
 from typing import get_args, get_type_hints
 
@@ -29,6 +30,14 @@ from hmc_mcp.client_templates import TemplatesMixin
 ADR_0029_OPERATION_EXCLUSIONS: dict[str, str] = {}
 
 _ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
+
+
+# ADR 0029: HMCClient's supported surface is exactly this allowlist. Inherited
+# mixin methods stay callable but are unsupported, so no contract gate covers
+# them.
+SUPPORTED_CLIENT_LIFECYCLE = frozenset(
+    {"__init__", "__aenter__", "__aexit__", "is_logged_on", "logon", "logoff"}
+)
 
 
 def test_public_api_exports_the_adr_inventory() -> None:
@@ -201,6 +210,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "assess_snapshot_affinity",
         "inspect_lpar_snapshot",
         "validate_lpar_snapshot",
+        "get_job",
+        "wait_for_job",
+        "JobOutcome",
     ]
 
 
@@ -356,6 +368,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         added ``ownership_override`` to ``power_lpar``, and it added the
         ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
         ``__init__`` signature is derived from its fields.
+        Before that, issue #364 added the cross-process job-polling
+        operations ``get_job`` and ``wait_for_job`` and exported the
+        ``JobOutcome`` result model (ADR 0093).
         Before that, issue #363 exported four operations ADR 0029's
         selection rule already covered but the manifest omitted: the
         optical-media operations ``list_optical_mappings``,
@@ -408,9 +423,74 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #371: power_lpar gains ownership_override and HMCConfig gains
-    # authorize_power_operations (ADR 0092 §4).
-    expected_digest = "b69830c4ac2b01612d595c028cc2cb1d82174d7d3e237d769a9d04b7735441cd"  # pragma: allowlist secret
+    # authorize_power_operations (ADR 0092 §4). Recomputed over #364's baseline
+    # 925fd693, which this branch merged.
+    expected_digest = "502e6acd97a53d230526fd2d1c6eddcef855f662466a5a89ea5ee680882404cb"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
+
+
+def _bare_annotations(label: str, member: Callable[..., object]) -> list[str]:
+    """An omitted ``__init__`` return is not a gap: PEP 484 infers ``None`` for
+    a constructor with any annotated argument, and the argument check below is
+    what establishes that."""
+    try:
+        signature = inspect.signature(member)
+    except (TypeError, ValueError):
+        return []
+    bare = [
+        f"{label}({parameter.name})"
+        for parameter in signature.parameters.values()
+        if parameter.name not in {"self", "cls"}
+        and parameter.annotation is inspect.Parameter.empty
+    ]
+    if not label.endswith(".__init__") and (
+        signature.return_annotation is inspect.Signature.empty
+    ):
+        bare.append(f"{label} -> (bare return)")
+    return bare
+
+
+def _contract_callables(name: str, exported: type) -> list[tuple[str, object]]:
+    """The members ADR 0029 actually promises for an exported class.
+
+    ``HMCClient`` is the exception: its supported surface is exactly the
+    lifecycle allowlist, so the 94 inherited mixin methods the same contract
+    calls unsupported are not gated here. For every other exported class a
+    member inherited from ``BaseException`` or ``BaseModel`` is not this
+    package's to annotate, and its bare ``*args`` is not a facade defect.
+    """
+    members = [
+        (member_name, member)
+        for member_name, member in inspect.getmembers(exported, inspect.isfunction)
+        if (member_name == "__init__" or not member_name.startswith("_"))
+        and getattr(member, "__module__", "").startswith("hmc_mcp")
+    ]
+    if name != "HMCClient":
+        return members
+    return [
+        (member_name, member)
+        for member_name, member in members
+        if member_name in SUPPORTED_CLIENT_LIFECYCLE
+    ]
+
+
+def test_every_exported_callable_is_fully_annotated() -> None:
+    """The PEP 561 marker asserts the facade is typed. A bare parameter or
+    return would make that assertion false for a downstream checker, which is
+    worse than shipping no marker at all — the consumer gets silent ``Any``
+    where it was promised a type. Covers both halves of the README's claim:
+    each export's call signature, and the constructor and public methods of
+    each exported package-owned model."""
+    bare: list[str] = []
+    for name in sorted(api.__all__):
+        exported = getattr(api, name)
+        if inspect.isfunction(exported):
+            bare.extend(_bare_annotations(name, exported))
+        elif inspect.isclass(exported):
+            for member_name, member in _contract_callables(name, exported):
+                bare.extend(_bare_annotations(f"{name}.{member_name}", member))
+
+    assert not bare, f"supported facade members missing an annotation: {bare}"
 
 
 def test_public_error_hierarchy_is_frozen() -> None:
@@ -420,15 +500,9 @@ def test_public_error_hierarchy_is_frozen() -> None:
 
 
 def test_hmc_client_supported_lifecycle_members_are_present() -> None:
-    supported = {
-        "__init__",
-        "__aenter__",
-        "__aexit__",
-        "is_logged_on",
-        "logon",
-        "logoff",
-    }
-    assert {name for name in supported if hasattr(api.HMCClient, name)} == supported
+    assert {
+        name for name in SUPPORTED_CLIENT_LIFECYCLE if hasattr(api.HMCClient, name)
+    } == SUPPORTED_CLIENT_LIFECYCLE
 
 
 def test_exported_literal_value_sets_are_frozen() -> None:
