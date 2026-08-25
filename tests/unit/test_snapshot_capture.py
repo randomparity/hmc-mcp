@@ -7,7 +7,10 @@ import pytest
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_snapshot import capture_lpar_snapshot
 from hmc_mcp.operations_snapshot import _placement
-from hmc_mcp.operations_ssh_network import ResourceGroupAffinityResult
+from hmc_mcp.operations_ssh_network import (
+    MinimumAffinityPolicyResult,
+    ResourceGroupAffinityResult,
+)
 from hmc_mcp.ssh_commands import MemoptResourceGroupSelector
 
 
@@ -82,6 +85,14 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         "hmc_mcp.operations_snapshot.plan_resource_group_memopt_scores",
         AsyncMock(return_value=result),
     )
+    monkeypatch.setattr(
+        "hmc_mcp.operations_snapshot.get_minimum_affinity_policy",
+        AsyncMock(
+            return_value=MinimumAffinityPolicyResult(
+                "available", "sys", "aix", 80, "warn", None
+            )
+        ),
+    )
     snapshot = await capture_lpar_snapshot(
         hmc,
         HMCConfig(host="h", user="u", password="p", _env_file=None),
@@ -101,6 +112,39 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         ]
         == "capability-unavailable"
     )
+    assert payload["observations"]["minimum_affinity_policy"]["data"] == {
+        "min_affinity_score": 80,
+        "min_affinity_score_action": "warn",
+    }
+    monkeypatch.setattr(
+        "hmc_mcp.operations_snapshot.get_minimum_affinity_policy",
+        AsyncMock(
+            return_value=MinimumAffinityPolicyResult(
+                "capability-unavailable",
+                "sys",
+                "aix",
+                None,
+                None,
+                "upgrade system firmware",
+            )
+        ),
+    )
+    unsupported = await capture_lpar_snapshot(
+        hmc,
+        HMCConfig(host="h", user="u", password="p", _env_file=None),
+        "sys",
+        "aix",
+        "default",
+    )
+    unsupported_payload = unsupported.model_dump(mode="json", exclude_none=True)
+    assert "minimum_affinity_policy" not in unsupported_payload["observations"]
+    assert unsupported_payload["capabilities"][2] == {
+        "name": "minimum-affinity-policy",
+        "version": 1,
+        "supported": False,
+        "collection": "hmc-cli",
+        "unavailable_reason": "upgrade system firmware",
+    }
     monkeypatch.setattr(
         "hmc_mcp.operations_snapshot.read_lpar_profile_record",
         AsyncMock(return_value=PROFILE + ",padding=" + ("x" * 1_048_576)),

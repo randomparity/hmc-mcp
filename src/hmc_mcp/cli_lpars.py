@@ -54,6 +54,7 @@ from .operations_lpm import (
 )
 from .operations_ssh_network import (
     get_lpar_memopt_score,
+    get_minimum_affinity_policy,
     get_system_memopt_score,
     list_lpar_memopt_scores,
     plan_lpar_memopt_scores,
@@ -138,6 +139,28 @@ def lpars_memopt_score(
             f"{score['lpar_name']} (id {score['lpar_id']}): "
             f"curr_lpar_score={score['curr_lpar_score']}"
         )
+
+
+@lpars_app.command("get-minimum-affinity-policy")
+def lpars_get_minimum_affinity_policy(
+    lpar_name: str = typer.Argument(..., help="LPAR name or UUID"),
+    system_name: str = typer.Argument(..., help="Managed system name or UUID"),
+    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Get an LPAR's minimum-affinity policy when supported."""
+    policy = _run(
+        lambda: get_minimum_affinity_policy(_ssh_config(), system_name, lpar_name)
+    )
+    if as_json:
+        _print_json(asdict(policy))
+        return
+    if policy.capability == "capability-unavailable":
+        console.print(f"unavailable: {policy.unavailable_reason}")
+        return
+    console.print(
+        f"minimum affinity score: {policy.min_affinity_score} "
+        f"({policy.min_affinity_score_action})"
+    )
 
 
 @lpars_app.command("memopt-scores")

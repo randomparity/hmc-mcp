@@ -11,6 +11,7 @@ from hmc_mcp.client import HMCClient
 from hmc_mcp.common import resolve_lpar_uuid, resolve_system_name, resolve_system_uuid
 from hmc_mcp.config import HMCConfig
 from hmc_mcp.operations_ssh_network import (
+    get_minimum_affinity_policy,
     get_lpar_memopt_score,
     get_system_memopt_score,
     list_resource_group_memopt_scores,
@@ -19,6 +20,7 @@ from hmc_mcp.operations_ssh_network import (
     plan_system_memopt_score,
 )
 from hmc_mcp.snapshot import (
+    MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
     PLACEMENT_MEDIA_TYPE,
     PROFILE_MEDIA_TYPE,
     SCORES_MEDIA_TYPE,
@@ -167,6 +169,9 @@ async def capture_lpar_snapshot(
     predicted_system = await plan_system_memopt_score(config, system_name)
     current_groups = await list_resource_group_memopt_scores(config, system_name)
     predicted_groups = await plan_resource_group_memopt_scores(config, system_name)
+    minimum_policy = await get_minimum_affinity_policy(
+        config, system_name, lpar_name
+    )
     mtms = system_resource.get("MachineTypeModelSerialNumber")
     if isinstance(mtms, dict):
         machine_type = _text(mtms.get("MachineType"), "system machine type")
@@ -230,6 +235,13 @@ async def capture_lpar_snapshot(
                 collection="hmc-cli",
             ),
             SnapshotCapability(
+                name="minimum-affinity-policy",
+                version=1,
+                supported=minimum_policy.capability == "available",
+                collection="hmc-cli",
+                unavailable_reason=minimum_policy.unavailable_reason,
+            ),
+            SnapshotCapability(
                 name="runtime-placement",
                 version=1,
                 supported=True,
@@ -256,6 +268,19 @@ async def capture_lpar_snapshot(
                         "predicted": asdict(predicted_groups),
                     },
                 },
+            ),
+            minimum_affinity_policy=(
+                ObservationEnvelope(
+                    media_type=MINIMUM_AFFINITY_POLICY_MEDIA_TYPE,
+                    data={
+                        "min_affinity_score": minimum_policy.min_affinity_score,
+                        "min_affinity_score_action": (
+                            minimum_policy.min_affinity_score_action
+                        ),
+                    },
+                )
+                if minimum_policy.capability == "available"
+                else None
             ),
         ),
     )

@@ -878,6 +878,7 @@ def test_the_scan_finds_every_known_site():
         "get_lpar_msp",
         "set_lpar_msp",
         "get_lpar_proc_compat",
+        "query_minimum_affinity_policy",
         "hmc_list_vios_backups",
         "capture_lpar_baseline",
         "mutate_lpar_properties",

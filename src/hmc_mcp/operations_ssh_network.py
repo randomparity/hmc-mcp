@@ -17,6 +17,7 @@ from hmc_mcp.operations_pcie import _require_admitted_environment
 from hmc_mcp.ssh_commands import (
     MemoptLparSelector,
     MemoptResourceGroupSelector,
+    MinimumAffinityPolicyQuery,
     add_vnic_backing,
     get_lpar_memopt_score as _get_lpar_memopt_score,
     get_system_memopt_score as _get_system_memopt_score,
@@ -32,6 +33,7 @@ from hmc_mcp.ssh_commands import (
     plan_lpar_memopt_scores as _plan_lpar_memopt_scores,
     plan_system_memopt_score as _plan_system_memopt_score,
     query_resource_group_memopt_scores,
+    query_minimum_affinity_policy,
     validate_memopt_scenario,
     read_vios_identity,
     remove_vnic_slot,
@@ -113,6 +115,18 @@ class ResourceGroupAffinityResult:
     system: str
     selector: MemoptResourceGroupSelector
     items: list[dict[str, object]]
+    unavailable_reason: str | None
+
+
+@dataclass(frozen=True)
+class MinimumAffinityPolicyResult:
+    """Stable envelope separating policy values from capability absence."""
+
+    capability: Literal["available", "capability-unavailable"]
+    system: str
+    lpar: str
+    min_affinity_score: int | None
+    min_affinity_score_action: Literal["none", "warn", "fail"] | None
     unavailable_reason: str | None
 
 
@@ -233,6 +247,30 @@ async def plan_resource_group_memopt_scores(
     """Return potential resource-group affinity scores without running DPO."""
     return await _resource_group_memopt_scores(
         config, system, selector, calculated=True
+    )
+
+
+async def get_minimum_affinity_policy(
+    config: HMCConfig,
+    system: str,
+    lpar: str,
+) -> MinimumAffinityPolicyResult:
+    """Return an LPAR's minimum-affinity policy when supported."""
+    system_name, lpar_name = await resolve_ssh_names(config, system, lpar)
+    resolved_system = cast(str, system_name)
+    resolved_lpar = cast(str, lpar_name)
+    query: MinimumAffinityPolicyQuery = await query_minimum_affinity_policy(
+        config, resolved_system, resolved_lpar
+    )
+    return MinimumAffinityPolicyResult(
+        capability=(
+            "capability-unavailable" if query.unavailable_reason else "available"
+        ),
+        system=resolved_system,
+        lpar=resolved_lpar,
+        min_affinity_score=query.min_affinity_score,
+        min_affinity_score_action=query.min_affinity_score_action,
+        unavailable_reason=query.unavailable_reason,
     )
 
 

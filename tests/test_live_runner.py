@@ -187,7 +187,11 @@ async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatc
     state = runner.RunState()
     await runner.inventory_lpar_profiles(None, state)
 
-    affinity_calls = [call for call in calls if "memopt" in call[0]]
+    affinity_calls = [
+        call
+        for call in calls
+        if "memopt" in call[0] or "minimum_affinity_policy" in call[0]
+    ]
     assert affinity_calls == [
         (
             "hmc_get_lpar_memopt_score",
@@ -199,6 +203,13 @@ async def test_lpar_inventory_calls_all_read_only_affinity_operations(monkeypatc
         ("hmc_plan_system_memopt_score", {"system_name_or_uuid": "ltczz386"}),
         ("hmc_list_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
         ("hmc_plan_resource_group_memopt_scores", {"system_name_or_uuid": "ltczz386"}),
+        (
+            "hmc_get_minimum_affinity_policy",
+            {
+                "system_name_or_uuid": "ltczz386",
+                "lpar_name_or_uuid": "ltczz386-lp3",
+            },
+        ),
     ]
 
 

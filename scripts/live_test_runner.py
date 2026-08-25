@@ -754,6 +754,14 @@ async def inventory_lpar_profiles(client: Client, state: RunState) -> None:
     )
     record(state, 4, "hmc_plan_resource_group_memopt_scores", st, data)
 
+    st, data = await call(
+        client,
+        "hmc_get_minimum_affinity_policy",
+        system_name_or_uuid=context.system_name,
+        lpar_name_or_uuid=context.lp3_name,
+    )
+    record(state, 4, "hmc_get_minimum_affinity_policy", st, data)
+
 
 # ---------------------------------------------------------------------------
 # ST5 — Metrics & Templates
