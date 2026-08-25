@@ -437,10 +437,10 @@ async def test_wait_for_job_drops_a_stale_link_after_confirming_it_once(
 async def test_get_job_reports_not_found_when_neither_path_has_the_job(
     mock_hmc,
 ) -> None:
-    """The confirming read is best-effort: its failure leaves found=False standing."""
+    """Neither the persisted link nor the global path has it: the job is gone."""
     mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
     mock_hmc.get(_GLOBAL_PATH).mock(
-        return_value=httpx.Response(400, text="Unrecognized root REST type of Job")
+        return_value=httpx.Response(404, text="Unknown job")
     )
 
     async with HMCClient(make_config()) as hmc:
@@ -562,7 +562,8 @@ async def test_wait_for_job_logs_the_last_status_when_a_job_vanishes_mid_wait(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "corrupted", ["abc/def", "abc?x=1", "abc#frag", "abc%2e%2e", "abc def"]
+    "corrupted",
+    ["abc/def", "abc?x=1", "abc#frag", "abc%2e%2e", "abc def", "a\x00b", "a\x1fb"],
 )
 async def test_job_operations_reject_a_corrupted_persisted_identifier(
     mock_hmc, corrupted
@@ -714,3 +715,41 @@ async def test_wait_for_job_warns_about_a_substituted_job_on_the_first_poll(
                 await waiter
 
     assert len([r for r in caplog.records if "returned job" in r.getMessage()]) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_job_does_not_report_a_degraded_hmc_as_a_vanished_job(
+    mock_hmc,
+) -> None:
+    """The confirming read second-sources absence, not failure.
+
+    ``HMCTransportError`` subclasses ``HMCError``, so a base-class catch here
+    would turn a socket reset into the one answer a consumer acts on
+    destructively.
+    """
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(503, text="Service unavailable")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError):
+            await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+
+@pytest.mark.asyncio
+async def test_get_job_treats_an_unsupported_global_path_as_absence(mock_hmc) -> None:
+    """Issue #95 firmware answers the global path with 400 REST000E, not 404.
+
+    That is the case the confirmation is best-effort about, so it must still
+    resolve to found=False rather than raise.
+    """
+    mock_hmc.get(_SELF_HREF).mock(return_value=httpx.Response(404, text="Unknown job"))
+    mock_hmc.get(_GLOBAL_PATH).mock(
+        return_value=httpx.Response(400, text="REST000E: Unrecognized root REST type")
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        outcome = await get_job(hmc, _JOB_ID, job_href=_SELF_HREF)
+
+    assert outcome.found is False

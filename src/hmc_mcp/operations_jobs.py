@@ -47,14 +47,17 @@ def _require_job_id(job_id: str) -> str:
     if not identifier:
         raise ValueError("job_id must be a non-empty HMC job identifier")
     illegal = any(
-        character in _ILLEGAL_JOB_ID_CHARACTERS or character.isspace()
+        character in _ILLEGAL_JOB_ID_CHARACTERS
+        or character.isspace()
+        or not character.isprintable()
         for character in identifier
     )
     if illegal or set(identifier) == {"."}:
         raise ValueError(
             f"job_id {job_id!r} is not an HMC job identifier: it is a path "
-            "segment, or contains a path, query, or whitespace character. Store "
-            "the UUID or JobID on its own; pass a submission link as job_href."
+            "segment, or contains a path, query, whitespace, or non-printable "
+            "character. Store the UUID or JobID on its own; pass a submission "
+            "link as job_href."
         )
     return identifier
 
@@ -68,6 +71,20 @@ def _clean_job_href(job_href: str | None) -> str | None:
     return job_href.strip() if job_href and job_href.strip() else None
 
 
+def _says_the_path_has_no_job(exc: HMCError) -> bool:
+    """Whether *exc* says this HMC has no job there, rather than that it failed.
+
+    Two shapes qualify: the documented 404, and the HTTP 400 REST000E the client
+    turns into "this endpoint is not available on this HMC" (issue #95). A 5xx, a
+    connection reset, or a read timeout is a *degraded* HMC — ``HMCTransportError``
+    subclasses ``HMCError``, so catching the base class would convert one into the
+    load-bearing ``found=False``, which is the one wrong answer this path can give.
+    """
+    if exc.status_code == _JOB_MISSING_STATUS:
+        return True
+    return exc.status_code == 400 and "REST000E" in f"{exc}{exc.body or ''}"
+
+
 async def _confirm_missing(
     hmc: HMCClient, identifier: str, link: str, missing: HMCError
 ) -> dict[str, Any] | None:
@@ -79,13 +96,18 @@ async def _confirm_missing(
     remove such parents. Confirm against the global jobs path, which is keyed on
     the identifier the caller actually asked about, before reporting the job gone.
 
-    The confirmation is best-effort: on firmware that does not serve the global
-    path it fails, and a failure leaves the original 404 standing rather than
-    replacing a documented ``found=False`` with an exception.
+    The confirmation is best-effort about *absence* only: firmware that does not
+    serve the global path leaves the original 404 standing rather than replacing a
+    documented ``found=False`` with an exception. It is not best-effort about
+    failure — a degraded HMC on this read propagates, exactly as it does on the
+    primary read, because reporting a job gone on the strength of a socket reset
+    is the answer a consumer acts on destructively.
     """
     try:
         job = await hmc.get_job(identifier, job_href=None)
-    except HMCError:
+    except HMCError as exc:
+        if not _says_the_path_has_no_job(exc):
+            raise
         job = None
     if job is not None:
         _logger.warning(
@@ -97,8 +119,8 @@ async def _confirm_missing(
         return job
     _logger.warning(
         "HMC job %s not found via job_href %s, and the global jobs path did not "
-        "have it either: reporting found=False. A deployment whose job path this "
-        "HMC does not serve produces the same answer. Detail: %s",
+        "have it either: reporting found=False. An HMC that does not serve the "
+        "global jobs path produces the same answer. Detail: %s",
         identifier,
         link,
         missing,
@@ -233,8 +255,13 @@ async def get_job(
     from the response would risk replacing it with an untried one on exactly the
     firmware ``job_href`` exists to serve. Where the caller supplied no link, or
     supplied one the confirming read proved stale, the handle is the href the
-    successful read carried — so a consumer that re-persists ``job_id`` and
-    ``job_href`` from every outcome never stores a link known not to work.
+    successful read carried — so a consumer that re-persists ``job_href`` from
+    every outcome never stores a link known not to work.
+
+    Re-persist ``job_href``, not ``job_id``. Never overwrite a stored ``job_id``
+    from an outcome whose ``job_id`` differs from the identifier you asked about:
+    that difference is the only mispairing signal there is, and writing over it
+    makes a transient mismatch permanent and self-consistent.
 
     **A supplied ``job_href`` decides which job is read, not ``job_id``.** The
     client fetches that link's path directly and validates only that it addresses

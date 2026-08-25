@@ -75,6 +75,11 @@ docstring and this clause tell a consumer to compare `job_id` against what it st
 Rejected as too strong: raising on the mismatch. Rejected as too weak: returning the requested
 identifier, which would hide the substitution entirely.
 
+A consumer re-persists `job_href` from an outcome, never `job_id`. Overwriting a stored `job_id`
+with a response-derived one would, on a mispaired handle, replace the identifier that disagrees
+with the link by the one that agrees — destroying the only mispairing evidence that exists and
+making the mismatch permanent and self-consistent from the next poll onward.
+
 The comparison is **advisory**, and the ADR says so rather than leaning on it as the whole
 mitigation. `jobs.job_identifier` prefers the response's `UUID` over its `JobID`, so a handle a
 consumer stored as a JobID — which is what `hmc_wait_for_job`'s own docstring tells it to store —
@@ -92,9 +97,15 @@ target resource, not just the job — `.../LogicalPartition/{uuid}/do/PowerOn/Jo
 stop resolving while the job is fine, and this package ships decommission operations that remove
 such parents. A 404 raised against a supplied link is therefore **confirmed against the global
 jobs path** before it becomes `found=False`; when the second read finds the job, that result is
-returned and the stale link is logged. The confirmation is best-effort: on firmware that does not
-serve the global path it fails, and a failure leaves the original 404 standing rather than
-replacing a documented `found=False` with an exception.
+returned and the stale link is logged. The confirmation is best-effort **about absence only**:
+firmware that does not serve the global path — a 404, or the HTTP 400 REST000E the client already
+turns into an actionable message — leaves the original 404 standing rather than replacing a
+documented `found=False` with an exception. It is not best-effort about failure. A 5xx, a
+connection reset, or a read timeout propagates as `HMCError`, exactly as it would on the primary
+read. `HMCTransportError` subclasses `HMCError`, so catching the base class here would quietly
+convert a degraded HMC into the one answer on this path a consumer acts on destructively — and it
+would do so hardest on issue #95 firmware, where a link is supplied and the global path is least
+likely to answer cleanly.
 
 A link proved stale is then **dropped**, not echoed. The outcome carries the href from the read
 that worked, so a consumer re-persisting the handle from every outcome never stores a link known
