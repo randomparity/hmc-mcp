@@ -86,6 +86,33 @@ def _unowned_partition():
     )
 
 
+def _mock_owning_system_discovery(router) -> None:
+    """The fleet reads ADR 0094's walk makes when the tool omits the selector."""
+    feed = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        + SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name="sys1")
+        .split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        + "</feed>"
+    )
+    router.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(200, text=feed)
+    )
+    partitions = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        + LPAR_ENTRY.split("?>", 1)[1]
+        .strip()
+        .replace(' xmlns="http://www.w3.org/2005/Atom"', "", 1)
+        + "</feed>"
+    )
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=partitions)
+    )
+
+
 # ---------------------------------------------------------------------- #
 # DLPAR
 # ---------------------------------------------------------------------- #
@@ -148,6 +175,79 @@ def test_dlpar_proc_error_propagates(monkeypatch, mock_hmc):
             system_name_or_uuid=SYSTEM_UUID,
         )
     assert exc_info.value.status_code == 500
+
+
+@pytest.mark.parametrize("tool", [hmc_dlpar_proc, hmc_dlpar_mem])
+def test_dlpar_without_a_system_selector_discovers_the_owner_and_writes(
+    monkeypatch, mock_hmc, tool
+):
+    """The default MCP shape — a partition and nothing else — still works.
+
+    This is the invocation every DLPAR client makes today, and the one this
+    change reshaped from a single POST into a fleet walk plus an ownership
+    read, so it stays covered at the tool boundary rather than only at the
+    operation.
+    """
+    _hmc_env(monkeypatch)
+    _mock_dlpar_authorization(mock_hmc)
+    _mock_owning_system_discovery(mock_hmc)
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    read = AsyncMock(return_value="")
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        result = tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
+
+    assert result["Resource"]["PartitionName"] == "lpar1"
+    assert route.called
+    # The token was read against the system the walk actually found it on.
+    assert read.await_args.args[1:] == ("sys1", "lpar1")
+
+
+@pytest.mark.parametrize("tool", [hmc_dlpar_proc, hmc_dlpar_mem])
+def test_dlpar_without_a_system_selector_refuses_a_foreign_owner(
+    monkeypatch, mock_hmc, tool
+):
+    """Discovery feeds the guard, so the default shape is guarded too."""
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_AGENT_ID", "alice")
+    _mock_dlpar_authorization(mock_hmc)
+    _mock_owning_system_discovery(mock_hmc)
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    with patch(
+        "hmc_mcp.operations_lpar.get_lpar_description",
+        new=AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]"),
+    ):
+        with pytest.raises(PermissionError, match="ownership_override=true"):
+            tool(LPAR_UUID, LparResources(desired_procs=1.0, desired_memory=2048))
+    assert not route.called
+
+
+@pytest.mark.parametrize("tool", [hmc_dlpar_proc, hmc_dlpar_mem])
+def test_dlpar_override_without_a_selector_needs_no_discovery(
+    monkeypatch, mock_hmc, tool
+):
+    """The operator's approved exception is not blocked by fleet discovery.
+
+    No fleet route is registered, so respx fails the test if the tool tries to
+    walk the fleet — the regression this asserts against.
+    """
+    _hmc_env(monkeypatch)
+    monkeypatch.setenv("HMC_AGENT_ID", "alice")
+    route = mock_hmc.post(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
+        return_value=httpx.Response(200, text=LPAR_ENTRY)
+    )
+    read = AsyncMock(return_value="[hmc-mcp owner:bob created:2026-08-14]")
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        tool(
+            LPAR_UUID,
+            LparResources(desired_procs=1.0, desired_memory=2048),
+            ownership_override=True,
+        )
+    read.assert_not_awaited()
+    assert route.called
 
 
 def test_dlpar_proc_refuses_a_foreign_owned_partition(monkeypatch, mock_hmc):

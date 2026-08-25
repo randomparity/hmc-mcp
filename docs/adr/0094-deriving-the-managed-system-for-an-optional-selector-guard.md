@@ -42,24 +42,48 @@ the owning system by bounded parent discovery when the caller omits it.**
 `operations_lpar._resolve_and_authorize_lpar` is the guarded resolve chain for
 those operations. With a selector it is the chain `rename_lpar` already uses.
 Without one it resolves the partition UUID fleet-wide, then calls
-`_discover_owning_system_uuid`, which walks `list_managed_systems()` and each
-system's `list_logical_partitions(<system_uuid>)` feed until it finds the system
-whose partition list contains that UUID. From there the existing
+`_discover_owning_system`, which walks `list_managed_systems()` and each system's
+`list_logical_partitions(<system_uuid>)` feed until it finds the system whose
+partition list contains that UUID, returning that system's UUID **and its
+`SystemName` from the inventory entry that matched**. From there the existing
 `resolve_lpar_ownership_names` → `authorize_lpar_mutation` chain is unchanged.
 
-The walk reuses the bounds `HMCClient.find_partition_by_name` already applies to
-a fleet-ambiguous partition name — `bounded_parent_systems`' 100-system fan-out
-cap and `PARENT_DISCOVERY_TIMEOUT_SECONDS` — and fails with the same operator
-remedy that path names, *supply managed-system scope*. A caller who does not want
-to pay for discovery, or whose fleet is too large for it, passes the selector.
+Returning the name matters: `_system_name`'s degraded path falls back to the
+selector string it was handed, so passing a UUID there would end in
+`lssyscfg -m <uuid>`, which the HMC CLI cannot satisfy, and the operator would
+see an opaque SSH failure instead of a diagnosis. The walk already read the name
+from the same feed, so it carries it forward rather than re-deriving it.
+
+The walk applies the bounds `HMCClient.find_partition_by_name` applies to a
+fleet-ambiguous partition name — `MAX_PARENT_DISCOVERY_SYSTEMS` and
+`PARENT_DISCOVERY_TIMEOUT_SECONDS` — and names the same operator remedy, *supply
+managed-system scope*. It does not reuse `bounded_parent_systems` itself, whose
+message asserts an ambiguous partition name; nothing is ambiguous on this path,
+because the UUID resolved uniquely before the walk began. A fleet entry with no
+usable UUID or `SystemName` is a hard error naming incomplete inventory metadata,
+matching the sibling walk rather than being skipped into a misleading "no managed
+system reports it".
 
 Containment is established by UUID equality against the system's own partition
 feed, so a partition name that collides across systems cannot cause the guard to
 read the token off the wrong partition.
 
-The cost lands only on the omitted-selector path: 1 + N REST reads, N bounded at
-100. A caller that supplies the selector pays nothing new, and any caller under a
-`targets` table is already forced to supply it by ADR 0039.
+**An approved override skips discovery entirely.** `ownership_override=True`
+reads no token (ADR 0092 §5), so it needs none of the resolution the guard alone
+requires: the chain resolves the partition UUID exactly as the pre-extraction tool
+body did, audits the override, and writes. Without this short-circuit the
+operator's exception would be *blocked* by discovery's failure modes — an
+oversized fleet, a slow one, an unreachable owning frame — which are precisely
+the degraded conditions that provoke an operator into using it, and ADR 0092 §4's
+"that path pays nothing" would stop being true. The audit record then carries the
+selectors the caller supplied, with an empty `system` when none was named: that is
+what the operator actually asserted, and inventing a resolved name for a system
+the caller never chose would make the record less faithful, not more.
+
+The cost lands only on the guarded, omitted-selector path: 1 + N REST reads, N
+bounded by the cap. A caller that supplies the selector pays nothing new, any
+caller under a `targets` table is already forced to supply it by ADR 0039, and an
+override pays nothing at all.
 
 ## Consequences
 
@@ -82,6 +106,17 @@ size before it writes. On a large fleet that is visible latency, and the remedy
 is the selector. A partition whose owning system is not in
 `list_managed_systems()` — an unreachable or unmanaged frame — fails with a named
 error rather than mutating unguarded.
+
+**The two DLPAR entry points now require SSH reachability to the HMC.** They were
+REST-only; the guard reads the token over SSH (ADR 0092 §4), so an environment
+where the HMC user has REST access but not remote command execution — port 22
+filtered, or a task role that denies it — loses both tools unless the caller
+passes `ownership_override=True`, which reads no token. This is disclosed rather
+than mitigated: the guard's transport is ADR 0071's decision, not this one's. The
+resulting failure is an unwrapped `HMCCLIError` that names neither the ownership
+precheck nor the override, which is the same shape `delete_lpar` and `rename_lpar`
+already produce; wrapping it belongs to the shared guard and to every operation
+that calls it, so it is tracked in #459 rather than special-cased here.
 
 This rule is stated generally because ADR 0092 tracks three more entry points
 with the same shape (#441's `hmc_set_lpar_msp` and `hmc_set_lpar_proc_compat`,

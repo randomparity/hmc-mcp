@@ -18,8 +18,8 @@ from hmc_mcp.affinity_assessment import (
 from . import audit
 from .client import HMCClient
 from .client_resolution import (
+    MAX_PARENT_DISCOVERY_SYSTEMS,
     PARENT_DISCOVERY_TIMEOUT_SECONDS,
-    bounded_parent_systems,
 )
 from .common import resolve_lpar_uuid, resolve_system_uuid
 from .documents import (
@@ -845,10 +845,36 @@ async def rename_lpar(
 # ====================================================================== #
 
 
-async def _discover_owning_system_uuid(
+def _incomplete_inventory(lpar_label: str) -> ValueError:
+    """Reject a fleet entry the walk cannot address, as the sibling walk does."""
+    return ValueError(
+        f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
+        "incomplete managed-system inventory metadata"
+    )
+
+
+def _fleet_within_discovery_bound(
+    systems: list[dict[str, Any]], lpar_label: str
+) -> list[dict[str, Any]]:
+    """Reject an owning-system search whose request fan-out is too large.
+
+    The bound is `client_resolution`'s, but not its message: that one reads
+    "ambiguous LPAR name", and nothing is ambiguous here — the partition UUID
+    resolved uniquely before this ran.
+    """
+    if len(systems) > MAX_PARENT_DISCOVERY_SYSTEMS:
+        raise ValueError(
+            f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
+            f"discovery exceeds {MAX_PARENT_DISCOVERY_SYSTEMS} managed systems; "
+            "supply managed-system scope"
+        )
+    return systems
+
+
+async def _discover_owning_system(
     hmc: HMCClient, lpar_uuid: str, lpar_label: str
-) -> str:
-    """Return the UUID of the managed system that contains *lpar_uuid*.
+) -> tuple[str, str]:
+    """Return the UUID and CLI name of the system that contains *lpar_uuid*.
 
     ADR 0094. The ADR 0011 guard reads an ownership token by CLI system name
     plus partition name, so an operation whose managed-system selector is
@@ -856,19 +882,26 @@ async def _discover_owning_system_uuid(
     bounded parent discovery :meth:`HMCClient.find_partition_by_name` already
     applies to a fleet-ambiguous partition name — the same 100-system fan-out
     cap, the same timeout, and the same "supply managed-system scope" remedy.
+
+    The name comes from the inventory entry that matched, so the guard never
+    falls back to running ``lssyscfg -m <uuid>``, which the HMC CLI cannot
+    satisfy.
     """
-    systems = bounded_parent_systems(
-        await hmc.list_managed_systems(), "LPAR", lpar_label
+    systems = _fleet_within_discovery_bound(
+        await hmc.list_managed_systems(), lpar_label
     )
     try:
         async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
             for system in systems:
                 system_uuid = system.get("UUID")
+                system_name = (system.get("Resource") or {}).get("SystemName")
                 if not isinstance(system_uuid, str) or not system_uuid:
-                    continue
+                    raise _incomplete_inventory(lpar_label)
+                if not isinstance(system_name, str) or not system_name:
+                    raise _incomplete_inventory(lpar_label)
                 partitions = await hmc.list_logical_partitions(system_uuid)
                 if any(entry.get("UUID") == lpar_uuid for entry in partitions):
-                    return system_uuid
+                    return system_uuid, system_name
     except TimeoutError as exc:
         raise ValueError(
             f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
@@ -892,14 +925,31 @@ async def _resolve_and_authorize_lpar(
     The guarded counterpart of the resolve chain in :func:`rename_lpar`, for the
     operations whose managed-system selector is optional. With a selector the
     chain is identical; without one the owning system is discovered first
-    (:func:`_discover_owning_system_uuid`) so the guard still runs (ADR 0092).
+    (:func:`_discover_owning_system`) so the guard still runs (ADR 0092).
+
+    An approved override reads no token, so it resolves nothing the guard alone
+    needs (ADR 0092 §4: that path pays nothing). Discovery is skipped entirely
+    there — otherwise an oversized fleet, a slow one, or an unreachable owning
+    frame would *block* the operator's exception on exactly the degraded
+    inventory that provokes it. The audit record then carries the caller's own
+    selectors, which is what the operator actually asserted.
     """
+    if ownership_override:
+        lpar_uuid = await resolve_lpar_uuid(
+            hmc, lpar_name_or_uuid, system_name_or_uuid=system_name_or_uuid
+        )
+        await authorize_lpar_mutation(
+            hmc,
+            system_name_or_uuid or "",
+            lpar_name_or_uuid,
+            ownership_override=True,
+        )
+        return lpar_uuid
     if system_name_or_uuid is None:
         lpar_uuid = await resolve_lpar_uuid(hmc, lpar_name_or_uuid)
-        system_uuid = await _discover_owning_system_uuid(
+        system_uuid, system_selector = await _discover_owning_system(
             hmc, lpar_uuid, lpar_name_or_uuid
         )
-        system_selector = system_uuid
     else:
         system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
         lpar_uuid = await resolve_lpar_uuid(
@@ -909,12 +959,7 @@ async def _resolve_and_authorize_lpar(
     system_name, lpar_name = await resolve_lpar_ownership_names(
         hmc, system_uuid, system_selector, lpar_uuid
     )
-    await authorize_lpar_mutation(
-        hmc,
-        system_name,
-        lpar_name,
-        ownership_override=ownership_override,
-    )
+    await authorize_lpar_mutation(hmc, system_name, lpar_name)
     return lpar_uuid
 
 

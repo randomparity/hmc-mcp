@@ -12,6 +12,8 @@ by ``test_dlpar.py``; the MCP tool delegation is covered by ``test_power_tools.p
 
 from __future__ import annotations
 
+import json
+import logging
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -19,6 +21,7 @@ import pytest
 
 from conftest import make_config
 
+from hmc_mcp import audit
 from hmc_mcp.client import HMCClient
 from hmc_mcp.documents import LparResources
 from hmc_mcp.errors import HMCError
@@ -326,6 +329,87 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
 
     paths = [call.request.url.path for call in mock_hmc.calls]
     assert "/rest/api/uom/ManagedSystem" not in paths
+
+
+@pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
+@pytest.mark.asyncio
+async def test_an_override_without_a_selector_skips_discovery_entirely(
+    mock_hmc, operation
+):
+    """ADR 0092 §4: the override path pays nothing — and is blocked by nothing.
+
+    Discovery exists only to feed the guard, so an approved override must not
+    depend on it. Registering no fleet routes at all is the assertion: respx
+    raises on an unmocked request, so any discovery call fails this test.
+    """
+    route = _mock_modify(mock_hmc)
+    read = _owned_by("bob")
+
+    with patch("hmc_mcp.operations_lpar.get_lpar_description", new=read):
+        async with HMCClient(make_config(agent_id="alice")) as hmc:
+            await operation(
+                hmc,
+                LPAR_UUID,
+                LparResources(desired_procs=1.0, desired_memory=1024),
+                ownership_override=True,
+            )
+
+    read.assert_not_awaited()
+    assert route.called
+    assert [call.request.url.path for call in mock_hmc.calls if
+            call.request.method == "GET"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_override_audits_the_selectors_the_caller_supplied(mock_hmc, caplog):
+    """With no system named, the audit records that absence rather than a guess."""
+    _mock_modify(mock_hmc)
+
+    with (
+        patch("hmc_mcp.operations_lpar.get_lpar_description", new=AsyncMock()),
+        caplog.at_level(logging.WARNING),
+    ):
+        async with HMCClient(make_config(agent_id="alice")) as hmc:
+            await set_lpar_processors(
+                hmc,
+                LPAR_UUID,
+                LparResources(desired_procs=1.0),
+                ownership_override=True,
+            )
+
+    records = [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == audit.AUDIT_LOGGER_NAME
+    ]
+    assert len(records) == 1, "an absence assertion over an empty capture proves nothing"
+    assert records[0]["event"] == "ownership-override"
+    assert records[0]["lpar"] == LPAR_UUID
+    assert records[0]["system"] == ""
+
+
+@pytest.mark.asyncio
+async def test_discovery_rejects_incomplete_fleet_inventory(mock_hmc):
+    """A fleet entry the walk cannot address is a diagnosis, not a silent skip."""
+    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+        return_value=httpx.Response(
+            200,
+            text=_feed(
+                SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME).replace(
+                    f"<id>urn:uuid:{SYSTEM_UUID}</id>", "<id></id>"
+                )
+            ),
+        )
+    )
+    route = _mock_modify(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(ValueError, match="incomplete managed-system inventory"):
+            await set_lpar_processors(
+                hmc, LPAR_UUID, LparResources(desired_procs=1.0)
+            )
+
+    assert not route.called
 
 
 @pytest.mark.asyncio
