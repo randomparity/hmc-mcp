@@ -8,14 +8,16 @@ authorization field table, as the sentence enumerating the `connection.state` ar
 as the clause naming the TLS record's `source` values — and nothing read it, so the two
 sides could drift apart silently. They had.
 
-The `source` vocabulary is restated a second time, in `docs/environment-variables.md`'s
-`HMC_VERIFY_SSL` note, which describes the same audit record; both restatements are held
-to the same set, so neither can drift alone (#497).
+`docs/environment-variables.md`'s `HMC_VERIFY_SSL` note describes the same TLS record, so
+its restatement of the `source` values is held to the same set and neither document can
+drift alone (#497). Two further restatements are in code and are *not* reached; they are
+in the ledger below.
 
 Every equality check below is a set comparison, so it fails on an orphan (documented,
-not defined) and on a dangling entry (defined, not documented) alike. Each is paired
-with a mutation test that feeds the extractor a deliberately drifted copy of the real
-document and asserts it notices, so the check cannot pass by extracting nothing.
+not defined) and on a dangling entry (defined, not documented) alike — with one bounded
+exception in the ledger, for a member appended to a run-based list with "and". Each is
+paired with a mutation test that feeds the extractor a deliberately drifted copy of the
+real document and asserts it notices, so the check cannot pass by extracting nothing.
 
 The counts stay out of the assertions on purpose: pinning one here would recreate the
 stale literal this guard exists to remove, the same anti-pattern
@@ -40,7 +42,25 @@ What this does not reach, so a green run is not read as more coverage than it is
 - a pinned count anywhere in `docs/environment-variables.md`. The count patterns run over
   the audit document, whose subject is these vocabularies; turning them loose on a
   document about twenty settings would read its ordinary prose ("one SSH login plus two
-  REST GETs") the same wrong way. Only the `HMC_VERIFY_SSL` note's membership is guarded.
+  REST GETs") the same wrong way. Only the `HMC_VERIFY_SSL` note's membership is guarded;
+- a member appended to a run-based list with "and" rather than a comma or "or".
+  `EFFECT_LIST` and `SOURCE_LIST` end the run at the first separator they do not
+  recognise, which is what lets the negative controls treat a trailing clarification as
+  prose — and the same tradeoff means `..., or `field-default`, and `config-file`` reads as
+  three values plus prose. The dangling direction is unaffected; only the orphan half has
+  the hole, and only for those two extractors;
+- the `source` restatements that live in code rather than in a document:
+  `audit.record_tls_verification_disabled`'s docstring, which is where a consumer reads
+  the field (`audit` imports nothing from `hmc_mcp`, so its parameter is a plain `str`),
+  and `tests/unit/test_audit.py`'s TLS record test. Both spell the three values out and
+  neither is reachable from here. Issue #504 owns replacing them with a pointer;
+- the editing constraint this guard puts on the two documents. Both TLS passages must keep
+  the clause "where the [effective] setting came from" — the environment-variable note
+  writes no `source` identifier to anchor on, so eight words of prose are the only anchor
+  available — and that note must stay one `- **` bullet. Every violation fails loud, but it
+  fails naming a regex, and an editor of a settings document has no reason to open a test
+  named for a different one. `docs/authorization-audit.md` carries a marker saying so;
+  #504 covers the same marker for the other document.
 """
 
 import re
@@ -80,7 +100,7 @@ TLS_PASSAGE = {
         re.MULTILINE | re.DOTALL,
     ),
     "environment-variables.md": re.compile(
-        r"^- \*\*TLS verification\*\* \(`HMC_VERIFY_SSL`\):.*?(?=^- \*\*)",
+        r"^- \*\*TLS verification\*\* \(`HMC_VERIFY_SSL`\):.*?(?=^- \*\*|\Z)",
         re.MULTILINE | re.DOTALL,
     ),
 }
