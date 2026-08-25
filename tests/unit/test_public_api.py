@@ -68,6 +68,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DecommissionResult",
         "fleet_health",
         "FleetHealthResult",
+        "install_lpar_os",
+        "install_vios",
         "assess_post_activation_affinity",
         "authorize_decommission_lpar_ownership_snapshot",
         "authorize_lpar_mutation",
@@ -368,6 +370,13 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
         added ``ownership_override`` to ``power_lpar``, and it added the
         ``authorize_power_operations`` field to ``HMCConfig``, whose pydantic
         ``__init__`` signature is derived from its fields.
+        Before that, issue #366 extracted the ``installios`` install
+        orchestration out of the MCP tool bodies into ``operations_install``
+        and exported ``install_lpar_os`` and ``install_vios``. Both return the
+        CLI bridge's detach handle, not an HMC job identifier: ADR 0069 found
+        no ``InstallLPAR``/``InstallVIOS`` REST job on any surveyed HMC and
+        ADR 0070 replaced them with the detached CLI submission, so this
+        addition composes with #364's ``wait_for_job`` nowhere.
         Before that, issue #364 added the cross-process job-polling
         operations ``get_job`` and ``wait_for_job`` and exported the
         ``JobOutcome`` result model (ADR 0093).
@@ -423,9 +432,9 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
             continue
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
     # Moved by #371: power_lpar gains ownership_override and HMCConfig gains
-    # authorize_power_operations (ADR 0092 §4). Recomputed over #364's baseline
-    # 925fd693, which this branch merged.
-    expected_digest = "502e6acd97a53d230526fd2d1c6eddcef855f662466a5a89ea5ee680882404cb"  # pragma: allowlist secret
+    # authorize_power_operations (ADR 0092 §4). Recomputed over #366's
+    # baseline 5c7b317e, which this branch merged.
+    expected_digest = "32b6008fbd0ff5cf8936fde10459cbb45cada5040fd2d6d5abf8425dac10a54c"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
