@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import InitVar, dataclass, fields, is_dataclass
 from types import ModuleType
 from typing import Annotated, Literal, TypeVar, get_args, get_origin, get_type_hints
 
@@ -48,6 +48,7 @@ class FacadeContractError(AssertionError):
     annotation keeps that distinguishable from a bare ``SyntaxError`` surfacing from
     inside ``ast``.
     """
+
 
 _ADR_CITATION = re.compile(r"ADR 0029|docs/adr/0029")
 
@@ -665,7 +666,7 @@ def _field_literal_aliases(models: list[type]) -> dict[tuple[str, str], object]:
     return aliases
 
 
-def _constructor_surfaces() -> list[type]:
+def _fieldless_exported_classes() -> list[type]:
     """The exported owned classes whose supported surface is their constructor.
 
     ADR 0029 pins that set to ``HMCClient`` and the exported error types, and the test
@@ -716,10 +717,55 @@ def _constructor_literal_aliases(owners: list[type]) -> dict[tuple[str, str], ob
             _aliases_in_annotations(
                 sys.modules[module_name],
                 inspect.get_annotations(initialiser).values(),
-                origin=f"{owner.__module__}.{owner.__qualname__}.__init__",
+                origin=f"{module_name}.{initialiser.__qualname__}",
             )
         )
     return aliases
+
+
+def _init_parameters_outside_fields(owner: type) -> list[str]:
+    """A dataclass's ``__init__`` parameters that are not among its declared fields.
+
+    ADR 0029 reads a model's constructor through its fields on the grounds that the two
+    agree. ``dataclasses.InitVar`` is the case where they do not: it is a constructor
+    parameter and ``dataclasses.fields`` omits it, so its type would be selected under
+    the Decision's call-signature clause while both halves of the mechanism read
+    nothing of it — the same silent drop-out the constructor clause above closes.
+    """
+    parameters = set(inspect.signature(owner.__init__).parameters) - {"self"}
+    return sorted(parameters - {field.name for field in fields(owner)})
+
+
+def test_an_exported_dataclass_constructor_names_only_its_own_fields() -> None:
+    """The equivalence that lets the constructor clause skip a model must hold.
+
+    Driven with a synthetic ``InitVar`` as well as against the facade, because every
+    exported dataclass satisfies this today and the check would otherwise never be
+    seen to fail.
+    """
+
+    @dataclass(frozen=True)
+    class InitVarModel:
+        kept: str
+        seed: InitVar[SyntheticResult]
+
+        def __post_init__(self, seed: SyntheticResult) -> None: ...
+
+    assert _init_parameters_outside_fields(InitVarModel) == ["seed"]
+
+    offenders = {
+        name: outside
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and is_dataclass(exported)
+        and (outside := _init_parameters_outside_fields(exported))
+    }
+    assert offenders == {}, (
+        f"{offenders} are constructor parameters of an exported dataclass that are not "
+        "declared fields, so ADR 0029's type clause reads neither their types nor the "
+        "literal aliases they name"
+    )
 
 
 def _unexported_owned_types(
@@ -740,7 +786,7 @@ def _unexported_owned_types(
         for hint in get_type_hints(getattr(modules[module_name], name)).values():
             _collect_owned_types(hint, owned)
     owned.update(_owned_literal_aliases(selected, modules))
-    constructors = _constructor_surfaces()
+    constructors = _fieldless_exported_classes()
     owned.update(_constructor_owned_types(constructors))
     owned.update(_field_literal_aliases(_supported_models(owned)))
     owned.update(_constructor_literal_aliases(constructors))
@@ -963,7 +1009,7 @@ def test_adr_0029_type_rule_descends_into_owned_model_fields(
     ]
 
 
-def test_adr_0029_type_rule_reaches_a_fieldless_exports_constructor(
+def test_adr_0029_type_rule_reaches_an_exported_errors_constructor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The constructor half must redden on its own, with no operation involved.
@@ -1102,7 +1148,9 @@ def test_annotation_walk_still_resolves_a_quoted_forward_reference() -> None:
     )
 
 
-def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse() -> None:
+def test_annotation_walk_names_the_operation_when_an_annotation_will_not_parse() -> (
+    None
+):
     """An unreadable signature is a guard failure, and must report as one."""
     with pytest.raises(FacadeContractError) as error:
         _annotation_paths("not a valid annotation", origin="operations_x.do_thing")

@@ -82,10 +82,17 @@ catches an exported error or constructs an exported client must be able to name 
 constructor takes and what it exposes. Every package-owned type or literal alias a selected
 constructor's parameters name is therefore selected too, on the same terms as an operation's
 parameters and by the same transitive closure — a model reached through a constructor is walked
-for its own fields in turn. For a model this reads nothing new, because a model's constructor
-parameters are its fields, so the clause is stated for the classes whose fields cannot be read.
-A constructor inherited from outside the package — `RuntimeError.__init__`, `ValueError.__init__` —
-carries no annotation and names nothing.
+for its own fields in turn.
+
+A model's constructor is not read a second time, because its parameters are the fields the clause
+above already selects. That equivalence is asserted rather than assumed: a `dataclasses.InitVar` is
+a constructor parameter that `dataclasses.fields` omits, so a contract test fails when an exported
+dataclass takes a parameter that is not one of its own fields, rather than letting that parameter's
+type drop out of both halves the way these twelve constructors did. A constructor inherited from
+outside the package names nothing owned — `RuntimeError.__init__` and `ValueError.__init__` carry
+no annotation at all — and the alias half, which reads annotation source text and so requires the
+defining module to carry `from __future__ import annotations`, is not run over a constructor a
+foreign module defines: an alias arriving from outside the package is no facade export in any case.
 
 The rule reads a module attribute exactly as `inspect.iscoroutinefunction` and `__module__`
 ownership report it, so three operation shapes fall outside it by decision rather than by
@@ -307,7 +314,9 @@ fields too. This one found no omission (#502): `HMCClient` takes `HMCConfig`, an
 an unexported result, which a consumer would meet through a supported `except` clause with no
 supported import path to name it — so a synthetic exported error whose constructor names an
 unexported type and an unexported alias drives the clause, because the live facade exercises only
-its clean path.
+its clean path. A companion test holds the equivalence that lets a model's constructor go unread,
+comparing each exported dataclass's `__init__` parameters with its declared fields; a synthetic
+`InitVar` drives that one too, since every exported dataclass satisfies it today.
 
 A third test parses the inventory above and asserts each clause against the facade's own import
 statements and the modules' contents, rejecting every line inside the fence that is neither an
