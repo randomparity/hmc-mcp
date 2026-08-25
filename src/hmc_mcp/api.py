@@ -6,14 +6,18 @@ from hmc_mcp.config import ConfigError, HMCConfig, load_profile
 from hmc_mcp.affinity_assessment import (
     AffinityAssessmentInput,
     AffinityAssessmentResult,
+    AffinityClassification,
     AffinityEvidence,
     CapturedPolicyState,
     PolicyState,
 )
 from hmc_mcp.documents import (
     BootDeviceSelector,
+    Keylock,
     LparResources,
+    OsType,
     PartitionType,
+    SharingMode,
     StorageKind,
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
@@ -83,10 +87,12 @@ from hmc_mcp.operations_pcm import (
     set_pcm_preferences,
 )
 from hmc_mcp.operations_pcie import (
+    CapabilityState,
     DedicatedSlot,
     InventoryResult,
     InventorySelector,
     PcieAssignmentUnavailableError,
+    ResourceKind,
     SriovAdapter,
     SriovLogicalPort,
     SriovPhysicalPort,
@@ -183,6 +189,7 @@ from hmc_mcp.ssh_commands import SriovMode
 from hmc_mcp.console_capture import (
     ConsoleCapture,
     ConsoleHeldError,
+    StopReason,
     capture_lpar_console,
 )
 from hmc_mcp.operations_snapshot import (
@@ -192,15 +199,28 @@ from hmc_mcp.operations_snapshot import (
     validate_lpar_snapshot,
 )
 from hmc_mcp.snapshot import (
+    HmcIdentity,
+    LparIdentity,
     LparSnapshot,
+    MemoryProjection,
+    NativeProfile,
+    NormalizedConfiguration,
+    ObservationEnvelope,
+    ProcessorProjection,
+    SnapshotCapability,
+    SnapshotConfiguration,
     SnapshotInspection,
+    SnapshotObservations,
+    SnapshotSource,
     SnapshotValidationError,
+    SystemIdentity,
 )
 
 __all__ = [
     "HMCClient",
     "AffinityAssessmentInput",
     "AffinityAssessmentResult",
+    "AffinityClassification",
     "AffinityEvidence",
     "CapturedPolicyState",
     "PolicyState",
@@ -273,6 +293,8 @@ __all__ = [
     "DedicatedSlot",
     "InventoryResult",
     "InventorySelector",
+    "CapabilityState",
+    "ResourceKind",
     "PcieAssignmentUnavailableError",
     "SriovAdapter",
     "SriovLogicalPort",
@@ -299,6 +321,9 @@ __all__ = [
     "AttachDiskResult",
     "LparResources",
     "PartitionType",
+    "OsType",
+    "Keylock",
+    "SharingMode",
     "list_fc_ports",
     "get_lpar_memopt_score",
     "get_minimum_affinity_policy",
@@ -364,9 +389,22 @@ __all__ = [
     "capture_lpar_console",
     "ConsoleCapture",
     "ConsoleHeldError",
+    "StopReason",
     "LparSnapshot",
     "SnapshotInspection",
     "SnapshotValidationError",
+    "HmcIdentity",
+    "SystemIdentity",
+    "LparIdentity",
+    "SnapshotSource",
+    "SnapshotCapability",
+    "NativeProfile",
+    "MemoryProjection",
+    "ProcessorProjection",
+    "NormalizedConfiguration",
+    "SnapshotConfiguration",
+    "ObservationEnvelope",
+    "SnapshotObservations",
     "capture_lpar_snapshot",
     "assess_snapshot_affinity",
     "inspect_lpar_snapshot",

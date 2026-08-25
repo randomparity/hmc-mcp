@@ -13,8 +13,8 @@ import pkgutil
 import re
 import subprocess
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, fields, is_dataclass
 from types import ModuleType
 from typing import Annotated, Literal, TypeVar, get_args, get_origin, get_type_hints
 
@@ -77,6 +77,7 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "HMCClient",
         "AffinityAssessmentInput",
         "AffinityAssessmentResult",
+        "AffinityClassification",
         "AffinityEvidence",
         "CapturedPolicyState",
         "PolicyState",
@@ -149,6 +150,8 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "DedicatedSlot",
         "InventoryResult",
         "InventorySelector",
+        "CapabilityState",
+        "ResourceKind",
         "PcieAssignmentUnavailableError",
         "SriovAdapter",
         "SriovLogicalPort",
@@ -175,6 +178,9 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "AttachDiskResult",
         "LparResources",
         "PartitionType",
+        "OsType",
+        "Keylock",
+        "SharingMode",
         "list_fc_ports",
         "get_lpar_memopt_score",
         "get_minimum_affinity_policy",
@@ -240,9 +246,22 @@ def test_public_api_exports_the_adr_inventory() -> None:
         "capture_lpar_console",
         "ConsoleCapture",
         "ConsoleHeldError",
+        "StopReason",
         "LparSnapshot",
         "SnapshotInspection",
         "SnapshotValidationError",
+        "HmcIdentity",
+        "SystemIdentity",
+        "LparIdentity",
+        "SnapshotSource",
+        "SnapshotCapability",
+        "NativeProfile",
+        "MemoryProjection",
+        "ProcessorProjection",
+        "NormalizedConfiguration",
+        "SnapshotConfiguration",
+        "ObservationEnvelope",
+        "SnapshotObservations",
         "capture_lpar_snapshot",
         "assess_snapshot_affinity",
         "inspect_lpar_snapshot",
@@ -325,6 +344,11 @@ def test_facade_operation_set_matches_adr_0029_selection_rule() -> None:
     assert facade_operations == selected - set(ADR_0029_OPERATION_EXCLUSIONS)
 
 
+def _is_owned(module_name: str) -> bool:
+    """Whether a module name is this package's own."""
+    return module_name == "hmc_mcp" or module_name.startswith("hmc_mcp.")
+
+
 def _collect_owned_types(hint: object, owned: dict[tuple[str, str], object]) -> None:
     """Record every ``hmc_mcp``-owned type reachable from one resolved annotation.
 
@@ -351,7 +375,7 @@ def _collect_owned_types(hint: object, owned: dict[tuple[str, str], object]) -> 
         return
     if type_name.startswith("_"):
         return  # ADR 0029: every underscore name is internal.
-    if module_name == "hmc_mcp" or module_name.startswith("hmc_mcp."):
+    if _is_owned(module_name):
         owned[(module_name, type_name)] = hint
 
 
@@ -501,16 +525,143 @@ def _owned_literal_aliases(
     aliases: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
         module = modules[module_name]
-        for annotation in inspect.get_annotations(getattr(module, name)).values():
-            assert isinstance(annotation, str), (
-                f"{module_name}.{name} has an evaluated annotation; ADR 0029's "
-                "literal-alias clause needs `from __future__ import annotations`"
+        aliases.update(
+            _aliases_in_annotations(
+                module,
+                inspect.get_annotations(getattr(module, name)).values(),
+                origin=f"{module_name}.{name}",
             )
-            for path in _annotation_paths(annotation, origin=f"{module_name}.{name}"):
-                value = _literal_alias(vars(module), path)
-                owner = _alias_owner(module, path) if value is not None else None
-                if owner is not None:
-                    aliases[(owner, path[-1])] = value
+        )
+    return aliases
+
+
+def _aliases_in_annotations(
+    module: ModuleType, annotations: Iterable[object], *, origin: str
+) -> dict[tuple[str, str], object]:
+    """Every package-owned literal alias raw annotation source text names.
+
+    Shared by the signature half and the model-field half, which read the same source
+    text off different holders and must attribute an alias the same way.
+    """
+    aliases: dict[tuple[str, str], object] = {}
+    for annotation in annotations:
+        assert isinstance(annotation, str), (
+            f"{origin} has an evaluated annotation; ADR 0029's literal-alias "
+            "clause needs `from __future__ import annotations`"
+        )
+        for path in _annotation_paths(annotation, origin=origin):
+            value = _literal_alias(vars(module), path)
+            owner = _alias_owner(module, path) if value is not None else None
+            if owner is not None:
+                aliases[(owner, path[-1])] = value
+    return aliases
+
+
+def _model_field_hints(owner: type) -> dict[str, object] | None:
+    """The resolved field annotations ADR 0029 calls an owned model's supported fields.
+
+    The three shapes this package builds models out of. ``None`` — not an empty
+    mapping — when *owner* is none of them, so a shape this clause cannot read stays
+    distinguishable from a model that genuinely declares no field; the test below
+    rests on that difference.
+    """
+    model_fields = getattr(owner, "model_fields", None)
+    if isinstance(model_fields, dict):
+        return {name: field.annotation for name, field in model_fields.items()}
+    if is_dataclass(owner):
+        resolved = get_type_hints(owner)
+        return {field.name: resolved[field.name] for field in fields(owner)}
+    if hasattr(owner, "__required_keys__"):  # A ``TypedDict``'s keys are its fields.
+        return dict(get_type_hints(owner))
+    return None
+
+
+def test_every_exported_owned_class_is_a_model_shape_or_declared_fieldless() -> None:
+    """A model shape the field walk cannot read is a silent hole, not a pass.
+
+    ``_model_field_hints`` knows three constructions and returns ``None`` for a fourth,
+    so a result type built as a ``NamedTuple``, with ``attrs``, or by hand would drop
+    out of ADR 0029's transitive type clause exactly the way #482's nineteen dropped
+    out of the signature clause — and nothing else here would say so. The package
+    already reaches past dataclasses and Pydantic elsewhere (``jobs`` defines
+    ``TypedDict`` sources), so pin what may legitimately carry no readable fields:
+    ``HMCClient``, whose supported surface is a lifecycle allowlist, and the errors.
+    """
+    unreadable = sorted(
+        name
+        for name in api.__all__
+        if inspect.isclass(exported := getattr(api, name))
+        and _is_owned(exported.__module__)
+        and _model_field_hints(exported) is None
+        and name != "HMCClient"
+        and not issubclass(exported, BaseException)
+    )
+    assert unreadable == [], (
+        f"{unreadable} carry no fields ADR 0029's transitive type clause can read; "
+        "either they are models in a shape `_model_field_hints` does not know, or "
+        "the ADR must record why they expose no supported fields"
+    )
+
+
+def _supported_models(owned: dict[tuple[str, str], object]) -> list[type]:
+    """Close *owned* over model fields, returning every owned model it reached.
+
+    ADR 0029's Decision supports the fields of an exported package-owned model, so a
+    type a consumer meets only through such a field needs a supported import path as
+    much as one an operation names (#482). Seeded from the manifest as well as from the
+    signature walk, because an exported model need not appear in any selected
+    operation's signature — ``ConsoleCapture`` appears in none, its operation living
+    outside ``operations_*``.
+    """
+    pending = [value for value in owned.values() if isinstance(value, type)]
+    pending += [
+        exported
+        for name in api.__all__
+        if isinstance(exported := getattr(api, name), type)
+        and _is_owned(getattr(exported, "__module__", ""))
+    ]
+    models: list[type] = []
+    seen: set[type] = set()
+    while pending:
+        model = pending.pop()
+        if model in seen:
+            continue
+        seen.add(model)
+        hints = _model_field_hints(model)
+        if not hints:
+            continue
+        models.append(model)
+        reached: dict[tuple[str, str], object] = {}
+        for hint in hints.values():
+            _collect_owned_types(hint, reached)
+        owned.update(reached)
+        pending.extend(value for value in reached.values() if isinstance(value, type))
+    return models
+
+
+def _field_literal_aliases(models: list[type]) -> dict[tuple[str, str], object]:
+    """The literal-alias clause read off an owned model's own field annotations.
+
+    ``get_type_hints`` erases an alias on a field exactly as it does on a parameter, so
+    this half reads source text too. An inherited field carries its annotation on the
+    base that declares it, so each model is read through its MRO; a base from outside
+    the package defines no owned alias and is skipped.
+    """
+    aliases: dict[tuple[str, str], object] = {}
+    for model in models:
+        field_names = set(_model_field_hints(model) or ())
+        for owner in model.__mro__:
+            if not _is_owned(getattr(owner, "__module__", "")):
+                continue
+            module = sys.modules[owner.__module__]
+            declared = inspect.get_annotations(owner)
+            aliases.update(
+                _aliases_in_annotations(
+                    module,
+                    [declared[name] for name in declared.keys() & field_names],
+                    origin=f"{owner.__module__}.{owner.__qualname__}",
+                )
+            )
     return aliases
 
 
@@ -521,15 +672,15 @@ def _unexported_owned_types(
 
     Opaque HMC payloads (``dict[str, Any]`` and friends) own no ``hmc_mcp`` type and
     so fall out by construction, which is exactly the distinction ADR 0029's
-    Consequences section draws. The walk reaches the types an operation *names*; it
-    does not descend into an owned model's own fields, so a type reachable only
-    through a field of an exported model is out of this clause's scope (#482).
+    Consequences section draws. The walk then closes over the fields of every owned
+    model it reached, because the Decision's type clause is transitive through them.
     """
     owned: dict[tuple[str, str], object] = {}
     for module_name, name in selected:
         for hint in get_type_hints(getattr(modules[module_name], name)).values():
             _collect_owned_types(hint, owned)
     owned.update(_owned_literal_aliases(selected, modules))
+    owned.update(_field_literal_aliases(_supported_models(owned)))
 
     manifest = set(api.__all__)
     exported = {
@@ -646,13 +797,36 @@ SyntheticResult.__module__ = "hmc_mcp.operations_typed"
 SyntheticFlavour = Literal["thin", "thick"]
 
 
-def test_adr_0029_type_rule_reddens_end_to_end() -> None:
+@dataclass(frozen=True)
+class SyntheticNested:
+    """An owned type reachable only through a field of an owned model."""
+
+    value: str
+
+
+@dataclass(frozen=True)
+class SyntheticSnapshot:
+    """An owned model whose fields name a type and an alias no signature mentions."""
+
+    nested: SyntheticNested
+    flavour: SyntheticFlavour
+
+
+SyntheticNested.__module__ = "hmc_mcp.operations_typed"
+SyntheticSnapshot.__module__ = "hmc_mcp.operations_typed"
+
+
+def test_adr_0029_type_rule_reddens_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Drive signature -> hints -> walk -> comparison against an unexported type.
 
     Once the facade is correct the real check exercises the clean path only, so
     without this the whole walk could return nothing and stay green. This module
     carries ``from __future__ import annotations``, matching every ``operations_*``
-    module, so the literal-alias half reads real source text here too.
+    module, so the literal-alias half reads real source text here too. The synthetic
+    module is registered because a real owned class always reaches its own module
+    through ``sys.modules``, and the field half looks it up there.
     """
     module = ModuleType("hmc_mcp.operations_typed")
 
@@ -663,6 +837,7 @@ def test_adr_0029_type_rule_reddens_end_to_end() -> None:
     synthetic_operation.__module__ = module.__name__
     module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
     module.synthetic_operation = synthetic_operation  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
 
     faults = _unexported_owned_types(
         {(module.__name__, "synthetic_operation")}, {module.__name__: module}
@@ -670,6 +845,37 @@ def test_adr_0029_type_rule_reddens_end_to_end() -> None:
     assert faults["selected but not exported or excluded"] == [
         "hmc_mcp.operations_typed:SyntheticFlavour",
         "hmc_mcp.operations_typed:SyntheticResult",
+    ]
+
+
+def test_adr_0029_type_rule_descends_into_owned_model_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The transitive half must redden on its own, not only through the live facade.
+
+    The operation's signature names ``SyntheticSnapshot`` alone. ``SyntheticNested``
+    and ``SyntheticFlavour`` are reachable only through its fields, which is exactly
+    the shape #482 found twelve models and seven aliases deep — a facade correct under
+    the old signature-only walk still leaves both unnameable by a consumer.
+    """
+    module = ModuleType("hmc_mcp.operations_typed")
+
+    async def snapshot_operation(hmc: object) -> SyntheticSnapshot: ...
+
+    snapshot_operation.__module__ = module.__name__
+    module.SyntheticFlavour = SyntheticFlavour  # type: ignore[attr-defined]
+    module.SyntheticNested = SyntheticNested  # type: ignore[attr-defined]
+    module.SyntheticSnapshot = SyntheticSnapshot  # type: ignore[attr-defined]
+    module.snapshot_operation = snapshot_operation  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    faults = _unexported_owned_types(
+        {(module.__name__, "snapshot_operation")}, {module.__name__: module}
+    )
+    assert faults["selected but not exported or excluded"] == [
+        "hmc_mcp.operations_typed:SyntheticFlavour",
+        "hmc_mcp.operations_typed:SyntheticNested",
+        "hmc_mcp.operations_typed:SyntheticSnapshot",
     ]
 
 
@@ -690,6 +896,7 @@ def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
 
     synthetic_operation.__module__ = module.__name__
     module.synthetic_operation = synthetic_operation  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
 
     monkeypatch.setattr(api, "SyntheticResult", SyntheticResult, raising=False)
     assert "SyntheticResult" not in api.__all__
@@ -1188,6 +1395,20 @@ def test_runtime_httpx_annotations_remain_resolvable() -> None:
     assert get_type_hints(TemplatesMixin)["_http"].__module__ == "httpx"
 
 
+def _signature_text(exported: object) -> str:
+    """One exported name's signature, rendered the same on every supported interpreter.
+
+    `inspect` writes an `Annotated` annotation as `typing.Annotated[...]` on 3.11 and
+    as `Annotated[...]` from 3.12 on. The digest below is a single frozen constant
+    checked against 3.11 through 3.14, so an interpreter-dependent rendering makes it
+    unfreezable — invisible until #482 put the first `Annotated` field in the manifest,
+    and then a failure on whichever versions did not recompute it. Dropping the
+    qualifier everywhere it appears leaves the annotation's content intact and the
+    text identical across all four.
+    """
+    return re.sub(r"\btyping\.", "", str(inspect.signature(exported)))
+
+
 def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     """ADR 0029: the supported signatures move only with a recorded decision.
 
@@ -1265,14 +1486,18 @@ def test_public_operations_are_async_and_signatures_are_frozen() -> None:
     signatures = {}
     for name in api.__all__:
         try:
-            signatures[name] = str(inspect.signature(getattr(api, name)))
+            signatures[name] = _signature_text(getattr(api, name))
         except (TypeError, ValueError):
             continue
+    # At least one manifest entry must carry an `Annotated` field, or the CI matrix
+    # stops exercising the interpreter divergence `_signature_text` normalises away.
+    assert "Annotated[str, MinLen" in signatures["HmcIdentity"]
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    # Moved by #446: `PcmResource` enters the manifest with its dataclass
-    # constructor, and `RemoteRestartOperation` with the `(*args, **kwargs)` every
-    # literal alias reports. Recomputed over #371's baseline 44e83b7a.
-    expected_digest = "960b037616127748f8e89bd517892d499571711ee2c2f9958ddc659f23a1bf9e"  # pragma: allowlist secret
+    # Moved by #482: the transitive type clause adds twelve `snapshot` models with
+    # their Pydantic constructors and seven literal aliases with the
+    # `(*args, **kwargs)` every alias reports. Recomputed over #446's 960b0376
+    # under the normalisation `_signature_text` now applies.
+    expected_digest = "717825fbc7db94ee250515d56ab86a768d9d241f789def7a70bb2a1ad6a0cb39"  # pragma: allowlist secret
     assert hashlib.sha256(encoded).hexdigest() == expected_digest
 
 
@@ -1384,31 +1609,72 @@ def test_hmc_client_supported_lifecycle_members_are_present() -> None:
     } == SUPPORTED_CLIENT_LIFECYCLE
 
 
-def test_exported_literal_value_sets_are_frozen() -> None:
-    assert get_args(api.AdapterType) == (
+_FROZEN_LITERAL_VALUE_SETS: dict[str, tuple[str, ...]] = {
+    "AdapterType": (
         "ClientNetworkAdapter",
         "VirtualSCSIClientAdapter",
         "VirtualFibreChannelClientAdapter",
         "VirtualNICDedicated",
-    )
-    assert get_args(api.PartitionType) == (
-        "AIX/Linux",
-        "OS400",
-        "Virtual IO Server",
-    )
-    assert get_args(api.StorageKind) == ("PhysicalVolume", "VirtualDisk")
-    assert get_args(api.DeviceType) == ("VirtualIO_Disk", "VirtualIO_Image")
-    assert get_args(api.LuType) == ("THIN", "THICK")
-    assert get_args(api.MetricKind) == ("processed", "aggregated")
-    assert get_args(api.PcmCategory) == ("ManagedSystem", "LogicalPartition")
-    assert get_args(api.SriovMode) == ("sriov", "dedicated")
-    assert get_args(api.RemoteRestartOperation) == (
+    ),
+    "AffinityClassification": (
+        "regression",
+        "optimization-opportunity",
+        "policy-violation",
+        "unsupported-data",
+        "none",
+    ),
+    "BootDeviceSelector": ("cd", "disk", "network"),
+    "CapabilityState": ("available", "capability-unavailable"),
+    "CapturedPolicyState": ("configured", "absent", "unsupported", "missing"),
+    "DeviceType": ("VirtualIO_Disk", "VirtualIO_Image"),
+    "Keylock": ("normal", "manual", "auto"),
+    "LuType": ("THIN", "THICK"),
+    "MetricKind": ("processed", "aggregated"),
+    "OsType": ("aix", "linux", "ibmi"),
+    "PartitionType": ("AIX/Linux", "OS400", "Virtual IO Server"),
+    "PcmCategory": ("ManagedSystem", "LogicalPartition"),
+    "PolicyState": ("configured", "absent", "unsupported"),
+    "RemoteRestartOperation": (
         "validate",
         "recover",
         "restart",
         "cleanup",
         "cancel",
-    )
+    ),
+    "ResourceKind": (
+        "dedicated_slot",
+        "sriov_adapter",
+        "sriov_physical_port",
+        "sriov_logical_port",
+    ),
+    "SharingMode": (
+        "capped",
+        "uncapped",
+        "keep_idle_procs",
+        "share_idle_procs",
+        "share_idle_procs_active",
+        "share_idle_procs_always",
+    ),
+    "SriovMode": ("sriov", "dedicated"),
+    "StopReason": ("duration", "max_bytes", "idle", "remote-close", "error"),
+    "StorageKind": ("PhysicalVolume", "VirtualDisk"),
+}
+
+
+def test_exported_literal_value_sets_are_frozen() -> None:
+    """ADR 0029 puts an exported alias's value set under the minor-release policy.
+
+    Keyed off ``__all__`` rather than off a hand-picked list of aliases to check: the
+    list this replaced named nine of the nineteen exported aliases, so the other ten —
+    ``PolicyState`` among them, exported since the facade shipped — were free to gain
+    or lose an alternative under a patch release with nothing objecting.
+    """
+    exported = {
+        name for name in api.__all__ if get_origin(getattr(api, name)) is Literal
+    }
+    assert exported == set(_FROZEN_LITERAL_VALUE_SETS)
+    for name, values in sorted(_FROZEN_LITERAL_VALUE_SETS.items()):
+        assert get_args(getattr(api, name)) == values, name
 
 
 def test_public_signatures_exclude_presentation_types() -> None:
