@@ -2,9 +2,8 @@
 
 The server writes one structured record for every authorization decision it makes at the
 MCP dispatch boundary, and further records for the other things an operator has to be
-able to audit — an approved LPAR ownership override, a client built with TLS verification
-off. The sections under [The records](#the-records) are the full set; this document is
-the contract they keep. The decision behind it is
+able to audit. The sections under [The records](#the-records) are the full set; this
+document is the contract they keep. The decision behind it is
 [ADR 0040](adr/0040-authorization-audit-events.md).
 
 ## What you get, and when you get nothing
@@ -21,7 +20,7 @@ ownership check inside the handler, which runs whether or not a policy is select
 on the CLI and Python API paths, which have no policy at all. So an unpolicied server can
 still produce those, and only those.
 
-Two other things produce no record, by design:
+Other things produce no record, by design:
 
 - a call to a tool the policy's ceiling withheld — it is never registered, so nothing
   reaches the boundary;
@@ -321,7 +320,10 @@ rather than the operator deploying it — choose one that reads its child's stde
 made a policy mandatory this applies to every deployment, and an ungranted caller can drive
 the writes at call rate, because the record precedes the denial. Since ADR 0051 a denied call
 puts *two* items on the queue — this record, then FastMCP's one-line denial — so the queue
-fills in about half the calls it used to. That caller can therefore make records drop —
-bounded to the queue, visible as a `records-dropped` count, and never able to stall a call.
+fills in about half the calls it used to. Size the destination for the permitted path too:
+on the insecure `HMC_VERIFY_SSL` default a permitted call also puts a TLS record on the
+queue, per the rate noted with that record above. That caller can therefore make records
+drop — bounded to the queue, visible as a `records-dropped` count, and never able to stall
+a call.
 `hmc-mcp serve --audit-level WARNING` halves what that caller can produce — permits are gone —
 but the denials themselves stay, because an unrecorded probe is worse than a recorded one.
