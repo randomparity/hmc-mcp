@@ -20,6 +20,9 @@ from .jobs import (
 )
 from .errors import HMCError
 
+_MAX_CAPABILITY_LIMITS = 8
+_MAX_CAPABILITY_LIMIT_LENGTH = 200
+
 
 @dataclass(frozen=True)
 class LpmResult:
@@ -115,11 +118,20 @@ def evaluate_lpm_affinity_preflight(
         malformed.append("destination_check_basis")
     if request.capability not in {"available", "unavailable"}:
         malformed.append("capability")
-    if not request.capability_limits or any(
-        not isinstance(limit, str) or not limit.strip()
-        for limit in request.capability_limits
+    if (
+        not request.capability_limits
+        or len(request.capability_limits) > _MAX_CAPABILITY_LIMITS
+        or any(
+            not isinstance(limit, str)
+            or not limit.strip()
+            or len(limit) > _MAX_CAPABILITY_LIMIT_LENGTH
+            for limit in request.capability_limits
+        )
     ):
-        raise ValueError("capability_limits must contain non-empty descriptions")
+        raise ValueError(
+            "capability_limits must contain 1 through 8 non-empty descriptions "
+            "of at most 200 characters each"
+        )
 
     if malformed:
         reason = f"Affinity preflight input is malformed: {', '.join(malformed)}."

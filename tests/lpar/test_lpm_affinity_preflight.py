@@ -68,7 +68,9 @@ def test_adverse_estimate_obeys_explicit_response(
     assert "below configured minimum" in result.reason
 
 
-@pytest.mark.parametrize("missing", ["source_current_score", "destination_estimated_score"])
+@pytest.mark.parametrize(
+    "missing", ["source_current_score", "destination_estimated_score"]
+)
 @pytest.mark.parametrize(
     ("response", "status", "proceed"),
     [("warn", "unavailable", True), ("fail", "failed", False)],
@@ -123,6 +125,15 @@ def test_malformed_preflight_obeys_explicit_response(
 def test_invalid_response_is_rejected() -> None:
     with pytest.raises(ValueError, match="response"):
         evaluate_lpm_affinity_preflight(_request(response="implicit"))
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [(), tuple("limit" for _ in range(9)), ("x" * 201,)],
+)
+def test_capability_limits_are_bounded(limits: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError, match="capability_limits"):
+        evaluate_lpm_affinity_preflight(_request(capability_limits=limits))
 
 
 @pytest.mark.asyncio
@@ -211,6 +222,7 @@ async def test_passing_preflight_composes_before_canonical_validation(
 ) -> None:
     order: list[str] = []
     hmc = AsyncMock()
+
     async def fake_migrate(*args: object, **kwargs: object):
         order.append("validation-and-migration")
         return type("Result", (), {"lpar_uuid": "uuid-1", "job": "job"})()
