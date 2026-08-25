@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Literal, TypeVar, get_args, get_origin, get_type_hints
 
+import pytest
+
 import hmc_mcp
 from hmc_mcp import api
 from hmc_mcp.client_contracts import PcmClient
@@ -530,6 +532,35 @@ def test_adr_0029_type_rule_reddens_end_to_end() -> None:
     assert faults["selected but not exported or excluded"] == [
         "hmc_mcp.operations_typed:SyntheticFlavour",
         "hmc_mcp.operations_typed:SyntheticResult",
+    ]
+
+
+def test_adr_0029_type_rule_requires_a_manifest_entry_not_a_bare_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Binding a type on ``hmc_mcp.api`` is not exporting it.
+
+    ``__all__`` is the manifest this ADR freezes and the minor-release policy keys
+    on; a merely-bound attribute records no supported import path and ``import *``
+    does not carry it. Every facade name is both bound and listed today, so the
+    distinction has no live case and stays unproven — and therefore free to be
+    weakened back — unless a synthetic one drives it.
+    """
+    module = ModuleType("hmc_mcp.operations_typed")
+
+    async def synthetic_operation(hmc: object) -> SyntheticResult: ...
+
+    synthetic_operation.__module__ = module.__name__
+    module.synthetic_operation = synthetic_operation  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(api, "SyntheticResult", SyntheticResult, raising=False)
+    assert "SyntheticResult" not in api.__all__
+
+    faults = _unexported_owned_types(
+        {(module.__name__, "synthetic_operation")}, {module.__name__: module}
+    )
+    assert faults["selected but not exported or excluded"] == [
+        "hmc_mcp.operations_typed:SyntheticResult"
     ]
 
 
