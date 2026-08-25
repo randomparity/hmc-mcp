@@ -626,11 +626,14 @@ def test_wait_for_job_has_one_stable_output_schema():
         "timed_out",
         "error",
         "job",
+        "found",
+        "job_href",
     }
     assert set(schema["required"]) == set(schema["properties"])
     assert schema["properties"]["job_id"] == {"type": "string"}
     assert schema["properties"]["timed_out"] == {"type": "boolean"}
-    for nullable_field in ("status", "error", "job"):
+    assert schema["properties"]["found"] == {"type": "boolean"}
+    for nullable_field in ("status", "error", "job", "job_href"):
         assert {
             variant["type"] for variant in schema["properties"][nullable_field]["anyOf"]
         } == {
@@ -672,6 +675,8 @@ def test_lpm_recovery_tools_have_standard_wait_contract():
             "timed_out",
             "error",
             "job",
+            "found",
+            "job_href",
         }
         assert set(tool.output_schema["required"]) == set(
             tool.output_schema["properties"]

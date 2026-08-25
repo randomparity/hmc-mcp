@@ -65,6 +65,24 @@ UOM helpers, inherited mixin methods, XML and parser helpers, SSH primitives, an
 presentation modules are implementation details. They may remain importable or discoverable, but
 they are unsupported and may change without a compatibility release.
 
+The distribution ships a PEP 561 `py.typed` marker, so a type-checker reads the facade's inline
+annotations instead of treating every value as `Any`. That covers exactly the surface `__all__`
+declares: each export's call signature, the fields and constructor of each exported package-owned
+model, each exported exception type, and the members and values of each exported enum and literal
+alias. Modules outside `hmc_mcp.api` carry annotations too, but they are implementation details and
+their types are not part of the contract.
+
+What the marker does not do is make the open-ended HMC payloads specific. Operations that return a
+raw resource mapping are annotated `dict[str, Any]`, and ADR 0029 keeps them that way deliberately
+so an IBM-side field addition is not a breaking change — the call is typed, the payload contents
+stay opaque. Operations that return a package-owned result model are typed all the way down.
+
+One consequence is worth planning for: the operations annotate the concrete `HMCClient`, so a
+type-checker now rejects a duck-typed fake passed in a consumer's own tests even though the call
+still runs. ADR 0029 deliberately promises no alternate-client protocol, so pass such a fake through
+`typing.cast(HMCClient, fake)` at the call site, or silence that call with
+`# type: ignore[arg-type]`.
+
 While hmc-mcp is in `0.x`, strict SemVer applies to this supported surface: removing or renaming an
 export, invalidating a compatible call, changing an owned model incompatibly, changing an exported
 enum or literal value set, or adding a facade export requires a minor release. Patch releases are

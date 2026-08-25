@@ -17,7 +17,8 @@ from hmc_mcp.documents import (
     StorageKind,
 )
 from hmc_mcp.errors import HMCError, HMCTransportError
-from hmc_mcp.jobs import DeviceType, LuType
+from hmc_mcp.jobs import DeviceType, JobOutcome, LuType
+from hmc_mcp.operations_jobs import get_job, wait_for_job
 from hmc_mcp.operations_adapters import (
     AdapterResult,
     add_network_adapter,
@@ -365,4 +366,7 @@ __all__ = [
     "assess_snapshot_affinity",
     "inspect_lpar_snapshot",
     "validate_lpar_snapshot",
+    "get_job",
+    "wait_for_job",
+    "JobOutcome",
 ]
